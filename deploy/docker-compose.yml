@@ -1,0 +1,38 @@
+
+
+services:
+  # Infrastructure
+  headscale:
+    image: headscale/headscale:latest
+    volumes:
+      - ./headscale/config:/etc/headscale
+      - ./headscale/data:/var/lib/headscale
+    ports:
+      - "8080:8080"
+    command: serve
+
+  coredns:
+    image: coredns/coredns:latest
+    volumes:
+      - ./coredns/Corefile:/Corefile
+      - ./coredns/zones:/zones
+    ports:
+      - "53:53/udp"
+
+  # Meshploy Control Plane (Pulled from Registry!)
+  api:
+    image: ghcr.io/meshploy/api:latest
+    environment:
+      - HEADSCALE_URL=http://headscale:8080
+    ports:
+      - "4000:4000"
+
+  proxy:
+    image: ghcr.io/meshploy/proxy:latest
+    ports:
+      - "8081:8081"
+
+  web:
+    image: ghcr.io/meshploy/web:latest
+    ports:
+      - "3000:3000"
