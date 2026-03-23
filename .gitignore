@@ -1,11 +1,14 @@
 # Go workspace
 go.work.sum
 
+# Environment
+.env
+.env.local
+
 # Node & Next.js
 node_modules/
 .next/
 out/
-.env*.local
 
 # Database & State (CRITICAL)
 *.db
