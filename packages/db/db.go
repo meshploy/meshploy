@@ -8,42 +8,127 @@ import (
 	"gorm.io/gorm"
 )
 
+// ---------------------------------------------------------------------------
+// Connection
+// ---------------------------------------------------------------------------
+
 // Open connects to Postgres using the provided DSN.
 func Open(dsn string) (*gorm.DB, error) {
 	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
 }
 
-// FromEnv connects using the DATABASE_URL environment variable.
+// FromEnv connects using DATABASE_URL.
 // Expected format: postgres://user:password@host:5432/dbname?sslmode=disable
 func FromEnv() (*gorm.DB, error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		return nil, fmt.Errorf("DATABASE_URL environment variable is not set")
+		return nil, fmt.Errorf("DATABASE_URL is not set")
 	}
 	return Open(dsn)
 }
 
-// Migrate runs AutoMigrate for all models and creates the partial unique index
-// that enforces exactly one owner per organization.
+// ---------------------------------------------------------------------------
+// Extensible Migration Registry (Open-Core pattern)
+//
+// CE code calls Migrate() which runs all CE AutoMigrate + the eeHooks slice.
+// The EE module registers its own migrations via RegisterMigration() from an
+// init() function. Because the CE binary never imports the EE module, eeHooks
+// stays empty in CE builds — the CE codebase remains completely unaware of EE.
+// ---------------------------------------------------------------------------
+
+var eeHooks []func(*gorm.DB) error
+
+// RegisterMigration appends an EE migration function to the registry.
+// Intended to be called from the EE module's init().
+func RegisterMigration(fn func(*gorm.DB) error) {
+	eeHooks = append(eeHooks, fn)
+}
+
+// ---------------------------------------------------------------------------
+// Migrate
+// ---------------------------------------------------------------------------
+
+// Migrate runs AutoMigrate for all CE models, applies supplementary DB-level
+// constraints, and then calls any registered EE migration hooks.
 func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(
+		// Identity & Access
 		&User{},
 		&Organization{},
 		&OrganizationMember{},
+		&ResourcePermission{},
+
+		// Projects & Infrastructure
 		&Project{},
 		&Node{},
+
+		// Secrets
+		&Secret{},
+		&ServiceSecret{},
+
+		// Workloads
 		&Service{},
+		&BuildConfig{},
+		&DatabaseConfig{},
+
+		// Traffic
 		&Route{},
-		&ResourcePermission{},
+
+		// Deployment History
 		&Deployment{},
+
+		// Integrations
+		&StorageIntegration{},
+		&RegistryIntegration{},
+
+		// Operations
+		&BackupConfig{},
+		&NotificationChannel{},
+
+		// Templates
+		&Template{},
 	); err != nil {
-		return err
+		return fmt.Errorf("automigrate: %w", err)
 	}
 
-	// Enforce single owner per org at the DB level (Postgres partial unique index).
-	return db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
-		ON organization_members (organization_id)
-		WHERE role = 'owner'
-	`).Error
+	if err := applyConstraints(db); err != nil {
+		return fmt.Errorf("constraints: %w", err)
+	}
+
+	// Run EE migration hooks (no-op in CE builds)
+	for _, fn := range eeHooks {
+		if err := fn(db); err != nil {
+			return fmt.Errorf("ee migration: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// applyConstraints creates DB-level constraints that GORM's AutoMigrate
+// cannot express via struct tags alone.
+func applyConstraints(db *gorm.DB) error {
+	stmts := []string{
+		// Exactly one owner per organization
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
+		 ON organization_members (organization_id)
+		 WHERE role = 'owner' AND deleted_at IS NULL`,
+
+		// Secret names must be unique within a project (mirrors K8s namespace scoping)
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_secrets_project_name
+		 ON secrets (project_id, name)
+		 WHERE deleted_at IS NULL`,
+
+		// Prevent duplicate env var keys per service
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_secrets_env_key
+		 ON service_secrets (service_id, env_key)
+		 WHERE deleted_at IS NULL`,
+	}
+
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

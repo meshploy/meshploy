@@ -7,7 +7,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// --- Enums ---
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
 
 type MemberRole string
 
@@ -24,6 +26,20 @@ const (
 	NodeOffline NodeStatus = "offline"
 )
 
+type K3sRole string
+
+const (
+	K3sRoleServer K3sRole = "server"
+	K3sRoleAgent  K3sRole = "agent"
+)
+
+type ServiceType string
+
+const (
+	ServiceTypeApplication ServiceType = "application"
+	ServiceTypeDatabase    ServiceType = "database"
+)
+
 type ServiceStatus string
 
 const (
@@ -33,12 +49,79 @@ const (
 	ServiceFailed    ServiceStatus = "failed"
 )
 
+type BuilderType string
+
+const (
+	BuilderNixpacks   BuilderType = "nixpacks"
+	BuilderBuildpack  BuilderType = "buildpack"
+	BuilderDockerfile BuilderType = "dockerfile"
+	BuilderImage      BuilderType = "image"
+)
+
+type DatabaseEngine string
+
+const (
+	DatabasePostgres DatabaseEngine = "postgres"
+	DatabaseMySQL    DatabaseEngine = "mysql"
+	DatabaseRedis    DatabaseEngine = "redis"
+	DatabaseMongoDB  DatabaseEngine = "mongodb"
+)
+
 type DeploymentStatus string
 
 const (
 	DeploymentPending DeploymentStatus = "pending"
+	DeploymentRunning DeploymentStatus = "running"
 	DeploymentSuccess DeploymentStatus = "success"
 	DeploymentFailed  DeploymentStatus = "failed"
+)
+
+type BackupStatus string
+
+const (
+	BackupPending BackupStatus = "pending"
+	BackupRunning BackupStatus = "running"
+	BackupSuccess BackupStatus = "success"
+	BackupFailed  BackupStatus = "failed"
+)
+
+type NotificationChannelType string
+
+const (
+	NotificationSlack   NotificationChannelType = "slack"
+	NotificationDiscord NotificationChannelType = "discord"
+	NotificationEmail   NotificationChannelType = "email"
+	NotificationWebhook NotificationChannelType = "webhook"
+)
+
+type StorageProvider string
+
+const (
+	StorageS3    StorageProvider = "s3"
+	StorageR2    StorageProvider = "r2"
+	StorageMinio StorageProvider = "minio"
+	StorageB2    StorageProvider = "b2"
+)
+
+type RegistryProvider string
+
+const (
+	RegistryGHCR      RegistryProvider = "ghcr"
+	RegistryDockerHub RegistryProvider = "dockerhub"
+	RegistryECR       RegistryProvider = "ecr"
+	RegistryGCR       RegistryProvider = "gcr"
+	RegistryCustom    RegistryProvider = "custom"
+)
+
+type TemplateCategory string
+
+const (
+	TemplateCategoryDatabase    TemplateCategory = "database"
+	TemplateCategoryCMS         TemplateCategory = "cms"
+	TemplateCategoryAnalytics   TemplateCategory = "analytics"
+	TemplateCategoryQueue       TemplateCategory = "queue"
+	TemplateCategoryMonitoring  TemplateCategory = "monitoring"
+	TemplateCategoryApplication TemplateCategory = "application"
 )
 
 type ResourceType string
@@ -48,16 +131,20 @@ const (
 	ResourceRoute   ResourceType = "route"
 )
 
-// --- Base ---
+// ---------------------------------------------------------------------------
+// Base
+// ---------------------------------------------------------------------------
 
 type Base struct {
 	ID        uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	DeletedAt gorm.DeletedAt `gorm:"index"                                          json:"-"`
 }
 
-// --- Models ---
+// ---------------------------------------------------------------------------
+// Identity & Access
+// ---------------------------------------------------------------------------
 
 type User struct {
 	Base
@@ -68,7 +155,7 @@ type User struct {
 
 type Organization struct {
 	Base
-	Name string `gorm:"not null"        json:"name"`
+	Name string `gorm:"not null"             json:"name"`
 	Slug string `gorm:"uniqueIndex;not null" json:"slug"`
 
 	Members  []OrganizationMember `gorm:"foreignKey:OrganizationID" json:"-"`
@@ -78,9 +165,9 @@ type Organization struct {
 
 type OrganizationMember struct {
 	Base
-	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                        json:"organization_id"`
-	UserID         uuid.UUID  `gorm:"type:uuid;not null;index"                        json:"user_id"`
-	Role           MemberRole `gorm:"type:varchar(10);not null;default:'member'"      json:"role"`
+	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                   json:"organization_id"`
+	UserID         uuid.UUID  `gorm:"type:uuid;not null;index"                   json:"user_id"`
+	Role           MemberRole `gorm:"type:varchar(10);not null;default:'member'" json:"role"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	User         User         `gorm:"foreignKey:UserID"         json:"-"`
@@ -88,62 +175,10 @@ type OrganizationMember struct {
 
 func (OrganizationMember) TableName() string { return "organization_members" }
 
-type Project struct {
-	Base
-	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index" json:"organization_id"`
-	Name           string    `gorm:"not null"                 json:"name"`
-	Slug           string    `gorm:"uniqueIndex;not null"     json:"slug"`
-
-	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
-	Services     []Service    `gorm:"foreignKey:ProjectID"      json:"-"`
-	Routes       []Route      `gorm:"foreignKey:ProjectID"      json:"-"`
-}
-
-type Node struct {
-	Base
-	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index" json:"organization_id"`
-	Name           string     `gorm:"not null"                 json:"name"`
-	TailscaleIP    string     `gorm:"not null"                 json:"tailscale_ip"`
-	Status         NodeStatus `gorm:"type:varchar(10);not null;default:'offline'" json:"status"`
-	LastSeenAt     *time.Time `json:"last_seen_at"`
-
-	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
-}
-
-type Service struct {
-	Base
-	ProjectID    uuid.UUID     `gorm:"type:uuid;not null;index" json:"project_id"`
-	NodeID       uuid.UUID     `gorm:"type:uuid;not null;index" json:"node_id"`
-	Name         string        `gorm:"not null"                 json:"name"`
-	Image        string        `gorm:"not null"                 json:"image"`
-	InternalPort int           `gorm:"not null"                 json:"internal_port"`
-	EnvVars      EnvVarsMap    `gorm:"type:jsonb;default:'{}'"  json:"env_vars"`
-	Status       ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
-
-	Project     Project      `gorm:"foreignKey:ProjectID" json:"-"`
-	Node        Node         `gorm:"foreignKey:NodeID"    json:"-"`
-	Routes      []Route      `gorm:"foreignKey:ServiceID" json:"-"`
-	Deployments []Deployment `gorm:"foreignKey:ServiceID" json:"-"`
-}
-
-type Route struct {
-	Base
-	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"          json:"organization_id"`
-	ProjectID      uuid.UUID  `gorm:"type:uuid;not null;index"          json:"project_id"`
-	ServiceID      *uuid.UUID `gorm:"type:uuid;index"                   json:"service_id"` // nullable
-	Hostname       string     `gorm:"uniqueIndex;not null"              json:"hostname"`
-	TargetIP       string     `gorm:"not null"                          json:"target_ip"`
-	TargetPort     int        `gorm:"not null"                          json:"target_port"`
-
-	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
-	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`
-	Service      *Service     `gorm:"foreignKey:ServiceID"      json:"-"`
-}
-
 type ResourcePermission struct {
 	Base
-	OrganizationID uuid.UUID    `gorm:"type:uuid;not null;index" json:"organization_id"`
-	UserID         uuid.UUID    `gorm:"type:uuid;not null;index" json:"user_id"`
+	OrganizationID uuid.UUID    `gorm:"type:uuid;not null;index"  json:"organization_id"`
+	UserID         uuid.UUID    `gorm:"type:uuid;not null;index"  json:"user_id"`
 	ResourceType   ResourceType `gorm:"type:varchar(10);not null" json:"resource_type"`
 	ResourceID     uuid.UUID    `gorm:"type:uuid;not null"        json:"resource_id"`
 
@@ -153,12 +188,305 @@ type ResourcePermission struct {
 
 func (ResourcePermission) TableName() string { return "resource_permissions" }
 
-type Deployment struct {
+// ---------------------------------------------------------------------------
+// Projects & Infrastructure
+// ---------------------------------------------------------------------------
+
+type Project struct {
 	Base
-	ServiceID  uuid.UUID        `gorm:"type:uuid;not null;index" json:"service_id"`
-	Status     DeploymentStatus `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
-	Log        string           `gorm:"type:text"                json:"log"`
-	DeployedAt *time.Time       `json:"deployed_at"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index" json:"organization_id"`
+	Name           string    `gorm:"not null"                 json:"name"`
+	// Slug doubles as the K8s namespace name for this project.
+	// Enforced pattern: ^[a-z0-9-]+$ (matches K8s namespace constraints).
+	Slug string `gorm:"uniqueIndex;not null" json:"slug"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+	Services     []Service    `gorm:"foreignKey:ProjectID"      json:"-"`
+	Routes       []Route      `gorm:"foreignKey:ProjectID"      json:"-"`
+	Secrets      []Secret     `gorm:"foreignKey:ProjectID"      json:"-"`
+}
+
+type Node struct {
+	Base
+	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                   json:"organization_id"`
+	Name           string     `gorm:"not null"                                   json:"name"`
+	TailscaleIP    string     `gorm:"not null"                                   json:"tailscale_ip"`
+	Status         NodeStatus `gorm:"type:varchar(10);not null;default:'offline'" json:"status"`
+	LastSeenAt     *time.Time `json:"last_seen_at"`
+
+	// K3s
+	K3sRole    K3sRole    `gorm:"type:varchar(10);not null;default:'agent'" json:"k3s_role"`
+	K3sVersion string     `json:"k3s_version"` // e.g. "v1.28.4+k3s1"
+	K3sLabels  JSONObject `gorm:"type:jsonb;default:'{}'"                   json:"k3s_labels"`
+	// e.g. {"meshploy.com/role": "builder", "topology.kubernetes.io/region": "us-east"}
+
+	// Capacity — populated by node agent heartbeat
+	CPUCores float32 `json:"cpu_cores"`
+	MemoryGB float32 `json:"memory_gb"`
+	DiskGB   float32 `json:"disk_gb"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+}
+
+// ---------------------------------------------------------------------------
+// Secrets  (mirrors K8s Secret objects, project-scoped)
+// ---------------------------------------------------------------------------
+
+type Secret struct {
+	Base
+	ProjectID uuid.UUID       `gorm:"type:uuid;not null;index" json:"project_id"`
+	Name      string          `gorm:"not null"                 json:"name"`  // e.g. "DATABASE_URL"
+	Value     EncryptedString `gorm:"not null"                 json:"-"`     // never serialized
+	// Unique constraint: (project_id, name) — enforced via DB index in Migrate()
+
+	Project Project `gorm:"foreignKey:ProjectID" json:"-"`
+}
+
+// ServiceSecret is the join between a Service and a Secret.
+// EnvKey is the environment variable name the secret is injected as.
+// Maps to K8s: env[].valueFrom.secretKeyRef
+type ServiceSecret struct {
+	Base
+	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
+	SecretID  uuid.UUID `gorm:"type:uuid;not null"       json:"secret_id"`
+	EnvKey    string    `gorm:"not null"                 json:"env_key"` // e.g. "DATABASE_URL"
+	// Unique constraint: (service_id, env_key) — enforced via DB index in Migrate()
 
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
+	Secret  Secret  `gorm:"foreignKey:SecretID"  json:"-"`
+}
+
+func (ServiceSecret) TableName() string { return "service_secrets" }
+
+// ---------------------------------------------------------------------------
+// Workloads  (unified polymorphic table)
+// ---------------------------------------------------------------------------
+
+type Service struct {
+	Base
+	ProjectID uuid.UUID   `gorm:"type:uuid;not null;index"                     json:"project_id"`
+	NodeID    *uuid.UUID  `gorm:"type:uuid;index"                              json:"node_id"` // nullable = let K3s schedule
+	Name      string      `gorm:"not null"                                     json:"name"`
+	Type      ServiceType `gorm:"type:varchar(15);not null;default:'application'" json:"type"`
+
+	// Runtime image.
+	// - application/image builder: set at creation.
+	// - application/other builders: populated after first successful build.
+	// - database: set at creation (e.g. "postgres:15").
+	Image string `json:"image"`
+
+	Status   ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
+	Replicas int           `gorm:"not null;default:1"                          json:"replicas"`
+
+	// K8s resource spec (standard K8s quantity strings)
+	CPURequest    string `gorm:"not null;default:'100m'"  json:"cpu_request"`
+	CPULimit      string `gorm:"not null;default:'500m'"  json:"cpu_limit"`
+	MemoryRequest string `gorm:"not null;default:'128Mi'" json:"memory_request"`
+	MemoryLimit   string `gorm:"not null;default:'512Mi'" json:"memory_limit"`
+
+	// Non-sensitive config injected as plain env vars.
+	// Sensitive values go through service_secrets.
+	EnvVars EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"env_vars"`
+
+	Project        Project         `gorm:"foreignKey:ProjectID"  json:"-"`
+	Node           *Node           `gorm:"foreignKey:NodeID"     json:"-"`
+	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID"  json:"-"`
+	DatabaseConfig *DatabaseConfig `gorm:"foreignKey:ServiceID"  json:"-"`
+	Routes         []Route         `gorm:"foreignKey:ServiceID"  json:"-"`
+	Secrets        []ServiceSecret `gorm:"foreignKey:ServiceID"  json:"-"`
+	Deployments    []Deployment    `gorm:"foreignKey:ServiceID"  json:"-"`
+}
+
+// BuildConfig holds app-specific build settings. 1:1 with Service (type=application).
+type BuildConfig struct {
+	Base
+	ServiceID uuid.UUID   `gorm:"type:uuid;not null;uniqueIndex" json:"service_id"`
+	Builder   BuilderType `gorm:"type:varchar(15);not null"      json:"builder"`
+
+	// Git source
+	GitRepo  string `json:"git_repo"`
+	Branch   string `gorm:"default:'main'"        json:"branch"`
+	RootDir  string `gorm:"default:'.'"`           // root of the app within the repo
+	// Dockerfile builder
+	DockerfilePath string     `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
+	BuildArgs      EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"build_args"`
+
+	// Registry to push the built image to.
+	// nil = use the internal mesh registry (default, zero-config CE experience).
+	RegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"registry_integration_id"`
+
+	// Populated after a successful build — used for the next deployment.
+	LastBuiltImage string     `json:"last_built_image"`
+	LastBuiltAt    *time.Time `json:"last_built_at"`
+
+	Service             Service              `gorm:"foreignKey:ServiceID"             json:"-"`
+	RegistryIntegration *RegistryIntegration `gorm:"foreignKey:RegistryIntegrationID" json:"-"`
+}
+
+// DatabaseConfig holds managed-database settings. 1:1 with Service (type=database).
+type DatabaseConfig struct {
+	Base
+	ServiceID uuid.UUID      `gorm:"type:uuid;not null;uniqueIndex" json:"service_id"`
+	Engine    DatabaseEngine `gorm:"type:varchar(10);not null"      json:"engine"`
+	Version   string         `gorm:"not null"                       json:"version"` // e.g. "15", "8.0", "7"
+	StorageGB int            `gorm:"not null;default:10"            json:"storage_gb"`
+
+	// Auto-generated connection string stored as an encrypted Secret in the same project.
+	// Meshploy creates this Secret automatically when the database is provisioned.
+	ConnectionSecretID *uuid.UUID `gorm:"type:uuid" json:"connection_secret_id"`
+
+	Service          Service `gorm:"foreignKey:ServiceID"          json:"-"`
+	ConnectionSecret *Secret `gorm:"foreignKey:ConnectionSecretID" json:"-"`
+}
+
+// ---------------------------------------------------------------------------
+// Traffic
+// ---------------------------------------------------------------------------
+
+type Route struct {
+	Base
+	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"  json:"organization_id"`
+	ProjectID      uuid.UUID  `gorm:"type:uuid;not null;index"  json:"project_id"`
+	ServiceID      *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"` // nullable — loose coupling
+	Hostname       string     `gorm:"uniqueIndex;not null"      json:"hostname"`   // hot-path proxy lookup
+	TargetIP       string     `gorm:"not null"                  json:"target_ip"`  // denormalised Headscale IP
+	TargetPort     int        `gorm:"not null"                  json:"target_port"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`
+	Service      *Service     `gorm:"foreignKey:ServiceID"      json:"-"`
+}
+
+// ---------------------------------------------------------------------------
+// Deployment History
+// ---------------------------------------------------------------------------
+
+type Deployment struct {
+	Base
+	ServiceID uuid.UUID        `gorm:"type:uuid;not null;index"                    json:"service_id"`
+	Status    DeploymentStatus `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
+	Image     string           `json:"image"` // image used for this specific deployment
+
+	// K8s artefacts — stored for auditing and rollback
+	AppliedManifest string `gorm:"type:text" json:"applied_manifest"` // K8s YAML applied
+	BuildJobName    string `json:"build_job_name"`                    // K8s Job name for the build
+
+	Log        string     `gorm:"type:text" json:"log"`
+	DeployedAt *time.Time `json:"deployed_at"`
+
+	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
+}
+
+// ---------------------------------------------------------------------------
+// Integrations
+// ---------------------------------------------------------------------------
+
+// StorageIntegration holds org-level S3-compatible credentials for backups.
+// Credentials are encrypted at rest via EncryptedString.
+type StorageIntegration struct {
+	Base
+	OrganizationID  uuid.UUID       `gorm:"type:uuid;not null;index" json:"organization_id"`
+	Name            string          `gorm:"not null"                 json:"name"` // user-given label
+	Provider        StorageProvider `gorm:"type:varchar(10);not null" json:"provider"`
+	Endpoint        string          `json:"endpoint"` // S3-compatible endpoint URL
+	Region          string          `json:"region"`
+	Bucket          string          `gorm:"not null"  json:"bucket"`
+	AccessKeyID     EncryptedString `gorm:"not null"  json:"-"`
+	SecretAccessKey EncryptedString `gorm:"not null"  json:"-"`
+
+	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
+	BackupConfigs []BackupConfig `gorm:"foreignKey:StorageIntegrationID" json:"-"`
+}
+
+func (StorageIntegration) TableName() string { return "storage_integrations" }
+
+// RegistryIntegration holds org-level container registry credentials.
+// nil RegistryIntegrationID on BuildConfig = use internal mesh registry.
+type RegistryIntegration struct {
+	Base
+	OrganizationID uuid.UUID        `gorm:"type:uuid;not null;index"  json:"organization_id"`
+	Name           string           `gorm:"not null"                  json:"name"`
+	Provider       RegistryProvider `gorm:"type:varchar(15);not null" json:"provider"`
+	Endpoint       string           `json:"endpoint"`   // custom registry URL
+	Namespace      string           `json:"namespace"`  // e.g. "ghcr.io/myorg"
+	Username       EncryptedString  `gorm:"not null"    json:"-"`
+	Password       EncryptedString  `gorm:"not null"    json:"-"` // token for GHCR/ECR
+
+	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
+}
+
+func (RegistryIntegration) TableName() string { return "registry_integrations" }
+
+// ---------------------------------------------------------------------------
+// Operations
+// ---------------------------------------------------------------------------
+
+// BackupConfig defines an automated backup schedule for a Service.
+// Backup execution targets the StorageIntegration's S3-compatible bucket.
+type BackupConfig struct {
+	Base
+	ServiceID             uuid.UUID    `gorm:"type:uuid;not null;index" json:"service_id"`
+	StorageIntegrationID  uuid.UUID    `gorm:"type:uuid;not null"       json:"storage_integration_id"`
+	Schedule              string       `gorm:"not null"                 json:"schedule"`       // cron: "0 2 * * *"
+	RetentionDays         int          `gorm:"not null;default:30"      json:"retention_days"`
+	PathPrefix            string       `json:"path_prefix"` // S3 key prefix for this service
+	Enabled               bool         `gorm:"default:true"             json:"enabled"`
+	LastBackupAt          *time.Time   `json:"last_backup_at"`
+	LastBackupStatus      *BackupStatus `json:"last_backup_status"`
+
+	Service            Service            `gorm:"foreignKey:ServiceID"            json:"-"`
+	StorageIntegration StorageIntegration `gorm:"foreignKey:StorageIntegrationID" json:"-"`
+}
+
+func (BackupConfig) TableName() string { return "backup_configs" }
+
+// NotificationChannel defines a webhook/email destination for org-level events.
+// Config JSONB schema depends on Type:
+//   slack/discord: {"webhook_url": "https://..."}
+//   email:         {"address": "ops@company.com"}
+//   webhook:       {"url": "https://...", "secret": "..."}
+//
+// Events JSONB is an array of event strings:
+//   "deploy.success" | "deploy.failed" | "node.offline" |
+//   "backup.success" | "backup.failed"
+type NotificationChannel struct {
+	Base
+	OrganizationID uuid.UUID               `gorm:"type:uuid;not null;index"  json:"organization_id"`
+	Name           string                  `gorm:"not null"                  json:"name"`
+	Type           NotificationChannelType `gorm:"type:varchar(10);not null" json:"type"`
+	Config         JSONObject              `gorm:"type:jsonb;not null;default:'{}'" json:"config"`
+	Events         StringArray             `gorm:"type:jsonb;not null;default:'[]'" json:"events"`
+	Enabled        bool                    `gorm:"default:true"              json:"enabled"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+}
+
+func (NotificationChannel) TableName() string { return "notification_channels" }
+
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
+
+// Template represents a 1-click deployment blueprint.
+// Official templates (is_official=true) are shipped by Meshploy; OrganizationID is null.
+// User templates (is_official=false) are private to an org.
+//
+// Manifest JSONB describes the services/configs to instantiate — think of it
+// as a Meshploy-flavoured Compose/Helm values file resolved by the API at
+// deploy time.
+type Template struct {
+	Base
+	OrganizationID *uuid.UUID       `gorm:"type:uuid;index"           json:"organization_id"` // null = official
+	Name           string           `gorm:"not null"                  json:"name"`
+	Description    string           `json:"description"`
+	Category       TemplateCategory `gorm:"type:varchar(15);not null" json:"category"`
+	IconURL        string           `json:"icon_url"`
+	Manifest       JSONObject       `gorm:"type:jsonb;not null;default:'{}'" json:"manifest"`
+	DefaultEnvVars EnvVarsMap       `gorm:"type:jsonb;default:'{}'"          json:"default_env_vars"`
+	IsOfficial     bool             `gorm:"default:false"             json:"is_official"`
+	// Official-only: points to the public manifest registry entry
+	SourceURL string `json:"source_url"`
+	Version   string `json:"version"`
+
+	Organization *Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }
