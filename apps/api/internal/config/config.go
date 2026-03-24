@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	DatabaseURL  string
-	APIPort      int
-	HeadscaleURL string
-	HeadscaleKey string
-	JWTSecret    string
+	DatabaseURL   string
+	APIPort       int
+	HeadscaleURL  string
+	HeadscaleKey  string
+	JWTSecret     string
+	EncryptionKey string
 }
 
 func Load() (*Config, error) {
@@ -32,11 +33,12 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DatabaseURL:  require("DATABASE_URL"),
-		APIPort:      port,
-		HeadscaleURL: os.Getenv("HEADSCALE_URL"),
-		HeadscaleKey: os.Getenv("HEADSCALE_API_KEY"),
-		JWTSecret:    require("JWT_SECRET"),
+		DatabaseURL:   require("DATABASE_URL"),
+		APIPort:       port,
+		HeadscaleURL:  os.Getenv("HEADSCALE_URL"),
+		HeadscaleKey:  os.Getenv("HEADSCALE_API_KEY"),
+		JWTSecret:     require("JWT_SECRET"),
+		EncryptionKey: require("ENCRYPTION_KEY"),
 	}
 
 	if len(missing) > 0 {

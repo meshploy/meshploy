@@ -17,6 +17,8 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
+	db.SetEncryptionKey(cfg.EncryptionKey)
+
 	database, err := db.Open(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("database: %v", err)

@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	svc "github.com/meshploy/apps/api/internal/service"
 	"github.com/meshploy/packages/db"
 )
 
@@ -31,11 +32,15 @@ type CreateWorkloadInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		Name         string         `json:"name" minLength:"1" maxLength:"100"`
-		Image        string         `json:"image" minLength:"1"`
-		NodeID       string         `json:"node_id"`
-		InternalPort int            `json:"internal_port" minimum:"1" maximum:"65535"`
-		EnvVars      db.EnvVarsMap  `json:"env_vars"`
+		Name          string        `json:"name" minLength:"1" maxLength:"100"`
+		Image         string        `json:"image"`
+		NodeID        *string       `json:"node_id"` // nullable
+		EnvVars       db.EnvVarsMap `json:"env_vars"`
+		Replicas      int           `json:"replicas" minimum:"1"`
+		CPURequest    string        `json:"cpu_request"`
+		CPULimit      string        `json:"cpu_limit"`
+		MemoryRequest string        `json:"memory_request"`
+		MemoryLimit   string        `json:"memory_limit"`
 	}
 }
 
@@ -104,12 +109,25 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 	if err != nil {
 		return nil, err
 	}
-	nodeID, err := parseUUID(input.Body.NodeID)
-	if err != nil {
-		return nil, err
+	var nodeID *uuid.UUID
+	if input.Body.NodeID != nil {
+		id, err := parseUUID(*input.Body.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		nodeID = &id
 	}
-	service, err := h.svc.Workloads.Create(ctx, projectID, nodeID,
-		input.Body.Name, input.Body.Image, input.Body.InternalPort, input.Body.EnvVars)
+	service, err := h.svc.Workloads.Create(ctx, projectID, svc.CreateWorkloadInput{
+		Name:          input.Body.Name,
+		Image:         input.Body.Image,
+		NodeID:        nodeID,
+		EnvVars:       input.Body.EnvVars,
+		Replicas:      input.Body.Replicas,
+		CPURequest:    input.Body.CPURequest,
+		CPULimit:      input.Body.CPULimit,
+		MemoryRequest: input.Body.MemoryRequest,
+		MemoryLimit:   input.Body.MemoryLimit,
+	})
 	if err != nil {
 		return nil, err
 	}

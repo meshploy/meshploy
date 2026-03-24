@@ -12,6 +12,20 @@ type WorkloadService struct {
 	db *gorm.DB
 }
 
+type CreateWorkloadInput struct {
+	Name    string
+	Image   string
+	NodeID  *uuid.UUID // nil = let K3s schedule
+	EnvVars db.EnvVarsMap
+
+	// K8s resource spec — optional, defaults applied by the model
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
+	Replicas      int
+}
+
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
 	var services []db.Service
 	err := s.db.WithContext(ctx).Where("project_id = ?", projectID).Find(&services).Error
@@ -24,15 +38,20 @@ func (s *WorkloadService) Get(ctx context.Context, serviceID uuid.UUID) (*db.Ser
 	return &service, err
 }
 
-func (s *WorkloadService) Create(ctx context.Context, projectID, nodeID uuid.UUID, name, image string, port int, envVars db.EnvVarsMap) (*db.Service, error) {
+func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in CreateWorkloadInput) (*db.Service, error) {
+	replicas := in.Replicas
+	if replicas == 0 {
+		replicas = 1
+	}
 	service := &db.Service{
-		ProjectID:    projectID,
-		NodeID:       nodeID,
-		Name:         name,
-		Image:        image,
-		InternalPort: port,
-		EnvVars:      envVars,
-		Status:       db.ServiceStopped,
+		ProjectID: projectID,
+		NodeID:    in.NodeID,
+		Name:      in.Name,
+		Type:      db.ServiceTypeApplication,
+		Image:     in.Image,
+		Status:    db.ServiceStopped,
+		Replicas:  replicas,
+		EnvVars:   in.EnvVars,
 	}
 	return service, s.db.WithContext(ctx).Create(service).Error
 }
