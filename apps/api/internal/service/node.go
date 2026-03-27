@@ -25,13 +25,15 @@ func (s *NodeService) Get(ctx context.Context, nodeID uuid.UUID) (*db.Node, erro
 }
 
 func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tailscaleIP string) (*db.Node, error) {
-	node := &db.Node{
+	node := db.Node{
 		OrganizationID: orgID,
 		Name:           name,
 		TailscaleIP:    tailscaleIP,
 		Status:         db.NodeOffline,
 	}
-	return node, s.db.WithContext(ctx).Create(node).Error
+	
+	err := s.db.WithContext(ctx).Create(&node).Error
+	return &node, err
 }
 
 func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, name string) (*db.Node, error) {
