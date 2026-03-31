@@ -200,10 +200,13 @@ type Project struct {
 	// Enforced pattern: ^[a-z0-9-]+$ (matches K8s namespace constraints).
 	Slug string `gorm:"uniqueIndex;not null" json:"slug"`
 
+	// Project-level env vars shared across all services (AES-256-GCM encrypted .env block).
+	// Service-level env vars override these when the same key appears.
+	EnvVars EncryptedString `gorm:"type:text" json:"-"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	Services     []Service    `gorm:"foreignKey:ProjectID"      json:"-"`
 	Routes       []Route      `gorm:"foreignKey:ProjectID"      json:"-"`
-	Secrets      []Secret     `gorm:"foreignKey:ProjectID"      json:"-"`
 }
 
 type Node struct {
@@ -227,36 +230,6 @@ type Node struct {
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }
-
-// ---------------------------------------------------------------------------
-// Secrets  (mirrors K8s Secret objects, project-scoped)
-// ---------------------------------------------------------------------------
-
-type Secret struct {
-	Base
-	ProjectID uuid.UUID       `gorm:"type:uuid;not null;index" json:"project_id"`
-	Name      string          `gorm:"not null"                 json:"name"`  // e.g. "DATABASE_URL"
-	Value     EncryptedString `gorm:"not null"                 json:"-"`     // never serialized
-	// Unique constraint: (project_id, name) — enforced via DB index in Migrate()
-
-	Project Project `gorm:"foreignKey:ProjectID" json:"-"`
-}
-
-// ServiceSecret is the join between a Service and a Secret.
-// EnvKey is the environment variable name the secret is injected as.
-// Maps to K8s: env[].valueFrom.secretKeyRef
-type ServiceSecret struct {
-	Base
-	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
-	SecretID  uuid.UUID `gorm:"type:uuid;not null"       json:"secret_id"`
-	EnvKey    string    `gorm:"not null"                 json:"env_key"` // e.g. "DATABASE_URL"
-	// Unique constraint: (service_id, env_key) — enforced via DB index in Migrate()
-
-	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
-	Secret  Secret  `gorm:"foreignKey:SecretID"  json:"-"`
-}
-
-func (ServiceSecret) TableName() string { return "service_secrets" }
 
 // ---------------------------------------------------------------------------
 // Workloads  (unified polymorphic table)
@@ -284,16 +257,15 @@ type Service struct {
 	MemoryRequest string `gorm:"not null;default:'128Mi'" json:"memory_request"`
 	MemoryLimit   string `gorm:"not null;default:'512Mi'" json:"memory_limit"`
 
-	// Non-sensitive config injected as plain env vars.
-	// Sensitive values go through service_secrets.
-	EnvVars EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"env_vars"`
+	// Service-level env vars (AES-256-GCM encrypted .env block).
+	// Merged with project-level env vars at deploy time; service keys win on conflict.
+	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
 	Project        Project         `gorm:"foreignKey:ProjectID"  json:"-"`
 	Node           *Node           `gorm:"foreignKey:NodeID"     json:"-"`
 	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID"  json:"-"`
 	DatabaseConfig *DatabaseConfig `gorm:"foreignKey:ServiceID"  json:"-"`
 	Routes         []Route         `gorm:"foreignKey:ServiceID"  json:"-"`
-	Secrets        []ServiceSecret `gorm:"foreignKey:ServiceID"  json:"-"`
 	Deployments    []Deployment    `gorm:"foreignKey:ServiceID"  json:"-"`
 }
 
@@ -331,12 +303,11 @@ type DatabaseConfig struct {
 	Version   string         `gorm:"not null"                       json:"version"` // e.g. "15", "8.0", "7"
 	StorageGB int            `gorm:"not null;default:10"            json:"storage_gb"`
 
-	// Auto-generated connection string stored as an encrypted Secret in the same project.
-	// Meshploy creates this Secret automatically when the database is provisioned.
-	ConnectionSecretID *uuid.UUID `gorm:"type:uuid" json:"connection_secret_id"`
+	// Auto-generated connection string stored encrypted directly on this record.
+	// Meshploy populates this when the database is provisioned.
+	ConnectionString EncryptedString `gorm:"type:text" json:"-"`
 
-	Service          Service `gorm:"foreignKey:ServiceID"          json:"-"`
-	ConnectionSecret *Secret `gorm:"foreignKey:ConnectionSecretID" json:"-"`
+	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }
 
 // ---------------------------------------------------------------------------
@@ -390,9 +361,9 @@ type StorageIntegration struct {
 	Provider        StorageProvider `gorm:"type:varchar(10);not null" json:"provider"`
 	Endpoint        string          `json:"endpoint"` // S3-compatible endpoint URL
 	Region          string          `json:"region"`
-	Bucket          string          `gorm:"not null"  json:"bucket"`
-	AccessKeyID     EncryptedString `gorm:"not null"  json:"-"`
-	SecretAccessKey EncryptedString `gorm:"not null"  json:"-"`
+	Bucket          string          `gorm:"not null"           json:"bucket"`
+	AccessKeyID     EncryptedString `gorm:"type:text;not null" json:"-"`
+	SecretAccessKey EncryptedString `gorm:"type:text;not null" json:"-"`
 
 	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
 	BackupConfigs []BackupConfig `gorm:"foreignKey:StorageIntegrationID" json:"-"`
@@ -409,8 +380,8 @@ type RegistryIntegration struct {
 	Provider       RegistryProvider `gorm:"type:varchar(15);not null" json:"provider"`
 	Endpoint       string           `json:"endpoint"`   // custom registry URL
 	Namespace      string           `json:"namespace"`  // e.g. "ghcr.io/myorg"
-	Username       EncryptedString  `gorm:"not null"    json:"-"`
-	Password       EncryptedString  `gorm:"not null"    json:"-"` // token for GHCR/ECR
+	Username       EncryptedString  `gorm:"type:text;not null" json:"-"`
+	Password       EncryptedString  `gorm:"type:text;not null" json:"-"` // token for GHCR/ECR
 
 	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
 }

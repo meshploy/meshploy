@@ -1,5 +1,7 @@
 package db
 
+//go:generate go run ./cmd/gen-dbml
+
 import (
 	"fmt"
 	"os"
@@ -62,10 +64,6 @@ func Migrate(db *gorm.DB) error {
 		&Project{},
 		&Node{},
 
-		// Secrets
-		&Secret{},
-		&ServiceSecret{},
-
 		// Workloads
 		&Service{},
 		&BuildConfig{},
@@ -113,16 +111,6 @@ func applyConstraints(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
 		 ON organization_members (organization_id)
 		 WHERE role = 'owner' AND deleted_at IS NULL`,
-
-		// Secret names must be unique within a project (mirrors K8s namespace scoping)
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_secrets_project_name
-		 ON secrets (project_id, name)
-		 WHERE deleted_at IS NULL`,
-
-		// Prevent duplicate env var keys per service
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_secrets_env_key
-		 ON service_secrets (service_id, env_key)
-		 WHERE deleted_at IS NULL`,
 	}
 
 	for _, stmt := range stmts {

@@ -6,7 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	svc "github.com/meshploy/apps/api/internal/service"
-	"github.com/meshploy/packages/db"
+	db "github.com/meshploy/packages/db"
 )
 
 type WorkloadPathInput struct {
@@ -32,11 +32,11 @@ type CreateWorkloadInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		Name          string        `json:"name" minLength:"1" maxLength:"100"`
-		Image         string        `json:"image"`
-		NodeID        *string       `json:"node_id"` // nullable
-		EnvVars       db.EnvVarsMap `json:"env_vars"`
-		Replicas      int           `json:"replicas" minimum:"1"`
+		Name          string  `json:"name" minLength:"1" maxLength:"100"`
+		Image         string  `json:"image"`
+		NodeID        *string `json:"node_id"` // nullable
+		EnvVars       string  `json:"env_vars"` // raw .env block, encrypted at rest
+		Replicas      int     `json:"replicas" minimum:"1"`
 		CPURequest    string        `json:"cpu_request"`
 		CPULimit      string        `json:"cpu_limit"`
 		MemoryRequest string        `json:"memory_request"`

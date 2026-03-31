@@ -16,7 +16,7 @@ type CreateWorkloadInput struct {
 	Name    string
 	Image   string
 	NodeID  *uuid.UUID // nil = let K3s schedule
-	EnvVars db.EnvVarsMap
+	EnvVars string     // raw .env block, stored as EncryptedString
 
 	// K8s resource spec — optional, defaults applied by the model
 	CPURequest    string
@@ -51,7 +51,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		Image:     in.Image,
 		Status:    db.ServiceStopped,
 		Replicas:  replicas,
-		EnvVars:   in.EnvVars,
+		EnvVars:   db.EncryptedString(in.EnvVars),
 	}
 	return service, s.db.WithContext(ctx).Create(service).Error
 }

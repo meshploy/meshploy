@@ -1,0 +1,317 @@
+// Meshploy CE — DBML Schema
+// Auto-generated — run `go generate ./packages/db/...` to regenerate
+// DO NOT EDIT MANUALLY
+
+Table "public"."users" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "username"               varchar(500)    [not null]
+  "email"                  varchar(500)    [not null]
+  "password"               varchar(500)
+
+  Indexes {
+    "deleted_at" [name: "idx_users_deleted_at"]
+    "email" [unique, name: "idx_users_email"]
+    "username" [unique, name: "idx_users_username"]
+  }
+}
+
+Table "public"."organizations" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "name"                   varchar(500)    [not null]
+  "slug"                   varchar(500)    [not null]
+
+  Indexes {
+    "deleted_at" [name: "idx_organizations_deleted_at"]
+    "slug" [unique, name: "idx_organizations_slug"]
+  }
+}
+
+Table "public"."organization_members" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "user_id"                uuid            [not null, ref: > "public"."users"."id"]
+  "role"                   varchar(10)     [not null, default: 'member']
+
+  Indexes {
+    "deleted_at" [name: "idx_organization_members_deleted_at"]
+    "organization_id" [name: "idx_organization_members_organization_id"]
+    "user_id" [name: "idx_organization_members_user_id"]
+  }
+}
+
+Table "public"."resource_permissions" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "user_id"                uuid            [not null, ref: > "public"."users"."id"]
+  "resource_type"          varchar(10)     [not null]
+  "resource_id"            uuid            [not null]
+
+  Indexes {
+    "deleted_at" [name: "idx_resource_permissions_deleted_at"]
+    "organization_id" [name: "idx_resource_permissions_organization_id"]
+    "user_id" [name: "idx_resource_permissions_user_id"]
+  }
+}
+
+Table "public"."projects" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "name"                   varchar(500)    [not null]
+  "slug"                   varchar(500)    [not null]
+  "env_vars"               text
+
+  Indexes {
+    "deleted_at" [name: "idx_projects_deleted_at"]
+    "organization_id" [name: "idx_projects_organization_id"]
+    "slug" [unique, name: "idx_projects_slug"]
+  }
+}
+
+Table "public"."nodes" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "name"                   varchar(500)    [not null]
+  "tailscale_ip"           varchar(500)    [not null]
+  "status"                 varchar(10)     [not null, default: 'offline']
+  "last_seen_at"           timestamptz
+  "k3s_role"               varchar(10)     [not null, default: 'agent']
+  "k3s_version"            varchar(500)
+  "k3s_labels"             jsonb           [default: '{}']
+  "cpu_cores"              real
+  "memory_gb"              real
+  "disk_gb"                real
+
+  Indexes {
+    "deleted_at" [name: "idx_nodes_deleted_at"]
+    "organization_id" [name: "idx_nodes_organization_id"]
+  }
+}
+
+Table "public"."services" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "project_id"             uuid            [not null, ref: > "public"."projects"."id"]
+  "node_id"                uuid            [ref: > "public"."nodes"."id"]
+  "name"                   varchar(500)    [not null]
+  "type"                   varchar(15)     [not null, default: 'application']
+  "image"                  varchar(500)
+  "status"                 varchar(10)     [not null, default: 'stopped']
+  "replicas"               int             [not null, default: 1]
+  "cpu_request"            varchar(500)    [not null, default: '100m']
+  "cpu_limit"              varchar(500)    [not null, default: '500m']
+  "memory_request"         varchar(500)    [not null, default: '128Mi']
+  "memory_limit"           varchar(500)    [not null, default: '512Mi']
+  "env_vars"               text
+
+  Indexes {
+    "deleted_at" [name: "idx_services_deleted_at"]
+    "node_id" [name: "idx_services_node_id"]
+    "project_id" [name: "idx_services_project_id"]
+  }
+}
+
+Table "public"."build_configs" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "service_id"             uuid            [not null, ref: > "public"."services"."id"]
+  "builder"                varchar(15)     [not null]
+  "git_repo"               varchar(500)
+  "branch"                 varchar(500)    [default: 'main']
+  "root_dir"               varchar(500)    [default: .]
+  "dockerfile_path"        varchar(500)    [default: 'Dockerfile']
+  "build_args"             jsonb           [default: '{}']
+  "registry_integration_id" uuid            [ref: > "public"."registry_integrations"."id"]
+  "last_built_image"       varchar(500)
+  "last_built_at"          timestamptz
+
+  Indexes {
+    "deleted_at" [name: "idx_build_configs_deleted_at"]
+    "service_id" [unique, name: "idx_build_configs_service_id"]
+  }
+}
+
+Table "public"."database_configs" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "service_id"             uuid            [not null, ref: > "public"."services"."id"]
+  "engine"                 varchar(10)     [not null]
+  "version"                varchar(500)    [not null]
+  "storage_gb"             int             [not null, default: 10]
+  "connection_string"      text
+
+  Indexes {
+    "deleted_at" [name: "idx_database_configs_deleted_at"]
+    "service_id" [unique, name: "idx_database_configs_service_id"]
+  }
+}
+
+Table "public"."routes" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "project_id"             uuid            [not null, ref: > "public"."projects"."id"]
+  "service_id"             uuid            [ref: > "public"."services"."id"]
+  "hostname"               varchar(500)    [not null]
+  "target_ip"              varchar(500)    [not null]
+  "target_port"            int             [not null]
+
+  Indexes {
+    "deleted_at" [name: "idx_routes_deleted_at"]
+    "hostname" [unique, name: "idx_routes_hostname"]
+    "organization_id" [name: "idx_routes_organization_id"]
+    "project_id" [name: "idx_routes_project_id"]
+    "service_id" [name: "idx_routes_service_id"]
+  }
+}
+
+Table "public"."deployments" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "service_id"             uuid            [not null, ref: > "public"."services"."id"]
+  "status"                 varchar(10)     [not null, default: 'pending']
+  "image"                  varchar(500)
+  "applied_manifest"       text
+  "build_job_name"         varchar(500)
+  "log"                    text
+  "deployed_at"            timestamptz
+
+  Indexes {
+    "deleted_at" [name: "idx_deployments_deleted_at"]
+    "service_id" [name: "idx_deployments_service_id"]
+  }
+}
+
+Table "public"."storage_integrations" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "name"                   varchar(500)    [not null]
+  "provider"               varchar(10)     [not null]
+  "endpoint"               varchar(500)
+  "region"                 varchar(500)
+  "bucket"                 varchar(500)    [not null]
+  "access_key_id"          text            [not null]
+  "secret_access_key"      text            [not null]
+
+  Indexes {
+    "deleted_at" [name: "idx_storage_integrations_deleted_at"]
+    "organization_id" [name: "idx_storage_integrations_organization_id"]
+  }
+}
+
+Table "public"."registry_integrations" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "name"                   varchar(500)    [not null]
+  "provider"               varchar(15)     [not null]
+  "endpoint"               varchar(500)
+  "namespace"              varchar(500)
+  "username"               text            [not null]
+  "password"               text            [not null]
+
+  Indexes {
+    "deleted_at" [name: "idx_registry_integrations_deleted_at"]
+    "organization_id" [name: "idx_registry_integrations_organization_id"]
+  }
+}
+
+Table "public"."backup_configs" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "service_id"             uuid            [not null, ref: > "public"."services"."id"]
+  "storage_integration_id" uuid            [not null, ref: > "public"."storage_integrations"."id"]
+  "schedule"               varchar(500)    [not null]
+  "retention_days"         int             [not null, default: 30]
+  "path_prefix"            varchar(500)
+  "enabled"                boolean         [default: TRUE]
+  "last_backup_at"         timestamptz
+  "last_backup_status"     varchar(500)
+
+  Indexes {
+    "deleted_at" [name: "idx_backup_configs_deleted_at"]
+    "service_id" [name: "idx_backup_configs_service_id"]
+  }
+}
+
+Table "public"."notification_channels" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "name"                   varchar(500)    [not null]
+  "type"                   varchar(10)     [not null]
+  "config"                 jsonb           [not null, default: '{}']
+  "events"                 jsonb           [not null, default: '[]']
+  "enabled"                boolean         [default: TRUE]
+
+  Indexes {
+    "deleted_at" [name: "idx_notification_channels_deleted_at"]
+    "organization_id" [name: "idx_notification_channels_organization_id"]
+  }
+}
+
+Table "public"."templates" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [ref: > "public"."organizations"."id"]
+  "name"                   varchar(500)    [not null]
+  "description"            varchar(500)
+  "category"               varchar(15)     [not null]
+  "icon_url"               varchar(500)
+  "manifest"               jsonb           [not null, default: '{}']
+  "default_env_vars"       jsonb           [default: '{}']
+  "is_official"            boolean         [default: FALSE]
+  "source_url"             varchar(500)
+  "version"                varchar(500)
+
+  Indexes {
+    "deleted_at" [name: "idx_templates_deleted_at"]
+    "organization_id" [name: "idx_templates_organization_id"]
+  }
+}
+
+// ── Manual constraints (partial unique indexes) ──────────────────────────
+// The following cannot be derived from struct tags; they are applied by
+// applyConstraints() in db.go at startup.
+//
+// CREATE UNIQUE INDEX idx_one_owner_per_org
+//   ON organization_members (organization_id)
+//   WHERE role = 'owner' AND deleted_at IS NULL;
