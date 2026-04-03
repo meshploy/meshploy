@@ -285,8 +285,19 @@ ENVEOF
     success "Headscale user '${HEADSCALE_USER}' already exists"
   fi
 
+  # v0.28+ --user flag requires numeric ID, not a username string
+  HEADSCALE_USER_ID="$(docker compose exec -T headscale \
+    headscale users list -o json 2>/dev/null \
+    | python3 -c "
+import sys, json
+for u in json.load(sys.stdin):
+    if u['name'] == '$HEADSCALE_USER':
+        print(u['id']); break
+" || true)"
+  [[ -z "$HEADSCALE_USER_ID" ]] && die "Could not resolve Headscale user ID for '${HEADSCALE_USER}'"
+
   _PREAUTH_RAW="$(docker compose exec -T headscale \
-    headscale preauthkeys create --user "$HEADSCALE_USER" --expiration 1h --reusable \
+    headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 1h --reusable \
     2>&1 || true)"
   PREAUTH_KEY="$(echo "$_PREAUTH_RAW" | grep -oE '[a-z0-9]{40,}' | head -1 || true)"
   if [[ -z "$PREAUTH_KEY" ]]; then
