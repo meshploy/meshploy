@@ -259,7 +259,7 @@ ENVEOF
   # exist until Tailscale joins the mesh. Start them in phase 2.
   header "Starting core services"
   info "Pulling images…"
-  docker compose pull
+  DOCKER_CONFIG=/dev/null docker compose pull
   info "Starting postgres, headscale, api, web, proxy…"
   DOMAIN="$DOMAIN" docker compose up -d postgres headscale api web proxy
   success "Core services started"
@@ -331,9 +331,11 @@ for u in json.load(sys.stdin):
   # Joining creates the WireGuard interface with the mesh IP (e.g. 100.64.0.1).
   # CoreDNS and Caddy must start AFTER this so they can bind to that IP.
   header "Joining this node to the Headscale mesh"
-  info "Connecting to https://headscale.${DOMAIN}…"
+  # Use localhost directly — Caddy/DNS not running yet (Phase 2 starts after this).
+  # Headscale is already reachable at 127.0.0.1:8085 inside the container network.
+  info "Connecting to http://127.0.0.1:8085 (direct, pre-DNS)…"
   tailscale up \
-    --login-server="https://headscale.${DOMAIN}" \
+    --login-server="http://127.0.0.1:8085" \
     --authkey="$PREAUTH_KEY" \
     --hostname="gateway" \
     --accept-routes \
