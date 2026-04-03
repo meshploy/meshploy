@@ -299,7 +299,7 @@ for u in json.load(sys.stdin):
   _PREAUTH_RAW="$(docker compose exec -T headscale \
     headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 1h --reusable \
     2>&1 || true)"
-  PREAUTH_KEY="$(echo "$_PREAUTH_RAW" | grep -oE '[a-z0-9]{40,}' | head -1 || true)"
+  PREAUTH_KEY="$(echo "$_PREAUTH_RAW" | grep -oE 'hskey-auth-[A-Za-z0-9_-]+' | head -1 || true)"
   if [[ -z "$PREAUTH_KEY" ]]; then
     error "headscale preauthkeys output was:"
     echo "$_PREAUTH_RAW" >&2
@@ -308,7 +308,7 @@ for u in json.load(sys.stdin):
   success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
 
   _APIKEY_RAW="$(docker compose exec -T headscale headscale apikeys create 2>&1 || true)"
-  HEADSCALE_API_KEY="$(echo "$_APIKEY_RAW" | grep -oE '[a-z0-9]{40,}' | head -1 || true)"
+  HEADSCALE_API_KEY="$(echo "$_APIKEY_RAW" | grep -oE '[A-Za-z0-9_-]{40,}' | head -1 || true)"
   if [[ -z "$HEADSCALE_API_KEY" ]]; then
     error "headscale apikeys output was:"
     echo "$_APIKEY_RAW" >&2
