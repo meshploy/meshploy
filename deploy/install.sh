@@ -227,13 +227,15 @@ ENVEOF
     warn "Skipping registry login. 'docker compose pull' will fail if images are private."
   fi
 
-  # ── Docker Compose ──────────────────────────────────────────────────────────
-  header "Starting Meshploy stack"
+  # ── Phase 1: Start core services (no mesh IP needed yet) ────────────────────
+  # CoreDNS and Caddy bind to the WireGuard mesh IP (100.64.x.x) which doesn't
+  # exist until Tailscale joins the mesh. Start them in phase 2.
+  header "Starting core services"
   info "Pulling images…"
-  docker compose pull --quiet 2>/dev/null || true
-  info "Starting services…"
-  DOMAIN="$DOMAIN" docker compose up -d
-  success "Docker Compose stack started"
+  docker compose pull
+  info "Starting postgres, headscale, api, web, proxy…"
+  DOMAIN="$DOMAIN" docker compose up -d postgres headscale api web proxy
+  success "Core services started"
 
   # ── Wait for Headscale ──────────────────────────────────────────────────────
   header "Waiting for Headscale to be ready"
@@ -256,14 +258,18 @@ ENVEOF
     success "Headscale user '${HEADSCALE_USER}' already exists"
   fi
 
+  # Newer Headscale versions require a numeric user ID, not a username string.
+  HEADSCALE_USER_ID="$(docker compose exec -T headscale \
+    headscale users list --output json 2>/dev/null \
+    | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')"
+
   PREAUTH_KEY="$(docker compose exec -T headscale \
-    headscale preauthkeys create --user "$HEADSCALE_USER" --expiration 1h --reusable \
+    headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 1h --reusable \
     | grep -oE '[a-z0-9]{40,}')"
   success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
 
   HEADSCALE_API_KEY="$(docker compose exec -T headscale \
     headscale apikeys create | tail -n1 | tr -d '[:space:]')"
-  # Update .env with the generated API key
   sed -i "s|HEADSCALE_API_KEY=|HEADSCALE_API_KEY=${HEADSCALE_API_KEY}|" .env
   success "Headscale API key written to .env"
 
@@ -278,15 +284,25 @@ ENVEOF
   fi
 
   # ── Join this machine to the mesh ───────────────────────────────────────────
+  # Joining creates the WireGuard interface with the mesh IP (e.g. 100.64.0.1).
+  # CoreDNS and Caddy must start AFTER this so they can bind to that IP.
   header "Joining this node to the Headscale mesh"
   info "Connecting to https://headscale.${DOMAIN}…"
-  sudo tailscale up \
+  tailscale up \
     --login-server="https://headscale.${DOMAIN}" \
     --authkey="$PREAUTH_KEY" \
     --hostname="gateway" \
     --accept-routes \
     || warn "tailscale up returned non-zero — it may already be connected, check: tailscale status"
   success "This node joined the mesh as 'gateway'"
+
+  # ── Phase 2: Start mesh-IP-dependent services ────────────────────────────────
+  # CoreDNS binds to PUBLIC_IP:53 and MESH_IP:53.
+  # Caddy binds to PUBLIC_IP:80/443 and MESH_IP:80/443.
+  # Both require the WireGuard interface to exist before starting.
+  header "Starting DNS and proxy services"
+  DOMAIN="$DOMAIN" docker compose up -d coredns caddy
+  success "CoreDNS and Caddy started"
 
   # ── Final summary ────────────────────────────────────────────────────────────
   echo
