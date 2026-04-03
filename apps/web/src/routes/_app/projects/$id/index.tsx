@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Globe, Loader2, Plus, Server, ServerCrash } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { NewRouteModal } from "@/components/routes/new-route-modal"
 import { projects as projectsApi, services as servicesApi, routes as routesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -67,6 +68,15 @@ function ProjectDetailPage() {
   const routeList = routesQuery.data ?? []
 
   return (
+    <>
+    {orgId && (
+      <NewRouteModal
+        open={routeModalOpen}
+        onOpenChange={setRouteModalOpen}
+        orgId={orgId}
+        projectId={projectId}
+      />
+    )}
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
@@ -193,5 +203,6 @@ function ProjectDetailPage() {
         )}
       </section>
     </div>
+    </>
   )
 }

@@ -1,5 +1,6 @@
-import { createFileRoute, useNavigate, notFound } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
   Box,
   Database,
@@ -13,20 +14,25 @@ import {
   Server,
   Settings2,
   Globe,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
-import { mockProjects, mockNodes, mockTemplates } from "@/lib/mock-data"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { projects as projectsApi, gitIntegrations as gitApi } from "@/lib/api"
+import { useAuthStore } from "@/store/auth-store"
+import { useOrgStore } from "@/store/org-store"
+import { mockNodes, mockTemplates } from "@/lib/mock-data"
 
 // ─── Route ──────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute("/_app/projects/$id/new-service")({
-  loader: ({ params }) => {
-    const project = mockProjects.find((p) => p.id === params.id)
-    if (!project) throw notFound()
-    return { project }
-  },
   component: NewServicePage,
 })
 
@@ -34,7 +40,7 @@ export const Route = createFileRoute("/_app/projects/$id/new-service")({
 
 type ServiceKind = "app" | "database" | "compose" | "template"
 type AppSource = "image" | "git"
-type Builder = "nixpacks" | "dockerfile" | "buildpack"
+type Builder = "nixpacks" | "railpack" | "dockerfile"
 type DBEngine = "postgres" | "mysql" | "redis" | "mongodb"
 
 interface WizardState {
@@ -44,6 +50,7 @@ interface WizardState {
   appName: string
   appSource: AppSource
   appImage: string
+  gitIntegrationId: string
   gitRepo: string
   gitBranch: string
   builder: Builder
@@ -69,7 +76,7 @@ interface WizardState {
 
 const INITIAL: WizardState = {
   kind: null,
-  appName: "", appSource: "image", appImage: "", gitRepo: "", gitBranch: "main", builder: "nixpacks",
+  appName: "", appSource: "image", appImage: "", gitIntegrationId: "", gitRepo: "", gitBranch: "", builder: "nixpacks",
   dbName: "", dbEngine: "postgres", dbVersion: "16", dbStorageGB: 10,
   composeName: "", composeYaml: "",
   templateId: null, templateName: "",
@@ -82,11 +89,19 @@ const STEPS = ["Type", "Configuration", "Deployment"]
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 function NewServicePage() {
-  const { project } = Route.useLoaderData()
+  const { id: projectId } = useParams({ from: "/_app/projects/$id/new-service" })
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [state, setState] = useState<WizardState>(INITIAL)
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  const { data: project, isLoading } = useQuery({
+    queryKey: ["project", orgId, projectId],
+    queryFn: () => projectsApi.get(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
 
   const patch = (partial: Partial<WizardState>) =>
     setState((s) => ({ ...s, ...partial }))
@@ -98,7 +113,16 @@ function NewServicePage() {
 
   function handleCreate() {
     // TODO: POST /api/v1/workloads
-    navigate({ to: "/projects/$id", params: { id: project.id } })
+    navigate({ to: "/projects/$id", params: { id: projectId } })
+  }
+
+  if (isLoading || !project) {
+    return (
+      <div className="flex items-center justify-center h-64 gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm">Loading…</span>
+      </div>
+    )
   }
 
   return (
@@ -107,7 +131,7 @@ function NewServicePage() {
       <div className="border-b border-border/40 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-6 h-14 flex items-center gap-4">
           <button
-            onClick={() => navigate({ to: "/projects/$id", params: { id: project.id } })}
+            onClick={() => navigate({ to: "/projects/$id", params: { id: projectId } })}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -223,6 +247,29 @@ function Step2Config({ state, patch }: { state: WizardState; patch: (p: Partial<
 }
 
 function Step2App({ state, patch }: { state: WizardState; patch: (p: Partial<WizardState>) => void }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+
+  const { data: gitList = [] } = useQuery({
+    queryKey: ["git-integrations", orgId],
+    queryFn: () => gitApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: repoList = [], isFetching: reposFetching } = useQuery({
+    queryKey: ["git-repos", orgId, state.gitIntegrationId],
+    queryFn: () => gitApi.repos(orgId, state.gitIntegrationId, token),
+    enabled: !!state.gitIntegrationId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: branchList = [], isFetching: branchesFetching } = useQuery({
+    queryKey: ["git-branches", orgId, state.gitIntegrationId, state.gitRepo],
+    queryFn: () => gitApi.branches(orgId, state.gitIntegrationId, state.gitRepo, token),
+    enabled: !!state.gitIntegrationId && !!state.gitRepo,
+    staleTime: 2 * 60 * 1000,
+  })
+
   return (
     <div className="space-y-6">
       <div>
@@ -263,21 +310,81 @@ function Step2App({ state, patch }: { state: WizardState; patch: (p: Partial<Wiz
         </Field>
       ) : (
         <div className="space-y-4">
-          <Field label="Repository URL">
-            <input value={state.gitRepo} onChange={(e) => patch({ gitRepo: e.target.value })}
-              placeholder="https://github.com/org/repo" className={inputCls} />
+          <Field label="Git integration">
+            <Select
+              value={state.gitIntegrationId}
+              onValueChange={(v) => patch({ gitIntegrationId: v ?? "", gitRepo: "" })}
+            >
+              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                <SelectValue placeholder={gitList.length === 0 ? "No integrations — connect one in Integrations" : "Select a git integration…"} />
+              </SelectTrigger>
+              <SelectContent>
+                {gitList.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label={reposFetching ? "Repository (loading…)" : "Repository"}>
+            <Select
+              value={state.gitRepo}
+              onValueChange={(v) => {
+                const repo = repoList.find((r) => r.full_name === v)
+                patch({ gitRepo: v ?? "", gitBranch: repo?.default_branch ?? "" })
+              }}
+              disabled={!state.gitIntegrationId || reposFetching}
+            >
+              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                <SelectValue placeholder={
+                  !state.gitIntegrationId ? "Select an integration first" :
+                  reposFetching ? "Loading repos…" :
+                  repoList.length === 0 ? "No accessible repositories" :
+                  "Select a repository…"
+                } />
+              </SelectTrigger>
+              <SelectContent>
+                {repoList.map((r) => (
+                  <SelectItem key={r.full_name} value={r.full_name}>
+                    {r.full_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Branch">
-              <input value={state.gitBranch} onChange={(e) => patch({ gitBranch: e.target.value })}
-                placeholder="main" className={inputCls} />
+            <Field label={branchesFetching ? "Branch (loading…)" : "Branch"}>
+              <Select
+                value={state.gitBranch}
+                onValueChange={(v) => patch({ gitBranch: v ?? "" })}
+                disabled={!state.gitRepo || branchesFetching}
+              >
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue placeholder={
+                    !state.gitRepo ? "Select a repo first" :
+                    branchesFetching ? "Loading branches…" :
+                    "Select a branch…"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  {branchList.map((b) => (
+                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label="Builder">
-              <select value={state.builder} onChange={(e) => patch({ builder: e.target.value as Builder })} className={inputCls}>
-                <option value="nixpacks">Nixpacks (auto-detect)</option>
-                <option value="dockerfile">Dockerfile</option>
-                <option value="buildpack">Buildpack</option>
-              </select>
+              <Select value={state.builder} onValueChange={(v) => patch({ builder: (v ?? "nixpacks") as Builder })}>
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nixpacks">Nixpacks</SelectItem>
+                  <SelectItem value="railpack">Railpack</SelectItem>
+                  <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </div>
         </div>
@@ -333,11 +440,16 @@ function Step2Database({ state, patch }: { state: WizardState; patch: (p: Partia
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Version">
-          <select value={state.dbVersion} onChange={(e) => patch({ dbVersion: e.target.value })} className={inputCls}>
-            {selected.versions.map((v) => (
-              <option key={v} value={v}>{v}</option>
-            ))}
-          </select>
+          <Select value={state.dbVersion} onValueChange={(v) => patch({ dbVersion: v ?? selected.versions[0] })}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {selected.versions.map((v) => (
+                <SelectItem key={v} value={v}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
         <Field label="Storage (GB)">
           <input type="number" min={1} value={state.dbStorageGB}
@@ -590,7 +702,7 @@ const inputCls =
   "w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
 
 function isStep2Valid(state: WizardState): boolean {
-  if (state.kind === "app") return state.appName.length > 0 && (state.appSource === "image" ? state.appImage.length > 0 : state.gitRepo.length > 0)
+  if (state.kind === "app") return state.appName.length > 0 && (state.appSource === "image" ? state.appImage.length > 0 : state.gitIntegrationId.length > 0 && state.gitRepo.length > 0 && state.gitBranch.length > 0)
   if (state.kind === "database") return state.dbName.length > 0
   if (state.kind === "compose") return state.composeName.length > 0 && state.composeYaml.length > 0
   if (state.kind === "template") return state.templateId !== null

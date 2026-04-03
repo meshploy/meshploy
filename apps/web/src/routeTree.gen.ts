@@ -18,8 +18,10 @@ import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/ind
 import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
 import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrations/index'
+import { Route as AppDomainsIndexRouteImport } from './routes/_app/domains/index'
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
+import { Route as AppDomainsNewRouteImport } from './routes/_app/domains/new'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/_app/projects/$id/index'
 import { Route as AppProjectsIdNewServiceRouteImport } from './routes/_app/projects/$id/new-service'
 
@@ -66,6 +68,11 @@ const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
   path: '/integrations/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDomainsIndexRoute = AppDomainsIndexRouteImport.update({
+  id: '/domains/',
+  path: '/domains/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppClusterIndexRoute = AppClusterIndexRouteImport.update({
   id: '/cluster/',
   path: '/cluster/',
@@ -74,6 +81,11 @@ const AppClusterIndexRoute = AppClusterIndexRouteImport.update({
 const AppNodesIdRoute = AppNodesIdRouteImport.update({
   id: '/nodes/$id',
   path: '/nodes/$id',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDomainsNewRoute = AppDomainsNewRouteImport.update({
+  id: '/domains/new',
+  path: '/domains/new',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProjectsIdIndexRoute = AppProjectsIdIndexRouteImport.update({
@@ -91,8 +103,10 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/domains/new': typeof AppDomainsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/cluster/': typeof AppClusterIndexRoute
+  '/domains/': typeof AppDomainsIndexRoute
   '/integrations/': typeof AppIntegrationsIndexRoute
   '/nodes/': typeof AppNodesIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
@@ -104,8 +118,10 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/domains/new': typeof AppDomainsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/cluster': typeof AppClusterIndexRoute
+  '/domains': typeof AppDomainsIndexRoute
   '/integrations': typeof AppIntegrationsIndexRoute
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
@@ -120,8 +136,10 @@ export interface FileRoutesById {
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/domains/new': typeof AppDomainsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
+  '/_app/domains/': typeof AppDomainsIndexRoute
   '/_app/integrations/': typeof AppIntegrationsIndexRoute
   '/_app/nodes/': typeof AppNodesIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
@@ -135,8 +153,10 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/register'
+    | '/domains/new'
     | '/nodes/$id'
     | '/cluster/'
+    | '/domains/'
     | '/integrations/'
     | '/nodes/'
     | '/projects/'
@@ -148,8 +168,10 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/register'
+    | '/domains/new'
     | '/nodes/$id'
     | '/cluster'
+    | '/domains'
     | '/integrations'
     | '/nodes'
     | '/projects'
@@ -163,8 +185,10 @@ export interface FileRouteTypes {
     | '/_auth/login'
     | '/_auth/register'
     | '/_app/'
+    | '/_app/domains/new'
     | '/_app/nodes/$id'
     | '/_app/cluster/'
+    | '/_app/domains/'
     | '/_app/integrations/'
     | '/_app/nodes/'
     | '/_app/projects/'
@@ -243,6 +267,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIntegrationsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/domains/': {
+      id: '/_app/domains/'
+      path: '/domains'
+      fullPath: '/domains/'
+      preLoaderRoute: typeof AppDomainsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/cluster/': {
       id: '/_app/cluster/'
       path: '/cluster'
@@ -255,6 +286,13 @@ declare module '@tanstack/react-router' {
       path: '/nodes/$id'
       fullPath: '/nodes/$id'
       preLoaderRoute: typeof AppNodesIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/domains/new': {
+      id: '/_app/domains/new'
+      path: '/domains/new'
+      fullPath: '/domains/new'
+      preLoaderRoute: typeof AppDomainsNewRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/projects/$id/': {
@@ -276,8 +314,10 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
+  AppDomainsNewRoute: typeof AppDomainsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
+  AppDomainsIndexRoute: typeof AppDomainsIndexRoute
   AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute
   AppNodesIndexRoute: typeof AppNodesIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
@@ -288,8 +328,10 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
+  AppDomainsNewRoute: AppDomainsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,
+  AppDomainsIndexRoute: AppDomainsIndexRoute,
   AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
   AppNodesIndexRoute: AppNodesIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,

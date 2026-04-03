@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/meshploy/apps/api/internal/service"
 	"github.com/meshploy/packages/db"
 )
 
@@ -30,6 +31,16 @@ type GetDeploymentOutput struct {
 
 func (h *Handler) registerDeploymentRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
+		OperationID:   "trigger-deployment",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments",
+		Summary:       "Trigger a new deployment",
+		Tags:          []string{"Deployments"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 202,
+	}, h.TriggerDeployment)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "list-deployments",
 		Method:      "GET",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments",
@@ -46,6 +57,25 @@ func (h *Handler) registerDeploymentRoutes(api huma.API) {
 		Tags:        []string{"Deployments"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetDeployment)
+}
+
+func (h *Handler) TriggerDeployment(ctx context.Context, input *ListDeploymentsInput) (*GetDeploymentOutput, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	deployment, err := h.svc.Deployments.Trigger(ctx, service.TriggerInput{
+		ServiceID:   serviceID,
+		TriggeredBy: userID,
+	})
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &GetDeploymentOutput{Body: deployment}, nil
 }
 
 func (h *Handler) ListDeployments(ctx context.Context, input *ListDeploymentsInput) (*ListDeploymentsOutput, error) {

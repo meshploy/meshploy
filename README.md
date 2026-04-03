@@ -85,14 +85,26 @@ meshploy/
 
 ---
 
-## Getting Started
+## Self-Hosting
+
+Run this on a fresh Linux server as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh | sudo bash
+```
+
+The script installs Docker (if needed), clones Meshploy to `/opt/meshploy`, walks you through an interactive setup (domain, IP, secrets), and starts the full stack. See [docs/self-hosting.md](docs/self-hosting.md) for the full guide including DNS setup and adding worker nodes.
+
+---
+
+## Local Development
 
 ### Prerequisites
 
 - Go 1.22+
 - Node.js 20+
 - PostgreSQL 15+
-- Docker (for infra)
+- Docker
 
 ### 1. Clone and configure
 
@@ -102,7 +114,7 @@ cd meshploy
 cp .env.example .env
 ```
 
-Edit `.env` with your values:
+Edit `.env`:
 
 ```bash
 DATABASE_URL=postgres://user:password@localhost:5432/meshploy?sslmode=disable
@@ -116,18 +128,13 @@ ENCRYPTION_KEY=exactly-32-characters-here!!!!!   # openssl rand -hex 16
 cd deploy && docker compose up -d
 ```
 
-This starts Headscale (WireGuard mesh) and CoreDNS.
-
 ### 3. Run the API
-
-The API runs database migrations automatically on startup.
 
 ```bash
 cd apps/api && go run main.go
 ```
 
-API available at `http://localhost:4000`
-OpenAPI docs at `http://localhost:4000/docs`
+API at `http://localhost:4000` · OpenAPI docs at `http://localhost:4000/docs`
 
 ### 4. Run the Proxy
 
@@ -141,7 +148,7 @@ cd apps/proxy && go run main.go
 cd apps/web && npm install && npm run dev
 ```
 
-Dashboard at `http://localhost:3000`
+Dashboard at `http://localhost:5173`
 
 ---
 

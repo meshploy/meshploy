@@ -22,6 +22,9 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/gorm v1.31.1 // indirect
+	k8s.io/api v0.31.0 // indirect
+	k8s.io/apimachinery v0.31.0 // indirect
+	k8s.io/client-go v0.31.0 // indirect
 )
 
 replace github.com/meshploy/packages/db => ../../packages/db

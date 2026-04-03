@@ -53,7 +53,7 @@ type BuilderType string
 
 const (
 	BuilderNixpacks   BuilderType = "nixpacks"
-	BuilderBuildpack  BuilderType = "buildpack"
+	BuilderRailpack   BuilderType = "railpack"
 	BuilderDockerfile BuilderType = "dockerfile"
 	BuilderImage      BuilderType = "image"
 )
@@ -70,10 +70,12 @@ const (
 type DeploymentStatus string
 
 const (
-	DeploymentPending DeploymentStatus = "pending"
-	DeploymentRunning DeploymentStatus = "running"
-	DeploymentSuccess DeploymentStatus = "success"
-	DeploymentFailed  DeploymentStatus = "failed"
+	DeploymentPending   DeploymentStatus = "pending"
+	DeploymentBuilding  DeploymentStatus = "building"
+	DeploymentDeploying DeploymentStatus = "deploying"
+	DeploymentRunning   DeploymentStatus = "running"
+	DeploymentSuccess   DeploymentStatus = "success"
+	DeploymentFailed    DeploymentStatus = "failed"
 )
 
 type BackupStatus string
@@ -129,6 +131,14 @@ type ResourceType string
 const (
 	ResourceService ResourceType = "service"
 	ResourceRoute   ResourceType = "route"
+)
+
+type RouteZone string
+
+const (
+	RouteZonePublic   RouteZone = "public"
+	RouteZoneInternal RouteZone = "internal"
+	RouteZonePreview  RouteZone = "preview"
 )
 
 // ---------------------------------------------------------------------------
@@ -311,6 +321,34 @@ type DatabaseConfig struct {
 }
 
 // ---------------------------------------------------------------------------
+// Domains
+// ---------------------------------------------------------------------------
+
+// Domain represents an org-owned base domain managed by the org's CoreDNS + Caddy.
+// CE limit: 1 domain per org (enforced in service layer). EE removes this limit.
+//
+// base_domain is immutable once set — users must add a new domain and delete the old one.
+// internal_subdomain and preview_subdomain are mutable (wildcard TLS makes renames cheap).
+type Domain struct {
+	Base
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index"         json:"organization_id"`
+	// Immutable once set. Global unique index prevents cross-org domain hijacking
+	// (combined with ownership verification via DNS TXT record).
+	BaseDomain        string `gorm:"uniqueIndex;not null"             json:"base_domain"`
+	InternalSubdomain string `gorm:"not null;default:'internal'"      json:"internal_subdomain"`
+	PreviewSubdomain  string `gorm:"not null;default:'preview'"       json:"preview_subdomain"`
+	// Pending domains cannot be used for routing until verified.
+	Verified bool `gorm:"default:false" json:"verified"`
+	// DNS TXT record value for ownership proof:
+	//   _meshploy-verify.{base_domain}  TXT  {verify_token}
+	VerifyToken string `gorm:"not null" json:"-"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID"                        json:"-"`
+	// RESTRICT: domain cannot be deleted while routes reference it.
+	Routes []Route `gorm:"foreignKey:DomainID;constraint:OnDelete:RESTRICT" json:"-"`
+}
+
+// ---------------------------------------------------------------------------
 // Traffic
 // ---------------------------------------------------------------------------
 
@@ -319,13 +357,18 @@ type Route struct {
 	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"  json:"organization_id"`
 	ProjectID      uuid.UUID  `gorm:"type:uuid;not null;index"  json:"project_id"`
 	ServiceID      *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"` // nullable — loose coupling
-	Hostname       string     `gorm:"uniqueIndex;not null"      json:"hostname"`   // hot-path proxy lookup
-	TargetIP       string     `gorm:"not null"                  json:"target_ip"`  // denormalised Headscale IP
-	TargetPort     int        `gorm:"not null"                  json:"target_port"`
+	// DomainID links to the managed Domain. Nullable for manually-specified hostnames.
+	DomainID  *uuid.UUID `gorm:"type:uuid;index"           json:"domain_id"`
+	Zone      RouteZone  `gorm:"type:varchar(10)"           json:"zone"`      // public|internal|preview
+	Subdomain string     `json:"subdomain"`                                   // prefix, e.g. "keeper"
+	Hostname  string     `gorm:"uniqueIndex;not null"       json:"hostname"`  // hot-path proxy lookup (denormalised)
+	TargetIP  string     `gorm:"not null"                   json:"target_ip"` // Headscale mesh IP
+	TargetPort int       `gorm:"not null"                   json:"target_port"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`
 	Service      *Service     `gorm:"foreignKey:ServiceID"      json:"-"`
+	Domain       *Domain      `gorm:"foreignKey:DomainID"       json:"-"`
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +430,37 @@ type RegistryIntegration struct {
 }
 
 func (RegistryIntegration) TableName() string { return "registry_integrations" }
+
+// GitIntegration holds an org-level connection to a Git hosting provider via
+// GitHub App installation (or, in future, GitLab/Gitea OAuth tokens).
+// InstallationID is stored encrypted; use the service layer to derive
+// short-lived installation tokens for repo operations.
+type GitIntegration struct {
+	Base
+	OrganizationID uuid.UUID       `gorm:"type:uuid;not null;index"   json:"organization_id"`
+	Provider       string          `gorm:"type:varchar(15);not null"  json:"provider"`   // "github" | "gitlab" | "gitea"
+	Name           string          `gorm:"not null"                   json:"name"`       // e.g. "acme-org" (GitHub account login)
+	InstallationID EncryptedString `gorm:"type:text"                  json:"-"`          // GitHub App installation_id (int64 as string)
+	BaseURL        string          `gorm:"not null;default:''"        json:"base_url"`   // empty = github.com; self-hosted URL otherwise
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+}
+
+func (GitIntegration) TableName() string { return "git_integrations" }
+
+// GitHubAppConfig stores the platform-wide GitHub App credentials created via the
+// manifest flow. There is at most one row. All sensitive fields are encrypted at rest.
+type GitHubAppConfig struct {
+	Base
+	AppID         string          `gorm:"not null"  json:"app_id"`
+	AppSlug       string          `gorm:"not null"  json:"app_slug"`
+	ClientID      string          `gorm:"not null"  json:"client_id"`
+	ClientSecret  EncryptedString `gorm:"type:text" json:"-"`
+	PrivateKey    EncryptedString `gorm:"type:text" json:"-"`
+	WebhookSecret EncryptedString `gorm:"type:text" json:"-"`
+}
+
+func (GitHubAppConfig) TableName() string { return "github_app_config" }
 
 // ---------------------------------------------------------------------------
 // Operations

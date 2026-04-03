@@ -22,6 +22,8 @@ func (h *Handler) Register(api huma.API) {
 	h.registerProjectRoutes(api)
 	h.registerNodeRoutes(api)
 	h.registerWorkloadRoutes(api)
+	h.registerDomainRoutes(api)
 	h.registerRouteRoutes(api)
 	h.registerDeploymentRoutes(api)
+	h.registerGitIntegrationRoutes(api)
 }

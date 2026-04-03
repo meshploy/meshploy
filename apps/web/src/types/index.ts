@@ -66,6 +66,15 @@ export interface Deployment {
   deployedAt: Date
 }
 
+export interface GitIntegration {
+  id: string
+  name: string
+  provider: "github" | "gitlab" | "gitea" | "generic"
+  baseUrl?: string
+  organizationId: string
+  createdAt: Date
+}
+
 export interface RegistryIntegration {
   id: string
   name: string
@@ -96,20 +105,26 @@ export interface NotificationChannel {
   createdAt: Date
 }
 
-export type RouteZone = "public" | "internal"
+export type RouteZone = "public" | "internal" | "preview"
 
-export interface RouteTarget {
-  path: string
-  nodeId: string
-  port: number
-  override?: string
+export interface Domain {
+  id: string
+  organizationId: string
+  baseDomain: string
+  internalSubdomain: string
+  previewSubdomain: string
+  verified: boolean
+  createdAt: Date
 }
 
 export interface AppRoute {
   id: string
+  hostname: string
   subdomain: string
   zone: RouteZone
-  targets: RouteTarget[]
+  domainId: string | null
+  targetIp: string
+  targetPort: number
   projectId: string
   organizationId: string
 }

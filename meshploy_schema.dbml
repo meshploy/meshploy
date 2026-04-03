@@ -105,6 +105,25 @@ Table "public"."nodes" {
   }
 }
 
+Table "public"."domains" {
+  "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
+  "created_at"             timestamptz     [default: `NOW()`]
+  "updated_at"             timestamptz     [default: `NOW()`]
+  "deleted_at"             timestamptz
+  "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
+  "base_domain"            varchar(500)    [not null]
+  "internal_subdomain"     varchar(500)    [not null, default: 'internal']
+  "preview_subdomain"      varchar(500)    [not null, default: 'preview']
+  "verified"               boolean         [default: FALSE]
+  "verify_token"           varchar(500)    [not null]
+
+  Indexes {
+    "base_domain" [unique, name: "idx_domains_base_domain"]
+    "deleted_at" [name: "idx_domains_deleted_at"]
+    "organization_id" [name: "idx_domains_organization_id"]
+  }
+}
+
 Table "public"."services" {
   "id"                     uuid            [pk, not null, default: `GEN_RANDOM_UUID()`]
   "created_at"             timestamptz     [default: `NOW()`]
@@ -177,12 +196,16 @@ Table "public"."routes" {
   "organization_id"        uuid            [not null, ref: > "public"."organizations"."id"]
   "project_id"             uuid            [not null, ref: > "public"."projects"."id"]
   "service_id"             uuid            [ref: > "public"."services"."id"]
+  "domain_id"              uuid            [ref: > "public"."domains"."id"]
+  "zone"                   varchar(10)
+  "subdomain"              varchar(500)
   "hostname"               varchar(500)    [not null]
   "target_ip"              varchar(500)    [not null]
   "target_port"            int             [not null]
 
   Indexes {
     "deleted_at" [name: "idx_routes_deleted_at"]
+    "domain_id" [name: "idx_routes_domain_id"]
     "hostname" [unique, name: "idx_routes_hostname"]
     "organization_id" [name: "idx_routes_organization_id"]
     "project_id" [name: "idx_routes_project_id"]

@@ -7,6 +7,7 @@ import type {
   AppRoute,
   Template,
   Deployment,
+  GitIntegration,
   RegistryIntegration,
   StorageIntegration,
   NotificationChannel,
@@ -273,32 +274,34 @@ export const mockServices: Service[] = [
 export const mockRoutes: AppRoute[] = [
   {
     id: "route_01",
+    hostname: "api.cs.example.com",
     subdomain: "api",
     zone: "public",
-    targets: [
-      { path: "/", nodeId: "550e8400-e29b-41d4-a716-446655440001", port: 3000 },
-    ],
+    domainId: null,
+    targetIp: "100.64.0.1",
+    targetPort: 3000,
     projectId: mockProjects[0].id,
     organizationId: mockOrgs[0].id,
   },
   {
     id: "route_02",
-    subdomain: "api-internal",
+    hostname: "api.internal.cs.example.com",
+    subdomain: "api",
     zone: "internal",
-    targets: [
-      { path: "/", nodeId: "550e8400-e29b-41d4-a716-446655440001", port: 3001 },
-      { path: "/metrics", nodeId: "550e8400-e29b-41d4-a716-446655440002", port: 9090, override: "http://prom:9090" },
-    ],
+    domainId: null,
+    targetIp: "100.64.0.1",
+    targetPort: 3001,
     projectId: mockProjects[0].id,
     organizationId: mockOrgs[0].id,
   },
   {
     id: "route_03",
+    hostname: "shop.cs.example.com",
     subdomain: "shop",
     zone: "public",
-    targets: [
-      { path: "/", nodeId: "550e8400-e29b-41d4-a716-446655440002", port: 3000 },
-    ],
+    domainId: null,
+    targetIp: "100.64.0.2",
+    targetPort: 3000,
     projectId: mockProjects[1].id,
     organizationId: mockOrgs[0].id,
   },
@@ -533,6 +536,24 @@ export const mockDeployments: Deployment[] = [
     status: "failed",
     image: "bitnami/kafka:3.7",
     deployedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
+  },
+]
+
+export const mockGitIntegrations: GitIntegration[] = [
+  {
+    id: "git_01",
+    name: "GitHub — acme-org",
+    provider: "github",
+    organizationId: mockOrgs[0].id,
+    createdAt: new Date("2024-10-01"),
+  },
+  {
+    id: "git_02",
+    name: "GitLab — self-hosted",
+    provider: "gitlab",
+    baseUrl: "https://gitlab.acme.internal",
+    organizationId: mockOrgs[0].id,
+    createdAt: new Date("2024-11-15"),
   },
 ]
 
