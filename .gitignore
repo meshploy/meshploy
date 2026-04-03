@@ -17,5 +17,6 @@ out/
 deploy/headscale/data/*
 !deploy/headscale/data/.gitkeep
 
-# Dynamic DNS edits
+# Dynamic DNS edits — ignore substituted runtime zone files but keep the template
 deploy/coredns/zones/_acme-challenge.*
+!deploy/coredns/zones/_acme-challenge.{DOMAIN}
