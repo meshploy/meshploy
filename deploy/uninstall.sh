@@ -108,8 +108,9 @@ if confirm "Delete generated zone files, .env, and substituted configs?"; then
   find coredns/zones/ -type f ! -name '*{DOMAIN}*' -delete 2>/dev/null || true
   # .env
   rm -f .env
-  # Substituted configs — reinstall.sh rewrites these from templates anyway
-  rm -f headscale/config/config.yaml coredns/Corefile
+  # Do NOT delete Corefile or headscale/config/config.yaml — they are the
+  # templates that install.sh substitutes in place. get.sh restores them via
+  # git checkout before reinstalling.
   success "Generated files removed"
 else
   warn "Config files kept"

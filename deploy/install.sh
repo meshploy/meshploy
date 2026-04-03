@@ -2,12 +2,40 @@
 # =============================================================================
 #  Meshploy Installation Script
 #  https://github.com/meshploy/meshploy
+#
+#  Can be run directly:
+#    curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh \
+#      -o /tmp/install.sh && sudo bash /tmp/install.sh
+#
+#  If config files are not found alongside the script (e.g. running from /tmp),
+#  the repo is cloned to /opt/meshploy and the script re-execs from there.
 # =============================================================================
 set -euo pipefail
 
 # When piped via curl | bash, stdin is the pipe not the terminal.
 # Reconnect stdin to the terminal so interactive prompts work correctly.
 exec < /dev/tty
+
+# ── Self-bootstrap ────────────────────────────────────────────────────────────
+# If the config templates are not next to this script, clone the repo first.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f "$SCRIPT_DIR/coredns/Corefile" ]]; then
+  INSTALL_DIR="/opt/meshploy"
+  REPO="https://github.com/meshploy/meshploy"
+  echo "Config files not found — cloning Meshploy to ${INSTALL_DIR}..."
+  if ! command -v git &>/dev/null; then
+    apt-get update -qq && apt-get install -y -qq git 2>/dev/null \
+      || yum install -y git 2>/dev/null \
+      || { echo "git is required. Install it and re-run."; exit 1; }
+  fi
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    git -C "$INSTALL_DIR" fetch --quiet origin main
+    git -C "$INSTALL_DIR" checkout --quiet origin/main -- .
+  else
+    git clone --depth 1 "$REPO" "$INSTALL_DIR"
+  fi
+  exec bash "$INSTALL_DIR/deploy/install.sh"
+fi
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m';  GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -102,7 +130,6 @@ if ! docker compose version &>/dev/null 2>&1; then
 fi
 success "Docker Compose $(docker compose version --short)"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── Node type ─────────────────────────────────────────────────────────────────

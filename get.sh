@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Meshploy — one-line installer
+# Meshploy — unified entry point
 #
-#   curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh | bash
+#   Install:    sudo bash get.sh
+#   Uninstall:  sudo bash get.sh --uninstall
+#   Reinstall:  sudo bash get.sh --reinstall
 #
 set -euo pipefail
+exec < /dev/tty
 
 REPO="https://github.com/meshploy/meshploy"
 INSTALL_DIR="/opt/meshploy"
@@ -13,16 +16,16 @@ info()    { echo -e "${CYAN}  →${RESET}  $*"; }
 success() { echo -e "${GREEN}  ✔${RESET}  $*"; }
 die()     { echo -e "${RED}  ✘${RESET}  $*" >&2; exit 1; }
 
-[[ "$(uname -s)" != "Linux" ]] && die "Meshploy requires Linux."
-[[ "$EUID" -ne 0 ]] && die "Please run as root: sudo bash <(curl -fsSL ...)"
+MODE="install"
+for arg in "$@"; do
+  case "$arg" in
+    --uninstall) MODE="uninstall" ;;
+    --reinstall) MODE="reinstall" ;;
+  esac
+done
 
-# ── Docker ────────────────────────────────────────────────────────────────────
-if ! command -v docker &>/dev/null; then
-  info "Installing Docker..."
-  curl -fsSL https://get.docker.com | sh
-  systemctl enable --now docker
-  success "Docker installed."
-fi
+[[ "$(uname -s)" != "Linux" ]] && die "Meshploy requires Linux."
+[[ "$EUID" -ne 0 ]] && die "Please run as root: sudo bash get.sh"
 
 # ── Git ───────────────────────────────────────────────────────────────────────
 if ! command -v git &>/dev/null; then
@@ -35,8 +38,9 @@ fi
 
 # ── Clone / update repo ───────────────────────────────────────────────────────
 if [[ -d "$INSTALL_DIR/.git" ]]; then
-  info "Updating existing installation at ${INSTALL_DIR}..."
-  git -C "$INSTALL_DIR" pull --quiet --ff-only
+  info "Updating ${INSTALL_DIR}..."
+  git -C "$INSTALL_DIR" fetch --quiet origin main
+  git -C "$INSTALL_DIR" checkout --quiet origin/main -- .
   success "Updated."
 else
   info "Cloning Meshploy into ${INSTALL_DIR}..."
@@ -44,6 +48,24 @@ else
   success "Cloned."
 fi
 
-# ── Hand off to the interactive installer ────────────────────────────────────
 cd "$INSTALL_DIR/deploy"
-exec bash install.sh
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+case "$MODE" in
+  install)
+    # Docker only needed for install/reinstall
+    if ! command -v docker &>/dev/null; then
+      info "Installing Docker..."
+      curl -fsSL https://get.docker.com | sh
+      systemctl enable --now docker
+      success "Docker installed."
+    fi
+    exec bash install.sh
+    ;;
+  uninstall)
+    exec bash uninstall.sh
+    ;;
+  reinstall)
+    exec bash uninstall.sh --reinstall
+    ;;
+esac
