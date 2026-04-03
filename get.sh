@@ -8,7 +8,7 @@
 set -euo pipefail
 exec < /dev/tty
 
-REPO="https://github.com/meshploy/meshploy"
+REPO_BASE="https://github.com/meshploy/meshploy"
 INSTALL_DIR="/opt/meshploy"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
@@ -36,9 +36,18 @@ if ! command -v git &>/dev/null; then
   success "git installed."
 fi
 
+# ── Repo URL (PAT optional — required only while repo is private) ─────────────
+if [[ -n "${GITHUB_PAT:-}" ]]; then
+  REPO="https://${GITHUB_PAT}@github.com/meshploy/meshploy"
+else
+  REPO="$REPO_BASE"
+fi
+
 # ── Clone / update repo ───────────────────────────────────────────────────────
+export GIT_TERMINAL_PROMPT=0
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   info "Updating ${INSTALL_DIR}..."
+  git -C "$INSTALL_DIR" remote set-url origin "$REPO"
   git -C "$INSTALL_DIR" fetch --quiet origin main
   git -C "$INSTALL_DIR" checkout --quiet origin/main -- .
   success "Updated."
