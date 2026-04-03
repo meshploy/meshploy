@@ -33,13 +33,24 @@ done
 confirm() {
   # confirm <prompt> — skipped when --yes is passed
   if $YES; then return 0; fi
-  printf "  ${BOLD}%s${RESET} [y/N]: " "$1"
+  echo -e -n "  ${BOLD}$1${RESET} [y/N]: "
   read -r yn
   [[ "$yn" =~ ^[Yy]$ ]]
 }
 
+# Resolve deploy dir — works whether run from /tmp, the repo, or /opt/meshploy/deploy
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+DEPLOY_DIR="/opt/meshploy/deploy"
+if [[ -f "$DEPLOY_DIR/docker-compose.yml" ]]; then
+  cd "$DEPLOY_DIR"
+elif [[ -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
+  cd "$SCRIPT_DIR"
+else
+  warn "Could not find Meshploy deploy directory. Looked in:"
+  warn "  $DEPLOY_DIR"
+  warn "  $SCRIPT_DIR"
+  warn "Docker Compose steps will be skipped."
+fi
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 clear
@@ -97,12 +108,8 @@ if confirm "Delete generated zone files, .env, and substituted configs?"; then
   find coredns/zones/ -type f ! -name '*{DOMAIN}*' -delete 2>/dev/null || true
   # .env
   rm -f .env
-  # Headscale config (re-generated on reinstall from template)
-  git checkout headscale/config/config.yaml 2>/dev/null \
-    || warn "Could not restore headscale/config/config.yaml — restore manually from git"
-  # CoreDNS Corefile (may have been substituted in place)
-  git checkout coredns/Corefile 2>/dev/null \
-    || warn "Could not restore coredns/Corefile — restore manually from git"
+  # Substituted configs — reinstall.sh rewrites these from templates anyway
+  rm -f headscale/config/config.yaml coredns/Corefile
   success "Generated files removed"
 else
   warn "Config files kept"
@@ -152,7 +159,7 @@ hr
 if $REINSTALL; then
   echo
   info "Reinstalling…"
-  exec bash install.sh
+  exec bash "$(pwd)/install.sh"
 fi
 
 echo
