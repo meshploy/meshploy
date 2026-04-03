@@ -287,11 +287,13 @@ ENVEOF
 
   PREAUTH_KEY="$(docker compose exec -T headscale \
     headscale preauthkeys create --user "$HEADSCALE_USER" --expiration 1h --reusable \
-    | grep -oE '[a-z0-9]{40,}')"
+    2>/dev/null | grep -oE '[a-z0-9]{40,}')"
+  [[ -z "$PREAUTH_KEY" ]] && die "Failed to generate pre-auth key. Check: docker compose logs headscale"
   success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
 
   HEADSCALE_API_KEY="$(docker compose exec -T headscale \
-    headscale apikeys create | tail -n1 | tr -d '[:space:]')"
+    headscale apikeys create 2>/dev/null | grep -oE '[a-z0-9]{40,}')"
+  [[ -z "$HEADSCALE_API_KEY" ]] && die "Failed to generate API key. Check: docker compose logs headscale"
   sed -i "s|HEADSCALE_API_KEY=|HEADSCALE_API_KEY=${HEADSCALE_API_KEY}|" .env
   success "Headscale API key written to .env"
 
