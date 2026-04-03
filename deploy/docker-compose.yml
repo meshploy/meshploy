@@ -19,7 +19,7 @@ services:
   # ── Headscale — WireGuard mesh control plane ───────────────────────────────
   # Listens on localhost only; Caddy proxies headscale.{DOMAIN} → 8085
   headscale:
-    image: headscale/headscale:latest
+    image: headscale/headscale:v0.22.3
     restart: unless-stopped
     command: serve
     ports:
