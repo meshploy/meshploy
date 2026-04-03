@@ -319,37 +319,6 @@ volumes:
   },
 ]
 
-export const mockDeployments: Deployment[] = [
-  {
-    id: "dep_01",
-    serviceId: "svc_01",
-    status: "success",
-    image: "ghcr.io/acme/api-server:v2.3.1",
-    deployedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-  },
-  {
-    id: "dep_02",
-    serviceId: "svc_01",
-    status: "success",
-    image: "ghcr.io/acme/api-server:v2.3.0",
-    deployedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-  },
-  {
-    id: "dep_03",
-    serviceId: "svc_04",
-    status: "running",
-    image: "ghcr.io/acme/frontend:latest",
-    deployedAt: new Date(Date.now() - 10 * 60 * 1000),
-  },
-  {
-    id: "dep_04",
-    serviceId: "svc_07",
-    status: "failed",
-    image: "bitnami/kafka:3.7",
-    deployedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
-  },
-]
-
 export const mockGitIntegrations: GitIntegration[] = [
   {
     id: "git_01",
