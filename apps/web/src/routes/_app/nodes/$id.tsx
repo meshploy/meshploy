@@ -1,43 +1,63 @@
-import { createFileRoute, notFound } from "@tanstack/react-router"
-import { Cpu, HardDrive, MemoryStick, Server } from "lucide-react"
+import { createFileRoute } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
+import {
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Server,
+  Loader2,
+  ServerCrash,
+  Tag,
+  User,
+  Clock,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
-import { mockNodes, mockServices, mockDeployments } from "@/lib/mock-data"
+import { nodes as nodesApi, toNode } from "@/lib/api"
+import { useAuthStore } from "@/store/auth-store"
+import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
-import type { ServiceStatus, DeploymentStatus } from "@/types"
-
-const SERVICE_STATUS_STYLES: Record<ServiceStatus, string> = {
-  running: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  deploying: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  failed: "bg-destructive/10 text-destructive border-destructive/20",
-  stopped: "bg-muted text-muted-foreground border-border",
-}
-
-const DEPLOY_STATUS_STYLES: Record<DeploymentStatus, string> = {
-  success: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  running: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  failed: "bg-destructive/10 text-destructive border-destructive/20",
-  pending: "bg-muted text-muted-foreground border-border",
-}
 
 export const Route = createFileRoute("/_app/nodes/$id")({
-  loader: ({ params }) => {
-    const node = mockNodes.find((n) => n.id === params.id)
-    if (!node) throw notFound()
-    const nodeServices = mockServices.filter((s) => s.nodeId === node.id)
-    const nodeDeployments = mockDeployments.filter((d) =>
-      nodeServices.some((s) => s.id === d.serviceId)
-    )
-    return { node, nodeServices, nodeDeployments }
-  },
   component: NodeDetailPage,
 })
 
 function NodeDetailPage() {
-  const { node, nodeServices, nodeDeployments } = Route.useLoaderData()
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const { id } = Route.useParams()
+
+  const { data: node, isLoading, isError, error } = useQuery({
+    queryKey: ["node", orgId, id],
+    queryFn: () => nodesApi.get(orgId!, id, token),
+    enabled: !!orgId,
+    select: toNode,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64 gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm">Loading node…</span>
+      </div>
+    )
+  }
+
+  if (isError || !node) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-muted-foreground">
+        <ServerCrash className="h-8 w-8 text-destructive/60" />
+        <p className="text-sm">Failed to load node</p>
+        <p className="text-xs text-muted-foreground/60">{(error as Error)?.message}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-center gap-3">
         <NodeStatusDot status={node.status} className="h-2.5 w-2.5" />
         <div>
@@ -49,7 +69,6 @@ function NodeDetailPage() {
           </div>
           <div className="flex items-center gap-3 mt-0.5">
             <code className="text-xs font-mono text-muted-foreground">{node.tailscaleIP}</code>
-            <span className="text-xs text-muted-foreground">{node.os}</span>
             <span className="text-xs text-muted-foreground">
               Last seen {formatRelativeTime(node.lastSeenAt)}
             </span>
@@ -57,62 +76,109 @@ function NodeDetailPage() {
         </div>
       </div>
 
+      {/* Hardware spec cards */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <SpecCard icon={<Cpu className="h-4 w-4" />} label="CPU" value={`${node.cpuCores} cores`} />
-        <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={`${node.memoryGB} GB`} />
-        <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={`${node.diskGB} GB`} />
-        <SpecCard icon={<Server className="h-4 w-4" />} label="K3s version" value={node.k3sVersion} mono />
+        <SpecCard icon={<Cpu className="h-4 w-4" />} label="CPU" value={node.cpuCores ? `${node.cpuCores} cores` : "—"} />
+        <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={node.memoryGB ? `${node.memoryGB} GB` : "—"} />
+        <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={node.diskGB ? `${node.diskGB} GB` : "—"} />
+        <SpecCard icon={<Server className="h-4 w-4" />} label="K3s version" value={node.k3sVersion || "—"} mono />
       </div>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-foreground">
-          Services{" "}
-          <span className="text-muted-foreground font-normal">({nodeServices.length})</span>
-        </h2>
-        {nodeServices.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4">No services scheduled on this node.</p>
-        ) : (
-          <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-            {nodeServices.map((svc) => (
-              <div key={svc.id} className="flex items-center gap-3 px-4 py-3.5">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-foreground">{svc.name}</p>
-                    <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border ${SERVICE_STATUS_STYLES[svc.status]}`}>
-                      {svc.status}
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5">{svc.type}</Badge>
-                  </div>
-                  <code className="text-[11px] font-mono text-muted-foreground/70 mt-0.5 block truncate">{svc.image}</code>
-                </div>
-                <span className="text-xs text-muted-foreground shrink-0">×{svc.replicas}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {nodeDeployments.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium text-foreground">Recent deployments</h2>
-          <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-            {nodeDeployments.map((dep) => {
-              const svc = nodeServices.find((s) => s.id === dep.serviceId)
-              return (
-                <div key={dep.id} className="flex items-center gap-3 px-4 py-3.5">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground">{svc?.name ?? dep.serviceId}</p>
-                      <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border ${DEPLOY_STATUS_STYLES[dep.status]}`}>
-                        {dep.status}
+      {/* Two-column info area */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Headscale Peer */}
+        <InfoCard title="Headscale Peer">
+          {node.headscaleId ? (
+            <dl className="space-y-2.5">
+              <InfoRow icon={<Server className="h-3.5 w-3.5" />} label="Peer ID" value={node.headscaleId} mono />
+              <InfoRow
+                icon={
+                  node.headscaleOnline
+                    ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    : <XCircle className="h-3.5 w-3.5 text-muted-foreground/60" />
+                }
+                label="Status"
+                value={node.headscaleOnline ? "Online" : "Offline"}
+                valueClass={node.headscaleOnline ? "text-emerald-400" : "text-muted-foreground"}
+              />
+              {node.headscaleUser && (
+                <InfoRow icon={<User className="h-3.5 w-3.5" />} label="User" value={node.headscaleUser} />
+              )}
+              {node.headscaleLastSeen && (
+                <InfoRow
+                  icon={<Clock className="h-3.5 w-3.5" />}
+                  label="Last Seen"
+                  value={formatRelativeTime(node.headscaleLastSeen)}
+                />
+              )}
+              {node.headscaleExpiry && (
+                <InfoRow
+                  icon={<Clock className="h-3.5 w-3.5" />}
+                  label="Key Expires"
+                  value={node.headscaleExpiry.toLocaleDateString()}
+                />
+              )}
+              {node.headscaleTags.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <Tag className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="flex flex-wrap gap-1">
+                    {node.headscaleTags.map((t) => (
+                      <Badge key={t} variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 font-mono">
+                        {t}
                       </Badge>
-                    </div>
-                    <code className="text-[11px] font-mono text-muted-foreground/70 mt-0.5 block truncate">{dep.image}</code>
+                    ))}
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0">{formatRelativeTime(dep.deployedAt)}</span>
                 </div>
-              )
-            })}
+              )}
+            </dl>
+          ) : (
+            <p className="text-sm text-muted-foreground">Not found in Headscale.</p>
+          )}
+        </InfoCard>
+
+        {/* K8s Cluster */}
+        <InfoCard title="Cluster">
+          {node.k8sMember ? (
+            <dl className="space-y-2.5">
+              <InfoRow
+                icon={<CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+                label="Membership"
+                value="In Cluster"
+                valueClass="text-emerald-400"
+              />
+              {node.k8sNodeName && (
+                <InfoRow icon={<Server className="h-3.5 w-3.5" />} label="Node Name" value={node.k8sNodeName} mono />
+              )}
+              <InfoRow
+                icon={
+                  node.k8sReady
+                    ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    : <XCircle className="h-3.5 w-3.5 text-amber-400" />
+                }
+                label="Ready"
+                value={node.k8sReady ? "Ready" : "Not Ready"}
+                valueClass={node.k8sReady ? "text-emerald-400" : "text-amber-400"}
+              />
+            </dl>
+          ) : (
+            <p className="text-sm text-muted-foreground">Not joined to the k3s cluster.</p>
+          )}
+        </InfoCard>
+      </div>
+
+      {/* Active Projects */}
+      {node.activeProjects.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium text-foreground">
+            Active Projects{" "}
+            <span className="text-muted-foreground font-normal">({node.activeProjects.length})</span>
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {node.activeProjects.map((ns) => (
+              <Badge key={ns} variant="secondary" className="font-mono text-xs">
+                {ns}
+              </Badge>
+            ))}
           </div>
         </section>
       )}
@@ -120,7 +186,17 @@ function NodeDetailPage() {
   )
 }
 
-function SpecCard({ icon, label, value, mono }: { icon: React.ReactNode; label: string; value: string; mono?: boolean }) {
+function SpecCard({
+  icon,
+  label,
+  value,
+  mono,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  mono?: boolean
+}) {
   return (
     <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1.5">
       <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -128,6 +204,37 @@ function SpecCard({ icon, label, value, mono }: { icon: React.ReactNode; label: 
         <span className="text-xs font-medium">{label}</span>
       </div>
       <p className={`text-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}>{value}</p>
+    </div>
+  )
+}
+
+function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
+      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+      {children}
+    </div>
+  )
+}
+
+function InfoRow({
+  icon,
+  label,
+  value,
+  mono,
+  valueClass = "text-foreground",
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  mono?: boolean
+  valueClass?: string
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground shrink-0">{icon}</span>
+      <span className="text-xs text-muted-foreground w-24 shrink-0">{label}</span>
+      <span className={`text-xs ${mono ? "font-mono" : ""} ${valueClass} truncate`}>{value}</span>
     </div>
   )
 }

@@ -33,6 +33,19 @@ export interface Node {
   diskGB: number
   lastSeenAt: Date
   organizationId: string
+  // Headscale peer data
+  headscaleId: string
+  headscaleOnline: boolean
+  headscaleLastSeen: Date | null
+  headscaleExpiry: Date | null
+  headscaleTags: string[]
+  headscaleUser: string
+  // K8s cluster membership
+  k8sMember: boolean
+  k8sReady: boolean
+  k8sNodeName: string
+  // Active project namespaces on this node
+  activeProjects: string[]
 }
 
 export interface Project {

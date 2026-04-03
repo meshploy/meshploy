@@ -82,6 +82,19 @@ export interface ApiNode {
   organization_id: string
   created_at: string
   updated_at: string
+  // Headscale peer data (zeroed when Headscale is not configured)
+  headscale_id: string
+  headscale_online: boolean
+  headscale_last_seen: string | null
+  headscale_expiry: string | null
+  headscale_tags: string[]
+  headscale_user: string
+  // K8s cluster membership
+  k8s_member: boolean
+  k8s_ready: boolean
+  k8s_node_name: string
+  // Active project namespaces on this node
+  active_projects: string[]
 }
 
 export interface ApiProject {
@@ -109,6 +122,16 @@ export function toNode(n: ApiNode): Node {
     diskGB: n.disk_gb,
     lastSeenAt: n.last_seen_at ? new Date(n.last_seen_at) : new Date(0),
     organizationId: n.organization_id,
+    headscaleId: n.headscale_id,
+    headscaleOnline: n.headscale_online,
+    headscaleLastSeen: n.headscale_last_seen ? new Date(n.headscale_last_seen) : null,
+    headscaleExpiry: n.headscale_expiry ? new Date(n.headscale_expiry) : null,
+    headscaleTags: n.headscale_tags ?? [],
+    headscaleUser: n.headscale_user,
+    k8sMember: n.k8s_member,
+    k8sReady: n.k8s_ready,
+    k8sNodeName: n.k8s_node_name,
+    activeProjects: n.active_projects ?? [],
   }
 }
 
@@ -158,6 +181,16 @@ export const nodes = {
 
   get: (orgId: string, nodeId: string, token: string) =>
     apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, {}, token),
+
+  getRegistrationToken: (orgId: string, token: string) =>
+    apiFetch<{ token: string }>(`/api/v1/orgs/${orgId}/node-registration-token`, {}, token),
+
+  generateRegistrationToken: (orgId: string, token: string) =>
+    apiFetch<{ token: string }>(
+      `/api/v1/orgs/${orgId}/node-registration-token`,
+      { method: "POST" },
+      token
+    ),
 }
 
 export interface ApiService {
@@ -201,6 +234,13 @@ export interface ApiDomain {
   verified: boolean
   created_at: string
   updated_at: string
+}
+
+// ─── Cluster ──────────────────────────────────────────────────────────────────
+
+export const cluster = {
+  getJoinToken: (token: string) =>
+    apiFetch<{ token: string; server_url: string }>("/api/v1/cluster/join-token", {}, token),
 }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────

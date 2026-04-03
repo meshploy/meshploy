@@ -202,6 +202,7 @@ JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 API_BASE_URL=https://api.${DOMAIN}
 FRONTEND_URL=https://app.${DOMAIN}
+K3S_TOKEN=${K3S_TOKEN}
 # Fill in after first start: docker compose exec headscale headscale apikeys create
 HEADSCALE_API_KEY=
 ENVEOF
@@ -253,6 +254,27 @@ ENVEOF
   else
     warn "Skipping registry login. 'docker compose pull' will fail if images are private."
   fi
+
+  # ── Install k3s server (control plane) ─────────────────────────────────────
+  header "Installing k3s"
+  if command -v k3s &>/dev/null && systemctl is-active --quiet k3s 2>/dev/null; then
+    success "k3s server already running: $(k3s --version | head -1)"
+  else
+    info "Installing k3s server…"
+    curl -sfL https://get.k3s.io | sh -
+    success "k3s server installed and started"
+  fi
+
+  # Read the node token (written by k3s on first start)
+  K3S_TOKEN_FILE="/var/lib/rancher/k3s/server/node-token"
+  MAX_K3S_WAIT=30; K3S_WAITED=0
+  until [[ -f "$K3S_TOKEN_FILE" ]]; do
+    sleep 2; K3S_WAITED=$((K3S_WAITED+2))
+    [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && die "k3s node token not found after ${MAX_K3S_WAIT}s. Check: journalctl -u k3s"
+    printf "."
+  done
+  K3S_TOKEN="$(cat "$K3S_TOKEN_FILE")"
+  success "k3s node token retrieved"
 
   # ── Phase 1: Start core services (no mesh IP needed yet) ────────────────────
   # CoreDNS and Caddy bind to the WireGuard mesh IP (100.64.x.x) which doesn't
@@ -350,6 +372,46 @@ for u in json.load(sys.stdin):
   DOMAIN="$DOMAIN" docker compose up -d coredns caddy
   success "CoreDNS and Caddy started"
 
+  # ── Wait for TLS certificates ─────────────────────────────────────────────────
+  # Caddy uses DNS-01 ACME challenges for wildcard certs (*.domain + *.internal.domain).
+  # CoreDNS must propagate the _acme-challenge TXT records before Let's Encrypt
+  # can verify them. This typically takes 1–3 minutes.
+  header "Provisioning TLS certificates"
+  echo -e "  ${YELLOW}Caddy is obtaining wildcard TLS certificates via DNS-01 ACME.${RESET}"
+  echo -e "  ${YELLOW}This typically takes 1–3 minutes. Please wait…${RESET}"
+  echo
+  TLS_MAX_WAIT=300   # 5 minutes
+  TLS_INTERVAL=5
+  TLS_WAITED=0
+  TLS_OK=0
+  while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
+    # -k to ignore cert errors during the first few seconds while Caddy is still
+    # serving self-signed — we look for HTTP 200/302 from the app, not cert validity.
+    # Once certs are valid, -k still succeeds, so we additionally check that the
+    # response is NOT a TLS error by checking without -k after the first success.
+    if curl -sf -k --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
+      # Check if the cert is actually valid (not self-signed fallback)
+      if curl -sf --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
+        TLS_OK=1
+        break
+      fi
+    fi
+    sleep $TLS_INTERVAL
+    TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
+    MINS=$((TLS_WAITED / 60)); SECS=$((TLS_WAITED % 60))
+    printf "\r  ${CYAN}→${RESET}  Waiting for TLS… %02d:%02d elapsed" "$MINS" "$SECS"
+  done
+  echo
+
+  if [[ $TLS_OK -eq 1 ]]; then
+    success "TLS certificates issued — HTTPS is live!"
+  else
+    warn "TLS certificates not yet ready after ${TLS_MAX_WAIT}s."
+    warn "Caddy may still be obtaining them in the background."
+    warn "Check progress: docker compose logs -f caddy"
+    warn "Try the dashboard once you see 'certificate obtained successfully' in the logs."
+  fi
+
   # ── Final summary ────────────────────────────────────────────────────────────
   echo
   hr
@@ -361,8 +423,12 @@ for u in json.load(sys.stdin):
   echo -e "    Headscale   ${CYAN}https://headscale.${DOMAIN}${RESET}"
   echo
   echo -e "  ${BOLD}To add a worker node${RESET}"
-  echo -e "    Copy this pre-auth key (valid 1h, reusable):"
-  echo -e "    ${BOLD}${CYAN}${PREAUTH_KEY}${RESET}"
+  echo -e "    1. Headscale pre-auth key (valid 1h, reusable):"
+  echo -e "       ${BOLD}${CYAN}${PREAUTH_KEY}${RESET}"
+  echo -e "    2. Node registration token (shown in dashboard → Cluster):"
+  echo -e "       Generate one at ${CYAN}https://app.${DOMAIN}${RESET} → Cluster → Add a worker node"
+  echo -e "    3. k3s cluster join token (also shown in dashboard → Cluster):"
+  echo -e "       ${BOLD}${CYAN}${K3S_TOKEN}${RESET}"
   echo -e "    Then on the worker machine run:"
   echo -e "    ${BOLD}curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh | bash${RESET}"
   echo
@@ -408,6 +474,19 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   NODE_HOSTNAME="$(hostname -s | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
   ask NODE_HOSTNAME "Hostname for this node in the mesh" "$NODE_HOSTNAME"
 
+  # ── Node registration token ─────────────────────────────────────────────────
+  # After joining the mesh, the worker can reach the master API directly over
+  # WireGuard (100.64.0.1:4000) without going through the public internet.
+  # The registration token is generated in the Meshploy dashboard → Cluster.
+  echo
+  echo -e "  ${BOLD}Node registration token${RESET}"
+  echo -e "  Find it in the Meshploy dashboard under ${CYAN}Cluster → Add a worker node${RESET}."
+  echo
+  ask_secret MESHPLOY_TOKEN "Node registration token (mreg-...)"
+
+  MESHPLOY_API_URL="${MESHPLOY_API_URL:-http://100.64.0.1:4000}"
+  ask MESHPLOY_API_URL "Meshploy API URL (mesh)" "$MESHPLOY_API_URL"
+
   # ── Join the mesh ───────────────────────────────────────────────────────────
   header "Joining the Meshploy mesh"
   info "Connecting to ${HEADSCALE_URL}…"
@@ -421,6 +500,53 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   MESH_IP_ASSIGNED="$(tailscale ip -4 2>/dev/null || echo "pending")"
   success "Joined mesh as '${NODE_HOSTNAME}' — mesh IP: ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
 
+  # ── Self-register with the Meshploy API ─────────────────────────────────────
+  # Now on the mesh, so we can reach the master's API at its WireGuard IP.
+  header "Registering node with Meshploy"
+  _REG_RESPONSE="$(curl -sf \
+    --max-time 10 \
+    -X POST "${MESHPLOY_API_URL}/api/v1/nodes/self-register" \
+    -H "Content-Type: application/json" \
+    -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"name\":\"${NODE_HOSTNAME}\",\"tailscale_ip\":\"${MESH_IP_ASSIGNED}\"}" \
+    2>&1 || true)"
+
+  if echo "$_REG_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null | grep -q .; then
+    success "Node '${NODE_HOSTNAME}' registered in Meshploy"
+  else
+    warn "Auto-registration failed. You can register manually in the dashboard."
+    warn "Response: ${_REG_RESPONSE}"
+  fi
+
+  # ── Optionally join k3s cluster ─────────────────────────────────────────────
+  echo
+  if ask_yn "Join this node to the k3s cluster now?"; then
+    ask_secret K3S_JOIN_TOKEN "k3s node token (from master summary or dashboard → Cluster)"
+    K3S_SERVER_URL="${K3S_SERVER_URL:-https://100.64.0.1:6443}"
+    ask K3S_SERVER_URL "k3s server URL" "$K3S_SERVER_URL"
+
+    header "Joining k3s cluster"
+    info "Installing k3s agent and joining ${K3S_SERVER_URL}…"
+    curl -sfL https://get.k3s.io | \
+      K3S_URL="$K3S_SERVER_URL" \
+      K3S_TOKEN="$K3S_JOIN_TOKEN" \
+      sh -s - agent \
+      || die "k3s agent install failed. Check the token and server URL."
+
+    # Wait for the agent to come up
+    MAX_K3S_WAIT=30; K3S_WAITED=0
+    until systemctl is-active --quiet k3s-agent 2>/dev/null; do
+      sleep 2; K3S_WAITED=$((K3S_WAITED+2))
+      [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && { warn "k3s-agent not active yet — check: journalctl -u k3s-agent"; break; }
+      printf "."
+    done
+    echo
+    systemctl is-active --quiet k3s-agent \
+      && success "k3s agent is running — node joined the cluster" \
+      || warn "k3s agent may still be starting. Check: systemctl status k3s-agent"
+  else
+    info "Skipped. You can join the cluster later from the Meshploy dashboard → Cluster."
+  fi
+
   echo
   hr
   echo -e "  ${BOLD}${GREEN}✔  Worker node is ready!${RESET}"
@@ -429,9 +555,8 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   echo -e "  ${BOLD}Mesh IP${RESET}    ${CYAN}${MESH_IP_ASSIGNED}${RESET}"
   echo
   echo -e "  ${BOLD}Next steps${RESET}"
-  echo -e "    1. In the Meshploy dashboard → Nodes → register this node"
-  echo -e "       with IP ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
-  echo -e "    2. Check connectivity from master:  tailscale ping ${NODE_HOSTNAME}"
+  echo -e "    1. Check connectivity from master:  tailscale ping ${NODE_HOSTNAME}"
+  echo -e "    2. View node in dashboard:          ${CYAN}Nodes → ${NODE_HOSTNAME}${RESET}"
   hr
 
 fi
