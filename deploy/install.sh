@@ -286,11 +286,11 @@ ENVEOF
   fi
 
   # Newer Headscale versions require a numeric user ID, not a username string.
-  # Handle both "id":1 and "id":"1" JSON formats across headscale versions.
+  # Parse from plain-text table output — most reliable across all versions.
   HEADSCALE_USER_ID="$(docker compose exec -T headscale \
-    headscale users list --output json 2>/dev/null \
-    | grep -oE '"id"[[:space:]]*:[[:space:]]*"?[0-9]+"?' \
-    | grep -oE '[0-9]+' | head -1)"
+    headscale users list 2>/dev/null \
+    | grep "$HEADSCALE_USER" | awk '{print $1}' | tr -dc '0-9')"
+  [[ -z "$HEADSCALE_USER_ID" ]] && die "Could not determine Headscale user ID. Check: docker compose exec headscale headscale users list"
 
   PREAUTH_KEY="$(docker compose exec -T headscale \
     headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 1h --reusable \
