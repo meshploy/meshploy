@@ -285,15 +285,8 @@ ENVEOF
     success "Headscale user '${HEADSCALE_USER}' already exists"
   fi
 
-  # Newer Headscale versions require a numeric user ID, not a username string.
-  # Parse from plain-text table output — most reliable across all versions.
-  HEADSCALE_USER_ID="$(docker compose exec -T headscale \
-    headscale users list 2>/dev/null \
-    | grep "$HEADSCALE_USER" | awk '{print $1}' | tr -dc '0-9')"
-  [[ -z "$HEADSCALE_USER_ID" ]] && die "Could not determine Headscale user ID. Check: docker compose exec headscale headscale users list"
-
   PREAUTH_KEY="$(docker compose exec -T headscale \
-    headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 1h --reusable \
+    headscale preauthkeys create --user "$HEADSCALE_USER" --expiration 1h --reusable \
     | grep -oE '[a-z0-9]{40,}')"
   success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
 
