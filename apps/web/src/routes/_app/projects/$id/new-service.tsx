@@ -25,10 +25,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { projects as projectsApi, gitIntegrations as gitApi } from "@/lib/api"
+import { projects as projectsApi, gitIntegrations as gitApi, nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { mockNodes, mockTemplates } from "@/lib/mock-data"
+import { mockTemplates } from "@/lib/mock-data"
 
 // ─── Route ──────────────────────────────────────────────────────────────────
 
@@ -556,7 +556,18 @@ function Step3Deployment({
   showAdvanced: boolean
   setShowAdvanced: (v: boolean) => void
 }) {
-  const workerNodes = mockNodes.filter((n) => n.status === "online" && n.k3sRole === "agent")
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
+
+  const { data: allNodes = [] } = useQuery({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId!, token),
+    enabled: !!orgId,
+    select: (raw) => raw.map(toNode),
+  })
+
+  // Only offer nodes that are in the cluster and online as agents
+  const workerNodes = allNodes.filter((n) => n.k8sMember && n.status === "online" && n.k3sRole === "agent")
 
   return (
     <div className="space-y-6">
