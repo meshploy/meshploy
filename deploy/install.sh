@@ -373,46 +373,6 @@ for u in json.load(sys.stdin):
   DOMAIN="$DOMAIN" docker compose up -d coredns caddy
   success "CoreDNS and Caddy started"
 
-  # ── Wait for TLS certificates ─────────────────────────────────────────────────
-  # Caddy uses DNS-01 ACME challenges for wildcard certs (*.domain + *.internal.domain).
-  # CoreDNS must propagate the _acme-challenge TXT records before Let's Encrypt
-  # can verify them. This typically takes 1–3 minutes.
-  header "Provisioning TLS certificates"
-  echo -e "  ${YELLOW}Caddy is obtaining wildcard TLS certificates via DNS-01 ACME.${RESET}"
-  echo -e "  ${YELLOW}This typically takes 1–3 minutes. Please wait…${RESET}"
-  echo
-  TLS_MAX_WAIT=300   # 5 minutes
-  TLS_INTERVAL=5
-  TLS_WAITED=0
-  TLS_OK=0
-  while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
-    # -k to ignore cert errors during the first few seconds while Caddy is still
-    # serving self-signed — we look for HTTP 200/302 from the app, not cert validity.
-    # Once certs are valid, -k still succeeds, so we additionally check that the
-    # response is NOT a TLS error by checking without -k after the first success.
-    if curl -sf -k --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
-      # Check if the cert is actually valid (not self-signed fallback)
-      if curl -sf --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
-        TLS_OK=1
-        break
-      fi
-    fi
-    sleep $TLS_INTERVAL
-    TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
-    MINS=$((TLS_WAITED / 60)); SECS=$((TLS_WAITED % 60))
-    printf "\r  ${CYAN}→${RESET}  Waiting for TLS… %02d:%02d elapsed" "$MINS" "$SECS"
-  done
-  echo
-
-  if [[ $TLS_OK -eq 1 ]]; then
-    success "TLS certificates issued — HTTPS is live!"
-  else
-    warn "TLS certificates not yet ready after ${TLS_MAX_WAIT}s."
-    warn "Caddy may still be obtaining them in the background."
-    warn "Check progress: docker compose logs -f caddy"
-    warn "Try the dashboard once you see 'certificate obtained successfully' in the logs."
-  fi
-
   # ── Final summary ────────────────────────────────────────────────────────────
   echo
   hr
@@ -439,6 +399,41 @@ for u in json.load(sys.stdin):
   echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
   echo -e "    4. Check mesh:  tailscale status"
   hr
+
+  # ── Wait for TLS certificates ─────────────────────────────────────────────────
+  # Shown after the summary so keys are always visible even if you Ctrl+C.
+  # Caddy uses DNS-01 ACME challenges for wildcard certs (*.domain + *.internal.domain).
+  # CoreDNS must propagate the _acme-challenge TXT records before Let's Encrypt
+  # can verify them. This typically takes 1–3 minutes.
+  echo
+  echo -e "  ${YELLOW}Waiting for Caddy to obtain wildcard TLS certificates (DNS-01 ACME).${RESET}"
+  echo -e "  ${YELLOW}This typically takes 1–3 minutes. Press Ctrl+C to skip — certs will${RESET}"
+  echo -e "  ${YELLOW}finish in the background and the dashboard will be available shortly.${RESET}"
+  echo
+  TLS_MAX_WAIT=300   # 5 minutes
+  TLS_INTERVAL=5
+  TLS_WAITED=0
+  TLS_OK=0
+  while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
+    if curl -sf -k --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
+      if curl -sf --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
+        TLS_OK=1
+        break
+      fi
+    fi
+    sleep $TLS_INTERVAL
+    TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
+    MINS=$((TLS_WAITED / 60)); SECS=$((TLS_WAITED % 60))
+    printf "\r  ${CYAN}→${RESET}  Waiting for TLS… %02d:%02d elapsed" "$MINS" "$SECS"
+  done
+  echo
+
+  if [[ $TLS_OK -eq 1 ]]; then
+    success "TLS certificates issued — ${CYAN}https://app.${DOMAIN}${RESET} is live!"
+  else
+    warn "TLS not confirmed after ${TLS_MAX_WAIT}s — still provisioning in background."
+    warn "Monitor: docker compose logs -f caddy"
+  fi
 
 # =============================================================================
 #  WORKER
