@@ -4,8 +4,8 @@
 #  https://github.com/meshploy/meshploy
 #
 #  Can be run directly:
-#    curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh \
-#      -o /tmp/install.sh && sudo bash /tmp/install.sh
+#    curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh \
+#      -o /tmp/get.sh && sudo bash /tmp/get.sh
 #
 #  If config files are not found alongside the script (e.g. running from /tmp),
 #  the repo is cloned to /opt/meshploy and the script re-execs from there.
@@ -17,24 +17,14 @@ set -euo pipefail
 exec < /dev/tty
 
 # ── Self-bootstrap ────────────────────────────────────────────────────────────
-# If the config templates are not next to this script, clone the repo first.
+# install.sh is always invoked via get.sh which downloads the deploy/ folder
+# first. If someone runs install.sh directly without the config files present,
+# tell them to use get.sh instead.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ ! -f "$SCRIPT_DIR/coredns/Corefile" ]]; then
-  INSTALL_DIR="/opt/meshploy"
-  REPO="https://github.com/meshploy/meshploy"
-  echo "Config files not found — cloning Meshploy to ${INSTALL_DIR}..."
-  if ! command -v git &>/dev/null; then
-    apt-get update -qq && apt-get install -y -qq git 2>/dev/null \
-      || yum install -y git 2>/dev/null \
-      || { echo "git is required. Install it and re-run."; exit 1; }
-  fi
-  if [[ -d "$INSTALL_DIR/.git" ]]; then
-    git -C "$INSTALL_DIR" fetch --quiet origin main
-    git -C "$INSTALL_DIR" checkout --quiet origin/main -- .
-  else
-    git clone --depth 1 "$REPO" "$INSTALL_DIR"
-  fi
-  exec bash "$INSTALL_DIR/deploy/install.sh"
+  echo "Config files not found. Please run via get.sh:"
+  echo "  curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o /tmp/get.sh && sudo bash /tmp/get.sh"
+  exit 1
 fi
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -391,7 +381,8 @@ for u in json.load(sys.stdin):
   echo -e "    3. k3s cluster join token (also shown in dashboard → Cluster):"
   echo -e "       ${BOLD}${CYAN}${K3S_TOKEN}${RESET}"
   echo -e "    Then on the worker machine run:"
-  echo -e "    ${BOLD}curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh | bash${RESET}"
+  echo -e "    ${BOLD}curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o /tmp/get.sh${RESET}"
+  echo -e "    ${BOLD}sudo bash /tmp/get.sh${RESET}"
   echo
   echo -e "  ${BOLD}Next steps${RESET}"
   echo -e "    1. Point your domain's NS records to this server (${PUBLIC_IP})"
