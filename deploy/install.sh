@@ -259,7 +259,7 @@ ENVEOF
   # exist until Tailscale joins the mesh. Start them in phase 2.
   header "Starting core services"
   info "Pulling images…"
-  DOCKER_CONFIG=/dev/null docker compose pull
+  docker compose pull
   info "Starting postgres, headscale, api, web, proxy…"
   DOMAIN="$DOMAIN" docker compose up -d postgres headscale api web proxy
   success "Core services started"
