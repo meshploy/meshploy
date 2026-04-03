@@ -31,7 +31,7 @@ api.{$DOMAIN} {
 # Browser SPA calls /api/* — Caddy routes them to the API container.
 # No domain config needed in the frontend image.
 app.{$DOMAIN} {
-    handle /api/* {
+    handle_path /api/* {
         reverse_proxy localhost:4000
     }
     handle {
