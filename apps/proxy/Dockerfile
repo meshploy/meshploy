@@ -9,9 +9,12 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /workspace
 
 COPY go.work go.work.sum* ./
+COPY apps/api/go.mod apps/api/go.sum* ./apps/api/
 COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
 
+# go work sync requires all modules in go.work to be present.
+# Only download deps for the modules we actually build here.
 RUN go work sync && \
     cd apps/proxy && go mod download && \
     cd /workspace/packages/db && go mod download

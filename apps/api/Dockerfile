@@ -13,9 +13,11 @@ WORKDIR /workspace
 # Copy workspace and module manifests first for layer caching.
 COPY go.work go.work.sum* ./
 COPY apps/api/go.mod apps/api/go.sum ./apps/api/
+COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
 
-# Download deps for both modules (workspace-aware).
+# go work sync requires all modules in go.work to be present.
+# Only download deps for the modules we actually build here.
 RUN go work sync && \
     cd apps/api && go mod download && \
     cd /workspace/packages/db && go mod download
