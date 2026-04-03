@@ -285,15 +285,24 @@ ENVEOF
     success "Headscale user '${HEADSCALE_USER}' already exists"
   fi
 
-  PREAUTH_KEY="$(docker compose exec -T headscale \
+  _PREAUTH_RAW="$(docker compose exec -T headscale \
     headscale preauthkeys create --user "$HEADSCALE_USER" --expiration 1h --reusable \
-    2>/dev/null | grep -oE '[a-z0-9]{40,}')"
-  [[ -z "$PREAUTH_KEY" ]] && die "Failed to generate pre-auth key. Check: docker compose logs headscale"
+    2>&1 || true)"
+  PREAUTH_KEY="$(echo "$_PREAUTH_RAW" | grep -oE '[a-z0-9]{40,}' | head -1 || true)"
+  if [[ -z "$PREAUTH_KEY" ]]; then
+    error "headscale preauthkeys output was:"
+    echo "$_PREAUTH_RAW" >&2
+    die "Failed to generate pre-auth key. Check: docker compose logs headscale"
+  fi
   success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
 
-  HEADSCALE_API_KEY="$(docker compose exec -T headscale \
-    headscale apikeys create 2>/dev/null | grep -oE '[a-z0-9]{40,}')"
-  [[ -z "$HEADSCALE_API_KEY" ]] && die "Failed to generate API key. Check: docker compose logs headscale"
+  _APIKEY_RAW="$(docker compose exec -T headscale headscale apikeys create 2>&1 || true)"
+  HEADSCALE_API_KEY="$(echo "$_APIKEY_RAW" | grep -oE '[a-z0-9]{40,}' | head -1 || true)"
+  if [[ -z "$HEADSCALE_API_KEY" ]]; then
+    error "headscale apikeys output was:"
+    echo "$_APIKEY_RAW" >&2
+    die "Failed to generate API key. Check: docker compose logs headscale"
+  fi
   sed -i "s|HEADSCALE_API_KEY=|HEADSCALE_API_KEY=${HEADSCALE_API_KEY}|" .env
   success "Headscale API key written to .env"
 
