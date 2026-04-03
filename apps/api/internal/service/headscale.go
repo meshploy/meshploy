@@ -1,0 +1,91 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// HeadscaleNode mirrors the fields returned by GET /api/v1/node.
+type HeadscaleNode struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	GivenName   string     `json:"givenName"`
+	IPAddresses []string   `json:"ipAddresses"`
+	Online      bool       `json:"online"`
+	LastSeen    *time.Time `json:"lastSeen"`
+	Expiry      *time.Time `json:"expiry"`
+	ForcedTags  []string   `json:"forcedTags"`
+	ValidTags   []string   `json:"validTags"`
+	InvalidTags []string   `json:"invalidTags"`
+	User        struct {
+		Name string `json:"name"`
+	} `json:"user"`
+	RegisterMethod string    `json:"registerMethod"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+// Tags returns the combined set of tags on this node (forced + valid).
+func (n HeadscaleNode) Tags() []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, t := range n.ForcedTags {
+		if _, ok := seen[t]; !ok {
+			seen[t] = struct{}{}
+			out = append(out, t)
+		}
+	}
+	for _, t := range n.ValidTags {
+		if _, ok := seen[t]; !ok {
+			seen[t] = struct{}{}
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// HeadscaleService wraps the Headscale REST API.
+type HeadscaleService struct {
+	url    string
+	key    string
+	client *http.Client
+}
+
+func NewHeadscaleService(url, key string) *HeadscaleService {
+	return &HeadscaleService{
+		url: url,
+		key: key,
+		client: &http.Client{
+			Timeout: 5 * time.Second,
+		},
+	}
+}
+
+// ListNodes calls GET {url}/api/v1/node and returns all nodes.
+func (h *HeadscaleService) ListNodes(ctx context.Context) ([]HeadscaleNode, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/node", nil)
+	if err != nil {
+		return nil, fmt.Errorf("headscale list nodes: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("headscale list nodes: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("headscale list nodes: unexpected status %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Nodes []HeadscaleNode `json:"nodes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("headscale list nodes: decode: %w", err)
+	}
+	return body.Nodes, nil
+}

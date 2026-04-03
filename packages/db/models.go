@@ -320,6 +320,20 @@ type DatabaseConfig struct {
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }
 
+// NodeRegistrationToken is a long-lived pre-shared token that allows a worker
+// node to self-register into the org's node list without a user JWT.
+// There is at most one token per organisation (unique index on OrganizationID).
+// Regenerating replaces the existing row via upsert.
+type NodeRegistrationToken struct {
+	Base
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex" json:"organization_id"`
+	Token          string    `gorm:"not null"                       json:"token"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+}
+
+func (NodeRegistrationToken) TableName() string { return "node_registration_tokens" }
+
 // ---------------------------------------------------------------------------
 // Domains
 // ---------------------------------------------------------------------------
