@@ -20,8 +20,47 @@ env:
   ORG: meshploy
 
 jobs:
+  # ── Detect changed paths ──────────────────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api:     ${{ steps.filter.outputs.api }}
+      web:     ${{ steps.filter.outputs.web }}
+      proxy:   ${{ steps.filter.outputs.proxy }}
+      builder: ${{ steps.filter.outputs.builder }}
+      caddy:   ${{ steps.filter.outputs.caddy }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - "apps/api/**"
+              - "packages/db/**"
+              - "go.work"
+              - "go.work.sum"
+              - ".github/workflows/build.yml"
+            web:
+              - "apps/web/**"
+              - ".github/workflows/build.yml"
+            proxy:
+              - "apps/proxy/**"
+              - "packages/db/**"
+              - "go.work"
+              - "go.work.sum"
+              - ".github/workflows/build.yml"
+            builder:
+              - "apps/builder/**"
+              - ".github/workflows/build.yml"
+            caddy:
+              - "deploy/caddy/**"
+              - ".github/workflows/build.yml"
+
   # ── API ───────────────────────────────────────────────────────────────────────
   api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch'
     name: API
     runs-on: ubuntu-latest
     permissions:
@@ -62,6 +101,8 @@ jobs:
 
   # ── Web ───────────────────────────────────────────────────────────────────────
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || github.event_name == 'workflow_dispatch'
     name: Web
     runs-on: ubuntu-latest
     permissions:
@@ -102,6 +143,8 @@ jobs:
 
   # ── Caddy (custom build with meshploy DNS provider) ──────────────────────────
   caddy:
+    needs: changes
+    if: needs.changes.outputs.caddy == 'true' || github.event_name == 'workflow_dispatch'
     name: Caddy
     runs-on: ubuntu-latest
     permissions:
@@ -142,6 +185,8 @@ jobs:
 
   # ── Proxy ────────────────────────────────────────────────────────────────────
   proxy:
+    needs: changes
+    if: needs.changes.outputs.proxy == 'true' || github.event_name == 'workflow_dispatch'
     name: Proxy
     runs-on: ubuntu-latest
     permissions:
@@ -182,6 +227,8 @@ jobs:
 
   # ── Builder ───────────────────────────────────────────────────────────────────
   builder:
+    needs: changes
+    if: needs.changes.outputs.builder == 'true' || github.event_name == 'workflow_dispatch'
     name: Builder
     runs-on: ubuntu-latest
     permissions:

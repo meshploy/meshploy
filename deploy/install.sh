@@ -5,6 +5,10 @@
 # =============================================================================
 set -euo pipefail
 
+# When piped via curl | bash, stdin is the pipe not the terminal.
+# Reconnect stdin to the terminal so interactive prompts work correctly.
+exec < /dev/tty
+
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m';  GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m';  BOLD='\033[1m';  RESET='\033[0m'
