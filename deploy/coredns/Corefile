@@ -1,0 +1,47 @@
+# Meshploy CoreDNS configuration
+# Replace ${DOMAIN}, ${PUBLIC_IP}, ${MESH_IP} with real values before starting.
+# Quick replace:
+#   sed -i 's/${DOMAIN}/yourdomain.com/g; s/${PUBLIC_IP}/1.2.3.4/g; s/${MESH_IP}/100.64.0.1/g' Corefile
+
+# ── Public zone ───────────────────────────────────────────────────────────────
+# Answers internet queries for ${DOMAIN} (browsers, Let's Encrypt, etc.)
+${DOMAIN}:53 {
+    bind ${PUBLIC_IP}
+    file /etc/coredns/zones/${DOMAIN}
+    reload 5s
+    log
+    errors
+}
+
+# ── ACME challenge delegation zone ────────────────────────────────────────────
+# Let's Encrypt queries this during wildcard cert issuance (DNS-01 challenge).
+# The Meshploy API writes TXT records here and deletes them after verification.
+_acme-challenge.${DOMAIN}:53 {
+    bind ${PUBLIC_IP}
+    file /etc/coredns/zones/_acme-challenge.${DOMAIN}
+    reload 2s
+    log
+    errors
+}
+
+# ── Private mesh zone ─────────────────────────────────────────────────────────
+# Only reachable on the WireGuard interface (${MESH_IP}).
+# Mesh nodes resolve *.internal.${DOMAIN} to the gateway's mesh IP.
+# The Meshploy API appends dynamic A records here when app routes are created.
+internal.${DOMAIN}:53 {
+    bind ${MESH_IP}
+    file /etc/coredns/zones/internal.${DOMAIN}
+    reload 5s
+    log
+    errors
+}
+
+# ── Upstream forwarding ───────────────────────────────────────────────────────
+# Both interfaces — so mesh clients can still resolve public domains.
+.:53 {
+    bind ${MESH_IP} ${PUBLIC_IP}
+    local
+    forward . 1.1.1.1 1.0.0.1
+    cache 300
+    errors
+}

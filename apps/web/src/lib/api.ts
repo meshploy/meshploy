@@ -1,6 +1,15 @@
 import type { Node, Project } from "@/types"
 
-const BASE = "http://localhost:4000"
+declare global {
+  interface Window {
+    __MESHPLOY_CONFIG__?: { apiUrl: string }
+  }
+}
+
+const BASE =
+  window.__MESHPLOY_CONFIG__?.apiUrl ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:4000"  // dev fallback — in production Caddy routes /api/* to the API
 
 // ─── Error ────────────────────────────────────────────────────────────────────
 
@@ -173,9 +182,23 @@ export interface ApiDbRoute {
   organization_id: string
   project_id: string
   service_id: string | null
+  domain_id: string | null
+  zone: "public" | "internal" | "preview"
+  subdomain: string
   hostname: string
   target_ip: string
   target_port: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ApiDomain {
+  id: string
+  organization_id: string
+  base_domain: string
+  internal_subdomain: string
+  preview_subdomain: string
+  verified: boolean
   created_at: string
   updated_at: string
 }
@@ -215,6 +238,125 @@ export const routes = {
     apiFetch<ApiDbRoute[]>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/routes`,
       {},
+      token
+    ),
+
+  create: (
+    orgId: string,
+    projectId: string,
+    body: {
+      domain_id?: string
+      zone: string
+      subdomain: string
+      hostname?: string
+      target_ip: string
+      target_port: number
+      service_id?: string
+    },
+    token: string
+  ) =>
+    apiFetch<ApiDbRoute>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  delete: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
+      { method: "DELETE" },
+      token
+    ),
+}
+
+// ─── GitHub App (platform-wide setup) ────────────────────────────────────────
+
+export const gitHubApp = {
+  status: () =>
+    apiFetch<{ configured: boolean; app_slug: string }>("/api/v1/github/app-status"),
+
+  manifestSetup: () =>
+    apiFetch<{ github_url: string; manifest: string }>("/api/v1/github/manifest-setup"),
+}
+
+// ─── Git Integrations ─────────────────────────────────────────────────────────
+
+export interface ApiGitIntegration {
+  id: string
+  organization_id: string
+  provider: string
+  name: string
+  base_url: string
+  created_at: string
+  updated_at: string
+}
+
+export interface GitRepo {
+  full_name: string
+  default_branch: string
+  private: boolean
+}
+
+export const gitIntegrations = {
+  list: (orgId: string, token: string) =>
+    apiFetch<ApiGitIntegration[]>(`/api/v1/orgs/${orgId}/git-integrations`, {}, token),
+
+  installUrl: (orgId: string, token: string) =>
+    apiFetch<{ url: string }>(`/api/v1/orgs/${orgId}/git-integrations/github/install-url`, {}, token),
+
+  repos: (orgId: string, id: string, token: string) =>
+    apiFetch<GitRepo[]>(`/api/v1/orgs/${orgId}/git-integrations/${id}/repos`, {}, token),
+
+  branches: (orgId: string, id: string, repo: string, token: string) =>
+    apiFetch<string[]>(`/api/v1/orgs/${orgId}/git-integrations/${id}/branches?repo=${encodeURIComponent(repo)}`, {}, token),
+
+  delete: (orgId: string, id: string, token: string) =>
+    apiFetch<void>(`/api/v1/orgs/${orgId}/git-integrations/${id}`, { method: "DELETE" }, token),
+}
+
+// ─── Domains ──────────────────────────────────────────────────────────────────
+
+export const domains = {
+  list: (orgId: string, token: string) =>
+    apiFetch<ApiDomain[]>(`/api/v1/orgs/${orgId}/domains`, {}, token),
+
+  create: (
+    orgId: string,
+    body: { base_domain: string; internal_subdomain?: string; preview_subdomain?: string },
+    token: string
+  ) =>
+    apiFetch<ApiDomain>(
+      `/api/v1/orgs/${orgId}/domains`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  get: (orgId: string, domainId: string, token: string) =>
+    apiFetch<ApiDomain>(`/api/v1/orgs/${orgId}/domains/${domainId}`, {}, token),
+
+  update: (
+    orgId: string,
+    domainId: string,
+    body: { internal_subdomain?: string; preview_subdomain?: string },
+    token: string
+  ) =>
+    apiFetch<ApiDomain>(
+      `/api/v1/orgs/${orgId}/domains/${domainId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+      token
+    ),
+
+  delete: (orgId: string, domainId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/domains/${domainId}`,
+      { method: "DELETE" },
+      token
+    ),
+
+  verify: (orgId: string, domainId: string, token: string) =>
+    apiFetch<ApiDomain>(
+      `/api/v1/orgs/${orgId}/domains/${domainId}/verify`,
+      { method: "POST" },
       token
     ),
 }

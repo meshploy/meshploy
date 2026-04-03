@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
@@ -10,6 +12,24 @@ import (
 
 type RouteService struct {
 	db *gorm.DB
+}
+
+type CreateRouteInput struct {
+	OrgID     uuid.UUID
+	ProjectID uuid.UUID
+	ServiceID *uuid.UUID
+
+	// Domain-based fields (preferred path)
+	DomainID *uuid.UUID
+	Zone     db.RouteZone // public | internal | preview
+	Subdomain string
+
+	// Legacy / manual fallback: supply a raw hostname directly
+	// (used when DomainID is nil)
+	Hostname string
+
+	TargetIP   string
+	TargetPort int
 }
 
 func (s *RouteService) ListByProject(ctx context.Context, projectID uuid.UUID) ([]db.Route, error) {
@@ -30,14 +50,50 @@ func (s *RouteService) Get(ctx context.Context, routeID uuid.UUID) (*db.Route, e
 	return &route, err
 }
 
-func (s *RouteService) Create(ctx context.Context, orgID, projectID uuid.UUID, serviceID *uuid.UUID, hostname, targetIP string, targetPort int) (*db.Route, error) {
+func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Route, error) {
+	hostname := in.Hostname
+
+	if in.DomainID != nil {
+		var domain db.Domain
+		if err := s.db.WithContext(ctx).First(&domain, "id = ?", *in.DomainID).Error; err != nil {
+			return nil, huma.Error404NotFound("domain not found")
+		}
+
+		// Ownership must be verified before routes can be created.
+		if !domain.Verified {
+			return nil, huma.Error422UnprocessableEntity("domain ownership not yet verified")
+		}
+
+		// Block reserved subdomains from being used as public routes.
+		if in.Zone == db.RouteZonePublic {
+			if in.Subdomain == domain.InternalSubdomain || in.Subdomain == domain.PreviewSubdomain {
+				return nil, huma.Error422UnprocessableEntity(
+					fmt.Sprintf("subdomain %q is reserved for %s routing",
+						in.Subdomain, in.Subdomain))
+			}
+		}
+
+		// Derive the full hostname from zone + subdomain.
+		switch in.Zone {
+		case db.RouteZoneInternal:
+			hostname = fmt.Sprintf("%s.%s.%s", in.Subdomain, domain.InternalSubdomain, domain.BaseDomain)
+		case db.RouteZonePreview:
+			hostname = fmt.Sprintf("%s.%s.%s", in.Subdomain, domain.PreviewSubdomain, domain.BaseDomain)
+		default: // public
+			hostname = fmt.Sprintf("%s.%s", in.Subdomain, domain.BaseDomain)
+		}
+	}
+
 	route := &db.Route{
-		OrganizationID: orgID,
-		ProjectID:      projectID,
-		ServiceID:      serviceID,
+		OrganizationID: in.OrgID,
+		ProjectID:      in.ProjectID,
+		ServiceID:      in.ServiceID,
+		DomainID:       in.DomainID,
+		Zone:           in.Zone,
+		Subdomain:      in.Subdomain,
 		Hostname:       hostname,
-		TargetIP:       targetIP,
-		TargetPort:     targetPort,
+		TargetIP:       in.TargetIP,
+		TargetPort:     in.TargetPort,
 	}
 	return route, s.db.WithContext(ctx).Create(route).Error
 }

@@ -1,0 +1,45 @@
+; Public zone for {DOMAIN}
+; Replace {DOMAIN}, {PUBLIC_IP} with real values before starting.
+;
+; After editing, increment the serial number (format: YYYYMMDDNN).
+; CoreDNS reloads automatically every 5s — no restart needed.
+
+$TTL 300
+$ORIGIN {DOMAIN}.
+
+@   IN SOA ns1.{DOMAIN}. admin.{DOMAIN}. (
+        2026040201  ; serial — increment (YYYYMMDDNN) on every change
+        3600        ; refresh
+        900         ; retry
+        604800      ; expire
+        300         ; minimum TTL
+    )
+
+; Nameserver — this server is authoritative
+@       IN NS   ns1.{DOMAIN}.
+
+; Root of {DOMAIN} → gateway public IP
+@       IN A    {PUBLIC_IP}
+
+; Named subdomains
+headscale   IN A    {PUBLIC_IP}
+api         IN A    {PUBLIC_IP}
+app         IN A    {PUBLIC_IP}
+
+; Wildcard — all other *.{DOMAIN} → gateway (app routes via Meshploy proxy)
+*           IN A    {PUBLIC_IP}
+
+; ── ACME challenge delegation ─────────────────────────────────────────────────
+; Delegates _acme-challenge.{DOMAIN} to this nameserver so CoreDNS can
+; serve TXT records for wildcard cert DNS-01 verification.
+_acme-challenge IN NS ns1.{DOMAIN}.
+
+; Route internal subdomain ACME challenges through the public challenge zone
+_acme-challenge.internal    IN CNAME  _acme-challenge.{DOMAIN}.
+*._acme-challenge.internal  IN CNAME  _acme-challenge.{DOMAIN}.
+
+; ── Internal blackhole (public internet only) ─────────────────────────────────
+; Prevents the public wildcard from accidentally resolving internal subdomains.
+; Mesh clients never see this — they query the private zone on 100.64.0.1.
+internal    IN A    127.0.0.1
+*.internal  IN A    127.0.0.1

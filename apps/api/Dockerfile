@@ -1,0 +1,44 @@
+# ── Build stage ────────────────────────────────────────────────────────────────
+# Build context must be the monorepo root so the Go workspace can resolve
+# the packages/db replace directive.
+#
+#   docker build -f apps/api/Dockerfile -t ghcr.io/meshploy/api:latest .
+#
+FROM golang:1.25.8-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /workspace
+
+# Copy workspace and module manifests first for layer caching.
+COPY go.work go.work.sum* ./
+COPY apps/api/go.mod apps/api/go.sum ./apps/api/
+COPY packages/db/go.mod packages/db/go.sum ./packages/db/
+
+# Download deps for both modules (workspace-aware).
+RUN go work sync && \
+    cd apps/api && go mod download && \
+    cd /workspace/packages/db && go mod download
+
+# Copy full source.
+COPY apps/api ./apps/api
+COPY packages/db ./packages/db
+
+# Build a fully static binary.
+WORKDIR /workspace/apps/api
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w" \
+    -o /out/api \
+    .
+
+# ── Runtime stage ──────────────────────────────────────────────────────────────
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+COPY --from=builder /out/api ./api
+
+EXPOSE 4000
+
+ENTRYPOINT ["./api"]

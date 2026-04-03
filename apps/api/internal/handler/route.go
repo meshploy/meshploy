@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	svc "github.com/meshploy/apps/api/internal/service"
 )
 
 type RoutePathInput struct {
@@ -35,7 +36,13 @@ type CreateRouteInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		Hostname   string  `json:"hostname" minLength:"1"`
+		// Domain-based (preferred): supply domain_id + zone + subdomain.
+		// Meshploy derives the full hostname and enforces reserved-subdomain rules.
+		DomainID  *string `json:"domain_id"`  // UUID of a verified Domain
+		Zone      string  `json:"zone"`       // "public" | "internal" | "preview"
+		Subdomain string  `json:"subdomain"`  // prefix only, e.g. "keeper"
+		// Legacy / manual: supply a raw hostname when domain_id is omitted.
+		Hostname   string  `json:"hostname"`
 		TargetIP   string  `json:"target_ip"`
 		TargetPort int     `json:"target_port" minimum:"1" maximum:"65535"`
 		ServiceID  *string `json:"service_id"`
@@ -158,7 +165,7 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 	if err != nil {
 		return nil, err
 	}
-	// service_id is optional — parse it only if provided
+	// service_id is optional
 	var parsedServiceID *uuid.UUID
 	if input.Body.ServiceID != nil {
 		id, err := parseUUID(*input.Body.ServiceID)
@@ -168,10 +175,29 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 		parsedServiceID = &id
 	}
 
-	route, err := h.svc.Routes.Create(ctx, orgID, projectID, parsedServiceID,
-		input.Body.Hostname, input.Body.TargetIP, input.Body.TargetPort)
+	// domain_id is optional — when provided, zone + subdomain are used to derive the hostname
+	var parsedDomainID *uuid.UUID
+	if input.Body.DomainID != nil {
+		id, err := parseUUID(*input.Body.DomainID)
+		if err != nil {
+			return nil, err
+		}
+		parsedDomainID = &id
+	}
+
+	route, err := h.svc.Routes.Create(ctx, svc.CreateRouteInput{
+		OrgID:      orgID,
+		ProjectID:  projectID,
+		ServiceID:  parsedServiceID,
+		DomainID:   parsedDomainID,
+		Zone:       db.RouteZone(input.Body.Zone),
+		Subdomain:  input.Body.Subdomain,
+		Hostname:   input.Body.Hostname,
+		TargetIP:   input.Body.TargetIP,
+		TargetPort: input.Body.TargetPort,
+	})
 	if err != nil {
-		return nil, huma.Error409Conflict("hostname already in use")
+		return nil, err
 	}
 	return &CreateRouteOutput{Body: route}, nil
 }

@@ -64,12 +64,15 @@ func Migrate(db *gorm.DB) error {
 		&Project{},
 		&Node{},
 
+		// Domains
+		&Domain{},
+
 		// Workloads
 		&Service{},
 		&BuildConfig{},
 		&DatabaseConfig{},
 
-		// Traffic
+		// Traffic (Domain must migrate before Route for FK constraint)
 		&Route{},
 
 		// Deployment History
@@ -78,6 +81,8 @@ func Migrate(db *gorm.DB) error {
 		// Integrations
 		&StorageIntegration{},
 		&RegistryIntegration{},
+		&GitIntegration{},
+		&GitHubAppConfig{},
 
 		// Operations
 		&BackupConfig{},

@@ -43,9 +43,10 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 
 	api := humachi.New(r, apiCfg)
 
-	svc := service.New(db)
+	svc := service.New(db, cfg)
 	h := handler.New(cfg, svc)
 	h.Register(api)
+	h.RegisterRaw(r)
 
 	return &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.APIPort),

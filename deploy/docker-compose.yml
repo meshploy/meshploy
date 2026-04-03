@@ -1,38 +1,109 @@
-
-
 services:
-  # Infrastructure
+
+  # ── Database ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-meshploy}
+      POSTGRES_USER:     ${POSTGRES_USER:-meshploy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meshploy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Headscale — WireGuard mesh control plane ───────────────────────────────
+  # Listens on localhost only; Caddy proxies headscale.{DOMAIN} → 8085
   headscale:
     image: headscale/headscale:latest
+    restart: unless-stopped
+    command: serve
+    ports:
+      - "127.0.0.1:8085:8080"
+      - "127.0.0.1:9090:9090"   # Prometheus metrics, localhost only
     volumes:
       - ./headscale/config:/etc/headscale
       - ./headscale/data:/var/lib/headscale
-    ports:
-      - "8080:8080"
-    command: serve
 
+  # ── CoreDNS — authoritative DNS ────────────────────────────────────────────
+  # network_mode: host required to bind to specific public + mesh IPs.
+  # Handles: public zone, internal mesh zone, ACME challenge delegation.
   coredns:
     image: coredns/coredns:latest
+    restart: unless-stopped
+    network_mode: host
     volumes:
-      - ./coredns/Corefile:/Corefile
-      - ./coredns/zones:/zones
-    ports:
-      - "53:53/udp"
+      - ./coredns/Corefile:/etc/coredns/Corefile:ro
+      - ./coredns/zones:/etc/coredns/zones
+    command: -conf /etc/coredns/Corefile
 
-  # Meshploy Control Plane (Pulled from Registry!)
+  # ── Caddy — TLS termination + reverse proxy ────────────────────────────────
+  # network_mode: host so it binds 80/443 on the public IP directly.
+  # Auto-provisions TLS for named subdomains via HTTP-01 ACME.
+  caddy:
+    image: ghcr.io/meshploy/caddy:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      DOMAIN:   ${DOMAIN}
+      MESH_IP:  ${MESH_IP:-100.64.0.1}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./coredns/zones:/etc/coredns/zones    # shared with CoreDNS for ACME TXT records
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # ── Meshploy API ───────────────────────────────────────────────────────────
   api:
     image: ghcr.io/meshploy/api:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4000:4000"
     environment:
-      - HEADSCALE_URL=http://headscale:8080
-    ports:
-      - "4000:4000"
+      DATABASE_URL:      postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
+      JWT_SECRET:        ${JWT_SECRET}
+      ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
+      API_BASE_URL:      ${API_BASE_URL:-https://api.${DOMAIN}}
+      FRONTEND_URL:      ${FRONTEND_URL:-https://app.${DOMAIN}}
+      HEADSCALE_URL:     http://headscale:8080
+      HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
+      API_PORT:          4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      headscale:
+        condition: service_started
 
-  proxy:
-    image: ghcr.io/meshploy/proxy:latest
-    ports:
-      - "8081:8081"
-
+  # ── Meshploy Web UI ────────────────────────────────────────────────────────
   web:
     image: ghcr.io/meshploy/web:latest
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - api
+
+  # ── Meshploy Traffic Proxy ─────────────────────────────────────────────────
+  # Resolves *.{DOMAIN} and *.internal.{DOMAIN} routes via DB → mesh IP + port.
+  # Receives wildcard traffic from Caddy.
+  proxy:
+    image: ghcr.io/meshploy/proxy:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      DATABASE_URL:   postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      PROXY_PORT:     8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

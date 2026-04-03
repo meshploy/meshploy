@@ -1,0 +1,79 @@
+# Meshploy Caddyfile
+# Caddy runs with network_mode: host so all reverse_proxy targets are localhost.
+#
+# TLS strategy:
+#   - Named subdomains (headscale, api, app): HTTP-01 ACME — automatic, no config needed.
+#   - *.{DOMAIN} public wildcard: DNS-01 via the Meshploy CoreDNS module.
+#   - *.internal.{DOMAIN} mesh wildcard: DNS-01 via same module, bound to mesh IP only.
+#
+# Prerequisites:
+#   - DNS A records for headscale, api, app pointing to PUBLIC_IP (written by install.sh)
+#   - NS delegation for {DOMAIN} pointing to this server
+
+# ── Headscale control plane ───────────────────────────────────────────────────
+headscale.{$DOMAIN} {
+    reverse_proxy localhost:8085
+}
+
+# ── Meshploy API (direct access + OAuth callbacks) ───────────────────────────
+# Kept for GitHub OAuth callbacks (API_BASE_URL) and CLI/external tool access.
+api.{$DOMAIN} {
+    reverse_proxy localhost:4000
+
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        Access-Control-Allow-Headers "Authorization, Content-Type"
+    }
+}
+
+# ── Meshploy Web UI + API path routing ────────────────────────────────────────
+# Browser SPA calls /api/* — Caddy routes them to the API container.
+# No domain config needed in the frontend image.
+app.{$DOMAIN} {
+    handle /api/* {
+        reverse_proxy localhost:4000
+    }
+    handle {
+        reverse_proxy localhost:5173
+    }
+}
+
+# ── Public app traffic — wildcard ─────────────────────────────────────────────
+# All *.{DOMAIN} not matched above (user-deployed public apps).
+# Meshploy proxy reads the Host header, queries the DB, streams to the target
+# mesh node over WireGuard. No Caddy restart needed when routes change.
+#
+# TLS: DNS-01 challenge via Meshploy CoreDNS module (writes TXT records to
+# the _acme-challenge zone file, CoreDNS serves them).
+*.{$DOMAIN} {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+        }
+        resolvers 1.1.1.1 8.8.8.8
+    }
+
+    reverse_proxy localhost:8081
+}
+
+# ── Internal mesh traffic — wildcard ─────────────────────────────────────────
+# *.internal.{DOMAIN} is only reachable from inside the WireGuard mesh.
+# Bound to the mesh IP (100.64.0.1) so it never answers on the public interface.
+#
+# All internal hostnames resolve to the gateway via the wildcard DNS record
+# (* IN A {MESH_IP} in the internal zone). Caddy hands everything to the proxy,
+# which does the Host header → DB lookup → target node:port resolution.
+# No per-app DNS records or Caddy restarts required when routes are added.
+*.internal.{$DOMAIN} {
+    bind {$MESH_IP}
+
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+        }
+        resolvers 1.1.1.1 8.8.8.8
+    }
+
+    reverse_proxy localhost:8081
+}

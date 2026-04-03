@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Meshploy build script — runs inside the K8s builder Job container.
+# Environment variables are injected by the K8s Job spec:
+#   GIT_REPO       owner/repo
+#   GIT_BRANCH     branch to build
+#   GIT_TOKEN      GitHub installation access token
+#   BUILDER        nixpacks | railpack | dockerfile
+#   IMAGE_DEST     registry/image:tag to push to
+#   REGISTRY_HOST  registry hostname (for buildah login)
+#   REGISTRY_USER  registry username
+#   REGISTRY_PASS  registry password
+
+set -euo pipefail
+
+log() { echo -e "\033[1;34m[meshploy-build]\033[0m $*"; }
+die() { echo -e "\033[1;31m[meshploy-build] ERROR:\033[0m $*" >&2; exit 1; }
+
+[[ -z "${GIT_REPO:-}"    ]] && die "GIT_REPO is not set"
+[[ -z "${GIT_BRANCH:-}"  ]] && die "GIT_BRANCH is not set"
+[[ -z "${GIT_TOKEN:-}"   ]] && die "GIT_TOKEN is not set"
+[[ -z "${IMAGE_DEST:-}"  ]] && die "IMAGE_DEST is not set"
+[[ -z "${REGISTRY_HOST:-}" ]] && die "REGISTRY_HOST is not set"
+
+BUILDER="${BUILDER:-nixpacks}"
+WORKDIR="/tmp/workspace"
+
+# ── Clone ─────────────────────────────────────────────────────────────────────
+log "Cloning ${GIT_REPO}@${GIT_BRANCH}…"
+git clone --depth=1 --branch "${GIT_BRANCH}" \
+    "https://x-access-token:${GIT_TOKEN}@github.com/${GIT_REPO}.git" \
+    "${WORKDIR}"
+cd "${WORKDIR}"
+log "Cloned successfully ($(git rev-parse --short HEAD))"
+
+# ── Registry login ────────────────────────────────────────────────────────────
+if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
+    log "Logging in to ${REGISTRY_HOST}…"
+    echo "${REGISTRY_PASS}" | buildah login \
+        --username "${REGISTRY_USER}" \
+        --password-stdin \
+        "${REGISTRY_HOST}"
+fi
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+case "${BUILDER}" in
+  nixpacks)
+    log "Building with Nixpacks → ${IMAGE_DEST}"
+    nixpacks build . \
+        --name "${IMAGE_DEST}" \
+        --platform linux/amd64
+    ;;
+
+  railpack)
+    log "Building with Railpack → ${IMAGE_DEST}"
+    railpack build . \
+        --image "${IMAGE_DEST}"
+    ;;
+
+  dockerfile)
+    log "Building with Dockerfile → ${IMAGE_DEST}"
+    DOCKERFILE="${DOCKERFILE_PATH:-Dockerfile}"
+    [[ -f "${DOCKERFILE}" ]] || die "Dockerfile not found at ${DOCKERFILE}"
+    buildah build \
+        --file "${DOCKERFILE}" \
+        --tag "${IMAGE_DEST}" \
+        .
+    ;;
+
+  *)
+    die "Unknown builder: ${BUILDER}. Valid values: nixpacks, railpack, dockerfile"
+    ;;
+esac
+
+# ── Push ──────────────────────────────────────────────────────────────────────
+log "Pushing ${IMAGE_DEST}…"
+case "${BUILDER}" in
+  nixpacks|railpack)
+    # These tools output a local Docker image; use buildah to push it.
+    buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
+    ;;
+  dockerfile)
+    buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
+    ;;
+esac
+
+log "Build complete: ${IMAGE_DEST}"

@@ -9,6 +9,8 @@
   </head>
   <body class="h-full bg-background text-foreground">
     <div id="root" class="h-full"></div>
+    <!-- Runtime config injected by Docker entrypoint — sets window.__MESHPLOY_CONFIG__ -->
+    <script src="/config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,28 @@
+; Private mesh zone for internal.{DOMAIN}
+; Only served on the WireGuard interface ({MESH_IP} / 100.64.0.1).
+; Replace {DOMAIN}, {MESH_IP} with real values before starting.
+;
+; No per-app records are written here. The wildcard catches all
+; *.internal.{DOMAIN} and routes to the gateway. From there, Caddy
+; hands traffic to apps/proxy, which does the Host header → DB lookup
+; to find the target mesh node IP + port. Routes are fully dynamic —
+; no DNS changes or Caddy restarts when new apps are deployed.
+
+$TTL 300
+$ORIGIN internal.{DOMAIN}.
+
+@   IN SOA ns1.{DOMAIN}. admin.{DOMAIN}. (
+        2026040201  ; serial
+        3600        ; refresh
+        900         ; retry
+        604800      ; expire
+        300         ; minimum TTL
+    )
+
+@   IN NS  ns1.{DOMAIN}.
+
+; Gateway — the single entry point for all mesh traffic
+@   IN A   {MESH_IP}
+
+; Wildcard — all *.internal.{DOMAIN} → gateway → Caddy → proxy → target node
+*   IN A   {MESH_IP}
