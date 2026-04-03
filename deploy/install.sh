@@ -187,6 +187,28 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     die "Aborted."
   fi
 
+  # ── Install k3s server (control plane) ─────────────────────────────────────
+  # Must happen before writing .env so K3S_TOKEN is available.
+  header "Installing k3s"
+  if command -v k3s &>/dev/null && systemctl is-active --quiet k3s 2>/dev/null; then
+    success "k3s server already running: $(k3s --version | head -1)"
+  else
+    info "Installing k3s server…"
+    curl -sfL https://get.k3s.io | sh -
+    success "k3s server installed and started"
+  fi
+
+  # Read the node token (written by k3s on first start)
+  K3S_TOKEN_FILE="/var/lib/rancher/k3s/server/node-token"
+  MAX_K3S_WAIT=30; K3S_WAITED=0
+  until [[ -f "$K3S_TOKEN_FILE" ]]; do
+    sleep 2; K3S_WAITED=$((K3S_WAITED+2))
+    [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && die "k3s node token not found after ${MAX_K3S_WAIT}s. Check: journalctl -u k3s"
+    printf "."
+  done
+  K3S_TOKEN="$(cat "$K3S_TOKEN_FILE")"
+  success "k3s node token retrieved"
+
   # ── Write config files ──────────────────────────────────────────────────────
   header "Writing configuration files"
 
@@ -254,27 +276,6 @@ ENVEOF
   else
     warn "Skipping registry login. 'docker compose pull' will fail if images are private."
   fi
-
-  # ── Install k3s server (control plane) ─────────────────────────────────────
-  header "Installing k3s"
-  if command -v k3s &>/dev/null && systemctl is-active --quiet k3s 2>/dev/null; then
-    success "k3s server already running: $(k3s --version | head -1)"
-  else
-    info "Installing k3s server…"
-    curl -sfL https://get.k3s.io | sh -
-    success "k3s server installed and started"
-  fi
-
-  # Read the node token (written by k3s on first start)
-  K3S_TOKEN_FILE="/var/lib/rancher/k3s/server/node-token"
-  MAX_K3S_WAIT=30; K3S_WAITED=0
-  until [[ -f "$K3S_TOKEN_FILE" ]]; do
-    sleep 2; K3S_WAITED=$((K3S_WAITED+2))
-    [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && die "k3s node token not found after ${MAX_K3S_WAIT}s. Check: journalctl -u k3s"
-    printf "."
-  done
-  K3S_TOKEN="$(cat "$K3S_TOKEN_FILE")"
-  success "k3s node token retrieved"
 
   # ── Phase 1: Start core services (no mesh IP needed yet) ────────────────────
   # CoreDNS and Caddy bind to the WireGuard mesh IP (100.64.x.x) which doesn't
