@@ -21,12 +21,8 @@ RUN curl -fsSL https://nixpacks.com/install.sh | bash && \
     nixpacks --version
 
 # ── Railpack ──────────────────────────────────────────────────────────────────
-# Install from GitHub releases — railpack.io DNS is unreliable in CI builds.
-RUN RAILPACK_VERSION=$(curl -fsSL https://api.github.com/repos/railwayapp/railpack/releases/latest \
-      | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": "\(.*\)".*/\1/') && \
-    curl -fsSL "https://github.com/railwayapp/railpack/releases/download/${RAILPACK_VERSION}/railpack-x86_64-unknown-linux-musl" \
-      -o /usr/local/bin/railpack && \
-    chmod +x /usr/local/bin/railpack && \
+# Use raw.githubusercontent.com — reliable in CI, unlike railpack.io
+RUN curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/install.sh | bash && \
     railpack --version
 
 # ── Buildah rootless setup ────────────────────────────────────────────────────
