@@ -1,0 +1,25 @@
+; ACME challenge zone for _acme-challenge.{DOMAIN}
+; Replace {DOMAIN} with your real domain before starting.
+;
+; This zone is served on the public interface so Let's Encrypt can reach it
+; during DNS-01 challenge verification for wildcard certificates.
+;
+; The Meshploy API writes TXT records here before cert issuance and
+; removes them afterwards. Do not add records manually.
+
+$TTL 60
+$ORIGIN _acme-challenge.{DOMAIN}.
+
+@   IN SOA ns1.{DOMAIN}. admin.{DOMAIN}. (
+        2026040201  ; serial — auto-managed by Meshploy API
+        3600        ; refresh
+        900         ; retry
+        604800      ; expire
+        60          ; minimum TTL — must be low, challenges are short-lived
+    )
+
+@   IN NS  ns1.{DOMAIN}.
+
+; TXT records are written and deleted here automatically during cert issuance.
+; Example (managed by Meshploy API):
+;   @   IN TXT  "abc123challengetoken"
