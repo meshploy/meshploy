@@ -395,6 +395,10 @@ for u in json.load(sys.stdin):
   # Caddy binds to PUBLIC_IP:80/443 and MESH_IP:80/443.
   # Both require the WireGuard interface to exist before starting.
   header "Starting DNS and proxy services"
+  # Ensure external caddy volumes exist before compose up (suppresses the
+  # "volume already exists but was not created by Docker Compose" warning).
+  docker volume create meshploy_caddy_data  &>/dev/null || true
+  docker volume create meshploy_caddy_config &>/dev/null || true
   DOMAIN="$DOMAIN" docker compose up -d coredns caddy
   success "CoreDNS and Caddy started"
 
