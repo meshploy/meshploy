@@ -87,13 +87,57 @@ meshploy/
 
 ## Self-Hosting
 
-Run this on a fresh Linux server as root:
+### Prerequisites
+
+- Linux (x86_64 or arm64)
+- A public domain with NS records pointing to this server
+- Ports **80**, **443**, **53** (TCP+UDP) open on the gateway
+- Root / sudo access
+
+### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh \
+  -o /tmp/get.sh && sudo bash /tmp/get.sh
 ```
 
-The script installs Docker (if needed), clones Meshploy to `/opt/meshploy`, walks you through an interactive setup (domain, IP, secrets), and starts the full stack. See [docs/self-hosting.md](docs/self-hosting.md) for the full guide including DNS setup and adding worker nodes.
+The script installs Docker (if needed), downloads Meshploy to `/opt/meshploy`, walks you through an interactive setup (domain, IP, secrets), and starts the full stack. Select **Master** for the gateway node or **Worker** to join an existing mesh.
+
+### DNS setup
+
+Point your domain's NS records to the gateway's public IP before running the install. Meshploy runs its own CoreDNS authoritative server — no third-party DNS provider needed.
+
+```
+# At your registrar, delegate a subdomain to the gateway
+meshploy.example.com  NS  <gateway-public-ip>
+```
+
+After install, verify:
+
+```bash
+dig @<gateway-public-ip> app.meshploy.example.com A
+```
+
+### Managing your installation
+
+All operations go through `get.sh` — no Docker Compose commands needed.
+
+| Command | What it does |
+|---|---|
+| `sudo bash /tmp/get.sh` | Fresh install |
+| `sudo bash /tmp/get.sh --reinstall` | Update images and config, **preserve** database and TLS certs |
+| `sudo bash /tmp/get.sh --reinstall --wipe-data` | Full reinstall from scratch, wipes database and TLS cert cache |
+| `sudo bash /tmp/get.sh --uninstall` | Remove Meshploy (interactive) |
+
+> **TLS cert cache**: Caddy stores Let's Encrypt certificates in a Docker volume. `--reinstall` always preserves this volume to avoid hitting rate limits (5 certs per domain per week). Use `--wipe-data` only when you genuinely need a clean slate.
+
+### Private repo (while in development)
+
+```bash
+export GITHUB_PAT=ghp_xxxx
+curl -fsSL "https://${GITHUB_PAT}@raw.githubusercontent.com/meshploy/meshploy/main/get.sh" \
+  -o /tmp/get.sh && GITHUB_PAT=$GITHUB_PAT sudo -E bash /tmp/get.sh
+```
 
 ---
 

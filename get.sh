@@ -11,8 +11,9 @@
 #       -o /tmp/get.sh && GITHUB_PAT=$GITHUB_PAT sudo -E bash /tmp/get.sh
 #
 #   Flags:
-#     --reinstall   wipe and reinstall
-#     --uninstall   remove Meshploy
+#     --reinstall            update images and config, preserve data volumes
+#     --reinstall --wipe-data  reinstall from scratch, deleting database and TLS certs
+#     --uninstall            remove Meshploy
 #
 set -euo pipefail
 exec < /dev/tty
@@ -26,10 +27,12 @@ success() { echo -e "${GREEN}  ✔${RESET}  $*"; }
 die()     { echo -e "${RED}  ✘${RESET}  $*" >&2; exit 1; }
 
 MODE="install"
+WIPE_DATA=false
 for arg in "$@"; do
   case "$arg" in
-    --uninstall) MODE="uninstall" ;;
-    --reinstall) MODE="reinstall" ;;
+    --uninstall)  MODE="uninstall" ;;
+    --reinstall)  MODE="reinstall" ;;
+    --wipe-data)  WIPE_DATA=true ;;
   esac
 done
 
@@ -71,7 +74,11 @@ case "$MODE" in
       systemctl enable --now docker
       success "Docker installed."
     fi
-    [[ "$MODE" == "reinstall" ]] && exec bash uninstall.sh --reinstall
+    if [[ "$MODE" == "reinstall" ]]; then
+      EXTRA_FLAGS="--reinstall"
+      $WIPE_DATA && EXTRA_FLAGS="$EXTRA_FLAGS --wipe-data"
+      exec bash install.sh $EXTRA_FLAGS
+    fi
     exec bash install.sh
     ;;
   uninstall)

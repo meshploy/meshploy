@@ -16,6 +16,15 @@ set -euo pipefail
 # Reconnect stdin to the terminal so interactive prompts work correctly.
 exec < /dev/tty
 
+REINSTALL=false
+WIPE_DATA=false
+for arg in "$@"; do
+  case "$arg" in
+    --reinstall) REINSTALL=true ;;
+    --wipe-data) WIPE_DATA=true ;;
+  esac
+done
+
 # ── Self-bootstrap ────────────────────────────────────────────────────────────
 # install.sh is always invoked via get.sh which downloads the deploy/ folder
 # first. If someone runs install.sh directly without the config files present,
@@ -175,6 +184,32 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   echo
   if ! ask_yn "Proceed with this configuration?"; then
     die "Aborted."
+  fi
+
+  # ── Handle existing installation ───────────────────────────────────────────
+  CADDY_VOLUME="meshploy_caddy_data"
+  if docker volume inspect "$CADDY_VOLUME" &>/dev/null; then
+    if $WIPE_DATA; then
+      info "Wiping existing data volumes…"
+      docker compose down --remove-orphans 2>/dev/null || true
+      docker volume rm meshploy_caddy_data meshploy_caddy_config meshploy_postgres_data 2>/dev/null || true
+      success "Volumes wiped — starting fresh"
+    elif $REINSTALL; then
+      info "Existing installation detected — updating images and preserving data."
+      docker compose down --remove-orphans 2>/dev/null || true
+    else
+      # Fresh install with existing volume — ask user
+      echo
+      warn "Existing Meshploy data detected (TLS certs + database)."
+      if ask_yn "Wipe existing data for a clean install?" "n"; then
+        docker compose down --remove-orphans 2>/dev/null || true
+        docker volume rm meshploy_caddy_data meshploy_caddy_config meshploy_postgres_data 2>/dev/null || true
+        success "Volumes wiped — starting fresh"
+      else
+        info "Preserving existing data — continuing install."
+        docker compose down --remove-orphans 2>/dev/null || true
+      fi
+    fi
   fi
 
   # ── Install k3s server (control plane) ─────────────────────────────────────

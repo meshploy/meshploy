@@ -89,16 +89,20 @@ else
 fi
 
 # ── Remove volumes (database + caddy TLS data) ───────────────────────────────
-header "Removing Docker volumes"
-if confirm "Delete all volumes? (${BOLD}this deletes the database and TLS certificates${RESET})"; then
-  docker volume rm \
-    "$(basename "$SCRIPT_DIR")_postgres_data" \
-    "$(basename "$SCRIPT_DIR")_caddy_data" \
-    "$(basename "$SCRIPT_DIR")_caddy_config" \
-    2>/dev/null || true
-  success "Volumes removed"
-else
-  warn "Volumes kept — data is preserved"
+# Skipped during --reinstall: caddy TLS certs (rate-limited by Let's Encrypt)
+# and database data are preserved so reinstall continues from a clean state.
+if ! $REINSTALL; then
+  header "Removing Docker volumes"
+  if confirm "Delete all volumes? (${BOLD}this deletes the database and TLS certificates${RESET})"; then
+    docker volume rm \
+      "$(basename "$SCRIPT_DIR")_postgres_data" \
+      "$(basename "$SCRIPT_DIR")_caddy_data" \
+      "$(basename "$SCRIPT_DIR")_caddy_config" \
+      2>/dev/null || true
+    success "Volumes removed"
+  else
+    warn "Volumes kept — data is preserved"
+  fi
 fi
 
 # ── Remove generated config files ────────────────────────────────────────────
