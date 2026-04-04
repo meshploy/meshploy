@@ -11,12 +11,22 @@
 
 # ── Headscale control plane ───────────────────────────────────────────────────
 headscale.{$DOMAIN} {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+        }
+    }
     reverse_proxy localhost:8085
 }
 
 # ── Meshploy Web UI + API ─────────────────────────────────────────────────────
 # /api/* → Go API, everything else → Next.js
 app.{$DOMAIN} {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+        }
+    }
     handle_path /api/* {
         reverse_proxy localhost:4000
     }
