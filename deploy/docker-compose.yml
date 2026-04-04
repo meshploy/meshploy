@@ -110,4 +110,8 @@ services:
 volumes:
   postgres_data:
   caddy_data:
+    external: true
+    name: meshploy_caddy_data
   caddy_config:
+    external: true
+    name: meshploy_caddy_config
