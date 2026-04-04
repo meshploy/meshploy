@@ -9,32 +9,13 @@
 #   - DNS A records for headscale, api, app pointing to PUBLIC_IP (written by install.sh)
 #   - NS delegation for {DOMAIN} pointing to this server
 
-{
-    acme_dns meshploy {
-        zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
-    }
-}
-
 # ── Headscale control plane ───────────────────────────────────────────────────
 headscale.{$DOMAIN} {
     reverse_proxy localhost:8085
 }
 
-# ── Meshploy API (direct access + OAuth callbacks) ───────────────────────────
-# Kept for GitHub OAuth callbacks (API_BASE_URL) and CLI/external tool access.
-api.{$DOMAIN} {
-    reverse_proxy localhost:4000
-
-    header {
-        Access-Control-Allow-Origin *
-        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-        Access-Control-Allow-Headers "Authorization, Content-Type"
-    }
-}
-
-# ── Meshploy Web UI + API path routing ────────────────────────────────────────
-# Browser SPA calls /api/* — Caddy routes them to the API container.
-# No domain config needed in the frontend image.
+# ── Meshploy Web UI + API ─────────────────────────────────────────────────────
+# /api/* → Go API, everything else → Next.js
 app.{$DOMAIN} {
     handle_path /api/* {
         reverse_proxy localhost:4000
@@ -44,16 +25,15 @@ app.{$DOMAIN} {
     }
 }
 
-# ── Public app traffic — wildcard ─────────────────────────────────────────────
-# All *.{DOMAIN} not matched above (user-deployed public apps).
-*.{$DOMAIN} {
-    reverse_proxy localhost:8081
-}
-
 # ── Internal mesh traffic — wildcard ─────────────────────────────────────────
-# *.internal.{DOMAIN} is only reachable from inside the WireGuard mesh.
-# Bound to the mesh IP (100.64.0.1) so it never answers on the public interface.
+# Wildcard cert requires DNS-01 — uses the Meshploy CoreDNS module.
+# Only reachable from inside the WireGuard mesh (bound to mesh IP).
 *.internal.{$DOMAIN} {
     bind {$MESH_IP}
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+        }
+    }
     reverse_proxy localhost:8081
 }
