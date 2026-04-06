@@ -219,7 +219,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server already running: $(k3s --version | head -1)"
   else
     info "Installing k3s server…"
-    curl -sfL https://get.k3s.io | sh -
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb" sh -
     success "k3s server installed and started"
   fi
 
