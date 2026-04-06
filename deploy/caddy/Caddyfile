@@ -2,10 +2,12 @@
 # Caddy runs with network_mode: host so all reverse_proxy targets are localhost.
 #
 # TLS strategy:
-#   - All certs use DNS-01 via the Meshploy CoreDNS module.
-#   - resolvers points CertMagic's propagation check at the local authoritative
-#     CoreDNS, bypassing recursive resolver negative caching (which would cause
-#     the propagation check to time out for up to 60s after the TXT is written).
+#   - Named subdomains (headscale, app) use DNS-01 with CNAME delegation to
+#     _acme-challenge.{DOMAIN}. Recursive resolvers follow the CNAME — no
+#     resolvers override needed.
+#   - *.internal uses DNS-01 with NS delegation to its own zone
+#     (_acme-challenge.internal.{DOMAIN}). resolvers points CertMagic at the
+#     authoritative CoreDNS directly, bypassing recursive resolver caching.
 #
 # Prerequisites:
 #   - DNS A records for headscale, api, app pointing to PUBLIC_IP (written by install.sh)
@@ -17,7 +19,6 @@ headscale.{$DOMAIN} {
         dns meshploy {
             zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
         }
-        resolvers {$PUBLIC_IP}
     }
     reverse_proxy localhost:8085
 }
@@ -29,7 +30,6 @@ app.{$DOMAIN} {
         dns meshploy {
             zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
         }
-        resolvers {$PUBLIC_IP}
     }
     handle_path /api/* {
         reverse_proxy localhost:4000
@@ -40,13 +40,15 @@ app.{$DOMAIN} {
 }
 
 # ── Internal mesh traffic — wildcard ─────────────────────────────────────────
-# Wildcard cert requires DNS-01 — uses the Meshploy CoreDNS module.
+# Wildcard cert requires DNS-01 — uses its own NS-delegated challenge zone.
+# resolvers points at the authoritative CoreDNS so CertMagic queries it
+# directly (no CNAME to chase, no recursive resolver caching in the way).
 # Only reachable from inside the WireGuard mesh (bound to mesh IP).
 *.internal.{$DOMAIN} {
     bind {$MESH_IP}
     tls {
         dns meshploy {
-            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+            zone_file_path /etc/coredns/zones/_acme-challenge.internal.{$DOMAIN}
         }
         resolvers {$PUBLIC_IP}
     }

@@ -14,11 +14,22 @@ ${DOMAIN}:53 {
 }
 
 # ── ACME challenge delegation zone ────────────────────────────────────────────
-# Let's Encrypt queries this during wildcard cert issuance (DNS-01 challenge).
-# The Meshploy API writes TXT records here and deletes them after verification.
+# Let's Encrypt queries this during DNS-01 challenge verification.
+# The Caddy DNS module writes TXT records here and deletes them after issuance.
 _acme-challenge.${DOMAIN}:53 {
     bind ${PUBLIC_IP}
     file /etc/coredns/zones/_acme-challenge.${DOMAIN}
+    reload 2s
+    log
+    errors
+}
+
+# ── ACME challenge zone for *.internal wildcard ────────────────────────────────
+# Separate zone so CertMagic can query the authoritative server directly
+# without needing CNAME chasing (which authoritative servers don't do).
+_acme-challenge.internal.${DOMAIN}:53 {
+    bind ${PUBLIC_IP}
+    file /etc/coredns/zones/_acme-challenge.internal.${DOMAIN}
     reload 2s
     log
     errors
