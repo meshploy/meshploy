@@ -34,6 +34,11 @@ app         IN A    {PUBLIC_IP}
 ; serve TXT records for wildcard cert DNS-01 verification.
 _acme-challenge IN NS ns1.{DOMAIN}.
 
+; Route named subdomain ACME challenges through the central challenge zone
+; Let's Encrypt follows CNAMEs, so all DNS-01 TXT records land in one place.
+_acme-challenge.headscale   IN CNAME  _acme-challenge.{DOMAIN}.
+_acme-challenge.app         IN CNAME  _acme-challenge.{DOMAIN}.
+
 ; Route internal subdomain ACME challenges through the public challenge zone
 _acme-challenge.internal    IN CNAME  _acme-challenge.{DOMAIN}.
 *._acme-challenge.internal  IN CNAME  _acme-challenge.{DOMAIN}.
