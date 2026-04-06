@@ -9,7 +9,7 @@
 #   - DNS A records for headscale, api, app pointing to PUBLIC_IP (written by install.sh)
 #   - NS delegation for {DOMAIN} pointing to this server
 
-# ── Headscale control plane ───────────────────────────────────────────────────
+# ── Headscale control plane ──────────────────────────────────────────────────
 headscale.{$DOMAIN} {
     tls {
         dns meshploy {
@@ -19,7 +19,7 @@ headscale.{$DOMAIN} {
     reverse_proxy localhost:8085
 }
 
-# ── Meshploy Web UI + API ─────────────────────────────────────────────────────
+# ── Meshploy Web UI + API ────────────────────────────────────────────────────
 # /api/* → Go API, everything else → Next.js
 app.{$DOMAIN} {
     tls {
