@@ -269,7 +269,7 @@ ENVEOF
   success "coredns/Corefile configured"
 
   # Rename and populate zone files
-  for tpl in "coredns/zones/{DOMAIN}" "coredns/zones/internal.{DOMAIN}" "coredns/zones/_acme-challenge.{DOMAIN}"; do
+  for tpl in "coredns/zones/{DOMAIN}" "coredns/zones/internal.{DOMAIN}" "coredns/zones/_acme-challenge.{DOMAIN}" "coredns/zones/_acme-challenge.internal.{DOMAIN}"; do
     if [[ -f "$tpl" ]]; then
       target="${tpl/\{DOMAIN\}/${DOMAIN}}"
       cp "$tpl" "$target"

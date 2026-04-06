@@ -34,14 +34,15 @@ app         IN A    {PUBLIC_IP}
 ; serve TXT records for wildcard cert DNS-01 verification.
 _acme-challenge IN NS ns1.{DOMAIN}.
 
-; Route named subdomain ACME challenges through the central challenge zone
-; Let's Encrypt follows CNAMEs, so all DNS-01 TXT records land in one place.
+; Named subdomain ACME challenges — CNAME to central challenge zone.
+; Recursive resolvers follow the CNAME; LE verifies the TXT at the target.
 _acme-challenge.headscale   IN CNAME  _acme-challenge.{DOMAIN}.
 _acme-challenge.app         IN CNAME  _acme-challenge.{DOMAIN}.
 
-; Route internal subdomain ACME challenges through the public challenge zone
-_acme-challenge.internal    IN CNAME  _acme-challenge.{DOMAIN}.
-*._acme-challenge.internal  IN CNAME  _acme-challenge.{DOMAIN}.
+; Internal wildcard ACME challenge — NS delegation (not CNAME).
+; NS delegation lets CertMagic query the authoritative zone directly,
+; avoiding CNAME chasing which authoritative-only resolvers don't perform.
+_acme-challenge.internal    IN NS     ns1.{DOMAIN}.
 
 ; ── Internal blackhole (public internet only) ─────────────────────────────────
 ; Prevents the public wildcard from accidentally resolving internal subdomains.
