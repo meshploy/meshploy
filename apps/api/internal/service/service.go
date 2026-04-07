@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/apps/api/internal/config"
@@ -53,17 +54,40 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	domains := &DomainService{db: db}
 	auth := &AuthService{db: db}
 
-	// Wire gateway seeding: if GATEWAY_HOSTNAME is set the first user to register
-	// gets the gateway node and base domain pre-created for their org.
-	if c != nil && c.GatewayHostname != "" {
-		auth.onFirstRegistration = func(ctx context.Context, orgID uuid.UUID) {
+	// seedGateway creates the gateway node and domain for an org if not already present.
+	seedGateway := func(ctx context.Context, orgID uuid.UUID) {
+		var nodeCount int64
+		if db.WithContext(ctx).Model(&meshdb.Node{}).
+			Where("organization_id = ? AND tailscale_ip = ?", orgID, c.GatewayIP).
+			Count(&nodeCount).Error == nil && nodeCount == 0 {
 			if _, err := nodes.Register(ctx, orgID, c.GatewayHostname, c.GatewayIP, meshdb.K3sRoleServer); err != nil {
 				log.Printf("warning: seed gateway node: %v", err)
 			}
-			if err := domains.CreateSeeded(ctx, orgID, c.Domain); err != nil {
-				log.Printf("warning: seed domain: %v", err)
-			}
 		}
+		if err := domains.CreateSeeded(ctx, orgID, c.Domain); err != nil {
+			log.Printf("warning: seed domain: %v", err)
+		}
+	}
+
+	// Wire gateway seeding: if GATEWAY_HOSTNAME is set, seed on first registration
+	// and also seed any existing orgs on startup (handles pre-existing installations).
+	if c != nil && c.GatewayHostname != "" {
+		auth.onFirstRegistration = func(ctx context.Context, orgID uuid.UUID) {
+			seedGateway(ctx, orgID)
+		}
+
+		// Seed existing orgs on startup.
+		go func() {
+			time.Sleep(2 * time.Second) // let DB connections settle
+			ctx := context.Background()
+			var orgs []meshdb.Organization
+			if err := db.WithContext(ctx).Find(&orgs).Error; err != nil || len(orgs) == 0 {
+				return
+			}
+			for _, org := range orgs {
+				seedGateway(ctx, org.ID)
+			}
+		}()
 	}
 
 	return &Services{
