@@ -22,6 +22,12 @@ type Config struct {
 	KubeconfigPath string // KUBECONFIG      path to kubeconfig file; empty = in-cluster config
 	BuilderImage   string // BUILDER_IMAGE   override the builder container image
 	K3sToken       string // K3S_TOKEN       node token for workers to join the cluster
+
+	// Gateway seeding — set by install.sh on master nodes.
+	// When present, the first user to register gets a gateway node + domain pre-created.
+	Domain          string // DOMAIN           base domain (e.g. meshp.example.com)
+	GatewayIP       string // MESH_IP          WireGuard IP of the gateway node
+	GatewayHostname string // GATEWAY_HOSTNAME hostname of the gateway server
 }
 
 func Load() (*Config, error) {
@@ -63,6 +69,10 @@ func Load() (*Config, error) {
 		KubeconfigPath: os.Getenv("KUBECONFIG"),
 		BuilderImage:   os.Getenv("BUILDER_IMAGE"),
 		K3sToken:       os.Getenv("K3S_TOKEN"),
+
+		Domain:          os.Getenv("DOMAIN"),
+		GatewayIP:       os.Getenv("MESH_IP"),
+		GatewayHostname: os.Getenv("GATEWAY_HOSTNAME"),
 	}
 
 	if len(missing) > 0 {

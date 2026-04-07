@@ -237,11 +237,14 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   # ── Write config files ──────────────────────────────────────────────────────
   header "Writing configuration files"
 
+  GATEWAY_HOSTNAME=$(hostname)
+
   # .env
   cat > .env <<ENVEOF
 DOMAIN=${DOMAIN}
 PUBLIC_IP=${PUBLIC_IP}
 MESH_IP=${MESH_IP}
+GATEWAY_HOSTNAME=${GATEWAY_HOSTNAME}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=meshploy
 POSTGRES_USER=meshploy

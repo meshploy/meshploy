@@ -116,6 +116,28 @@ func (s *DomainService) Update(ctx context.Context, domainID uuid.UUID, in Updat
 	return domain, err
 }
 
+// CreateSeeded creates the base domain as already verified. Used during
+// gateway auto-seeding where DNS ownership is implicit (we control CoreDNS).
+// Silently returns nil if a domain already exists for the org.
+func (s *DomainService) CreateSeeded(ctx context.Context, orgID uuid.UUID, baseDomain string) error {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&db.Domain{}).
+		Where("organization_id = ?", orgID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count >= 1 {
+		return nil // already seeded
+	}
+	domain := &db.Domain{
+		OrganizationID:    orgID,
+		BaseDomain:        baseDomain,
+		InternalSubdomain: "internal",
+		PreviewSubdomain:  "preview",
+		Verified:          true,
+	}
+	return s.db.WithContext(ctx).Create(domain).Error
+}
+
 func (s *DomainService) Delete(ctx context.Context, domainID uuid.UUID) error {
 	err := s.db.WithContext(ctx).Delete(&db.Domain{}, "id = ?", domainID).Error
 	if err != nil && strings.Contains(err.Error(), "violates foreign key constraint") {

@@ -154,7 +154,8 @@ type UpdateNodeInput struct {
 	OrgID  string `path:"orgId"`
 	NodeID string `path:"nodeId"`
 	Body   struct {
-		Name string `json:"name" minLength:"1" maxLength:"100"`
+		Name    string `json:"name,omitempty"     maxLength:"100"`
+		K3sRole string `json:"k3s_role,omitempty" enum:"server,agent"`
 	}
 }
 
@@ -306,7 +307,10 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 	if err != nil {
 		return nil, err
 	}
-	node, err := h.svc.Nodes.Update(ctx, nodeID, input.Body.Name)
+	node, err := h.svc.Nodes.Update(ctx, nodeID, service.UpdateNodeInput{
+		Name:    input.Body.Name,
+		K3sRole: db.K3sRole(input.Body.K3sRole),
+	})
 	if err != nil {
 		return nil, notFound(err)
 	}

@@ -1,10 +1,13 @@
 package service
 
 import (
+	"context"
 	"log"
 
+	"github.com/google/uuid"
 	"github.com/meshploy/apps/api/internal/config"
 	appk8s "github.com/meshploy/apps/api/internal/k8s"
+	meshdb "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
 )
@@ -46,13 +49,30 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		headscaleSvc = NewHeadscaleService(c.HeadscaleURL, c.HeadscaleKey)
 	}
 
+	nodes := &NodeService{db: db}
+	domains := &DomainService{db: db}
+	auth := &AuthService{db: db}
+
+	// Wire gateway seeding: if GATEWAY_HOSTNAME is set the first user to register
+	// gets the gateway node and base domain pre-created for their org.
+	if c != nil && c.GatewayHostname != "" {
+		auth.onFirstRegistration = func(ctx context.Context, orgID uuid.UUID) {
+			if _, err := nodes.Register(ctx, orgID, c.GatewayHostname, c.GatewayIP, meshdb.K3sRoleServer); err != nil {
+				log.Printf("warning: seed gateway node: %v", err)
+			}
+			if err := domains.CreateSeeded(ctx, orgID, c.Domain); err != nil {
+				log.Printf("warning: seed domain: %v", err)
+			}
+		}
+	}
+
 	return &Services{
-		Auth:            &AuthService{db: db},
+		Auth:            auth,
 		Orgs:            &OrgService{db: db},
 		Projects:        &ProjectService{db: db},
-		Nodes:           &NodeService{db: db},
+		Nodes:           nodes,
 		Workloads:       &WorkloadService{db: db},
-		Domains:         &DomainService{db: db},
+		Domains:         domains,
 		Routes:          &RouteService{db: db},
 		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc},
 		GitIntegrations: gitSvc,
