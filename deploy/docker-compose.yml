@@ -76,6 +76,9 @@ services:
       KUBECONFIG:        /etc/rancher/k3s/k3s.yaml
       K3S_TOKEN:         ${K3S_TOKEN}
       API_PORT:          4000
+      DOMAIN:            ${DOMAIN}
+      MESH_IP:           ${MESH_IP:-100.64.0.1}
+      GATEWAY_HOSTNAME:  ${GATEWAY_HOSTNAME}
     volumes:
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
     depends_on:
