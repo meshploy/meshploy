@@ -6,13 +6,15 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 type AuthService struct {
-	db *gorm.DB
+	db                  *gorm.DB
+	onFirstRegistration func(ctx context.Context, orgID uuid.UUID)
 }
 
 type RegisterInput struct {
@@ -40,16 +42,17 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User,
 		Password: string(hashed),
 	}
 
+	var org db.Organization
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
 			return err
 		}
 
-		org := &db.Organization{
+		org = db.Organization{
 			Name: in.Username + "'s Organization",
 			Slug: in.Username,
 		}
-		if err := tx.Create(org).Error; err != nil {
+		if err := tx.Create(&org).Error; err != nil {
 			return err
 		}
 
@@ -61,6 +64,10 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User,
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if s.onFirstRegistration != nil {
+		go s.onFirstRegistration(context.Background(), org.ID)
 	}
 
 	return user, nil

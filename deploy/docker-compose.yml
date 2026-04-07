@@ -49,9 +49,10 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      DOMAIN:    ${DOMAIN}
-      MESH_IP:   ${MESH_IP:-100.64.0.1}
-      PUBLIC_IP: ${PUBLIC_IP}
+      DOMAIN:           ${DOMAIN}
+      MESH_IP:          ${MESH_IP:-100.64.0.1}
+      PUBLIC_IP:        ${PUBLIC_IP}
+      GATEWAY_HOSTNAME: ${GATEWAY_HOSTNAME}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./coredns/zones:/etc/coredns/zones    # shared with CoreDNS for ACME TXT records

@@ -28,25 +28,52 @@ func (s *NodeService) Get(ctx context.Context, nodeID uuid.UUID) (*db.Node, erro
 	return &node, err
 }
 
-func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tailscaleIP string) (*db.Node, error) {
+// Register creates a new node. Pass db.K3sRoleServer as the optional role to
+// mark the gateway node; defaults to db.K3sRoleAgent if omitted.
+func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tailscaleIP string, role ...db.K3sRole) (*db.Node, error) {
+	k3sRole := db.K3sRoleAgent
+	if len(role) > 0 && role[0] != "" {
+		k3sRole = role[0]
+	}
 	node := db.Node{
 		OrganizationID: orgID,
 		Name:           name,
 		TailscaleIP:    tailscaleIP,
 		Status:         db.NodeOffline,
+		K3sRole:        k3sRole,
 	}
-	
 	err := s.db.WithContext(ctx).Create(&node).Error
 	return &node, err
 }
 
-func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, name string) (*db.Node, error) {
+type UpdateNodeInput struct {
+	Name    string     // empty = no change
+	K3sRole db.K3sRole // empty = no change
+}
+
+func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, in UpdateNodeInput) (*db.Node, error) {
 	var node db.Node
 	if err := s.db.WithContext(ctx).First(&node, "id = ?", nodeID).Error; err != nil {
 		return nil, err
 	}
-	err := s.db.WithContext(ctx).Model(&node).Update("name", name).Error
-	return &node, err
+	updates := map[string]any{}
+	if in.Name != "" {
+		updates["name"] = in.Name
+	}
+	if in.K3sRole != "" {
+		updates["k3s_role"] = in.K3sRole
+	}
+	if len(updates) > 0 {
+		if err := s.db.WithContext(ctx).Model(&node).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+	return &node, nil
+}
+
+// UpdateRole sets the k3s role on a node. Used internally during gateway seeding.
+func (s *NodeService) UpdateRole(ctx context.Context, nodeID uuid.UUID, role db.K3sRole) error {
+	return s.db.WithContext(ctx).Model(&db.Node{}).Where("id = ?", nodeID).Update("k3s_role", role).Error
 }
 
 func (s *NodeService) Delete(ctx context.Context, nodeID uuid.UUID) error {
