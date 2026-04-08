@@ -20,6 +20,7 @@ type Config struct {
 
 	// Kubernetes — optional; build+deploy features require K3s connectivity.
 	KubeconfigPath string // KUBECONFIG      path to kubeconfig file; empty = in-cluster config
+	K3sServerURL   string // K3S_SERVER_URL  override k3s API server URL (e.g. when running in Docker)
 	BuilderImage   string // BUILDER_IMAGE   override the builder container image
 	K3sToken       string // K3S_TOKEN       node token for workers to join the cluster
 
@@ -67,6 +68,7 @@ func Load() (*Config, error) {
 		FrontendURL: frontendURL,
 
 		KubeconfigPath: os.Getenv("KUBECONFIG"),
+		K3sServerURL:   os.Getenv("K3S_SERVER_URL"),
 		BuilderImage:   os.Getenv("BUILDER_IMAGE"),
 		K3sToken:       os.Getenv("K3S_TOKEN"),
 

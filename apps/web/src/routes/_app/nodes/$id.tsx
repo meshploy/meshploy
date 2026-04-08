@@ -70,7 +70,7 @@ function NodeDetailPage() {
           <div className="flex items-center gap-3 mt-0.5">
             <code className="text-xs font-mono text-muted-foreground">{node.tailscaleIP}</code>
             <span className="text-xs text-muted-foreground">
-              Last seen {formatRelativeTime(node.lastSeenAt)}
+              {node.lastSeenAt ? `Last seen ${formatRelativeTime(node.lastSeenAt)}` : "Never seen"}
             </span>
           </div>
         </div>

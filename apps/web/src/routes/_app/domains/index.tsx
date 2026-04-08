@@ -2,10 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
-  Check,
   Globe,
   Loader2,
-  Pencil,
   Plus,
   Sparkles,
   Trash2,
@@ -38,19 +36,7 @@ function DomainsSettingsPage() {
     enabled: !!orgId,
   })
 
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editInternal, setEditInternal] = useState("")
-  const [editPreview, setEditPreview] = useState("")
   const [deleteError, setDeleteError] = useState<string | null>(null)
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: { internal_subdomain: string; preview_subdomain: string } }) =>
-      domainsApi.update(orgId, id, body, token),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["domains", orgId] })
-      setEditingId(null)
-    },
-  })
 
   const deleteMutation = useMutation({
     mutationFn: (domainId: string) => domainsApi.delete(orgId, domainId, token),
@@ -62,23 +48,6 @@ function DomainsSettingsPage() {
       setDeleteError(err.message)
     },
   })
-
-  function startEdit(domain: ApiDomain) {
-    setEditingId(domain.id)
-    setEditInternal(domain.internal_subdomain)
-    setEditPreview(domain.preview_subdomain)
-  }
-
-  function cancelEdit() {
-    setEditingId(null)
-  }
-
-  function saveEdit(domain: ApiDomain) {
-    updateMutation.mutate({
-      id: domain.id,
-      body: { internal_subdomain: editInternal, preview_subdomain: editPreview },
-    })
-  }
 
   // CE: first domain exists → "Add Domain" is soft-locked
   const atCELimit = domainList.length >= 1
@@ -159,16 +128,7 @@ function DomainsSettingsPage() {
             <DomainRow
               key={domain.id}
               domain={domain}
-              isEditing={editingId === domain.id}
-              editInternal={editInternal}
-              editPreview={editPreview}
-              onEditInternal={setEditInternal}
-              onEditPreview={setEditPreview}
-              onStartEdit={startEdit}
-              onCancelEdit={cancelEdit}
-              onSaveEdit={saveEdit}
               onDelete={(id) => deleteMutation.mutate(id)}
-              isSaving={updateMutation.isPending && editingId === domain.id}
               isDeleting={deleteMutation.isPending}
             />
           ))}
@@ -182,35 +142,13 @@ function DomainsSettingsPage() {
 
 interface DomainRowProps {
   domain: ApiDomain
-  isEditing: boolean
-  editInternal: string
-  editPreview: string
-  onEditInternal: (v: string) => void
-  onEditPreview: (v: string) => void
-  onStartEdit: (d: ApiDomain) => void
-  onCancelEdit: () => void
-  onSaveEdit: (d: ApiDomain) => void
   onDelete: (id: string) => void
-  isSaving: boolean
   isDeleting: boolean
 }
 
-function DomainRow({
-  domain,
-  isEditing,
-  editInternal,
-  editPreview,
-  onEditInternal,
-  onEditPreview,
-  onStartEdit,
-  onCancelEdit,
-  onSaveEdit,
-  onDelete,
-  isSaving,
-  isDeleting,
-}: DomainRowProps) {
+function DomainRow({ domain, onDelete, isDeleting }: DomainRowProps) {
   return (
-    <div className="px-4 py-4 space-y-3">
+    <div className="px-4 py-4">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -227,102 +165,32 @@ function DomainRow({
               {domain.verified ? "verified" : "pending"}
             </span>
           </div>
-          {!isEditing && (
-            <div className="mt-1.5 flex items-center gap-4 text-xs text-muted-foreground font-mono">
-              <span>
-                <span className="text-muted-foreground/50">internal: </span>
-                {domain.internal_subdomain}.{domain.base_domain}
-              </span>
-              <span>
-                <span className="text-muted-foreground/50">preview: </span>
-                {domain.preview_subdomain}.{domain.base_domain}
-              </span>
-            </div>
-          )}
+          <div className="mt-1.5 flex items-center gap-4 text-xs text-muted-foreground font-mono">
+            <span>
+              <span className="text-muted-foreground/50">internal: </span>
+              {domain.internal_subdomain}.{domain.base_domain}
+            </span>
+            <span>
+              <span className="text-muted-foreground/50">preview: </span>
+              {domain.preview_subdomain}.{domain.base_domain}
+            </span>
+          </div>
         </div>
 
-        {!isEditing && (
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => onStartEdit(domain)}
-              className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-              title="Edit subdomains"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(domain.id)}
-              disabled={isDeleting}
-              className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40"
-              title="Delete domain"
-            >
-              {isDeleting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => onDelete(domain.id)}
+          disabled={isDeleting}
+          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 shrink-0"
+          title="Delete domain"
+        >
+          {isDeleting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+        </button>
       </div>
-      {isEditing && (
-        <div className="space-y-3 pl-7">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Internal subdomain
-              </label>
-              <div className="flex items-stretch rounded-md border border-border/60 bg-input/30 overflow-hidden focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 transition-all">
-                <input
-                  type="text"
-                  value={editInternal}
-                  onChange={(e) => onEditInternal(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                  className="flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-sm font-mono text-foreground outline-none"
-                />
-                <span className="flex items-center bg-muted/30 px-2 text-[10px] font-mono text-muted-foreground border-l border-border/60 shrink-0 whitespace-nowrap">
-                  .{domain.base_domain}
-                </span>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Preview subdomain
-              </label>
-              <div className="flex items-stretch rounded-md border border-border/60 bg-input/30 overflow-hidden focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 transition-all">
-                <input
-                  type="text"
-                  value={editPreview}
-                  onChange={(e) => onEditPreview(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                  className="flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-sm font-mono text-foreground outline-none"
-                />
-                <span className="flex items-center bg-muted/30 px-2 text-[10px] font-mono text-muted-foreground border-l border-border/60 shrink-0 whitespace-nowrap">
-                  .{domain.base_domain}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => onSaveEdit(domain)}
-              disabled={isSaving || !editInternal || !editPreview}
-              className="gap-1.5"
-            >
-              {isSaving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Check className="h-3.5 w-3.5" />
-              )}
-              Save
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onCancelEdit}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

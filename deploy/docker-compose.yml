@@ -74,11 +74,14 @@ services:
       HEADSCALE_URL:     http://headscale:8080
       HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
       KUBECONFIG:        /etc/rancher/k3s/k3s.yaml
+      K3S_SERVER_URL:    https://host.docker.internal:6443
       K3S_TOKEN:         ${K3S_TOKEN}
       API_PORT:          4000
       DOMAIN:            ${DOMAIN}
       MESH_IP:           ${MESH_IP:-100.64.0.1}
       GATEWAY_HOSTNAME:  ${GATEWAY_HOSTNAME}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
     depends_on:

@@ -31,7 +31,7 @@ export interface Node {
   cpuCores: number
   memoryGB: number
   diskGB: number
-  lastSeenAt: Date
+  lastSeenAt: Date | null
   organizationId: string
   // Headscale peer data
   headscaleId: string

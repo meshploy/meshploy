@@ -108,6 +108,14 @@ export interface ApiProject {
 
 // ─── Adapters (API → frontend types) ─────────────────────────────────────────
 
+// parseTimestamp returns null for missing values and Go's zero time (year 1).
+function parseTimestamp(s: string | null | undefined): Date | null {
+  if (!s) return null
+  const d = new Date(s)
+  if (d.getFullYear() <= 1) return null
+  return d
+}
+
 export function toNode(n: ApiNode): Node {
   return {
     id: n.id,
@@ -120,12 +128,12 @@ export function toNode(n: ApiNode): Node {
     cpuCores: n.cpu_cores,
     memoryGB: n.memory_gb,
     diskGB: n.disk_gb,
-    lastSeenAt: n.last_seen_at ? new Date(n.last_seen_at) : new Date(0),
+    lastSeenAt: parseTimestamp(n.last_seen_at),
     organizationId: n.organization_id,
     headscaleId: n.headscale_id,
     headscaleOnline: n.headscale_online,
-    headscaleLastSeen: n.headscale_last_seen ? new Date(n.headscale_last_seen) : null,
-    headscaleExpiry: n.headscale_expiry ? new Date(n.headscale_expiry) : null,
+    headscaleLastSeen: parseTimestamp(n.headscale_last_seen),
+    headscaleExpiry: parseTimestamp(n.headscale_expiry),
     headscaleTags: n.headscale_tags ?? [],
     headscaleUser: n.headscale_user,
     k8sMember: n.k8s_member,
