@@ -1,3 +1,6 @@
+# Local documentation
+docs/
+
 # Go workspace
 go.work.sum
 

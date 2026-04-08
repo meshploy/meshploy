@@ -1,0 +1,7 @@
+# Files generated at install time by install.sh substituting {DOMAIN}/{PUBLIC_IP}.
+# These exist on the server with real values — never overwrite from CI.
+.env
+coredns/Corefile
+coredns/zones/*.*
+headscale/config/config.yaml
+headscale/data/
