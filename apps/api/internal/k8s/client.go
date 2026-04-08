@@ -27,6 +27,12 @@ func NewClient(kubeconfigPath string, serverURL ...string) (*kubernetes.Clientse
 	}
 	if len(serverURL) > 0 && serverURL[0] != "" {
 		cfg.Host = serverURL[0]
+		// The k3s TLS cert is only valid for 127.0.0.1. When routing via
+		// host.docker.internal the hostname won't match, so skip server cert
+		// verification. This is safe: the connection stays on-host.
+		cfg.TLSClientConfig.Insecure = true
+		cfg.TLSClientConfig.CAData = nil
+		cfg.TLSClientConfig.CAFile = ""
 	}
 	return kubernetes.NewForConfig(cfg)
 }
