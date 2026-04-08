@@ -12,7 +12,6 @@ on:
       - "packages/db/**"
       - "go.work"
       - "go.work.sum"
-      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 env:
@@ -41,22 +40,22 @@ jobs:
               - "packages/db/**"
               - "go.work"
               - "go.work.sum"
-              - ".github/workflows/build.yml"
+
             web:
               - "apps/web/**"
-              - ".github/workflows/build.yml"
+
             proxy:
               - "apps/proxy/**"
               - "packages/db/**"
               - "go.work"
               - "go.work.sum"
-              - ".github/workflows/build.yml"
+
             builder:
               - "apps/builder/**"
-              - ".github/workflows/build.yml"
+
             caddy:
               - "deploy/caddy/**"
-              - ".github/workflows/build.yml"
+
 
   # ── API ───────────────────────────────────────────────────────────────────────
   api:
@@ -249,7 +248,7 @@ jobs:
       - name: Sync deploy configs
         run: |
           rsync -az --delete \
-            --filter='merge deploy/.rsyncignore' \
+            --exclude-from='deploy/.rsyncignore' \
             deploy/ \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_DIR }}/
 
