@@ -11,7 +11,9 @@ import (
 // NewClient returns a Kubernetes clientset.
 // If kubeconfigPath is set it loads that file; otherwise it falls back to
 // in-cluster config (works when the API pod runs inside K3s).
-func NewClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
+// An optional serverURL overrides the server address in the kubeconfig — useful
+// when the API runs in Docker and the kubeconfig points to 127.0.0.1.
+func NewClient(kubeconfigPath string, serverURL ...string) (*kubernetes.Clientset, error) {
 	var cfg *rest.Config
 	var err error
 
@@ -22,6 +24,9 @@ func NewClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("k8s config: %w", err)
+	}
+	if len(serverURL) > 0 && serverURL[0] != "" {
+		cfg.Host = serverURL[0]
 	}
 	return kubernetes.NewForConfig(cfg)
 }

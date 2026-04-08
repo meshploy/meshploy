@@ -37,7 +37,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	var k8sClient kubernetes.Interface
 	if c != nil {
 		var err error
-		k8sClient, err = appk8s.NewClient(c.KubeconfigPath)
+		k8sClient, err = appk8s.NewClient(c.KubeconfigPath, c.K3sServerURL)
 		if err != nil {
 			log.Printf("warning: K8s not available (%v) — build/deploy features disabled", err)
 		}

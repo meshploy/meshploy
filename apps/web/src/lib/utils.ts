@@ -5,7 +5,8 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatRelativeTime(date: Date): string {
+export function formatRelativeTime(date: Date | null | undefined): string {
+  if (!date) return "Never"
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
   if (seconds < 60) return `${seconds}s ago`
   const minutes = Math.floor(seconds / 60)
