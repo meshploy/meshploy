@@ -35,11 +35,17 @@ func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tails
 	if len(role) > 0 && role[0] != "" {
 		k3sRole = role[0]
 	}
+	// Server nodes are the running gateway — seed them as online.
+	// Agent nodes start offline until their first heartbeat.
+	status := db.NodeOffline
+	if k3sRole == db.K3sRoleServer {
+		status = db.NodeOnline
+	}
 	node := db.Node{
 		OrganizationID: orgID,
 		Name:           name,
 		TailscaleIP:    tailscaleIP,
-		Status:         db.NodeOffline,
+		Status:         status,
 		K3sRole:        k3sRole,
 	}
 	err := s.db.WithContext(ctx).Create(&node).Error

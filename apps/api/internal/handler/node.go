@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -34,46 +35,59 @@ type NodeResponse struct {
 	ActiveProjects []string `json:"active_projects"`
 }
 
-// enrichNodes fetches headscale nodes and k8s cluster nodes once, then
+// enrichTimeout is the max time we wait for external enrichment sources.
+// DB results are always returned; slow external calls are abandoned.
+const enrichTimeout = 4 * time.Second
+
+// enrichNodes fetches headscale nodes and k8s cluster nodes concurrently, then
 // annotates each DB node. Errors from external sources are logged but never
 // propagated — callers always get at minimum the DB data.
 func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeResponse {
-	// --- headscale ---
-	type hsIndex struct {
-		node service.HeadscaleNode
+	tctx, cancel := context.WithTimeout(ctx, enrichTimeout)
+	defer cancel()
+
+	type hsIndex struct{ node service.HeadscaleNode }
+	type k8sIndex struct {
+		name  string
+		ready bool
 	}
+
 	hsByIP := make(map[string]hsIndex)
+	k8sByIP := make(map[string]k8sIndex)
+
+	var wg sync.WaitGroup
+
 	if h.svc.Headscale != nil {
-		hsNodes, err := h.svc.Headscale.ListNodes(ctx)
-		if err != nil {
-			log.Printf("warning: headscale ListNodes: %v", err)
-		} else {
+		wg.Go(func() {
+			hsNodes, err := h.svc.Headscale.ListNodes(tctx)
+			if err != nil {
+				log.Printf("warning: headscale ListNodes: %v", err)
+				return
+			}
 			for _, hn := range hsNodes {
 				if len(hn.IPAddresses) > 0 {
 					hsByIP[hn.IPAddresses[0]] = hsIndex{node: hn}
 				}
 			}
-		}
+		})
 	}
 
-	// --- k8s ---
-	type k8sIndex struct {
-		name  string
-		ready bool
-	}
-	k8sByIP := make(map[string]k8sIndex)
 	if h.svc.K8s != nil {
-		clusterNodes, err := appk8s.GetClusterNodes(ctx, h.svc.K8s)
-		if err != nil {
-			log.Printf("warning: k8s GetClusterNodes: %v", err)
-		} else {
+		wg.Go(func() {
+			clusterNodes, err := appk8s.GetClusterNodes(tctx, h.svc.K8s)
+			if err != nil {
+				log.Printf("warning: k8s GetClusterNodes: %v", err)
+				return
+			}
 			for _, cn := range clusterNodes {
 				for _, ip := range cn.InternalIPs {
 					k8sByIP[ip] = k8sIndex{name: cn.Name, ready: cn.Ready}
 				}
 			}
-		}
+		})
 	}
+
+	wg.Wait()
 
 	out := make([]NodeResponse, 0, len(nodes))
 	for _, n := range nodes {
@@ -96,6 +110,12 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 			r.K8sMember = true
 			r.K8sReady = kn.ready
 			r.K8sNodeName = kn.name
+			// Reflect live cluster readiness in the status field.
+			if kn.ready {
+				r.Status = db.NodeOnline
+			} else {
+				r.Status = db.NodeOffline
+			}
 		}
 
 		out = append(out, r)
