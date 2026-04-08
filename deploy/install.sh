@@ -368,6 +368,12 @@ for u in json.load(sys.stdin):
   sed -i "s|HEADSCALE_API_KEY=|HEADSCALE_API_KEY=${HEADSCALE_API_KEY}|" .env
   success "Headscale API key written to .env"
 
+  # The API container started before the key was generated — recreate it so it
+  # picks up the updated HEADSCALE_API_KEY from .env.
+  info "Restarting API with Headscale credentials…"
+  docker compose up -d --force-recreate api
+  success "API restarted"
+
   # ── Install Tailscale ───────────────────────────────────────────────────────
   header "Installing Tailscale"
   if ! command -v tailscale &>/dev/null; then

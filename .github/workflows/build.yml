@@ -18,6 +18,7 @@ on:
 env:
   REGISTRY: ghcr.io
   ORG: meshploy
+  DEPLOY_DIR: /opt/meshploy
 
 jobs:
   # ── Detect changed paths ──────────────────────────────────────────────────────
@@ -224,6 +225,41 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ── Deploy ────────────────────────────────────────────────────────────────────
+  # Runs after all build jobs (whether they ran or were skipped).
+  # Syncs deploy/ configs to the server, pulls new images, restarts containers.
+  deploy:
+    needs: [api, web, caddy, proxy, builder]
+    if: always() && !failure() && !cancelled()
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      # Sync deploy/ folder to server, preserving runtime-substituted files.
+      # .rsyncignore defines what to protect (zone files, Corefile, .env, etc.)
+      - name: Sync deploy configs
+        run: |
+          rsync -az --delete \
+            --filter='merge deploy/.rsyncignore' \
+            deploy/ \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_DIR }}/
+
+      # Pull new images and restart only changed services.
+      - name: Pull and restart
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "cd ${{ env.DEPLOY_DIR }} && \
+             docker compose pull --quiet && \
+             docker compose up -d --remove-orphans"
 
   # ── Builder ───────────────────────────────────────────────────────────────────
   builder:
