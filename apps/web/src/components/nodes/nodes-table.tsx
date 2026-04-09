@@ -77,7 +77,7 @@ export function NodesTable({ nodes }: NodesTableProps) {
               </TableCell>
               <TableCell className="py-3.5 text-right">
                 <span className={node.status === "online" ? "text-xs text-emerald-400/80" : "text-xs text-muted-foreground/50"}>
-                  {formatRelativeTime(node.lastSeenAt)}
+                  {formatRelativeTime(node.lastSeenAt ?? node.headscaleLastSeen)}
                 </span>
               </TableCell>
             </TableRow>
