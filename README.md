@@ -95,9 +95,23 @@ meshploy/
 
 ## Self-Hosting
 
+### Supported operating systems
+
+| Distro | Versions | Container runtime |
+|---|---|---|
+| Ubuntu | 20.04+ | Docker (auto-installed) or Podman |
+| Debian | 11+ | Docker (auto-installed) or Podman |
+| Fedora | 38+ | Docker or Podman (auto-installed) |
+| RHEL / Rocky / AlmaLinux | 8+ | Docker or Podman (auto-installed) |
+| CentOS Stream | 9+ | Docker or Podman (auto-installed) |
+| openSUSE Leap / Tumbleweed | latest | Docker or Podman (auto-installed) |
+| Arch Linux | rolling | Docker or Podman (auto-installed) |
+
+> **Requirements:** systemd, x86_64 or arm64, kernel ≥ 5.4. Alpine and non-systemd distros are not supported.
+
 ### Prerequisites
 
-- Linux (x86_64 or arm64)
+- A supported Linux distro (see above)
 - A public domain with NS records pointing to this server
 - Ports **80**, **443**, **53** (TCP+UDP) open on the gateway
 - Root / sudo access
