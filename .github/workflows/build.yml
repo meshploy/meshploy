@@ -257,8 +257,9 @@ jobs:
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "cd ${{ env.DEPLOY_DIR }} && \
-             docker compose pull --quiet && \
-             docker compose up -d --remove-orphans"
+             RUNTIME=\$(grep '^CONTAINER_RUNTIME=' .env 2>/dev/null | cut -d= -f2 || echo docker) && \
+             \${RUNTIME} compose pull --quiet && \
+             \${RUNTIME} compose up -d --remove-orphans"
 
   # ── Builder ───────────────────────────────────────────────────────────────────
   builder:

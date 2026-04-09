@@ -110,24 +110,89 @@ header "Checking prerequisites"
 OS="$(uname -s)"
 [[ "$OS" != "Linux" ]] && die "This script requires Linux."
 
-if ! command -v docker &>/dev/null; then
-  warn "Docker is not installed."
-  if ask_yn "Install Docker now?"; then
+# ── Container runtime detection ──────────────────────────────────────────────
+# Supports Docker (preferred) and Podman. CRI-O is a k8s-level runtime and is
+# not applicable here — the platform services run via Compose, not k8s.
+CONTAINER_RUNTIME=""
+COMPOSE_CMD=""
+
+if command -v docker &>/dev/null && ! docker --version 2>/dev/null | grep -qi "podman"; then
+  # Real Docker (not podman-docker shim)
+  if ! docker compose version &>/dev/null 2>&1; then
+    die "Docker found but Compose v2 plugin missing. Install Docker Engine ≥ 24."
+  fi
+  CONTAINER_RUNTIME="docker"
+  COMPOSE_CMD="docker compose"
+  success "Docker $(docker --version | awk '{print $3}' | tr -d ',') + Compose $(docker compose version --short)"
+
+elif command -v podman &>/dev/null; then
+  # Podman — must be rootful (running as root/sudo) for host-gateway and port binding
+  if ! podman compose version &>/dev/null 2>&1; then
+    warn "Podman found but 'podman compose' is not available."
+    warn "Install podman-compose: pip3 install podman-compose  OR  dnf/apt install podman-compose"
+    if ! ask_yn "Continue anyway? (compose commands will fail until podman-compose is installed)"; then
+      die "Aborted."
+    fi
+  fi
+  CONTAINER_RUNTIME="podman"
+  COMPOSE_CMD="podman compose"
+  success "Podman $(podman --version | awk '{print $3}')"
+
+else
+  warn "Neither Docker nor Podman found."
+  echo -e "  ${CYAN}1)${RESET} Install Docker (recommended)"
+  echo -e "  ${CYAN}2)${RESET} Install Podman"
+  RUNTIME_CHOICE="1"
+  ask RUNTIME_CHOICE "Choose runtime [1/2]" "1"
+
+  if [[ "$RUNTIME_CHOICE" == "1" ]]; then
     info "Installing Docker…"
     curl -fsSL https://get.docker.com | sh
-    sudo systemctl enable --now docker
-    success "Docker installed."
+    systemctl enable --now docker
+    CONTAINER_RUNTIME="docker"
+    COMPOSE_CMD="docker compose"
+    success "Docker installed"
+  elif [[ "$RUNTIME_CHOICE" == "2" ]]; then
+    info "Installing Podman…"
+    if command -v dnf &>/dev/null;       then dnf install -y podman podman-compose
+    elif command -v apt-get &>/dev/null; then apt-get install -y podman podman-compose
+    elif command -v zypper &>/dev/null;  then zypper install -y podman python3-podman-compose
+    elif command -v pacman &>/dev/null;  then pacman -Sy --noconfirm podman python-podman-compose
+    else die "Cannot auto-install Podman — package manager not recognised. Install manually then re-run."; fi
+    CONTAINER_RUNTIME="podman"
+    COMPOSE_CMD="podman compose"
+    success "Podman installed"
   else
-    die "Docker is required. Aborting."
+    die "Invalid selection '${RUNTIME_CHOICE}'. Enter 1 (Docker) or 2 (Podman)."
   fi
-else
-  success "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
 fi
 
-if ! docker compose version &>/dev/null 2>&1; then
-  die "Docker Compose v2 plugin not found. Install Docker Engine ≥ 24."
+# ── Host gateway IP detection ────────────────────────────────────────────────
+# Maps host.meshploy.internal inside containers → host's bridge gateway IP so
+# the API container can reach k3s on port 6443.
+#
+# Docker: bridge gateway from the docker0 network (typically 172.17.0.1)
+# Podman: bridge gateway from the default podman network (typically 10.88.0.1)
+#
+# NOTE: ip route show default gives the internet-facing gateway — that is
+# deliberately NOT used here.
+HOST_GATEWAY_IP=""
+if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
+  # Pulling a tiny image forces Docker to initialise the bridge network on a
+  # fresh install before we inspect it.
+  docker pull hello-world &>/dev/null || true
+  HOST_GATEWAY_IP=$(docker network inspect bridge \
+    --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || true)
+elif [[ "$CONTAINER_RUNTIME" == "podman" ]]; then
+  # Force Podman to initialise its default network on a fresh install.
+  podman pull hello-world &>/dev/null || true
+  HOST_GATEWAY_IP=$(podman network inspect podman \
+    --format '{{range .Subnets}}{{.Gateway}}{{end}}' 2>/dev/null || true)
+else
+  die "Unsupported container runtime: '${CONTAINER_RUNTIME}'. Expected 'docker' or 'podman'."
 fi
-success "Docker Compose $(docker compose version --short)"
+[[ -z "$HOST_GATEWAY_IP" ]] && die "Could not detect container bridge gateway IP. Start ${CONTAINER_RUNTIME} first, then retry."
+success "Host gateway IP (${CONTAINER_RUNTIME} bridge): ${BOLD}${HOST_GATEWAY_IP}${RESET}"
 
 cd "$SCRIPT_DIR"
 
@@ -186,28 +251,36 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     die "Aborted."
   fi
 
+  # ── Migrate existing .env if it's missing HOST_GATEWAY_IP ───────────────────
+  # Servers installed before runtime-aware bridge detection was added won't have
+  # this variable. The compose file needs it for the extra_hosts entry.
+  if [[ -f ".env" ]] && ! grep -q "^HOST_GATEWAY_IP=" .env; then
+    echo "HOST_GATEWAY_IP=${HOST_GATEWAY_IP}" >> .env
+    success ".env upgraded: added HOST_GATEWAY_IP=${HOST_GATEWAY_IP}"
+  fi
+
   # ── Handle existing installation ───────────────────────────────────────────
   CADDY_VOLUME="meshploy_caddy_data"
-  if docker volume inspect "$CADDY_VOLUME" &>/dev/null; then
+  if $CONTAINER_RUNTIME volume inspect "$CADDY_VOLUME" &>/dev/null; then
     if $WIPE_DATA; then
       info "Wiping existing data volumes…"
-      docker compose down --remove-orphans 2>/dev/null || true
-      docker volume rm meshploy_caddy_data meshploy_caddy_config meshploy_postgres_data 2>/dev/null || true
+      $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+      $CONTAINER_RUNTIME volume rm meshploy_caddy_data meshploy_caddy_config meshploy_postgres_data 2>/dev/null || true
       success "Volumes wiped — starting fresh"
     elif $REINSTALL; then
       info "Existing installation detected — updating images and preserving data."
-      docker compose down --remove-orphans 2>/dev/null || true
+      $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
     else
       # Fresh install with existing volume — ask user
       echo
       warn "Existing Meshploy data detected (TLS certs + database)."
       if ask_yn "Wipe existing data for a clean install?" "n"; then
-        docker compose down --remove-orphans 2>/dev/null || true
-        docker volume rm meshploy_caddy_data meshploy_caddy_config meshploy_postgres_data 2>/dev/null || true
+        $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+        $CONTAINER_RUNTIME volume rm meshploy_caddy_data meshploy_caddy_config meshploy_postgres_data 2>/dev/null || true
         success "Volumes wiped — starting fresh"
       else
         info "Preserving existing data — continuing install."
-        docker compose down --remove-orphans 2>/dev/null || true
+        $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
       fi
     fi
   fi
@@ -223,22 +296,26 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server installed and started"
   fi
 
-  # ── Allow Docker bridge networks to reach k3s API (port 6443) ──────────────
-  # The Meshploy API runs in Docker. When it connects to k3s at
-  # host.docker.internal:6443, traffic comes from a Docker bridge subnet
-  # (172.16.0.0/12). UFW and firewalld block this by default.
+  # ── Allow container bridge networks to reach k3s API (port 6443) ────────────
+  # The Meshploy API container connects to k3s at host.meshploy.internal:6443.
+  # Traffic originates from the container bridge subnet — UFW and firewalld
+  # block this by default.
+  #   Docker bridge: 172.16.0.0/12  (172.17.x.x – 172.31.x.x)
+  #   Podman bridge: 10.88.0.0/16
   if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
     if ! ufw status | grep -q "6443"; then
-      ufw allow from 172.16.0.0/12 to any port 6443 comment "k3s API — Docker bridge access" >/dev/null
-      success "UFW: allowed Docker bridge networks → port 6443"
+      ufw allow from 172.16.0.0/12 to any port 6443 comment "k3s API — Docker bridge" >/dev/null
+      ufw allow from 10.88.0.0/16  to any port 6443 comment "k3s API — Podman bridge" >/dev/null
+      success "UFW: allowed container bridge networks → port 6443"
     else
       success "UFW: port 6443 already allowed"
     fi
   elif command -v firewall-cmd &>/dev/null && firewall-cmd --state 2>/dev/null | grep -q "running"; then
     if ! firewall-cmd --list-rich-rules | grep -q "6443"; then
       firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.16.0.0/12" port port="6443" protocol="tcp" accept'
+      firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="10.88.0.0/16" port port="6443" protocol="tcp" accept'
       firewall-cmd --reload >/dev/null
-      success "firewalld: allowed Docker bridge networks → port 6443"
+      success "firewalld: allowed container bridge networks → port 6443"
     else
       success "firewalld: port 6443 already allowed"
     fi
@@ -274,7 +351,9 @@ ENCRYPTION_KEY=${ENCRYPTION_KEY}
 API_BASE_URL=https://api.${DOMAIN}
 FRONTEND_URL=https://app.${DOMAIN}
 K3S_TOKEN=${K3S_TOKEN}
-# Fill in after first start: docker compose exec headscale headscale apikeys create
+CONTAINER_RUNTIME=${CONTAINER_RUNTIME}
+HOST_GATEWAY_IP=${HOST_GATEWAY_IP}
+# Fill in after first start: $COMPOSE_CMD exec headscale headscale apikeys create
 HEADSCALE_API_KEY=
 ENVEOF
   success ".env written"
@@ -319,11 +398,11 @@ ENVEOF
   if ask_yn "Log in to ghcr.io now?"; then
     ask GHCR_USER "GitHub username"
     ask_secret GHCR_TOKEN "GitHub PAT (read:packages)"
-    echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin \
+    echo "$GHCR_TOKEN" | $CONTAINER_RUNTIME login ghcr.io --username "$GHCR_USER" --password-stdin \
       && success "Logged in to ghcr.io as ${BOLD}${GHCR_USER}${RESET}" \
-      || die "docker login failed — check your username and token."
+      || die "$CONTAINER_RUNTIME login failed — check your username and token."
   else
-    warn "Skipping registry login. 'docker compose pull' will fail if images are private."
+    warn "Skipping registry login. '$COMPOSE_CMD pull' will fail if images are private."
   fi
 
   # ── Phase 1: Start core services (no mesh IP needed yet) ────────────────────
@@ -331,17 +410,17 @@ ENVEOF
   # exist until Tailscale joins the mesh. Start them in phase 2.
   header "Starting core services"
   info "Pulling images…"
-  docker compose pull
+  $COMPOSE_CMD pull
   info "Starting postgres, headscale, api, web, proxy…"
-  DOMAIN="$DOMAIN" docker compose up -d postgres headscale api web proxy
+  DOMAIN="$DOMAIN" $COMPOSE_CMD up -d postgres headscale api web proxy
   success "Core services started"
 
   # ── Wait for Headscale ──────────────────────────────────────────────────────
   header "Waiting for Headscale to be ready"
   MAX_WAIT=60; WAITED=0
-  until docker compose exec -T headscale headscale version &>/dev/null; do
+  until $COMPOSE_CMD exec -T headscale headscale version &>/dev/null; do
     sleep 2; WAITED=$((WAITED+2))
-    [[ $WAITED -ge $MAX_WAIT ]] && die "Headscale did not start within ${MAX_WAIT}s. Check: docker compose logs headscale"
+    [[ $WAITED -ge $MAX_WAIT ]] && die "Headscale did not start within ${MAX_WAIT}s. Check: $COMPOSE_CMD logs headscale"
     printf "."
   done
   echo; success "Headscale is ready"
@@ -350,15 +429,15 @@ ENVEOF
   header "Setting up Headscale"
   HEADSCALE_USER="meshploy"
 
-  if ! docker compose exec -T headscale headscale users list 2>/dev/null | grep -q "$HEADSCALE_USER"; then
-    docker compose exec -T headscale headscale users create "$HEADSCALE_USER" &>/dev/null
+  if ! $COMPOSE_CMD exec -T headscale headscale users list 2>/dev/null | grep -q "$HEADSCALE_USER"; then
+    $COMPOSE_CMD exec -T headscale headscale users create "$HEADSCALE_USER" &>/dev/null
     success "Headscale user '${HEADSCALE_USER}' created"
   else
     success "Headscale user '${HEADSCALE_USER}' already exists"
   fi
 
   # v0.28+ --user flag requires numeric ID, not a username string
-  HEADSCALE_USER_ID="$(docker compose exec -T headscale \
+  HEADSCALE_USER_ID="$($COMPOSE_CMD exec -T headscale \
     headscale users list -o json 2>/dev/null \
     | python3 -c "
 import sys, json
@@ -368,23 +447,23 @@ for u in json.load(sys.stdin):
 " || true)"
   [[ -z "$HEADSCALE_USER_ID" ]] && die "Could not resolve Headscale user ID for '${HEADSCALE_USER}'"
 
-  _PREAUTH_RAW="$(docker compose exec -T headscale \
+  _PREAUTH_RAW="$($COMPOSE_CMD exec -T headscale \
     headscale preauthkeys create --user "$HEADSCALE_USER_ID" --expiration 1h --reusable \
     2>&1 || true)"
   PREAUTH_KEY="$(echo "$_PREAUTH_RAW" | grep -oE 'hskey-auth-[A-Za-z0-9_-]+' | head -1 || true)"
   if [[ -z "$PREAUTH_KEY" ]]; then
     error "headscale preauthkeys output was:"
     echo "$_PREAUTH_RAW" >&2
-    die "Failed to generate pre-auth key. Check: docker compose logs headscale"
+    die "Failed to generate pre-auth key. Check: $COMPOSE_CMD logs headscale"
   fi
   success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
 
-  _APIKEY_RAW="$(docker compose exec -T headscale headscale apikeys create 2>&1 || true)"
+  _APIKEY_RAW="$($COMPOSE_CMD exec -T headscale headscale apikeys create 2>&1 || true)"
   HEADSCALE_API_KEY="$(echo "$_APIKEY_RAW" | grep -oE '[A-Za-z0-9_-]{40,}' | head -1 || true)"
   if [[ -z "$HEADSCALE_API_KEY" ]]; then
     error "headscale apikeys output was:"
     echo "$_APIKEY_RAW" >&2
-    die "Failed to generate API key. Check: docker compose logs headscale"
+    die "Failed to generate API key. Check: $COMPOSE_CMD logs headscale"
   fi
   sed -i "s|HEADSCALE_API_KEY=|HEADSCALE_API_KEY=${HEADSCALE_API_KEY}|" .env
   success "Headscale API key written to .env"
@@ -392,7 +471,7 @@ for u in json.load(sys.stdin):
   # The API container started before the key was generated — recreate it so it
   # picks up the updated HEADSCALE_API_KEY from .env.
   info "Restarting API with Headscale credentials…"
-  docker compose up -d --force-recreate api
+  $COMPOSE_CMD up -d --force-recreate api
   success "API restarted"
 
   # ── Install Tailscale ───────────────────────────────────────────────────────
@@ -427,9 +506,9 @@ for u in json.load(sys.stdin):
   header "Starting DNS and proxy services"
   # Ensure external caddy volumes exist before compose up (suppresses the
   # "volume already exists but was not created by Docker Compose" warning).
-  docker volume create meshploy_caddy_data  &>/dev/null || true
-  docker volume create meshploy_caddy_config &>/dev/null || true
-  DOMAIN="$DOMAIN" docker compose up -d coredns caddy
+  $CONTAINER_RUNTIME volume create meshploy_caddy_data  &>/dev/null || true
+  $CONTAINER_RUNTIME volume create meshploy_caddy_config &>/dev/null || true
+  DOMAIN="$DOMAIN" $COMPOSE_CMD up -d coredns caddy
   success "CoreDNS and Caddy started"
 
   # ── Final summary ────────────────────────────────────────────────────────────
@@ -492,7 +571,7 @@ for u in json.load(sys.stdin):
     success "TLS certificates issued — ${CYAN}https://app.${DOMAIN}${RESET} is live!"
   else
     warn "TLS not confirmed after ${TLS_MAX_WAIT}s — still provisioning in background."
-    warn "Monitor: docker compose logs -f caddy"
+    warn "Monitor: $COMPOSE_CMD logs -f caddy"
   fi
 
 # =============================================================================

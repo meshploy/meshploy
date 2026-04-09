@@ -77,11 +77,24 @@ if ! $YES; then
   [[ "$confirm_input" == "yes" ]] || { info "Aborted."; exit 0; }
 fi
 
-# ── Stop and remove Docker Compose stack ─────────────────────────────────────
-header "Stopping Docker Compose stack"
+# ── Detect container runtime ──────────────────────────────────────────────────
+CONTAINER_RUNTIME=$(grep '^CONTAINER_RUNTIME=' .env 2>/dev/null | cut -d= -f2 || true)
+if [[ -z "$CONTAINER_RUNTIME" ]]; then
+  if command -v docker &>/dev/null && ! docker --version 2>/dev/null | grep -qi "podman"; then
+    CONTAINER_RUNTIME="docker"
+  elif command -v podman &>/dev/null; then
+    CONTAINER_RUNTIME="podman"
+  else
+    CONTAINER_RUNTIME="docker"
+  fi
+fi
+COMPOSE_CMD="$CONTAINER_RUNTIME compose"
+
+# ── Stop and remove Compose stack ────────────────────────────────────────────
+header "Stopping ${CONTAINER_RUNTIME^} Compose stack"
 if [[ -f "docker-compose.yml" ]]; then
   if confirm "Remove containers and networks?"; then
-    DOMAIN="${DOMAIN:-}" docker compose down --remove-orphans 2>/dev/null || true
+    DOMAIN="${DOMAIN:-}" $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
     success "Containers stopped and removed"
   fi
 else
@@ -92,9 +105,9 @@ fi
 # Skipped during --reinstall: caddy TLS certs (rate-limited by Let's Encrypt)
 # and database data are preserved so reinstall continues from a clean state.
 if ! $REINSTALL; then
-  header "Removing Docker volumes"
+  header "Removing volumes"
   if confirm "Delete all volumes? (${BOLD}this deletes the database and TLS certificates${RESET})"; then
-    docker volume rm \
+    $CONTAINER_RUNTIME volume rm \
       "$(basename "$SCRIPT_DIR")_postgres_data" \
       "$(basename "$SCRIPT_DIR")_caddy_data" \
       "$(basename "$SCRIPT_DIR")_caddy_config" \
@@ -140,10 +153,10 @@ else
   info "Tailscale not installed — skipping"
 fi
 
-# ── Remove Docker images (optional) ──────────────────────────────────────────
-header "Docker images"
-if confirm "Remove pulled Meshploy images from local Docker? (saves disk space)"; then
-  docker rmi \
+# ── Remove images (optional) ─────────────────────────────────────────────────
+header "Container images"
+if confirm "Remove pulled Meshploy images? (saves disk space)"; then
+  $CONTAINER_RUNTIME rmi \
     ghcr.io/meshploy/api:latest \
     ghcr.io/meshploy/web:latest \
     ghcr.io/meshploy/proxy:latest \
