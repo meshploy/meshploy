@@ -535,6 +535,22 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   MESH_IP_ASSIGNED="$(tailscale ip -4 2>/dev/null || echo "pending")"
   success "Joined mesh as '${NODE_HOSTNAME}' — mesh IP: ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
 
+  # ── Node role selection ──────────────────────────────────────────────────────
+  echo
+  echo -e "  ${BOLD}Node scheduling role${RESET}"
+  echo -e "  ${CYAN}1)${RESET} workload_builder ${DIM}(default)${RESET} — runs customer workloads AND build jobs"
+  echo -e "  ${CYAN}2)${RESET} workload          — customer workloads only"
+  echo -e "  ${CYAN}3)${RESET} builder           — build jobs only (tainted, workloads won't land here)"
+  echo
+  NODE_ROLE_CHOICE="1"
+  ask NODE_ROLE_CHOICE "Choose role [1/2/3]" "1"
+  case "$NODE_ROLE_CHOICE" in
+    2) NODE_MESH_ROLE="workload" ;;
+    3) NODE_MESH_ROLE="builder" ;;
+    *) NODE_MESH_ROLE="workload_builder" ;;
+  esac
+  info "Node mesh role: ${BOLD}${NODE_MESH_ROLE}${RESET}"
+
   # ── Self-register with the Meshploy API ─────────────────────────────────────
   # Now on the mesh, so we can reach the master's API at its WireGuard IP.
   header "Registering node with Meshploy"
@@ -542,11 +558,11 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     --max-time 10 \
     -X POST "${MESHPLOY_API_URL}/api/v1/nodes/self-register" \
     -H "Content-Type: application/json" \
-    -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"name\":\"${NODE_HOSTNAME}\",\"tailscale_ip\":\"${MESH_IP_ASSIGNED}\"}" \
+    -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"name\":\"${NODE_HOSTNAME}\",\"tailscale_ip\":\"${MESH_IP_ASSIGNED}\",\"mesh_role\":\"${NODE_MESH_ROLE}\"}" \
     2>&1 || true)"
 
   if echo "$_REG_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null | grep -q .; then
-    success "Node '${NODE_HOSTNAME}' registered in Meshploy"
+    success "Node '${NODE_HOSTNAME}' registered in Meshploy (role: ${NODE_MESH_ROLE})"
   else
     warn "Auto-registration failed. You can register manually in the dashboard."
     warn "Response: ${_REG_RESPONSE}"
