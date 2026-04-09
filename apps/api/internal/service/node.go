@@ -53,8 +53,9 @@ func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tails
 }
 
 type UpdateNodeInput struct {
-	Name    string     // empty = no change
-	K3sRole db.K3sRole // empty = no change
+	Name     string      // empty = no change
+	K3sRole  db.K3sRole  // empty = no change
+	MeshRole db.MeshRole // empty = no change
 }
 
 func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, in UpdateNodeInput) (*db.Node, error) {
@@ -68,6 +69,9 @@ func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, in UpdateNod
 	}
 	if in.K3sRole != "" {
 		updates["k3s_role"] = in.K3sRole
+	}
+	if in.MeshRole != "" {
+		updates["mesh_role"] = in.MeshRole
 	}
 	if len(updates) > 0 {
 		if err := s.db.WithContext(ctx).Model(&node).Updates(updates).Error; err != nil {
@@ -127,7 +131,8 @@ func (s *NodeService) GetRegistrationToken(ctx context.Context, orgID uuid.UUID)
 
 // RegisterWithToken validates a node registration token and creates the node.
 // Returns the new node, or an error if the token is invalid.
-func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailscaleIP string) (*db.Node, error) {
+// An optional MeshRole sets the scheduling role (defaults to MeshRoleWorkloadBuilder).
+func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailscaleIP string, meshRole ...db.MeshRole) (*db.Node, error) {
 	var row db.NodeRegistrationToken
 	if err := s.db.WithContext(ctx).Where("token = ?", token).First(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -135,5 +140,17 @@ func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailsc
 		}
 		return nil, err
 	}
-	return s.Register(ctx, row.OrganizationID, name, tailscaleIP)
+	node, err := s.Register(ctx, row.OrganizationID, name, tailscaleIP)
+	if err != nil {
+		return nil, err
+	}
+	role := db.MeshRoleWorkloadBuilder
+	if len(meshRole) > 0 && meshRole[0] != "" {
+		role = meshRole[0]
+	}
+	if err := s.db.WithContext(ctx).Model(node).Update("mesh_role", role).Error; err != nil {
+		return nil, err
+	}
+	node.MeshRole = role
+	return node, nil
 }

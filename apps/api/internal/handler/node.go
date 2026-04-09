@@ -48,12 +48,14 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 
 	type hsIndex struct{ node service.HeadscaleNode }
 	type k8sIndex struct {
-		name  string
-		ready bool
+		name   string
+		ready  bool
+		Labels map[string]string
 	}
 
 	hsByIP := make(map[string]hsIndex)
 	k8sByIP := make(map[string]k8sIndex)
+	k8sByName := make(map[string]k8sIndex)
 
 	var wg sync.WaitGroup
 
@@ -80,8 +82,10 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 				return
 			}
 			for _, cn := range clusterNodes {
+				idx := k8sIndex{name: cn.Name, ready: cn.Ready, Labels: cn.Labels}
+				k8sByName[cn.Name] = idx
 				for _, ip := range cn.InternalIPs {
-					k8sByIP[ip] = k8sIndex{name: cn.Name, ready: cn.Ready}
+					k8sByIP[ip] = idx
 				}
 			}
 		})
@@ -106,7 +110,13 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 			r.HeadscaleUser = hs.node.User.Name
 		}
 
-		if kn, ok := k8sByIP[n.TailscaleIP]; ok {
+		kn, ok := k8sByIP[n.TailscaleIP]
+		if !ok {
+			// k3s may report the host's real NIC IP rather than the WireGuard IP.
+			// Fall back to matching by node name.
+			kn, ok = k8sByName[n.Name]
+		}
+		if ok {
 			r.K8sMember = true
 			r.K8sReady = kn.ready
 			r.K8sNodeName = kn.name
@@ -115,6 +125,16 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 				r.Status = db.NodeOnline
 			} else {
 				r.Status = db.NodeOffline
+			}
+			// Reconcile mesh_role labels: if the DB has a role set but the k8s node
+			// doesn't have the expected label yet (e.g. node just joined k3s after
+			// self-register), apply them async so the next request sees them.
+			if n.MeshRole != "" && h.svc.K8s != nil && !meshRoleLabelsMatch(kn.Labels, n.MeshRole) {
+				go func(name string, role db.MeshRole) {
+					if err := appk8s.SetNodeMeshRole(context.Background(), h.svc.K8s, name, role); err != nil {
+						log.Printf("warning: reconcile mesh role labels for %s: %v", name, err)
+					}
+				}(kn.name, n.MeshRole)
 			}
 		}
 
@@ -174,8 +194,9 @@ type UpdateNodeInput struct {
 	OrgID  string `path:"orgId"`
 	NodeID string `path:"nodeId"`
 	Body   struct {
-		Name    string `json:"name,omitempty"     maxLength:"100"`
-		K3sRole string `json:"k3s_role,omitempty" enum:"server,agent"`
+		Name     string `json:"name,omitempty"      maxLength:"100"`
+		K3sRole  string `json:"k3s_role,omitempty"  enum:"server,agent"`
+		MeshRole string `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder"`
 	}
 }
 
@@ -328,11 +349,18 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 		return nil, err
 	}
 	node, err := h.svc.Nodes.Update(ctx, nodeID, service.UpdateNodeInput{
-		Name:    input.Body.Name,
-		K3sRole: db.K3sRole(input.Body.K3sRole),
+		Name:     input.Body.Name,
+		K3sRole:  db.K3sRole(input.Body.K3sRole),
+		MeshRole: db.MeshRole(input.Body.MeshRole),
 	})
 	if err != nil {
 		return nil, notFound(err)
+	}
+	// Apply k8s labels/taints if mesh_role changed and k8s client is available.
+	if input.Body.MeshRole != "" && h.svc.K8s != nil {
+		if err := appk8s.SetNodeMeshRole(ctx, h.svc.K8s, node.Name, node.MeshRole); err != nil {
+			log.Printf("warning: apply mesh role to k8s node %s: %v", node.Name, err)
+		}
 	}
 	r := h.enrichNode(ctx, node)
 	return &UpdateNodeOutput{Body: &r}, nil
@@ -416,17 +444,31 @@ func (h *Handler) GetClusterJoinToken(ctx context.Context, _ *struct{}) (*Cluste
 // over the WireGuard mesh after joining Headscale.
 type SelfRegisterNodeInput struct {
 	Body struct {
-		Token       string `json:"token"        minLength:"1"`
-		Name        string `json:"name"         minLength:"1" maxLength:"100"`
-		TailscaleIP string `json:"tailscale_ip" minLength:"1"`
+		Token       string      `json:"token"        minLength:"1"`
+		Name        string      `json:"name"         minLength:"1" maxLength:"100"`
+		TailscaleIP string      `json:"tailscale_ip" minLength:"1"`
+		MeshRole    db.MeshRole `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder"`
 	}
 }
 
 func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeInput) (*RegisterNodeOutput, error) {
-	node, err := h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP)
+	node, err := h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole)
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid or unknown registration token")
 	}
 	r := h.enrichNode(ctx, node)
 	return &RegisterNodeOutput{Body: &r}, nil
+}
+
+// meshRoleLabelsMatch returns true if the k8s node's labels already reflect the
+// desired MeshRole, meaning no reconciliation is needed.
+func meshRoleLabelsMatch(labels map[string]string, role db.MeshRole) bool {
+	const key = "meshploy.com/role"
+	val, hasLabel := labels[key]
+	switch role {
+	case db.MeshRoleWorkloadBuilder, db.MeshRoleBuilder:
+		return hasLabel && val == "builder"
+	default: // workload
+		return !hasLabel
+	}
 }

@@ -33,6 +33,18 @@ const (
 	K3sRoleAgent  K3sRole = "agent"
 )
 
+// MeshRole controls which workloads are scheduled on a node via k8s labels/taints.
+type MeshRole string
+
+const (
+	// MeshRoleWorkloadBuilder (default) — accepts both customer workloads and build jobs.
+	MeshRoleWorkloadBuilder MeshRole = "workload_builder"
+	// MeshRoleWorkload — customer workloads only, no build jobs.
+	MeshRoleWorkload MeshRole = "workload"
+	// MeshRoleBuilder — build jobs only; tainted so customer workloads can't land here.
+	MeshRoleBuilder MeshRole = "builder"
+)
+
 type ServiceType string
 
 const (
@@ -228,10 +240,12 @@ type Node struct {
 	LastSeenAt     *time.Time `json:"last_seen_at"`
 
 	// K3s
-	K3sRole    K3sRole    `gorm:"type:varchar(10);not null;default:'agent'" json:"k3s_role"`
+	K3sRole    K3sRole    `gorm:"type:varchar(10);not null;default:'agent'"    json:"k3s_role"`
 	K3sVersion string     `json:"k3s_version"` // e.g. "v1.28.4+k3s1"
-	K3sLabels  JSONObject `gorm:"type:jsonb;default:'{}'"                   json:"k3s_labels"`
+	K3sLabels  JSONObject `gorm:"type:jsonb;default:'{}'"                      json:"k3s_labels"`
 	// e.g. {"meshploy.com/role": "builder", "topology.kubernetes.io/region": "us-east"}
+	MeshRole MeshRole `gorm:"type:varchar(20);not null;default:''" json:"mesh_role"`
+	// workload_builder | workload | builder — controls k8s labels/taints applied to this node
 
 	// Capacity — populated by node agent heartbeat
 	CPUCores float32 `json:"cpu_cores"`
