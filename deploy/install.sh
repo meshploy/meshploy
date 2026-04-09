@@ -223,6 +223,27 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server installed and started"
   fi
 
+  # ── Allow Docker bridge networks to reach k3s API (port 6443) ──────────────
+  # The Meshploy API runs in Docker. When it connects to k3s at
+  # host.docker.internal:6443, traffic comes from a Docker bridge subnet
+  # (172.16.0.0/12). UFW and firewalld block this by default.
+  if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+    if ! ufw status | grep -q "6443"; then
+      ufw allow from 172.16.0.0/12 to any port 6443 comment "k3s API — Docker bridge access" >/dev/null
+      success "UFW: allowed Docker bridge networks → port 6443"
+    else
+      success "UFW: port 6443 already allowed"
+    fi
+  elif command -v firewall-cmd &>/dev/null && firewall-cmd --state 2>/dev/null | grep -q "running"; then
+    if ! firewall-cmd --list-rich-rules | grep -q "6443"; then
+      firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.16.0.0/12" port port="6443" protocol="tcp" accept'
+      firewall-cmd --reload >/dev/null
+      success "firewalld: allowed Docker bridge networks → port 6443"
+    else
+      success "firewalld: port 6443 already allowed"
+    fi
+  fi
+
   # Read the node token (written by k3s on first start)
   K3S_TOKEN_FILE="/var/lib/rancher/k3s/server/node-token"
   MAX_K3S_WAIT=30; K3S_WAITED=0

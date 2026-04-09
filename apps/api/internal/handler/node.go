@@ -48,9 +48,13 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 
 	type hsIndex struct{ node service.HeadscaleNode }
 	type k8sIndex struct {
-		name   string
-		ready  bool
-		Labels map[string]string
+		name       string
+		ready      bool
+		Labels     map[string]string
+		cpuCores   float32
+		memoryGB   float32
+		diskGB     float32
+		k3sVersion string
 	}
 
 	hsByIP := make(map[string]hsIndex)
@@ -82,7 +86,15 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 				return
 			}
 			for _, cn := range clusterNodes {
-				idx := k8sIndex{name: cn.Name, ready: cn.Ready, Labels: cn.Labels}
+				idx := k8sIndex{
+					name:       cn.Name,
+					ready:      cn.Ready,
+					Labels:     cn.Labels,
+					cpuCores:   cn.CPUCores,
+					memoryGB:   cn.MemoryGB,
+					diskGB:     cn.DiskGB,
+					k3sVersion: cn.K3sVersion,
+				}
 				k8sByName[cn.Name] = idx
 				for _, ip := range cn.InternalIPs {
 					k8sByIP[ip] = idx
@@ -120,6 +132,11 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 			r.K8sMember = true
 			r.K8sReady = kn.ready
 			r.K8sNodeName = kn.name
+			// Override hardware fields with live k8s capacity data.
+			r.CPUCores = kn.cpuCores
+			r.MemoryGB = kn.memoryGB
+			r.DiskGB = kn.diskGB
+			r.K3sVersion = kn.k3sVersion
 			// Reflect live cluster readiness in the status field.
 			if kn.ready {
 				r.Status = db.NodeOnline

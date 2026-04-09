@@ -15,12 +15,17 @@ import (
 const meshRoleLabelKey = "meshploy.com/role"
 const meshRoleBuilderValue = "builder"
 
-// ClusterNode holds a k8s node's name, readiness, internal IPs, and labels.
+// ClusterNode holds a k8s node's name, readiness, internal IPs, labels, and hardware capacity.
 type ClusterNode struct {
 	Name        string
 	Ready       bool
 	InternalIPs []string
 	Labels      map[string]string
+	// Hardware capacity from node.Status.Capacity
+	CPUCores   float32
+	MemoryGB   float32
+	DiskGB     float32
+	K3sVersion string // e.g. "v1.34.6+k3s1"
 }
 
 // GetClusterNodes returns all nodes in the k8s cluster with their Ready status,
@@ -33,7 +38,11 @@ func GetClusterNodes(ctx context.Context, client kubernetes.Interface) ([]Cluste
 
 	out := make([]ClusterNode, 0, len(list.Items))
 	for _, n := range list.Items {
-		cn := ClusterNode{Name: n.Name, Labels: n.Labels}
+		cn := ClusterNode{
+			Name:       n.Name,
+			Labels:     n.Labels,
+			K3sVersion: n.Status.NodeInfo.KubeletVersion,
+		}
 		for _, cond := range n.Status.Conditions {
 			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
 				cn.Ready = true
@@ -44,6 +53,15 @@ func GetClusterNodes(ctx context.Context, client kubernetes.Interface) ([]Cluste
 			if addr.Type == corev1.NodeInternalIP {
 				cn.InternalIPs = append(cn.InternalIPs, addr.Address)
 			}
+		}
+		if cpu, ok := n.Status.Capacity[corev1.ResourceCPU]; ok {
+			cn.CPUCores = float32(cpu.MilliValue()) / 1000.0
+		}
+		if mem, ok := n.Status.Capacity[corev1.ResourceMemory]; ok {
+			cn.MemoryGB = float32(mem.Value()) / (1024 * 1024 * 1024)
+		}
+		if disk, ok := n.Status.Capacity["ephemeral-storage"]; ok {
+			cn.DiskGB = float32(disk.Value()) / (1024 * 1024 * 1024)
 		}
 		out = append(out, cn)
 	}

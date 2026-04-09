@@ -8,6 +8,14 @@ Deploy apps, provision managed databases, and ship to a global distributed clust
 
 ---
 
+## How Meshploy Differs
+
+Meshploy makes deliberate architectural choices that differ from how most platforms approach the same problems — no Ingress controller, no cert-manager, no external CI runners, encrypted DB columns instead of K8s Secrets, and a WireGuard mesh instead of cloud VPC lock-in.
+
+[**CONCEPTS.md**](./CONCEPTS.md) walks through each of these decisions: what the standard approach is, what Meshploy does instead, and why.
+
+---
+
 ## How It Works
 
 ```
