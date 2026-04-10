@@ -253,7 +253,7 @@ export const cluster = {
     apiFetch<{ token: string; server_url: string }>("/api/v1/cluster/join-token", {}, token),
 
   getHeadscalePreAuthKey: (token: string) =>
-    apiFetch<{ key: string; reusable: boolean; expiration: string; headscale_url: string }>(
+    apiFetch<{ has_active_key: boolean; headscale_url: string }>(
       "/api/v1/cluster/headscale-preauth-key",
       {},
       token

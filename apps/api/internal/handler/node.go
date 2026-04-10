@@ -505,27 +505,40 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 
 // ─── Headscale preauth key ───────────────────────────────────────────────────
 
+// HeadscalePreAuthKeyStatusOutput is returned by GET — existence only, never the key value.
+// Headscale's list endpoint returns masked/truncated key material; only the CREATE
+// response contains the full value safe to pass to `tailscale up`.
+type HeadscalePreAuthKeyStatusOutput struct {
+	Body struct {
+		HasActiveKey bool   `json:"has_active_key"`
+		HeadscaleURL string `json:"headscale_url"`
+	}
+}
+
+// HeadscalePreAuthKeyOutput is returned by POST — contains the full key from the CREATE response.
 type HeadscalePreAuthKeyOutput struct {
 	Body struct {
 		Key          string    `json:"key"`
 		Reusable     bool      `json:"reusable"`
 		Expiration   time.Time `json:"expiration"`
-		HeadscaleURL string    `json:"headscale_url"` // server URL — needed for `tailscale up`
+		HeadscaleURL string    `json:"headscale_url"`
 	}
 }
 
-// GetHeadscalePreAuthKey returns the most recent active (non-expired, reusable) preauth key.
-// Returns an empty key string if Headscale is not configured or no active key exists.
-func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyOutput, error) {
+// GetHeadscalePreAuthKey reports whether an active reusable preauth key exists.
+// It deliberately does NOT return the key value — Headscale's list endpoint masks
+// key material, so any value returned would be truncated and unusable by tailscale.
+// To get a usable key, call POST to generate a fresh one.
+func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyStatusOutput, error) {
 	if _, err := requireUser(ctx); err != nil {
 		return nil, err
 	}
-	out := &HeadscalePreAuthKeyOutput{}
+	out := &HeadscalePreAuthKeyStatusOutput{}
 	if h.cfg != nil {
 		out.Body.HeadscaleURL = h.cfg.HeadscaleURL
 	}
 	if h.svc.Headscale == nil {
-		return out, nil // Headscale not configured — return empty, let UI handle it
+		return out, nil
 	}
 
 	user := "meshploy"
@@ -534,18 +547,14 @@ func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*Hea
 	}
 	keys, err := h.svc.Headscale.ListPreAuthKeys(ctx, user)
 	if err != nil {
-		// Non-fatal: return empty rather than 5xx so the UI degrades gracefully
-		return out, nil
+		return out, nil // non-fatal — UI shows "no active key"
 	}
 
-	// Pick the newest non-expired reusable key.
 	now := time.Now()
 	for i := len(keys) - 1; i >= 0; i-- {
 		k := keys[i]
 		if k.Reusable && !k.Expiration.IsZero() && k.Expiration.After(now) {
-			out.Body.Key = k.Key
-			out.Body.Reusable = k.Reusable
-			out.Body.Expiration = k.Expiration
+			out.Body.HasActiveKey = true
 			break
 		}
 	}
