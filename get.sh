@@ -48,10 +48,10 @@ esac
 
 # ── Download CLI binary ───────────────────────────────────────────────────────
 if [[ -n "${GITHUB_PAT:-}" ]]; then
-  CLI_URL="https://${GITHUB_PAT}@api.github.com/repos/${REPO}/releases/latest"
+  CLI_URL="https://${GITHUB_PAT}@api.github.com/repos/${REPO}/releases/tags/cli-latest"
   AUTH_HEADER="Authorization: token ${GITHUB_PAT}"
 else
-  CLI_URL="https://api.github.com/repos/${REPO}/releases/latest"
+  CLI_URL="https://api.github.com/repos/${REPO}/releases/tags/cli-latest"
   AUTH_HEADER=""
 fi
 
