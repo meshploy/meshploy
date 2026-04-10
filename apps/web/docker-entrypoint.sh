@@ -6,7 +6,7 @@ set -e
 
 cat > /usr/share/nginx/html/config.js <<'EOF'
 window.__MESHPLOY_CONFIG__ = {
-  apiUrl: "/api"
+  apiUrl: ""
 };
 EOF
 

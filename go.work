@@ -2,6 +2,7 @@ go 1.25.8
 
 use (
 	./apps/api
+	./apps/cli
 	./apps/proxy
 	./packages/db
 )
