@@ -60,11 +60,14 @@ services:
       - caddy_config:/config
 
   # ── Meshploy API ───────────────────────────────────────────────────────────
+  # Port 4000 binds on all interfaces so worker nodes can reach the API over the
+  # WireGuard mesh (100.64.0.1:4000). External traffic goes through Caddy on 443;
+  # the API is JWT-authenticated so direct access on 4000 is safe.
   api:
     image: ghcr.io/meshploy/api:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4000:4000"
+      - "4000:4000"
     environment:
       DATABASE_URL:      postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
       JWT_SECRET:        ${JWT_SECRET}
