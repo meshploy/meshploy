@@ -8,6 +8,21 @@ Deploy apps, provision managed databases, and ship to a global distributed clust
 
 ---
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [CLAUDE.md](./CLAUDE.md) | Coding standards, architecture overview, safety guardrails — read this first |
+| [CONCEPTS.md](./CONCEPTS.md) | Architectural decisions — what Meshploy does differently and why |
+| [apps/api/README.md](./apps/api/README.md) | REST API — routes, node enrichment, self-register/deregister |
+| [apps/proxy/README.md](./apps/proxy/README.md) | Edge proxy — "Ask & Resolve" routing, route cache |
+| [apps/web/README.md](./apps/web/README.md) | Web dashboard — stack, API client, production build |
+| [apps/web/AGENTS.md](./apps/web/AGENTS.md) | Web coding rules — @base-ui/react patterns, TanStack Router conventions |
+| [apps/cli/README.md](./apps/cli/README.md) | CLI — installation, all commands, config file, workflows |
+| [packages/db/README.md](./packages/db/README.md) | Shared DB models — schema, migrations, encryption, CE/EE boundary |
+
+---
+
 ## How Meshploy Differs
 
 Meshploy makes deliberate architectural choices that differ from how most platforms approach the same problems — no Ingress controller, no cert-manager, no external CI runners, encrypted DB columns instead of K8s Secrets, and a WireGuard mesh instead of cloud VPC lock-in.
@@ -41,9 +56,35 @@ User → Caddy (TLS) → Go Proxy → WireGuard Mesh → K3s Worker Node
 |---|---|
 | `apps/api` | Go · Chi · Huma (OpenAPI 3.1) |
 | `apps/proxy` | Go · `net/http` |
-| `apps/web` | Next.js 15 · App Router · Tailwind · shadcn/ui |
+| `apps/web` | Vite · React 19 · TanStack Router · Tailwind · shadcn/ui |
+| `apps/cli` | Go · Cobra — static binary for node & cluster management |
 | `packages/db` | Go · GORM · PostgreSQL |
 | Infrastructure | Headscale · K3s · CoreDNS · Caddy |
+
+---
+
+## CLI
+
+The `meshploy` CLI lets you manage nodes and authenticate from the terminal without the web dashboard. It is installed automatically by `get.sh` and lives at `/usr/local/bin/meshploy`.
+
+```bash
+# Authenticate against your instance
+meshploy auth login --api-url https://app.your-domain.com
+
+# Manage nodes
+meshploy node list
+meshploy node delete <id>
+meshploy node token get
+
+# Install/uninstall a node (requires root, shells out to install.sh / uninstall.sh)
+sudo meshploy node install
+sudo meshploy node uninstall
+
+# Update the CLI on an existing node without re-running install
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)" _ --cli-only
+```
+
+See [**apps/cli/README.md**](./apps/cli/README.md) for the full command reference.
 
 ---
 
@@ -67,24 +108,19 @@ User → Caddy (TLS) → Go Proxy → WireGuard Mesh → K3s Worker Node
 ```
 meshploy/
 ├── apps/
-│   ├── api/              # REST API — Chi + Huma, OpenAPI 3.1
-│   │   ├── main.go
-│   │   └── internal/
-│   │       ├── config/   # Typed env config
-│   │       ├── handler/  # Huma operation handlers (thin HTTP layer)
-│   │       ├── middleware/  # JWT auth
-│   │       ├── server/   # Chi router + Huma wiring
-│   │       └── service/  # Business logic
-│   ├── proxy/            # Edge router — "Ask & Resolve" L7 proxy
-│   └── web/              # Next.js dashboard + setup wizard
+│   ├── api/          # REST API — Chi + Huma, OpenAPI 3.1
+│   ├── proxy/        # Edge proxy — "Ask & Resolve" L7 routing over WireGuard mesh
+│   ├── cli/          # meshploy CLI — static binary for node & cluster management
+│   └── web/          # Dashboard — Vite + React 19 + TanStack Router
 ├── packages/
-│   └── db/               # Shared GORM models — imported by api and proxy
-│       ├── models.go     # All 18 CE table definitions
+│   └── db/           # Shared GORM models — imported by api and proxy
+│       ├── models.go     # All 19 CE table definitions
 │       ├── db.go         # Open(), Migrate(), RegisterMigration() (EE hook)
 │       ├── types.go      # Custom JSONB types (EnvVarsMap, JSONObject, StringArray)
 │       └── crypto.go     # AES-256-GCM EncryptedString type
 ├── deploy/
 │   ├── docker-compose.yml   # Production: pulls images from GHCR
+│   ├── caddy/               # Custom Caddy build with CoreDNS DNS-01 plugin
 │   ├── headscale/           # Headscale config
 │   └── coredns/             # CoreDNS zones + Corefile
 ├── go.work                  # Go workspace — links all Go modules
@@ -149,6 +185,7 @@ All operations go through `get.sh` — no Docker Compose commands needed.
 | `sudo bash -c "$(curl -fsSL URL)" _ --reinstall` | Update images and config, **preserve** database and TLS certs |
 | `sudo bash -c "$(curl -fsSL URL)" _ --reinstall --wipe-data` | Full reinstall from scratch, wipes database and TLS cert cache |
 | `sudo bash -c "$(curl -fsSL URL)" _ --uninstall` | Remove Meshploy (interactive) |
+| `sudo bash -c "$(curl -fsSL URL)" _ --cli-only` | Install or update the `meshploy` CLI binary only — safe on existing nodes |
 
 > Replace `URL` with `https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh`
 
@@ -220,32 +257,9 @@ Dashboard at `http://localhost:5173`
 
 ## API
 
-Meshploy exposes a fully documented OpenAPI 3.1 REST API.
+Meshploy exposes a fully documented OpenAPI 3.1 REST API. Interactive docs are served at `GET /docs`.
 
-| Resource | Base path |
-|---|---|
-| Auth | `/api/v1/auth` |
-| Organizations | `/api/v1/orgs` |
-| Projects | `/api/v1/orgs/{orgId}/projects` |
-| Nodes | `/api/v1/orgs/{orgId}/nodes` |
-| Services | `/api/v1/orgs/{orgId}/projects/{projectId}/services` |
-| Routes | `/api/v1/orgs/{orgId}/projects/{projectId}/routes` |
-| Deployments | `/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments` |
-
-Interactive docs: `GET /docs` — served automatically by Huma.
-
----
-
-## Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL DSN |
-| `JWT_SECRET` | Yes | Secret for signing JWTs |
-| `ENCRYPTION_KEY` | Yes | 32-char key for AES-256 field encryption |
-| `API_PORT` | No | API listen port (default: `4000`) |
-| `HEADSCALE_URL` | No | Headscale API URL (default: `http://localhost:8080`) |
-| `HEADSCALE_API_KEY` | No | Headscale API key |
+See [**apps/api/README.md**](./apps/api/README.md) for the full route reference.
 
 ---
 

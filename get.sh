@@ -12,6 +12,7 @@
 #     sudo bash -c "$(curl -fsSL URL)" _ --reinstall
 #     sudo bash -c "$(curl -fsSL URL)" _ --reinstall --wipe-data
 #     sudo bash -c "$(curl -fsSL URL)" _ --uninstall
+#     sudo bash -c "$(curl -fsSL URL)" _ --cli-only   # install/update CLI binary only
 #
 set -euo pipefail
 
@@ -27,11 +28,13 @@ die()     { echo -e "${RED}  ✘${RESET}  $*" >&2; exit 1; }
 
 MODE="install"
 WIPE_DATA=false
+CLI_ONLY=false
 for arg in "$@"; do
   case "$arg" in
     --uninstall)  MODE="uninstall" ;;
     --reinstall)  MODE="reinstall" ;;
     --wipe-data)  WIPE_DATA=true ;;
+    --cli-only)   CLI_ONLY=true ;;
   esac
 done
 
@@ -56,7 +59,6 @@ else
 fi
 
 info "Downloading Meshploy CLI (linux/${CLI_ARCH})…"
-# Resolve the download URL from the latest release asset list
 if [[ -n "$AUTH_HEADER" ]]; then
   ASSET_URL=$(curl -fsSL -H "$AUTH_HEADER" "$CLI_URL" \
     | grep -o "\"browser_download_url\":[[:space:]]*\"[^\"]*meshploy-linux-${CLI_ARCH}\"" \
@@ -68,8 +70,6 @@ else
 fi
 
 if [[ -z "${ASSET_URL:-}" ]]; then
-  # Fall back to building from source is not feasible in get.sh;
-  # exit with a clear message so users know what to do.
   die "Could not find a CLI release asset for linux/${CLI_ARCH}. \
 Is this a development branch? Set MESHPLOY_BRANCH or download manually."
 fi
@@ -81,6 +81,14 @@ else
 fi
 chmod +x "$CLI_BIN"
 success "meshploy CLI installed at ${CLI_BIN}"
+
+# ── CLI-only mode — stop here ─────────────────────────────────────────────────
+if $CLI_ONLY; then
+  echo
+  echo -e "  ${BOLD}meshploy$(${CLI_BIN} --version 2>/dev/null || true)${RESET}"
+  echo -e "  Run ${BOLD}meshploy --help${RESET} to get started."
+  exit 0
+fi
 
 # ── Download deploy/ via tarball ──────────────────────────────────────────────
 # Only the deploy/ directory is needed — source code ships in Docker images.
