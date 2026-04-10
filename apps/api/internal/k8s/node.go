@@ -120,6 +120,17 @@ func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName 
 	return err
 }
 
+// DeleteNode removes the node object from the k8s cluster. This does not stop
+// the k3s-agent process on the worker — the user must run k3s-agent-uninstall.sh
+// manually (or the future CLI will do it). Non-fatal if the node doesn't exist.
+func DeleteNode(ctx context.Context, client kubernetes.Interface, nodeName string) error {
+	err := client.CoreV1().Nodes().Delete(ctx, nodeName, metav1.DeleteOptions{})
+	if err != nil {
+		return fmt.Errorf("k8s delete node %s: %w", nodeName, err)
+	}
+	return nil
+}
+
 // systemNamespaces are excluded from the active-projects list shown in the UI.
 var systemNamespaces = map[string]bool{
 	"kube-system":      true,

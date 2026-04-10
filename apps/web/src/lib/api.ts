@@ -201,6 +201,9 @@ export const nodes = {
       { method: "POST" },
       token
     ),
+
+  delete: (orgId: string, nodeId: string, token: string) =>
+    apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "DELETE" }, token),
 }
 
 export interface ApiService {

@@ -233,9 +233,10 @@ type Project struct {
 
 type Node struct {
 	Base
-	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                   json:"organization_id"`
-	Name           string     `gorm:"not null"                                   json:"name"`
-	TailscaleIP    string     `gorm:"not null"                                   json:"tailscale_ip"`
+	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                    json:"organization_id"`
+	Name           string     `gorm:"not null"                                    json:"name"`
+	TailscaleIP    string     `gorm:"not null"                                    json:"tailscale_ip"`
+	HeadscaleID    string     `gorm:"default:''"                                  json:"headscale_id"` // Headscale peer ID — stable across IP changes
 	Status         NodeStatus `gorm:"type:varchar(10);not null;default:'offline'" json:"status"`
 	LastSeenAt     *time.Time `json:"last_seen_at"`
 
