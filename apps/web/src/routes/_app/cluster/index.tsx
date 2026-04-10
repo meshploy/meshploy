@@ -17,7 +17,7 @@ import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
-import { nodes as nodesApi, cluster as clusterApi, toNode } from "@/lib/api"
+import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -146,8 +146,9 @@ function ClusterPage() {
       </div>
 
       {/* Tokens row */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <NodeRegistrationTokenPanel />
+        <HeadscalePreAuthKeyPanel />
         <K3sJoinTokenPanel />
       </div>
     </div>
@@ -271,6 +272,115 @@ function NodeRegistrationTokenPanel() {
               </div>
               <p className="text-[11px] text-muted-foreground/60">
                 The worker connects to the API over the WireGuard mesh ({meshApiUrl}) — no public internet needed after joining Headscale.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Headscale preauth key panel ─────────────────────────────────────────────
+
+function HeadscalePreAuthKeyPanel() {
+  const token = useAuthStore((s) => s.token)!
+  const [visible, setVisible] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [preAuthKey, setPreAuthKey] = useState<{ key: string; headscale_url: string; expiration: string } | null>(null)
+  const [unavailable, setUnavailable] = useState(false)
+
+  const { mutate: generate, isPending: generating } = useMutation({
+    mutationFn: () => clusterApi.createHeadscalePreAuthKey(token),
+    onSuccess: (res) => {
+      setPreAuthKey(res)
+      setVisible(true)
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 503) {
+        setUnavailable(true)
+      }
+    },
+  })
+
+  const copy = async (text: string) => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const tailscaleCmd = preAuthKey
+    ? `tailscale up \\\n  --login-server="${preAuthKey.headscale_url}" \\\n  --authkey="${preAuthKey.key}"`
+    : ""
+
+  return (
+    <div className="rounded-lg border border-border/60 overflow-hidden">
+      <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Headscale preauth key</p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs gap-1.5"
+          onClick={() => generate()}
+          disabled={generating || unavailable}
+        >
+          {generating ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3 w-3" />
+          )}
+          {preAuthKey ? "New key" : "Generate key"}
+        </Button>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {unavailable ? (
+          <p className="text-sm text-muted-foreground">
+            Headscale is not configured on this gateway.
+          </p>
+        ) : !preAuthKey ? (
+          <p className="text-sm text-muted-foreground">
+            Generate a reusable preauth key to join the WireGuard mesh.
+          </p>
+        ) : (
+          <>
+            {/* Key display */}
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground font-medium">Preauth key</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                  {visible ? preAuthKey.key : "•".repeat(32)}
+                </code>
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
+                  {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(preAuthKey.key)}>
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </div>
+
+            {/* tailscale up command */}
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground font-medium">Run on the worker machine</p>
+              <div className="relative group">
+                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
+                  <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                  <code className="text-xs font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed">
+                    {tailscaleCmd}
+                  </code>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => copy(tailscaleCmd.replace(/\\\n  /g, " "))}
+                >
+                  {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground/60">
+                Key is reusable and valid for 1 year. Generate a new one to rotate.
               </p>
             </div>
           </>

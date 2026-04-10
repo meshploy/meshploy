@@ -306,6 +306,16 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetClusterJoinToken)
+
+	// Headscale preauth key — generates a fresh reusable key via the Headscale API
+	huma.Register(api, huma.Operation{
+		OperationID: "create-headscale-preauth-key",
+		Method:      "POST",
+		Path:        "/api/v1/cluster/headscale-preauth-key",
+		Summary:     "Generate a Headscale preauth key for joining the WireGuard mesh",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.CreateHeadscalePreAuthKey)
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -475,6 +485,44 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	}
 	r := h.enrichNode(ctx, node)
 	return &RegisterNodeOutput{Body: &r}, nil
+}
+
+// ─── Headscale preauth key ───────────────────────────────────────────────────
+
+type HeadscalePreAuthKeyOutput struct {
+	Body struct {
+		Key          string    `json:"key"`
+		Reusable     bool      `json:"reusable"`
+		Expiration   time.Time `json:"expiration"`
+		HeadscaleURL string    `json:"headscale_url"` // server URL — needed for `tailscale up`
+	}
+}
+
+// CreateHeadscalePreAuthKey generates a fresh reusable Headscale preauth key.
+// Workers use this with `tailscale up --login-server=<url> --authkey=<key>`.
+func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	if h.svc.Headscale == nil {
+		return nil, huma.NewError(503, "Headscale is not configured on this gateway")
+	}
+	user := "meshploy"
+	if h.cfg != nil && h.cfg.HeadscaleUser != "" {
+		user = h.cfg.HeadscaleUser
+	}
+	key, err := h.svc.Headscale.CreatePreAuthKey(ctx, user)
+	if err != nil {
+		return nil, huma.NewError(502, "failed to generate Headscale preauth key: "+err.Error())
+	}
+	out := &HeadscalePreAuthKeyOutput{}
+	out.Body.Key = key.Key
+	out.Body.Reusable = key.Reusable
+	out.Body.Expiration = key.Expiration
+	if h.cfg != nil {
+		out.Body.HeadscaleURL = h.cfg.HeadscaleURL
+	}
+	return out, nil
 }
 
 // meshRoleLabelsMatch returns true if the k8s node's labels already reflect the
