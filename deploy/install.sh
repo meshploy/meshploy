@@ -626,32 +626,41 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   header "Joining the Meshploy mesh"
   info "Connecting to ${HEADSCALE_URL}…"
 
-  # Detect if already connected to a different login server.
-  CURRENT_LOGIN_SERVER="$(tailscale status --json 2>/dev/null | grep -m1 '"LoginServerURL"' | cut -d'"' -f4 || true)"
-  FORCE_REAUTH_FLAG=""
-  if [[ -n "$CURRENT_LOGIN_SERVER" && "$CURRENT_LOGIN_SERVER" != "$HEADSCALE_URL" ]]; then
-    warn "This node is currently connected to a different Tailscale/Headscale network:"
-    warn "  Current : ${CURRENT_LOGIN_SERVER}"
-    warn "  Target  : ${HEADSCALE_URL}"
-    warn "Tailscale supports one login server at a time — switching will disconnect"
-    warn "this node from its current network. To rejoin it later you must manually"
-    warn "run: tailscale up --login-server=<old-url> --force-reauth"
+  # Warn if already connected to a *different* login server so the user can decide
+  # whether to switch. --force-reauth is always passed unconditionally below because
+  # tailscale refuses to re-authenticate with an authkey without it, even when the
+  # login server hasn't changed.
+  EXISTING_URL="$(tailscale status --json 2>/dev/null | grep -m1 '"LoginServerURL"' | cut -d'"' -f4 || true)"
+  if [[ -n "$EXISTING_URL" && "$EXISTING_URL" != "$HEADSCALE_URL" ]]; then
+    warn "This node is connected to a different network: ${EXISTING_URL}"
+    warn "Switching to ${HEADSCALE_URL} — it will disconnect from the current network."
+    warn "To rejoin it later: tailscale up --login-server=${EXISTING_URL} --force-reauth"
     echo
     if ! ask_yn "Switch networks and join the Meshploy mesh?"; then
       die "Aborted — node not joined to mesh."
     fi
-    FORCE_REAUTH_FLAG="--force-reauth"
   fi
 
+  # --force-reauth is always needed when specifying --authkey; it re-authenticates
+  # silently (no browser) and is safe to pass unconditionally.
   sudo tailscale up \
     --login-server="$HEADSCALE_URL" \
     --authkey="$PREAUTH_KEY" \
     --hostname="$NODE_HOSTNAME" \
     --accept-routes \
-    $FORCE_REAUTH_FLAG \
-    || warn "tailscale up returned non-zero — it may already be connected, check: tailscale status"
+    --force-reauth \
+    || die "tailscale up failed — check: sudo tailscale status"
 
-  MESH_IP_ASSIGNED="$(tailscale ip -4 2>/dev/null || echo "pending")"
+  # Wait up to 15 s for the WireGuard IP to be assigned.
+  MESH_IP_ASSIGNED=""
+  for _i in $(seq 1 15); do
+    MESH_IP_ASSIGNED="$(tailscale ip -4 2>/dev/null || true)"
+    [[ -n "$MESH_IP_ASSIGNED" ]] && break
+    sleep 1
+  done
+  if [[ -z "$MESH_IP_ASSIGNED" ]]; then
+    die "No mesh IP assigned after 15 s. Check: sudo tailscale status"
+  fi
   success "Joined mesh as '${NODE_HOSTNAME}' — mesh IP: ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
 
   # ── Node role selection ──────────────────────────────────────────────────────
@@ -673,8 +682,18 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   # ── Self-register with the Meshploy API ─────────────────────────────────────
   # Now on the mesh, so we can reach the master's API at its WireGuard IP.
   header "Registering node with Meshploy"
-  _REG_RESPONSE="$(curl -sf \
-    --max-time 10 \
+
+  # Verify the API is reachable over the mesh before attempting registration.
+  if ! curl -s --max-time 5 "${MESHPLOY_API_URL}/api/v1/auth/login" -o /dev/null 2>/dev/null; then
+    warn "Cannot reach ${MESHPLOY_API_URL} — WireGuard routing may not be ready yet."
+    warn "Waiting 5 s for routes to propagate…"
+    sleep 5
+  fi
+
+  # Note: -f is intentionally omitted so HTTP error bodies (e.g. 401 invalid token)
+  # are captured in _REG_RESPONSE and shown to the user instead of silently discarded.
+  _REG_RESPONSE="$(curl -s \
+    --max-time 15 \
     -X POST "${MESHPLOY_API_URL}/api/v1/nodes/self-register" \
     -H "Content-Type: application/json" \
     -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"name\":\"${NODE_HOSTNAME}\",\"tailscale_ip\":\"${MESH_IP_ASSIGNED}\",\"mesh_role\":\"${NODE_MESH_ROLE}\"}" \
@@ -684,7 +703,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     success "Node '${NODE_HOSTNAME}' registered in Meshploy (role: ${NODE_MESH_ROLE})"
   else
     warn "Auto-registration failed. You can register manually in the dashboard."
-    warn "Response: ${_REG_RESPONSE}"
+    warn "API response: ${_REG_RESPONSE:-<no response — API unreachable or connection timed out>}"
   fi
 
   # ── Optionally join k3s cluster ─────────────────────────────────────────────

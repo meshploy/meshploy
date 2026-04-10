@@ -152,6 +152,39 @@ func (h *HeadscaleService) CreatePreAuthKey(ctx context.Context, user string) (*
 	return &out.PreAuthKey, nil
 }
 
+// ListPreAuthKeys returns all preauth keys for the given Headscale user.
+// Headscale v0.28+ requires the numeric user ID as the `user` query param.
+func (h *HeadscaleService) ListPreAuthKeys(ctx context.Context, user string) ([]PreAuthKey, error) {
+	userID, err := h.resolveUserID(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/preauthkey?user="+userID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("headscale list preauth keys: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("headscale list preauth keys: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("headscale list preauth keys: unexpected status %d", resp.StatusCode)
+	}
+
+	var body struct {
+		PreAuthKeys []PreAuthKey `json:"preAuthKeys"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("headscale list preauth keys: decode: %w", err)
+	}
+	return body.PreAuthKeys, nil
+}
+
 // ListNodes calls GET {url}/api/v1/node and returns all nodes.
 func (h *HeadscaleService) ListNodes(ctx context.Context) ([]HeadscaleNode, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/node", nil)

@@ -314,12 +314,21 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetClusterJoinToken)
 
-	// Headscale preauth key — generates a fresh reusable key via the Headscale API
+	// Headscale preauth key — get the most recent active key, or generate a new one
+	huma.Register(api, huma.Operation{
+		OperationID: "get-headscale-preauth-key",
+		Method:      "GET",
+		Path:        "/api/v1/cluster/headscale-preauth-key",
+		Summary:     "Get the most recent active Headscale preauth key",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetHeadscalePreAuthKey)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "create-headscale-preauth-key",
 		Method:      "POST",
 		Path:        "/api/v1/cluster/headscale-preauth-key",
-		Summary:     "Generate a Headscale preauth key for joining the WireGuard mesh",
+		Summary:     "Generate a new Headscale preauth key for joining the WireGuard mesh",
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.CreateHeadscalePreAuthKey)
@@ -503,6 +512,44 @@ type HeadscalePreAuthKeyOutput struct {
 		Expiration   time.Time `json:"expiration"`
 		HeadscaleURL string    `json:"headscale_url"` // server URL — needed for `tailscale up`
 	}
+}
+
+// GetHeadscalePreAuthKey returns the most recent active (non-expired, reusable) preauth key.
+// Returns an empty key string if Headscale is not configured or no active key exists.
+func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	out := &HeadscalePreAuthKeyOutput{}
+	if h.cfg != nil {
+		out.Body.HeadscaleURL = h.cfg.HeadscaleURL
+	}
+	if h.svc.Headscale == nil {
+		return out, nil // Headscale not configured — return empty, let UI handle it
+	}
+
+	user := "meshploy"
+	if h.cfg != nil && h.cfg.HeadscaleUser != "" {
+		user = h.cfg.HeadscaleUser
+	}
+	keys, err := h.svc.Headscale.ListPreAuthKeys(ctx, user)
+	if err != nil {
+		// Non-fatal: return empty rather than 5xx so the UI degrades gracefully
+		return out, nil
+	}
+
+	// Pick the newest non-expired reusable key.
+	now := time.Now()
+	for i := len(keys) - 1; i >= 0; i-- {
+		k := keys[i]
+		if k.Reusable && !k.Expiration.IsZero() && k.Expiration.After(now) {
+			out.Body.Key = k.Key
+			out.Body.Reusable = k.Reusable
+			out.Body.Expiration = k.Expiration
+			break
+		}
+	}
+	return out, nil
 }
 
 // CreateHeadscalePreAuthKey generates a fresh reusable Headscale preauth key.
