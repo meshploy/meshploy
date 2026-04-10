@@ -185,6 +185,76 @@ func (h *HeadscaleService) ListPreAuthKeys(ctx context.Context, user string) ([]
 	return body.PreAuthKeys, nil
 }
 
+// GetNode calls GET {url}/api/v1/node/{id} and returns a single node by its
+// Headscale numeric ID. Prefer this over ListNodes when the ID is known.
+func (h *HeadscaleService) GetNode(ctx context.Context, id string) (*HeadscaleNode, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/node/"+id, nil)
+	if err != nil {
+		return nil, fmt.Errorf("headscale get node: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("headscale get node: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("headscale get node: unexpected status %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Node HeadscaleNode `json:"node"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("headscale get node: decode: %w", err)
+	}
+	return &body.Node, nil
+}
+
+// DeleteNode calls DELETE {url}/api/v1/node/{id} to remove a peer from Headscale.
+// Called when a Meshploy node is deleted so the WireGuard peer is also cleaned up.
+func (h *HeadscaleService) DeleteNode(ctx context.Context, id string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, h.url+"/api/v1/node/"+id, nil)
+	if err != nil {
+		return fmt.Errorf("headscale delete node: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("headscale delete node: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("headscale delete node: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// RenameNode calls POST {url}/api/v1/node/{id}/rename/{name} to update the
+// Headscale peer's given name, keeping MagicDNS in sync with Meshploy.
+func (h *HeadscaleService) RenameNode(ctx context.Context, id, name string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.url+"/api/v1/node/"+id+"/rename/"+name, nil)
+	if err != nil {
+		return fmt.Errorf("headscale rename node: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("headscale rename node: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("headscale rename node: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // ListNodes calls GET {url}/api/v1/node and returns all nodes.
 func (h *HeadscaleService) ListNodes(ctx context.Context) ([]HeadscaleNode, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/node", nil)

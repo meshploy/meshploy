@@ -752,6 +752,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       if ! curl -sfL https://get.k3s.io | \
           K3S_URL="$K3S_SERVER_URL" \
           K3S_TOKEN="$K3S_JOIN_TOKEN" \
+          K3S_NODE_NAME="$NODE_HOSTNAME" \
           sh -s - agent; then
         error "k3s agent install failed."
         warn "Last log lines:"

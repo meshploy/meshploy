@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	appk8s "github.com/meshploy/apps/api/internal/k8s"
 	"github.com/meshploy/apps/api/internal/service"
 	"github.com/meshploy/packages/db"
@@ -68,6 +69,20 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 
 	if h.svc.Headscale != nil {
 		wg.Go(func() {
+			// Single-node shortcut: when the node has a stored headscale_id use a
+			// direct GET /api/v1/node/{id} (O(1)) instead of listing all peers.
+			if len(nodes) == 1 && nodes[0].HeadscaleID != "" {
+				hn, err := h.svc.Headscale.GetNode(tctx, nodes[0].HeadscaleID)
+				if err != nil {
+					log.Printf("warning: headscale GetNode(%s): %v", nodes[0].HeadscaleID, err)
+					return
+				}
+				// Key by stored TailscaleIP so the match below always works,
+				// even if Headscale has assigned a new IP after re-registration.
+				hsByIP[nodes[0].TailscaleIP] = hsIndex{node: *hn}
+				return
+			}
+			// Multiple nodes (or no stored ID): full list scan.
 			hsNodes, err := h.svc.Headscale.ListNodes(tctx)
 			if err != nil {
 				log.Printf("warning: headscale ListNodes: %v", err)
@@ -126,6 +141,15 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 			// MagicDNS FQDN matches headscale config: base_domain = mesh.{DOMAIN}
 			if hs.node.GivenName != "" && h.cfg != nil && h.cfg.Domain != "" {
 				r.HeadscaleFQDN = fmt.Sprintf("%s.mesh.%s", hs.node.GivenName, h.cfg.Domain)
+			}
+			// Lazy backfill: store the headscale_id so future requests can use the
+			// direct GET /api/v1/node/{id} shortcut instead of a full list scan.
+			if n.HeadscaleID == "" && h.svc != nil {
+				go func(nID uuid.UUID, hsID string) {
+					if err := h.svc.Nodes.SetHeadscaleID(context.Background(), nID, hsID); err != nil {
+						log.Printf("warning: backfill headscale_id for node %s: %v", nID, err)
+					}
+				}(n.ID, hs.node.ID)
 			}
 		}
 
@@ -391,6 +415,11 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 	if err != nil {
 		return nil, err
 	}
+	// Fetch the current node so we know the stored headscale_id and old name.
+	current, err := h.svc.Nodes.Get(ctx, nodeID)
+	if err != nil {
+		return nil, notFound(err)
+	}
 	node, err := h.svc.Nodes.Update(ctx, nodeID, service.UpdateNodeInput{
 		Name:     input.Body.Name,
 		K3sRole:  db.K3sRole(input.Body.K3sRole),
@@ -398,6 +427,12 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 	})
 	if err != nil {
 		return nil, notFound(err)
+	}
+	// Keep Headscale MagicDNS in sync when the node is renamed.
+	if input.Body.Name != "" && input.Body.Name != current.Name && h.svc.Headscale != nil && current.HeadscaleID != "" {
+		if err := h.svc.Headscale.RenameNode(ctx, current.HeadscaleID, input.Body.Name); err != nil {
+			log.Printf("warning: rename headscale peer %s → %s: %v", current.Name, input.Body.Name, err)
+		}
 	}
 	// Apply k8s labels/taints if mesh_role changed and k8s client is available.
 	if input.Body.MeshRole != "" && h.svc.K8s != nil {
@@ -416,6 +451,29 @@ func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*struct
 	nodeID, err := parseUUID(input.NodeID)
 	if err != nil {
 		return nil, err
+	}
+	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	// The gateway/master node runs the control plane — deleting it would break
+	// everything. Block it at the API level regardless of UI state.
+	if node.K3sRole == db.K3sRoleServer {
+		return nil, huma.Error400BadRequest("the gateway node cannot be deleted")
+	}
+	// Remove the WireGuard peer from Headscale before deleting from the DB.
+	// Non-fatal: if Headscale is unavailable the DB record is still cleaned up.
+	if h.svc.Headscale != nil && node.HeadscaleID != "" {
+		if err := h.svc.Headscale.DeleteNode(ctx, node.HeadscaleID); err != nil {
+			log.Printf("warning: delete headscale peer %s for node %s: %v", node.HeadscaleID, node.Name, err)
+		}
+	}
+	// Remove the node object from the k3s cluster so it doesn't linger as NotReady.
+	// The k3s-agent process on the worker keeps running until manually uninstalled.
+	if h.svc.K8s != nil && node.Name != "" {
+		if err := appk8s.DeleteNode(ctx, h.svc.K8s, node.Name); err != nil {
+			log.Printf("warning: delete k8s node %s: %v", node.Name, err)
+		}
 	}
 	return nil, h.svc.Nodes.Delete(ctx, nodeID)
 }
@@ -498,6 +556,25 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	node, err := h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole)
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid or unknown registration token")
+	}
+	// Eagerly store the Headscale peer ID at registration time. The worker just
+	// called tailscale up so the peer already exists in Headscale.
+	if h.svc.Headscale != nil {
+		go func(nID uuid.UUID, ip string) {
+			hsNodes, err := h.svc.Headscale.ListNodes(context.Background())
+			if err != nil {
+				log.Printf("warning: SelfRegisterNode headscale lookup for %s: %v", ip, err)
+				return
+			}
+			for _, hn := range hsNodes {
+				if len(hn.IPAddresses) > 0 && hn.IPAddresses[0] == ip {
+					if err := h.svc.Nodes.SetHeadscaleID(context.Background(), nID, hn.ID); err != nil {
+						log.Printf("warning: SelfRegisterNode set headscale_id for %s: %v", nID, err)
+					}
+					return
+				}
+			}
+		}(node.ID, node.TailscaleIP)
 	}
 	r := h.enrichNode(ctx, node)
 	return &RegisterNodeOutput{Body: &r}, nil

@@ -81,6 +81,12 @@ func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, in UpdateNod
 	return &node, nil
 }
 
+// SetHeadscaleID stores the Headscale peer ID on the node for stable lookups.
+// Called after self-registration and as a lazy backfill during enrichNodes.
+func (s *NodeService) SetHeadscaleID(ctx context.Context, nodeID uuid.UUID, headscaleID string) error {
+	return s.db.WithContext(ctx).Model(&db.Node{}).Where("id = ?", nodeID).Update("headscale_id", headscaleID).Error
+}
+
 // UpdateRole sets the k3s role on a node. Used internally during gateway seeding.
 func (s *NodeService) UpdateRole(ctx context.Context, nodeID uuid.UUID, role db.K3sRole) error {
 	return s.db.WithContext(ctx).Model(&db.Node{}).Where("id = ?", nodeID).Update("k3s_role", role).Error

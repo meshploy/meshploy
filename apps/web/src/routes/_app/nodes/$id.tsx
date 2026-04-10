@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Cpu,
   HardDrive,
@@ -12,13 +12,16 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  Trash2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { useState } from "react"
 
 export const Route = createFileRoute("/_app/nodes/$id")({
   component: NodeDetailPage,
@@ -28,12 +31,23 @@ function NodeDetailPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const { id } = Route.useParams()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { data: node, isLoading, isError, error } = useQuery({
     queryKey: ["node", orgId, id],
     queryFn: () => nodesApi.get(orgId!, id, token),
     enabled: !!orgId,
     select: toNode,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => nodesApi.delete(orgId!, id, token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["nodes", orgId] })
+      navigate({ to: "/nodes" })
+    },
   })
 
   if (isLoading) {
@@ -58,25 +72,55 @@ function NodeDetailPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <NodeStatusDot status={node.status} className="h-2.5 w-2.5" />
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight">{node.name}</h1>
-            <Badge variant={node.k3sRole === "server" ? "default" : "secondary"} className="text-xs">
-              {node.k3sRole}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-3 mt-0.5">
-            <code className="text-xs font-mono text-muted-foreground">{node.tailscaleIP}</code>
-            <span className="text-xs text-muted-foreground">
-              {(() => {
-                const seen = node.lastSeenAt ?? node.headscaleLastSeen
-                return seen ? `Last seen ${formatRelativeTime(seen)}` : "Never seen"
-              })()}
-            </span>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <NodeStatusDot status={node.status} className="h-2.5 w-2.5" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight">{node.name}</h1>
+              <Badge variant={node.k3sRole === "server" ? "default" : "secondary"} className="text-xs">
+                {node.k3sRole}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-3 mt-0.5">
+              <code className="text-xs font-mono text-muted-foreground">{node.tailscaleIP}</code>
+              <span className="text-xs text-muted-foreground">
+                {(() => {
+                  const seen = node.lastSeenAt ?? node.headscaleLastSeen
+                  return seen ? `Last seen ${formatRelativeTime(seen)}` : "Never seen"
+                })()}
+              </span>
+            </div>
           </div>
         </div>
+
+        {/* Delete — server/gateway node cannot be removed */}
+        {node.k3sRole !== "server" && !confirmDelete ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Remove
+          </Button>
+        ) : node.k3sRole !== "server" && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Remove this node?</span>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Hardware spec cards */}
