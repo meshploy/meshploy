@@ -257,7 +257,7 @@ jobs:
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "cd ${{ env.DEPLOY_DIR }} && \
-             RUNTIME=\$(grep '^CONTAINER_RUNTIME=' .env 2>/dev/null | cut -d= -f2 || echo docker) && \
+             RUNTIME=\$(grep '^CONTAINER_RUNTIME=' .env 2>/dev/null | cut -d= -f2 | grep -m1 . || echo docker) && \
              \${RUNTIME} compose pull --quiet && \
              \${RUNTIME} compose up -d --remove-orphans"
 
