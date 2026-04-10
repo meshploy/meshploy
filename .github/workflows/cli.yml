@@ -1,0 +1,79 @@
+name: Build & Release CLI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/cli/**"
+      - "go.work"
+      - "go.work.sum"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build CLI binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          cd apps/cli
+          go build -ldflags="-s -w" -o "meshploy-${{ matrix.goos }}-${{ matrix.goarch }}" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meshploy-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: apps/cli/meshploy-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Create or update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cli-latest
+          name: "meshploy CLI (latest)"
+          body: |
+            Latest CLI build from `main`. Updated automatically on every change to `apps/cli/`.
+
+            **Install:**
+            ```bash
+            sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
+            ```
+          files: dist/*
+          make_latest: true
+          prerelease: false

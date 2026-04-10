@@ -17,6 +17,8 @@ set -euo pipefail
 
 INSTALL_DIR="/opt/meshploy"
 BRANCH="${MESHPLOY_BRANCH:-main}"
+CLI_BIN="/usr/local/bin/meshploy"
+REPO="meshploy/meshploy"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 info()    { echo -e "${CYAN}  →${RESET}  $*"; }
@@ -36,16 +38,58 @@ done
 [[ "$(uname -s)" != "Linux" ]] && die "Meshploy requires Linux."
 [[ "$EUID" -ne 0 ]] && die "Please run as root: sudo bash get.sh"
 
+# ── Detect architecture ───────────────────────────────────────────────────────
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64)  CLI_ARCH="amd64" ;;
+  aarch64) CLI_ARCH="arm64" ;;
+  *)       die "Unsupported architecture: $ARCH" ;;
+esac
+
+# ── Download CLI binary ───────────────────────────────────────────────────────
+if [[ -n "${GITHUB_PAT:-}" ]]; then
+  CLI_URL="https://${GITHUB_PAT}@api.github.com/repos/${REPO}/releases/latest"
+  AUTH_HEADER="Authorization: token ${GITHUB_PAT}"
+else
+  CLI_URL="https://api.github.com/repos/${REPO}/releases/latest"
+  AUTH_HEADER=""
+fi
+
+info "Downloading Meshploy CLI (linux/${CLI_ARCH})…"
+# Resolve the download URL from the latest release asset list
+if [[ -n "$AUTH_HEADER" ]]; then
+  ASSET_URL=$(curl -fsSL -H "$AUTH_HEADER" "$CLI_URL" \
+    | grep -o "\"browser_download_url\":[[:space:]]*\"[^\"]*meshploy-linux-${CLI_ARCH}\"" \
+    | grep -o 'https://[^"]*' || true)
+else
+  ASSET_URL=$(curl -fsSL "$CLI_URL" \
+    | grep -o "\"browser_download_url\":[[:space:]]*\"[^\"]*meshploy-linux-${CLI_ARCH}\"" \
+    | grep -o 'https://[^"]*' || true)
+fi
+
+if [[ -z "${ASSET_URL:-}" ]]; then
+  # Fall back to building from source is not feasible in get.sh;
+  # exit with a clear message so users know what to do.
+  die "Could not find a CLI release asset for linux/${CLI_ARCH}. \
+Is this a development branch? Set MESHPLOY_BRANCH or download manually."
+fi
+
+if [[ -n "$AUTH_HEADER" ]]; then
+  curl -fsSL -H "$AUTH_HEADER" -L -o "$CLI_BIN" "$ASSET_URL"
+else
+  curl -fsSL -L -o "$CLI_BIN" "$ASSET_URL"
+fi
+chmod +x "$CLI_BIN"
+success "meshploy CLI installed at ${CLI_BIN}"
+
 # ── Download deploy/ via tarball ──────────────────────────────────────────────
 # Only the deploy/ directory is needed — source code ships in Docker images.
 # curl + tar are always available; no git required.
 
 if [[ -n "${GITHUB_PAT:-}" ]]; then
-  TARBALL_URL="https://${GITHUB_PAT}@api.github.com/repos/meshploy/meshploy/tarball/${BRANCH}"
-  AUTH_HEADER="Authorization: token ${GITHUB_PAT}"
+  TARBALL_URL="https://${GITHUB_PAT}@api.github.com/repos/${REPO}/tarball/${BRANCH}"
 else
-  TARBALL_URL="https://api.github.com/repos/meshploy/meshploy/tarball/${BRANCH}"
-  AUTH_HEADER=""
+  TARBALL_URL="https://api.github.com/repos/${REPO}/tarball/${BRANCH}"
 fi
 
 mkdir -p "$INSTALL_DIR"
@@ -62,17 +106,17 @@ success "Deploy config ready at ${INSTALL_DIR}/"
 
 cd "$INSTALL_DIR"
 
-# ── Dispatch ──────────────────────────────────────────────────────────────────
+# ── Dispatch via CLI ──────────────────────────────────────────────────────────
 case "$MODE" in
   install|reinstall)
     if [[ "$MODE" == "reinstall" ]]; then
       EXTRA_FLAGS="--reinstall"
       $WIPE_DATA && EXTRA_FLAGS="$EXTRA_FLAGS --wipe-data"
-      exec bash install.sh $EXTRA_FLAGS
+      exec "$CLI_BIN" node install $EXTRA_FLAGS
     fi
-    exec bash install.sh
+    exec "$CLI_BIN" node install
     ;;
   uninstall)
-    exec bash uninstall.sh
+    exec "$CLI_BIN" node uninstall
     ;;
 esac

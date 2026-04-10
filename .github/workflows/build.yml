@@ -13,6 +13,7 @@ on:
       - "go.work"
       - "go.work.sum"
       - "get.sh"
+      - "apps/cli/**"
   workflow_dispatch:
 
 env:

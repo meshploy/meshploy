@@ -4,6 +4,11 @@ docs/
 # Go workspace
 go.work.sum
 
+# Go build output
+apps/cli/cli
+apps/cli/meshploy
+apps/cli/meshploy-*
+
 # Environment
 .env
 .env.local

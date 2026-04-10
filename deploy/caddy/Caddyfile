@@ -31,7 +31,7 @@ app.{$DOMAIN} {
             zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
         }
     }
-    handle_path /api/* {
+    handle /api/* {
         reverse_proxy localhost:4000
     }
     handle {
