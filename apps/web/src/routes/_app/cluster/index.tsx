@@ -285,21 +285,20 @@ function NodeRegistrationTokenPanel() {
 
 function HeadscalePreAuthKeyPanel() {
   const token = useAuthStore((s) => s.token)!
+  const queryClient = useQueryClient()
   const [visible, setVisible] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [preAuthKey, setPreAuthKey] = useState<{ key: string; headscale_url: string; expiration: string } | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["headscale-preauth-key"],
+    queryFn: () => clusterApi.getHeadscalePreAuthKey(token),
+  })
 
   const { mutate: generate, isPending: generating } = useMutation({
     mutationFn: () => clusterApi.createHeadscalePreAuthKey(token),
     onSuccess: (res) => {
-      setPreAuthKey(res)
+      queryClient.setQueryData(["headscale-preauth-key"], res)
       setVisible(true)
-    },
-    onError: (err) => {
-      if (err instanceof ApiError && err.status === 503) {
-        setUnavailable(true)
-      }
     },
   })
 
@@ -309,9 +308,14 @@ function HeadscalePreAuthKeyPanel() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const tailscaleCmd = preAuthKey
-    ? `tailscale up \\\n  --login-server="${preAuthKey.headscale_url}" \\\n  --authkey="${preAuthKey.key}"`
+  const key = data?.key ?? ""
+  const headscaleUrl = data?.headscale_url ?? ""
+  const tailscaleCmd = key
+    ? `tailscale up \\\n  --login-server="${headscaleUrl}" \\\n  --authkey="${key}" \\\n  --force-reauth`
     : ""
+
+  // Headscale not configured — GET returns empty headscale_url
+  const unavailable = !isLoading && !headscaleUrl
 
   return (
     <div className="rounded-lg border border-border/60 overflow-hidden">
@@ -322,23 +326,22 @@ function HeadscalePreAuthKeyPanel() {
           variant="outline"
           className="h-7 text-xs gap-1.5"
           onClick={() => generate()}
-          disabled={generating || unavailable}
+          disabled={generating || isLoading || unavailable}
         >
-          {generating ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3 w-3" />
-          )}
-          {preAuthKey ? "New key" : "Generate key"}
+          {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          {key ? "New key" : "Generate key"}
         </Button>
       </div>
 
       <div className="p-4 space-y-4">
-        {unavailable ? (
-          <p className="text-sm text-muted-foreground">
-            Headscale is not configured on this gateway.
-          </p>
-        ) : !preAuthKey ? (
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Loading…</span>
+          </div>
+        ) : unavailable ? (
+          <p className="text-sm text-muted-foreground">Headscale is not configured on this gateway.</p>
+        ) : !key ? (
           <p className="text-sm text-muted-foreground">
             Generate a reusable preauth key to join the WireGuard mesh.
           </p>
@@ -349,12 +352,12 @@ function HeadscalePreAuthKeyPanel() {
               <p className="text-xs text-muted-foreground font-medium">Preauth key</p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
-                  {visible ? preAuthKey.key : "•".repeat(32)}
+                  {visible ? key : "•".repeat(32)}
                 </code>
                 <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
                   {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(preAuthKey.key)}>
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(key)}>
                   {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>
               </div>
@@ -380,7 +383,7 @@ function HeadscalePreAuthKeyPanel() {
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground/60">
-                Key is reusable and valid for 1 year. Generate a new one to rotate.
+                Key is reusable and valid for 1 year. Click "New key" to rotate.
               </p>
             </div>
           </>
