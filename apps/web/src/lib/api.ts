@@ -89,6 +89,7 @@ export interface ApiNode {
   headscale_expiry: string | null
   headscale_tags: string[]
   headscale_user: string
+  headscale_fqdn: string
   // K8s cluster membership
   k8s_member: boolean
   k8s_ready: boolean
@@ -136,6 +137,7 @@ export function toNode(n: ApiNode): Node {
     headscaleExpiry: parseTimestamp(n.headscale_expiry),
     headscaleTags: n.headscale_tags ?? [],
     headscaleUser: n.headscale_user,
+    headscaleFQDN: n.headscale_fqdn ?? "",
     k8sMember: n.k8s_member,
     k8sReady: n.k8s_ready,
     k8sNodeName: n.k8s_node_name,
