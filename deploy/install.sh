@@ -12,10 +12,6 @@
 # =============================================================================
 set -euo pipefail
 
-# When piped via curl | bash, stdin is the pipe not the terminal.
-# Reconnect stdin to the terminal so interactive prompts work correctly.
-exec < /dev/tty
-
 REINSTALL=false
 WIPE_DATA=false
 for arg in "$@"; do
@@ -711,8 +707,19 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"name\":\"${NODE_HOSTNAME}\",\"tailscale_ip\":\"${MESH_IP_ASSIGNED}\",\"mesh_role\":\"${NODE_MESH_ROLE}\"}" \
       2>&1 || true)"
 
-    if echo "$_REG_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null | grep -q .; then
+    _NODE_ID="$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || true)"
+    if [[ -n "$_NODE_ID" ]]; then
       success "Node '${NODE_HOSTNAME}' registered in Meshploy (role: ${NODE_MESH_ROLE})"
+      # Save node identity so uninstall.sh can self-deregister via the API.
+      mkdir -p /etc/meshploy
+      cat > /etc/meshploy/node.conf <<NODECONF
+NODE_ID=${_NODE_ID}
+NODE_NAME=${NODE_HOSTNAME}
+MESHPLOY_API_URL=${MESHPLOY_API_URL}
+MESHPLOY_TOKEN=${MESHPLOY_TOKEN}
+NODECONF
+      chmod 600 /etc/meshploy/node.conf
+      success "Node identity saved to /etc/meshploy/node.conf"
     else
       warn "Auto-registration failed. You can register manually in the dashboard."
       warn "API response: ${_REG_RESPONSE:-<no response>}"

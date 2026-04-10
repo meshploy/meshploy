@@ -328,6 +328,15 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 	}, h.SelfRegisterNode)
 
+	// Unauthenticated — called by the worker uninstall script over the mesh
+	huma.Register(api, huma.Operation{
+		OperationID: "self-deregister-node",
+		Method:      "DELETE",
+		Path:        "/api/v1/nodes/self-deregister",
+		Summary:     "Self-deregister a node using its registration token and node ID",
+		Tags:        []string{"Nodes"},
+	}, h.SelfDeregisterNode)
+
 	// K3s cluster join token — authenticated, gateway-only value from config
 	huma.Register(api, huma.Operation{
 		OperationID: "get-cluster-join-token",
@@ -578,6 +587,48 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	}
 	r := h.enrichNode(ctx, node)
 	return &RegisterNodeOutput{Body: &r}, nil
+}
+
+// SelfDeregisterNode is unauthenticated — called by the worker uninstall script
+// over the WireGuard mesh. Validates the registration token belongs to the same
+// org as the node, then deletes the node from DB + Headscale + k3s.
+type SelfDeregisterNodeInput struct {
+	Body struct {
+		Token  string `json:"token"   minLength:"1"` // mreg-... registration token
+		NodeID string `json:"node_id" minLength:"1"` // UUID of the node to remove
+	}
+}
+
+func (h *Handler) SelfDeregisterNode(ctx context.Context, input *SelfDeregisterNodeInput) (*struct{}, error) {
+	nodeID, err := parseUUID(input.Body.NodeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid node_id")
+	}
+	// Validate token → resolves to an org
+	orgID, err := h.svc.Nodes.OrgIDFromToken(ctx, input.Body.Token)
+	if err != nil {
+		return nil, huma.Error401Unauthorized("invalid or unknown registration token")
+	}
+	// Verify the node belongs to that org
+	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	if err != nil || node.OrganizationID != orgID {
+		return nil, huma.Error401Unauthorized("node does not belong to this token's organisation")
+	}
+	if node.K3sRole == db.K3sRoleServer {
+		return nil, huma.Error400BadRequest("the gateway node cannot be deregistered")
+	}
+	// Cascade: Headscale peer → k3s node object → DB record
+	if h.svc.Headscale != nil && node.HeadscaleID != "" {
+		if err := h.svc.Headscale.DeleteNode(ctx, node.HeadscaleID); err != nil {
+			log.Printf("warning: self-deregister headscale peer %s: %v", node.HeadscaleID, err)
+		}
+	}
+	if h.svc.K8s != nil && node.Name != "" {
+		if err := appk8s.DeleteNode(ctx, h.svc.K8s, node.Name); err != nil {
+			log.Printf("warning: self-deregister k8s node %s: %v", node.Name, err)
+		}
+	}
+	return nil, h.svc.Nodes.Delete(ctx, nodeID)
 }
 
 // ─── Headscale preauth key ───────────────────────────────────────────────────

@@ -9,7 +9,6 @@
 #    bash uninstall.sh --reinstall — uninstall then immediately re-run install.sh
 # =============================================================================
 set -euo pipefail
-exec < /dev/tty
 
 RED='\033[0;31m';  GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m';  BOLD='\033[1m';  RESET='\033[0m'
@@ -125,6 +124,34 @@ if $WORKER; then
     info "k3s agent not installed — skipping"
   fi
 
+  # ── Deregister from Meshploy ─────────────────────────────────────────────────
+  # Must happen before tailscale logout — the API is reachable over the mesh.
+  header "Deregistering from Meshploy"
+  if [[ -f /etc/meshploy/node.conf ]]; then
+    # shellcheck source=/dev/null
+    source /etc/meshploy/node.conf
+    if [[ -n "${NODE_ID:-}" && -n "${MESHPLOY_API_URL:-}" && -n "${MESHPLOY_TOKEN:-}" ]]; then
+      if confirm "Remove '${NODE_NAME:-$NODE_ID}' from Meshploy, Headscale, and k3s cluster?"; then
+        _DEREG_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
+          --max-time 10 \
+          -X DELETE "${MESHPLOY_API_URL}/api/v1/nodes/self-deregister" \
+          -H "Content-Type: application/json" \
+          -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"node_id\":\"${NODE_ID}\"}" \
+          2>/dev/null || echo "000")"
+        if [[ "$_DEREG_STATUS" == "200" || "$_DEREG_STATUS" == "204" ]]; then
+          success "Node deregistered — removed from Meshploy DB, Headscale, and k3s cluster"
+          rm -f /etc/meshploy/node.conf
+        else
+          warn "Deregister API returned HTTP ${_DEREG_STATUS} — node may still appear in dashboard"
+          warn "Delete it manually: Nodes → ${NODE_NAME:-$NODE_ID} → Remove"
+        fi
+      fi
+    fi
+  else
+    info "No node identity found (/etc/meshploy/node.conf) — skipping API deregister"
+    warn "If this node appears in the Meshploy dashboard, delete it manually."
+  fi
+
   # ── Disconnect from mesh ─────────────────────────────────────────────────────
   header "Disconnecting from WireGuard mesh"
   if command -v tailscale &>/dev/null; then
@@ -132,11 +159,6 @@ if $WORKER; then
       sudo tailscale logout 2>/dev/null || true
       sudo tailscale down 2>/dev/null || true
       success "Disconnected from mesh"
-      echo
-      warn "The node still appears in Headscale until the gateway removes it."
-      warn "On the gateway, run:"
-      warn "  docker exec \$(docker ps -qf name=headscale) headscale nodes list"
-      warn "  docker exec \$(docker ps -qf name=headscale) headscale nodes delete --identifier <id>"
     fi
   else
     info "Tailscale not installed — skipping"
