@@ -14,6 +14,7 @@ WORKDIR /workspace
 COPY go.work go.work.sum* ./
 COPY apps/api/go.mod apps/api/go.sum ./apps/api/
 COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
+COPY apps/cli/go.mod apps/cli/go.sum ./apps/cli/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
 
 # go work sync requires all modules in go.work to be present.
