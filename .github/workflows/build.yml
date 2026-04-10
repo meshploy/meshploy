@@ -8,10 +8,11 @@ on:
       - "apps/web/**"
       - "apps/proxy/**"
       - "apps/builder/**"
-      - "deploy/caddy/**"
+      - "deploy/**"
       - "packages/db/**"
       - "go.work"
       - "go.work.sum"
+      - "get.sh"
   workflow_dispatch:
 
 env:

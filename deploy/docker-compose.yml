@@ -26,8 +26,8 @@ services:
       - "127.0.0.1:8085:8080"
       - "127.0.0.1:9090:9090"   # Prometheus metrics, localhost only
     volumes:
-      - ./headscale/config:/etc/headscale
-      - ./headscale/data:/var/lib/headscale
+      - ./headscale/config:/etc/headscale:z
+      - ./headscale/data:/var/lib/headscale:z
 
   # ── CoreDNS — authoritative DNS ────────────────────────────────────────────
   # network_mode: host required to bind to specific public + mesh IPs.
@@ -37,8 +37,8 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./coredns/Corefile:/etc/coredns/Corefile:ro
-      - ./coredns/zones:/etc/coredns/zones
+      - ./coredns/Corefile:/etc/coredns/Corefile:ro,z
+      - ./coredns/zones:/etc/coredns/zones:z
     command: -conf /etc/coredns/Corefile
 
   # ── Caddy — TLS termination + reverse proxy ────────────────────────────────
@@ -54,8 +54,8 @@ services:
       PUBLIC_IP:        ${PUBLIC_IP}
       GATEWAY_HOSTNAME: ${GATEWAY_HOSTNAME}
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./coredns/zones:/etc/coredns/zones    # shared with CoreDNS for ACME TXT records
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - ./coredns/zones:/etc/coredns/zones:z  # shared with CoreDNS for ACME TXT records
       - caddy_data:/data
       - caddy_config:/config
 
