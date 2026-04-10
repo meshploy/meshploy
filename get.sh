@@ -2,21 +2,18 @@
 # Meshploy — unified entry point
 #
 #   Public repo:
-#     curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh \
-#       -o /tmp/get.sh && sudo bash /tmp/get.sh
+#     sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
 #
 #   Private repo (while in development):
 #     export GITHUB_PAT=ghp_xxxx
-#     curl -fsSL "https://${GITHUB_PAT}@raw.githubusercontent.com/meshploy/meshploy/main/get.sh" \
-#       -o /tmp/get.sh && GITHUB_PAT=$GITHUB_PAT sudo -E bash /tmp/get.sh
+#     sudo -E bash -c "$(curl -fsSL "https://${GITHUB_PAT}@raw.githubusercontent.com/meshploy/meshploy/main/get.sh")"
 #
-#   Flags:
-#     --reinstall            update images and config, preserve data volumes
-#     --reinstall --wipe-data  reinstall from scratch, deleting database and TLS certs
-#     --uninstall            remove Meshploy
+#   Flags (append after a bare --):
+#     sudo bash -c "$(curl -fsSL URL)" _ --reinstall
+#     sudo bash -c "$(curl -fsSL URL)" _ --reinstall --wipe-data
+#     sudo bash -c "$(curl -fsSL URL)" _ --uninstall
 #
 set -euo pipefail
-exec < /dev/tty
 
 INSTALL_DIR="/opt/meshploy"
 BRANCH="${MESHPLOY_BRANCH:-main}"

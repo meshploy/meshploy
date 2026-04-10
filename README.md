@@ -119,8 +119,7 @@ meshploy/
 ### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh \
-  -o /tmp/get.sh && sudo bash /tmp/get.sh
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
 ```
 
 The script installs Docker (if needed), downloads Meshploy to `/opt/meshploy`, walks you through an interactive setup (domain, IP, secrets), and starts the full stack. Select **Master** for the gateway node or **Worker** to join an existing mesh.
@@ -146,10 +145,12 @@ All operations go through `get.sh` — no Docker Compose commands needed.
 
 | Command | What it does |
 |---|---|
-| `sudo bash /tmp/get.sh` | Fresh install |
-| `sudo bash /tmp/get.sh --reinstall` | Update images and config, **preserve** database and TLS certs |
-| `sudo bash /tmp/get.sh --reinstall --wipe-data` | Full reinstall from scratch, wipes database and TLS cert cache |
-| `sudo bash /tmp/get.sh --uninstall` | Remove Meshploy (interactive) |
+| `sudo bash -c "$(curl -fsSL URL)"` | Fresh install |
+| `sudo bash -c "$(curl -fsSL URL)" _ --reinstall` | Update images and config, **preserve** database and TLS certs |
+| `sudo bash -c "$(curl -fsSL URL)" _ --reinstall --wipe-data` | Full reinstall from scratch, wipes database and TLS cert cache |
+| `sudo bash -c "$(curl -fsSL URL)" _ --uninstall` | Remove Meshploy (interactive) |
+
+> Replace `URL` with `https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh`
 
 > **TLS cert cache**: Caddy stores Let's Encrypt certificates in a Docker volume. `--reinstall` always preserves this volume to avoid hitting rate limits (5 certs per domain per week). Use `--wipe-data` only when you genuinely need a clean slate.
 
@@ -157,8 +158,7 @@ All operations go through `get.sh` — no Docker Compose commands needed.
 
 ```bash
 export GITHUB_PAT=ghp_xxxx
-curl -fsSL "https://${GITHUB_PAT}@raw.githubusercontent.com/meshploy/meshploy/main/get.sh" \
-  -o /tmp/get.sh && GITHUB_PAT=$GITHUB_PAT sudo -E bash /tmp/get.sh
+sudo -E bash -c "$(curl -fsSL "https://${GITHUB_PAT}@raw.githubusercontent.com/meshploy/meshploy/main/get.sh")"
 ```
 
 ---

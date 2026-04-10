@@ -122,6 +122,19 @@ func (s *NodeService) GenerateRegistrationToken(ctx context.Context, orgID uuid.
 	return token, nil
 }
 
+// OrgIDFromToken resolves a registration token to its organisation ID.
+// Returns an error if the token is invalid.
+func (s *NodeService) OrgIDFromToken(ctx context.Context, token string) (uuid.UUID, error) {
+	var row db.NodeRegistrationToken
+	if err := s.db.WithContext(ctx).Where("token = ?", token).First(&row).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return uuid.Nil, fmt.Errorf("invalid registration token")
+		}
+		return uuid.Nil, err
+	}
+	return row.OrganizationID, nil
+}
+
 // GetRegistrationToken returns the current registration token for the org,
 // or an empty string if none has been generated yet.
 func (s *NodeService) GetRegistrationToken(ctx context.Context, orgID uuid.UUID) (string, error) {
