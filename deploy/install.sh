@@ -38,7 +38,7 @@ fi
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m';  GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; CYAN='\033[0;36m';  BOLD='\033[1m';  RESET='\033[0m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m';  BOLD='\033[1m';  RESET='\033[0m'; DIM='\033[2m'
 
 info()    { echo -e "${CYAN}  →${RESET}  $*"; }
 success() { echo -e "${GREEN}  ✔${RESET}  $*"; }
@@ -625,11 +625,30 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   # ── Join the mesh ───────────────────────────────────────────────────────────
   header "Joining the Meshploy mesh"
   info "Connecting to ${HEADSCALE_URL}…"
+
+  # Detect if already connected to a different login server.
+  CURRENT_LOGIN_SERVER="$(tailscale status --json 2>/dev/null | grep -m1 '"LoginServerURL"' | cut -d'"' -f4 || true)"
+  FORCE_REAUTH_FLAG=""
+  if [[ -n "$CURRENT_LOGIN_SERVER" && "$CURRENT_LOGIN_SERVER" != "$HEADSCALE_URL" ]]; then
+    warn "This node is currently connected to a different Tailscale/Headscale network:"
+    warn "  Current : ${CURRENT_LOGIN_SERVER}"
+    warn "  Target  : ${HEADSCALE_URL}"
+    warn "Tailscale supports one login server at a time — switching will disconnect"
+    warn "this node from its current network. To rejoin it later you must manually"
+    warn "run: tailscale up --login-server=<old-url> --force-reauth"
+    echo
+    if ! ask_yn "Switch networks and join the Meshploy mesh?"; then
+      die "Aborted — node not joined to mesh."
+    fi
+    FORCE_REAUTH_FLAG="--force-reauth"
+  fi
+
   sudo tailscale up \
     --login-server="$HEADSCALE_URL" \
     --authkey="$PREAUTH_KEY" \
     --hostname="$NODE_HOSTNAME" \
     --accept-routes \
+    $FORCE_REAUTH_FLAG \
     || warn "tailscale up returned non-zero — it may already be connected, check: tailscale status"
 
   MESH_IP_ASSIGNED="$(tailscale ip -4 2>/dev/null || echo "pending")"
