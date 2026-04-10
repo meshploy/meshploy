@@ -663,7 +663,11 @@ func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*Hea
 	}
 	out := &HeadscalePreAuthKeyStatusOutput{}
 	if h.cfg != nil {
-		out.Body.HeadscaleURL = h.cfg.HeadscaleURL
+		if h.cfg.Domain != "" {
+			out.Body.HeadscaleURL = "https://headscale." + h.cfg.Domain
+		} else {
+			out.Body.HeadscaleURL = h.cfg.HeadscaleURL
+		}
 	}
 	if h.svc.Headscale == nil {
 		return out, nil
@@ -711,10 +715,15 @@ func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*
 	out.Body.Reusable = key.Reusable
 	out.Body.Expiration = key.Expiration
 	if h.cfg != nil {
-		out.Body.HeadscaleURL = h.cfg.HeadscaleURL
+		if h.cfg.Domain != "" {
+			out.Body.HeadscaleURL = "https://headscale." + h.cfg.Domain
+		} else {
+			out.Body.HeadscaleURL = h.cfg.HeadscaleURL
+		}
 	}
 	return out, nil
 }
+
 
 // meshRoleLabelsMatch returns true if the k8s node's labels already reflect the
 // desired MeshRole, meaning no reconciliation is needed.

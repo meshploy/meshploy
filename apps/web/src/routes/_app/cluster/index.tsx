@@ -409,13 +409,9 @@ function HeadscalePreAuthKeyPanel() {
                   </p>
                 </div>
               </>
-            ) : hasActiveKey ? (
-              <p className="text-sm text-muted-foreground">
-                An active key exists — it wasn't regenerated. Click <span className="text-foreground font-medium">New key</span> only if you need to copy the key value again.
-              </p>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Generate a reusable preauth key to join the WireGuard mesh.
+                Click <span className="text-foreground font-medium">New key</span> to generate a reusable preauth key for worker installation.
               </p>
             )}
           </>
