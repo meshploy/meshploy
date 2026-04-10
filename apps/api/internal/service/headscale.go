@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -61,6 +62,51 @@ func NewHeadscaleService(url, key string) *HeadscaleService {
 			Timeout: 5 * time.Second,
 		},
 	}
+}
+
+// PreAuthKey mirrors the relevant fields from the Headscale preauth key response.
+type PreAuthKey struct {
+	Key        string    `json:"key"`
+	Reusable   bool      `json:"reusable"`
+	Expiration time.Time `json:"expiration"`
+	Used       bool      `json:"used"`
+}
+
+// CreatePreAuthKey calls POST {url}/api/v1/preauthkey and returns a new reusable preauth key
+// scoped to the given Headscale user. The key expires in 1 year.
+func (h *HeadscaleService) CreatePreAuthKey(ctx context.Context, user string) (*PreAuthKey, error) {
+	expiry := time.Now().Add(365 * 24 * time.Hour)
+	payload, _ := json.Marshal(map[string]any{
+		"user":       user,
+		"reusable":   true,
+		"ephemeral":  false,
+		"expiration": expiry.Format(time.RFC3339),
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.url+"/api/v1/preauthkey", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("headscale create preauth key: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("headscale create preauth key: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("headscale create preauth key: unexpected status %d", resp.StatusCode)
+	}
+
+	var out struct {
+		PreAuthKey PreAuthKey `json:"preAuthKey"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("headscale create preauth key: decode: %w", err)
+	}
+	return &out.PreAuthKey, nil
 }
 
 // ListNodes calls GET {url}/api/v1/node and returns all nodes.

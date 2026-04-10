@@ -12,6 +12,7 @@ type Config struct {
 	APIPort       int
 	HeadscaleURL  string
 	HeadscaleKey  string
+	HeadscaleUser string // HEADSCALE_USER  Headscale user preauth keys are created under (default: "meshploy")
 	JWTSecret     string
 	EncryptionKey string
 
@@ -61,6 +62,12 @@ func Load() (*Config, error) {
 		APIPort:       port,
 		HeadscaleURL:  os.Getenv("HEADSCALE_URL"),
 		HeadscaleKey:  os.Getenv("HEADSCALE_API_KEY"),
+		HeadscaleUser: func() string {
+			if v := os.Getenv("HEADSCALE_USER"); v != "" {
+				return v
+			}
+			return "meshploy"
+		}(),
 		JWTSecret:     require("JWT_SECRET"),
 		EncryptionKey: require("ENCRYPTION_KEY"),
 

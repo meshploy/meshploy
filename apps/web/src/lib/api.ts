@@ -249,6 +249,13 @@ export interface ApiDomain {
 export const cluster = {
   getJoinToken: (token: string) =>
     apiFetch<{ token: string; server_url: string }>("/api/v1/cluster/join-token", {}, token),
+
+  createHeadscalePreAuthKey: (token: string) =>
+    apiFetch<{ key: string; reusable: boolean; expiration: string; headscale_url: string }>(
+      "/api/v1/cluster/headscale-preauth-key",
+      { method: "POST" },
+      token
+    ),
 }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
