@@ -51,7 +51,7 @@ Internet
 Routing config lives as YAML files in the cluster. Adding a new route means applying a new Ingress manifest.
 
 **What Meshploy does:**
-There is no Ingress Controller. Caddy sits on the gateway and terminates TLS. The `apps/proxy` service reads routes directly from Postgres.
+There is no Ingress Controller. Caddy sits on the gateway and terminates TLS. `apps/proxy` maintains an in-memory cache of the routes table (refreshed every 30s) and forwards requests over the WireGuard mesh.
 
 ```
 Internet
