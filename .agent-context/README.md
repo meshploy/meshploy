@@ -13,3 +13,4 @@ When this directory is empty, delete the directory itself.
 | File | What it tracks | Delete when |
 |---|---|---|
 | `headscale-id-storage.md` | Store `headscale_id` on the Node model | Column added, `enrichNode` and `DeleteNode` updated |
+| `cli-tool.md` | Build a `meshploy` CLI binary replacing the bash scripts | CLI is implemented, built in CI, and `get.sh` downloads it |

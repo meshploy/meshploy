@@ -23,12 +23,19 @@ hr()      { echo -e "${BLUE}─────────────────�
 
 YES=false
 REINSTALL=false
+WORKER=false
 for arg in "$@"; do
   case "$arg" in
     --yes)       YES=true ;;
     --reinstall) REINSTALL=true; YES=true ;;
+    --worker)    WORKER=true ;;
   esac
 done
+
+# Auto-detect worker: no docker-compose.yml in deploy dir and k3s-agent is present
+if ! $WORKER && ! [[ -f "/opt/meshploy/deploy/docker-compose.yml" ]] && command -v k3s &>/dev/null && systemctl is-enabled k3s-agent &>/dev/null 2>&1; then
+  WORKER=true
+fi
 
 confirm() {
   # confirm <prompt> — skipped when --yes is passed
@@ -90,82 +97,143 @@ if [[ -z "$CONTAINER_RUNTIME" ]]; then
 fi
 COMPOSE_CMD="$CONTAINER_RUNTIME compose"
 
-# ── Stop and remove Compose stack ────────────────────────────────────────────
-header "Stopping ${CONTAINER_RUNTIME^} Compose stack"
-if [[ -f "docker-compose.yml" ]]; then
-  if confirm "Remove containers and networks?"; then
-    DOMAIN="${DOMAIN:-}" $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
-    success "Containers stopped and removed"
-  fi
-else
-  warn "docker-compose.yml not found — skipping"
-fi
+if $WORKER; then
+  # ==========================================================================
+  #  WORKER uninstall — removes k3s agent + Tailscale from this node
+  # ==========================================================================
+  echo -e "  Detected: ${BOLD}worker node${RESET}"
+  echo -e "  This will remove k3s agent and disconnect from the WireGuard mesh."
+  echo
 
-# ── Remove volumes (database + caddy TLS data) ───────────────────────────────
-# Skipped during --reinstall: caddy TLS certs (rate-limited by Let's Encrypt)
-# and database data are preserved so reinstall continues from a clean state.
-if ! $REINSTALL; then
-  header "Removing volumes"
-  if confirm "Delete all volumes? (${BOLD}this deletes the database and TLS certificates${RESET})"; then
-    $CONTAINER_RUNTIME volume rm \
-      "$(basename "$SCRIPT_DIR")_postgres_data" \
-      "$(basename "$SCRIPT_DIR")_caddy_data" \
-      "$(basename "$SCRIPT_DIR")_caddy_config" \
-      2>/dev/null || true
-    success "Volumes removed"
+  # ── Remove k3s agent ────────────────────────────────────────────────────────
+  header "Removing k3s agent"
+  if command -v k3s-agent-uninstall.sh &>/dev/null; then
+    if confirm "Run k3s-agent-uninstall.sh? (stops agent, removes binaries and data)"; then
+      sudo k3s-agent-uninstall.sh || true
+      success "k3s agent removed"
+    fi
+  elif systemctl is-enabled k3s-agent &>/dev/null 2>&1; then
+    if confirm "Stop and disable k3s-agent service?"; then
+      sudo systemctl stop k3s-agent 2>/dev/null || true
+      sudo systemctl disable k3s-agent 2>/dev/null || true
+      sudo rm -f /etc/systemd/system/k3s-agent.service /etc/systemd/system/k3s-agent.service.env
+      sudo systemctl daemon-reload
+      sudo rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
+      success "k3s agent removed"
+    fi
   else
-    warn "Volumes kept — data is preserved"
+    info "k3s agent not installed — skipping"
   fi
-fi
 
-# ── Remove generated config files ────────────────────────────────────────────
-header "Removing generated configuration files"
-if confirm "Delete generated zone files, .env, and substituted configs?"; then
-  # Zone files (substituted copies — not the templates)
-  find coredns/zones/ -type f ! -name '*{DOMAIN}*' -delete 2>/dev/null || true
-  # .env
-  rm -f .env
-  # Do NOT delete Corefile or headscale/config/config.yaml — they are the
-  # templates that install.sh substitutes in place. get.sh restores them via
-  # git checkout before reinstalling.
-  success "Generated files removed"
-else
-  warn "Config files kept"
-fi
-
-# ── Remove Headscale data ─────────────────────────────────────────────────────
-header "Removing Headscale data"
-if confirm "Delete Headscale state? (${BOLD}removes all nodes, keys, and ACLs${RESET})"; then
-  rm -rf headscale/data/*
-  success "Headscale data removed"
-else
-  warn "Headscale data kept"
-fi
-
-# ── Disconnect from mesh ──────────────────────────────────────────────────────
-header "Disconnecting from WireGuard mesh"
-if command -v tailscale &>/dev/null; then
-  if confirm "Disconnect this node from the Tailscale/Headscale mesh?"; then
-    tailscale down 2>/dev/null || true
-    success "Disconnected from mesh"
+  # ── Disconnect from mesh ─────────────────────────────────────────────────────
+  header "Disconnecting from WireGuard mesh"
+  if command -v tailscale &>/dev/null; then
+    if confirm "Log out and disconnect from Headscale mesh?"; then
+      sudo tailscale logout 2>/dev/null || true
+      sudo tailscale down 2>/dev/null || true
+      success "Disconnected from mesh"
+      echo
+      warn "The node still appears in Headscale until the gateway removes it."
+      warn "On the gateway, run:"
+      warn "  docker exec \$(docker ps -qf name=headscale) headscale nodes list"
+      warn "  docker exec \$(docker ps -qf name=headscale) headscale nodes delete --identifier <id>"
+    fi
+  else
+    info "Tailscale not installed — skipping"
   fi
-else
-  info "Tailscale not installed — skipping"
-fi
 
-# ── Remove images (optional) ─────────────────────────────────────────────────
-header "Container images"
-if confirm "Remove pulled Meshploy images? (saves disk space)"; then
-  $CONTAINER_RUNTIME rmi \
-    ghcr.io/meshploy/api:latest \
-    ghcr.io/meshploy/web:latest \
-    ghcr.io/meshploy/proxy:latest \
-    ghcr.io/meshploy/caddy:latest \
-    ghcr.io/meshploy/builder:latest \
-    2>/dev/null || true
-  success "Images removed"
+  # ── Remove Tailscale (optional) ──────────────────────────────────────────────
+  header "Tailscale binaries"
+  if command -v tailscale &>/dev/null; then
+    if confirm "Remove Tailscale package?"; then
+      sudo apt-get remove --purge -y tailscale 2>/dev/null \
+        || sudo yum remove -y tailscale 2>/dev/null \
+        || true
+      sudo rm -rf /var/lib/tailscale /etc/tailscale
+      success "Tailscale removed"
+    else
+      info "Tailscale kept (you can reconnect to a different mesh later)"
+    fi
+  fi
+
 else
-  info "Images kept"
+  # ==========================================================================
+  #  MASTER uninstall — tears down the full control plane stack
+  # ==========================================================================
+
+  # ── Stop and remove Compose stack ──────────────────────────────────────────
+  header "Stopping ${CONTAINER_RUNTIME^} Compose stack"
+  if [[ -f "docker-compose.yml" ]]; then
+    if confirm "Remove containers and networks?"; then
+      DOMAIN="${DOMAIN:-}" $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+      success "Containers stopped and removed"
+    fi
+  else
+    warn "docker-compose.yml not found — skipping"
+  fi
+
+  # ── Remove volumes (database + caddy TLS data) ─────────────────────────────
+  # Skipped during --reinstall: caddy TLS certs (rate-limited by Let's Encrypt)
+  # and database data are preserved so reinstall continues from a clean state.
+  if ! $REINSTALL; then
+    header "Removing volumes"
+    if confirm "Delete all volumes? (${BOLD}this deletes the database and TLS certificates${RESET})"; then
+      $CONTAINER_RUNTIME volume rm \
+        "$(basename "$SCRIPT_DIR")_postgres_data" \
+        "$(basename "$SCRIPT_DIR")_caddy_data" \
+        "$(basename "$SCRIPT_DIR")_caddy_config" \
+        2>/dev/null || true
+      success "Volumes removed"
+    else
+      warn "Volumes kept — data is preserved"
+    fi
+  fi
+
+  # ── Remove generated config files ──────────────────────────────────────────
+  header "Removing generated configuration files"
+  if confirm "Delete generated zone files, .env, and substituted configs?"; then
+    find coredns/zones/ -type f ! -name '*{DOMAIN}*' -delete 2>/dev/null || true
+    rm -f .env
+    success "Generated files removed"
+  else
+    warn "Config files kept"
+  fi
+
+  # ── Remove Headscale data ───────────────────────────────────────────────────
+  header "Removing Headscale data"
+  if confirm "Delete Headscale state? (${BOLD}removes all nodes, keys, and ACLs${RESET})"; then
+    rm -rf headscale/data/*
+    success "Headscale data removed"
+  else
+    warn "Headscale data kept"
+  fi
+
+  # ── Disconnect from mesh ────────────────────────────────────────────────────
+  header "Disconnecting from WireGuard mesh"
+  if command -v tailscale &>/dev/null; then
+    if confirm "Disconnect this node from the Tailscale/Headscale mesh?"; then
+      tailscale down 2>/dev/null || true
+      success "Disconnected from mesh"
+    fi
+  else
+    info "Tailscale not installed — skipping"
+  fi
+
+  # ── Remove images (optional) ────────────────────────────────────────────────
+  header "Container images"
+  if confirm "Remove pulled Meshploy images? (saves disk space)"; then
+    $CONTAINER_RUNTIME rmi \
+      ghcr.io/meshploy/api:latest \
+      ghcr.io/meshploy/web:latest \
+      ghcr.io/meshploy/proxy:latest \
+      ghcr.io/meshploy/caddy:latest \
+      ghcr.io/meshploy/builder:latest \
+      2>/dev/null || true
+    success "Images removed"
+  else
+    info "Images kept"
+  fi
+
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -181,7 +249,11 @@ if $REINSTALL; then
 fi
 
 echo
-echo -e "  To reinstall:  ${BOLD}bash install.sh${RESET}"
-echo -e "  To reinstall in one command:"
-echo -e "  ${BOLD}bash uninstall.sh --reinstall${RESET}"
+if $WORKER; then
+  echo -e "  To re-join as a worker:  ${BOLD}bash install.sh${RESET}"
+else
+  echo -e "  To reinstall:  ${BOLD}bash install.sh${RESET}"
+  echo -e "  To reinstall in one command:"
+  echo -e "  ${BOLD}bash uninstall.sh --reinstall${RESET}"
+fi
 hr
