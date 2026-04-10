@@ -352,56 +352,73 @@ function HeadscalePreAuthKeyPanel() {
           </div>
         ) : unavailable ? (
           <p className="text-sm text-muted-foreground">Headscale is not configured on this gateway.</p>
-        ) : freshKey ? (
+        ) : (
           <>
-            {/* Key display — only shown when freshly generated in this session */}
+            {/* Headscale server URL — always visible so users can copy it during worker install */}
             <div className="space-y-1.5">
-              <p className="text-xs text-muted-foreground font-medium">Preauth key</p>
+              <p className="text-xs text-muted-foreground font-medium">Headscale server URL</p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
-                  {visible ? freshKey : "•".repeat(32)}
+                  {headscaleUrl}
                 </code>
-                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
-                  {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(freshKey)}>
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(headscaleUrl)}>
                   {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>
               </div>
             </div>
 
-            {/* tailscale up command */}
-            <div className="space-y-1.5">
-              <p className="text-xs text-muted-foreground font-medium">Run on the worker machine</p>
-              <div className="relative group">
-                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
-                  <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                  <code className="text-xs font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed">
-                    {tailscaleCmd}
-                  </code>
+            {freshKey ? (
+              <>
+                {/* Key display — only shown when freshly generated in this session */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground font-medium">Preauth key</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                      {visible ? freshKey : "•".repeat(32)}
+                    </code>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
+                      {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(freshKey)}>
+                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => copy(tailscaleCmd.replace(/\\\n  /g, " "))}
-                >
-                  {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-                </Button>
-              </div>
-              <p className="text-[11px] text-muted-foreground/60">
-                Key is reusable and valid for 1 year. Click "New key" to rotate.
+
+                {/* tailscale up command */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground font-medium">Run on the worker machine</p>
+                  <div className="relative group">
+                    <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
+                      <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                      <code className="text-xs font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed">
+                        {tailscaleCmd}
+                      </code>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => copy(tailscaleCmd.replace(/\\\n  /g, " "))}
+                    >
+                      {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Key is reusable and valid for 1 year. Click "New key" to rotate.
+                  </p>
+                </div>
+              </>
+            ) : hasActiveKey ? (
+              <p className="text-sm text-muted-foreground">
+                An active key exists — it wasn't regenerated. Click <span className="text-foreground font-medium">New key</span> only if you need to copy the key value again.
               </p>
-            </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Generate a reusable preauth key to join the WireGuard mesh.
+              </p>
+            )}
           </>
-        ) : hasActiveKey ? (
-          <p className="text-sm text-muted-foreground">
-            An active key exists. Click <span className="text-foreground font-medium">New key</span> to generate a fresh one you can copy.
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Generate a reusable preauth key to join the WireGuard mesh.
-          </p>
         )}
       </div>
     </div>
