@@ -75,7 +75,7 @@ Is this a development branch? Set MESHPLOY_BRANCH or download manually."
 fi
 
 if [[ -n "$AUTH_HEADER" ]]; then
-  curl -fsSL -H "$AUTH_HEADER" -L -o "$CLI_BIN" "$ASSET_URL"
+  curl -fsSL -H "$AUTH_HEADER" -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL"
 else
   curl -fsSL -L -o "$CLI_BIN" "$ASSET_URL"
 fi
