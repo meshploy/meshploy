@@ -72,12 +72,55 @@ type PreAuthKey struct {
 	Used       bool      `json:"used"`
 }
 
+// resolveUserID returns the numeric string ID for the given Headscale username.
+// Headscale v0.28+ requires the numeric user ID (not the name) in API requests.
+func (h *HeadscaleService) resolveUserID(ctx context.Context, name string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/user", nil)
+	if err != nil {
+		return "", fmt.Errorf("headscale list users: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("headscale list users: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("headscale list users: unexpected status %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Users []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"users"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("headscale list users: decode: %w", err)
+	}
+
+	for _, u := range body.Users {
+		if u.Name == name {
+			return u.ID, nil
+		}
+	}
+	return "", fmt.Errorf("headscale user %q not found", name)
+}
+
 // CreatePreAuthKey calls POST {url}/api/v1/preauthkey and returns a new reusable preauth key
 // scoped to the given Headscale user. The key expires in 1 year.
+// Headscale v0.28+ requires the numeric user ID in the request, so we resolve it first.
 func (h *HeadscaleService) CreatePreAuthKey(ctx context.Context, user string) (*PreAuthKey, error) {
+	userID, err := h.resolveUserID(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
 	expiry := time.Now().Add(365 * 24 * time.Hour)
 	payload, _ := json.Marshal(map[string]any{
-		"user":       user,
+		"user":       userID,
 		"reusable":   true,
 		"ephemeral":  false,
 		"expiration": expiry.Format(time.RFC3339),
