@@ -68,12 +68,6 @@ cd "$INSTALL_DIR"
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "$MODE" in
   install|reinstall)
-    if ! command -v docker &>/dev/null; then
-      info "Installing Docker…"
-      curl -fsSL https://get.docker.com | sh
-      systemctl enable --now docker
-      success "Docker installed."
-    fi
     if [[ "$MODE" == "reinstall" ]]; then
       EXTRA_FLAGS="--reinstall"
       $WIPE_DATA && EXTRA_FLAGS="$EXTRA_FLAGS --wipe-data"
