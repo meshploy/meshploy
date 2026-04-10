@@ -8,7 +8,7 @@ import {
   Loader2,
   ServerCrash,
   Tag,
-  User,
+  Globe,
   Clock,
   CheckCircle2,
   XCircle,
@@ -104,8 +104,8 @@ function NodeDetailPage() {
                 value={node.headscaleOnline ? "Online" : "Offline"}
                 valueClass={node.headscaleOnline ? "text-emerald-400" : "text-muted-foreground"}
               />
-              {node.headscaleUser && (
-                <InfoRow icon={<User className="h-3.5 w-3.5" />} label="User" value={node.headscaleUser} />
+              {node.headscaleFQDN && (
+                <InfoRow icon={<Globe className="h-3.5 w-3.5" />} label="Mesh Domain" value={node.headscaleFQDN} mono />
               )}
               {node.headscaleLastSeen && (
                 <InfoRow

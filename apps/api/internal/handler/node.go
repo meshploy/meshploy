@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -25,6 +26,8 @@ type NodeResponse struct {
 	HeadscaleExpiry   *time.Time `json:"headscale_expiry,omitempty"`
 	HeadscaleTags     []string   `json:"headscale_tags"`
 	HeadscaleUser     string     `json:"headscale_user,omitempty"`
+	// MagicDNS FQDN: {givenName}.mesh.{domain} — reachable from any node on the mesh
+	HeadscaleFQDN string `json:"headscale_fqdn,omitempty"`
 
 	// K8s cluster membership
 	K8sMember   bool   `json:"k8s_member"`
@@ -120,6 +123,10 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 			r.HeadscaleExpiry = hs.node.Expiry
 			r.HeadscaleTags = hs.node.Tags()
 			r.HeadscaleUser = hs.node.User.Name
+			// MagicDNS FQDN matches headscale config: base_domain = mesh.{DOMAIN}
+			if hs.node.GivenName != "" && h.cfg != nil && h.cfg.Domain != "" {
+				r.HeadscaleFQDN = fmt.Sprintf("%s.mesh.%s", hs.node.GivenName, h.cfg.Domain)
+			}
 		}
 
 		kn, ok := k8sByIP[n.TailscaleIP]

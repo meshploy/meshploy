@@ -40,6 +40,7 @@ export interface Node {
   headscaleExpiry: Date | null
   headscaleTags: string[]
   headscaleUser: string
+  headscaleFQDN: string
   // K8s cluster membership
   k8sMember: boolean
   k8sReady: boolean
