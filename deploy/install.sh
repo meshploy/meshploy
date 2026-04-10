@@ -683,27 +683,40 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   # Now on the mesh, so we can reach the master's API at its WireGuard IP.
   header "Registering node with Meshploy"
 
-  # Verify the API is reachable over the mesh before attempting registration.
-  if ! curl -s --max-time 5 "${MESHPLOY_API_URL}/api/v1/auth/login" -o /dev/null 2>/dev/null; then
-    warn "Cannot reach ${MESHPLOY_API_URL} — WireGuard routing may not be ready yet."
-    warn "Waiting 5 s for routes to propagate…"
+  # Wait for the API to be reachable over the WireGuard mesh.
+  # After tailscale up, kernel routes may take a few seconds to propagate.
+  _API_READY=0
+  for _i in $(seq 1 12); do
+    if curl -s --max-time 4 "${MESHPLOY_API_URL}/api/v1/auth/login" -o /dev/null 2>/dev/null; then
+      _API_READY=1
+      break
+    fi
+    [[ $_i -eq 1 ]] && info "Waiting for API to be reachable at ${MESHPLOY_API_URL}…"
     sleep 5
-  fi
+  done
 
-  # Note: -f is intentionally omitted so HTTP error bodies (e.g. 401 invalid token)
-  # are captured in _REG_RESPONSE and shown to the user instead of silently discarded.
-  _REG_RESPONSE="$(curl -s \
-    --max-time 15 \
-    -X POST "${MESHPLOY_API_URL}/api/v1/nodes/self-register" \
-    -H "Content-Type: application/json" \
-    -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"name\":\"${NODE_HOSTNAME}\",\"tailscale_ip\":\"${MESH_IP_ASSIGNED}\",\"mesh_role\":\"${NODE_MESH_ROLE}\"}" \
-    2>&1 || true)"
-
-  if echo "$_REG_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null | grep -q .; then
-    success "Node '${NODE_HOSTNAME}' registered in Meshploy (role: ${NODE_MESH_ROLE})"
+  if [[ $_API_READY -eq 0 ]]; then
+    warn "Cannot reach ${MESHPLOY_API_URL} after 60 s."
+    warn "Diagnostics:"
+    warn "  tailscale status:  $(tailscale status --json 2>/dev/null | python3 -c "import sys,json; s=json.load(sys.stdin); print('connected' if s.get('BackendState')=='Running' else s.get('BackendState','unknown'))" 2>/dev/null || echo 'unknown')"
+    warn "  ping gateway:      $(ping -c1 -W2 100.64.0.1 &>/dev/null && echo 'ok' || echo 'FAILED')"
+    warn "Auto-registration skipped. Register this node manually from the dashboard."
   else
-    warn "Auto-registration failed. You can register manually in the dashboard."
-    warn "API response: ${_REG_RESPONSE:-<no response — API unreachable or connection timed out>}"
+    # Note: -f is intentionally omitted so HTTP error bodies (e.g. 401 invalid token)
+    # are captured in _REG_RESPONSE and shown to the user instead of silently discarded.
+    _REG_RESPONSE="$(curl -s \
+      --max-time 15 \
+      -X POST "${MESHPLOY_API_URL}/api/v1/nodes/self-register" \
+      -H "Content-Type: application/json" \
+      -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"name\":\"${NODE_HOSTNAME}\",\"tailscale_ip\":\"${MESH_IP_ASSIGNED}\",\"mesh_role\":\"${NODE_MESH_ROLE}\"}" \
+      2>&1 || true)"
+
+    if echo "$_REG_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null | grep -q .; then
+      success "Node '${NODE_HOSTNAME}' registered in Meshploy (role: ${NODE_MESH_ROLE})"
+    else
+      warn "Auto-registration failed. You can register manually in the dashboard."
+      warn "API response: ${_REG_RESPONSE:-<no response>}"
+    fi
   fi
 
   # ── Optionally join k3s cluster ─────────────────────────────────────────────
@@ -713,25 +726,51 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     K3S_SERVER_URL="${K3S_SERVER_URL:-https://100.64.0.1:6443}"
     ask K3S_SERVER_URL "k3s server URL" "$K3S_SERVER_URL"
 
-    header "Joining k3s cluster"
-    info "Installing k3s agent and joining ${K3S_SERVER_URL}…"
-    curl -sfL https://get.k3s.io | \
-      K3S_URL="$K3S_SERVER_URL" \
-      K3S_TOKEN="$K3S_JOIN_TOKEN" \
-      sh -s - agent \
-      || die "k3s agent install failed. Check the token and server URL."
+    # Extract host+port from the server URL to test reachability before installing.
+    _K3S_HOST="$(echo "$K3S_SERVER_URL" | sed 's|https\?://||' | cut -d/ -f1 | cut -d: -f1)"
+    _K3S_PORT="$(echo "$K3S_SERVER_URL" | sed 's|https\?://||' | cut -d/ -f1 | cut -s -d: -f2)"
+    _K3S_PORT="${_K3S_PORT:-6443}"
 
-    # Wait for the agent to come up
-    MAX_K3S_WAIT=30; K3S_WAITED=0
-    until systemctl is-active --quiet k3s-agent 2>/dev/null; do
-      sleep 2; K3S_WAITED=$((K3S_WAITED+2))
-      [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && { warn "k3s-agent not active yet — check: journalctl -u k3s-agent"; break; }
-      printf "."
-    done
-    echo
-    systemctl is-active --quiet k3s-agent \
-      && success "k3s agent is running — node joined the cluster" \
-      || warn "k3s agent may still be starting. Check: systemctl status k3s-agent"
+    if ! (echo >/dev/tcp/"$_K3S_HOST"/"$_K3S_PORT") 2>/dev/null; then
+      warn "Cannot reach k3s server at ${_K3S_HOST}:${_K3S_PORT} over the mesh."
+      warn "Diagnostics:"
+      warn "  ping gateway: $(ping -c1 -W2 "$_K3S_HOST" &>/dev/null && echo 'ok' || echo 'FAILED')"
+      warn "  If ping fails, the WireGuard route to the master is not yet active."
+      warn "  Try: sudo tailscale status   and   sudo tailscale ping ${_K3S_HOST}"
+      if ! ask_yn "Proceed anyway?"; then
+        info "Skipped. Re-run the script or join manually later."
+      else
+        _do_k3s_join=1
+      fi
+    else
+      _do_k3s_join=1
+    fi
+
+    if [[ "${_do_k3s_join:-0}" -eq 1 ]]; then
+      header "Joining k3s cluster"
+      info "Installing k3s agent and joining ${K3S_SERVER_URL}…"
+      if ! curl -sfL https://get.k3s.io | \
+          K3S_URL="$K3S_SERVER_URL" \
+          K3S_TOKEN="$K3S_JOIN_TOKEN" \
+          sh -s - agent; then
+        error "k3s agent install failed."
+        warn "Last log lines:"
+        journalctl -u k3s-agent --no-pager -n 20 2>/dev/null || true
+        die "Fix the error above and re-run: curl -sfL https://get.k3s.io | K3S_URL=\"${K3S_SERVER_URL}\" K3S_TOKEN=\"<token>\" sh -s - agent"
+      fi
+
+      # Wait for the agent to come up
+      MAX_K3S_WAIT=30; K3S_WAITED=0
+      until systemctl is-active --quiet k3s-agent 2>/dev/null; do
+        sleep 2; K3S_WAITED=$((K3S_WAITED+2))
+        [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && { warn "k3s-agent not active yet — check: journalctl -u k3s-agent"; break; }
+        printf "."
+      done
+      echo
+      systemctl is-active --quiet k3s-agent \
+        && success "k3s agent is running — node joined the cluster" \
+        || warn "k3s agent may still be starting. Check: systemctl status k3s-agent"
+    fi
   else
     info "Skipped. You can join the cluster later from the Meshploy dashboard → Cluster."
   fi
