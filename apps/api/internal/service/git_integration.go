@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -296,15 +297,18 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 }
 
 // CreatePATIntegration creates a GitLab or Gitea integration using a personal access token.
+// The token is validated by hitting the provider's /user endpoint before persisting.
 func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, pat string) (*db.GitIntegration, error) {
-	// Validate PAT by making a test API call.
 	switch provider {
 	case "gitlab":
-		if err := validateGitLabPAT(baseURL, pat); err != nil {
+		if err := validateGitToken(gitLabBase(baseURL)+"/api/v4/user", "Bearer", pat); err != nil {
 			return nil, huma.Error400BadRequest("invalid GitLab token: " + err.Error())
 		}
 	case "gitea":
-		if err := validateGiteaPAT(baseURL, pat); err != nil {
+		if baseURL == "" {
+			return nil, huma.Error400BadRequest("instance URL is required for Gitea")
+		}
+		if err := validateGitToken(strings.TrimRight(baseURL, "/")+"/api/v1/user", "token", pat); err != nil {
 			return nil, huma.Error400BadRequest("invalid Gitea token: " + err.Error())
 		}
 	default:
@@ -314,6 +318,7 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 	row := db.GitIntegration{
 		OrganizationID: orgID,
 		Provider:       provider,
+		AuthMethod:     "pat",
 		Name:           name,
 		InstallationID: db.EncryptedString(pat),
 		BaseURL:        baseURL,
@@ -322,6 +327,109 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 		return nil, huma.Error500InternalServerError("failed to save git integration")
 	}
 	return &row, nil
+}
+
+// InitOAuthIntegration creates a pending GitLab/Gitea integration record and returns
+// the OAuth authorization URL the user should be redirected to.
+func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, clientID, clientSecret string) (*db.GitIntegration, string, error) {
+	row := db.GitIntegration{
+		OrganizationID:    orgID,
+		Provider:          provider,
+		AuthMethod:        "oauth",
+		Name:              name,
+		BaseURL:           baseURL,
+		OAuthClientID:     clientID,
+		OAuthClientSecret: db.EncryptedString(clientSecret),
+	}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return nil, "", huma.Error500InternalServerError("failed to save git integration")
+	}
+
+	state := buildState(row.ID.String(), s.cfg.JWTSecret)
+	var authURL string
+	switch provider {
+	case "gitlab":
+		base := gitLabBase(baseURL)
+		redirectURI := s.cfg.APIBaseURL + "/api/v1/gitlab/callback"
+		authURL = fmt.Sprintf("%s/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
+			base, url.QueryEscape(clientID), url.QueryEscape(redirectURI),
+			url.QueryEscape("api read_user read_repository"), state)
+	case "gitea":
+		base := strings.TrimRight(baseURL, "/")
+		redirectURI := s.cfg.APIBaseURL + "/api/v1/gitea/callback"
+		authURL = fmt.Sprintf("%s/login/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
+			base, url.QueryEscape(clientID), url.QueryEscape(redirectURI), state)
+	default:
+		_ = s.db.WithContext(ctx).Delete(&row)
+		return nil, "", huma.Error400BadRequest("unsupported provider: " + provider)
+	}
+
+	return &row, authURL, nil
+}
+
+// HandleGitLabOAuthCallback exchanges the authorization code for an access token
+// and stores it on the integration record.
+func (s *GitIntegrationService) HandleGitLabOAuthCallback(ctx context.Context, code, state string) (*db.GitIntegration, error) {
+	integrationID, err := validateState(state, s.cfg.JWTSecret)
+	if err != nil {
+		return nil, fmt.Errorf("invalid state: %w", err)
+	}
+	id, err := uuid.Parse(integrationID)
+	if err != nil {
+		return nil, fmt.Errorf("malformed integration ID in state")
+	}
+
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, id).Error; err != nil {
+		return nil, fmt.Errorf("integration not found")
+	}
+
+	base := gitLabBase(integration.BaseURL)
+	redirectURI := s.cfg.APIBaseURL + "/api/v1/gitlab/callback"
+	token, err := exchangeOAuthCode(base+"/oauth/token",
+		integration.OAuthClientID, string(integration.OAuthClientSecret), code, redirectURI)
+	if err != nil {
+		return nil, fmt.Errorf("token exchange failed: %w", err)
+	}
+
+	if err := s.db.WithContext(ctx).Model(&integration).
+		Update("installation_id", db.EncryptedString(token)).Error; err != nil {
+		return nil, fmt.Errorf("failed to persist access token")
+	}
+	integration.InstallationID = db.EncryptedString(token)
+	return &integration, nil
+}
+
+// HandleGiteaOAuthCallback does the same for Gitea.
+func (s *GitIntegrationService) HandleGiteaOAuthCallback(ctx context.Context, code, state string) (*db.GitIntegration, error) {
+	integrationID, err := validateState(state, s.cfg.JWTSecret)
+	if err != nil {
+		return nil, fmt.Errorf("invalid state: %w", err)
+	}
+	id, err := uuid.Parse(integrationID)
+	if err != nil {
+		return nil, fmt.Errorf("malformed integration ID in state")
+	}
+
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, id).Error; err != nil {
+		return nil, fmt.Errorf("integration not found")
+	}
+
+	base := strings.TrimRight(integration.BaseURL, "/")
+	redirectURI := s.cfg.APIBaseURL + "/api/v1/gitea/callback"
+	token, err := exchangeOAuthCode(base+"/login/oauth/access_token",
+		integration.OAuthClientID, string(integration.OAuthClientSecret), code, redirectURI)
+	if err != nil {
+		return nil, fmt.Errorf("token exchange failed: %w", err)
+	}
+
+	if err := s.db.WithContext(ctx).Model(&integration).
+		Update("installation_id", db.EncryptedString(token)).Error; err != nil {
+		return nil, fmt.Errorf("failed to persist access token")
+	}
+	integration.InstallationID = db.EncryptedString(token)
+	return &integration, nil
 }
 
 // ListRepos returns all repositories accessible via a GitHub App installation,
@@ -334,6 +442,7 @@ func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uui
 
 	switch integration.Provider {
 	case "gitlab":
+		// Both PAT and OAuth access tokens work with Authorization: Bearer
 		repos, err := listGitLabRepos(integration.BaseURL, string(integration.InstallationID))
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list GitLab repositories: " + err.Error())
@@ -513,6 +622,66 @@ func fetchAllRepos(token string) ([]GitRepo, error) {
 	return all, nil
 }
 
+// ─── Shared auth helpers ──────────────────────────────────────────────────────
+
+// validateGitToken sends a GET to userURL with "Authorization: {scheme} {token}"
+// and returns an error if the response is not 200.
+func validateGitToken(userURL, scheme, token string) error {
+	req, _ := http.NewRequest(http.MethodGet, userURL, nil)
+	req.Header.Set("Authorization", scheme+" "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("unauthorized — check the token and its scopes")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// exchangeOAuthCode exchanges an OAuth2 authorization code for an access token.
+// Works for both GitLab (/oauth/token) and Gitea (/login/oauth/access_token).
+func exchangeOAuthCode(tokenURL, clientID, clientSecret, code, redirectURI string) (string, error) {
+	body := url.Values{
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+		"code":          {code},
+		"grant_type":    {"authorization_code"},
+		"redirect_uri":  {redirectURI},
+	}
+	req, _ := http.NewRequest(http.MethodPost, tokenURL, strings.NewReader(body.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(raw))
+	}
+	var result struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode token response: %w", err)
+	}
+	if result.Error != "" {
+		return "", fmt.Errorf("OAuth error: %s", result.Error)
+	}
+	if result.AccessToken == "" {
+		return "", fmt.Errorf("empty access token in response")
+	}
+	return result.AccessToken, nil
+}
+
 // ─── GitLab helpers ───────────────────────────────────────────────────────────
 
 func gitLabBase(baseURL string) string {
@@ -522,32 +691,14 @@ func gitLabBase(baseURL string) string {
 	return strings.TrimRight(baseURL, "/")
 }
 
-func validateGitLabPAT(baseURL, pat string) error {
-	url := gitLabBase(baseURL) + "/api/v4/user"
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("PRIVATE-TOKEN", pat)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("unauthorized")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status %d", resp.StatusCode)
-	}
-	return nil
-}
-
-func listGitLabRepos(baseURL, pat string) ([]GitRepo, error) {
+func listGitLabRepos(baseURL, token string) ([]GitRepo, error) {
 	base := gitLabBase(baseURL)
 	var all []GitRepo
 	page := 1
 	for {
 		url := fmt.Sprintf("%s/api/v4/projects?membership=true&per_page=100&page=%d", base, page)
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("PRIVATE-TOKEN", pat)
+		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, err
@@ -576,7 +727,7 @@ func listGitLabRepos(baseURL, pat string) ([]GitRepo, error) {
 	return all, nil
 }
 
-func listGitLabBranches(baseURL, pat, projectPath string) ([]string, error) {
+func listGitLabBranches(baseURL, token, projectPath string) ([]string, error) {
 	base := gitLabBase(baseURL)
 	encoded := strings.ReplaceAll(projectPath, "/", "%2F")
 	var all []string
@@ -584,7 +735,7 @@ func listGitLabBranches(baseURL, pat, projectPath string) ([]string, error) {
 	for {
 		url := fmt.Sprintf("%s/api/v4/projects/%s/repository/branches?per_page=100&page=%d", base, encoded, page)
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("PRIVATE-TOKEN", pat)
+		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, err
@@ -608,27 +759,6 @@ func listGitLabBranches(baseURL, pat, projectPath string) ([]string, error) {
 }
 
 // ─── Gitea helpers ────────────────────────────────────────────────────────────
-
-func validateGiteaPAT(baseURL, pat string) error {
-	if baseURL == "" {
-		return fmt.Errorf("base URL is required for Gitea")
-	}
-	url := strings.TrimRight(baseURL, "/") + "/api/v1/user"
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("Authorization", "token "+pat)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("unauthorized")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status %d", resp.StatusCode)
-	}
-	return nil
-}
 
 func listGiteaRepos(baseURL, pat string) ([]GitRepo, error) {
 	base := strings.TrimRight(baseURL, "/")

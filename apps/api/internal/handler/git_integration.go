@@ -51,6 +51,24 @@ type CreatePATIntegrationOutput struct {
 	Body *db.GitIntegration
 }
 
+type InitOAuthIntegrationInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		Provider     string `json:"provider"      enum:"gitlab,gitea"`
+		Name         string `json:"name"          minLength:"1" maxLength:"100"`
+		BaseURL      string `json:"base_url,omitempty"`
+		ClientID     string `json:"client_id"     minLength:"1"`
+		ClientSecret string `json:"client_secret" minLength:"1"`
+	}
+}
+
+type InitOAuthIntegrationOutput struct {
+	Body struct {
+		AuthURL     string `json:"auth_url"`
+		RedirectURI string `json:"redirect_uri"`
+	}
+}
+
 type AppStatusOutput struct {
 	Body struct {
 		Configured bool   `json:"configured"`
@@ -153,6 +171,41 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		return &CreatePATIntegrationOutput{Body: row}, nil
 	})
 
+	// Init OAuth integration (GitLab / Gitea)
+	huma.Register(api, huma.Operation{
+		OperationID:   "init-oauth-git-integration",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/git-integrations/oauth",
+		Summary:       "Start a GitLab or Gitea OAuth App connection",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusCreated,
+	}, func(ctx context.Context, in *InitOAuthIntegrationInput) (*InitOAuthIntegrationOutput, error) {
+		requireUser(ctx)
+		orgID, err := uuid.Parse(in.OrgID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		_, authURL, err := h.svc.GitIntegrations.InitOAuthIntegration(
+			ctx, orgID, in.Body.Provider, in.Body.Name,
+			in.Body.BaseURL, in.Body.ClientID, in.Body.ClientSecret,
+		)
+		if err != nil {
+			return nil, err
+		}
+		var redirectURI string
+		switch in.Body.Provider {
+		case "gitlab":
+			redirectURI = h.cfg.APIBaseURL + "/api/v1/gitlab/callback"
+		case "gitea":
+			redirectURI = h.cfg.APIBaseURL + "/api/v1/gitea/callback"
+		}
+		out := &InitOAuthIntegrationOutput{}
+		out.Body.AuthURL = authURL
+		out.Body.RedirectURI = redirectURI
+		return out, nil
+	})
+
 	// GitHub install URL
 	huma.Register(api, huma.Operation{
 		OperationID: "github-install-url",
@@ -253,6 +306,8 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 func (h *Handler) RegisterRaw(r chi.Router) {
 	r.Get("/api/v1/github/app-callback", h.GitHubAppCallback)
 	r.Get("/api/v1/github/callback", h.GitHubCallback)
+	r.Get("/api/v1/gitlab/callback", h.GitLabOAuthCallback)
+	r.Get("/api/v1/gitea/callback", h.GiteaOAuthCallback)
 }
 
 // GitHubAppCallback handles the redirect back from GitHub after manifest app creation.
@@ -275,6 +330,38 @@ func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, frontendURL+"/integrations?app_setup=done", http.StatusFound)
+}
+
+// GitLabOAuthCallback handles the redirect back from GitLab after OAuth authorization.
+func (h *Handler) GitLabOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	frontendURL := h.cfg.FrontendURL
+	q := r.URL.Query()
+	code, state := q.Get("code"), q.Get("state")
+	if code == "" || state == "" {
+		http.Redirect(w, r, frontendURL+"/integrations?gitlab=error&reason=missing_params", http.StatusFound)
+		return
+	}
+	if _, err := h.svc.GitIntegrations.HandleGitLabOAuthCallback(r.Context(), code, state); err != nil {
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations?gitlab=error&reason=internal_error", frontendURL), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, frontendURL+"/integrations?gitlab=connected", http.StatusFound)
+}
+
+// GiteaOAuthCallback handles the redirect back from Gitea after OAuth authorization.
+func (h *Handler) GiteaOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	frontendURL := h.cfg.FrontendURL
+	q := r.URL.Query()
+	code, state := q.Get("code"), q.Get("state")
+	if code == "" || state == "" {
+		http.Redirect(w, r, frontendURL+"/integrations?gitea=error&reason=missing_params", http.StatusFound)
+		return
+	}
+	if _, err := h.svc.GitIntegrations.HandleGiteaOAuthCallback(r.Context(), code, state); err != nil {
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations?gitea=error&reason=internal_error", frontendURL), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, frontendURL+"/integrations?gitea=connected", http.StatusFound)
 }
 
 // GitHubCallback handles the redirect back from GitHub after App installation.
