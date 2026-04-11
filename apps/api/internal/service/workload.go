@@ -27,7 +27,7 @@ type CreateWorkloadInput struct {
 }
 
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
-	var services []db.Service
+	services := make([]db.Service, 0)
 	err := s.db.WithContext(ctx).Where("project_id = ?", projectID).Find(&services).Error
 	return services, err
 }

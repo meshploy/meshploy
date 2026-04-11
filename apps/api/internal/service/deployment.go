@@ -24,7 +24,7 @@ type DeploymentService struct {
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
 func (s *DeploymentService) List(ctx context.Context, serviceID uuid.UUID) ([]db.Deployment, error) {
-	var deployments []db.Deployment
+	deployments := make([]db.Deployment, 0)
 	err := s.db.WithContext(ctx).
 		Where("service_id = ?", serviceID).
 		Order("created_at DESC").

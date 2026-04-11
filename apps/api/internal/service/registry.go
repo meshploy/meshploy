@@ -22,7 +22,7 @@ type CreateRegistryInput struct {
 }
 
 func (s *RegistryService) List(ctx context.Context, orgID uuid.UUID) ([]db.RegistryIntegration, error) {
-	var items []db.RegistryIntegration
+	items := make([]db.RegistryIntegration, 0)
 	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&items).Error
 	return items, err
 }

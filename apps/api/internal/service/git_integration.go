@@ -146,7 +146,7 @@ func (s *GitIntegrationService) HandleAppCallback(ctx context.Context, code, sta
 
 // List returns all git integrations for an org.
 func (s *GitIntegrationService) List(ctx context.Context, orgID uuid.UUID) ([]db.GitIntegration, error) {
-	var rows []db.GitIntegration
+	rows := make([]db.GitIntegration, 0)
 	if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&rows).Error; err != nil {
 		return nil, huma.Error500InternalServerError("failed to list git integrations")
 	}

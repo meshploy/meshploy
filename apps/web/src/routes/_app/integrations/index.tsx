@@ -588,7 +588,7 @@ function RegistrySection({ orgId, token }: { orgId: string; token: string }) {
 
   const { data: list = [], isLoading } = useQuery({
     queryKey: ["registry-integrations", orgId],
-    queryFn: () => registriesApi.list(orgId, token),
+    queryFn: () => registriesApi.list(orgId, token).then((r) => r ?? []),
     enabled: !!orgId,
   })
 
