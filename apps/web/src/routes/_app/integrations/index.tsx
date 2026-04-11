@@ -12,6 +12,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   gitIntegrations as gitApi,
   gitHubApp,
   registries as registriesApi,
@@ -762,15 +769,16 @@ function AddRegistryDialog({ open, onClose, orgId, token, onSuccess }: {
           {/* Provider */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Provider</label>
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as RegistryProvider)}
-              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-            >
-              {PROVIDERS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
+            <Select value={provider} onValueChange={(v) => setProvider(v as RegistryProvider)}>
+              <SelectTrigger className="w-full h-9 px-3 text-sm bg-input/30 border-border/60">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Name */}
