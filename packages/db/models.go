@@ -481,6 +481,7 @@ type GitIntegration struct {
 	BaseURL           string          `gorm:"not null;default:''"        json:"base_url"`          // empty = hosted (github.com / gitlab.com); self-hosted URL otherwise
 	OAuthClientID     string          `gorm:"not null;default:''"        json:"-"`                 // GitLab/Gitea OAuth App client_id
 	OAuthClientSecret EncryptedString `gorm:"type:text"                  json:"-"`                 // GitLab/Gitea OAuth App client_secret
+	OAuthRedirectURI  string          `gorm:"not null;default:''"        json:"-"`                 // redirect_uri used when initiating the OAuth flow — must match callback
 	Groups            string          `gorm:"not null;default:''"        json:"groups,omitempty"` // GitLab: group path; Gitea: org name — scopes repo listing
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`

@@ -80,7 +80,7 @@ function IntegrationsPage() {
 
   const { data: gitList = [], isLoading: gitLoading } = useQuery({
     queryKey: ["git-integrations", orgId],
-    queryFn: () => gitApi.list(orgId, token),
+    queryFn: () => gitApi.list(orgId, token).then((r) => r ?? []),
     enabled: !!orgId,
   })
 
@@ -268,7 +268,7 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   })
 
   const oauthMutation = useMutation({
-    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; client_id: string; client_secret: string }) =>
+    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; redirect_uri: string; client_id: string; client_secret: string }) =>
       gitApi.initOAuth(orgId, body, token),
     onSuccess: ({ auth_url }) => { window.location.href = auth_url },
     onError: (err: Error) => setError(err.message),
@@ -307,7 +307,8 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
 
   function submitOAuth() {
     setError(null)
-    oauthMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, client_id: clientID.trim(), client_secret: clientSecret })
+    const redirectURI = provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI
+    oauthMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, redirect_uri: redirectURI, client_id: clientID.trim(), client_secret: clientSecret })
   }
 
   const TABS: { value: GitProvider; label: string }[] = [

@@ -59,6 +59,7 @@ type InitOAuthIntegrationInput struct {
 		Name         string `json:"name"          minLength:"1" maxLength:"100"`
 		BaseURL      string `json:"base_url,omitempty"`
 		Groups       string `json:"groups,omitempty"`
+		RedirectURI  string `json:"redirect_uri"  minLength:"1"`
 		ClientID     string `json:"client_id"     minLength:"1"`
 		ClientSecret string `json:"client_secret" minLength:"1"`
 	}
@@ -190,21 +191,14 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		}
 		_, authURL, err := h.svc.GitIntegrations.InitOAuthIntegration(
 			ctx, orgID, in.Body.Provider, in.Body.Name,
-			in.Body.BaseURL, in.Body.Groups, in.Body.ClientID, in.Body.ClientSecret,
+			in.Body.BaseURL, in.Body.Groups, in.Body.RedirectURI, in.Body.ClientID, in.Body.ClientSecret,
 		)
 		if err != nil {
 			return nil, err
 		}
-		var redirectURI string
-		switch in.Body.Provider {
-		case "gitlab":
-			redirectURI = h.cfg.APIBaseURL + "/api/v1/gitlab/callback"
-		case "gitea":
-			redirectURI = h.cfg.APIBaseURL + "/api/v1/gitea/callback"
-		}
 		out := &InitOAuthIntegrationOutput{}
 		out.Body.AuthURL = authURL
-		out.Body.RedirectURI = redirectURI
+		out.Body.RedirectURI = in.Body.RedirectURI
 		return out, nil
 	})
 

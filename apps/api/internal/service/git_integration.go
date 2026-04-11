@@ -332,7 +332,12 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 
 // InitOAuthIntegration creates a pending GitLab/Gitea integration record and returns
 // the OAuth authorization URL the user should be redirected to.
-func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, groups, clientID, clientSecret string) (*db.GitIntegration, string, error) {
+// InitOAuthIntegration creates a pending GitLab/Gitea integration record and returns
+// the OAuth authorization URL the user should be redirected to.
+// redirectURI must be the full public URL the provider will redirect back to — it is
+// computed by the frontend (window.location.origin + /api/v1/{provider}/callback) so
+// it always matches what the user registered in their GitLab/Gitea application.
+func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, groups, redirectURI, clientID, clientSecret string) (*db.GitIntegration, string, error) {
 	row := db.GitIntegration{
 		OrganizationID:    orgID,
 		Provider:          provider,
@@ -342,6 +347,7 @@ func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID 
 		Groups:            groups,
 		OAuthClientID:     clientID,
 		OAuthClientSecret: db.EncryptedString(clientSecret),
+		OAuthRedirectURI:  redirectURI,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, "", huma.Error500InternalServerError("failed to save git integration")
@@ -352,13 +358,11 @@ func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID 
 	switch provider {
 	case "gitlab":
 		base := gitLabBase(baseURL)
-		redirectURI := s.cfg.APIBaseURL + "/api/v1/gitlab/callback"
 		authURL = fmt.Sprintf("%s/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
 			base, url.QueryEscape(clientID), url.QueryEscape(redirectURI),
 			url.QueryEscape("api read_user read_repository"), state)
 	case "gitea":
 		base := strings.TrimRight(baseURL, "/")
-		redirectURI := s.cfg.APIBaseURL + "/api/v1/gitea/callback"
 		authURL = fmt.Sprintf("%s/login/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
 			base, url.QueryEscape(clientID), url.QueryEscape(redirectURI), state)
 	default:
@@ -387,7 +391,7 @@ func (s *GitIntegrationService) HandleGitLabOAuthCallback(ctx context.Context, c
 	}
 
 	base := gitLabBase(integration.BaseURL)
-	redirectURI := s.cfg.APIBaseURL + "/api/v1/gitlab/callback"
+	redirectURI := integration.OAuthRedirectURI
 	token, err := exchangeOAuthCode(base+"/oauth/token",
 		integration.OAuthClientID, string(integration.OAuthClientSecret), code, redirectURI)
 	if err != nil {
@@ -419,7 +423,7 @@ func (s *GitIntegrationService) HandleGiteaOAuthCallback(ctx context.Context, co
 	}
 
 	base := strings.TrimRight(integration.BaseURL, "/")
-	redirectURI := s.cfg.APIBaseURL + "/api/v1/gitea/callback"
+	redirectURI := integration.OAuthRedirectURI
 	token, err := exchangeOAuthCode(base+"/login/oauth/access_token",
 		integration.OAuthClientID, string(integration.OAuthClientSecret), code, redirectURI)
 	if err != nil {
