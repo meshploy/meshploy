@@ -6,5 +6,5 @@ export const Route = createFileRoute("/_app/domains/new")({
 })
 
 function NewDomainPage() {
-  return <DomainSetupWizard />
+  return <DomainSetupWizard backTo="/settings" />
 }
