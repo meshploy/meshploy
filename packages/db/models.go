@@ -180,6 +180,11 @@ type Organization struct {
 	Name string `gorm:"not null"             json:"name"`
 	Slug string `gorm:"uniqueIndex;not null" json:"slug"`
 
+	// Headscale preauth key — persisted encrypted so it survives page navigation.
+	// Populated by CreateHeadscalePreAuthKey, auto-cleared on expiry by GetHeadscalePreAuthKey.
+	HeadscalePreAuthKey       EncryptedString `gorm:"type:text" json:"-"`
+	HeadscalePreAuthKeyExpiry *time.Time      `                 json:"-"`
+
 	Members  []OrganizationMember `gorm:"foreignKey:OrganizationID" json:"-"`
 	Projects []Project            `gorm:"foreignKey:OrganizationID" json:"-"`
 	Nodes    []Node               `gorm:"foreignKey:OrganizationID" json:"-"`

@@ -633,12 +633,13 @@ func (h *Handler) SelfDeregisterNode(ctx context.Context, input *SelfDeregisterN
 
 // ─── Headscale preauth key ───────────────────────────────────────────────────
 
-// HeadscalePreAuthKeyStatusOutput is returned by GET — existence only, never the key value.
-// Headscale's list endpoint returns masked/truncated key material; only the CREATE
-// response contains the full value safe to pass to `tailscale up`.
+// HeadscalePreAuthKeyStatusOutput is returned by GET.
+// When a valid stored key exists, Key is populated so the UI can display it without
+// requiring a fresh POST. Key is omitted when there is no stored key or it is expired.
 type HeadscalePreAuthKeyStatusOutput struct {
 	Body struct {
 		HasActiveKey bool   `json:"has_active_key"`
+		Key          string `json:"key,omitempty"` // full key value when a valid stored key exists
 		HeadscaleURL string `json:"headscale_url"`
 	}
 }
@@ -653,12 +654,13 @@ type HeadscalePreAuthKeyOutput struct {
 	}
 }
 
-// GetHeadscalePreAuthKey reports whether an active reusable preauth key exists.
-// It deliberately does NOT return the key value — Headscale's list endpoint masks
-// key material, so any value returned would be truncated and unusable by tailscale.
-// To get a usable key, call POST to generate a fresh one.
+// GetHeadscalePreAuthKey returns the stored Headscale preauth key for this org (if any).
+// The key is persisted encrypted in the DB by CreateHeadscalePreAuthKey and auto-cleared
+// here when it has passed its expiry. This lets the UI display the key across page
+// navigations without requiring the user to generate a new one every session.
 func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyStatusOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
 	out := &HeadscalePreAuthKeyStatusOutput{}
@@ -669,47 +671,57 @@ func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*Hea
 			out.Body.HeadscaleURL = h.cfg.HeadscaleURL
 		}
 	}
-	if h.svc.Headscale == nil {
+
+	orgs, err := h.svc.Orgs.ListForUser(ctx, userID)
+	if err != nil || len(orgs) == 0 {
+		return out, nil
+	}
+	org := orgs[0]
+
+	if org.HeadscalePreAuthKey == "" || org.HeadscalePreAuthKeyExpiry == nil {
+		return out, nil
+	}
+	if time.Now().After(*org.HeadscalePreAuthKeyExpiry) {
+		// Key has expired — clear it so the UI prompts for a new one.
+		if err := h.svc.Orgs.ClearHeadscalePreAuthKey(ctx, org.ID); err != nil {
+			log.Printf("warning: clear expired headscale preauth key for org %s: %v", org.ID, err)
+		}
 		return out, nil
 	}
 
-	user := "meshploy"
-	if h.cfg != nil && h.cfg.HeadscaleUser != "" {
-		user = h.cfg.HeadscaleUser
-	}
-	keys, err := h.svc.Headscale.ListPreAuthKeys(ctx, user)
-	if err != nil {
-		return out, nil // non-fatal — UI shows "no active key"
-	}
-
-	now := time.Now()
-	for i := len(keys) - 1; i >= 0; i-- {
-		k := keys[i]
-		if k.Reusable && !k.Expiration.IsZero() && k.Expiration.After(now) {
-			out.Body.HasActiveKey = true
-			break
-		}
-	}
+	out.Body.HasActiveKey = true
+	out.Body.Key = string(org.HeadscalePreAuthKey)
 	return out, nil
 }
 
-// CreateHeadscalePreAuthKey generates a fresh reusable Headscale preauth key.
-// Workers use this with `tailscale up --login-server=<url> --authkey=<key>`.
+// CreateHeadscalePreAuthKey generates a fresh reusable Headscale preauth key and
+// persists it encrypted on the org record so GetHeadscalePreAuthKey can return it
+// on subsequent page loads without requiring another POST.
 func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
 	if h.svc.Headscale == nil {
 		return nil, huma.NewError(503, "Headscale is not configured on this gateway")
 	}
-	user := "meshploy"
+	hsUser := "meshploy"
 	if h.cfg != nil && h.cfg.HeadscaleUser != "" {
-		user = h.cfg.HeadscaleUser
+		hsUser = h.cfg.HeadscaleUser
 	}
-	key, err := h.svc.Headscale.CreatePreAuthKey(ctx, user)
+	key, err := h.svc.Headscale.CreatePreAuthKey(ctx, hsUser)
 	if err != nil {
 		return nil, huma.NewError(502, "failed to generate Headscale preauth key: "+err.Error())
 	}
+
+	// Persist the key so the UI can retrieve it across page navigations.
+	orgs, err := h.svc.Orgs.ListForUser(ctx, userID)
+	if err == nil && len(orgs) > 0 {
+		if storeErr := h.svc.Orgs.StoreHeadscalePreAuthKey(ctx, orgs[0].ID, key.Key, key.Expiration); storeErr != nil {
+			log.Printf("warning: persist headscale preauth key for org %s: %v", orgs[0].ID, storeErr)
+		}
+	}
+
 	out := &HeadscalePreAuthKeyOutput{}
 	out.Body.Key = key.Key
 	out.Body.Reusable = key.Reusable
