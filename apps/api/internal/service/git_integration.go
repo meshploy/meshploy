@@ -60,7 +60,10 @@ func (s *GitIntegrationService) GetAppConfig(ctx context.Context) (*db.GitHubApp
 func (s *GitIntegrationService) BuildManifestSetup(ctx context.Context) (githubURL, manifest, state string, err error) {
 	state = buildState("setup", s.cfg.JWTSecret)
 
-	base := s.cfg.APIBaseURL
+	// Callbacks must go through the public-facing domain (Caddy terminates TLS
+	// there and proxies /api/* to the API). Using APIBaseURL would point GitHub
+	// at the raw API port which has no TLS.
+	base := s.cfg.FrontendURL
 	m := map[string]any{
 		"name":          "Meshploy",
 		"url":           base,
