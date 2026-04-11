@@ -1,23 +1,47 @@
 import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router"
-import React, { useEffect } from "react"
+import React, { useEffect, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Bell, Box, GitBranch, HardDrive, Loader2, Plus, Settings2, Trash2 } from "lucide-react"
+import { Bell, Box, GitBranch, HardDrive, Loader2, Plus, Settings2, Trash2, AlertCircle, Eye, EyeOff } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import {
   gitIntegrations as gitApi,
   gitHubApp,
+  registries as registriesApi,
   type ApiGitIntegration,
+  type ApiRegistryIntegration,
+  type RegistryProvider,
+  type CreateRegistryBody,
 } from "@/lib/api"
-import { mockRegistries, mockStorage, mockNotifications } from "@/lib/mock-data"
+import { mockStorage, mockNotifications } from "@/lib/mock-data"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import type { NotificationChannel } from "@/types"
 
+type GitProvider = "github" | "gitlab" | "gitea"
+
 const PROVIDER_LABELS: Record<string, string> = {
-  ghcr: "GitHub Container Registry", dockerhub: "Docker Hub", ecr: "Amazon ECR", generic: "Private Registry",
-  s3: "Amazon S3", r2: "Cloudflare R2", minio: "MinIO",
-  slack: "Slack", webhook: "Webhook", email: "Email",
-  github: "GitHub", gitlab: "GitLab", gitea: "Gitea",
+  ghcr: "GitHub Container Registry",
+  dockerhub: "Docker Hub",
+  ecr: "Amazon ECR",
+  gcr: "Google Container Registry",
+  custom: "Private Registry",
+  s3: "Amazon S3",
+  r2: "Cloudflare R2",
+  minio: "MinIO",
+  slack: "Slack",
+  webhook: "Webhook",
+  email: "Email",
+  github: "GitHub",
+  gitlab: "GitLab",
+  gitea: "Gitea",
 }
 
 export const Route = createFileRoute("/_app/integrations/")({
@@ -29,8 +53,7 @@ function IntegrationsPage() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [actionError, setActionError] = React.useState<string | null>(null)
-  const [actioning, setActioning] = React.useState(false)
+  const [addGitOpen, setAddGitOpen] = useState(false)
 
   const search = useSearch({ strict: false }) as Record<string, string>
   useEffect(() => {
@@ -51,16 +74,167 @@ function IntegrationsPage() {
   const { data: gitList = [], isLoading: gitLoading } = useQuery({
     queryKey: ["git-integrations", orgId],
     queryFn: () => gitApi.list(orgId, token),
-    enabled: !!orgId && appStatus?.configured === true,
+    enabled: !!orgId,
   })
 
-  const deleteMutation = useMutation({
+  const gitDeleteMutation = useMutation({
     mutationFn: (id: string) => gitApi.delete(orgId, id, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["git-integrations", orgId] }),
   })
 
-  async function handleSetupGitHubApp() {
-    setActionError(null)
+  return (
+    <div className="p-6 space-y-8">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Connect external services for source code, images, backups, and alerts
+        </p>
+      </div>
+
+      {/* ── Git Sources ────────────────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <SectionHeader
+            icon={<GitBranch className="h-4 w-4" />}
+            title="Git Sources"
+            description="Connect GitHub, GitLab, or Gitea to deploy from repositories"
+          />
+          <button
+            onClick={() => setAddGitOpen(true)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+          >
+            <Plus className="h-3 w-3" />Add source
+          </button>
+        </div>
+
+        {gitLoading ? (
+          <LoadingRow />
+        ) : gitList.length === 0 ? (
+          <EmptyState icon={<GitBranch className="h-7 w-7" />} title="No git sources connected" description="Connect GitHub, GitLab, or Gitea to enable repository-based deployments">
+            <button
+              onClick={() => setAddGitOpen(true)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+            >
+              <Plus className="h-3 w-3" />Add source
+            </button>
+          </EmptyState>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {gitList.map((g) => (
+              <GitIntegrationCard
+                key={g.id}
+                integration={g}
+                orgId={orgId}
+                token={token}
+                onDelete={() => gitDeleteMutation.mutate(g.id)}
+                isDeleting={gitDeleteMutation.isPending}
+              />
+            ))}
+          </div>
+        )}
+
+        <AddGitSourceDialog
+          open={addGitOpen}
+          onClose={() => setAddGitOpen(false)}
+          orgId={orgId}
+          token={token}
+          appConfigured={appStatus?.configured === true}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["git-integrations", orgId] })
+            setAddGitOpen(false)
+          }}
+        />
+      </section>
+
+      {/* ── Container Registries ───────────────────────────────────────────── */}
+      <RegistrySection orgId={orgId} token={token} />
+
+      {/* ── Object Storage (mock / coming soon) ────────────────────────────── */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <SectionHeader
+            icon={<HardDrive className="h-4 w-4" />}
+            title="Object Storage"
+            description="Store database backups and build artifacts"
+          />
+          <button disabled className="flex items-center gap-1.5 text-xs text-muted-foreground/40 border border-border/40 px-2.5 py-1.5 rounded-md cursor-not-allowed">
+            <Plus className="h-3 w-3" />Add storage
+          </button>
+        </div>
+        {mockStorage.length === 0 ? (
+          <EmptyState icon={<HardDrive className="h-7 w-7" />} title="No storage configured" description="Coming soon — connect S3, R2, or MinIO for backups" />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {mockStorage.map((sto) => (
+              <IntegrationCard key={sto.id} name={sto.name} providerKey={sto.provider} meta={`${sto.bucket}${sto.region ? ` · ${sto.region}` : ""}`} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Notification Channels (mock / coming soon) ─────────────────────── */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <SectionHeader
+            icon={<Bell className="h-4 w-4" />}
+            title="Notification Channels"
+            description="Get alerted on deployments, node status changes, and failures"
+          />
+          <button disabled className="flex items-center gap-1.5 text-xs text-muted-foreground/40 border border-border/40 px-2.5 py-1.5 rounded-md cursor-not-allowed">
+            <Plus className="h-3 w-3" />Add channel
+          </button>
+        </div>
+        {mockNotifications.length === 0 ? (
+          <EmptyState icon={<Bell className="h-7 w-7" />} title="No notification channels" description="Coming soon — connect Slack, Discord, or webhooks" />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {mockNotifications.map((ntf) => <NotificationCard key={ntf.id} channel={ntf} />)}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+// ─── Add git source dialog ────────────────────────────────────────────────────
+
+function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSuccess }: {
+  open: boolean
+  onClose: () => void
+  orgId: string
+  token: string
+  appConfigured: boolean
+  onSuccess: () => void
+}) {
+  const [provider, setProvider] = useState<GitProvider>("github")
+  const [name, setName] = useState("")
+  const [baseURL, setBaseURL] = useState("")
+  const [pat, setPAT] = useState("")
+  const [showPAT, setShowPAT] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [actioning, setActioning] = useState(false)
+
+  function reset() {
+    setProvider("github")
+    setName("")
+    setBaseURL("")
+    setPAT("")
+    setShowPAT(false)
+    setError(null)
+  }
+
+  const patMutation = useMutation({
+    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; token: string }) =>
+      gitApi.createPAT(orgId, body, token),
+    onSuccess: () => {
+      reset()
+      onSuccess()
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  async function handleGitHubSetup() {
+    setError(null)
     setActioning(true)
     try {
       const { github_url, manifest } = await gitHubApp.manifestSetup()
@@ -75,151 +249,498 @@ function IntegrationsPage() {
       document.body.appendChild(form)
       form.submit()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to start GitHub App setup"
-      setActionError(msg)
+      setError(err instanceof Error ? err.message : "Failed to start GitHub App setup")
       setActioning(false)
     }
   }
 
-  async function handleConnectGitHub() {
-    setActionError(null)
+  async function handleGitHubConnect() {
+    setError(null)
     setActioning(true)
     try {
       const { url } = await gitApi.installUrl(orgId, token)
       window.location.href = url
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to get install URL"
-      setActionError(msg)
+      setError(err instanceof Error ? err.message : "Failed to get install URL")
       setActioning(false)
     }
   }
 
-  const appConfigured = appStatus?.configured === true
+  function submitPAT() {
+    setError(null)
+    patMutation.mutate({
+      provider: provider as "gitlab" | "gitea",
+      name: name.trim(),
+      base_url: baseURL.trim() || undefined,
+      token: pat,
+    })
+  }
+
+  const TABS: { value: GitProvider; label: string }[] = [
+    { value: "github", label: "GitHub" },
+    { value: "gitlab", label: "GitLab" },
+    { value: "gitea", label: "Gitea" },
+  ]
 
   return (
-    <div className="p-6 space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Connect external services for source code, images, backups, and alerts</p>
-      </div>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose() } }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add git source</DialogTitle>
+        </DialogHeader>
 
-      {/* Git Sources */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="text-muted-foreground"><GitBranch className="h-4 w-4" /></div>
-            <div>
-              <h2 className="text-sm font-medium text-foreground">Git Sources</h2>
-              <p className="text-xs text-muted-foreground">
-                {appConfigured
-                  ? "Connect GitHub organizations to deploy from repositories"
-                  : "Set up the Meshploy GitHub App to enable git-based deployments"}
-              </p>
-            </div>
-          </div>
-          {appConfigured ? (
+        {/* Provider tabs */}
+        <div className="flex gap-1 rounded-lg bg-muted/40 p-1 mt-1">
+          {TABS.map((tab) => (
             <button
-              onClick={handleConnectGitHub}
-              disabled={actioning}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              key={tab.value}
+              type="button"
+              onClick={() => { setProvider(tab.value); setError(null) }}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                provider === tab.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              {actioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-              {actioning ? "Redirecting…" : "Connect GitHub"}
+              {tab.label}
             </button>
-          ) : (
-            <button
-              onClick={handleSetupGitHubApp}
-              disabled={actioning}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {actioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Settings2 className="h-3 w-3" />}
-              {actioning ? "Opening GitHub…" : "Setup GitHub App"}
-            </button>
-          )}
+          ))}
         </div>
-        {actionError && (
-          <p className="text-xs text-destructive">{actionError}</p>
-        )}
 
-        {!appConfigured ? (
-          <div className="rounded-lg border border-dashed border-border/60 py-8 flex flex-col items-center gap-3">
-            <GitBranch className="h-7 w-7 text-muted-foreground/40" />
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">GitHub App not set up</p>
-              <p className="text-xs text-muted-foreground/60 mt-0.5">
-                Click "Setup GitHub App" to register Meshploy as a GitHub App on your account
-              </p>
-            </div>
-            <button
-              onClick={handleSetupGitHubApp}
-              disabled={actioning}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {actioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Settings2 className="h-3 w-3" />}
-              {actioning ? "Opening GitHub…" : "Setup GitHub App"}
-            </button>
-          </div>
-        ) : gitLoading ? (
-          <div className="flex items-center gap-2 py-6 text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Loading…</span>
-          </div>
-        ) : gitList.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border/60 py-8 flex flex-col items-center gap-3">
-            <GitBranch className="h-7 w-7 text-muted-foreground/40" />
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">No GitHub organizations connected</p>
-              <p className="text-xs text-muted-foreground/60 mt-0.5">Install the Meshploy App on your GitHub organization</p>
-            </div>
-            <button
-              onClick={handleConnectGitHub}
-              disabled={actioning}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {actioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-              {actioning ? "Redirecting…" : "Connect GitHub"}
-            </button>
+        {provider === "github" ? (
+          <div className="space-y-4 mt-1">
+            {!appConfigured ? (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Register Meshploy as a GitHub App on your account. This is a one-time platform-wide setup.
+                </p>
+                {error && (
+                  <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{error}
+                  </div>
+                )}
+                <Button onClick={handleGitHubSetup} disabled={actioning} className="w-full gap-1.5">
+                  {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Settings2 className="h-3.5 w-3.5" />}
+                  {actioning ? "Opening GitHub…" : "Setup GitHub App"}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Install the Meshploy GitHub App on an organization or personal account to grant access to repositories.
+                </p>
+                {error && (
+                  <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{error}
+                  </div>
+                )}
+                <Button onClick={handleGitHubConnect} disabled={actioning} className="w-full gap-1.5">
+                  {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  {actioning ? "Redirecting…" : "Install GitHub App"}
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {gitList.map((g) => (
-              <GitIntegrationCard
-                key={g.id}
-                integration={g}
-                orgId={orgId}
-                token={token}
-                onDelete={() => deleteMutation.mutate(g.id)}
-                isDeleting={deleteMutation.isPending}
+          <form onSubmit={(e) => { e.preventDefault(); submitPAT() }} className="space-y-4 mt-1">
+            {provider === "gitlab" && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Instance URL <span className="text-muted-foreground/50 font-normal">(leave empty for gitlab.com)</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://gitlab.example.com"
+                  value={baseURL}
+                  onChange={(e) => setBaseURL(e.target.value)}
+                  className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                />
+              </div>
+            )}
+            {provider === "gitea" && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Instance URL</label>
+                <input
+                  type="url"
+                  placeholder="https://gitea.example.com"
+                  value={baseURL}
+                  onChange={(e) => setBaseURL(e.target.value)}
+                  required
+                  className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Label</label>
+              <input
+                type="text"
+                placeholder={provider === "gitlab" ? "e.g. my-gitlab-org" : "e.g. my-gitea-org"}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
               />
-            ))}
-          </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Personal access token</label>
+              <div className="flex items-center gap-1">
+                <input
+                  type={showPAT ? "text" : "password"}
+                  value={pat}
+                  onChange={(e) => setPAT(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  placeholder={provider === "gitlab" ? "glpat-…" : ""}
+                  className="flex-1 rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPAT((v) => !v)}
+                  className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPAT ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground/60">
+                {provider === "gitlab"
+                  ? "Requires read_api and read_repository scopes"
+                  : "Requires repository read access"}
+              </p>
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{error}
+              </div>
+            )}
+
+            <DialogFooter showCloseButton>
+              <Button
+                onClick={submitPAT}
+                disabled={patMutation.isPending || !name || !pat || (provider === "gitea" && !baseURL)}
+                className="gap-1.5"
+              >
+                {patMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Connect {provider === "gitlab" ? "GitLab" : "Gitea"}
+              </Button>
+            </DialogFooter>
+          </form>
         )}
-      </section>
 
-      <Section icon={<Box className="h-4 w-4" />} title="Container Registries" description="Pull images from private and public registries" action="Add registry">
-        {mockRegistries.map((reg) => (
-          <IntegrationCard key={reg.id} name={reg.name} providerKey={reg.provider} meta={reg.endpoint ?? `docker.io/${reg.username}`} />
-        ))}
-      </Section>
+        {provider === "github" && (
+          <DialogFooter showCloseButton />
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
 
-      <Section icon={<HardDrive className="h-4 w-4" />} title="Object Storage" description="Store database backups and build artifacts" action="Add storage">
-        {mockStorage.map((sto) => (
-          <IntegrationCard key={sto.id} name={sto.name} providerKey={sto.provider} meta={`${sto.bucket}${sto.region ? ` · ${sto.region}` : ""}`} />
-        ))}
-      </Section>
+// ─── Registry section ─────────────────────────────────────────────────────────
 
-      <Section icon={<Bell className="h-4 w-4" />} title="Notification Channels" description="Get alerted on deployments, node status changes, and failures" action="Add channel">
-        {mockNotifications.map((ntf) => <NotificationCard key={ntf.id} channel={ntf} />)}
-      </Section>
+function RegistrySection({ orgId, token }: { orgId: string; token: string }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+
+  const { data: list = [], isLoading } = useQuery({
+    queryKey: ["registry-integrations", orgId],
+    queryFn: () => registriesApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => registriesApi.delete(orgId, id, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["registry-integrations", orgId] }),
+  })
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <SectionHeader
+          icon={<Box className="h-4 w-4" />}
+          title="Container Registries"
+          description="Pull and push images from private and public registries"
+        />
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+        >
+          <Plus className="h-3 w-3" />Add registry
+        </button>
+      </div>
+
+      {isLoading ? (
+        <LoadingRow />
+      ) : list.length === 0 ? (
+        <EmptyState
+          icon={<Box className="h-7 w-7" />}
+          title="No registries connected"
+          description="Add a registry to pull private images during deployments"
+        >
+          <button
+            onClick={() => setOpen(true)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+          >
+            <Plus className="h-3 w-3" />Add registry
+          </button>
+        </EmptyState>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {list.map((reg) => (
+            <RegistryCard
+              key={reg.id}
+              registry={reg}
+              onDelete={() => deleteMutation.mutate(reg.id)}
+              isDeleting={deleteMutation.isPending}
+            />
+          ))}
+        </div>
+      )}
+
+      <AddRegistryDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        orgId={orgId}
+        token={token}
+        onSuccess={() => {
+          qc.invalidateQueries({ queryKey: ["registry-integrations", orgId] })
+          setOpen(false)
+        }}
+      />
+    </section>
+  )
+}
+
+// ─── Registry card ────────────────────────────────────────────────────────────
+
+function RegistryCard({ registry, onDelete, isDeleting }: {
+  registry: ApiRegistryIntegration
+  onDelete: () => void
+  isDeleting: boolean
+}) {
+  const label = PROVIDER_LABELS[registry.provider] ?? registry.provider
+  const meta = registry.namespace || registry.endpoint || ""
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
+      <ProviderIcon provider={registry.provider} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-foreground truncate">{registry.name}</p>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
+            connected
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+        {meta && <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>}
+      </div>
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={isDeleting}
+        className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
+        title="Remove"
+      >
+        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+      </button>
     </div>
   )
 }
 
-// ─── GitIntegrationCard ───────────────────────────────────────────────────────
+// ─── Add registry dialog ──────────────────────────────────────────────────────
 
-function GitIntegrationCard({
-  integration, orgId, token, onDelete, isDeleting,
-}: {
+const PROVIDERS: { value: RegistryProvider; label: string; needsEndpoint: boolean; userLabel: string; passLabel: string; namespacePlaceholder: string }[] = [
+  { value: "ghcr",      label: "GitHub Container Registry", needsEndpoint: false, userLabel: "GitHub username",    passLabel: "Personal access token",  namespacePlaceholder: "ghcr.io/my-org" },
+  { value: "dockerhub", label: "Docker Hub",                needsEndpoint: false, userLabel: "Docker Hub username", passLabel: "Password or access token", namespacePlaceholder: "docker.io/my-org" },
+  { value: "ecr",       label: "Amazon ECR",                needsEndpoint: true,  userLabel: "AWS access key ID",  passLabel: "AWS secret access key",   namespacePlaceholder: "123456789.dkr.ecr.us-east-1.amazonaws.com" },
+  { value: "gcr",       label: "Google Container Registry", needsEndpoint: true,  userLabel: "Username (_json_key)", passLabel: "Service account JSON",  namespacePlaceholder: "gcr.io/my-project" },
+  { value: "custom",    label: "Private Registry",          needsEndpoint: true,  userLabel: "Username",           passLabel: "Password or token",       namespacePlaceholder: "registry.example.com/my-org" },
+]
+
+function AddRegistryDialog({ open, onClose, orgId, token, onSuccess }: {
+  open: boolean
+  onClose: () => void
+  orgId: string
+  token: string
+  onSuccess: (reg: ApiRegistryIntegration) => void
+}) {
+  const [provider, setProvider] = useState<RegistryProvider>("ghcr")
+  const [name, setName] = useState("")
+  const [endpoint, setEndpoint] = useState("")
+  const [namespace, setNamespace] = useState("")
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPass, setShowPass] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const providerMeta = PROVIDERS.find((p) => p.value === provider)!
+
+  function reset() {
+    setProvider("ghcr")
+    setName("")
+    setEndpoint("")
+    setNamespace("")
+    setUsername("")
+    setPassword("")
+    setShowPass(false)
+    setError(null)
+  }
+
+  const mutation = useMutation({
+    mutationFn: (body: CreateRegistryBody) => registriesApi.create(orgId, body, token),
+    onSuccess: (reg) => {
+      reset()
+      onSuccess(reg)
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  function submit() {
+    setError(null)
+    mutation.mutate({
+      name: name.trim(),
+      provider,
+      endpoint: endpoint.trim() || undefined,
+      namespace: namespace.trim() || undefined,
+      username: username.trim(),
+      password,
+    })
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    submit()
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => { if (!o) { reset(); onClose() } }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add container registry</DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4 mt-1">
+          {/* Provider */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Provider</label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as RegistryProvider)}
+              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Name */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Label</label>
+            <input
+              type="text"
+              placeholder="e.g. production-ghcr"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+
+          {/* Endpoint — only for providers that need it */}
+          {providerMeta.needsEndpoint && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Registry endpoint</label>
+              <input
+                type="text"
+                placeholder={providerMeta.namespacePlaceholder}
+                value={endpoint}
+                onChange={(e) => setEndpoint(e.target.value)}
+                className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              />
+            </div>
+          )}
+
+          {/* Namespace */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">
+              Namespace <span className="text-muted-foreground/50 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder={providerMeta.namespacePlaceholder}
+              value={namespace}
+              onChange={(e) => setNamespace(e.target.value)}
+              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+
+          {/* Username */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">{providerMeta.userLabel}</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              autoComplete="off"
+              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+
+          {/* Password / token */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">{providerMeta.passLabel}</label>
+            <div className="flex items-center gap-1">
+              <input
+                type={showPass ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+                className="flex-1 rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground/60">Stored encrypted with AES-256-GCM</p>
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              {error}
+            </div>
+          )}
+        </form>
+
+        <DialogFooter showCloseButton>
+          <Button
+            onClick={submit}
+            disabled={mutation.isPending || !name || !username || !password}
+            className="gap-1.5"
+          >
+            {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Add registry
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Git integration card ─────────────────────────────────────────────────────
+
+function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }: {
   integration: ApiGitIntegration
   orgId: string
   token: string
@@ -236,9 +757,7 @@ function GitIntegrationCard({
 
   return (
     <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
-      <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted shrink-0 text-xs font-bold text-muted-foreground uppercase">
-        {integration.provider.slice(0, 2)}
-      </div>
+      <ProviderIcon provider={integration.provider} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground truncate">{integration.name}</p>
@@ -268,36 +787,12 @@ function GitIntegrationCard({
   )
 }
 
-// ─── Shared section / card components ────────────────────────────────────────
-
-function Section({ icon, title, description, action, children }: {
-  icon: React.ReactNode; title: string; description: string; action: string; children: React.ReactNode
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="text-muted-foreground">{icon}</div>
-          <div>
-            <h2 className="text-sm font-medium text-foreground">{title}</h2>
-            <p className="text-xs text-muted-foreground">{description}</p>
-          </div>
-        </div>
-        <button className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors">
-          <Plus className="h-3 w-3" />{action}
-        </button>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{children}</div>
-    </section>
-  )
-}
+// ─── Mock section cards ───────────────────────────────────────────────────────
 
 function IntegrationCard({ name, providerKey, meta }: { name: string; providerKey: string; meta: string }) {
   return (
     <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
-      <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted shrink-0 text-xs font-bold text-muted-foreground uppercase">
-        {providerKey.slice(0, 2)}
-      </div>
+      <ProviderIcon provider={providerKey} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground truncate">{name}</p>
@@ -314,9 +809,7 @@ function NotificationCard({ channel }: { channel: NotificationChannel }) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4">
       <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted shrink-0 text-xs font-bold text-muted-foreground uppercase">
-          {channel.type.slice(0, 2)}
-        </div>
+        <ProviderIcon provider={channel.type} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-foreground truncate">{channel.name}</p>
@@ -330,6 +823,55 @@ function NotificationCard({ channel }: { channel: NotificationChannel }) {
           <code key={ev} className="text-[10px] font-mono bg-muted/60 px-1.5 py-0.5 rounded text-muted-foreground">{ev}</code>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ─── Shared primitives ────────────────────────────────────────────────────────
+
+function ProviderIcon({ provider }: { provider: string }) {
+  return (
+    <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted shrink-0 text-xs font-bold text-muted-foreground uppercase">
+      {provider.slice(0, 2)}
+    </div>
+  )
+}
+
+function SectionHeader({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="text-muted-foreground">{icon}</div>
+      <div>
+        <h2 className="text-sm font-medium text-foreground">{title}</h2>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  )
+}
+
+function EmptyState({ icon, title, description, children }: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-border/60 py-8 flex flex-col items-center gap-3">
+      <div className="text-muted-foreground/40">{icon}</div>
+      <div className="text-center">
+        <p className="text-sm text-muted-foreground">{title}</p>
+        <p className="text-xs text-muted-foreground/60 mt-0.5">{description}</p>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function LoadingRow() {
+  return (
+    <div className="flex items-center gap-2 py-6 text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span className="text-sm">Loading…</span>
     </div>
   )
 }

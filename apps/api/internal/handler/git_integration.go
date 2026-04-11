@@ -37,6 +37,20 @@ type ListBranchesOutput struct {
 	Body []string
 }
 
+type CreatePATIntegrationInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		Provider string `json:"provider" enum:"gitlab,gitea"`
+		Name     string `json:"name"     minLength:"1" maxLength:"100"`
+		BaseURL  string `json:"base_url,omitempty"`
+		Token    string `json:"token"    minLength:"1"`
+	}
+}
+
+type CreatePATIntegrationOutput struct {
+	Body *db.GitIntegration
+}
+
 type AppStatusOutput struct {
 	Body struct {
 		Configured bool   `json:"configured"`
@@ -115,6 +129,28 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 			return nil, err
 		}
 		return &ListGitIntegrationsOutput{Body: rows}, nil
+	})
+
+	// Create PAT-based integration (GitLab / Gitea)
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-pat-git-integration",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/git-integrations",
+		Summary:       "Create a GitLab or Gitea integration via personal access token",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusCreated,
+	}, func(ctx context.Context, in *CreatePATIntegrationInput) (*CreatePATIntegrationOutput, error) {
+		requireUser(ctx)
+		orgID, err := uuid.Parse(in.OrgID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		row, err := h.svc.GitIntegrations.CreatePATIntegration(ctx, orgID, in.Body.Provider, in.Body.Name, in.Body.BaseURL, in.Body.Token)
+		if err != nil {
+			return nil, err
+		}
+		return &CreatePATIntegrationOutput{Body: row}, nil
 	})
 
 	// GitHub install URL
