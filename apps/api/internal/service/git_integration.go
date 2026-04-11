@@ -175,7 +175,7 @@ func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, orgID uuid
 		return "", huma.Error501NotImplemented("GitHub App is not set up — visit /integrations to complete setup")
 	}
 	state := buildState(orgID.String(), s.cfg.JWTSecret)
-	url := fmt.Sprintf("https://github.com/apps/%s?state=%s", appCfg.AppSlug, state)
+	url := fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s", appCfg.AppSlug, state)
 	return url, nil
 }
 
