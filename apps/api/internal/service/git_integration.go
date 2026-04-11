@@ -228,12 +228,29 @@ func (s *GitIntegrationService) HandleGitHubCallback(ctx context.Context, instal
 	return &row, nil
 }
 
-// ListBranches returns branch names for a specific repo in a GitHub App installation.
+// ListBranches returns branch names for a specific repo in a git integration.
 func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID uuid.UUID, repo string) ([]string, error) {
 	var integration db.GitIntegration
 	if err := s.db.WithContext(ctx).First(&integration, integrationID).Error; err != nil {
 		return nil, huma.Error404NotFound("git integration not found")
 	}
+
+	switch integration.Provider {
+	case "gitlab":
+		branches, err := listGitLabBranches(integration.BaseURL, string(integration.InstallationID), repo)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list GitLab branches: " + err.Error())
+		}
+		return branches, nil
+	case "gitea":
+		branches, err := listGiteaBranches(integration.BaseURL, string(integration.InstallationID), repo)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list Gitea branches: " + err.Error())
+		}
+		return branches, nil
+	}
+
+	// Default: GitHub App flow.
 	appCfg, err := s.GetAppConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -278,16 +295,59 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 	return all, nil
 }
 
-// ListRepos returns all repositories accessible via a GitHub App installation.
+// CreatePATIntegration creates a GitLab or Gitea integration using a personal access token.
+func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, pat string) (*db.GitIntegration, error) {
+	// Validate PAT by making a test API call.
+	switch provider {
+	case "gitlab":
+		if err := validateGitLabPAT(baseURL, pat); err != nil {
+			return nil, huma.Error400BadRequest("invalid GitLab token: " + err.Error())
+		}
+	case "gitea":
+		if err := validateGiteaPAT(baseURL, pat); err != nil {
+			return nil, huma.Error400BadRequest("invalid Gitea token: " + err.Error())
+		}
+	default:
+		return nil, huma.Error400BadRequest("unsupported provider: " + provider)
+	}
+
+	row := db.GitIntegration{
+		OrganizationID: orgID,
+		Provider:       provider,
+		Name:           name,
+		InstallationID: db.EncryptedString(pat),
+		BaseURL:        baseURL,
+	}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return nil, huma.Error500InternalServerError("failed to save git integration")
+	}
+	return &row, nil
+}
+
+// ListRepos returns all repositories accessible via a GitHub App installation,
+// GitLab PAT, or Gitea PAT depending on the integration provider.
 func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uuid.UUID) ([]GitRepo, error) {
 	var integration db.GitIntegration
 	if err := s.db.WithContext(ctx).First(&integration, integrationID).Error; err != nil {
 		return nil, huma.Error404NotFound("git integration not found")
 	}
-	if integration.Provider != "github" {
-		return nil, huma.Error400BadRequest("repo listing is only supported for GitHub integrations")
+
+	switch integration.Provider {
+	case "gitlab":
+		repos, err := listGitLabRepos(integration.BaseURL, string(integration.InstallationID))
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list GitLab repositories: " + err.Error())
+		}
+		return repos, nil
+	case "gitea":
+		repos, err := listGiteaRepos(integration.BaseURL, string(integration.InstallationID))
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list Gitea repositories: " + err.Error())
+		}
+		return repos, nil
 	}
 
+	// Default: GitHub App flow.
 	appCfg, err := s.GetAppConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -446,6 +506,191 @@ func fetchAllRepos(token string) ([]GitRepo, error) {
 			})
 		}
 		if len(result.Repositories) < 100 {
+			break
+		}
+		page++
+	}
+	return all, nil
+}
+
+// ─── GitLab helpers ───────────────────────────────────────────────────────────
+
+func gitLabBase(baseURL string) string {
+	if baseURL == "" {
+		return "https://gitlab.com"
+	}
+	return strings.TrimRight(baseURL, "/")
+}
+
+func validateGitLabPAT(baseURL, pat string) error {
+	url := gitLabBase(baseURL) + "/api/v4/user"
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("PRIVATE-TOKEN", pat)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("unauthorized")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func listGitLabRepos(baseURL, pat string) ([]GitRepo, error) {
+	base := gitLabBase(baseURL)
+	var all []GitRepo
+	page := 1
+	for {
+		url := fmt.Sprintf("%s/api/v4/projects?membership=true&per_page=100&page=%d", base, page)
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("PRIVATE-TOKEN", pat)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		var result []struct {
+			PathWithNamespace string `json:"path_with_namespace"`
+			DefaultBranch     string `json:"default_branch"`
+			Visibility        string `json:"visibility"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, err
+		}
+		for _, r := range result {
+			all = append(all, GitRepo{
+				FullName:      r.PathWithNamespace,
+				DefaultBranch: r.DefaultBranch,
+				Private:       r.Visibility != "public",
+			})
+		}
+		if len(result) < 100 {
+			break
+		}
+		page++
+	}
+	return all, nil
+}
+
+func listGitLabBranches(baseURL, pat, projectPath string) ([]string, error) {
+	base := gitLabBase(baseURL)
+	encoded := strings.ReplaceAll(projectPath, "/", "%2F")
+	var all []string
+	page := 1
+	for {
+		url := fmt.Sprintf("%s/api/v4/projects/%s/repository/branches?per_page=100&page=%d", base, encoded, page)
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("PRIVATE-TOKEN", pat)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		var result []struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, err
+		}
+		for _, b := range result {
+			all = append(all, b.Name)
+		}
+		if len(result) < 100 {
+			break
+		}
+		page++
+	}
+	return all, nil
+}
+
+// ─── Gitea helpers ────────────────────────────────────────────────────────────
+
+func validateGiteaPAT(baseURL, pat string) error {
+	if baseURL == "" {
+		return fmt.Errorf("base URL is required for Gitea")
+	}
+	url := strings.TrimRight(baseURL, "/") + "/api/v1/user"
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "token "+pat)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("unauthorized")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func listGiteaRepos(baseURL, pat string) ([]GitRepo, error) {
+	base := strings.TrimRight(baseURL, "/")
+	var all []GitRepo
+	page := 1
+	for {
+		url := fmt.Sprintf("%s/api/v1/repos/search?limit=50&page=%d", base, page)
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("Authorization", "token "+pat)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		var result struct {
+			Data []struct {
+				FullName      string `json:"full_name"`
+				DefaultBranch string `json:"default_branch"`
+				Private       bool   `json:"private"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, err
+		}
+		for _, r := range result.Data {
+			all = append(all, GitRepo{
+				FullName:      r.FullName,
+				DefaultBranch: r.DefaultBranch,
+				Private:       r.Private,
+			})
+		}
+		if len(result.Data) < 50 {
+			break
+		}
+		page++
+	}
+	return all, nil
+}
+
+func listGiteaBranches(baseURL, pat, repo string) ([]string, error) {
+	base := strings.TrimRight(baseURL, "/")
+	var all []string
+	page := 1
+	for {
+		url := fmt.Sprintf("%s/api/v1/repos/%s/branches?limit=50&page=%d", base, repo, page)
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("Authorization", "token "+pat)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		var result []struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, err
+		}
+		for _, b := range result {
+			all = append(all, b.Name)
+		}
+		if len(result) < 50 {
 			break
 		}
 		page++

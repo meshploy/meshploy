@@ -251,6 +251,53 @@ export interface ApiDomain {
   updated_at: string
 }
 
+// ─── Registry Integrations ────────────────────────────────────────────────────
+
+export type RegistryProvider = "ghcr" | "dockerhub" | "ecr" | "gcr" | "custom"
+
+export interface ApiRegistryIntegration {
+  id: string
+  organization_id: string
+  name: string
+  provider: RegistryProvider
+  endpoint: string
+  namespace: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateRegistryBody {
+  name: string
+  provider: RegistryProvider
+  endpoint?: string
+  namespace?: string
+  username: string
+  password: string
+}
+
+export const registries = {
+  list: (orgId: string, token: string) =>
+    apiFetch<ApiRegistryIntegration[]>(
+      `/api/v1/orgs/${orgId}/registry-integrations`,
+      {},
+      token
+    ),
+
+  create: (orgId: string, body: CreateRegistryBody, token: string) =>
+    apiFetch<ApiRegistryIntegration>(
+      `/api/v1/orgs/${orgId}/registry-integrations`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  delete: (orgId: string, id: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/registry-integrations/${id}`,
+      { method: "DELETE" },
+      token
+    ),
+}
+
 // ─── Cluster ──────────────────────────────────────────────────────────────────
 
 export const cluster = {
@@ -369,6 +416,17 @@ export interface GitRepo {
 export const gitIntegrations = {
   list: (orgId: string, token: string) =>
     apiFetch<ApiGitIntegration[]>(`/api/v1/orgs/${orgId}/git-integrations`, {}, token),
+
+  createPAT: (
+    orgId: string,
+    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; token: string },
+    authToken: string
+  ) =>
+    apiFetch<ApiGitIntegration>(
+      `/api/v1/orgs/${orgId}/git-integrations`,
+      { method: "POST", body: JSON.stringify(body) },
+      authToken
+    ),
 
   installUrl: (orgId: string, token: string) =>
     apiFetch<{ url: string }>(`/api/v1/orgs/${orgId}/git-integrations/github/install-url`, {}, token),

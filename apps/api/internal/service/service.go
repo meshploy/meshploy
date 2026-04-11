@@ -23,7 +23,8 @@ type Services struct {
 	Routes          *RouteService
 	Deployments     *DeploymentService
 	GitIntegrations *GitIntegrationService
-	Headscale       *HeadscaleService  // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
+	Registries      *RegistryService
+	Headscale       *HeadscaleService   // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
 }
 
@@ -100,6 +101,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Routes:          &RouteService{db: db},
 		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc},
 		GitIntegrations: gitSvc,
+		Registries:      &RegistryService{db: db},
 		Headscale:       headscaleSvc,
 		K8s:             k8sClient,
 	}
