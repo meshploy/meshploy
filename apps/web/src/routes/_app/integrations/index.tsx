@@ -254,14 +254,14 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   }
 
   const patMutation = useMutation({
-    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; token: string }) =>
+    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; token: string }) =>
       gitApi.createPAT(orgId, body, token),
     onSuccess: () => { reset(); onSuccess() },
     onError: (err: Error) => setError(err.message),
   })
 
   const oauthMutation = useMutation({
-    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; client_id: string; client_secret: string }) =>
+    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; client_id: string; client_secret: string }) =>
       gitApi.initOAuth(orgId, body, token),
     onSuccess: ({ auth_url }) => { window.location.href = auth_url },
     onError: (err: Error) => setError(err.message),
