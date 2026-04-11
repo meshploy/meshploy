@@ -171,7 +171,7 @@ export function DomainSetupWizard({ backTo }: DomainSetupWizardProps) {
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Reserved subdomains</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                These prefixes are reserved for internal and preview routing. They can be changed later from Settings → Domains.
+                These prefixes are reserved for internal and preview routing. They can be changed later from Settings.
               </p>
             </div>
 
@@ -339,6 +339,7 @@ export function DomainSetupWizard({ backTo }: DomainSetupWizardProps) {
                   {[
                     { name: `*.${createdDomain.internal_subdomain}.${createdDomain.base_domain}`, note: "Internal zone — Caddy wildcard TLS" },
                     { name: `*.${createdDomain.preview_subdomain}.${createdDomain.base_domain}`, note: "Preview zone — deployment previews" },
+                    { name: `*.mesh.${createdDomain.base_domain}`, note: "Mesh zone — Headscale MagicDNS" },
                     { name: `*.${createdDomain.base_domain}`, note: "Public routes — user-created" },
                   ].map((row) => (
                     <div key={row.name} className="grid grid-cols-[1fr_auto] gap-4 px-4 py-3 items-start">

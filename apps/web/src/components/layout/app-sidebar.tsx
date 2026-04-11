@@ -2,7 +2,6 @@ import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
 import {
   FolderKanban,
-  Globe,
   Server,
   Network,
   Plug,
@@ -19,7 +18,6 @@ const NAV_ITEMS = [
   { href: "/projects", icon: FolderKanban, label: "Projects" },
   { href: "/nodes", icon: Server, label: "Nodes" },
   { href: "/cluster", icon: Network, label: "Cluster" },
-  { href: "/domains", icon: Globe, label: "Domains" },
   { href: "/integrations", icon: Plug, label: "Integrations" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ] as const
