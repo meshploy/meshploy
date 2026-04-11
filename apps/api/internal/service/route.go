@@ -33,13 +33,13 @@ type CreateRouteInput struct {
 }
 
 func (s *RouteService) ListByProject(ctx context.Context, projectID uuid.UUID) ([]db.Route, error) {
-	var routes []db.Route
+	routes := make([]db.Route, 0)
 	err := s.db.WithContext(ctx).Where("project_id = ?", projectID).Find(&routes).Error
 	return routes, err
 }
 
 func (s *RouteService) ListByOrg(ctx context.Context, orgID uuid.UUID) ([]db.Route, error) {
-	var routes []db.Route
+	routes := make([]db.Route, 0)
 	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&routes).Error
 	return routes, err
 }

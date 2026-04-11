@@ -13,7 +13,7 @@ type ProjectService struct {
 }
 
 func (s *ProjectService) List(ctx context.Context, orgID uuid.UUID) ([]db.Project, error) {
-	var projects []db.Project
+	projects := make([]db.Project, 0)
 	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&projects).Error
 	return projects, err
 }

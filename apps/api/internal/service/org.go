@@ -28,7 +28,7 @@ type AddMemberInput struct {
 }
 
 func (s *OrgService) ListForUser(ctx context.Context, userID uuid.UUID) ([]db.Organization, error) {
-	var orgs []db.Organization
+	orgs := make([]db.Organization, 0)
 	err := s.db.WithContext(ctx).
 		Joins("JOIN organization_members ON organization_members.organization_id = organizations.id").
 		Where("organization_members.user_id = ? AND organization_members.deleted_at IS NULL", userID).
@@ -73,7 +73,7 @@ func (s *OrgService) Delete(ctx context.Context, orgID uuid.UUID) error {
 }
 
 func (s *OrgService) ListMembers(ctx context.Context, orgID uuid.UUID) ([]db.OrganizationMember, error) {
-	var members []db.OrganizationMember
+	members := make([]db.OrganizationMember, 0)
 	err := s.db.WithContext(ctx).Preload("User").Where("organization_id = ?", orgID).Find(&members).Error
 	return members, err
 }

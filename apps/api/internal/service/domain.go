@@ -30,7 +30,7 @@ type UpdateDomainInput struct {
 }
 
 func (s *DomainService) List(ctx context.Context, orgID uuid.UUID) ([]db.Domain, error) {
-	var domains []db.Domain
+	domains := make([]db.Domain, 0)
 	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&domains).Error
 	return domains, err
 }

@@ -17,7 +17,7 @@ type NodeService struct {
 }
 
 func (s *NodeService) List(ctx context.Context, orgID uuid.UUID) ([]db.Node, error) {
-	var nodes []db.Node
+	nodes := make([]db.Node, 0)
 	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&nodes).Error
 	return nodes, err
 }
