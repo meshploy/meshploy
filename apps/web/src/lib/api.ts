@@ -430,7 +430,7 @@ export const gitIntegrations = {
 
   initOAuth: (
     orgId: string,
-    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; client_id: string; client_secret: string },
+    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; redirect_uri: string; client_id: string; client_secret: string },
     authToken: string
   ) =>
     apiFetch<{ auth_url: string; redirect_uri: string }>(
