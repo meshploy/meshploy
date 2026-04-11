@@ -5,6 +5,8 @@ docs/
 go.work.sum
 
 # Go build output
+apps/api/api
+apps/proxy/proxy
 apps/cli/cli
 apps/cli/meshploy
 apps/cli/meshploy-*

@@ -54,6 +54,10 @@ func (e EncryptedString) Value() (driver.Value, error) {
 }
 
 func (e *EncryptedString) Scan(value any) error {
+	if value == nil {
+		*e = ""
+		return nil
+	}
 	str, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("EncryptedString: expected string, got %T", value)

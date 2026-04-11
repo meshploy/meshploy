@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
@@ -101,6 +102,26 @@ func (s *OrgService) RemoveMember(ctx context.Context, orgID, userID uuid.UUID) 
 	return s.db.WithContext(ctx).
 		Where("organization_id = ? AND user_id = ?", orgID, userID).
 		Delete(&db.OrganizationMember{}).Error
+}
+
+// StoreHeadscalePreAuthKey encrypts and persists a Headscale preauth key on the org record.
+func (s *OrgService) StoreHeadscalePreAuthKey(ctx context.Context, orgID uuid.UUID, key string, expiry time.Time) error {
+	return s.db.WithContext(ctx).Model(&db.Organization{}).
+		Where("id = ?", orgID).
+		Updates(map[string]any{
+			"headscale_pre_auth_key":        db.EncryptedString(key),
+			"headscale_pre_auth_key_expiry": expiry,
+		}).Error
+}
+
+// ClearHeadscalePreAuthKey removes the stored Headscale preauth key from the org record.
+func (s *OrgService) ClearHeadscalePreAuthKey(ctx context.Context, orgID uuid.UUID) error {
+	return s.db.WithContext(ctx).Model(&db.Organization{}).
+		Where("id = ?", orgID).
+		Updates(map[string]any{
+			"headscale_pre_auth_key":        db.EncryptedString(""),
+			"headscale_pre_auth_key_expiry": nil,
+		}).Error
 }
 
 // MemberRole returns the role of a user within an org, or an error if not a member.

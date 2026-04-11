@@ -288,10 +288,6 @@ function HeadscalePreAuthKeyPanel() {
   const queryClient = useQueryClient()
   const [visible, setVisible] = useState(false)
   const [copied, setCopied] = useState(false)
-  // freshKey holds the key value returned by the most recent POST in this session.
-  // The GET endpoint intentionally never returns key material (Headscale masks it).
-  const [freshKey, setFreshKey] = useState<string | null>(null)
-  const [freshUrl, setFreshUrl] = useState<string>("")
 
   const { data, isLoading } = useQuery({
     queryKey: ["headscale-preauth-key"],
@@ -301,12 +297,10 @@ function HeadscalePreAuthKeyPanel() {
   const { mutate: generate, isPending: generating } = useMutation({
     mutationFn: () => clusterApi.createHeadscalePreAuthKey(token),
     onSuccess: (res) => {
-      setFreshKey(res.key)
-      setFreshUrl(res.headscale_url)
       setVisible(true)
-      // Mark the GET cache as having an active key now
       queryClient.setQueryData(["headscale-preauth-key"], {
         has_active_key: true,
+        key: res.key,
         headscale_url: res.headscale_url,
       })
     },
@@ -318,14 +312,15 @@ function HeadscalePreAuthKeyPanel() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const headscaleUrl = freshUrl || data?.headscale_url || ""
-  const hasActiveKey = data?.has_active_key ?? false
+  const headscaleUrl = data?.headscale_url || ""
+  // activeKey: populated from stored key (GET) or freshly generated key (POST via setQueryData)
+  const activeKey = data?.key || ""
 
   // Headscale not configured — GET returns empty headscale_url
   const unavailable = !isLoading && !headscaleUrl
 
-  const tailscaleCmd = freshKey
-    ? `tailscale up \\\n  --login-server="${headscaleUrl}" \\\n  --authkey="${freshKey}" \\\n  --force-reauth`
+  const tailscaleCmd = activeKey
+    ? `tailscale up \\\n  --login-server="${headscaleUrl}" \\\n  --authkey="${activeKey}" \\\n  --force-reauth`
     : ""
 
   return (
@@ -340,7 +335,7 @@ function HeadscalePreAuthKeyPanel() {
           disabled={generating || isLoading || unavailable}
         >
           {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-          {freshKey || hasActiveKey ? "New key" : "Generate key"}
+          {activeKey ? "New key" : "Generate key"}
         </Button>
       </div>
 
@@ -367,19 +362,19 @@ function HeadscalePreAuthKeyPanel() {
               </div>
             </div>
 
-            {freshKey ? (
+            {activeKey ? (
               <>
-                {/* Key display — only shown when freshly generated in this session */}
+                {/* Key display — shown whenever a valid stored key exists (survives page navigation) */}
                 <div className="space-y-1.5">
                   <p className="text-xs text-muted-foreground font-medium">Preauth key</p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
-                      {visible ? freshKey : "•".repeat(32)}
+                      {visible ? activeKey : "•".repeat(32)}
                     </code>
                     <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
                       {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(freshKey)}>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(activeKey)}>
                       {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
@@ -411,7 +406,7 @@ function HeadscalePreAuthKeyPanel() {
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Click <span className="text-foreground font-medium">New key</span> to generate a reusable preauth key for worker installation.
+                Click <span className="text-foreground font-medium">Generate key</span> to create a reusable preauth key for worker installation.
               </p>
             )}
           </>
