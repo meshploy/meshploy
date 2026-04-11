@@ -465,17 +465,22 @@ type RegistryIntegration struct {
 
 func (RegistryIntegration) TableName() string { return "registry_integrations" }
 
-// GitIntegration holds an org-level connection to a Git hosting provider via
-// GitHub App installation (or, in future, GitLab/Gitea OAuth tokens).
-// InstallationID is stored encrypted; use the service layer to derive
-// short-lived installation tokens for repo operations.
+// GitIntegration holds an org-level connection to a Git hosting provider.
+// GitHub uses the App installation flow (InstallationID = GitHub App installation ID).
+// GitLab/Gitea support two auth methods:
+//   - PAT:   InstallationID = personal access token (encrypted)
+//   - OAuth: OAuthClientID + OAuthClientSecret = OAuth App credentials;
+//            InstallationID = OAuth access token (populated after callback)
 type GitIntegration struct {
 	Base
-	OrganizationID uuid.UUID       `gorm:"type:uuid;not null;index"   json:"organization_id"`
-	Provider       string          `gorm:"type:varchar(15);not null"  json:"provider"`   // "github" | "gitlab" | "gitea"
-	Name           string          `gorm:"not null"                   json:"name"`       // e.g. "acme-org" (GitHub account login)
-	InstallationID EncryptedString `gorm:"type:text"                  json:"-"`          // GitHub App installation_id (int64 as string)
-	BaseURL        string          `gorm:"not null;default:''"        json:"base_url"`   // empty = github.com; self-hosted URL otherwise
+	OrganizationID    uuid.UUID       `gorm:"type:uuid;not null;index"   json:"organization_id"`
+	Provider          string          `gorm:"type:varchar(15);not null"  json:"provider"`          // "github" | "gitlab" | "gitea"
+	AuthMethod        string          `gorm:"not null;default:'pat'"     json:"auth_method"`       // "app" | "pat" | "oauth"
+	Name              string          `gorm:"not null"                   json:"name"`
+	InstallationID    EncryptedString `gorm:"type:text"                  json:"-"`                 // GitHub: installation_id; GitLab/Gitea PAT: token; GitLab/Gitea OAuth: access token
+	BaseURL           string          `gorm:"not null;default:''"        json:"base_url"`          // empty = hosted (github.com / gitlab.com); self-hosted URL otherwise
+	OAuthClientID     string          `gorm:"not null;default:''"        json:"-"`                 // GitLab/Gitea OAuth App client_id
+	OAuthClientSecret EncryptedString `gorm:"type:text"                  json:"-"`                 // GitLab/Gitea OAuth App client_secret
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }

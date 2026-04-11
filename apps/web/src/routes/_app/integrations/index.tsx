@@ -60,11 +60,11 @@ function IntegrationsPage() {
     if (search.app_setup === "done") {
       qc.invalidateQueries({ queryKey: ["github-app-status"] })
       navigate({ to: "/integrations", replace: true })
-    } else if (search.github === "connected") {
+    } else if (search.github === "connected" || search.gitlab === "connected" || search.gitea === "connected") {
       qc.invalidateQueries({ queryKey: ["git-integrations", orgId] })
       navigate({ to: "/integrations", replace: true })
     }
-  }, [search.app_setup, search.github])
+  }, [search.app_setup, search.github, search.gitlab, search.gitea])
 
   const { data: appStatus } = useQuery({
     queryKey: ["github-app-status"],
@@ -198,6 +198,16 @@ function IntegrationsPage() {
 
 // ─── Add git source dialog ────────────────────────────────────────────────────
 
+type AuthMethod = "pat" | "oauth"
+
+// Derive the API base URL (same logic as api.ts BASE) for showing redirect URIs.
+function getAPIBase(): string {
+  return (window as Window & { __MESHPLOY_CONFIG__?: { apiUrl: string } })
+    .__MESHPLOY_CONFIG__?.apiUrl
+    ?? import.meta.env.VITE_API_URL
+    ?? "http://localhost:4000"
+}
+
 function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSuccess }: {
   open: boolean
   onClose: () => void
@@ -207,47 +217,58 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   onSuccess: () => void
 }) {
   const [provider, setProvider] = useState<GitProvider>("github")
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("pat")
+  // shared
   const [name, setName] = useState("")
   const [baseURL, setBaseURL] = useState("")
+  // PAT
   const [pat, setPAT] = useState("")
   const [showPAT, setShowPAT] = useState(false)
+  // OAuth
+  const [clientID, setClientID] = useState("")
+  const [clientSecret, setClientSecret] = useState("")
+  const [showSecret, setShowSecret] = useState(false)
+
   const [error, setError] = useState<string | null>(null)
   const [actioning, setActioning] = useState(false)
 
   function reset() {
     setProvider("github")
+    setAuthMethod("pat")
     setName("")
     setBaseURL("")
     setPAT("")
     setShowPAT(false)
+    setClientID("")
+    setClientSecret("")
+    setShowSecret(false)
     setError(null)
+    setActioning(false)
   }
 
   const patMutation = useMutation({
     mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; token: string }) =>
       gitApi.createPAT(orgId, body, token),
-    onSuccess: () => {
-      reset()
-      onSuccess()
-    },
+    onSuccess: () => { reset(); onSuccess() },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  const oauthMutation = useMutation({
+    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; client_id: string; client_secret: string }) =>
+      gitApi.initOAuth(orgId, body, token),
+    onSuccess: ({ auth_url }) => { window.location.href = auth_url },
     onError: (err: Error) => setError(err.message),
   })
 
   async function handleGitHubSetup() {
-    setError(null)
-    setActioning(true)
+    setError(null); setActioning(true)
     try {
       const { github_url, manifest } = await gitHubApp.manifestSetup()
       const form = document.createElement("form")
-      form.method = "POST"
-      form.action = github_url
+      form.method = "POST"; form.action = github_url
       const input = document.createElement("input")
-      input.type = "hidden"
-      input.name = "manifest"
-      input.value = manifest
-      form.appendChild(input)
-      document.body.appendChild(form)
-      form.submit()
+      input.type = "hidden"; input.name = "manifest"; input.value = manifest
+      form.appendChild(input); document.body.appendChild(form); form.submit()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to start GitHub App setup")
       setActioning(false)
@@ -255,8 +276,7 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   }
 
   async function handleGitHubConnect() {
-    setError(null)
-    setActioning(true)
+    setError(null); setActioning(true)
     try {
       const { url } = await gitApi.installUrl(orgId, token)
       window.location.href = url
@@ -268,12 +288,12 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
 
   function submitPAT() {
     setError(null)
-    patMutation.mutate({
-      provider: provider as "gitlab" | "gitea",
-      name: name.trim(),
-      base_url: baseURL.trim() || undefined,
-      token: pat,
-    })
+    patMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, token: pat })
+  }
+
+  function submitOAuth() {
+    setError(null)
+    oauthMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, client_id: clientID.trim(), client_secret: clientSecret })
   }
 
   const TABS: { value: GitProvider; label: string }[] = [
@@ -282,9 +302,20 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
     { value: "gitea", label: "Gitea" },
   ]
 
+  const apiBase = getAPIBase()
+  const gitlabRedirectURI = `${apiBase}/api/v1/gitlab/callback`
+  const giteaRedirectURI = `${apiBase}/api/v1/gitea/callback`
+  const gitlabSettingsURL = (baseURL || "https://gitlab.com") + "/-/profile"
+  const giteaSettingsURL = baseURL ? baseURL + "/user/settings/applications" : ""
+  const isPAT = authMethod === "pat"
+  const isGitLabOrGitea = provider === "gitlab" || provider === "gitea"
+
+  const inputCls = "w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+  const monoCls = inputCls + " font-mono"
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose() } }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add git source</DialogTitle>
         </DialogHeader>
@@ -292,148 +323,231 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
         {/* Provider tabs */}
         <div className="flex gap-1 rounded-lg bg-muted/40 p-1 mt-1">
           {TABS.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => { setProvider(tab.value); setError(null) }}
+            <button key={tab.value} type="button"
+              onClick={() => { setProvider(tab.value); setAuthMethod("pat"); setError(null) }}
               className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                provider === tab.value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                provider === tab.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}
-            >
-              {tab.label}
-            </button>
+            >{tab.label}</button>
           ))}
         </div>
 
-        {provider === "github" ? (
+        {/* ── GitHub ── */}
+        {provider === "github" && (
           <div className="space-y-4 mt-1">
             {!appConfigured ? (
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">
+              <>
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   Register Meshploy as a GitHub App on your account. This is a one-time platform-wide setup.
                 </p>
-                {error && (
-                  <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{error}
-                  </div>
-                )}
+                {error && <ErrorBanner message={error} />}
                 <Button onClick={handleGitHubSetup} disabled={actioning} className="w-full gap-1.5">
                   {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Settings2 className="h-3.5 w-3.5" />}
                   {actioning ? "Opening GitHub…" : "Setup GitHub App"}
                 </Button>
-              </div>
+              </>
             ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  Install the Meshploy GitHub App on an organization or personal account to grant access to repositories.
+              <>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Install the Meshploy GitHub App on an organization or personal account to grant repository access.
                 </p>
-                {error && (
-                  <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{error}
-                  </div>
-                )}
+                {error && <ErrorBanner message={error} />}
                 <Button onClick={handleGitHubConnect} disabled={actioning} className="w-full gap-1.5">
                   {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                   {actioning ? "Redirecting…" : "Install GitHub App"}
                 </Button>
-              </div>
+              </>
             )}
+            <DialogFooter showCloseButton />
           </div>
-        ) : (
-          <form onSubmit={(e) => { e.preventDefault(); submitPAT() }} className="space-y-4 mt-1">
-            {provider === "gitlab" && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Instance URL <span className="text-muted-foreground/50 font-normal">(leave empty for gitlab.com)</span>
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://gitlab.example.com"
-                  value={baseURL}
-                  onChange={(e) => setBaseURL(e.target.value)}
-                  className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                />
-              </div>
-            )}
-            {provider === "gitea" && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Instance URL</label>
-                <input
-                  type="url"
-                  placeholder="https://gitea.example.com"
-                  value={baseURL}
-                  onChange={(e) => setBaseURL(e.target.value)}
-                  required
-                  className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                />
-              </div>
-            )}
+        )}
 
+        {/* ── GitLab / Gitea ── */}
+        {isGitLabOrGitea && (
+          <div className="space-y-4 mt-1">
+            {/* Method selector cards */}
+            <div className="grid grid-cols-2 gap-2">
+              {(["pat", "oauth"] as AuthMethod[]).map((m) => (
+                <button key={m} type="button" onClick={() => { setAuthMethod(m); setError(null) }}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    authMethod === m ? "border-ring bg-ring/5" : "border-border/60 hover:border-border"
+                  }`}
+                >
+                  <p className={`text-xs font-semibold ${authMethod === m ? "text-foreground" : "text-muted-foreground"}`}>
+                    {m === "pat" ? "Personal Access Token" : "OAuth Application"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-0.5 leading-relaxed">
+                    {m === "pat"
+                      ? "Simple — paste a token from your account settings"
+                      : "Standard — stable, refreshable OAuth2 connection"}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            {/* Instance URL (both methods) */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Label</label>
-              <input
-                type="text"
-                placeholder={provider === "gitlab" ? "e.g. my-gitlab-org" : "e.g. my-gitea-org"}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              <label className="text-xs font-medium text-muted-foreground">
+                {provider === "gitlab" ? <>Instance URL <span className="text-muted-foreground/50 font-normal">(leave empty for gitlab.com)</span></> : "Instance URL"}
+              </label>
+              <input type="url"
+                placeholder={provider === "gitlab" ? "https://gitlab.example.com" : "https://gitea.example.com"}
+                value={baseURL} onChange={(e) => setBaseURL(e.target.value)}
+                required={provider === "gitea"}
+                className={monoCls}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Personal access token</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type={showPAT ? "text" : "password"}
-                  value={pat}
-                  onChange={(e) => setPAT(e.target.value)}
-                  required
-                  autoComplete="new-password"
-                  placeholder={provider === "gitlab" ? "glpat-…" : ""}
-                  className="flex-1 rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPAT((v) => !v)}
-                  className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showPAT ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <p className="text-[11px] text-muted-foreground/60">
-                {provider === "gitlab"
-                  ? "Requires read_api and read_repository scopes"
-                  : "Requires repository read access"}
-              </p>
-            </div>
-
-            {error && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{error}
+            {/* ── PAT instructions ── */}
+            {isPAT && (
+              <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-1.5 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Setup steps</p>
+                {provider === "gitlab" ? (
+                  <ol className="space-y-1 list-decimal list-inside">
+                    <li>Go to <a href={gitlabSettingsURL + "/personal_access_tokens"} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">GitLab → Access Tokens</a></li>
+                    <li>Click <span className="font-medium text-foreground">Add new token</span></li>
+                    <li>Enable scopes: <code className="bg-muted px-1 rounded">read_api</code> <code className="bg-muted px-1 rounded">read_repository</code></li>
+                    <li>Copy the generated token and paste it below</li>
+                  </ol>
+                ) : (
+                  <ol className="space-y-1 list-decimal list-inside">
+                    <li>Go to <a href={giteaSettingsURL} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">Gitea → Settings → Applications</a></li>
+                    <li>Under <span className="font-medium text-foreground">Manage Access Tokens</span>, click <span className="font-medium text-foreground">Generate Token</span></li>
+                    <li>Enable <code className="bg-muted px-1 rounded">repository</code> read permission</li>
+                    <li>Copy the token and paste it below</li>
+                  </ol>
+                )}
               </div>
             )}
 
-            <DialogFooter showCloseButton>
-              <Button
-                onClick={submitPAT}
-                disabled={patMutation.isPending || !name || !pat || (provider === "gitea" && !baseURL)}
-                className="gap-1.5"
-              >
-                {patMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Connect {provider === "gitlab" ? "GitLab" : "Gitea"}
-              </Button>
-            </DialogFooter>
-          </form>
-        )}
+            {/* ── OAuth instructions ── */}
+            {!isPAT && (
+              <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-1.5 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Setup steps</p>
+                {provider === "gitlab" ? (
+                  <ol className="space-y-1 list-decimal list-inside">
+                    <li>Go to <a href={gitlabSettingsURL + "/applications"} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">GitLab → Applications</a></li>
+                    <li>Create a new application — Name: <span className="font-medium text-foreground">Meshploy</span></li>
+                    <li>Set Redirect URI to the value below</li>
+                    <li>Enable scopes: <code className="bg-muted px-1 rounded">api</code> <code className="bg-muted px-1 rounded">read_user</code> <code className="bg-muted px-1 rounded">read_repository</code></li>
+                    <li>Copy the Application ID and Secret and paste them below</li>
+                  </ol>
+                ) : (
+                  <ol className="space-y-1 list-decimal list-inside">
+                    <li>Go to <a href={giteaSettingsURL} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">Gitea → Settings → Applications</a></li>
+                    <li>Under <span className="font-medium text-foreground">OAuth2 Applications</span>, click <span className="font-medium text-foreground">Create OAuth2 Application</span></li>
+                    <li>Name: <span className="font-medium text-foreground">Meshploy</span> — Set Redirect URI to the value below</li>
+                    <li>Copy the Client ID and Client Secret and paste them below</li>
+                  </ol>
+                )}
+                {/* Redirect URI copy box */}
+                <div className="mt-2 space-y-1">
+                  <p className="text-[11px] text-muted-foreground/60">Redirect URI to paste into {provider === "gitlab" ? "GitLab" : "Gitea"}:</p>
+                  <div className="flex items-center gap-1.5 rounded bg-muted px-2 py-1.5">
+                    <code className="flex-1 text-[11px] font-mono text-foreground break-all">
+                      {provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI}
+                    </code>
+                    <button type="button"
+                      onClick={() => navigator.clipboard.writeText(provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI)}
+                      className="shrink-0 text-muted-foreground hover:text-foreground transition-colors text-[11px]"
+                      title="Copy"
+                    >Copy</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
-        {provider === "github" && (
-          <DialogFooter showCloseButton />
+            {/* Label */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Label</label>
+              <input type="text"
+                placeholder={provider === "gitlab" ? "e.g. my-gitlab-org" : "e.g. my-gitea-org"}
+                value={name} onChange={(e) => setName(e.target.value)} required
+                className={inputCls}
+              />
+            </div>
+
+            {/* PAT fields */}
+            {isPAT && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Personal access token</label>
+                <div className="flex items-center gap-1">
+                  <input type={showPAT ? "text" : "password"}
+                    value={pat} onChange={(e) => setPAT(e.target.value)}
+                    required autoComplete="new-password"
+                    placeholder={provider === "gitlab" ? "glpat-…" : ""}
+                    className={`flex-1 ${monoCls}`}
+                  />
+                  <button type="button" onClick={() => setShowPAT((v) => !v)}
+                    className="p-2 text-muted-foreground hover:text-foreground transition-colors">
+                    {showPAT ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground/60">Stored encrypted with AES-256-GCM</p>
+              </div>
+            )}
+
+            {/* OAuth fields */}
+            {!isPAT && (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {provider === "gitlab" ? "Application ID" : "Client ID"}
+                  </label>
+                  <input type="text" value={clientID} onChange={(e) => setClientID(e.target.value)}
+                    required autoComplete="off" className={monoCls}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {provider === "gitlab" ? "Application Secret" : "Client Secret"}
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <input type={showSecret ? "text" : "password"}
+                      value={clientSecret} onChange={(e) => setClientSecret(e.target.value)}
+                      required autoComplete="new-password" className={`flex-1 ${monoCls}`}
+                    />
+                    <button type="button" onClick={() => setShowSecret((v) => !v)}
+                      className="p-2 text-muted-foreground hover:text-foreground transition-colors">
+                      {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/60">Stored encrypted with AES-256-GCM</p>
+                </div>
+              </>
+            )}
+
+            {error && <ErrorBanner message={error} />}
+
+            <DialogFooter showCloseButton>
+              {isPAT ? (
+                <Button onClick={submitPAT}
+                  disabled={patMutation.isPending || !name || !pat || (provider === "gitea" && !baseURL)}
+                  className="gap-1.5">
+                  {patMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Connect {provider === "gitlab" ? "GitLab" : "Gitea"}
+                </Button>
+              ) : (
+                <Button onClick={submitOAuth}
+                  disabled={oauthMutation.isPending || !name || !clientID || !clientSecret || (provider === "gitea" && !baseURL)}
+                  className="gap-1.5">
+                  {oauthMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Authorize {provider === "gitlab" ? "GitLab" : "Gitea"}
+                </Button>
+              )}
+            </DialogFooter>
+          </div>
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{message}
+    </div>
   )
 }
 

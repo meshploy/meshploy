@@ -428,6 +428,17 @@ export const gitIntegrations = {
       authToken
     ),
 
+  initOAuth: (
+    orgId: string,
+    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; client_id: string; client_secret: string },
+    authToken: string
+  ) =>
+    apiFetch<{ auth_url: string; redirect_uri: string }>(
+      `/api/v1/orgs/${orgId}/git-integrations/oauth`,
+      { method: "POST", body: JSON.stringify(body) },
+      authToken
+    ),
+
   installUrl: (orgId: string, token: string) =>
     apiFetch<{ url: string }>(`/api/v1/orgs/${orgId}/git-integrations/github/install-url`, {}, token),
 
