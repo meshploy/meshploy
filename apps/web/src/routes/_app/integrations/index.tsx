@@ -362,7 +362,10 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
             ) : (
               <>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Install the Meshploy GitHub App on an organization or personal account to grant repository access.
+                  Install the Meshploy GitHub App on a personal account or organization to grant repository access.
+                </p>
+                <p className="text-xs text-muted-foreground/70 leading-relaxed">
+                  If the app is already installed and you want to add an organization, GitHub will show your existing installation — use the account switcher in the left sidebar to install on additional orgs.
                 </p>
                 {error && <ErrorBanner message={error} />}
                 <Button onClick={handleGitHubConnect} disabled={actioning} className="w-full gap-1.5">
