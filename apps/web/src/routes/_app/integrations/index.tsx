@@ -200,12 +200,17 @@ function IntegrationsPage() {
 
 type AuthMethod = "pat" | "oauth"
 
-// Derive the API base URL (same logic as api.ts BASE) for showing redirect URIs.
+// Derive the absolute API base URL for constructing OAuth redirect URIs.
+// In production the apiUrl is "" (relative) — use window.location.origin in that case
+// so the redirect URI shown to the user is always a full https://… URL.
 function getAPIBase(): string {
-  return (window as Window & { __MESHPLOY_CONFIG__?: { apiUrl: string } })
-    .__MESHPLOY_CONFIG__?.apiUrl
+  const configured: string =
+    (window as Window & { __MESHPLOY_CONFIG__?: { apiUrl: string } })
+      .__MESHPLOY_CONFIG__?.apiUrl
     ?? import.meta.env.VITE_API_URL
-    ?? "http://localhost:4000"
+    ?? ""
+  if (!configured) return window.location.origin
+  return configured
 }
 
 function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSuccess }: {
@@ -221,6 +226,7 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   // shared
   const [name, setName] = useState("")
   const [baseURL, setBaseURL] = useState("")
+  const [groups, setGroups] = useState("")
   // PAT
   const [pat, setPAT] = useState("")
   const [showPAT, setShowPAT] = useState(false)
@@ -237,6 +243,7 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
     setAuthMethod("pat")
     setName("")
     setBaseURL("")
+    setGroups("")
     setPAT("")
     setShowPAT(false)
     setClientID("")
@@ -288,12 +295,12 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
 
   function submitPAT() {
     setError(null)
-    patMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, token: pat })
+    patMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, token: pat })
   }
 
   function submitOAuth() {
     setError(null)
-    oauthMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, client_id: clientID.trim(), client_secret: clientSecret })
+    oauthMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, client_id: clientID.trim(), client_secret: clientSecret })
   }
 
   const TABS: { value: GitProvider; label: string }[] = [
@@ -305,8 +312,6 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   const apiBase = getAPIBase()
   const gitlabRedirectURI = `${apiBase}/api/v1/gitlab/callback`
   const giteaRedirectURI = `${apiBase}/api/v1/gitea/callback`
-  const gitlabSettingsURL = (baseURL || "https://gitlab.com") + "/-/profile"
-  const giteaSettingsURL = baseURL ? baseURL + "/user/settings/applications" : ""
   const isPAT = authMethod === "pat"
   const isGitLabOrGitea = provider === "gitlab" || provider === "gitea"
 
@@ -315,7 +320,7 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose() } }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add git source</DialogTitle>
         </DialogHeader>
@@ -404,14 +409,14 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
                 <p className="font-medium text-foreground">Setup steps</p>
                 {provider === "gitlab" ? (
                   <ol className="space-y-1 list-decimal list-inside">
-                    <li>Go to <a href={gitlabSettingsURL + "/personal_access_tokens"} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">GitLab → Access Tokens</a></li>
+                    <li>Go to your GitLab profile → <span className="font-medium text-foreground">Access Tokens</span></li>
                     <li>Click <span className="font-medium text-foreground">Add new token</span></li>
                     <li>Enable scopes: <code className="bg-muted px-1 rounded">read_api</code> <code className="bg-muted px-1 rounded">read_repository</code></li>
                     <li>Copy the generated token and paste it below</li>
                   </ol>
                 ) : (
                   <ol className="space-y-1 list-decimal list-inside">
-                    <li>Go to <a href={giteaSettingsURL} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">Gitea → Settings → Applications</a></li>
+                    <li>Go to your Gitea profile → <span className="font-medium text-foreground">Settings → Applications</span></li>
                     <li>Under <span className="font-medium text-foreground">Manage Access Tokens</span>, click <span className="font-medium text-foreground">Generate Token</span></li>
                     <li>Enable <code className="bg-muted px-1 rounded">repository</code> read permission</li>
                     <li>Copy the token and paste it below</li>
@@ -426,23 +431,22 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
                 <p className="font-medium text-foreground">Setup steps</p>
                 {provider === "gitlab" ? (
                   <ol className="space-y-1 list-decimal list-inside">
-                    <li>Go to <a href={gitlabSettingsURL + "/applications"} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">GitLab → Applications</a></li>
+                    <li>Go to your GitLab profile → <span className="font-medium text-foreground">Applications</span></li>
                     <li>Create a new application — Name: <span className="font-medium text-foreground">Meshploy</span></li>
-                    <li>Set Redirect URI to the value below</li>
-                    <li>Enable scopes: <code className="bg-muted px-1 rounded">api</code> <code className="bg-muted px-1 rounded">read_user</code> <code className="bg-muted px-1 rounded">read_repository</code></li>
+                    <li>Set Redirect URI to the value below, enable scopes: <code className="bg-muted px-1 rounded">api</code> <code className="bg-muted px-1 rounded">read_user</code> <code className="bg-muted px-1 rounded">read_repository</code></li>
                     <li>Copy the Application ID and Secret and paste them below</li>
                   </ol>
                 ) : (
                   <ol className="space-y-1 list-decimal list-inside">
-                    <li>Go to <a href={giteaSettingsURL} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">Gitea → Settings → Applications</a></li>
+                    <li>Go to your Gitea profile → <span className="font-medium text-foreground">Settings → Applications</span></li>
                     <li>Under <span className="font-medium text-foreground">OAuth2 Applications</span>, click <span className="font-medium text-foreground">Create OAuth2 Application</span></li>
-                    <li>Name: <span className="font-medium text-foreground">Meshploy</span> — Set Redirect URI to the value below</li>
-                    <li>Copy the Client ID and Client Secret and paste them below</li>
+                    <li>Name: <span className="font-medium text-foreground">Meshploy</span>, set Redirect URI to the value below</li>
+                    <li>Copy the Client ID and Secret and paste them below</li>
                   </ol>
                 )}
                 {/* Redirect URI copy box */}
                 <div className="mt-2 space-y-1">
-                  <p className="text-[11px] text-muted-foreground/60">Redirect URI to paste into {provider === "gitlab" ? "GitLab" : "Gitea"}:</p>
+                  <p className="text-[11px] text-muted-foreground/60">Redirect URI — paste this into {provider === "gitlab" ? "GitLab" : "Gitea"}:</p>
                   <div className="flex items-center gap-1.5 rounded bg-muted px-2 py-1.5">
                     <code className="flex-1 text-[11px] font-mono text-foreground break-all">
                       {provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI}
@@ -450,12 +454,29 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
                     <button type="button"
                       onClick={() => navigator.clipboard.writeText(provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI)}
                       className="shrink-0 text-muted-foreground hover:text-foreground transition-colors text-[11px]"
-                      title="Copy"
                     >Copy</button>
                   </div>
                 </div>
               </div>
             )}
+
+            {/* Group / Org scoping */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                {provider === "gitlab" ? "Group name" : "Organization name"}
+                {" "}<span className="text-muted-foreground/50 font-normal">(optional — scopes repo access)</span>
+              </label>
+              <input type="text"
+                placeholder={provider === "gitlab" ? "e.g. my-group or my-group/sub-group" : "e.g. my-org"}
+                value={groups} onChange={(e) => setGroups(e.target.value)}
+                className={inputCls}
+              />
+              <p className="text-[11px] text-muted-foreground/60">
+                {provider === "gitlab"
+                  ? "Leave empty to list all accessible repos. Set to a group path to scope to that group."
+                  : "Leave empty to list all accessible repos. Set to an org name to scope to that org."}
+              </p>
+            </div>
 
             {/* Label */}
             <div className="space-y-1.5">

@@ -419,7 +419,7 @@ export const gitIntegrations = {
 
   createPAT: (
     orgId: string,
-    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; token: string },
+    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; token: string },
     authToken: string
   ) =>
     apiFetch<ApiGitIntegration>(
@@ -430,7 +430,7 @@ export const gitIntegrations = {
 
   initOAuth: (
     orgId: string,
-    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; client_id: string; client_secret: string },
+    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; client_id: string; client_secret: string },
     authToken: string
   ) =>
     apiFetch<{ auth_url: string; redirect_uri: string }>(

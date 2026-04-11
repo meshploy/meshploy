@@ -298,7 +298,7 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 
 // CreatePATIntegration creates a GitLab or Gitea integration using a personal access token.
 // The token is validated by hitting the provider's /user endpoint before persisting.
-func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, pat string) (*db.GitIntegration, error) {
+func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, groups, pat string) (*db.GitIntegration, error) {
 	switch provider {
 	case "gitlab":
 		if err := validateGitToken(gitLabBase(baseURL)+"/api/v4/user", "Bearer", pat); err != nil {
@@ -322,6 +322,7 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 		Name:           name,
 		InstallationID: db.EncryptedString(pat),
 		BaseURL:        baseURL,
+		Groups:         groups,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, huma.Error500InternalServerError("failed to save git integration")
@@ -331,13 +332,14 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 
 // InitOAuthIntegration creates a pending GitLab/Gitea integration record and returns
 // the OAuth authorization URL the user should be redirected to.
-func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, clientID, clientSecret string) (*db.GitIntegration, string, error) {
+func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, groups, clientID, clientSecret string) (*db.GitIntegration, string, error) {
 	row := db.GitIntegration{
 		OrganizationID:    orgID,
 		Provider:          provider,
 		AuthMethod:        "oauth",
 		Name:              name,
 		BaseURL:           baseURL,
+		Groups:            groups,
 		OAuthClientID:     clientID,
 		OAuthClientSecret: db.EncryptedString(clientSecret),
 	}
@@ -442,14 +444,13 @@ func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uui
 
 	switch integration.Provider {
 	case "gitlab":
-		// Both PAT and OAuth access tokens work with Authorization: Bearer
-		repos, err := listGitLabRepos(integration.BaseURL, string(integration.InstallationID))
+		repos, err := listGitLabRepos(integration.BaseURL, string(integration.InstallationID), integration.Groups)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list GitLab repositories: " + err.Error())
 		}
 		return repos, nil
 	case "gitea":
-		repos, err := listGiteaRepos(integration.BaseURL, string(integration.InstallationID))
+		repos, err := listGiteaRepos(integration.BaseURL, string(integration.InstallationID), integration.Groups)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list Gitea repositories: " + err.Error())
 		}
@@ -691,13 +692,20 @@ func gitLabBase(baseURL string) string {
 	return strings.TrimRight(baseURL, "/")
 }
 
-func listGitLabRepos(baseURL, token string) ([]GitRepo, error) {
+func listGitLabRepos(baseURL, token, group string) ([]GitRepo, error) {
 	base := gitLabBase(baseURL)
 	var all []GitRepo
 	page := 1
 	for {
-		url := fmt.Sprintf("%s/api/v4/projects?membership=true&per_page=100&page=%d", base, page)
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		var apiURL string
+		if group != "" {
+			// Scope to a specific group (includes subgroups via with_shared=false&include_subgroups=true)
+			apiURL = fmt.Sprintf("%s/api/v4/groups/%s/projects?per_page=100&page=%d&include_subgroups=true",
+				base, url.PathEscape(group), page)
+		} else {
+			apiURL = fmt.Sprintf("%s/api/v4/projects?membership=true&per_page=100&page=%d", base, page)
+		}
+		req, _ := http.NewRequest(http.MethodGet, apiURL, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -760,14 +768,20 @@ func listGitLabBranches(baseURL, token, projectPath string) ([]string, error) {
 
 // ─── Gitea helpers ────────────────────────────────────────────────────────────
 
-func listGiteaRepos(baseURL, pat string) ([]GitRepo, error) {
+func listGiteaRepos(baseURL, token, org string) ([]GitRepo, error) {
 	base := strings.TrimRight(baseURL, "/")
 	var all []GitRepo
 	page := 1
 	for {
-		url := fmt.Sprintf("%s/api/v1/repos/search?limit=50&page=%d", base, page)
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("Authorization", "token "+pat)
+		var apiURL string
+		if org != "" {
+			// Scope to a specific organization
+			apiURL = fmt.Sprintf("%s/api/v1/orgs/%s/repos?limit=50&page=%d", base, url.PathEscape(org), page)
+		} else {
+			apiURL = fmt.Sprintf("%s/api/v1/repos/search?limit=50&page=%d", base, page)
+		}
+		req, _ := http.NewRequest(http.MethodGet, apiURL, nil)
+		req.Header.Set("Authorization", "token "+token)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, err

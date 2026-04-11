@@ -43,6 +43,7 @@ type CreatePATIntegrationInput struct {
 		Provider string `json:"provider" enum:"gitlab,gitea"`
 		Name     string `json:"name"     minLength:"1" maxLength:"100"`
 		BaseURL  string `json:"base_url,omitempty"`
+		Groups   string `json:"groups,omitempty"`
 		Token    string `json:"token"    minLength:"1"`
 	}
 }
@@ -57,6 +58,7 @@ type InitOAuthIntegrationInput struct {
 		Provider     string `json:"provider"      enum:"gitlab,gitea"`
 		Name         string `json:"name"          minLength:"1" maxLength:"100"`
 		BaseURL      string `json:"base_url,omitempty"`
+		Groups       string `json:"groups,omitempty"`
 		ClientID     string `json:"client_id"     minLength:"1"`
 		ClientSecret string `json:"client_secret" minLength:"1"`
 	}
@@ -164,7 +166,7 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org ID")
 		}
-		row, err := h.svc.GitIntegrations.CreatePATIntegration(ctx, orgID, in.Body.Provider, in.Body.Name, in.Body.BaseURL, in.Body.Token)
+		row, err := h.svc.GitIntegrations.CreatePATIntegration(ctx, orgID, in.Body.Provider, in.Body.Name, in.Body.BaseURL, in.Body.Groups, in.Body.Token)
 		if err != nil {
 			return nil, err
 		}
@@ -188,7 +190,7 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		}
 		_, authURL, err := h.svc.GitIntegrations.InitOAuthIntegration(
 			ctx, orgID, in.Body.Provider, in.Body.Name,
-			in.Body.BaseURL, in.Body.ClientID, in.Body.ClientSecret,
+			in.Body.BaseURL, in.Body.Groups, in.Body.ClientID, in.Body.ClientSecret,
 		)
 		if err != nil {
 			return nil, err
