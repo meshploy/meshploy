@@ -146,6 +146,7 @@ function IntegrationsPage() {
           orgId={orgId}
           token={token}
           appConfigured={appStatus?.configured === true}
+          appSlug={appStatus?.app_slug}
           onSuccess={() => {
             qc.invalidateQueries({ queryKey: ["git-integrations", orgId] })
             setAddGitOpen(false)
@@ -220,12 +221,13 @@ function getAPIBase(): string {
   return configured
 }
 
-function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSuccess }: {
+function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlug, onSuccess }: {
   open: boolean
   onClose: () => void
   orgId: string
   token: string
   appConfigured: boolean
+  appSlug?: string
   onSuccess: () => void
 }) {
   const [provider, setProvider] = useState<GitProvider>("github")
@@ -241,9 +243,10 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   const [clientID, setClientID] = useState("")
   const [clientSecret, setClientSecret] = useState("")
   const [showSecret, setShowSecret] = useState(false)
-  // GitHub org toggle
-  const [isOrg, setIsOrg] = useState(false)
+  // GitHub org name (app creation)
   const [githubOrg, setGithubOrg] = useState("")
+  // GitHub install-on-org
+  const [installOrg, setInstallOrg] = useState("")
 
   const [error, setError] = useState<string | null>(null)
   const [actioning, setActioning] = useState(false)
@@ -251,8 +254,8 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   function reset() {
     setProvider("github")
     setAuthMethod("pat")
-    setIsOrg(false)
     setGithubOrg("")
+    setInstallOrg("")
     setName("")
     setBaseURL("")
     setGroups("")
@@ -282,7 +285,7 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   async function handleGitHubSetup() {
     setError(null); setActioning(true)
     try {
-      const { github_url, manifest } = await gitHubApp.manifestSetup(isOrg ? githubOrg.trim() : undefined)
+      const { github_url, manifest } = await gitHubApp.manifestSetup(githubOrg.trim() || undefined)
       const form = document.createElement("form")
       form.method = "POST"; form.action = github_url
       const input = document.createElement("input")
@@ -296,10 +299,22 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
 
   async function handleGitHubConnect() {
     setError(null); setActioning(true)
+    // Reset spinner if user returns via browser back / bfcache restore
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) { setActioning(false); window.removeEventListener("pageshow", onPageShow) }
+    }
+    window.addEventListener("pageshow", onPageShow)
     try {
-      const { url } = await gitApi.installUrl(orgId, token)
-      window.location.href = url
+      const org = installOrg.trim()
+      if (org && appSlug) {
+        // Go directly to the org's app settings page where they can install
+        window.location.href = `https://github.com/organizations/${org}/settings/apps/${appSlug}`
+      } else {
+        const { url } = await gitApi.installUrl(orgId, token)
+        window.location.href = url
+      }
     } catch (err: unknown) {
+      window.removeEventListener("pageshow", onPageShow)
       setError(err instanceof Error ? err.message : "Failed to get install URL")
       setActioning(false)
     }
@@ -358,29 +373,17 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Register Meshploy as a GitHub App on your account. This is a one-time platform-wide setup.
                 </p>
-                <div className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2.5">
-                  <span className="text-sm text-foreground">Organization?</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={isOrg}
-                    onClick={() => { setIsOrg((v) => !v); setGithubOrg("") }}
-                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none ${isOrg ? "bg-primary" : "bg-muted-foreground/30"}`}
-                  >
-                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isOrg ? "translate-x-4" : "translate-x-0"}`} />
-                  </button>
-                </div>
-                {isOrg && (
-                  <input
-                    className={inputCls}
-                    placeholder="Organization name"
-                    value={githubOrg}
-                    onChange={(e) => setGithubOrg(e.target.value)}
-                    autoFocus
-                  />
-                )}
+                <input
+                  className={inputCls}
+                  placeholder="Organization name (optional)"
+                  value={githubOrg}
+                  onChange={(e) => setGithubOrg(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground/60 -mt-2">
+                  Leave empty to create the app under your personal account.
+                </p>
                 {error && <ErrorBanner message={error} />}
-                <Button onClick={handleGitHubSetup} disabled={actioning || (isOrg && !githubOrg.trim())} className="w-full gap-1.5">
+                <Button onClick={handleGitHubSetup} disabled={actioning} className="w-full gap-1.5">
                   {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Settings2 className="h-3.5 w-3.5" />}
                   {actioning ? "Opening GitHub…" : "Setup GitHub App"}
                 </Button>
@@ -390,13 +393,19 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Install the Meshploy GitHub App on a personal account or organization to grant repository access.
                 </p>
-                <p className="text-xs text-muted-foreground/70 leading-relaxed">
-                  If the app is already installed and you want to add an organization, GitHub will show your existing installation — use the account switcher in the left sidebar to install on additional orgs.
+                <input
+                  className={inputCls}
+                  placeholder="Organization name (optional)"
+                  value={installOrg}
+                  onChange={(e) => setInstallOrg(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground/60 -mt-2">
+                  Leave empty to install on your personal account.
                 </p>
                 {error && <ErrorBanner message={error} />}
                 <Button onClick={handleGitHubConnect} disabled={actioning} className="w-full gap-1.5">
                   {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  {actioning ? "Redirecting…" : "Install GitHub App"}
+                  {actioning ? "Redirecting…" : installOrg.trim() ? "Install on organization" : "Install GitHub App"}
                 </Button>
               </>
             )}
