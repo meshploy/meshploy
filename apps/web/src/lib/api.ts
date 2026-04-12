@@ -385,29 +385,18 @@ export const routes = {
     ),
 }
 
-// ─── GitHub App (platform-wide setup) ────────────────────────────────────────
-
-export const gitHubApp = {
-  status: () =>
-    apiFetch<{ configured: boolean; app_slug: string }>("/api/v1/github/app-status"),
-
-  resetAppConfig: () =>
-    apiFetch<void>("/api/v1/github/app-config", { method: "DELETE" }),
-
-  manifestSetup: (org?: string) =>
-    apiFetch<{ github_url: string; manifest: string }>(
-      `/api/v1/github/manifest-setup${org ? `?org=${encodeURIComponent(org)}` : ""}`
-    ),
-}
-
 // ─── Git Integrations ─────────────────────────────────────────────────────────
 
 export interface ApiGitIntegration {
   id: string
   organization_id: string
   provider: string
+  auth_method: string
   name: string
   base_url: string
+  gh_app_slug?: string
+  groups?: string
+  connected: boolean
   created_at: string
   updated_at: string
 }
@@ -421,6 +410,13 @@ export interface GitRepo {
 export const gitIntegrations = {
   list: (orgId: string, token: string) =>
     apiFetch<ApiGitIntegration[]>(`/api/v1/orgs/${orgId}/git-integrations`, {}, token),
+
+  initGitHub: (orgId: string, body: { github_org?: string }, token: string) =>
+    apiFetch<{ integration: ApiGitIntegration; github_url: string; manifest: string }>(
+      `/api/v1/orgs/${orgId}/git-integrations/github`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
 
   createPAT: (
     orgId: string,
@@ -444,9 +440,16 @@ export const gitIntegrations = {
       authToken
     ),
 
-  installUrl: (orgId: string, token: string, githubOrg?: string) =>
+  installUrl: (orgId: string, integrationId: string, token: string, githubOrg?: string) =>
     apiFetch<{ url: string }>(
-      `/api/v1/orgs/${orgId}/git-integrations/github/install-url${githubOrg ? `?github_org=${encodeURIComponent(githubOrg)}` : ""}`,
+      `/api/v1/orgs/${orgId}/git-integrations/${integrationId}/install-url${githubOrg ? `?github_org=${encodeURIComponent(githubOrg)}` : ""}`,
+      {},
+      token
+    ),
+
+  oauthReconnect: (orgId: string, id: string, token: string) =>
+    apiFetch<{ auth_url: string }>(
+      `/api/v1/orgs/${orgId}/git-integrations/${id}/oauth-reconnect`,
       {},
       token
     ),

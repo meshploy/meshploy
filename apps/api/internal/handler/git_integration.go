@@ -8,7 +8,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/meshploy/apps/api/internal/service"
 	db "github.com/meshploy/packages/db"
 )
 
@@ -30,7 +29,13 @@ type GitHubInstallURLOutput struct {
 }
 
 type ListReposOutput struct {
-	Body []service.GitRepo
+	Body []RepoItem
+}
+
+type RepoItem struct {
+	FullName      string `json:"full_name"`
+	DefaultBranch string `json:"default_branch"`
+	Private       bool   `json:"private"`
 }
 
 type ListBranchesOutput struct {
@@ -72,17 +77,24 @@ type InitOAuthIntegrationOutput struct {
 	}
 }
 
-type AppStatusOutput struct {
-	Body struct {
-		Configured bool   `json:"configured"`
-		AppSlug    string `json:"app_slug"`
+type InitGitHubIntegrationInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		GithubOrg string `json:"github_org,omitempty"`
 	}
 }
 
-type ManifestSetupOutput struct {
+type InitGitHubIntegrationOutput struct {
 	Body struct {
-		GithubURL string `json:"github_url"`
-		Manifest  string `json:"manifest"`
+		Integration *db.GitIntegration `json:"integration"`
+		GithubURL   string             `json:"github_url"`
+		Manifest    string             `json:"manifest"`
+	}
+}
+
+type OAuthReconnectOutput struct {
+	Body struct {
+		AuthURL string `json:"auth_url"`
 	}
 }
 
@@ -90,61 +102,6 @@ type ManifestSetupOutput struct {
 
 func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 	const tag = "Git Integrations"
-
-	// App status — is the GitHub App configured on this instance?
-	huma.Register(api, huma.Operation{
-		OperationID: "github-app-status",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/github/app-status",
-		Summary:     "Check whether the platform GitHub App has been set up",
-		Tags:        []string{tag},
-	}, func(ctx context.Context, _ *struct{}) (*AppStatusOutput, error) {
-		cfg, err := h.svc.GitIntegrations.GetAppConfig(ctx)
-		if err != nil {
-			return nil, err
-		}
-		out := &AppStatusOutput{}
-		if cfg != nil {
-			out.Body.Configured = true
-			out.Body.AppSlug = cfg.AppSlug
-		}
-		return out, nil
-	})
-
-	// Reset GitHub App config
-	huma.Register(api, huma.Operation{
-		OperationID:   "github-app-reset",
-		Method:        http.MethodDelete,
-		Path:          "/api/v1/github/app-config",
-		Summary:       "Clear the platform GitHub App config to allow re-setup",
-		Tags:          []string{tag},
-		DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, _ *struct{}) (*struct{}, error) {
-		if err := h.svc.GitIntegrations.ResetAppConfig(ctx); err != nil {
-			return nil, err
-		}
-		return &struct{}{}, nil
-	})
-
-	// Manifest setup — returns data for the frontend to POST to GitHub
-	huma.Register(api, huma.Operation{
-		OperationID: "github-manifest-setup",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/github/manifest-setup",
-		Summary:     "Get manifest data to create the platform GitHub App",
-		Tags:        []string{tag},
-	}, func(ctx context.Context, in *struct {
-		Org string `query:"org"`
-	}) (*ManifestSetupOutput, error) {
-		githubURL, manifest, _, err := h.svc.GitIntegrations.BuildManifestSetup(ctx, in.Org)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to build manifest: " + err.Error())
-		}
-		out := &ManifestSetupOutput{}
-		out.Body.GithubURL = githubURL
-		out.Body.Manifest = manifest
-		return out, nil
-	})
 
 	// List
 	huma.Register(api, huma.Operation{
@@ -167,6 +124,32 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 			return nil, err
 		}
 		return &ListGitIntegrationsOutput{Body: rows}, nil
+	})
+
+	// Init GitHub integration (create pending row + return manifest setup data)
+	huma.Register(api, huma.Operation{
+		OperationID:   "init-github-git-integration",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/git-integrations/github",
+		Summary:       "Start a GitHub App integration (manifest flow)",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusCreated,
+	}, func(ctx context.Context, in *InitGitHubIntegrationInput) (*InitGitHubIntegrationOutput, error) {
+		requireUser(ctx)
+		orgID, err := uuid.Parse(in.OrgID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		row, githubURL, manifest, err := h.svc.GitIntegrations.InitGitHubIntegration(ctx, orgID, in.Body.GithubOrg)
+		if err != nil {
+			return nil, err
+		}
+		out := &InitGitHubIntegrationOutput{}
+		out.Body.Integration = row
+		out.Body.GithubURL = githubURL
+		out.Body.Manifest = manifest
+		return out, nil
 	})
 
 	// Create PAT-based integration (GitLab / Gitea)
@@ -219,30 +202,83 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		return out, nil
 	})
 
-	// GitHub install URL
+	// GitHub install URL (per-integration)
 	huma.Register(api, huma.Operation{
-		OperationID: "github-install-url",
+		OperationID: "github-integration-install-url",
 		Method:      http.MethodGet,
-		Path:        "/api/v1/orgs/{orgId}/git-integrations/github/install-url",
-		Summary:     "Get GitHub App install URL",
+		Path:        "/api/v1/orgs/{orgId}/git-integrations/{id}/install-url",
+		Summary:     "Get GitHub App install URL for a specific integration",
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *struct {
 		OrgID     string `path:"orgId"`
+		ID        string `path:"id"`
 		GithubOrg string `query:"github_org"`
 	}) (*GitHubInstallURLOutput, error) {
 		requireUser(ctx)
-		orgID, err := uuid.Parse(in.OrgID)
+		integrationID, err := uuid.Parse(in.ID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
+			return nil, huma.Error400BadRequest("invalid integration ID")
 		}
-		url, err := h.svc.GitIntegrations.GitHubInstallURL(ctx, orgID, in.GithubOrg)
+		installURL, err := h.svc.GitIntegrations.GitHubInstallURL(ctx, integrationID, in.GithubOrg)
 		if err != nil {
 			return nil, err
 		}
 		out := &GitHubInstallURLOutput{}
-		out.Body.URL = url
+		out.Body.URL = installURL
 		return out, nil
+	})
+
+	// OAuth reconnect (GitLab / Gitea)
+	huma.Register(api, huma.Operation{
+		OperationID: "oauth-reconnect-git-integration",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/orgs/{orgId}/git-integrations/{id}/oauth-reconnect",
+		Summary:     "Re-generate OAuth authorization URL for a pending integration",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *GitIntegrationPathInput) (*OAuthReconnectOutput, error) {
+		requireUser(ctx)
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid integration ID")
+		}
+		authURL, err := h.svc.GitIntegrations.OAuthReconnect(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out := &OAuthReconnectOutput{}
+		out.Body.AuthURL = authURL
+		return out, nil
+	})
+
+	// List repos
+	huma.Register(api, huma.Operation{
+		OperationID: "list-git-repos",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/orgs/{orgId}/git-integrations/{id}/repos",
+		Summary:     "List repositories for a git integration",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *GitIntegrationPathInput) (*ListReposOutput, error) {
+		requireUser(ctx)
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid integration ID")
+		}
+		repos, err := h.svc.GitIntegrations.ListRepos(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		items := make([]RepoItem, len(repos))
+		for i, r := range repos {
+			items[i] = RepoItem{
+				FullName:      r.FullName,
+				DefaultBranch: r.DefaultBranch,
+				Private:       r.Private,
+			}
+		}
+		return &ListReposOutput{Body: items}, nil
 	})
 
 	// List branches
@@ -271,27 +307,6 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 			return nil, err
 		}
 		return &ListBranchesOutput{Body: branches}, nil
-	})
-
-	// List repos
-	huma.Register(api, huma.Operation{
-		OperationID: "list-git-repos",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/orgs/{orgId}/git-integrations/{id}/repos",
-		Summary:     "List repositories for a git integration",
-		Tags:        []string{tag},
-		Security:    []map[string][]string{{"bearer": {}}},
-	}, func(ctx context.Context, in *GitIntegrationPathInput) (*ListReposOutput, error) {
-		requireUser(ctx)
-		id, err := uuid.Parse(in.ID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid integration ID")
-		}
-		repos, err := h.svc.GitIntegrations.ListRepos(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		return &ListReposOutput{Body: repos}, nil
 	})
 
 	// Delete
@@ -325,7 +340,8 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 }
 
 // GitHubAppCallback handles the redirect back from GitHub after manifest app creation.
-// GitHub sends ?code=&state= — we exchange code for credentials and store them.
+// GitHub sends ?code=&state= — we exchange code for credentials and store them on the
+// GitIntegration row identified by the state token.
 func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
 	frontendURL := h.cfg.FrontendURL
 
@@ -334,16 +350,16 @@ func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
 	state := q.Get("state")
 
 	if code == "" || state == "" {
-		http.Redirect(w, r, frontendURL+"/integrations?app_setup=error&reason=missing_params", http.StatusFound)
+		http.Redirect(w, r, frontendURL+"/integrations?github_setup=error&reason=missing_params", http.StatusFound)
 		return
 	}
 
 	if err := h.svc.GitIntegrations.HandleAppCallback(r.Context(), code, state); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("%s/integrations?app_setup=error&reason=internal_error", frontendURL), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations?github_setup=error&reason=internal_error", frontendURL), http.StatusFound)
 		return
 	}
 
-	http.Redirect(w, r, frontendURL+"/integrations?app_setup=done", http.StatusFound)
+	http.Redirect(w, r, frontendURL+"/integrations?github_setup=done", http.StatusFound)
 }
 
 // GitLabOAuthCallback handles the redirect back from GitLab after OAuth authorization.

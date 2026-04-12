@@ -29,7 +29,6 @@ var models = []any{
 	&db.StorageIntegration{},
 	&db.RegistryIntegration{},
 	&db.GitIntegration{},
-	&db.GitHubAppConfig{},
 	&db.BackupConfig{},
 	&db.NotificationChannel{},
 	&db.Template{},

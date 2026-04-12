@@ -23,7 +23,6 @@ import (
 	"github.com/meshploy/apps/api/internal/config"
 	db "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // GitIntegrationService handles GitHub App setup, installation flows, and repo listing.
@@ -39,38 +38,38 @@ type GitRepo struct {
 	Private       bool   `json:"private"`
 }
 
-// ─── Platform GitHub App config (manifest flow) ───────────────────────────────
+// ─── GitHub App per-integration flow ─────────────────────────────────────────
 
-// GetAppConfig loads the platform-wide GitHub App config from DB.
-// Returns nil, nil if the manifest flow has not been completed yet.
-func (s *GitIntegrationService) GetAppConfig(ctx context.Context) (*db.GitHubAppConfig, error) {
-	var cfg db.GitHubAppConfig
-	err := s.db.WithContext(ctx).First(&cfg).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil, nil
+// InitGitHubIntegration creates a pending GitIntegration row (no credentials yet),
+// then returns the GitHub manifest-setup URL and manifest JSON the frontend must
+// POST to GitHub to create the GitHub App.
+// Each call creates a separate GitHub App — multiple pending integrations are allowed.
+func (s *GitIntegrationService) InitGitHubIntegration(
+	ctx context.Context,
+	orgID uuid.UUID,
+	githubOrg string,
+) (row *db.GitIntegration, githubURL, manifest string, err error) {
+	autoName := "github-" + time.Now().UTC().Format("20060102-150405")
+	row = &db.GitIntegration{
+		OrganizationID: orgID,
+		Provider:       "github",
+		AuthMethod:     "app",
+		Name:           autoName,
 	}
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to load GitHub App config")
+	if err = s.db.WithContext(ctx).Create(row).Error; err != nil {
+		return nil, "", "", huma.Error500InternalServerError("failed to create git integration")
 	}
-	return &cfg, nil
-}
 
-// BuildManifestSetup returns the GitHub URL and manifest JSON the frontend needs
-// to auto-submit the manifest form that creates the GitHub App.
-func (s *GitIntegrationService) BuildManifestSetup(ctx context.Context, orgName string) (githubURL, manifest, state string, err error) {
-	state = buildState("setup", s.cfg.JWTSecret)
+	state := buildState(row.ID.String(), s.cfg.JWTSecret)
 
-	// Callbacks must go through the public-facing domain (Caddy terminates TLS
-	// there and proxies /api/* to the API). Using APIBaseURL would point GitHub
-	// at the raw API port which has no TLS.
 	base := s.cfg.FrontendURL
 	m := map[string]any{
-		"name":          "Meshploy",
-		"url":           base,
-		"redirect_url":  base + "/api/v1/github/app-callback",
+		"name":         "Meshploy",
+		"url":          base,
+		"redirect_url": base + "/api/v1/github/app-callback",
 		"callback_urls": []string{base + "/api/v1/github/callback"},
-		"setup_url":     base + "/api/v1/github/callback",
-		"public":        false,
+		"setup_url":    base + "/api/v1/github/callback",
+		"public":       false,
 		"default_permissions": map[string]string{
 			"contents":      "read",
 			"metadata":      "read",
@@ -79,31 +78,43 @@ func (s *GitIntegrationService) BuildManifestSetup(ctx context.Context, orgName 
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
-		return "", "", "", fmt.Errorf("marshal manifest: %w", err)
+		_ = s.db.WithContext(ctx).Delete(row)
+		return nil, "", "", fmt.Errorf("marshal manifest: %w", err)
 	}
 	manifest = string(b)
-	if orgName != "" {
-		githubURL = fmt.Sprintf("https://github.com/organizations/%s/settings/apps/new?state=%s", orgName, state)
+
+	if githubOrg != "" {
+		githubURL = fmt.Sprintf("https://github.com/organizations/%s/settings/apps/new?state=%s", githubOrg, state)
 	} else {
 		githubURL = fmt.Sprintf("https://github.com/settings/apps/new?state=%s", state)
 	}
-	return githubURL, manifest, state, nil
+	return row, githubURL, manifest, nil
 }
 
-// HandleAppCallback exchanges the one-time code GitHub sends after manifest app creation,
-// stores the resulting credentials in the DB (replacing any prior config).
+// HandleAppCallback is called by the GitHub redirect after manifest app creation.
+// It exchanges the code for GitHub App credentials and stores them on the
+// specific GitIntegration row identified by the state token.
 func (s *GitIntegrationService) HandleAppCallback(ctx context.Context, code, state string) error {
-	orgIDStr, err := validateState(state, s.cfg.JWTSecret)
+	integrationIDStr, err := validateState(state, s.cfg.JWTSecret)
 	if err != nil {
 		return fmt.Errorf("invalid state: %w", err)
 	}
-	if orgIDStr != "setup" {
-		return fmt.Errorf("unexpected state payload")
+	integrationID, err := uuid.Parse(integrationIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid state payload: not a valid integration ID")
+	}
+
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, integrationID).Error; err != nil {
+		return fmt.Errorf("integration not found")
+	}
+	if integration.Provider != "github" {
+		return fmt.Errorf("integration is not a GitHub integration")
 	}
 
 	// Exchange code → app credentials.
-	url := fmt.Sprintf("https://api.github.com/app-manifests/%s/conversions", code)
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(nil))
+	exchangeURL := fmt.Sprintf("https://api.github.com/app-manifests/%s/conversions", code)
+	req, _ := http.NewRequest(http.MethodPost, exchangeURL, bytes.NewReader(nil))
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
@@ -129,77 +140,31 @@ func (s *GitIntegrationService) HandleAppCallback(ctx context.Context, code, sta
 		return fmt.Errorf("decode response: %w", err)
 	}
 
-	row := db.GitHubAppConfig{
-		AppID:         fmt.Sprintf("%d", result.ID),
-		AppSlug:       result.Slug,
-		ClientID:      result.ClientID,
-		ClientSecret:  db.EncryptedString(result.ClientSecret),
-		PrivateKey:    db.EncryptedString(result.PEM),
-		WebhookSecret: db.EncryptedString(result.WebhookSecret),
+	updates := map[string]any{
+		"gh_app_id":         fmt.Sprintf("%d", result.ID),
+		"gh_app_slug":       result.Slug,
+		"gh_client_id":      result.ClientID,
+		"gh_client_secret":  db.EncryptedString(result.ClientSecret),
+		"gh_private_key":    db.EncryptedString(result.PEM),
+		"gh_webhook_secret": db.EncryptedString(result.WebhookSecret),
+		"name":              result.Slug,
 	}
-
-	// Singleton: delete any prior row, then insert fresh.
-	if err := s.db.WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).
-		Delete(&db.GitHubAppConfig{}).Error; err != nil {
-		return fmt.Errorf("clear old config: %w", err)
-	}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return fmt.Errorf("save app config: %w", err)
-	}
-	return nil
+	return s.db.WithContext(ctx).Model(&integration).Updates(updates).Error
 }
 
-// ─── Org-level installation ───────────────────────────────────────────────────
-
-// ResetAppConfig deletes the platform-wide GitHub App config so setup can be re-run.
-func (s *GitIntegrationService) ResetAppConfig(ctx context.Context) error {
-	return s.db.WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&db.GitHubAppConfig{}).Error
-}
-
-// List returns all git integrations for an org.
-func (s *GitIntegrationService) List(ctx context.Context, orgID uuid.UUID) ([]db.GitIntegration, error) {
-	rows := make([]db.GitIntegration, 0)
-	if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&rows).Error; err != nil {
-		return nil, huma.Error500InternalServerError("failed to list git integrations")
-	}
-	return rows, nil
-}
-
-// Delete removes an integration by ID.
-// If the deleted integration was GitHub and no GitHub integrations remain, the
-// platform-wide GitHub App config is also cleared so setup can be re-run.
-func (s *GitIntegrationService) Delete(ctx context.Context, id uuid.UUID) error {
+// GitHubInstallURL returns the GitHub App installation URL for a specific integration.
+// The state token encodes the integration ID so the install callback knows which row to update.
+func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, integrationID uuid.UUID, githubOrg string) (string, error) {
 	var integration db.GitIntegration
-	if err := s.db.WithContext(ctx).First(&integration, id).Error; err != nil {
-		return huma.Error404NotFound("git integration not found")
+	if err := s.db.WithContext(ctx).First(&integration, integrationID).Error; err != nil {
+		return "", huma.Error404NotFound("git integration not found")
 	}
-	if err := s.db.WithContext(ctx).Delete(&db.GitIntegration{}, id).Error; err != nil {
-		return huma.Error500InternalServerError("failed to delete git integration")
+	if integration.GHAppSlug == "" {
+		return "", huma.Error400BadRequest("GitHub App credentials not yet set — complete the manifest setup first")
 	}
-	if integration.Provider == "github" {
-		var remaining int64
-		s.db.WithContext(ctx).Model(&db.GitIntegration{}).Where("provider = ?", "github").Count(&remaining)
-		if remaining == 0 {
-			s.db.WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&db.GitHubAppConfig{})
-		}
-	}
-	return nil
-}
 
-// GitHubInstallURL returns the GitHub App installation URL with a signed state parameter.
-// If githubOrg is provided, fetches the org's numeric GitHub ID and appends suggested_target_id
-// so GitHub pre-selects that org in the installation account picker.
-// Returns 501 if the manifest flow has not been completed yet.
-func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, orgID uuid.UUID, githubOrg string) (string, error) {
-	appCfg, err := s.GetAppConfig(ctx)
-	if err != nil {
-		return "", err
-	}
-	if appCfg == nil {
-		return "", huma.Error501NotImplemented("GitHub App is not set up — visit /integrations to complete setup")
-	}
-	state := buildState(orgID.String(), s.cfg.JWTSecret)
-	installURL := fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s", appCfg.AppSlug, state)
+	state := buildState(integrationID.String(), s.cfg.JWTSecret)
+	installURL := fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s", integration.GHAppSlug, state)
 	if githubOrg != "" {
 		targetID, err := fetchGitHubOrgID(githubOrg)
 		if err != nil {
@@ -210,57 +175,107 @@ func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, orgID uuid
 	return installURL, nil
 }
 
-// HandleGitHubCallback validates the OAuth state, fetches installation metadata from GitHub,
-// and upserts a GitIntegration row for the org.
+// HandleGitHubCallback validates the install state, sets InstallationID on the
+// specific GitIntegration row, and updates the name to the installed account login.
 func (s *GitIntegrationService) HandleGitHubCallback(ctx context.Context, installationID, state string) (*db.GitIntegration, error) {
-	appCfg, err := s.GetAppConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if appCfg == nil {
-		return nil, fmt.Errorf("GitHub App is not configured")
-	}
-
-	orgIDStr, err := validateState(state, s.cfg.JWTSecret)
+	integrationIDStr, err := validateState(state, s.cfg.JWTSecret)
 	if err != nil {
 		return nil, fmt.Errorf("invalid state: %w", err)
 	}
-	orgID, err := uuid.Parse(orgIDStr)
+	integrationID, err := uuid.Parse(integrationIDStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid org ID in state")
+		return nil, fmt.Errorf("invalid state payload: not a valid integration ID")
 	}
 
-	appJWT, err := generateAppJWT(appCfg.AppID, string(appCfg.PrivateKey))
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, integrationID).Error; err != nil {
+		return nil, fmt.Errorf("integration not found")
+	}
+
+	appJWT, err := generateAppJWT(integration.GHAppID, string(integration.GHPrivateKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate GitHub App JWT: %w", err)
 	}
 	accountLogin, err := fetchInstallationLogin(installationID, appJWT)
 	if err != nil {
-		accountLogin = "github-" + installationID
+		accountLogin = integration.Name // keep existing name if fetch failed
 	}
 
-	row := db.GitIntegration{
-		OrganizationID: orgID,
-		Provider:       "github",
-		Name:           accountLogin,
-		InstallationID: db.EncryptedString(installationID),
-		BaseURL:        "",
+	updates := map[string]any{
+		"installation_id": db.EncryptedString(installationID),
+		"name":            accountLogin,
+	}
+	if err := s.db.WithContext(ctx).Model(&integration).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("failed to save installation: %w", err)
+	}
+	integration.InstallationID = db.EncryptedString(installationID)
+	integration.Name = accountLogin
+	integration.Connected = true
+	return &integration, nil
+}
+
+// ─── Org-level integration management ────────────────────────────────────────
+
+// List returns all git integrations for an org with Connected computed.
+func (s *GitIntegrationService) List(ctx context.Context, orgID uuid.UUID) ([]db.GitIntegration, error) {
+	rows := make([]db.GitIntegration, 0)
+	if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&rows).Error; err != nil {
+		return nil, huma.Error500InternalServerError("failed to list git integrations")
+	}
+	for i := range rows {
+		rows[i].Connected = string(rows[i].InstallationID) != ""
+	}
+	return rows, nil
+}
+
+// Delete removes an integration by ID.
+func (s *GitIntegrationService) Delete(ctx context.Context, id uuid.UUID) error {
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, id).Error; err != nil {
+		return huma.Error404NotFound("git integration not found")
+	}
+	if err := s.db.WithContext(ctx).Delete(&db.GitIntegration{}, id).Error; err != nil {
+		return huma.Error500InternalServerError("failed to delete git integration")
+	}
+	return nil
+}
+
+// OAuthReconnect resets the OAuth access token on a pending GitLab/Gitea OAuth
+// integration and returns a fresh authorization URL using the stored client credentials.
+func (s *GitIntegrationService) OAuthReconnect(ctx context.Context, integrationID uuid.UUID) (string, error) {
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, integrationID).Error; err != nil {
+		return "", huma.Error404NotFound("git integration not found")
+	}
+	if integration.AuthMethod != "oauth" {
+		return "", huma.Error400BadRequest("integration is not OAuth-based")
 	}
 
-	result := s.db.WithContext(ctx).
-		Where("organization_id = ? AND provider = ? AND installation_id = ?",
-			orgID, "github", db.EncryptedString(installationID)).
-		Assign(db.GitIntegration{Name: accountLogin}).
-		FirstOrCreate(&row)
-	if result.Error != nil {
-		row.Base = db.Base{}
-		if err2 := s.db.WithContext(ctx).
-			Clauses(clause.OnConflict{DoNothing: true}).
-			Create(&row).Error; err2 != nil {
-			return nil, fmt.Errorf("failed to save git integration: %w", err2)
-		}
+	// Clear the stale token so the row returns to pending state.
+	if err := s.db.WithContext(ctx).Model(&integration).
+		Update("installation_id", db.EncryptedString("")).Error; err != nil {
+		return "", huma.Error500InternalServerError("failed to reset integration")
 	}
-	return &row, nil
+
+	state := buildState(integrationID.String(), s.cfg.JWTSecret)
+	clientID := integration.OAuthClientID
+	redirectURI := integration.OAuthRedirectURI
+
+	var authURL string
+	switch integration.Provider {
+	case "gitlab":
+		base := gitLabBase(integration.BaseURL)
+		authURL = fmt.Sprintf("%s/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
+			base, url.QueryEscape(clientID), url.QueryEscape(redirectURI),
+			url.QueryEscape("api read_user read_repository"), state)
+	case "gitea":
+		base := strings.TrimRight(integration.BaseURL, "/")
+		authURL = fmt.Sprintf("%s/login/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
+			base, url.QueryEscape(clientID), url.QueryEscape(redirectURI), state)
+	default:
+		return "", huma.Error400BadRequest("unsupported provider: " + integration.Provider)
+	}
+	return authURL, nil
 }
 
 // ListBranches returns branch names for a specific repo in a git integration.
@@ -285,15 +300,11 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 		return branches, nil
 	}
 
-	// Default: GitHub App flow.
-	appCfg, err := s.GetAppConfig(ctx)
-	if err != nil {
-		return nil, err
+	// GitHub App flow — credentials are on the integration row itself.
+	if integration.GHAppID == "" || string(integration.InstallationID) == "" {
+		return nil, huma.Error400BadRequest("GitHub App is not fully configured — complete setup and installation first")
 	}
-	if appCfg == nil {
-		return nil, huma.Error501NotImplemented("GitHub App is not configured")
-	}
-	token, err := getInstallationToken(appCfg.AppID, string(appCfg.PrivateKey), string(integration.InstallationID))
+	token, err := getInstallationToken(integration.GHAppID, string(integration.GHPrivateKey), string(integration.InstallationID))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to get GitHub installation token: " + err.Error())
 	}
@@ -301,8 +312,8 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 	var all []string
 	page := 1
 	for {
-		url := fmt.Sprintf("https://api.github.com/repos/%s/branches?per_page=100&page=%d", repo, page)
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		reqURL := fmt.Sprintf("https://api.github.com/repos/%s/branches?per_page=100&page=%d", repo, page)
+		req, _ := http.NewRequest(http.MethodGet, reqURL, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -361,16 +372,12 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, huma.Error500InternalServerError("failed to save git integration")
 	}
+	row.Connected = true
 	return &row, nil
 }
 
 // InitOAuthIntegration creates a pending GitLab/Gitea integration record and returns
 // the OAuth authorization URL the user should be redirected to.
-// InitOAuthIntegration creates a pending GitLab/Gitea integration record and returns
-// the OAuth authorization URL the user should be redirected to.
-// redirectURI must be the full public URL the provider will redirect back to — it is
-// computed by the frontend (window.location.origin + /api/v1/{provider}/callback) so
-// it always matches what the user registered in their GitLab/Gitea application.
 func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID uuid.UUID, provider, name, baseURL, groups, redirectURI, clientID, clientSecret string) (*db.GitIntegration, string, error) {
 	row := db.GitIntegration{
 		OrganizationID:    orgID,
@@ -495,16 +502,11 @@ func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uui
 		return repos, nil
 	}
 
-	// Default: GitHub App flow.
-	appCfg, err := s.GetAppConfig(ctx)
-	if err != nil {
-		return nil, err
+	// GitHub App flow — credentials are on the integration row itself.
+	if integration.GHAppID == "" || string(integration.InstallationID) == "" {
+		return nil, huma.Error400BadRequest("GitHub App is not fully configured — complete setup and installation first")
 	}
-	if appCfg == nil {
-		return nil, huma.Error501NotImplemented("GitHub App is not configured")
-	}
-
-	token, err := getInstallationToken(appCfg.AppID, string(appCfg.PrivateKey), string(integration.InstallationID))
+	token, err := getInstallationToken(integration.GHAppID, string(integration.GHPrivateKey), string(integration.InstallationID))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to get GitHub installation token: " + err.Error())
 	}
@@ -596,8 +598,8 @@ func getInstallationToken(appID, privateKeyPEM, installationID string) (string, 
 	if err != nil {
 		return "", err
 	}
-	url := fmt.Sprintf("https://api.github.com/app/installations/%s/access_tokens", installationID)
-	req, _ := http.NewRequest(http.MethodPost, url, nil)
+	reqURL := fmt.Sprintf("https://api.github.com/app/installations/%s/access_tokens", installationID)
+	req, _ := http.NewRequest(http.MethodPost, reqURL, nil)
 	req.Header.Set("Authorization", "Bearer "+appJWT)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -622,8 +624,8 @@ func getInstallationToken(appID, privateKeyPEM, installationID string) (string, 
 
 // fetchInstallationLogin calls the GitHub API to get the account login name for an installation.
 func fetchInstallationLogin(installationID, appJWT string) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/app/installations/%s", installationID)
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	reqURL := fmt.Sprintf("https://api.github.com/app/installations/%s", installationID)
+	req, _ := http.NewRequest(http.MethodGet, reqURL, nil)
 	req.Header.Set("Authorization", "Bearer "+appJWT)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -649,8 +651,8 @@ func fetchAllRepos(token string) ([]GitRepo, error) {
 	var all []GitRepo
 	page := 1
 	for {
-		url := fmt.Sprintf("https://api.github.com/installation/repositories?per_page=100&page=%d", page)
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		reqURL := fmt.Sprintf("https://api.github.com/installation/repositories?per_page=100&page=%d", page)
+		req, _ := http.NewRequest(http.MethodGet, reqURL, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -746,7 +748,7 @@ func exchangeOAuthCode(tokenURL, clientID, clientSecret, code, redirectURI strin
 	return result.AccessToken, nil
 }
 
-// ─── GitLab helpers ───────────────────────────────────────────────────────────
+// ─── GitLab/Gitea provider helpers ───────────────────────────────────────────
 
 func gitLabBase(baseURL string) string {
 	if baseURL == "" {
@@ -762,7 +764,6 @@ func listGitLabRepos(baseURL, token, group string) ([]GitRepo, error) {
 	for {
 		var apiURL string
 		if group != "" {
-			// Scope to a specific group (includes subgroups via with_shared=false&include_subgroups=true)
 			apiURL = fmt.Sprintf("%s/api/v4/groups/%s/projects?per_page=100&page=%d&include_subgroups=true",
 				base, url.PathEscape(group), page)
 		} else {
@@ -804,8 +805,8 @@ func listGitLabBranches(baseURL, token, projectPath string) ([]string, error) {
 	var all []string
 	page := 1
 	for {
-		url := fmt.Sprintf("%s/api/v4/projects/%s/repository/branches?per_page=100&page=%d", base, encoded, page)
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		reqURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/branches?per_page=100&page=%d", base, encoded, page)
+		req, _ := http.NewRequest(http.MethodGet, reqURL, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -829,8 +830,6 @@ func listGitLabBranches(baseURL, token, projectPath string) ([]string, error) {
 	return all, nil
 }
 
-// ─── Gitea helpers ────────────────────────────────────────────────────────────
-
 func listGiteaRepos(baseURL, token, org string) ([]GitRepo, error) {
 	base := strings.TrimRight(baseURL, "/")
 	var all []GitRepo
@@ -838,7 +837,6 @@ func listGiteaRepos(baseURL, token, org string) ([]GitRepo, error) {
 	for {
 		var apiURL string
 		if org != "" {
-			// Scope to a specific organization
 			apiURL = fmt.Sprintf("%s/api/v1/orgs/%s/repos?limit=50&page=%d", base, url.PathEscape(org), page)
 		} else {
 			apiURL = fmt.Sprintf("%s/api/v1/repos/search?limit=50&page=%d", base, page)
@@ -880,8 +878,8 @@ func listGiteaBranches(baseURL, pat, repo string) ([]string, error) {
 	var all []string
 	page := 1
 	for {
-		url := fmt.Sprintf("%s/api/v1/repos/%s/branches?limit=50&page=%d", base, repo, page)
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		reqURL := fmt.Sprintf("%s/api/v1/repos/%s/branches?limit=50&page=%d", base, repo, page)
+		req, _ := http.NewRequest(http.MethodGet, reqURL, nil)
 		req.Header.Set("Authorization", "token "+pat)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

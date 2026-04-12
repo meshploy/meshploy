@@ -122,13 +122,12 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		return nil, fmt.Errorf("create deployment record: %w", err)
 	}
 
-	// Get a short-lived GitHub installation token.
-	appCfg, err := s.git.GetAppConfig(ctx)
-	if err != nil || appCfg == nil {
-		s.failDeployment(deployment.ID, "GitHub App not configured")
+	// Get a short-lived GitHub installation token using per-integration credentials.
+	if gitIntegration.GHAppID == "" || string(gitIntegration.InstallationID) == "" {
+		s.failDeployment(deployment.ID, "GitHub App not fully configured — complete setup and installation in Integrations")
 		return &deployment, nil
 	}
-	gitToken, err := getInstallationToken(appCfg.AppID, string(appCfg.PrivateKey), string(gitIntegration.InstallationID))
+	gitToken, err := getInstallationToken(gitIntegration.GHAppID, string(gitIntegration.GHPrivateKey), string(gitIntegration.InstallationID))
 	if err != nil {
 		s.failDeployment(deployment.ID, "failed to get GitHub token: "+err.Error())
 		return &deployment, nil

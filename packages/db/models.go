@@ -466,7 +466,10 @@ type RegistryIntegration struct {
 func (RegistryIntegration) TableName() string { return "registry_integrations" }
 
 // GitIntegration holds an org-level connection to a Git hosting provider.
-// GitHub uses the App installation flow (InstallationID = GitHub App installation ID).
+// GitHub: each integration is its own GitHub App (manifest flow). Two phases:
+//   - Pending (Connected=false): app created on GitHub, InstallationID not yet set
+//   - Connected (Connected=true): app installed on a GitHub account/org, InstallationID set
+//
 // GitLab/Gitea support two auth methods:
 //   - PAT:   InstallationID = personal access token (encrypted)
 //   - OAuth: OAuthClientID + OAuthClientSecret = OAuth App credentials;
@@ -484,24 +487,22 @@ type GitIntegration struct {
 	OAuthRedirectURI  string          `gorm:"not null;default:''"        json:"-"`                 // redirect_uri used when initiating the OAuth flow — must match callback
 	Groups            string          `gorm:"not null;default:''"        json:"groups,omitempty"` // GitLab: group path; Gitea: org name — scopes repo listing
 
+	// GitHub App credentials (auth_method="app" only). All encrypted at rest.
+	GHAppID         string          `gorm:"not null;default:''" json:"-"`
+	GHAppSlug       string          `gorm:"not null;default:''" json:"gh_app_slug,omitempty"` // exposed for pending card display
+	GHClientID      string          `gorm:"not null;default:''" json:"-"`
+	GHClientSecret  EncryptedString `gorm:"type:text"           json:"-"`
+	GHPrivateKey    EncryptedString `gorm:"type:text"           json:"-"`
+	GHWebhookSecret EncryptedString `gorm:"type:text"           json:"-"`
+
+	// Connected is computed (not stored): true when InstallationID is non-empty.
+	// Set by the service layer after loading from DB.
+	Connected bool `gorm:"-" json:"connected"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }
 
 func (GitIntegration) TableName() string { return "git_integrations" }
-
-// GitHubAppConfig stores the platform-wide GitHub App credentials created via the
-// manifest flow. There is at most one row. All sensitive fields are encrypted at rest.
-type GitHubAppConfig struct {
-	Base
-	AppID         string          `gorm:"not null"  json:"app_id"`
-	AppSlug       string          `gorm:"not null"  json:"app_slug"`
-	ClientID      string          `gorm:"not null"  json:"client_id"`
-	ClientSecret  EncryptedString `gorm:"type:text" json:"-"`
-	PrivateKey    EncryptedString `gorm:"type:text" json:"-"`
-	WebhookSecret EncryptedString `gorm:"type:text" json:"-"`
-}
-
-func (GitHubAppConfig) TableName() string { return "github_app_config" }
 
 // ---------------------------------------------------------------------------
 // Operations
