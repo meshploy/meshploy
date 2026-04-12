@@ -83,7 +83,6 @@ func Migrate(db *gorm.DB) error {
 		&StorageIntegration{},
 		&RegistryIntegration{},
 		&GitIntegration{},
-		&GitHubAppConfig{},
 
 		// Operations
 		&BackupConfig{},

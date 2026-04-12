@@ -1,7 +1,7 @@
 import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router"
 import React, { useEffect, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Bell, Box, GitBranch, HardDrive, Loader2, Plus, Settings2, Trash2, AlertCircle, Eye, EyeOff } from "lucide-react"
+import { Bell, Box, GitBranch, HardDrive, Loader2, Plus, Settings2, Trash2, AlertCircle, Eye, EyeOff, Download, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/select"
 import {
   gitIntegrations as gitApi,
-  gitHubApp,
   registries as registriesApi,
   type ApiGitIntegration,
   type ApiRegistryIntegration,
@@ -64,19 +63,11 @@ function IntegrationsPage() {
 
   const search = useSearch({ strict: false }) as Record<string, string>
   useEffect(() => {
-    if (search.app_setup === "done") {
-      qc.invalidateQueries({ queryKey: ["github-app-status"] })
-      navigate({ to: "/integrations", replace: true })
-    } else if (search.github === "connected" || search.gitlab === "connected" || search.gitea === "connected") {
+    if (search.github_setup === "done" || search.github === "connected" || search.gitlab === "connected" || search.gitea === "connected") {
       qc.invalidateQueries({ queryKey: ["git-integrations", orgId] })
       navigate({ to: "/integrations", replace: true })
     }
-  }, [search.app_setup, search.github, search.gitlab, search.gitea])
-
-  const { data: appStatus } = useQuery({
-    queryKey: ["github-app-status"],
-    queryFn: () => gitHubApp.status(),
-  })
+  }, [search.github_setup, search.github, search.gitlab, search.gitea])
 
   const { data: gitList = [], isLoading: gitLoading } = useQuery({
     queryKey: ["git-integrations", orgId],
@@ -134,7 +125,7 @@ function IntegrationsPage() {
                 orgId={orgId}
                 token={token}
                 onDelete={() => gitDeleteMutation.mutate(g.id)}
-                isDeleting={gitDeleteMutation.isPending}
+                isDeleting={gitDeleteMutation.isPending && gitDeleteMutation.variables === g.id}
               />
             ))}
           </div>
@@ -145,8 +136,6 @@ function IntegrationsPage() {
           onClose={() => setAddGitOpen(false)}
           orgId={orgId}
           token={token}
-          appConfigured={appStatus?.configured === true}
-          appSlug={appStatus?.app_slug}
           onSuccess={() => {
             qc.invalidateQueries({ queryKey: ["git-integrations", orgId] })
             setAddGitOpen(false)
@@ -208,9 +197,6 @@ function IntegrationsPage() {
 
 type AuthMethod = "pat" | "oauth"
 
-// Derive the absolute API base URL for constructing OAuth redirect URIs.
-// In production the apiUrl is "" (relative) — use window.location.origin in that case
-// so the redirect URI shown to the user is always a full https://… URL.
 function getAPIBase(): string {
   const configured: string =
     (window as Window & { __MESHPLOY_CONFIG__?: { apiUrl: string } })
@@ -221,13 +207,11 @@ function getAPIBase(): string {
   return configured
 }
 
-function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlug, onSuccess }: {
+function AddGitSourceDialog({ open, onClose, orgId, token, onSuccess }: {
   open: boolean
   onClose: () => void
   orgId: string
   token: string
-  appConfigured: boolean
-  appSlug?: string
   onSuccess: () => void
 }) {
   const [provider, setProvider] = useState<GitProvider>("github")
@@ -245,8 +229,6 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlu
   const [showSecret, setShowSecret] = useState(false)
   // GitHub org name (app creation)
   const [githubOrg, setGithubOrg] = useState("")
-  // GitHub install-on-org
-  const [installOrg, setInstallOrg] = useState("")
 
   const [error, setError] = useState<string | null>(null)
   const [actioning, setActioning] = useState(false)
@@ -255,7 +237,6 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlu
     setProvider("github")
     setAuthMethod("pat")
     setGithubOrg("")
-    setInstallOrg("")
     setName("")
     setBaseURL("")
     setGroups("")
@@ -284,32 +265,21 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlu
 
   async function handleGitHubSetup() {
     setError(null); setActioning(true)
-    try {
-      const { github_url, manifest } = await gitHubApp.manifestSetup(githubOrg.trim() || undefined)
-      const form = document.createElement("form")
-      form.method = "POST"; form.action = github_url
-      const input = document.createElement("input")
-      input.type = "hidden"; input.name = "manifest"; input.value = manifest
-      form.appendChild(input); document.body.appendChild(form); form.submit()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to start GitHub App setup")
-      setActioning(false)
-    }
-  }
-
-  async function handleGitHubConnect() {
-    setError(null); setActioning(true)
     // Reset spinner if user returns via browser back / bfcache restore
     const onPageShow = (e: PageTransitionEvent) => {
       if (e.persisted) { setActioning(false); window.removeEventListener("pageshow", onPageShow) }
     }
     window.addEventListener("pageshow", onPageShow)
     try {
-      const { url } = await gitApi.installUrl(orgId, token, installOrg.trim() || undefined)
-      window.location.href = url
+      const { github_url, manifest } = await gitApi.initGitHub(orgId, { github_org: githubOrg.trim() || undefined }, token)
+      const form = document.createElement("form")
+      form.method = "POST"; form.action = github_url
+      const input = document.createElement("input")
+      input.type = "hidden"; input.name = "manifest"; input.value = manifest
+      form.appendChild(input); document.body.appendChild(form); form.submit()
     } catch (err: unknown) {
       window.removeEventListener("pageshow", onPageShow)
-      setError(err instanceof Error ? err.message : "Failed to get install URL")
+      setError(err instanceof Error ? err.message : "Failed to start GitHub App setup")
       setActioning(false)
     }
   }
@@ -362,53 +332,23 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlu
         {/* ── GitHub ── */}
         {provider === "github" && (
           <div className="space-y-4 mt-1">
-            {!appConfigured ? (
-              <>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Register Meshploy as a GitHub App on your account. This is a one-time platform-wide setup.
-                </p>
-                <input
-                  className={inputCls}
-                  placeholder="Organization name (optional)"
-                  value={githubOrg}
-                  onChange={(e) => setGithubOrg(e.target.value)}
-                />
-                <p className="text-[11px] text-muted-foreground/60 -mt-2">
-                  Leave empty to create the app under your personal account.
-                </p>
-                {error && <ErrorBanner message={error} />}
-                <Button onClick={handleGitHubSetup} disabled={actioning} className="w-full gap-1.5">
-                  {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Settings2 className="h-3.5 w-3.5" />}
-                  {actioning ? "Opening GitHub…" : "Setup GitHub App"}
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Install the Meshploy GitHub App on a personal account or organization to grant repository access.
-                </p>
-                <input
-                  className={inputCls}
-                  placeholder="Organization name (optional)"
-                  value={installOrg}
-                  onChange={(e) => setInstallOrg(e.target.value)}
-                />
-                <p className="text-[11px] text-muted-foreground/60 -mt-2">
-                  Leave empty to install on your personal account.
-                </p>
-                {error && <ErrorBanner message={error} />}
-                <Button onClick={handleGitHubConnect} disabled={actioning} className="w-full gap-1.5">
-                  {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  {actioning ? "Redirecting…" : installOrg.trim() ? "Install on organization" : "Install GitHub App"}
-                </Button>
-                <p className="text-[11px] text-muted-foreground/60 text-center">
-                  Deleted the app on GitHub?{" "}
-                  <button type="button" className="underline hover:text-muted-foreground" onClick={async () => { await gitHubApp.resetAppConfig(); onSuccess() }}>
-                    Reset setup
-                  </button>
-                </p>
-              </>
-            )}
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Register a new GitHub App on your account or organization. Each app gives Meshploy access to one account's repositories.
+            </p>
+            <input
+              className={inputCls}
+              placeholder="Organization name (optional)"
+              value={githubOrg}
+              onChange={(e) => setGithubOrg(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground/60 -mt-2">
+              Leave empty to create the app under your personal account.
+            </p>
+            {error && <ErrorBanner message={error} />}
+            <Button onClick={handleGitHubSetup} disabled={actioning} className="w-full gap-1.5">
+              {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Settings2 className="h-3.5 w-3.5" />}
+              {actioning ? "Opening GitHub…" : "Create GitHub App"}
+            </Button>
             <DialogFooter showCloseButton />
           </div>
         )}
@@ -929,42 +869,116 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
   onDelete: () => void
   isDeleting: boolean
 }) {
+  const [installing, setInstalling] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+
   const { data: repos } = useQuery({
     queryKey: ["git-repos", orgId, integration.id],
     queryFn: () => import("@/lib/api").then(({ gitIntegrations }) =>
       gitIntegrations.repos(orgId, integration.id, token)
     ),
     staleTime: 5 * 60 * 1000,
+    enabled: integration.connected,
   })
 
+  async function handleInstall() {
+    setInstalling(true)
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) { setInstalling(false); window.removeEventListener("pageshow", onPageShow) }
+    }
+    window.addEventListener("pageshow", onPageShow)
+    try {
+      const { url } = await gitApi.installUrl(orgId, integration.id, token)
+      window.location.href = url
+    } catch {
+      window.removeEventListener("pageshow", onPageShow)
+      setInstalling(false)
+    }
+  }
+
+  async function handleReconnect() {
+    setReconnecting(true)
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) { setReconnecting(false); window.removeEventListener("pageshow", onPageShow) }
+    }
+    window.addEventListener("pageshow", onPageShow)
+    try {
+      const { auth_url } = await gitApi.oauthReconnect(orgId, integration.id, token)
+      window.location.href = auth_url
+    } catch {
+      window.removeEventListener("pageshow", onPageShow)
+      setReconnecting(false)
+    }
+  }
+
+  const isPending = !integration.connected
+  const isGHApp = integration.auth_method === "app"
+  const isOAuth = integration.auth_method === "oauth"
+
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
+    <div className={`flex items-start gap-3 rounded-lg border bg-card p-4 ${isPending ? "border-amber-500/30" : "border-border/60"}`}>
       <ProviderIcon provider={integration.provider} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground truncate">{integration.name}</p>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
-            connected
-          </Badge>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-foreground truncate">
+            {integration.provider === "github" ? (integration.gh_app_slug || integration.name) : integration.name}
+          </p>
+          {isPending ? (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-amber-500/10 text-amber-400 border-amber-500/20">
+              action required
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
+              connected
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
           {PROVIDER_LABELS[integration.provider] ?? integration.provider}
+          {isPending && isGHApp && " · awaiting installation"}
+          {isPending && isOAuth && " · authorization incomplete"}
         </p>
-        {repos !== undefined && (
+        {integration.connected && repos !== undefined && (
           <p className="text-[11px] font-mono text-muted-foreground/60 mt-1">
             {repos.length} {repos.length === 1 ? "repo" : "repos"} accessible
           </p>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={isDeleting}
-        className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-        title="Disconnect"
-      >
-        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-      </button>
+
+      {/* Actions */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        {isPending && isGHApp && (
+          <button
+            type="button"
+            onClick={handleInstall}
+            disabled={installing || !integration.gh_app_slug}
+            className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
+            title={integration.gh_app_slug ? "Install GitHub App" : "Setup not yet complete"}
+          >
+            {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          </button>
+        )}
+        {isPending && isOAuth && (
+          <button
+            type="button"
+            onClick={handleReconnect}
+            disabled={reconnecting}
+            className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
+            title="Re-authorize"
+          >
+            {reconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={isDeleting}
+          className="p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
+          title="Disconnect"
+        >
+          {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+        </button>
+      </div>
     </div>
   )
 }
@@ -1051,9 +1065,9 @@ function EmptyState({ icon, title, description, children }: {
 
 function LoadingRow() {
   return (
-    <div className="flex items-center gap-2 py-6 text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" />
-      <span className="text-sm">Loading…</span>
+    <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      <span>Loading…</span>
     </div>
   )
 }
