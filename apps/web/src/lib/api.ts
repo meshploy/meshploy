@@ -391,8 +391,10 @@ export const gitHubApp = {
   status: () =>
     apiFetch<{ configured: boolean; app_slug: string }>("/api/v1/github/app-status"),
 
-  manifestSetup: () =>
-    apiFetch<{ github_url: string; manifest: string }>("/api/v1/github/manifest-setup"),
+  manifestSetup: (org?: string) =>
+    apiFetch<{ github_url: string; manifest: string }>(
+      `/api/v1/github/manifest-setup${org ? `?org=${encodeURIComponent(org)}` : ""}`
+    ),
 }
 
 // ─── Git Integrations ─────────────────────────────────────────────────────────

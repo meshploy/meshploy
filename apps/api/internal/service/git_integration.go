@@ -57,7 +57,7 @@ func (s *GitIntegrationService) GetAppConfig(ctx context.Context) (*db.GitHubApp
 
 // BuildManifestSetup returns the GitHub URL and manifest JSON the frontend needs
 // to auto-submit the manifest form that creates the GitHub App.
-func (s *GitIntegrationService) BuildManifestSetup(ctx context.Context) (githubURL, manifest, state string, err error) {
+func (s *GitIntegrationService) BuildManifestSetup(ctx context.Context, orgName string) (githubURL, manifest, state string, err error) {
 	state = buildState("setup", s.cfg.JWTSecret)
 
 	// Callbacks must go through the public-facing domain (Caddy terminates TLS
@@ -82,7 +82,11 @@ func (s *GitIntegrationService) BuildManifestSetup(ctx context.Context) (githubU
 		return "", "", "", fmt.Errorf("marshal manifest: %w", err)
 	}
 	manifest = string(b)
-	githubURL = fmt.Sprintf("https://github.com/settings/apps/new?state=%s", state)
+	if orgName != "" {
+		githubURL = fmt.Sprintf("https://github.com/organizations/%s/settings/apps/new?state=%s", orgName, state)
+	} else {
+		githubURL = fmt.Sprintf("https://github.com/settings/apps/new?state=%s", state)
+	}
 	return githubURL, manifest, state, nil
 }
 

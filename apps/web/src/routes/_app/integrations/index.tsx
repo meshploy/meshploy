@@ -241,6 +241,9 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   const [clientID, setClientID] = useState("")
   const [clientSecret, setClientSecret] = useState("")
   const [showSecret, setShowSecret] = useState(false)
+  // GitHub org toggle
+  const [isOrg, setIsOrg] = useState(false)
+  const [githubOrg, setGithubOrg] = useState("")
 
   const [error, setError] = useState<string | null>(null)
   const [actioning, setActioning] = useState(false)
@@ -248,6 +251,8 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   function reset() {
     setProvider("github")
     setAuthMethod("pat")
+    setIsOrg(false)
+    setGithubOrg("")
     setName("")
     setBaseURL("")
     setGroups("")
@@ -277,7 +282,7 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
   async function handleGitHubSetup() {
     setError(null); setActioning(true)
     try {
-      const { github_url, manifest } = await gitHubApp.manifestSetup()
+      const { github_url, manifest } = await gitHubApp.manifestSetup(isOrg ? githubOrg.trim() : undefined)
       const form = document.createElement("form")
       form.method = "POST"; form.action = github_url
       const input = document.createElement("input")
@@ -353,8 +358,29 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, onSucc
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Register Meshploy as a GitHub App on your account. This is a one-time platform-wide setup.
                 </p>
+                <div className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2.5">
+                  <span className="text-sm text-foreground">Organization?</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isOrg}
+                    onClick={() => { setIsOrg((v) => !v); setGithubOrg("") }}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none ${isOrg ? "bg-primary" : "bg-muted-foreground/30"}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isOrg ? "translate-x-4" : "translate-x-0"}`} />
+                  </button>
+                </div>
+                {isOrg && (
+                  <input
+                    className={inputCls}
+                    placeholder="Organization name"
+                    value={githubOrg}
+                    onChange={(e) => setGithubOrg(e.target.value)}
+                    autoFocus
+                  />
+                )}
                 {error && <ErrorBanner message={error} />}
-                <Button onClick={handleGitHubSetup} disabled={actioning} className="w-full gap-1.5">
+                <Button onClick={handleGitHubSetup} disabled={actioning || (isOrg && !githubOrg.trim())} className="w-full gap-1.5">
                   {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Settings2 className="h-3.5 w-3.5" />}
                   {actioning ? "Opening GitHub…" : "Setup GitHub App"}
                 </Button>
