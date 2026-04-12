@@ -6,9 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"strings"
-
-	"github.com/danielgtaylor/huma/v2"
+"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
@@ -138,13 +136,6 @@ func (s *DomainService) CreateSeeded(ctx context.Context, orgID uuid.UUID, baseD
 	return s.db.WithContext(ctx).Create(domain).Error
 }
 
-func (s *DomainService) Delete(ctx context.Context, domainID uuid.UUID) error {
-	err := s.db.WithContext(ctx).Delete(&db.Domain{}, "id = ?", domainID).Error
-	if err != nil && strings.Contains(err.Error(), "violates foreign key constraint") {
-		return huma.Error409Conflict("delete all routes for this domain first")
-	}
-	return err
-}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

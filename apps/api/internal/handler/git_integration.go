@@ -111,6 +111,21 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		return out, nil
 	})
 
+	// Reset GitHub App config
+	huma.Register(api, huma.Operation{
+		OperationID:   "github-app-reset",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/github/app-config",
+		Summary:       "Clear the platform GitHub App config to allow re-setup",
+		Tags:          []string{tag},
+		DefaultStatus: http.StatusNoContent,
+	}, func(ctx context.Context, _ *struct{}) (*struct{}, error) {
+		if err := h.svc.GitIntegrations.ResetAppConfig(ctx); err != nil {
+			return nil, err
+		}
+		return &struct{}{}, nil
+	})
+
 	// Manifest setup — returns data for the frontend to POST to GitHub
 	huma.Register(api, huma.Operation{
 		OperationID: "github-manifest-setup",

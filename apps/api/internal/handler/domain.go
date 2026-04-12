@@ -89,15 +89,6 @@ func (h *Handler) registerDomainRoutes(api huma.API) {
 	}, h.UpdateDomain)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "delete-domain",
-		Method:      "DELETE",
-		Path:        "/api/v1/orgs/{orgId}/domains/{domainId}",
-		Summary:     "Delete a domain",
-		Tags:        []string{"Domains"},
-		Security:    []map[string][]string{{"bearer": {}}},
-	}, h.DeleteDomain)
-
-	huma.Register(api, huma.Operation{
 		OperationID: "verify-domain",
 		Method:      "POST",
 		Path:        "/api/v1/orgs/{orgId}/domains/{domainId}/verify",
@@ -174,16 +165,6 @@ func (h *Handler) UpdateDomain(ctx context.Context, input *UpdateDomainInput) (*
 	return &UpdateDomainOutput{Body: domain}, nil
 }
 
-func (h *Handler) DeleteDomain(ctx context.Context, input *DomainPathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	domainID, err := parseUUID(input.DomainID)
-	if err != nil {
-		return nil, err
-	}
-	return nil, h.svc.Domains.Delete(ctx, domainID)
-}
 
 func (h *Handler) VerifyDomain(ctx context.Context, input *DomainPathInput) (*GetDomainOutput, error) {
 	if _, err := requireUser(ctx); err != nil {
