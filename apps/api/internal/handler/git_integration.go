@@ -118,8 +118,10 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Path:        "/api/v1/github/manifest-setup",
 		Summary:     "Get manifest data to create the platform GitHub App",
 		Tags:        []string{tag},
-	}, func(ctx context.Context, _ *struct{}) (*ManifestSetupOutput, error) {
-		githubURL, manifest, _, err := h.svc.GitIntegrations.BuildManifestSetup(ctx)
+	}, func(ctx context.Context, in *struct {
+		Org string `query:"org"`
+	}) (*ManifestSetupOutput, error) {
+		githubURL, manifest, _, err := h.svc.GitIntegrations.BuildManifestSetup(ctx, in.Org)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to build manifest: " + err.Error())
 		}
