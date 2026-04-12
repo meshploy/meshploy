@@ -169,8 +169,10 @@ func (s *GitIntegrationService) Delete(ctx context.Context, id uuid.UUID) error 
 }
 
 // GitHubInstallURL returns the GitHub App installation URL with a signed state parameter.
+// If githubOrg is provided, fetches the org's numeric GitHub ID and appends suggested_target_id
+// so GitHub pre-selects that org in the installation account picker.
 // Returns 501 if the manifest flow has not been completed yet.
-func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, orgID uuid.UUID) (string, error) {
+func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, orgID uuid.UUID, githubOrg string) (string, error) {
 	appCfg, err := s.GetAppConfig(ctx)
 	if err != nil {
 		return "", err
@@ -179,8 +181,15 @@ func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, orgID uuid
 		return "", huma.Error501NotImplemented("GitHub App is not set up — visit /integrations to complete setup")
 	}
 	state := buildState(orgID.String(), s.cfg.JWTSecret)
-	url := fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s", appCfg.AppSlug, state)
-	return url, nil
+	installURL := fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s", appCfg.AppSlug, state)
+	if githubOrg != "" {
+		targetID, err := fetchGitHubOrgID(githubOrg)
+		if err != nil {
+			return "", huma.Error400BadRequest("could not find GitHub org: " + err.Error())
+		}
+		installURL += fmt.Sprintf("&suggested_target_id=%d", targetID)
+	}
+	return installURL, nil
 }
 
 // HandleGitHubCallback validates the OAuth state, fetches installation metadata from GitHub,
@@ -520,6 +529,31 @@ func validateState(state, secret string) (string, error) {
 		return "", fmt.Errorf("state signature mismatch")
 	}
 	return id, nil
+}
+
+// fetchGitHubOrgID returns the numeric GitHub ID for a given org login name.
+func fetchGitHubOrgID(orgName string) (int64, error) {
+	req, _ := http.NewRequest(http.MethodGet, "https://api.github.com/orgs/"+url.PathEscape(orgName), nil)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return 0, fmt.Errorf("org %q not found on GitHub", orgName)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("GitHub returned %d", resp.StatusCode)
+	}
+	var result struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+	return result.ID, nil
 }
 
 // generateAppJWT creates a short-lived RS256 JWT signed with the GitHub App private key.

@@ -441,8 +441,12 @@ export const gitIntegrations = {
       authToken
     ),
 
-  installUrl: (orgId: string, token: string) =>
-    apiFetch<{ url: string }>(`/api/v1/orgs/${orgId}/git-integrations/github/install-url`, {}, token),
+  installUrl: (orgId: string, token: string, githubOrg?: string) =>
+    apiFetch<{ url: string }>(
+      `/api/v1/orgs/${orgId}/git-integrations/github/install-url${githubOrg ? `?github_org=${encodeURIComponent(githubOrg)}` : ""}`,
+      {},
+      token
+    ),
 
   repos: (orgId: string, id: string, token: string) =>
     apiFetch<GitRepo[]>(`/api/v1/orgs/${orgId}/git-integrations/${id}/repos`, {}, token),
