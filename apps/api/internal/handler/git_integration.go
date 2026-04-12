@@ -213,14 +213,15 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *struct {
-		OrgID string `path:"orgId"`
+		OrgID     string `path:"orgId"`
+		GithubOrg string `query:"github_org"`
 	}) (*GitHubInstallURLOutput, error) {
 		requireUser(ctx)
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org ID")
 		}
-		url, err := h.svc.GitIntegrations.GitHubInstallURL(ctx, orgID)
+		url, err := h.svc.GitIntegrations.GitHubInstallURL(ctx, orgID, in.GithubOrg)
 		if err != nil {
 			return nil, err
 		}

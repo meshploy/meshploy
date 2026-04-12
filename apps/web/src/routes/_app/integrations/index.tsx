@@ -305,14 +305,8 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlu
     }
     window.addEventListener("pageshow", onPageShow)
     try {
-      const org = installOrg.trim()
-      if (org && appSlug) {
-        // Go directly to the org's app settings page where they can install
-        window.location.href = `https://github.com/organizations/${org}/settings/apps/${appSlug}`
-      } else {
-        const { url } = await gitApi.installUrl(orgId, token)
-        window.location.href = url
-      }
+      const { url } = await gitApi.installUrl(orgId, token, installOrg.trim() || undefined)
+      window.location.href = url
     } catch (err: unknown) {
       window.removeEventListener("pageshow", onPageShow)
       setError(err instanceof Error ? err.message : "Failed to get install URL")
