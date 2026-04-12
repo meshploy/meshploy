@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Crown, Shield, User, Globe, Plus, Loader2, Trash2, AlertCircle, X } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { Crown, Shield, User, Globe, Plus, Loader2 } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

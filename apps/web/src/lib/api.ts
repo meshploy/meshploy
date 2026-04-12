@@ -493,13 +493,6 @@ export const domains = {
       token
     ),
 
-  delete: (orgId: string, domainId: string, token: string) =>
-    apiFetch<void>(
-      `/api/v1/orgs/${orgId}/domains/${domainId}`,
-      { method: "DELETE" },
-      token
-    ),
-
   verify: (orgId: string, domainId: string, token: string) =>
     apiFetch<ApiDomain>(
       `/api/v1/orgs/${orgId}/domains/${domainId}/verify`,
