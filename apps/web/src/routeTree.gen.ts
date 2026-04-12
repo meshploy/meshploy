@@ -18,7 +18,6 @@ import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/ind
 import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
 import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrations/index'
-import { Route as AppDomainsIndexRouteImport } from './routes/_app/domains/index'
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
 import { Route as AppDomainsNewRouteImport } from './routes/_app/domains/new'
@@ -68,11 +67,6 @@ const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
   path: '/integrations/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppDomainsIndexRoute = AppDomainsIndexRouteImport.update({
-  id: '/domains/',
-  path: '/domains/',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppClusterIndexRoute = AppClusterIndexRouteImport.update({
   id: '/cluster/',
   path: '/cluster/',
@@ -106,7 +100,6 @@ export interface FileRoutesByFullPath {
   '/domains/new': typeof AppDomainsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/cluster/': typeof AppClusterIndexRoute
-  '/domains/': typeof AppDomainsIndexRoute
   '/integrations/': typeof AppIntegrationsIndexRoute
   '/nodes/': typeof AppNodesIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
@@ -121,7 +114,6 @@ export interface FileRoutesByTo {
   '/domains/new': typeof AppDomainsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/cluster': typeof AppClusterIndexRoute
-  '/domains': typeof AppDomainsIndexRoute
   '/integrations': typeof AppIntegrationsIndexRoute
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
@@ -139,7 +131,6 @@ export interface FileRoutesById {
   '/_app/domains/new': typeof AppDomainsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
-  '/_app/domains/': typeof AppDomainsIndexRoute
   '/_app/integrations/': typeof AppIntegrationsIndexRoute
   '/_app/nodes/': typeof AppNodesIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
@@ -156,7 +147,6 @@ export interface FileRouteTypes {
     | '/domains/new'
     | '/nodes/$id'
     | '/cluster/'
-    | '/domains/'
     | '/integrations/'
     | '/nodes/'
     | '/projects/'
@@ -171,7 +161,6 @@ export interface FileRouteTypes {
     | '/domains/new'
     | '/nodes/$id'
     | '/cluster'
-    | '/domains'
     | '/integrations'
     | '/nodes'
     | '/projects'
@@ -188,7 +177,6 @@ export interface FileRouteTypes {
     | '/_app/domains/new'
     | '/_app/nodes/$id'
     | '/_app/cluster/'
-    | '/_app/domains/'
     | '/_app/integrations/'
     | '/_app/nodes/'
     | '/_app/projects/'
@@ -267,13 +255,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIntegrationsIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/domains/': {
-      id: '/_app/domains/'
-      path: '/domains'
-      fullPath: '/domains/'
-      preLoaderRoute: typeof AppDomainsIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/cluster/': {
       id: '/_app/cluster/'
       path: '/cluster'
@@ -317,7 +298,6 @@ interface AppRouteChildren {
   AppDomainsNewRoute: typeof AppDomainsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
-  AppDomainsIndexRoute: typeof AppDomainsIndexRoute
   AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute
   AppNodesIndexRoute: typeof AppNodesIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
@@ -331,7 +311,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppDomainsNewRoute: AppDomainsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,
-  AppDomainsIndexRoute: AppDomainsIndexRoute,
   AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
   AppNodesIndexRoute: AppNodesIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,

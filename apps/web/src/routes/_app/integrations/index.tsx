@@ -401,6 +401,12 @@ function AddGitSourceDialog({ open, onClose, orgId, token, appConfigured, appSlu
                   {actioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                   {actioning ? "Redirecting…" : installOrg.trim() ? "Install on organization" : "Install GitHub App"}
                 </Button>
+                <p className="text-[11px] text-muted-foreground/60 text-center">
+                  Deleted the app on GitHub?{" "}
+                  <button type="button" className="underline hover:text-muted-foreground" onClick={async () => { await gitHubApp.resetAppConfig(); onSuccess() }}>
+                    Reset setup
+                  </button>
+                </p>
               </>
             )}
             <DialogFooter showCloseButton />

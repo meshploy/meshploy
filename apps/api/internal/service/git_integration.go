@@ -151,6 +151,11 @@ func (s *GitIntegrationService) HandleAppCallback(ctx context.Context, code, sta
 
 // ─── Org-level installation ───────────────────────────────────────────────────
 
+// ResetAppConfig deletes the platform-wide GitHub App config so setup can be re-run.
+func (s *GitIntegrationService) ResetAppConfig(ctx context.Context) error {
+	return s.db.WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&db.GitHubAppConfig{}).Error
+}
+
 // List returns all git integrations for an org.
 func (s *GitIntegrationService) List(ctx context.Context, orgID uuid.UUID) ([]db.GitIntegration, error) {
 	rows := make([]db.GitIntegration, 0)
@@ -161,9 +166,22 @@ func (s *GitIntegrationService) List(ctx context.Context, orgID uuid.UUID) ([]db
 }
 
 // Delete removes an integration by ID.
+// If the deleted integration was GitHub and no GitHub integrations remain, the
+// platform-wide GitHub App config is also cleared so setup can be re-run.
 func (s *GitIntegrationService) Delete(ctx context.Context, id uuid.UUID) error {
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, id).Error; err != nil {
+		return huma.Error404NotFound("git integration not found")
+	}
 	if err := s.db.WithContext(ctx).Delete(&db.GitIntegration{}, id).Error; err != nil {
 		return huma.Error500InternalServerError("failed to delete git integration")
+	}
+	if integration.Provider == "github" {
+		var remaining int64
+		s.db.WithContext(ctx).Model(&db.GitIntegration{}).Where("provider = ?", "github").Count(&remaining)
+		if remaining == 0 {
+			s.db.WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&db.GitHubAppConfig{})
+		}
 	}
 	return nil
 }

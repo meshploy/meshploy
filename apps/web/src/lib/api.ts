@@ -391,6 +391,9 @@ export const gitHubApp = {
   status: () =>
     apiFetch<{ configured: boolean; app_slug: string }>("/api/v1/github/app-status"),
 
+  resetAppConfig: () =>
+    apiFetch<void>("/api/v1/github/app-config", { method: "DELETE" }),
+
   manifestSetup: (org?: string) =>
     apiFetch<{ github_url: string; manifest: string }>(
       `/api/v1/github/manifest-setup${org ? `?org=${encodeURIComponent(org)}` : ""}`

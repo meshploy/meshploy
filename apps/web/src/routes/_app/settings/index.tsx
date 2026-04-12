@@ -82,22 +82,11 @@ function SettingsPage() {
 function PrimaryDomainSection() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
-  const qc = useQueryClient()
-  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const { data: domainList = [], isLoading } = useQuery({
     queryKey: ["domains", orgId],
     queryFn: () => domainsApi.list(orgId, token),
     enabled: !!orgId,
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (domainId: string) => domainsApi.delete(orgId, domainId, token),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["domains", orgId] })
-      setDeleteError(null)
-    },
-    onError: (err: Error) => setDeleteError(err.message),
   })
 
   const domain = domainList[0] ?? null
@@ -119,16 +108,6 @@ function PrimaryDomainSection() {
         )}
       </div>
 
-      {deleteError && (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <span className="flex-1">{deleteError}</span>
-          <button onClick={() => setDeleteError(null)} className="shrink-0 hover:text-destructive/70">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -139,21 +118,13 @@ function PrimaryDomainSection() {
           No domain configured yet. Add one to enable routing and automatic TLS.
         </p>
       ) : (
-        <DomainCard
-          domain={domain}
-          onDelete={(id) => deleteMutation.mutate(id)}
-          isDeleting={deleteMutation.isPending}
-        />
+        <DomainCard domain={domain} />
       )}
     </section>
   )
 }
 
-function DomainCard({ domain, onDelete, isDeleting }: {
-  domain: ApiDomain
-  onDelete: (id: string) => void
-  isDeleting: boolean
-}) {
+function DomainCard({ domain }: { domain: ApiDomain }) {
   return (
     <div className="rounded-lg border border-border/60 px-4 py-4">
       <div className="flex items-start gap-3">
@@ -187,20 +158,6 @@ function DomainCard({ domain, onDelete, isDeleting }: {
             </span>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => onDelete(domain.id)}
-          disabled={isDeleting}
-          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 shrink-0"
-          title="Delete domain"
-        >
-          {isDeleting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Trash2 className="h-3.5 w-3.5" />
-          )}
-        </button>
       </div>
     </div>
   )
