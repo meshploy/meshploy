@@ -251,9 +251,12 @@ func (s *GitIntegrationService) OAuthReconnect(ctx context.Context, integrationI
 		return "", huma.Error400BadRequest("integration is not OAuth-based")
 	}
 
-	// Clear the stale token so the row returns to pending state.
-	if err := s.db.WithContext(ctx).Model(&integration).
-		Update("installation_id", db.EncryptedString("")).Error; err != nil {
+	// Clear the stale tokens so the row returns to pending state.
+	if err := s.db.WithContext(ctx).Model(&integration).Updates(map[string]any{
+		"installation_id":      db.EncryptedString(""),
+		"o_auth_refresh_token": db.EncryptedString(""),
+		"o_auth_token_expiry":  nil,
+	}).Error; err != nil {
 		return "", huma.Error500InternalServerError("failed to reset integration")
 	}
 
@@ -287,13 +290,47 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 
 	switch integration.Provider {
 	case "gitlab":
-		branches, err := listGitLabBranches(integration.BaseURL, string(integration.InstallationID), repo)
+		token, err := s.resolveOAuthToken(ctx, &integration, false)
+		if err == errUnauthorized {
+			return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		branches, err := listGitLabBranches(integration.BaseURL, token, repo)
+		if err == errUnauthorized {
+			token, err = s.resolveOAuthToken(ctx, &integration, true)
+			if err == errUnauthorized {
+				return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+			}
+			if err != nil {
+				return nil, huma.Error500InternalServerError(err.Error())
+			}
+			branches, err = listGitLabBranches(integration.BaseURL, token, repo)
+		}
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list GitLab branches: " + err.Error())
 		}
 		return branches, nil
 	case "gitea":
-		branches, err := listGiteaBranches(integration.BaseURL, string(integration.InstallationID), repo)
+		token, err := s.resolveOAuthToken(ctx, &integration, false)
+		if err == errUnauthorized {
+			return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		branches, err := listGiteaBranches(integration.BaseURL, token, repo)
+		if err == errUnauthorized {
+			token, err = s.resolveOAuthToken(ctx, &integration, true)
+			if err == errUnauthorized {
+				return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+			}
+			if err != nil {
+				return nil, huma.Error500InternalServerError(err.Error())
+			}
+			branches, err = listGiteaBranches(integration.BaseURL, token, repo)
+		}
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list Gitea branches: " + err.Error())
 		}
@@ -433,17 +470,21 @@ func (s *GitIntegrationService) HandleGitLabOAuthCallback(ctx context.Context, c
 
 	base := gitLabBase(integration.BaseURL)
 	redirectURI := integration.OAuthRedirectURI
-	token, err := exchangeOAuthCode(base+"/oauth/token",
+	tok, err := exchangeOAuthCode(base+"/oauth/token",
 		integration.OAuthClientID, string(integration.OAuthClientSecret), code, redirectURI)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}
 
-	if err := s.db.WithContext(ctx).Model(&integration).
-		Update("installation_id", db.EncryptedString(token)).Error; err != nil {
+	updates := map[string]any{
+		"installation_id":    db.EncryptedString(tok.AccessToken),
+		"o_auth_refresh_token": db.EncryptedString(tok.RefreshToken),
+		"o_auth_token_expiry":  tok.Expiry,
+	}
+	if err := s.db.WithContext(ctx).Model(&integration).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("failed to persist access token")
 	}
-	integration.InstallationID = db.EncryptedString(token)
+	integration.InstallationID = db.EncryptedString(tok.AccessToken)
 	return &integration, nil
 }
 
@@ -465,18 +506,77 @@ func (s *GitIntegrationService) HandleGiteaOAuthCallback(ctx context.Context, co
 
 	base := strings.TrimRight(integration.BaseURL, "/")
 	redirectURI := integration.OAuthRedirectURI
-	token, err := exchangeOAuthCode(base+"/login/oauth/access_token",
+	tok, err := exchangeOAuthCode(base+"/login/oauth/access_token",
 		integration.OAuthClientID, string(integration.OAuthClientSecret), code, redirectURI)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}
 
-	if err := s.db.WithContext(ctx).Model(&integration).
-		Update("installation_id", db.EncryptedString(token)).Error; err != nil {
+	updates := map[string]any{
+		"installation_id":      db.EncryptedString(tok.AccessToken),
+		"o_auth_refresh_token": db.EncryptedString(tok.RefreshToken),
+		"o_auth_token_expiry":  tok.Expiry,
+	}
+	if err := s.db.WithContext(ctx).Model(&integration).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("failed to persist access token")
 	}
-	integration.InstallationID = db.EncryptedString(token)
+	integration.InstallationID = db.EncryptedString(tok.AccessToken)
 	return &integration, nil
+}
+
+// resolveOAuthToken returns a valid access token for an OAuth integration.
+// If force is false: only refreshes when the token is within 5 minutes of expiry.
+// If force is true: always refreshes using the refresh token (called after a 401 response).
+// Returns errUnauthorized if refresh is impossible (no refresh token) so the
+// caller can surface a reconnect prompt to the user.
+func (s *GitIntegrationService) resolveOAuthToken(ctx context.Context, integration *db.GitIntegration, force bool) (string, error) {
+	if integration.AuthMethod != "oauth" {
+		return string(integration.InstallationID), nil
+	}
+
+	needsRefresh := force
+	if !needsRefresh {
+		// Proactively refresh when within 5 minutes of expiry (or already expired).
+		if integration.OAuthTokenExpiry != nil && time.Until(*integration.OAuthTokenExpiry) <= 5*time.Minute {
+			needsRefresh = true
+		}
+	}
+
+	if !needsRefresh {
+		return string(integration.InstallationID), nil
+	}
+
+	if string(integration.OAuthRefreshToken) == "" {
+		return "", errUnauthorized
+	}
+
+	var tokenURL string
+	switch integration.Provider {
+	case "gitlab":
+		tokenURL = gitLabBase(integration.BaseURL) + "/oauth/token"
+	case "gitea":
+		tokenURL = strings.TrimRight(integration.BaseURL, "/") + "/login/oauth/access_token"
+	default:
+		return string(integration.InstallationID), nil
+	}
+
+	tok, err := refreshOAuthToken(tokenURL, integration.OAuthClientID, string(integration.OAuthClientSecret), string(integration.OAuthRefreshToken))
+	if err != nil {
+		return "", errUnauthorized
+	}
+
+	updates := map[string]any{
+		"installation_id":      db.EncryptedString(tok.AccessToken),
+		"o_auth_refresh_token": db.EncryptedString(tok.RefreshToken),
+		"o_auth_token_expiry":  tok.Expiry,
+	}
+	if err := s.db.WithContext(ctx).Model(integration).Updates(updates).Error; err != nil {
+		return "", fmt.Errorf("failed to persist refreshed token")
+	}
+	integration.InstallationID = db.EncryptedString(tok.AccessToken)
+	integration.OAuthRefreshToken = db.EncryptedString(tok.RefreshToken)
+	integration.OAuthTokenExpiry = tok.Expiry
+	return tok.AccessToken, nil
 }
 
 // ListRepos returns all repositories accessible via a GitHub App installation,
@@ -489,13 +589,48 @@ func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uui
 
 	switch integration.Provider {
 	case "gitlab":
-		repos, err := listGitLabRepos(integration.BaseURL, string(integration.InstallationID), integration.Groups)
+		token, err := s.resolveOAuthToken(ctx, &integration, false)
+		if err == errUnauthorized {
+			return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		repos, err := listGitLabRepos(integration.BaseURL, token, integration.Groups)
+		if err == errUnauthorized {
+			// Token was rejected despite looking valid — force refresh and retry once.
+			token, err = s.resolveOAuthToken(ctx, &integration, true)
+			if err == errUnauthorized {
+				return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+			}
+			if err != nil {
+				return nil, huma.Error500InternalServerError(err.Error())
+			}
+			repos, err = listGitLabRepos(integration.BaseURL, token, integration.Groups)
+		}
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list GitLab repositories: " + err.Error())
 		}
 		return repos, nil
 	case "gitea":
-		repos, err := listGiteaRepos(integration.BaseURL, string(integration.InstallationID), integration.Groups)
+		token, err := s.resolveOAuthToken(ctx, &integration, false)
+		if err == errUnauthorized {
+			return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		repos, err := listGiteaRepos(integration.BaseURL, token, integration.Groups)
+		if err == errUnauthorized {
+			token, err = s.resolveOAuthToken(ctx, &integration, true)
+			if err == errUnauthorized {
+				return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+			}
+			if err != nil {
+				return nil, huma.Error500InternalServerError(err.Error())
+			}
+			repos, err = listGiteaRepos(integration.BaseURL, token, integration.Groups)
+		}
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list Gitea repositories: " + err.Error())
 		}
@@ -709,9 +844,15 @@ func validateGitToken(userURL, scheme, token string) error {
 	return nil
 }
 
+type oauthTokenResult struct {
+	AccessToken  string
+	RefreshToken string
+	Expiry       *time.Time // nil if provider doesn't send expires_in
+}
+
 // exchangeOAuthCode exchanges an OAuth2 authorization code for an access token.
 // Works for both GitLab (/oauth/token) and Gitea (/login/oauth/access_token).
-func exchangeOAuthCode(tokenURL, clientID, clientSecret, code, redirectURI string) (string, error) {
+func exchangeOAuthCode(tokenURL, clientID, clientSecret, code, redirectURI string) (oauthTokenResult, error) {
 	body := url.Values{
 		"client_id":     {clientID},
 		"client_secret": {clientSecret},
@@ -719,34 +860,64 @@ func exchangeOAuthCode(tokenURL, clientID, clientSecret, code, redirectURI strin
 		"grant_type":    {"authorization_code"},
 		"redirect_uri":  {redirectURI},
 	}
+	return doTokenRequest(tokenURL, body)
+}
+
+// refreshOAuthToken uses a refresh token to obtain a new access token.
+func refreshOAuthToken(tokenURL, clientID, clientSecret, refreshToken string) (oauthTokenResult, error) {
+	body := url.Values{
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+		"refresh_token": {refreshToken},
+		"grant_type":    {"refresh_token"},
+	}
+	return doTokenRequest(tokenURL, body)
+}
+
+func doTokenRequest(tokenURL string, body url.Values) (oauthTokenResult, error) {
 	req, _ := http.NewRequest(http.MethodPost, tokenURL, strings.NewReader(body.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return oauthTokenResult{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(raw))
+		return oauthTokenResult{}, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(raw))
 	}
 	var result struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"` // seconds; 0 = not provided
+		Error        string `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode token response: %w", err)
+		return oauthTokenResult{}, fmt.Errorf("decode token response: %w", err)
 	}
 	if result.Error != "" {
-		return "", fmt.Errorf("OAuth error: %s", result.Error)
+		return oauthTokenResult{}, fmt.Errorf("OAuth error: %s", result.Error)
 	}
 	if result.AccessToken == "" {
-		return "", fmt.Errorf("empty access token in response")
+		return oauthTokenResult{}, fmt.Errorf("empty access token in response")
 	}
-	return result.AccessToken, nil
+	var expiry *time.Time
+	if result.ExpiresIn > 0 {
+		t := time.Now().Add(time.Duration(result.ExpiresIn) * time.Second)
+		expiry = &t
+	}
+	return oauthTokenResult{
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		Expiry:       expiry,
+	}, nil
 }
+
+// errUnauthorized is returned by provider helpers when the API responds with
+// 401/403. The caller can detect this and attempt a token refresh + retry.
+var errUnauthorized = fmt.Errorf("unauthorized")
 
 // ─── GitLab/Gitea provider helpers ───────────────────────────────────────────
 
@@ -776,6 +947,13 @@ func listGitLabRepos(baseURL, token, group string) ([]GitRepo, error) {
 			return nil, err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, errUnauthorized
+		}
+		if resp.StatusCode != http.StatusOK {
+			raw, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("GitLab API returned %d: %s", resp.StatusCode, string(raw))
+		}
 		var result []struct {
 			PathWithNamespace string `json:"path_with_namespace"`
 			DefaultBranch     string `json:"default_branch"`
@@ -813,6 +991,13 @@ func listGitLabBranches(baseURL, token, projectPath string) ([]string, error) {
 			return nil, err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, errUnauthorized
+		}
+		if resp.StatusCode != http.StatusOK {
+			raw, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("GitLab API returned %d: %s", resp.StatusCode, string(raw))
+		}
 		var result []struct {
 			Name string `json:"name"`
 		}
@@ -848,6 +1033,13 @@ func listGiteaRepos(baseURL, token, org string) ([]GitRepo, error) {
 			return nil, err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, errUnauthorized
+		}
+		if resp.StatusCode != http.StatusOK {
+			raw, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("Gitea API returned %d: %s", resp.StatusCode, string(raw))
+		}
 		var result struct {
 			Data []struct {
 				FullName      string `json:"full_name"`
@@ -886,6 +1078,13 @@ func listGiteaBranches(baseURL, pat, repo string) ([]string, error) {
 			return nil, err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, errUnauthorized
+		}
+		if resp.StatusCode != http.StatusOK {
+			raw, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("Gitea API returned %d: %s", resp.StatusCode, string(raw))
+		}
 		var result []struct {
 			Name string `json:"name"`
 		}

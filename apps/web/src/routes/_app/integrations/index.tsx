@@ -872,14 +872,19 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
   const [installing, setInstalling] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
 
-  const { data: repos } = useQuery({
+  const { data: repos, error: reposError } = useQuery({
     queryKey: ["git-repos", orgId, integration.id],
     queryFn: () => import("@/lib/api").then(({ gitIntegrations }) =>
       gitIntegrations.repos(orgId, integration.id, token)
     ),
     staleTime: 5 * 60 * 1000,
     enabled: integration.connected,
+    retry: false,
   })
+
+  // OAuth token expired and no refresh token available — user must re-authorize.
+  const needsReconnect = integration.connected && integration.auth_method === "oauth"
+    && (reposError as { status?: number } | null)?.status === 401
 
   async function handleInstall() {
     setInstalling(true)
@@ -916,7 +921,7 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
   const isOAuth = integration.auth_method === "oauth"
 
   return (
-    <div className={`flex items-start gap-3 rounded-lg border bg-card p-4 ${isPending ? "border-amber-500/30" : "border-border/60"}`}>
+    <div className={`flex items-start gap-3 rounded-lg border bg-card p-4 ${isPending || needsReconnect ? "border-amber-500/30" : "border-border/60"}`}>
       <ProviderIcon provider={integration.provider} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
@@ -937,6 +942,7 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
           {PROVIDER_LABELS[integration.provider] ?? integration.provider}
           {isPending && isGHApp && " · awaiting installation"}
           {isPending && isOAuth && " · authorization incomplete"}
+          {needsReconnect && " · token expired"}
         </p>
         {integration.connected && repos !== undefined && (
           <p className="text-[11px] font-mono text-muted-foreground/60 mt-1">
@@ -958,13 +964,13 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
             {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           </button>
         )}
-        {isPending && isOAuth && (
+        {(isPending && isOAuth || needsReconnect) && (
           <button
             type="button"
             onClick={handleReconnect}
             disabled={reconnecting}
             className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
-            title="Re-authorize"
+            title={needsReconnect ? "Token expired — re-authorize" : "Re-authorize"}
           >
             {reconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           </button>
