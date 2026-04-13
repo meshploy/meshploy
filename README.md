@@ -281,3 +281,9 @@ Meshploy is open-core. The Community Edition (this repository) is MIT-licensed a
 ## License
 
 Community Edition — [MIT](LICENSE)
+
+---
+
+## AI Usage Disclosure
+
+This project was built with AI assistance. Architecture decisions, code generation, and debugging were done with the help of Claude Code and Gemini. Every generated output was reviewed, tested, and adapted by the author.

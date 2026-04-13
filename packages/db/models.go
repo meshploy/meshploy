@@ -485,6 +485,8 @@ type GitIntegration struct {
 	OAuthClientID     string          `gorm:"not null;default:''"        json:"-"`                 // GitLab/Gitea OAuth App client_id
 	OAuthClientSecret EncryptedString `gorm:"type:text"                  json:"-"`                 // GitLab/Gitea OAuth App client_secret
 	OAuthRedirectURI  string          `gorm:"not null;default:''"        json:"-"`                 // redirect_uri used when initiating the OAuth flow — must match callback
+	OAuthRefreshToken EncryptedString `gorm:"type:text"                  json:"-"`                 // GitLab/Gitea OAuth refresh token (used to renew expired access tokens)
+	OAuthTokenExpiry  *time.Time      `gorm:"default:null"               json:"-"`                 // when the current access token expires; nil = unknown / PAT
 	Groups            string          `gorm:"not null;default:''"        json:"groups,omitempty"` // GitLab: group path; Gitea: org name — scopes repo listing
 
 	// GitHub App credentials (auth_method="app" only). All encrypted at rest.
