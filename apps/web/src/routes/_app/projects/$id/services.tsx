@@ -46,7 +46,7 @@ function ServicesTab() {
         <Button
           size="sm"
           className="gap-1.5"
-          render={<Link to="/projects/$id/new" params={{ id: projectId }} />}
+          onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId } })}
         >
           <Plus className="h-3.5 w-3.5" />
           New Service
@@ -67,7 +67,7 @@ function ServicesTab() {
           <Button
             size="sm"
             className="gap-1.5 mt-1"
-            render={<Link to="/projects/$id/new" params={{ id: projectId }} />}
+            onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId } })}
           >
             <Plus className="h-3.5 w-3.5" />
             New Service
