@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -11,6 +13,8 @@ import (
 	appk8s "github.com/meshploy/apps/api/internal/k8s"
 	db "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -286,6 +290,182 @@ func (s *DeploymentService) resolveRegistry(ctx context.Context, bc *db.BuildCon
 		return "", "", "", fmt.Errorf("registry integration not found")
 	}
 	return reg.Endpoint, string(reg.Username), string(reg.Password), nil
+}
+
+// ─── Log streaming ────────────────────────────────────────────────────────────
+
+// StreamBuildLogs streams the build log for a deployment as SSE events.
+// Each log line is written as "data: <line>\n\n".
+// A final "event: done\ndata: \n\n" signals the stream is complete.
+// flush is called after each write so the HTTP layer can push data immediately.
+func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uuid.UUID, w io.Writer, flush func()) error {
+	var d db.Deployment
+	if err := s.db.WithContext(ctx).First(&d, "id = ?", deploymentID).Error; err != nil {
+		return fmt.Errorf("deployment not found")
+	}
+
+	sendLine := func(line string) {
+		fmt.Fprintf(w, "data: %s\n\n", line)
+		flush()
+	}
+	sendDone := func() {
+		fmt.Fprintf(w, "event: done\ndata: \n\n")
+		flush()
+	}
+
+	// Completed deployment — replay stored log then close.
+	if d.Status != db.DeploymentBuilding && d.Status != db.DeploymentDeploying && d.Status != db.DeploymentPending {
+		for _, line := range strings.Split(d.Log, "\n") {
+			sendLine(line)
+		}
+		sendDone()
+		return nil
+	}
+
+	if s.k8s == nil {
+		sendLine("Kubernetes is not configured on this instance.")
+		sendDone()
+		return nil
+	}
+
+	// Get the namespace from the service's project.
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", d.ServiceID).Error; err != nil {
+		return fmt.Errorf("service not found")
+	}
+	namespace := svc.Project.Slug
+
+	// Wait up to 60 s for the build pod to be scheduled.
+	sendLine(fmt.Sprintf("Waiting for build pod (job: %s)…", d.BuildJobName))
+	flush()
+	podName, err := s.waitForBuildPod(ctx, namespace, d.BuildJobName)
+	if err != nil {
+		sendLine("Error: " + err.Error())
+		sendDone()
+		return nil
+	}
+
+	// Stream pod logs.
+	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
+	flush()
+	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+		Follow:    true,
+		TailLines: func() *int64 { n := int64(0); return &n }(),
+	})
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		sendLine("Error opening log stream: " + err.Error())
+		sendDone()
+		return nil
+	}
+	defer stream.Close()
+
+	scanner := bufio.NewScanner(stream)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			sendLine(scanner.Text())
+		}
+	}
+
+	sendDone()
+	return nil
+}
+
+// StreamRuntimeLogs streams live stdout/stderr from the running pod for a
+// service. Uses label selector app=<service-slug>,managed-by=meshploy.
+// Each line is written as "data: <line>\n\n"; "event: done\ndata: \n\n" when
+// the client disconnects or no running pod is found.
+func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uuid.UUID, w io.Writer, flush func()) error {
+	sendLine := func(line string) {
+		fmt.Fprintf(w, "data: %s\n\n", line)
+		flush()
+	}
+	sendDone := func() {
+		fmt.Fprintf(w, "event: done\ndata: \n\n")
+		flush()
+	}
+
+	if s.k8s == nil {
+		sendLine("Kubernetes is not configured on this instance.")
+		sendDone()
+		return nil
+	}
+
+	// Load service + project for namespace and slug.
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		sendLine("Error: service not found")
+		sendDone()
+		return nil
+	}
+	namespace := svc.Project.Slug
+	podSlug := slugify(svc.Name)
+	selector := fmt.Sprintf("app=%s,managed-by=meshploy", podSlug)
+
+	// Find the running pod.
+	pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil || len(pods.Items) == 0 {
+		sendLine("No running pod found for this service.")
+		sendDone()
+		return nil
+	}
+
+	podName := pods.Items[0].Name
+	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
+	flush()
+
+	tail := int64(200)
+	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+		Follow:    true,
+		TailLines: &tail,
+	})
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		sendLine("Error opening log stream: " + err.Error())
+		sendDone()
+		return nil
+	}
+	defer stream.Close()
+
+	scanner := bufio.NewScanner(stream)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			sendLine(scanner.Text())
+		}
+	}
+
+	sendDone()
+	return nil
+}
+
+// waitForBuildPod polls until the pod for a K8s Job appears, up to 60 s.
+func (s *DeploymentService) waitForBuildPod(ctx context.Context, namespace, jobName string) (string, error) {
+	deadline := time.Now().Add(60 * time.Second)
+	selector := "batch.kubernetes.io/job-name=" + jobName
+	for {
+		pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: selector,
+		})
+		if err == nil && len(pods.Items) > 0 {
+			return pods.Items[0].Name, nil
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("timed out waiting for build pod (job: %s)", jobName)
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // slugify converts a name to a K8s-safe lowercase slug.

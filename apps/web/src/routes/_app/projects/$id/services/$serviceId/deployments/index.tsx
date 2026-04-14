@@ -1,12 +1,6 @@
-import { createFileRoute, useParams } from "@tanstack/react-router"
-import { useState } from "react"
+import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  Rocket,
-} from "lucide-react"
+import { Loader2, Rocket, ScrollText } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
@@ -15,7 +9,7 @@ import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 
 export const Route = createFileRoute(
-  "/_app/projects/$id/services/$serviceId/deployments"
+  "/_app/projects/$id/services/$serviceId/deployments/"
 )({
   component: DeploymentsTab,
 })
@@ -40,62 +34,9 @@ const STATUS_DOT: Record<ApiDeployment["status"], string> = {
   failed:    "bg-destructive",
 }
 
-function DeploymentRow({ deployment }: { deployment: ApiDeployment }) {
-  const [expanded, setExpanded] = useState(false)
-
-  return (
-    <div className="divide-y divide-border/30">
-      <div
-        className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        {/* Status dot */}
-        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOT[deployment.status]}`} />
-
-        {/* ID + badge */}
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <code className="text-xs font-mono text-foreground/80">
-            {deployment.id.slice(0, 8)}
-          </code>
-          <Badge
-            className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[deployment.status]}`}
-          >
-            {deployment.status}
-          </Badge>
-          {deployment.image && (
-            <code className="text-[11px] font-mono text-muted-foreground/60 truncate hidden sm:block">
-              {deployment.image}
-            </code>
-          )}
-        </div>
-
-        {/* Time + expand toggle */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-muted-foreground">
-            {formatRelativeTime(new Date(deployment.created_at))}
-          </span>
-          {expanded
-            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-          }
-        </div>
-      </div>
-
-      {/* Expanded log */}
-      {expanded && (
-        <div className="px-4 py-3 bg-muted/10">
-          <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed max-h-64 overflow-y-auto">
-            {deployment.log || "No log output yet."}
-          </pre>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function DeploymentsTab() {
   const { id: projectId, serviceId } = useParams({
-    from: "/_app/projects/$id/services/$serviceId/deployments",
+    from: "/_app/projects/$id/services/$serviceId/deployments/",
   })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
@@ -107,7 +48,6 @@ function DeploymentsTab() {
     queryKey,
     queryFn: () => deploymentsApi.list(orgId!, projectId, serviceId, token),
     enabled: !!orgId,
-    // Only poll while there are active (in-progress) deployments
     refetchInterval: (query) => {
       const data = query.state.data as ApiDeployment[] | undefined
       return data?.some((d) => ACTIVE_STATUSES.has(d.status)) ? 3000 : false
@@ -183,10 +123,64 @@ function DeploymentsTab() {
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
           {deploymentList.map((dep) => (
-            <DeploymentRow key={dep.id} deployment={dep} />
+            <DeploymentRow
+              key={dep.id}
+              deployment={dep}
+              projectId={projectId}
+              serviceId={serviceId}
+            />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function DeploymentRow({
+  deployment,
+  projectId,
+  serviceId,
+}: {
+  deployment: ApiDeployment
+  projectId: string
+  serviceId: string
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+      {/* Status dot */}
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOT[deployment.status]}`} />
+
+      {/* ID + badge */}
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <code className="text-xs font-mono text-foreground/80">
+          {deployment.id.slice(0, 8)}
+        </code>
+        <Badge
+          className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[deployment.status]}`}
+        >
+          {deployment.status}
+        </Badge>
+        {deployment.image && (
+          <code className="text-[11px] font-mono text-muted-foreground/60 truncate hidden sm:block">
+            {deployment.image}
+          </code>
+        )}
+      </div>
+
+      {/* Time + view logs */}
+      <div className="flex items-center gap-3 shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {formatRelativeTime(new Date(deployment.created_at))}
+        </span>
+        <Link
+          to="/projects/$id/services/$serviceId/deployments/$deploymentId"
+          params={{ id: projectId, serviceId, deploymentId: deployment.id }}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ScrollText className="h-3 w-3" />
+          View logs
+        </Link>
+      </div>
     </div>
   )
 }
