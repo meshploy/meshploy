@@ -36,7 +36,7 @@ type CreateWorkloadInput struct {
 		Image         string  `json:"image"`
 		NodeID        *string `json:"node_id"` // nullable
 		EnvVars       string  `json:"env_vars"` // raw .env block, encrypted at rest
-		Replicas      int     `json:"replicas" minimum:"1"`
+		Replicas      int     `json:"replicas"` // 0 = use service layer default (1)
 		CPURequest    string  `json:"cpu_request"`
 		CPULimit      string  `json:"cpu_limit"`
 		MemoryRequest string  `json:"memory_request"`
