@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import type { ServiceStatus } from "@/types"
 
-export const Route = createFileRoute("/_app/projects/$id/services")({
+export const Route = createFileRoute("/_app/projects/$id/services/")({
   component: ServicesTab,
 })
 
@@ -20,7 +20,7 @@ const STATUS_STYLES: Record<ServiceStatus, string> = {
 }
 
 function ServicesTab() {
-  const { id: projectId } = useParams({ from: "/_app/projects/$id/services" })
+  const { id: projectId } = useParams({ from: "/_app/projects/$id/services/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
