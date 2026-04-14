@@ -25,6 +25,7 @@ import {
   gitIntegrations as gitApi,
   nodes as nodesApi,
   services as servicesApi,
+  registries as registryApi,
   toNode,
   type CreateServiceBody,
 } from "@/lib/api"
@@ -51,6 +52,7 @@ interface FormState {
   gitRepo: string
   gitBranch: string
   builder: Builder
+  registryIntegrationId: string
   nodeId: string | null
   replicas: number
   cpuRequest: string
@@ -68,6 +70,7 @@ const INITIAL: FormState = {
   gitRepo: "",
   gitBranch: "",
   builder: "nixpacks",
+  registryIntegrationId: "",
   nodeId: null,
   replicas: 1,
   cpuRequest: "100m",
@@ -125,9 +128,10 @@ function NewResourcePage() {
       if (form.source === "image") {
         body.image = form.image
       } else {
-        body.git_repo   = form.gitRepo
-        body.branch     = form.gitBranch
-        body.builder    = form.builder
+        body.git_repo                = form.gitRepo
+        body.branch                  = form.gitBranch
+        body.builder                 = form.builder
+        body.registry_integration_id = form.registryIntegrationId || undefined
       }
       return servicesApi.create(orgId!, projectId, body, token)
     },
@@ -145,7 +149,8 @@ function NewResourcePage() {
       ? form.image.trim().length > 0
       : form.gitIntegrationId.length > 0 &&
         form.gitRepo.length > 0 &&
-        form.gitBranch.length > 0)
+        form.gitBranch.length > 0 &&
+        form.registryIntegrationId.length > 0)
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -257,6 +262,12 @@ function ServiceForm({
     queryFn: () => gitApi.branches(orgId, form.gitIntegrationId, form.gitRepo, token),
     enabled: !!form.gitIntegrationId && !!form.gitRepo,
     staleTime: 2 * 60 * 1000,
+  })
+
+  const { data: registryList = [] } = useQuery({
+    queryKey: ["registry-integrations", orgId],
+    queryFn: () => registryApi.list(orgId, token),
+    enabled: !!orgId,
   })
 
   const { data: allNodes = [] } = useQuery({
@@ -414,6 +425,30 @@ function ServiceForm({
                 </Select>
               </Field>
             </div>
+
+            <Field label="Registry" required>
+              <Select
+                value={form.registryIntegrationId}
+                onValueChange={(v) => patch({ registryIntegrationId: v ?? "" })}
+              >
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue
+                    placeholder={
+                      registryList.length === 0
+                        ? "No registries — add one in Integrations"
+                        : "Select a registry to push the built image…"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {registryList.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         )}
       </Section>

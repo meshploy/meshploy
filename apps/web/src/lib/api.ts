@@ -253,7 +253,7 @@ export interface ApiDomain {
 
 // ─── Registry Integrations ────────────────────────────────────────────────────
 
-export type RegistryProvider = "ghcr" | "dockerhub" | "ecr" | "gcr" | "custom"
+export type RegistryProvider = "ghcr" | "dockerhub" | "ecr" | "gcr" | "custom" | "builtin"
 
 export interface ApiRegistryIntegration {
   id: string

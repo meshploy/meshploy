@@ -30,6 +30,11 @@ type Config struct {
 	Domain          string // DOMAIN           base domain (e.g. meshp.example.com)
 	GatewayIP       string // MESH_IP          WireGuard IP of the gateway node
 	GatewayHostname string // GATEWAY_HOSTNAME hostname of the gateway server
+
+	// Built-in registry — set when docker-compose includes the registry:2 service.
+	// Format: <host>:<port>, e.g. "100.64.0.1:5000" (mesh IP of gateway).
+	// When set, a registry_integrations row is auto-seeded for every org on startup.
+	BuiltinRegistryEndpoint string // BUILTIN_REGISTRY_ENDPOINT
 }
 
 func Load() (*Config, error) {
@@ -82,6 +87,8 @@ func Load() (*Config, error) {
 		Domain:          os.Getenv("DOMAIN"),
 		GatewayIP:       os.Getenv("MESH_IP"),
 		GatewayHostname: os.Getenv("GATEWAY_HOSTNAME"),
+
+		BuiltinRegistryEndpoint: os.Getenv("BUILTIN_REGISTRY_ENDPOINT"),
 	}
 
 	if len(missing) > 0 {

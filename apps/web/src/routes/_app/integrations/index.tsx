@@ -39,6 +39,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   ecr: "Amazon ECR",
   gcr: "Google Container Registry",
   custom: "Private Registry",
+  builtin: "Built-in Registry",
   s3: "Amazon S3",
   r2: "Cloudflare R2",
   minio: "MinIO",
@@ -649,22 +650,30 @@ function RegistryCard({ registry, onDelete, isDeleting }: {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground truncate">{registry.name}</p>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
-            connected
-          </Badge>
+          {registry.provider === "builtin" ? (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-blue-500/10 text-blue-400 border-0">
+              built-in
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
+              connected
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
         {meta && <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>}
       </div>
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={isDeleting}
-        className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-        title="Remove"
-      >
-        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-      </button>
+      {registry.provider !== "builtin" && (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={isDeleting}
+          className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
+          title="Remove"
+        >
+          {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+        </button>
+      )}
     </div>
   )
 }

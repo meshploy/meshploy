@@ -292,6 +292,19 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server installed and started"
   fi
 
+  # ── Configure containerd to trust the built-in registry (HTTP) ─────────────
+  # registry:2 runs on the gateway at MESH_IP:5000 inside the WireGuard mesh.
+  # K3s containerd needs an explicit mirror entry so it pulls over HTTP without TLS.
+  info "Configuring containerd registry mirror for built-in registry…"
+  mkdir -p /etc/rancher/k3s
+  cat > /etc/rancher/k3s/registries.yaml <<REGEOF
+mirrors:
+  "${MESH_IP}:5000":
+    endpoint:
+      - "http://${MESH_IP}:5000"
+REGEOF
+  success "Wrote /etc/rancher/k3s/registries.yaml (mirror: ${MESH_IP}:5000)"
+
   # ── Allow container bridge networks to reach k3s API (port 6443) ────────────
   # The Meshploy API container connects to k3s at host.meshploy.internal:6443.
   # Traffic originates from the container bridge subnet — UFW and firewalld
@@ -778,6 +791,20 @@ NODECONF
       systemctl is-active --quiet k3s-agent \
         && success "k3s agent is running — node joined the cluster" \
         || warn "k3s agent may still be starting. Check: systemctl status k3s-agent"
+
+      # ── Configure containerd to trust the built-in registry (HTTP) ───────────
+      # _K3S_HOST is the gateway mesh IP extracted from K3S_SERVER_URL above.
+      info "Configuring containerd registry mirror for built-in registry…"
+      mkdir -p /etc/rancher/k3s
+      cat > /etc/rancher/k3s/registries.yaml <<REGEOF
+mirrors:
+  "${_K3S_HOST}:5000":
+    endpoint:
+      - "http://${_K3S_HOST}:5000"
+REGEOF
+      success "Wrote /etc/rancher/k3s/registries.yaml (mirror: ${_K3S_HOST}:5000)"
+      systemctl restart k3s-agent
+      success "k3s-agent restarted to pick up registry config"
     fi
   else
     info "Skipped. You can join the cluster later from the Meshploy dashboard → Cluster."

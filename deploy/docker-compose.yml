@@ -59,6 +59,20 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # ── Built-in container registry ───────────────────────────────────────────
+  # Self-hosted Docker Registry v2, accessible from all mesh nodes via the
+  # gateway WireGuard IP (MESH_IP:5000). Build jobs push here; K3s nodes pull.
+  # Insecure HTTP — traffic stays within the WireGuard mesh (trusted network).
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    ports:
+      - "5000:5000"   # bind all interfaces so mesh nodes can reach it
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+    volumes:
+      - registry_data:/var/lib/registry
+
   # ── Meshploy API ───────────────────────────────────────────────────────────
   # Port 4000 binds on all interfaces so worker nodes can reach the API over the
   # WireGuard mesh (100.64.0.1:4000). External traffic goes through Caddy on 443;
@@ -78,11 +92,12 @@ services:
       HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
       KUBECONFIG:        /etc/rancher/k3s/k3s.yaml
       K3S_SERVER_URL:    https://host.meshploy.internal:6443
-      K3S_TOKEN:         ${K3S_TOKEN}
-      API_PORT:          4000
-      DOMAIN:            ${DOMAIN}
-      MESH_IP:           ${MESH_IP:-100.64.0.1}
-      GATEWAY_HOSTNAME:  ${GATEWAY_HOSTNAME}
+      K3S_TOKEN:                  ${K3S_TOKEN}
+      API_PORT:                   4000
+      DOMAIN:                     ${DOMAIN}
+      MESH_IP:                    ${MESH_IP:-100.64.0.1}
+      GATEWAY_HOSTNAME:           ${GATEWAY_HOSTNAME}
+      BUILTIN_REGISTRY_ENDPOINT:  ${MESH_IP:-100.64.0.1}:5000
     extra_hosts:
       - "host.meshploy.internal:${HOST_GATEWAY_IP}"
     volumes:
@@ -91,6 +106,8 @@ services:
       postgres:
         condition: service_healthy
       headscale:
+        condition: service_started
+      registry:
         condition: service_started
 
   # ── Meshploy Web UI ────────────────────────────────────────────────────────
@@ -120,6 +137,7 @@ services:
 
 volumes:
   postgres_data:
+  registry_data:
   caddy_data:
     external: true
     name: meshploy_caddy_data

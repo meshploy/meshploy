@@ -33,21 +33,21 @@ type CreateWorkloadInput struct {
 	ProjectID string `path:"projectId"`
 	Body      struct {
 		Name          string  `json:"name" minLength:"1" maxLength:"100"`
-		Image         string  `json:"image"`
-		NodeID        *string `json:"node_id"` // nullable
-		EnvVars       string  `json:"env_vars"` // raw .env block, encrypted at rest
-		Replicas      int     `json:"replicas"` // 0 = use service layer default (1)
-		CPURequest    string  `json:"cpu_request"`
-		CPULimit      string  `json:"cpu_limit"`
-		MemoryRequest string  `json:"memory_request"`
-		MemoryLimit   string  `json:"memory_limit"`
+		Image         string  `json:"image,omitempty"`
+		NodeID        *string `json:"node_id,omitempty"`        // nil = auto-schedule
+		EnvVars       string  `json:"env_vars,omitempty"`       // raw .env block, encrypted at rest
+		Replicas      int     `json:"replicas,omitempty"`       // 0 = use service layer default (1)
+		CPURequest    string  `json:"cpu_request,omitempty"`
+		CPULimit      string  `json:"cpu_limit,omitempty"`
+		MemoryRequest string  `json:"memory_request,omitempty"`
+		MemoryLimit   string  `json:"memory_limit,omitempty"`
 		// Optional build config — a BuildConfig row is created alongside the
 		// Service when git_repo is provided.
-		GitRepo               string  `json:"git_repo"`
-		Branch                string  `json:"branch"`
-		Builder               string  `json:"builder"`
-		DockerfilePath        string  `json:"dockerfile_path"`
-		RegistryIntegrationID *string `json:"registry_integration_id"`
+		GitRepo               string  `json:"git_repo,omitempty"`
+		Branch                string  `json:"branch,omitempty"`
+		Builder               string  `json:"builder,omitempty"`
+		DockerfilePath        string  `json:"dockerfile_path,omitempty"`
+		RegistryIntegrationID *string `json:"registry_integration_id,omitempty"`
 	}
 }
 
