@@ -338,10 +338,148 @@ export const projects = {
 
 // ─── Services ─────────────────────────────────────────────────────────────────
 
+export interface ApiDeployment {
+  id: string
+  service_id: string
+  status: "pending" | "building" | "deploying" | "running" | "success" | "failed"
+  image: string
+  build_job_name: string
+  log: string
+  deployed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateServiceBody {
+  name: string
+  image?: string
+  node_id?: string
+  replicas?: number
+  cpu_request?: string
+  cpu_limit?: string
+  memory_request?: string
+  memory_limit?: string
+  env_vars?: string
+  // Build config — a BuildConfig row is created server-side when git_repo is set
+  git_repo?: string
+  branch?: string
+  builder?: "nixpacks" | "railpack" | "dockerfile"
+  dockerfile_path?: string
+  registry_integration_id?: string
+}
+
 export const services = {
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiService[]>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services`,
+      {},
+      token
+    ),
+
+  get: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiService>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}`,
+      {},
+      token
+    ),
+
+  create: (orgId: string, projectId: string, body: CreateServiceBody, token: string) =>
+    apiFetch<ApiService>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  update: (orgId: string, projectId: string, serviceId: string, body: UpdateServiceBody, token: string) =>
+    apiFetch<ApiService>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+      token
+    ),
+
+  getEnvVars: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<{ env_vars: string }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/env-vars`,
+      {},
+      token
+    ),
+
+  delete: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}`,
+      { method: "DELETE" },
+      token
+    ),
+}
+
+export interface ApiBuildConfig {
+  id: string
+  service_id: string
+  builder: "nixpacks" | "railpack" | "dockerfile" | "image"
+  git_repo: string
+  branch: string
+  dockerfile_path: string
+  registry_integration_id: string | null
+  last_built_image: string
+  last_built_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface UpdateServiceBody {
+  name?: string
+  image?: string
+  node_id?: string     // "" = auto-schedule, UUID = pin to node
+  replicas?: number
+  cpu_request?: string
+  cpu_limit?: string
+  memory_request?: string
+  memory_limit?: string
+  env_vars?: string
+}
+
+export interface UpdateBuildConfigBody {
+  git_repo?: string
+  branch?: string
+  builder?: "nixpacks" | "railpack" | "dockerfile"
+  dockerfile_path?: string
+  registry_integration_id?: string  // "" = clear
+}
+
+export const buildConfigs = {
+  get: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiBuildConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/build-config`,
+      {},
+      token
+    ),
+
+  update: (orgId: string, projectId: string, serviceId: string, body: UpdateBuildConfigBody, token: string) =>
+    apiFetch<ApiBuildConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/build-config`,
+      { method: "PATCH", body: JSON.stringify(body) },
+      token
+    ),
+}
+
+export const deployments = {
+  list: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiDeployment[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments`,
+      {},
+      token
+    ),
+
+  trigger: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiDeployment>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments`,
+      { method: "POST" },
+      token
+    ),
+
+  get: (orgId: string, projectId: string, serviceId: string, deploymentId: string, token: string) =>
+    apiFetch<ApiDeployment>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}`,
       {},
       token
     ),

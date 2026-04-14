@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Loader2, Plus, Server } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -23,12 +23,15 @@ function ServicesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/services" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const navigate = useNavigate()
 
-  const { data: serviceList = [], isLoading } = useQuery({
+  const { data: allServices = [], isLoading } = useQuery({
     queryKey: ["services", orgId, projectId],
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
   })
+
+  const serviceList = allServices.filter((s) => s.type === "application")
 
   return (
     <div className="p-6 space-y-4">
@@ -43,7 +46,7 @@ function ServicesTab() {
         <Button
           size="sm"
           className="gap-1.5"
-          render={<Link to="/projects/$id/new-service" params={{ id: projectId }} />}
+          render={<Link to="/projects/$id/new" params={{ id: projectId }} />}
         >
           <Plus className="h-3.5 w-3.5" />
           New Service
@@ -64,7 +67,7 @@ function ServicesTab() {
           <Button
             size="sm"
             className="gap-1.5 mt-1"
-            render={<Link to="/projects/$id/new-service" params={{ id: projectId }} />}
+            render={<Link to="/projects/$id/new" params={{ id: projectId }} />}
           >
             <Plus className="h-3.5 w-3.5" />
             New Service
@@ -75,6 +78,7 @@ function ServicesTab() {
           {serviceList.map((svc) => (
             <div
               key={svc.id}
+              onClick={() => navigate({ to: "/projects/$id/services/$serviceId/deployments", params: { id: projectId, serviceId: svc.id } })}
               className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors cursor-pointer"
             >
               <div className="flex-1 min-w-0">
@@ -83,17 +87,12 @@ function ServicesTab() {
                   <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border ${STATUS_STYLES[svc.status]}`}>
                     {svc.status}
                   </Badge>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5">
-                    {svc.type}
-                  </Badge>
                 </div>
                 <code className="text-[11px] font-mono text-muted-foreground/70 mt-0.5 block truncate">
-                  {svc.image}
+                  {svc.image || "no image yet"}
                 </code>
               </div>
-              <span className="text-xs text-muted-foreground shrink-0">
-                {svc.type === "database" ? "1 replica" : `×${svc.replicas}`}
-              </span>
+              <span className="text-xs text-muted-foreground shrink-0">×{svc.replicas}</span>
             </div>
           ))}
         </div>
