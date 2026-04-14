@@ -288,7 +288,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server already running: $(k3s --version | head -1)"
   else
     info "Installing k3s server…"
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb" sh -
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP}" sh -
     success "k3s server installed and started"
   fi
 
@@ -773,7 +773,8 @@ NODECONF
           K3S_URL="$K3S_SERVER_URL" \
           K3S_TOKEN="$K3S_JOIN_TOKEN" \
           K3S_NODE_NAME="$NODE_HOSTNAME" \
-          sh -s - agent; then
+          sh -s - agent \
+            --node-ip="${MESH_IP_ASSIGNED}"; then
         error "k3s agent install failed."
         warn "Last log lines:"
         journalctl -u k3s-agent --no-pager -n 20 2>/dev/null || true

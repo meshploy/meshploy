@@ -348,13 +348,23 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	// Stream pod logs.
 	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
 	flush()
+	zero := int64(0)
 	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 		Follow:    true,
-		TailLines: func() *int64 { n := int64(0); return &n }(),
+		TailLines: &zero,
 	})
 	stream, err := req.Stream(ctx)
 	if err != nil {
-		sendLine("Error opening log stream: " + err.Error())
+		// Kubelet unreachable (e.g. node-ip mismatch) — fall back to stored log.
+		sendLine("Warning: cannot stream live logs (" + err.Error() + ")")
+		sendLine("Replaying stored log output:")
+		// Reload deployment to get latest log snapshot.
+		var snap db.Deployment
+		if snapErr := s.db.WithContext(ctx).First(&snap, "id = ?", d.ID).Error; snapErr == nil && snap.Log != "" {
+			for _, line := range strings.Split(snap.Log, "\n") {
+				sendLine(line)
+			}
+		}
 		sendDone()
 		return nil
 	}
@@ -426,7 +436,9 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 	})
 	stream, err := req.Stream(ctx)
 	if err != nil {
-		sendLine("Error opening log stream: " + err.Error())
+		// Kubelet may be unreachable due to node-ip mismatch.
+		sendLine("Cannot stream live container logs: " + err.Error())
+		sendLine("Hint: ensure workers joined k3s with --node-ip=<mesh_ip>")
 		sendDone()
 		return nil
 	}

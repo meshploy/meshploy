@@ -438,7 +438,7 @@ function K3sJoinTokenPanel() {
   }
 
   const installCmd = k3sToken
-    ? `curl -sfL https://get.k3s.io | \\\n  K3S_URL="${serverUrl}" \\\n  K3S_TOKEN="${k3sToken}" \\\n  sh -s - agent`
+    ? `curl -sfL https://get.k3s.io | \\\n  K3S_URL="${serverUrl}" \\\n  K3S_TOKEN="${k3sToken}" \\\n  sh -s - agent \\\n    --node-ip="$(tailscale ip -4)"`
     : ""
 
   return (
