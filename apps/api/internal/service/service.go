@@ -54,6 +54,18 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	nodes := &NodeService{db: db}
 	domains := &DomainService{db: db}
 	auth := &AuthService{db: db}
+	registries := &RegistryService{db: db}
+
+	// seedBuiltinRegistry ensures a builtin registry row exists for the org when
+	// BUILTIN_REGISTRY_ENDPOINT is configured.
+	seedBuiltinRegistry := func(ctx context.Context, orgID uuid.UUID) {
+		if c == nil || c.BuiltinRegistryEndpoint == "" {
+			return
+		}
+		if err := registries.SeedBuiltin(ctx, orgID, c.BuiltinRegistryEndpoint); err != nil {
+			log.Printf("warning: seed builtin registry: %v", err)
+		}
+	}
 
 	// seedGateway creates the gateway node and domain for an org if not already present.
 	seedGateway := func(ctx context.Context, orgID uuid.UUID) {
@@ -75,6 +87,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	if c != nil && c.GatewayHostname != "" {
 		auth.onFirstRegistration = func(ctx context.Context, orgID uuid.UUID) {
 			seedGateway(ctx, orgID)
+			seedBuiltinRegistry(ctx, orgID)
 		}
 
 		// Seed existing orgs on startup.
@@ -87,6 +100,23 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			}
 			for _, org := range orgs {
 				seedGateway(ctx, org.ID)
+				seedBuiltinRegistry(ctx, org.ID)
+			}
+		}()
+	} else if c != nil && c.BuiltinRegistryEndpoint != "" {
+		// No gateway seeding, but still seed builtin registry on registration + startup.
+		auth.onFirstRegistration = func(ctx context.Context, orgID uuid.UUID) {
+			seedBuiltinRegistry(ctx, orgID)
+		}
+		go func() {
+			time.Sleep(2 * time.Second)
+			ctx := context.Background()
+			var orgs []meshdb.Organization
+			if err := db.WithContext(ctx).Find(&orgs).Error; err != nil || len(orgs) == 0 {
+				return
+			}
+			for _, org := range orgs {
+				seedBuiltinRegistry(ctx, org.ID)
 			}
 		}()
 	}
@@ -101,7 +131,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Routes:          &RouteService{db: db},
 		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc},
 		GitIntegrations: gitSvc,
-		Registries:      &RegistryService{db: db},
+		Registries:      registries,
 		Headscale:       headscaleSvc,
 		K8s:             k8sClient,
 	}

@@ -125,6 +125,7 @@ const (
 	RegistryECR       RegistryProvider = "ecr"
 	RegistryGCR       RegistryProvider = "gcr"
 	RegistryCustom    RegistryProvider = "custom"
+	RegistryBuiltin   RegistryProvider = "builtin" // self-hosted registry:2 on gateway
 )
 
 type TemplateCategory string
