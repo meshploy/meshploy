@@ -1,28 +1,15 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { Loader2, ScrollText } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
+import { useEffect, useRef, useState } from "react"
+import { Loader2, RefreshCw, ScrollText } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { formatRelativeTime } from "@/lib/utils"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/logs"
 )({
   component: LogsTab,
 })
-
-const STATUS_STYLES: Record<ApiDeployment["status"], string> = {
-  pending:   "bg-muted text-muted-foreground border-border",
-  building:  "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  deploying: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  running:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  success:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  failed:    "bg-destructive/10 text-destructive border-destructive/20",
-}
-
-const ACTIVE_STATUSES = new Set(["pending", "building", "deploying"])
 
 function LogsTab() {
   const { id: projectId, serviceId } = useParams({
@@ -31,90 +18,169 @@ function LogsTab() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
 
-  const { data: deploymentList = [], isLoading } = useQuery({
-    queryKey: ["deployments", orgId, projectId, serviceId],
-    queryFn: () => deploymentsApi.list(orgId!, projectId, serviceId, token),
-    enabled: !!orgId,
-    refetchInterval: (query) => {
-      const data = query.state.data as ApiDeployment[] | undefined
-      return data?.some((d) => ACTIVE_STATUSES.has(d.status)) ? 3000 : false
-    },
-  })
+  const [logLines, setLogLines] = useState<string[]>([])
+  const [streaming, setStreaming] = useState(false)
+  const [streamDone, setStreamDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
-  const latest = deploymentList[0]
+  const startStream = () => {
+    if (!orgId || !token) return
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-40">
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-      </div>
-    )
+    // Abort any existing stream
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setLogLines([])
+    setStreamDone(false)
+    setError(null)
+    setStreaming(true)
+
+    const url = `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/logs/stream`
+
+    ;(async () => {
+      try {
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!res.ok || !res.body) {
+          setError("Failed to connect to log stream")
+          setStreaming(false)
+          return
+        }
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buf = ""
+
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+
+          const events = buf.split("\n\n")
+          buf = events.pop() ?? ""
+
+          for (const event of events) {
+            const lines = event.split("\n")
+            const eventLine = lines.find((l) => l.startsWith("event:"))
+            const dataLine = lines.find((l) => l.startsWith("data:"))
+
+            if (eventLine?.includes("done")) {
+              setStreamDone(true)
+              setStreaming(false)
+              return
+            }
+            if (dataLine) {
+              const text = dataLine.slice("data:".length).trimStart()
+              setLogLines((prev) => [...prev, text])
+            }
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          setError(err.message)
+        }
+      } finally {
+        setStreaming(false)
+      }
+    })()
   }
 
-  if (!latest) {
-    return (
-      <div className="p-6 flex flex-col items-center gap-3 py-24 text-center">
-        <ScrollText className="h-7 w-7 text-muted-foreground/40" />
-        <div>
-          <p className="text-sm text-muted-foreground">No deployments yet</p>
-          <p className="text-xs text-muted-foreground/60 mt-0.5">
-            Trigger a deployment to see build and deploy logs here
-          </p>
-        </div>
-      </div>
-    )
-  }
+  // Start stream on mount
+  useEffect(() => {
+    startStream()
+    return () => abortRef.current?.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, projectId, serviceId, token])
+
+  // Auto-scroll
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [logLines])
 
   return (
-    <div className="p-6 space-y-3">
-      {/* Deployment selector strip */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {deploymentList.slice(0, 10).map((dep, i) => (
-          <button
-            key={dep.id}
-            onClick={() => {
-              // Scroll to / highlight — for now just show latest
-            }}
-            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border/60 text-xs bg-muted/20 hover:bg-muted/40 transition-colors"
-          >
-            <span className="font-mono text-muted-foreground/70">{dep.id.slice(0, 7)}</span>
-            <Badge className={`text-[9px] px-1 py-0 h-3.5 border ${STATUS_STYLES[dep.status]}`}>
-              {dep.status}
-            </Badge>
-            <span className="text-muted-foreground/50">
-              {formatRelativeTime(new Date(dep.created_at))}
-            </span>
-            {i === 0 && (
-              <span className="text-[9px] text-primary font-medium">latest</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Log output */}
-      <div className="rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
-          <div className="flex items-center gap-2">
-            <code className="text-xs font-mono text-muted-foreground/70">
-              deployment/{latest.id.slice(0, 8)}
-            </code>
-            <Badge className={`text-[10px] px-1.5 py-0 h-4 border ${STATUS_STYLES[latest.status]}`}>
-              {latest.status}
-            </Badge>
-          </div>
-          <span className="text-xs text-muted-foreground/50">
-            {formatRelativeTime(new Date(latest.created_at))}
-          </span>
+    <div className="flex flex-col h-full p-6 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-medium">Runtime Logs</h2>
+          {streaming && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Live
+            </div>
+          )}
         </div>
-        <pre className="px-4 py-4 text-[12px] font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-all overflow-y-auto max-h-[calc(100vh-20rem)]">
-          {latest.log || "No log output."}
-        </pre>
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 h-7 text-xs"
+          onClick={startStream}
+          disabled={streaming}
+        >
+          <RefreshCw className="h-3 w-3" />
+          Reconnect
+        </Button>
       </div>
 
-      <p className="text-[11px] text-muted-foreground/50 text-center">
-        Showing build + deploy log from latest deployment.
-        Live container stdout/stderr streaming coming soon.
-      </p>
+      {error && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+          <p className="text-xs text-destructive">{error}</p>
+        </div>
+      )}
+
+      {/* Terminal */}
+      <div className="flex-1 rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden flex flex-col min-h-0">
+        {/* Terminal bar */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
+          <div className="flex gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" />
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/60" />
+          </div>
+          <code className="text-[11px] font-mono text-muted-foreground/50 ml-1">
+            container stdout · tail 200 + follow
+          </code>
+          {streamDone && (
+            <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono">
+              stream ended
+            </span>
+          )}
+          {streaming && (
+            <span className="ml-auto flex items-center gap-1 text-[10px] text-emerald-400/70 font-mono">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              live
+            </span>
+          )}
+        </div>
+
+        {/* Log output */}
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {!streaming && logLines.length === 0 && !error ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-3 text-muted-foreground/40">
+              <ScrollText className="h-7 w-7" />
+              <p className="text-xs font-mono">No log output. Is the service running?</p>
+            </div>
+          ) : (
+            <pre className="text-[12px] font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-all">
+              {logLines.map((line, i) => (
+                <span key={i} className="block">
+                  {line}
+                </span>
+              ))}
+              {streaming && (
+                <span className="inline-block w-2 h-3.5 bg-muted-foreground/60 animate-pulse align-middle ml-0.5" />
+              )}
+            </pre>
+          )}
+          <div ref={bottomRef} />
+        </div>
+      </div>
     </div>
   )
 }

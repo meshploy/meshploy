@@ -2,8 +2,11 @@ package handler
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
+	"github.com/meshploy/apps/api/internal/middleware"
 	"github.com/meshploy/apps/api/internal/service"
 	"github.com/meshploy/packages/db"
 )
@@ -106,4 +109,66 @@ func (h *Handler) GetDeployment(ctx context.Context, input *DeploymentPathInput)
 		return nil, notFound(err)
 	}
 	return &GetDeploymentOutput{Body: deployment}, nil
+}
+
+// StreamDeploymentLogs is a raw SSE handler — registered via RegisterRaw, not Huma.
+// GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream
+func (h *Handler) StreamDeploymentLogs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.UserFromContext(r.Context()); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	deploymentID, err := parseUUID(chi.URLParam(r, "deploymentId"))
+	if err != nil {
+		http.Error(w, "invalid deployment id", http.StatusBadRequest)
+		return
+	}
+
+	sseHeaders(w)
+
+	flusher, canFlush := w.(http.Flusher)
+	flush := func() {
+		if canFlush {
+			flusher.Flush()
+		}
+	}
+	flush()
+
+	_ = h.svc.Deployments.StreamBuildLogs(r.Context(), deploymentID, w, flush)
+}
+
+// StreamServiceLogs is a raw SSE handler for live runtime container logs.
+// GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream
+func (h *Handler) StreamServiceLogs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.UserFromContext(r.Context()); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	serviceID, err := parseUUID(chi.URLParam(r, "serviceId"))
+	if err != nil {
+		http.Error(w, "invalid service id", http.StatusBadRequest)
+		return
+	}
+
+	sseHeaders(w)
+
+	flusher, canFlush := w.(http.Flusher)
+	flush := func() {
+		if canFlush {
+			flusher.Flush()
+		}
+	}
+	flush()
+
+	_ = h.svc.Deployments.StreamRuntimeLogs(r.Context(), serviceID, w, flush)
+}
+
+func sseHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 }
