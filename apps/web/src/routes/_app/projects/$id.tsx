@@ -27,7 +27,7 @@ function ProjectLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
 
   // Wizard is full-screen — bypass layout entirely
-  const isWizard = pathname.endsWith("/new-service")
+  const isWizard = pathname.endsWith("/new")
   if (isWizard) return <Outlet />
 
   const { data: project, isLoading, isError } = useQuery({
