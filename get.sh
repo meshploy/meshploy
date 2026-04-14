@@ -51,7 +51,7 @@ esac
 
 # ── Download CLI binary ───────────────────────────────────────────────────────
 if [[ -n "${GITHUB_PAT:-}" ]]; then
-  CLI_URL="https://${GITHUB_PAT}@api.github.com/repos/${REPO}/releases/tags/cli-latest"
+  CLI_URL="https://api.github.com/repos/${REPO}/releases/tags/cli-latest"
   AUTH_HEADER="Authorization: token ${GITHUB_PAT}"
 else
   CLI_URL="https://api.github.com/repos/${REPO}/releases/tags/cli-latest"
@@ -59,14 +59,34 @@ else
 fi
 
 info "Downloading Meshploy CLI (linux/${CLI_ARCH})…"
+# For private repos: use the API asset URL (not browser_download_url) so the
+# Authorization header is honoured — browser_download_url redirects through S3
+# which strips auth and returns 404 on private repos.
 if [[ -n "$AUTH_HEADER" ]]; then
-  ASSET_URL=$(curl -fsSL -H "$AUTH_HEADER" "$CLI_URL" \
-    | grep -o "\"browser_download_url\":[[:space:]]*\"[^\"]*meshploy-linux-${CLI_ARCH}\"" \
-    | grep -o 'https://[^"]*' || true)
+  RELEASE_JSON=$(curl -fsSL -H "$AUTH_HEADER" "$CLI_URL")
 else
-  ASSET_URL=$(curl -fsSL "$CLI_URL" \
-    | grep -o "\"browser_download_url\":[[:space:]]*\"[^\"]*meshploy-linux-${CLI_ARCH}\"" \
-    | grep -o 'https://[^"]*' || true)
+  RELEASE_JSON=$(curl -fsSL "$CLI_URL")
+fi
+
+# Extract the API asset URL for authenticated downloads.
+# Private repos: browser_download_url redirects through S3 which drops the
+# Authorization header → 404. The API asset URL works correctly with the token.
+# python3 is always present on supported Linux targets; awk fallback for minimal images.
+TARGET_ASSET="meshploy-linux-${CLI_ARCH}"
+if command -v python3 &>/dev/null; then
+  ASSET_URL=$(printf '%s' "$RELEASE_JSON" | python3 -c "
+import json, sys
+assets = json.load(sys.stdin).get('assets', [])
+match = next((a for a in assets if a['name'] == '${TARGET_ASSET}'), None)
+if match:
+    # Prefer the API URL so auth header is forwarded through any redirect.
+    print(match.get('url') or match.get('browser_download_url', ''))
+" 2>/dev/null || true)
+else
+  # awk fallback — works on minified or single-line JSON from GitHub API
+  ASSET_URL=$(printf '%s' "$RELEASE_JSON" \
+    | grep -o "\"url\":\"https://api\.github\.com/repos/[^\"]*assets/[0-9]*\"" \
+    | grep -o 'https://[^"]*' | head -1 || true)
 fi
 
 if [[ -z "${ASSET_URL:-}" ]]; then
@@ -77,7 +97,7 @@ fi
 if [[ -n "$AUTH_HEADER" ]]; then
   curl -fsSL -H "$AUTH_HEADER" -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL"
 else
-  curl -fsSL -L -o "$CLI_BIN" "$ASSET_URL"
+  curl -fsSL -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL"
 fi
 chmod +x "$CLI_BIN"
 success "meshploy CLI installed at ${CLI_BIN}"
@@ -94,11 +114,7 @@ fi
 # Only the deploy/ directory is needed — source code ships in Docker images.
 # curl + tar are always available; no git required.
 
-if [[ -n "${GITHUB_PAT:-}" ]]; then
-  TARBALL_URL="https://${GITHUB_PAT}@api.github.com/repos/${REPO}/tarball/${BRANCH}"
-else
-  TARBALL_URL="https://api.github.com/repos/${REPO}/tarball/${BRANCH}"
-fi
+TARBALL_URL="https://api.github.com/repos/${REPO}/tarball/${BRANCH}"
 
 mkdir -p "$INSTALL_DIR"
 
