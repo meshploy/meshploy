@@ -505,6 +505,20 @@ export const deployments = {
       {},
       token
     ),
+
+  cancel: (orgId: string, projectId: string, serviceId: string, deploymentId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}`,
+      { method: "DELETE" },
+      token
+    ),
+
+  deleteRecord: (orgId: string, projectId: string, serviceId: string, deploymentId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}/record`,
+      { method: "DELETE" },
+      token
+    ),
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────

@@ -60,6 +60,26 @@ func (h *Handler) registerDeploymentRoutes(api huma.API) {
 		Tags:        []string{"Deployments"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetDeployment)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "cancel-deployment",
+		Method:        "DELETE",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}",
+		Summary:       "Cancel an active deployment",
+		Tags:          []string{"Deployments"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.CancelDeployment)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-deployment-record",
+		Method:        "DELETE",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/record",
+		Summary:       "Delete a deployment record",
+		Tags:          []string{"Deployments"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.DeleteDeploymentRecord)
 }
 
 func (h *Handler) TriggerDeployment(ctx context.Context, input *ListDeploymentsInput) (*GetDeploymentOutput, error) {
@@ -109,6 +129,34 @@ func (h *Handler) GetDeployment(ctx context.Context, input *DeploymentPathInput)
 		return nil, notFound(err)
 	}
 	return &GetDeploymentOutput{Body: deployment}, nil
+}
+
+func (h *Handler) CancelDeployment(ctx context.Context, input *DeploymentPathInput) (*struct{}, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	deploymentID, err := parseUUID(input.DeploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Deployments.Cancel(ctx, deploymentID); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return nil, nil
+}
+
+func (h *Handler) DeleteDeploymentRecord(ctx context.Context, input *DeploymentPathInput) (*struct{}, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	deploymentID, err := parseUUID(input.DeploymentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Deployments.DeleteRecord(ctx, deploymentID); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return nil, nil
 }
 
 // StreamDeploymentLogs is a raw SSE handler — registered via RegisterRaw, not Huma.

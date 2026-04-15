@@ -23,6 +23,20 @@ headscale.{$DOMAIN} {
     reverse_proxy localhost:8085
 }
 
+# ── Meshploy API (dedicated subdomain) ──────────────────────────────────────
+# All traffic → Go API on port 4000.
+# Exposes /docs (Swagger UI), /api/v1/*, and SSE log endpoints.
+api.{$DOMAIN} {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+        }
+    }
+    reverse_proxy localhost:4000 {
+        flush_interval -1
+    }
+}
+
 # ── Meshploy Web UI + API ────────────────────────────────────────────────────
 # /api/* → Go API, everything else → Next.js
 app.{$DOMAIN} {

@@ -300,6 +300,44 @@ func (s *DeploymentService) resolveRegistry(ctx context.Context, bc *db.BuildCon
 	return reg.Endpoint, string(reg.Username), string(reg.Password), nil
 }
 
+// Cancel kills an active build job and marks the deployment as failed.
+func (s *DeploymentService) Cancel(ctx context.Context, deploymentID uuid.UUID) error {
+	var d db.Deployment
+	if err := s.db.WithContext(ctx).Preload("Service.Project").First(&d, "id = ?", deploymentID).Error; err != nil {
+		return err
+	}
+	if d.Status != db.DeploymentBuilding && d.Status != db.DeploymentDeploying && d.Status != db.DeploymentPending {
+		return fmt.Errorf("deployment is not active")
+	}
+	// Delete the K8s Job — this terminates the build pod immediately.
+	if s.k8s != nil && d.BuildJobName != "" {
+		var svc db.Service
+		if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", d.ServiceID).Error; err == nil {
+			fg := metav1.DeletePropagationForeground
+			_ = s.k8s.BatchV1().Jobs(svc.Project.Slug).Delete(ctx, d.BuildJobName, metav1.DeleteOptions{
+				PropagationPolicy: &fg,
+			})
+		}
+	}
+	return s.db.WithContext(ctx).Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
+		"status": db.DeploymentFailed,
+		"log":    "Cancelled by user.",
+	}).Error
+}
+
+// DeleteRecord removes a deployment record from the database.
+// Returns an error if the deployment is still active (cancel it first).
+func (s *DeploymentService) DeleteRecord(ctx context.Context, deploymentID uuid.UUID) error {
+	var d db.Deployment
+	if err := s.db.WithContext(ctx).First(&d, "id = ?", deploymentID).Error; err != nil {
+		return err
+	}
+	if d.Status == db.DeploymentBuilding || d.Status == db.DeploymentDeploying || d.Status == db.DeploymentPending {
+		return fmt.Errorf("deployment is still active; cancel it before deleting")
+	}
+	return s.db.WithContext(ctx).Delete(&db.Deployment{}, "id = ?", deploymentID).Error
+}
+
 // ClearBuildCache deletes the buildah layer-cache PVC for the given project
 // namespace. It is recreated automatically on the next build.
 func (s *DeploymentService) ClearBuildCache(ctx context.Context, namespace string) error {
