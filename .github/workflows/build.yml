@@ -31,6 +31,7 @@ jobs:
       proxy:   ${{ steps.filter.outputs.proxy }}
       builder: ${{ steps.filter.outputs.builder }}
       caddy:   ${{ steps.filter.outputs.caddy }}
+      deploy:  ${{ steps.filter.outputs.deploy }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -57,6 +58,9 @@ jobs:
 
             caddy:
               - "deploy/caddy/**"
+
+            deploy:
+              - "deploy/**"
 
 
   # ── API ───────────────────────────────────────────────────────────────────────
@@ -231,8 +235,17 @@ jobs:
   # Runs after all build jobs (whether they ran or were skipped).
   # Syncs deploy/ configs to the server, pulls new images, restarts containers.
   deploy:
-    needs: [api, web, caddy, proxy, builder]
-    if: always() && !failure() && !cancelled()
+    needs: [api, web, caddy, proxy, builder, changes]
+    if: |
+      always() && !failure() && !cancelled() &&
+      (
+        needs.changes.outputs.api     == 'true' ||
+        needs.changes.outputs.web     == 'true' ||
+        needs.changes.outputs.proxy   == 'true' ||
+        needs.changes.outputs.caddy   == 'true' ||
+        needs.changes.outputs.deploy  == 'true' ||
+        github.event_name             == 'workflow_dispatch'
+      )
     name: Deploy
     runs-on: ubuntu-latest
     steps:
