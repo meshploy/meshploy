@@ -5,7 +5,7 @@
 # Build: docker build -t ghcr.io/meshploy/builder:latest apps/builder/
 # Push:  docker push ghcr.io/meshploy/builder:latest
 
-FROM alpine:3.21
+FROM alpine:3.22
 
 # ── System deps ────────────────────────────────────────────────────────────────
 # Alpine's git uses OpenSSL — no GnuTLS issues.
