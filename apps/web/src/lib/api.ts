@@ -334,6 +334,13 @@ export const projects = {
       { method: "POST", body: JSON.stringify({ name, slug }) },
       token
     ),
+
+  clearBuildCache: (orgId: string, projectId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/build-cache`,
+      { method: "DELETE" },
+      token
+    ),
 }
 
 // ─── Services ─────────────────────────────────────────────────────────────────

@@ -93,6 +93,16 @@ func (h *Handler) registerProjectRoutes(api huma.API) {
 		Tags:        []string{"Projects"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DeleteProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "clear-build-cache",
+		Method:        "DELETE",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/build-cache",
+		Summary:       "Clear the buildah layer cache PVC for a project",
+		Tags:          []string{"Projects"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.ClearBuildCache)
 }
 
 func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*ListProjectsOutput, error) {
@@ -164,4 +174,22 @@ func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*
 		return nil, err
 	}
 	return nil, h.svc.Projects.Delete(ctx, projectID)
+}
+
+func (h *Handler) ClearBuildCache(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := h.svc.Projects.Get(ctx, projectID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	if err := h.svc.Deployments.ClearBuildCache(ctx, project.Slug); err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return nil, nil
 }
