@@ -16,6 +16,8 @@ RUN apk add --no-cache \
     git \
     tar \
     buildah \
+    netavark \
+    aardvark-dns \
     fuse-overlayfs
 
 # ── Nixpacks ───────────────────────────────────────────────────────────────────
@@ -28,6 +30,8 @@ RUN curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/instal
 
 # ── Buildah rootless setup ────────────────────────────────────────────────────
 RUN adduser -D builder && \
+    echo "builder:100000:65536" >> /etc/subuid && \
+    echo "builder:100000:65536" >> /etc/subgid && \
     mkdir -p /home/builder/.config/containers && \
     printf '[storage]\ndriver = "overlay"\n[storage.options]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
     > /home/builder/.config/containers/storage.conf && \
