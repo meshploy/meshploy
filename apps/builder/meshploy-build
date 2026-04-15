@@ -28,7 +28,7 @@ WORKDIR="/tmp/workspace"
 # BUILD_ENV_VARS is a newline-separated list of KEY=VALUE pairs.
 # Build arrays of flags for each builder from the non-empty, non-comment lines.
 NIXPACKS_ENV_FLAGS=()
-RAILPACK_EXPORTS=""
+RAILPACK_ENV_FLAGS=()
 DOCKERFILE_BUILD_ARG_FLAGS=()
 
 if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
@@ -48,7 +48,7 @@ if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
             fi
         fi
         NIXPACKS_ENV_FLAGS+=(--env "${key}=${value}")
-        RAILPACK_EXPORTS+="export $(printf '%q=%q' "${key}" "${value}"); "
+        RAILPACK_ENV_FLAGS+=(--env "${key}=${value}")
         DOCKERFILE_BUILD_ARG_FLAGS+=(--build-arg "${key}=${value}")
     done <<< "${BUILD_ENV_VARS}"
 fi
@@ -80,6 +80,17 @@ if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
         --username "${REGISTRY_USER}" \
         --password-stdin \
         "${REGISTRY_HOST}"
+    # Mirror credentials for BuildKit (used by railpack).
+    # BuildKit reads ~/.docker/config.json, not buildah's auth.json.
+    mkdir -p "${HOME}/.docker"
+    echo "${REGISTRY_PASS}" | docker login \
+        --username "${REGISTRY_USER}" \
+        --password-stdin \
+        "${REGISTRY_HOST}" 2>/dev/null || \
+    printf '{"auths":{"%s":{"auth":"%s"}}}' \
+        "${REGISTRY_HOST}" \
+        "$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASS}" | base64 -w0)" \
+        > "${HOME}/.docker/config.json"
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────
@@ -109,17 +120,12 @@ case "${BUILDER}" in
 
   railpack)
     log "Building with Railpack → ${IMAGE_DEST}"
-    # --output writes the Dockerfile + a copy of the app source into
-    # /tmp/railpack-out. Use that directory as the build context.
-    # Build env vars are exported into the environment so railpack picks them up.
-    eval "${RAILPACK_EXPORTS}"
-    railpack build . --generate-dockerfile --output /tmp/railpack-out
-    buildah build \
-        --layers \
-        --cache-from "${CACHE_FROM_REPO}" \
-        --file /tmp/railpack-out/Dockerfile \
-        --tag "${IMAGE_DEST}" \
-        /tmp/railpack-out
+    # railpack 0.23+ builds directly via BuildKit — no Dockerfile is generated.
+    # --name tags the resulting image; --progress plain gives streaming log output.
+    railpack build . \
+        --name "${IMAGE_DEST}" \
+        --progress plain \
+        "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}"
     ;;
 
   dockerfile)
@@ -141,13 +147,15 @@ case "${BUILDER}" in
 esac
 
 # ── Push ──────────────────────────────────────────────────────────────────────
-log "Pushing ${IMAGE_DEST}…"
+# railpack build pushes directly via BuildKit when --name is a registry ref.
+# nixpacks and dockerfile build into buildah's local store and need an explicit push.
 case "${BUILDER}" in
-  nixpacks|railpack)
+  nixpacks|dockerfile)
+    log "Pushing ${IMAGE_DEST}…"
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
-  dockerfile)
-    buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
+  railpack)
+    log "Push handled by railpack BuildKit solve."
     ;;
 esac
 
