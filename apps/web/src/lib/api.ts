@@ -475,6 +475,13 @@ export const buildConfigs = {
       {},
       token
     ),
+
+  putBuildEnvVars: (orgId: string, projectId: string, serviceId: string, buildEnvVars: string, token: string) =>
+    apiFetch<{ build_env_vars: string }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/build-config/env-vars`,
+      { method: "PUT", body: JSON.stringify({ build_env_vars: buildEnvVars }) },
+      token
+    ),
 }
 
 export const deployments = {
