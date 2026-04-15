@@ -345,28 +345,41 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 		return nil
 	}
 
-	// Stream pod logs.
+	// Stream pod logs — wait for the container to be running first (image pull
+	// can take tens of seconds). Retry up to 3 minutes.
 	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
 	flush()
 	zero := int64(0)
-	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-		Follow:    true,
-		TailLines: &zero,
-	})
-	stream, err := req.Stream(ctx)
-	if err != nil {
-		// Kubelet unreachable (e.g. node-ip mismatch) — fall back to stored log.
-		sendLine("Warning: cannot stream live logs (" + err.Error() + ")")
-		sendLine("Replaying stored log output:")
-		// Reload deployment to get latest log snapshot.
-		var snap db.Deployment
-		if snapErr := s.db.WithContext(ctx).First(&snap, "id = ?", d.ID).Error; snapErr == nil && snap.Log != "" {
-			for _, line := range strings.Split(snap.Log, "\n") {
-				sendLine(line)
-			}
+	var stream io.ReadCloser
+	streamDeadline := time.Now().Add(3 * time.Minute)
+	for {
+		req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+			Follow:    true,
+			TailLines: &zero,
+		})
+		var err error
+		stream, err = req.Stream(ctx)
+		if err == nil {
+			break
 		}
-		sendDone()
-		return nil
+		if time.Now().After(streamDeadline) {
+			// Give up — kubelet unreachable or container never started.
+			sendLine("Warning: cannot stream live logs (" + err.Error() + ")")
+			sendLine("Replaying stored log output:")
+			var snap db.Deployment
+			if snapErr := s.db.WithContext(ctx).First(&snap, "id = ?", d.ID).Error; snapErr == nil && snap.Log != "" {
+				for _, line := range strings.Split(snap.Log, "\n") {
+					sendLine(line)
+				}
+			}
+			sendDone()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(3 * time.Second):
+		}
 	}
 	defer stream.Close()
 
