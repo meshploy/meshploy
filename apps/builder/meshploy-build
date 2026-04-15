@@ -45,24 +45,26 @@ fi
 case "${BUILDER}" in
   nixpacks)
     log "Building with Nixpacks → ${IMAGE_DEST}"
-    # Generate Dockerfile without requiring Docker daemon.
-    # Use . (workspace) as build context so COPY . . picks up app source.
+    # --out writes the Dockerfile + all supporting .nix files + a copy of the
+    # app source into /tmp/nixpacks-out. The generated Dockerfile references
+    # .nixpacks/*.nix paths relative to the build context, so the context must
+    # be /tmp/nixpacks-out (not the workspace).
     nixpacks build . --out /tmp/nixpacks-out
     buildah build \
         --file /tmp/nixpacks-out/.nixpacks/Dockerfile \
         --tag "${IMAGE_DEST}" \
-        .
+        /tmp/nixpacks-out
     ;;
 
   railpack)
     log "Building with Railpack → ${IMAGE_DEST}"
-    # Railpack generates a Dockerfile; buildah builds it (no Docker daemon needed).
-    # Use . (workspace) as build context so COPY . . picks up app source.
+    # --output writes the Dockerfile + a copy of the app source into
+    # /tmp/railpack-out. Use that directory as the build context.
     railpack build . --generate-dockerfile --output /tmp/railpack-out
     buildah build \
         --file /tmp/railpack-out/Dockerfile \
         --tag "${IMAGE_DEST}" \
-        .
+        /tmp/railpack-out
     ;;
 
   dockerfile)
