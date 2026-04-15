@@ -45,15 +45,23 @@ fi
 case "${BUILDER}" in
   nixpacks)
     log "Building with Nixpacks → ${IMAGE_DEST}"
-    nixpacks build . \
-        --name "${IMAGE_DEST}" \
-        --platform linux/amd64
+    # Nixpacks generates a Dockerfile; buildah builds it (no Docker daemon needed).
+    nixpacks plan . --format json > /tmp/nixpacks-plan.json
+    nixpacks build . --plan /tmp/nixpacks-plan.json --out /tmp/nixpacks-out
+    buildah build \
+        --file /tmp/nixpacks-out/.nixpacks/Dockerfile \
+        --tag "${IMAGE_DEST}" \
+        /tmp/nixpacks-out
     ;;
 
   railpack)
     log "Building with Railpack → ${IMAGE_DEST}"
-    railpack build . \
-        --image "${IMAGE_DEST}"
+    # Railpack generates a Dockerfile; buildah builds it (no Docker daemon needed).
+    railpack build . --generate-dockerfile --output /tmp/railpack-out
+    buildah build \
+        --file /tmp/railpack-out/Dockerfile \
+        --tag "${IMAGE_DEST}" \
+        /tmp/railpack-out
     ;;
 
   dockerfile)
@@ -75,7 +83,6 @@ esac
 log "Pushing ${IMAGE_DEST}…"
 case "${BUILDER}" in
   nixpacks|railpack)
-    # These tools output a local Docker image; use buildah to push it.
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
   dockerfile)
