@@ -47,6 +47,9 @@ type BuildJobParams struct {
 	RegistryHost string
 	RegistryUser string
 	RegistryPass string
+	// Build-time env vars — KEY=VALUE, one per line.
+	// Forwarded to nixpacks (--env), railpack (export), dockerfile (--build-arg).
+	BuildEnvVars string
 }
 
 // EnsureBuildCachePVC creates the buildah layer-cache PVC in the namespace if
@@ -167,6 +170,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "REGISTRY_HOST", Value: p.RegistryHost},
 								{Name: "REGISTRY_USER", Value: p.RegistryUser},
 								{Name: "REGISTRY_PASS", Value: p.RegistryPass},
+								{Name: "BUILD_ENV_VARS", Value: p.BuildEnvVars},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
