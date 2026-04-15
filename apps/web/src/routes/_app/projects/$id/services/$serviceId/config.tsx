@@ -17,49 +17,19 @@ import {
   buildConfigs as buildConfigsApi,
   gitIntegrations as gitApi,
   nodes as nodesApi,
+  registries as registryApi,
   toNode,
   type ApiNode,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/config"
 )({
   component: ConfigTab,
 })
-
-const inputCls =
-  "w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
-
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string
-  subtitle?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-4 pb-6 border-b border-border/40 last:border-0 last:pb-0">
-      <div>
-        <p className="text-sm font-medium">{title}</p>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-medium text-muted-foreground">{label}</label>
-      {children}
-    </div>
-  )
-}
 
 // ─── Env Vars section ─────────────────────────────────────────────────────────
 
@@ -117,17 +87,25 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
   )
 }
 
-// ─── Resources section ────────────────────────────────────────────────────────
+// ─── Source + Deploy section ──────────────────────────────────────────────────
 
-function ResourcesSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+function SourceDeploySection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
 
-  const { data: service, isLoading } = useQuery({
+  // ── Data queries ──────────────────────────────────────────────────────────
+  const { data: service, isLoading: svcLoading } = useQuery({
     queryKey: ["service", orgId, projectId, serviceId],
     queryFn: () => servicesApi.get(orgId, projectId, serviceId, token),
     enabled: !!orgId,
+  })
+
+  const { data: bc, isLoading: bcLoading } = useQuery({
+    queryKey: ["build-config", orgId, projectId, serviceId],
+    queryFn: () => buildConfigsApi.get(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+    retry: false,
   })
 
   const { data: rawNodes = [] } = useQuery<ApiNode[]>({
@@ -138,94 +116,327 @@ function ResourcesSection({ projectId, serviceId }: { projectId: string; service
   const workerNodes = rawNodes
     .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
     .map(toNode)
+  const builderNodes = rawNodes.filter(
+    (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
+  )
 
+  const { data: gitList = [] } = useQuery({
+    queryKey: ["git-integrations", orgId],
+    queryFn: () => gitApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+  const connectedGit = gitList.filter((g) => g.connected)
+
+  const { data: registryList = [] } = useQuery({
+    queryKey: ["registry-integrations", orgId],
+    queryFn: () => registryApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+
+  // ── Form state ────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
+    source: "git" as "git" | "image",
+    image: "",
+    gitIntegrationId: "",
+    gitRepo: "",
+    gitBranch: "main",
+    builder: "nixpacks" as "nixpacks" | "railpack" | "dockerfile",
+    dockerfilePath: "Dockerfile",
+    registryIntegrationId: "",
+    builderNodeName: "" as string,
+    builderCPURequest: "1000m",
+    builderMemoryRequest: "1Gi",
+    nodeId: "",
     replicas: 1,
     cpuRequest: "100m",
     cpuLimit: "500m",
     memoryRequest: "128Mi",
     memoryLimit: "512Mi",
-    nodeId: "",
+    showResources: false,
   })
+  const patch = (p: Partial<typeof form>) => setForm((f) => ({ ...f, ...p }))
 
   useEffect(() => {
-    if (service) {
-      setForm({
-        replicas: service.replicas,
-        cpuRequest: service.cpu_request,
-        cpuLimit: service.cpu_limit,
-        memoryRequest: service.memory_request,
-        memoryLimit: service.memory_limit,
-        nodeId: service.node_id ?? "",
-      })
-    }
-  }, [service])
+    if (!service) return
+    const isGit = !!bc?.git_repo
+    patch({
+      source: isGit ? "git" : "image",
+      image: service.image ?? "",
+      gitIntegrationId: bc?.git_integration_id ?? "",
+      gitRepo: bc?.git_repo ?? "",
+      gitBranch: bc?.branch ?? "main",
+      builder: (bc?.builder as typeof form.builder) ?? "nixpacks",
+      dockerfilePath: bc?.dockerfile_path ?? "Dockerfile",
+      registryIntegrationId: bc?.registry_integration_id ?? "",
+      builderNodeName: bc?.builder_node ?? "",
+      builderCPURequest: bc?.builder_cpu_request || "1000m",
+      builderMemoryRequest: bc?.builder_memory_request || "1Gi",
+      nodeId: service.node_id ?? "",
+      replicas: service.replicas,
+      cpuRequest: service.cpu_request,
+      cpuLimit: service.cpu_limit,
+      memoryRequest: service.memory_request,
+      memoryLimit: service.memory_limit,
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service, bc])
 
+  const { data: repoList = [], isFetching: reposFetching } = useQuery({
+    queryKey: ["git-repos", orgId, form.gitIntegrationId],
+    queryFn: () => gitApi.repos(orgId, form.gitIntegrationId, token),
+    enabled: !!form.gitIntegrationId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: branchList = [], isFetching: branchesFetching } = useQuery({
+    queryKey: ["git-branches", orgId, form.gitIntegrationId, form.gitRepo],
+    queryFn: () => gitApi.branches(orgId, form.gitIntegrationId, form.gitRepo, token),
+    enabled: !!form.gitIntegrationId && !!form.gitRepo,
+    staleTime: 2 * 60 * 1000,
+  })
+
+  // ── Save ──────────────────────────────────────────────────────────────────
   const mutation = useMutation({
-    mutationFn: () =>
-      servicesApi.update(orgId, projectId, serviceId, {
+    mutationFn: async () => {
+      // Always update service fields
+      const updatedSvc = await servicesApi.update(orgId, projectId, serviceId, {
+        image: form.source === "image" ? form.image : "",
+        node_id: form.nodeId,
         replicas: form.replicas,
         cpu_request: form.cpuRequest,
         cpu_limit: form.cpuLimit,
         memory_request: form.memoryRequest,
         memory_limit: form.memoryLimit,
-        node_id: form.nodeId,
-      }, token),
+      }, token)
+      // Update build config when git source
+      if (form.source === "git") {
+        await buildConfigsApi.update(orgId, projectId, serviceId, {
+          git_integration_id: form.gitIntegrationId || undefined,
+          git_repo: form.gitRepo,
+          branch: form.gitBranch,
+          builder: form.builder,
+          dockerfile_path: form.builder === "dockerfile" ? form.dockerfilePath : undefined,
+          registry_integration_id: form.registryIntegrationId || undefined,
+          builder_node: form.builderNodeName,
+          builder_cpu_request: form.builderCPURequest,
+          builder_memory_request: form.builderMemoryRequest,
+        }, token)
+      }
+      return updatedSvc
+    },
     onSuccess: (updated) => {
       queryClient.setQueryData(["service", orgId, projectId, serviceId], updated)
       queryClient.invalidateQueries({ queryKey: ["services", orgId, projectId] })
+      queryClient.invalidateQueries({ queryKey: ["build-config", orgId, projectId, serviceId] })
     },
   })
 
-  if (isLoading) return (
-    <Section title="Scaling & resources">
-      <div className="flex items-center gap-2 text-muted-foreground py-4">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      </div>
-    </Section>
+  if (svcLoading || bcLoading) return (
+    <div className="flex items-center gap-2 text-muted-foreground py-8">
+      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+    </div>
   )
 
   return (
-    <Section title="Scaling & resources" subtitle="Changes take effect on next deployment.">
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Replicas">
-          <input
-            type="number" min={1} max={20}
-            value={form.replicas}
-            onChange={(e) => setForm((f) => ({ ...f, replicas: Math.max(1, parseInt(e.target.value) || 1) }))}
-            className={inputCls}
-          />
-        </Field>
-        <Field label="Node">
-          <Select value={form.nodeId} onValueChange={(v) => setForm((f) => ({ ...f, nodeId: v ?? "" }))}>
-            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-              <SelectValue placeholder="Auto-schedule">
-                {form.nodeId ? workerNodes.find((n) => n.id === form.nodeId)?.name ?? form.nodeId : "Auto-schedule"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Auto-schedule</SelectItem>
-              {workerNodes.map((n) => (
-                <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>
+    <div className="space-y-8">
+      {/* ── Source ────────────────────────────────────────────── */}
+      <Section title="Source" subtitle="Where should Meshploy pull the code or image from?">
+        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
+          {(["git", "image"] as const).map((src) => (
+            <button
+              key={src}
+              type="button"
+              onClick={() => patch({ source: src })}
+              className={cn(
+                "px-4 py-2 text-sm transition-colors",
+                form.source === src
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+              )}
+            >
+              {src === "git" ? "Git repository" : "Docker image"}
+            </button>
+          ))}
+        </div>
+
+        {form.source === "image" ? (
+          <Field label="Image">
+            <input value={form.image} onChange={(e) => patch({ image: e.target.value })}
+              placeholder="nginx:alpine" className={inputCls} />
+          </Field>
+        ) : (
+          <div className="space-y-4">
+            <Field label="Git integration">
+              <Select value={form.gitIntegrationId} onValueChange={(v) => patch({ gitIntegrationId: v ?? "", gitRepo: "", gitBranch: "" })}>
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue placeholder={connectedGit.length === 0 ? "No connected integrations" : "Select a git integration…"}>
+                    {connectedGit.find((g) => g.id === form.gitIntegrationId)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {connectedGit.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label={reposFetching ? "Repository (loading…)" : "Repository"}>
+                <Select
+                  value={form.gitRepo}
+                  onValueChange={(v) => {
+                    const repo = repoList.find((r) => r.full_name === v)
+                    patch({ gitRepo: v ?? "", gitBranch: repo?.default_branch ?? form.gitBranch })
+                  }}
+                  disabled={!form.gitIntegrationId || reposFetching}
+                >
+                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                    <SelectValue placeholder={!form.gitIntegrationId ? "Select an integration first" : reposFetching ? "Loading…" : "Select a repository…"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {form.gitRepo && !repoList.find((r) => r.full_name === form.gitRepo) && (
+                      <SelectItem value={form.gitRepo}>{form.gitRepo}</SelectItem>
+                    )}
+                    {repoList.map((r) => <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label={branchesFetching ? "Branch (loading…)" : "Branch"}>
+                <Select
+                  value={form.gitBranch}
+                  onValueChange={(v) => patch({ gitBranch: v ?? "main" })}
+                  disabled={!form.gitIntegrationId || !form.gitRepo || branchesFetching}
+                >
+                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                    <SelectValue placeholder={!form.gitRepo ? "Select a repo first" : branchesFetching ? "Loading…" : "Select a branch…"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {form.gitBranch && !branchList.find((b) => b === form.gitBranch) && (
+                      <SelectItem value={form.gitBranch}>{form.gitBranch}</SelectItem>
+                    )}
+                    {branchList.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Builder">
+                <Select value={form.builder} onValueChange={(v) => patch({ builder: (v ?? "nixpacks") as typeof form.builder })}>
+                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
+                    <SelectItem value="railpack">Railpack</SelectItem>
+                    <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              {form.builder === "dockerfile" && (
+                <Field label="Dockerfile path">
+                  <input value={form.dockerfilePath} onChange={(e) => patch({ dockerfilePath: e.target.value })} className={inputCls} />
+                </Field>
+              )}
+            </div>
+
+            <Field label="Registry">
+              <Select value={form.registryIntegrationId} onValueChange={(v) => patch({ registryIntegrationId: v ?? "" })}>
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue placeholder={registryList.length === 0 ? "No registries — add one in Integrations" : "Select a registry…"}>
+                    {registryList.find((r) => r.id === form.registryIntegrationId)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {registryList.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Build ─────────────────────────────────────────────── */}
+      {form.source === "git" && (
+        <Section title="Build" subtitle="Configure where and how the build job runs">
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <Server className="h-3.5 w-3.5" /> Builder node
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <NodeCard label="Auto-schedule" sub="Any builder node" selected={form.builderNodeName === ""} onClick={() => patch({ builderNodeName: "" })} />
+              {builderNodes.map((node) => (
+                <NodeCard key={node.k8s_node_name} label={node.name} sub={node.tailscale_ip}
+                  selected={form.builderNodeName === node.k8s_node_name}
+                  onClick={() => patch({ builderNodeName: node.k8s_node_name })} online />
               ))}
-            </SelectContent>
-          </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Builder CPU request">
+              <input value={form.builderCPURequest} onChange={(e) => patch({ builderCPURequest: e.target.value })} placeholder="1000m" className={inputCls} />
+            </Field>
+            <Field label="Builder memory request">
+              <input value={form.builderMemoryRequest} onChange={(e) => patch({ builderMemoryRequest: e.target.value })} placeholder="1Gi" className={inputCls} />
+            </Field>
+          </div>
+        </Section>
+      )}
+
+      {/* ── Deployment ────────────────────────────────────────── */}
+      <Section title="Deployment" subtitle="Choose where this service runs and how many replicas to start">
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Server className="h-3.5 w-3.5" /> Target node
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <NodeCard label="Auto-schedule" sub="Let K3s decide" selected={form.nodeId === ""} onClick={() => patch({ nodeId: "" })} />
+            {workerNodes.map((node) => (
+              <NodeCard key={node.id} label={node.name} sub={node.tailscaleIP}
+                selected={form.nodeId === node.id}
+                onClick={() => patch({ nodeId: node.id })} online />
+            ))}
+          </div>
+        </div>
+
+        <Field label="Replicas">
+          <input type="number" min={1} max={20} value={form.replicas}
+            onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
+            className={cn(inputCls, "w-24")} />
         </Field>
-        <Field label="CPU request"><input value={form.cpuRequest} onChange={(e) => setForm((f) => ({ ...f, cpuRequest: e.target.value }))} className={inputCls} /></Field>
-        <Field label="CPU limit"><input value={form.cpuLimit} onChange={(e) => setForm((f) => ({ ...f, cpuLimit: e.target.value }))} className={inputCls} /></Field>
-        <Field label="Memory request"><input value={form.memoryRequest} onChange={(e) => setForm((f) => ({ ...f, memoryRequest: e.target.value }))} className={inputCls} /></Field>
-        <Field label="Memory limit"><input value={form.memoryLimit} onChange={(e) => setForm((f) => ({ ...f, memoryLimit: e.target.value }))} className={inputCls} /></Field>
+      </Section>
+
+      {/* ── Resource limits (collapsible) ─────────────────────── */}
+      <div className="rounded-lg border border-border/40">
+        <button
+          type="button"
+          onClick={() => patch({ showResources: !form.showResources })}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <span className="font-medium">Resource limits</span>
+          <span className={cn("text-xs transition-transform inline-block", form.showResources ? "rotate-180" : "")}>▼</span>
+        </button>
+        {form.showResources && (
+          <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
+            <Field label="CPU request"><input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} /></Field>
+            <Field label="CPU limit"><input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} /></Field>
+            <Field label="Memory request"><input value={form.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} /></Field>
+            <Field label="Memory limit"><input value={form.memoryLimit} onChange={(e) => patch({ memoryLimit: e.target.value })} className={inputCls} /></Field>
+          </div>
+        )}
       </div>
+
       {mutation.isError && (
         <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
       )}
-      <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Save
-        </Button>
-      </div>
-    </Section>
+      {mutation.isSuccess && (
+        <p className="text-xs text-emerald-400">Saved.</p>
+      )}
+      <Button className="w-full gap-2" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+        {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Save changes
+      </Button>
+    </div>
   )
 }
 
@@ -292,286 +503,6 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
   )
 }
 
-// ─── Build source section ─────────────────────────────────────────────────────
-
-function BuildSourceSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-  const queryClient = useQueryClient()
-
-  const { data: bc, isLoading, isError } = useQuery({
-    queryKey: ["build-config", orgId, projectId, serviceId],
-    queryFn: () => buildConfigsApi.get(orgId, projectId, serviceId, token),
-    enabled: !!orgId,
-    retry: false, // 404 = no build config, don't retry
-  })
-
-  const { data: gitList = [] } = useQuery({
-    queryKey: ["git-integrations", orgId],
-    queryFn: () => gitApi.list(orgId, token),
-    enabled: !!orgId,
-  })
-  const connectedGit = gitList.filter((g) => g.connected)
-
-  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
-    queryKey: ["nodes", orgId],
-    queryFn: () => nodesApi.list(orgId!, token),
-    enabled: !!orgId,
-  })
-  const builderNodes = rawNodes.filter(
-    (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
-  )
-
-  const [form, setForm] = useState({
-    gitIntegrationId: "",
-    gitRepo: "",
-    branch: "main",
-    builder: "nixpacks" as "nixpacks" | "railpack" | "dockerfile",
-    dockerfilePath: "Dockerfile",
-    builderNode: "",  // "" = auto-schedule, k8s_node_name = pin to node
-    builderCPURequest: "",
-    builderMemoryRequest: "",
-  })
-
-  useEffect(() => {
-    if (bc) {
-      setForm({
-        gitIntegrationId: bc.git_integration_id ?? "",
-        gitRepo: bc.git_repo,
-        branch: bc.branch,
-        builder: bc.builder as "nixpacks" | "railpack" | "dockerfile",
-        dockerfilePath: bc.dockerfile_path,
-        builderNode: bc.builder_node ?? "",
-        builderCPURequest: bc.builder_cpu_request ?? "",
-        builderMemoryRequest: bc.builder_memory_request ?? "",
-      })
-    }
-  }, [bc])
-
-  const { data: repoList = [], isFetching: reposFetching } = useQuery({
-    queryKey: ["git-repos", orgId, form.gitIntegrationId],
-    queryFn: () => gitApi.repos(orgId, form.gitIntegrationId, token),
-    enabled: !!form.gitIntegrationId,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const { data: branchList = [], isFetching: branchesFetching } = useQuery({
-    queryKey: ["git-branches", orgId, form.gitIntegrationId, form.gitRepo],
-    queryFn: () => gitApi.branches(orgId, form.gitIntegrationId, form.gitRepo, token),
-    enabled: !!form.gitIntegrationId && !!form.gitRepo,
-    staleTime: 2 * 60 * 1000,
-  })
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      buildConfigsApi.update(orgId, projectId, serviceId, {
-        git_repo: form.gitRepo,
-        branch: form.branch,
-        builder: form.builder,
-        dockerfile_path: form.builder === "dockerfile" ? form.dockerfilePath : undefined,
-        git_integration_id: form.gitIntegrationId || undefined,
-        builder_node: form.builderNode,
-        builder_cpu_request: form.builderCPURequest,
-        builder_memory_request: form.builderMemoryRequest,
-      }, token),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["build-config", orgId, projectId, serviceId], updated)
-    },
-  })
-
-  if (isLoading) return (
-    <Section title="Build source">
-      <div className="flex items-center gap-2 text-muted-foreground py-4">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      </div>
-    </Section>
-  )
-
-  if (isError) return (
-    <Section title="Build source" subtitle="No build config yet. This service deploys from a pre-built image.">
-      <p className="text-xs text-muted-foreground">
-        Build config will be available after switching this service to a git source.
-      </p>
-    </Section>
-  )
-
-  return (
-    <Section title="Build source" subtitle="Repository and build settings.">
-      <div className="space-y-4">
-        <Field label="Git integration">
-          <Select
-            value={form.gitIntegrationId}
-            onValueChange={(v) => setForm((f) => ({ ...f, gitIntegrationId: v ?? "" }))}
-          >
-            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-              <SelectValue placeholder={
-                connectedGit.length === 0
-                  ? "No connected integrations"
-                  : "Select integration to change repo…"
-              }>
-                {connectedGit.find((g) => g.id === form.gitIntegrationId)?.name}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {connectedGit.map((g) => (
-                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label={reposFetching ? "Repository (loading…)" : "Repository"}>
-            <Select
-              value={form.gitRepo}
-              onValueChange={(v) => {
-                const repo = repoList.find((r) => r.full_name === v)
-                setForm((f) => ({ ...f, gitRepo: v ?? "", branch: repo?.default_branch ?? f.branch }))
-              }}
-              disabled={!form.gitIntegrationId || reposFetching}
-            >
-              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue placeholder={
-                  !form.gitIntegrationId ? "Select an integration to change…" :
-                  reposFetching ? "Loading…" :
-                  repoList.length === 0 ? "No accessible repositories" :
-                  "Select a repository…"
-                } />
-              </SelectTrigger>
-              <SelectContent>
-                {/* Ensure current value always renders in trigger even when list hasn't loaded */}
-                {form.gitRepo && !repoList.find((r) => r.full_name === form.gitRepo) && (
-                  <SelectItem value={form.gitRepo}>{form.gitRepo}</SelectItem>
-                )}
-                {repoList.map((r) => (
-                  <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label={branchesFetching ? "Branch (loading…)" : "Branch"}>
-            <Select
-              value={form.branch}
-              onValueChange={(v) => setForm((f) => ({ ...f, branch: v ?? "main" }))}
-              disabled={!form.gitIntegrationId || !form.gitRepo || branchesFetching}
-            >
-              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue placeholder={
-                  !form.gitRepo ? "Select a repo first" :
-                  branchesFetching ? "Loading…" :
-                  "Select a branch…"
-                } />
-              </SelectTrigger>
-              <SelectContent>
-                {/* Ensure current value always renders in trigger even when list hasn't loaded */}
-                {form.branch && !branchList.find((b) => b === form.branch) && (
-                  <SelectItem value={form.branch}>{form.branch}</SelectItem>
-                )}
-                {branchList.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Builder">
-            <Select value={form.builder} onValueChange={(v) => setForm((f) => ({ ...f, builder: (v ?? "nixpacks") as typeof f.builder }))}>
-              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="nixpacks">Nixpacks</SelectItem>
-                <SelectItem value="railpack">Railpack</SelectItem>
-                <SelectItem value="dockerfile">Dockerfile</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          {form.builder === "dockerfile" && (
-            <Field label="Dockerfile path">
-              <input value={form.dockerfilePath} onChange={(e) => setForm((f) => ({ ...f, dockerfilePath: e.target.value }))} className={inputCls} />
-            </Field>
-          )}
-        </div>
-
-        {/* Builder node picker */}
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-            <Server className="h-3 w-3" />
-            Builder node
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => setForm((f) => ({ ...f, builderNode: "" }))}
-              className={cn(
-                "flex flex-col gap-1 rounded-lg border-2 p-3 text-left transition-all",
-                form.builderNode === ""
-                  ? "border-primary bg-primary/5"
-                  : "border-border/60 bg-card hover:border-border/80"
-              )}
-            >
-              <span className="text-sm font-medium">Auto-schedule</span>
-              <span className="text-[11px] text-muted-foreground">Any builder node</span>
-            </button>
-            {builderNodes.map((node) => (
-              <button
-                type="button"
-                key={node.k8s_node_name}
-                onClick={() => setForm((f) => ({ ...f, builderNode: node.k8s_node_name }))}
-                className={cn(
-                  "flex flex-col gap-1 rounded-lg border-2 p-3 text-left transition-all",
-                  form.builderNode === node.k8s_node_name
-                    ? "border-primary bg-primary/5"
-                    : "border-border/60 bg-card hover:border-border/80"
-                )}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  <span className="text-sm font-medium truncate">{node.name}</span>
-                </div>
-                <span className="text-[11px] text-muted-foreground font-mono">{node.tailscale_ip}</span>
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            <Field label="Builder CPU request">
-              <input
-                value={form.builderCPURequest}
-                onChange={(e) => setForm((f) => ({ ...f, builderCPURequest: e.target.value }))}
-                placeholder="1000m"
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Builder memory request">
-              <input
-                value={form.builderMemoryRequest}
-                onChange={(e) => setForm((f) => ({ ...f, builderMemoryRequest: e.target.value }))}
-                placeholder="1Gi"
-                className={inputCls}
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
-      {mutation.isError && (
-        <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
-      )}
-      {mutation.isSuccess && (
-        <p className="text-xs text-emerald-400">Saved.</p>
-      )}
-      <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Save
-        </Button>
-      </div>
-    </Section>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ConfigTab() {
@@ -583,8 +514,7 @@ function ConfigTab() {
     <div className="p-6 max-w-2xl space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
-      <ResourcesSection projectId={projectId} serviceId={serviceId} />
-      <BuildSourceSection projectId={projectId} serviceId={serviceId} />
+      <SourceDeploySection projectId={projectId} serviceId={serviceId} />
     </div>
   )
 }

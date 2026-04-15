@@ -361,15 +361,15 @@ type PatchBuildConfigInput struct {
 	ProjectID string `path:"projectId"`
 	ServiceID string `path:"serviceId"`
 	Body      struct {
-		GitIntegrationID      *string `json:"git_integration_id"`
-		GitRepo               *string `json:"git_repo"`
-		Branch                *string `json:"branch"`
-		Builder               *string `json:"builder"`
-		DockerfilePath        *string `json:"dockerfile_path"`
-		RegistryIntegrationID *string `json:"registry_integration_id"` // "" = clear
-		BuilderNode           *string `json:"builder_node"`             // "" = auto-schedule
-		BuilderCPURequest     *string `json:"builder_cpu_request"`
-		BuilderMemoryRequest  *string `json:"builder_memory_request"`
+		GitIntegrationID      *string `json:"git_integration_id,omitempty"`
+		GitRepo               *string `json:"git_repo,omitempty"`
+		Branch                *string `json:"branch,omitempty"`
+		Builder               *string `json:"builder,omitempty"`
+		DockerfilePath        *string `json:"dockerfile_path,omitempty"`
+		RegistryIntegrationID *string `json:"registry_integration_id,omitempty"` // "" = clear
+		BuilderNode           *string `json:"builder_node,omitempty"`             // "" = auto-schedule
+		BuilderCPURequest     *string `json:"builder_cpu_request,omitempty"`
+		BuilderMemoryRequest  *string `json:"builder_memory_request,omitempty"`
 	}
 }
 
