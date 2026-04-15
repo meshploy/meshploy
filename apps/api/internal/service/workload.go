@@ -28,12 +28,15 @@ type CreateWorkloadInput struct {
 
 	// Optional build config — when GitRepo is set, a BuildConfig row is
 	// created alongside the Service in the same transaction.
+	GitIntegrationID      *uuid.UUID
 	GitRepo               string
 	Branch                string
 	Builder               db.BuilderType
 	DockerfilePath        string
 	RegistryIntegrationID *uuid.UUID
 	BuilderNode           string // "" = auto-schedule on any builder node
+	BuilderCPURequest     string // "" = default (1000m)
+	BuilderMemoryRequest  string // "" = default (1Gi)
 }
 
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
@@ -85,12 +88,15 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		}
 		bc := &db.BuildConfig{
 			ServiceID:             service.ID,
+			GitIntegrationID:      in.GitIntegrationID,
 			Builder:               builder,
 			GitRepo:               in.GitRepo,
 			Branch:                branch,
 			DockerfilePath:        dockerfilePath,
 			RegistryIntegrationID: in.RegistryIntegrationID,
 			BuilderNode:           in.BuilderNode,
+			BuilderCPURequest:     in.BuilderCPURequest,
+			BuilderMemoryRequest:  in.BuilderMemoryRequest,
 		}
 		return tx.Create(bc).Error
 	})
@@ -181,6 +187,7 @@ func (s *WorkloadService) GetBuildEnvVars(ctx context.Context, serviceID uuid.UU
 }
 
 type UpdateBuildConfigInput struct {
+	GitIntegrationID      *uuid.UUID
 	GitRepo               *string
 	Branch                *string
 	Builder               *db.BuilderType
@@ -207,6 +214,9 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 			Builder:        db.BuilderNixpacks,
 			DockerfilePath: "Dockerfile",
 		}
+	}
+	if in.GitIntegrationID != nil {
+		bc.GitIntegrationID = in.GitIntegrationID
 	}
 	if in.GitRepo != nil {
 		bc.GitRepo = *in.GitRepo

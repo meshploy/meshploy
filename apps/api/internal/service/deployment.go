@@ -85,13 +85,13 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		return nil, fmt.Errorf("build config has no git repository configured")
 	}
 
-	// Load git integration for the org (need installation token).
+	// Load the git integration stored on the build config.
+	if bc.GitIntegrationID == nil {
+		return nil, fmt.Errorf("build config has no git integration set — edit the service build source to select one")
+	}
 	var gitIntegration db.GitIntegration
-	if err := s.db.WithContext(ctx).
-		Joins("JOIN projects ON projects.id = ?", svc.ProjectID).
-		Where("git_integrations.organization_id = projects.organization_id AND git_integrations.provider = 'github'").
-		First(&gitIntegration).Error; err != nil {
-		return nil, fmt.Errorf("no GitHub integration found — connect one in Integrations")
+	if err := s.db.WithContext(ctx).First(&gitIntegration, "id = ?", bc.GitIntegrationID).Error; err != nil {
+		return nil, fmt.Errorf("git integration not found — it may have been deleted")
 	}
 
 	// Resolve registry credentials.
