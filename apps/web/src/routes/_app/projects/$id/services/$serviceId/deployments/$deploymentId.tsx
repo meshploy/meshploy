@@ -35,6 +35,13 @@ function DeploymentLogsPage() {
   const [logLines, setLogLines] = useState<string[]>([])
   const [streaming, setStreaming] = useState(false)
   const [streamDone, setStreamDone] = useState(false)
+  const [, setTick] = useState(0)
+
+  // Re-render every second so the relative timestamp stays current
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 

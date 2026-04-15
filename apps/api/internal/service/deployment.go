@@ -404,14 +404,14 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	// can take tens of seconds). Retry up to 3 minutes.
 	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
 	flush()
-	zero := int64(0)
 	var stream io.ReadCloser
 	streamDeadline := time.Now().Add(3 * time.Minute)
 	attempt := 0
 	for {
 		req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-			Follow:    true,
-			TailLines: &zero,
+			Follow: true,
+			// No TailLines — replay all existing output then follow new lines.
+			// Needed so reconnecting clients catch up on already-written log output.
 		})
 		var err error
 		stream, err = req.Stream(ctx)

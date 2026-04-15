@@ -74,15 +74,15 @@ fi
 case "${BUILDER}" in
   nixpacks)
     log "Building with Nixpacks → ${IMAGE_DEST}"
-    # --out writes the Dockerfile + all supporting .nix files + a copy of the
-    # app source into /tmp/nixpacks-out. The generated Dockerfile references
-    # .nixpacks/*.nix paths relative to the build context, so the context must
-    # be /tmp/nixpacks-out (not the workspace).
+    # --out writes only the generated .nixpacks/ plan files (Dockerfile + .nix
+    # files). It does NOT copy the app source. We copy .nixpacks/ back into the
+    # workspace so the build context contains both the source and the plan files.
     nixpacks build . --out /tmp/nixpacks-out "${NIXPACKS_ENV_FLAGS[@]+"${NIXPACKS_ENV_FLAGS[@]}"}"
+    cp -r /tmp/nixpacks-out/.nixpacks "${WORKDIR}/.nixpacks"
     buildah build \
-        --file /tmp/nixpacks-out/.nixpacks/Dockerfile \
+        --file "${WORKDIR}/.nixpacks/Dockerfile" \
         --tag "${IMAGE_DEST}" \
-        /tmp/nixpacks-out
+        "${WORKDIR}"
     ;;
 
   railpack)
