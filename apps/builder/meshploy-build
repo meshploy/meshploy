@@ -45,9 +45,8 @@ fi
 case "${BUILDER}" in
   nixpacks)
     log "Building with Nixpacks → ${IMAGE_DEST}"
-    # Nixpacks generates a Dockerfile; buildah builds it (no Docker daemon needed).
-    nixpacks plan . --format json > /tmp/nixpacks-plan.json
-    nixpacks build . --plan /tmp/nixpacks-plan.json --out /tmp/nixpacks-out
+    # Generate Dockerfile without requiring Docker daemon.
+    nixpacks build . --out /tmp/nixpacks-out
     buildah build \
         --file /tmp/nixpacks-out/.nixpacks/Dockerfile \
         --tag "${IMAGE_DEST}" \
