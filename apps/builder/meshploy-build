@@ -65,8 +65,8 @@ log "Cloned successfully ($(git rev-parse --short HEAD))"
 # buildah defaults to HTTPS. Internal mesh registries (e.g. 100.64.x.x:5000)
 # are plain HTTP — add them to registries.conf so buildah doesn't upgrade to TLS.
 # This covers both `buildah push` and `buildah build --cache-from`.
-mkdir -p /etc/containers
-cat >> /etc/containers/registries.conf <<EOF
+mkdir -p "${HOME}/.config/containers"
+cat >> "${HOME}/.config/containers/registries.conf" <<EOF
 
 [[registry]]
 location = "${REGISTRY_HOST}"

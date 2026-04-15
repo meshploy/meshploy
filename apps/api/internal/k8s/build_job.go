@@ -50,6 +50,12 @@ type BuildJobParams struct {
 	// Build-time env vars — KEY=VALUE, one per line.
 	// Forwarded to nixpacks (--env), railpack (export), dockerfile (--build-arg).
 	BuildEnvVars string
+	// BuilderNode pins the job to a specific K8s node name (k8s_node_name).
+	// Empty = use NodeSelector meshploy.com/role=builder (auto-schedule).
+	BuilderNode string
+	// Resource requests for the build pod. Empty = defaults (1000m / 1Gi).
+	CPURequest    string
+	MemoryRequest string
 }
 
 // EnsureBuildCachePVC creates the buildah layer-cache PVC in the namespace if
@@ -131,9 +137,15 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							{Name: "ndots", Value: func() *string { s := "1"; return &s }()},
 						},
 					},
-					// Run builds on nodes labelled meshploy.com/role=builder.
-					// Falls back to any node if none are labelled.
-					NodeSelector: map[string]string{BuilderNodeLabel: BuilderNodeValue},
+					// If a specific node is requested, pin via NodeName (bypasses
+					// scheduler). Otherwise fall back to the role label selector.
+					NodeName:     p.BuilderNode,
+					NodeSelector: func() map[string]string {
+						if p.BuilderNode != "" {
+							return nil
+						}
+						return map[string]string{BuilderNodeLabel: BuilderNodeValue}
+					}(),
 					Tolerations: []corev1.Toleration{
 						{
 							Key:      BuilderNodeLabel,
@@ -161,6 +173,15 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							Image:           BuilderImage,
 							ImagePullPolicy: corev1.PullAlways,
 							Command:         []string{"/usr/local/bin/meshploy-build"},
+							// Resource requests give the scheduler enough signal to prefer
+							// less-loaded builder nodes (LeastAllocated scoring).
+							// No limits so builds can burst freely on spare capacity.
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse(builderCPU(p.CPURequest)),
+									corev1.ResourceMemory: resource.MustParse(builderMemory(p.MemoryRequest)),
+								},
+							},
 							Env: []corev1.EnvVar{
 								{Name: "GIT_REPO", Value: p.GitRepo},
 								{Name: "GIT_BRANCH", Value: p.GitBranch},
@@ -264,3 +285,17 @@ func fetchJobLog(ctx context.Context, client kubernetes.Interface, namespace, jo
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func builderCPU(v string) string {
+	if v == "" {
+		return "1000m"
+	}
+	return v
+}
+
+func builderMemory(v string) string {
+	if v == "" {
+		return "1Gi"
+	}
+	return v
+}

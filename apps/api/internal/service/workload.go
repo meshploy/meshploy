@@ -33,6 +33,7 @@ type CreateWorkloadInput struct {
 	Builder               db.BuilderType
 	DockerfilePath        string
 	RegistryIntegrationID *uuid.UUID
+	BuilderNode           string // "" = auto-schedule on any builder node
 }
 
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
@@ -89,6 +90,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			Branch:                branch,
 			DockerfilePath:        dockerfilePath,
 			RegistryIntegrationID: in.RegistryIntegrationID,
+			BuilderNode:           in.BuilderNode,
 		}
 		return tx.Create(bc).Error
 	})
@@ -186,6 +188,9 @@ type UpdateBuildConfigInput struct {
 	RegistryIntegrationID *uuid.UUID
 	ClearRegistry         bool    // when true, set registry_integration_id to NULL
 	BuildEnvVars          *string // nil = no change; "" = clear
+	BuilderNode           *string // nil = no change; "" = auto-schedule
+	BuilderCPURequest     *string // nil = no change; "" = use default (1000m)
+	BuilderMemoryRequest  *string // nil = no change; "" = use default (1Gi)
 }
 
 // UpsertBuildConfig creates or updates the BuildConfig for a service.
@@ -222,6 +227,15 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.BuildEnvVars != nil {
 		bc.BuildEnvVars = db.EncryptedString(*in.BuildEnvVars)
+	}
+	if in.BuilderNode != nil {
+		bc.BuilderNode = *in.BuilderNode
+	}
+	if in.BuilderCPURequest != nil {
+		bc.BuilderCPURequest = *in.BuilderCPURequest
+	}
+	if in.BuilderMemoryRequest != nil {
+		bc.BuilderMemoryRequest = *in.BuilderMemoryRequest
 	}
 	if isNew {
 		err = s.db.WithContext(ctx).Create(&bc).Error

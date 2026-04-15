@@ -200,7 +200,10 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		RegistryHost: a.registryHost,
 		RegistryUser: a.registryUser,
 		RegistryPass: a.registryPass,
-		BuildEnvVars: string(a.bc.BuildEnvVars),
+		BuildEnvVars:  string(a.bc.BuildEnvVars),
+		BuilderNode:   a.bc.BuilderNode,
+		CPURequest:    a.bc.BuilderCPURequest,
+		MemoryRequest: a.bc.BuilderMemoryRequest,
 	})
 	if err != nil {
 		s.failDeployment(a.deployment.ID, "failed to create build job: "+err.Error())
