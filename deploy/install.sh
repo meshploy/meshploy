@@ -292,6 +292,17 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server installed and started"
   fi
 
+  # ── Fix CoreDNS upstream on systemd-resolved hosts (Ubuntu 22.04+) ──────────
+  # k3s defaults CoreDNS to "forward . /etc/resolv.conf". On Ubuntu 22.04+
+  # systemd-resolved puts 127.0.0.53 there — a loopback address unreachable
+  # from inside pod network namespaces. Point k3s at the real upstream file.
+  if [[ -f /run/systemd/resolve/resolv.conf ]]; then
+    mkdir -p /etc/rancher/k3s
+    echo 'kubelet-arg: ["--resolv-conf=/run/systemd/resolve/resolv.conf"]' \
+      >> /etc/rancher/k3s/config.yaml
+    success "Configured k3s to use /run/systemd/resolve/resolv.conf for pod DNS"
+  fi
+
   # ── Configure containerd to trust the built-in registry (HTTP) ─────────────
   # registry:2 runs on the gateway at MESH_IP:5000 inside the WireGuard mesh.
   # K3s containerd needs an explicit mirror entry so it pulls over HTTP without TLS.
