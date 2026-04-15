@@ -1,7 +1,8 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
+import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Save } from "lucide-react"
+import { Loader2, Save, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -17,6 +18,7 @@ import {
   gitIntegrations as gitApi,
   nodes as nodesApi,
   toNode,
+  type ApiNode,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -128,13 +130,14 @@ function ResourcesSection({ projectId, serviceId }: { projectId: string; service
     enabled: !!orgId,
   })
 
-  const { data: allNodes = [] } = useQuery({
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
-    select: (raw) => raw.map(toNode),
   })
-  const workerNodes = allNodes.filter((n) => n.k8sMember && n.status === "online" && n.k3sRole === "agent")
+  const workerNodes = rawNodes
+    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
+    .map(toNode)
 
   const [form, setForm] = useState({
     replicas: 1,
@@ -308,12 +311,24 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
   })
   const connectedGit = gitList.filter((g) => g.connected)
 
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId!, token),
+    enabled: !!orgId,
+  })
+  const builderNodes = rawNodes.filter(
+    (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
+  )
+
   const [form, setForm] = useState({
     gitIntegrationId: "",
     gitRepo: "",
     branch: "main",
     builder: "nixpacks" as "nixpacks" | "railpack" | "dockerfile",
     dockerfilePath: "Dockerfile",
+    builderNode: "",  // "" = auto-schedule, k8s_node_name = pin to node
+    builderCPURequest: "",
+    builderMemoryRequest: "",
   })
 
   useEffect(() => {
@@ -324,6 +339,9 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
         branch: bc.branch,
         builder: bc.builder as "nixpacks" | "railpack" | "dockerfile",
         dockerfilePath: bc.dockerfile_path,
+        builderNode: bc.builder_node ?? "",
+        builderCPURequest: bc.builder_cpu_request ?? "",
+        builderMemoryRequest: bc.builder_memory_request ?? "",
       })
     }
   }, [bc])
@@ -349,6 +367,9 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
         branch: form.branch,
         builder: form.builder,
         dockerfile_path: form.builder === "dockerfile" ? form.dockerfilePath : undefined,
+        builder_node: form.builderNode,
+        builder_cpu_request: form.builderCPURequest,
+        builder_memory_request: form.builderMemoryRequest,
       }, token),
     onSuccess: (updated) => {
       queryClient.setQueryData(["build-config", orgId, projectId, serviceId], updated)
@@ -458,6 +479,66 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
               <input value={form.dockerfilePath} onChange={(e) => setForm((f) => ({ ...f, dockerfilePath: e.target.value }))} className={inputCls} />
             </Field>
           )}
+        </div>
+
+        {/* Builder node picker */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Server className="h-3 w-3" />
+            Builder node
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, builderNode: "" }))}
+              className={cn(
+                "flex flex-col gap-1 rounded-lg border-2 p-3 text-left transition-all",
+                form.builderNode === ""
+                  ? "border-primary bg-primary/5"
+                  : "border-border/60 bg-card hover:border-border/80"
+              )}
+            >
+              <span className="text-sm font-medium">Auto-schedule</span>
+              <span className="text-[11px] text-muted-foreground">Any builder node</span>
+            </button>
+            {builderNodes.map((node) => (
+              <button
+                type="button"
+                key={node.k8s_node_name}
+                onClick={() => setForm((f) => ({ ...f, builderNode: node.k8s_node_name }))}
+                className={cn(
+                  "flex flex-col gap-1 rounded-lg border-2 p-3 text-left transition-all",
+                  form.builderNode === node.k8s_node_name
+                    ? "border-primary bg-primary/5"
+                    : "border-border/60 bg-card hover:border-border/80"
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-sm font-medium truncate">{node.name}</span>
+                </div>
+                <span className="text-[11px] text-muted-foreground font-mono">{node.tailscale_ip}</span>
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <Field label="Builder CPU request">
+              <input
+                value={form.builderCPURequest}
+                onChange={(e) => setForm((f) => ({ ...f, builderCPURequest: e.target.value }))}
+                placeholder="1000m"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Builder memory request">
+              <input
+                value={form.builderMemoryRequest}
+                onChange={(e) => setForm((f) => ({ ...f, builderMemoryRequest: e.target.value }))}
+                placeholder="1Gi"
+                className={inputCls}
+              />
+            </Field>
+          </div>
         </div>
       </div>
       {mutation.isError && (

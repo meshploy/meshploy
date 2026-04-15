@@ -427,6 +427,9 @@ export interface ApiBuildConfig {
   branch: string
   dockerfile_path: string
   registry_integration_id: string | null
+  builder_node: string
+  builder_cpu_request: string
+  builder_memory_request: string
   last_built_image: string
   last_built_at: string | null
   created_at: string
@@ -452,6 +455,9 @@ export interface UpdateBuildConfigBody {
   dockerfile_path?: string
   registry_integration_id?: string  // "" = clear
   build_env_vars?: string           // nil = no change; "" = clear
+  builder_node?: string             // "" = auto-schedule, node name = pin
+  builder_cpu_request?: string      // "" = default (1000m)
+  builder_memory_request?: string   // "" = default (1Gi)
 }
 
 export const buildConfigs = {

@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { projects as projectsApi, gitIntegrations as gitApi, nodes as nodesApi, toNode } from "@/lib/api"
+import { projects as projectsApi, gitIntegrations as gitApi, nodes as nodesApi, toNode, type ApiNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { mockTemplates } from "@/lib/mock-data"
@@ -67,6 +67,9 @@ interface WizardState {
   templateName: string
   // Step 3
   nodeId: string | null
+  builderNodeName: string | null  // k8s_node_name of builder node; null = auto-schedule
+  builderCPURequest: string
+  builderMemoryRequest: string
   cpuRequest: string
   cpuLimit: string
   memoryRequest: string
@@ -80,7 +83,7 @@ const INITIAL: WizardState = {
   dbName: "", dbEngine: "postgres", dbVersion: "16", dbStorageGB: 10,
   composeName: "", composeYaml: "",
   templateId: null, templateName: "",
-  nodeId: null, cpuRequest: "100m", cpuLimit: "500m", memoryRequest: "128Mi", memoryLimit: "512Mi",
+  nodeId: null, builderNodeName: null, builderCPURequest: "1000m", builderMemoryRequest: "1Gi", cpuRequest: "100m", cpuLimit: "500m", memoryRequest: "128Mi", memoryLimit: "512Mi",
   createRoute: false,
 }
 
@@ -559,15 +562,21 @@ function Step3Deployment({
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
 
-  const { data: allNodes = [] } = useQuery({
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
-    select: (raw) => raw.map(toNode),
   })
 
   // Only offer nodes that are in the cluster and online as agents
-  const workerNodes = allNodes.filter((n) => n.k8sMember && n.status === "online" && n.k3sRole === "agent")
+  const workerNodes = rawNodes
+    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
+    .map(toNode)
+
+  // Builder nodes: online agents with the meshploy.com/role=builder label
+  const builderNodes = rawNodes.filter(
+    (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
+  )
 
   return (
     <div className="space-y-6">
@@ -615,6 +624,71 @@ function Step3Deployment({
           ))}
         </div>
       </div>
+
+      {/* Builder node selection — only when git source is selected */}
+      {state.kind === "app" && state.appSource === "git" && (
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-foreground flex items-center gap-2">
+            <Server className="h-3.5 w-3.5 text-muted-foreground" />
+            Builder node
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => patch({ builderNodeName: null })}
+              className={cn(
+                "flex flex-col gap-1 rounded-lg border-2 p-3 text-left transition-all",
+                state.builderNodeName === null
+                  ? "border-primary bg-primary/5"
+                  : "border-border/60 bg-card hover:border-border/80"
+              )}
+            >
+              <span className="text-sm font-medium">Auto-schedule</span>
+              <span className="text-[11px] text-muted-foreground">Any builder node</span>
+            </button>
+            {builderNodes.map((node) => (
+              <button
+                key={node.k8s_node_name}
+                onClick={() => patch({ builderNodeName: node.k8s_node_name })}
+                className={cn(
+                  "flex flex-col gap-1 rounded-lg border-2 p-3 text-left transition-all",
+                  state.builderNodeName === node.k8s_node_name
+                    ? "border-primary bg-primary/5"
+                    : "border-border/60 bg-card hover:border-border/80"
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-sm font-medium truncate">{node.name}</span>
+                </div>
+                <span className="text-[11px] text-muted-foreground font-mono">{node.tailscale_ip}</span>
+              </button>
+            ))}
+            {builderNodes.length === 0 && (
+              <p className="col-span-2 text-xs text-muted-foreground self-center pl-1">
+                No builder nodes found — auto-schedule will use any available node with the builder role label.
+              </p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <Field label="Builder CPU request">
+              <input
+                value={state.builderCPURequest}
+                onChange={(e) => patch({ builderCPURequest: e.target.value })}
+                placeholder="1000m"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Builder memory request">
+              <input
+                value={state.builderMemoryRequest}
+                onChange={(e) => patch({ builderMemoryRequest: e.target.value })}
+                placeholder="1Gi"
+                className={inputCls}
+              />
+            </Field>
+          </div>
+        </div>
+      )}
 
       {/* Advanced toggle */}
       <div>

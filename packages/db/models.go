@@ -319,6 +319,15 @@ type BuildConfig struct {
 	// Encrypted at rest; accessed via GET .../build-config/env-vars.
 	BuildEnvVars EncryptedString `gorm:"type:text" json:"-"`
 
+	// BuilderNode pins builds to a specific K8s node (k8s_node_name).
+	// Empty string = any node with meshploy.com/role=builder (default).
+	BuilderNode string `gorm:"not null;default:''" json:"builder_node"`
+
+	// Resource requests for the build job pod.
+	// Empty = use service layer defaults (1000m CPU, 1Gi memory).
+	BuilderCPURequest    string `gorm:"not null;default:''" json:"builder_cpu_request"`
+	BuilderMemoryRequest string `gorm:"not null;default:''" json:"builder_memory_request"`
+
 	// Registry to push the built image to.
 	// nil = use the internal mesh registry (default, zero-config CE experience).
 	RegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"registry_integration_id"`

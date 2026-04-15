@@ -48,6 +48,8 @@ type CreateWorkloadInput struct {
 		Builder               string  `json:"builder,omitempty"`
 		DockerfilePath        string  `json:"dockerfile_path,omitempty"`
 		RegistryIntegrationID *string `json:"registry_integration_id,omitempty"`
+		// BuilderNode is the k8s_node_name to pin builds to ("" = auto-schedule).
+		BuilderNode string `json:"builder_node,omitempty"`
 	}
 }
 
@@ -202,6 +204,7 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		Builder:               db.BuilderType(input.Body.Builder),
 		DockerfilePath:        input.Body.DockerfilePath,
 		RegistryIntegrationID: registryID,
+		BuilderNode:           input.Body.BuilderNode,
 	})
 	if err != nil {
 		return nil, err
@@ -349,6 +352,9 @@ type PatchBuildConfigInput struct {
 		Builder               *string `json:"builder"`
 		DockerfilePath        *string `json:"dockerfile_path"`
 		RegistryIntegrationID *string `json:"registry_integration_id"` // "" = clear
+		BuilderNode           *string `json:"builder_node"`             // "" = auto-schedule
+		BuilderCPURequest     *string `json:"builder_cpu_request"`
+		BuilderMemoryRequest  *string `json:"builder_memory_request"`
 	}
 }
 
@@ -368,9 +374,12 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 	}
 
 	in := svc.UpdateBuildConfigInput{
-		GitRepo:        input.Body.GitRepo,
-		Branch:         input.Body.Branch,
-		DockerfilePath: input.Body.DockerfilePath,
+		GitRepo:              input.Body.GitRepo,
+		Branch:               input.Body.Branch,
+		DockerfilePath:       input.Body.DockerfilePath,
+		BuilderNode:          input.Body.BuilderNode,
+		BuilderCPURequest:    input.Body.BuilderCPURequest,
+		BuilderMemoryRequest: input.Body.BuilderMemoryRequest,
 	}
 	if input.Body.Builder != nil {
 		bt := db.BuilderType(*input.Body.Builder)
