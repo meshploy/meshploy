@@ -61,6 +61,18 @@ git clone --depth=1 --branch "${GIT_BRANCH}" \
 cd "${WORKDIR}"
 log "Cloned successfully ($(git rev-parse --short HEAD))"
 
+# ── Mark registry as insecure if it is HTTP ──────────────────────────────────
+# buildah defaults to HTTPS. Internal mesh registries (e.g. 100.64.x.x:5000)
+# are plain HTTP — add them to registries.conf so buildah doesn't upgrade to TLS.
+# This covers both `buildah push` and `buildah build --cache-from`.
+mkdir -p /etc/containers
+cat >> /etc/containers/registries.conf <<EOF
+
+[[registry]]
+location = "${REGISTRY_HOST}"
+insecure = true
+EOF
+
 # ── Registry login ────────────────────────────────────────────────────────────
 if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
     log "Logging in to ${REGISTRY_HOST}…"
@@ -79,7 +91,13 @@ case "${BUILDER}" in
     # workspace so the build context contains both the source and the plan files.
     nixpacks build . --out /tmp/nixpacks-out "${NIXPACKS_ENV_FLAGS[@]+"${NIXPACKS_ENV_FLAGS[@]}"}"
     cp -r /tmp/nixpacks-out/.nixpacks "${WORKDIR}/.nixpacks"
+    # --layers enables intermediate layer caching in the PVC-backed OCI storage.
+    # --cache-from uses the last successfully pushed image as the cache source.
+    # This means stale intermediate layers from failed builds are never reused —
+    # only layers from a real successful push are considered.
     buildah build \
+        --layers \
+        --cache-from "${IMAGE_DEST}" \
         --file "${WORKDIR}/.nixpacks/Dockerfile" \
         --tag "${IMAGE_DEST}" \
         "${WORKDIR}"
@@ -93,6 +111,8 @@ case "${BUILDER}" in
     eval "${RAILPACK_EXPORTS}"
     railpack build . --generate-dockerfile --output /tmp/railpack-out
     buildah build \
+        --layers \
+        --cache-from "${IMAGE_DEST}" \
         --file /tmp/railpack-out/Dockerfile \
         --tag "${IMAGE_DEST}" \
         /tmp/railpack-out
@@ -103,6 +123,8 @@ case "${BUILDER}" in
     DOCKERFILE="${DOCKERFILE_PATH:-Dockerfile}"
     [[ -f "${DOCKERFILE}" ]] || die "Dockerfile not found at ${DOCKERFILE}"
     buildah build \
+        --layers \
+        --cache-from "${IMAGE_DEST}" \
         --file "${DOCKERFILE}" \
         --tag "${IMAGE_DEST}" \
         "${DOCKERFILE_BUILD_ARG_FLAGS[@]+"${DOCKERFILE_BUILD_ARG_FLAGS[@]}"}" \
