@@ -181,6 +181,13 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		return
 	}
 
+	// Ensure the per-namespace build cache PVC exists (created once, reused
+	// across all builds so nix/npm layers are not re-downloaded every time).
+	if err := appk8s.EnsureBuildCachePVC(ctx, s.k8s, a.namespace); err != nil {
+		s.failDeployment(a.deployment.ID, "failed to ensure build cache PVC: "+err.Error())
+		return
+	}
+
 	// Create the build Job.
 	err := appk8s.CreateBuildJob(ctx, s.k8s, appk8s.BuildJobParams{
 		JobName:      a.jobName,
@@ -290,6 +297,15 @@ func (s *DeploymentService) resolveRegistry(ctx context.Context, bc *db.BuildCon
 		return "", "", "", fmt.Errorf("registry integration not found")
 	}
 	return reg.Endpoint, string(reg.Username), string(reg.Password), nil
+}
+
+// ClearBuildCache deletes the buildah layer-cache PVC for the given project
+// namespace. It is recreated automatically on the next build.
+func (s *DeploymentService) ClearBuildCache(ctx context.Context, namespace string) error {
+	if s.k8s == nil {
+		return fmt.Errorf("kubernetes is not configured on this instance")
+	}
+	return appk8s.DeleteBuildCachePVC(ctx, s.k8s, namespace)
 }
 
 // ─── Log streaming ────────────────────────────────────────────────────────────

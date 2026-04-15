@@ -9,6 +9,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -21,6 +22,12 @@ const (
 	// BuilderNodeLabel is the node label used to schedule build jobs.
 	BuilderNodeLabel = "meshploy.com/role"
 	BuilderNodeValue = "builder"
+
+	// buildCachePVC is the PVC name used to persist buildah's layer cache.
+	// Created once per namespace; reused across all builds in that namespace.
+	buildCachePVC     = "buildah-layer-cache"
+	buildCacheSize    = "20Gi"
+	buildCacheMountAt = "/home/builder/.local/share/containers/storage"
 )
 
 // BuildJobParams holds everything the build job needs.
@@ -40,6 +47,50 @@ type BuildJobParams struct {
 	RegistryHost string
 	RegistryUser string
 	RegistryPass string
+}
+
+// EnsureBuildCachePVC creates the buildah layer-cache PVC in the namespace if
+// it does not already exist. The PVC is ReadWriteOnce / local-path so layers
+// survive across build jobs on the same node.
+func EnsureBuildCachePVC(ctx context.Context, client kubernetes.Interface, namespace string) error {
+	_, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, buildCachePVC, metav1.GetOptions{})
+	if err == nil {
+		return nil // already exists
+	}
+	if !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("check build-cache PVC: %w", err)
+	}
+
+	storageClass := "local-path"
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      buildCachePVC,
+			Namespace: namespace,
+			Labels:    map[string]string{"managed-by": "meshploy", "purpose": "build-cache"},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			StorageClassName: &storageClass,
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(buildCacheSize),
+				},
+			},
+		},
+	}
+	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
+	return err
+}
+
+// DeleteBuildCachePVC removes the buildah layer-cache PVC for a namespace.
+// The PVC is recreated automatically on the next build trigger.
+// Returns nil if the PVC does not exist.
+func DeleteBuildCachePVC(ctx context.Context, client kubernetes.Interface, namespace string) error {
+	err := client.CoreV1().PersistentVolumeClaims(namespace).Delete(ctx, buildCachePVC, metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("delete build-cache PVC: %w", err)
+	}
+	return nil
 }
 
 // CreateBuildJob submits a K8s Job that clones, builds, and pushes the image.
@@ -88,6 +139,19 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							Effect:   corev1.TaintEffectNoSchedule,
 						},
 					},
+					Volumes: []corev1.Volume{
+						{
+							// Persist buildah's layer cache across builds so nix
+							// package downloads and base image layers are not
+							// re-fetched on every job.
+							Name: "buildah-cache",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: buildCachePVC,
+								},
+							},
+						},
+					},
 					Containers: []corev1.Container{
 						{
 							Name:            "builder",
@@ -103,6 +167,12 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "REGISTRY_HOST", Value: p.RegistryHost},
 								{Name: "REGISTRY_USER", Value: p.RegistryUser},
 								{Name: "REGISTRY_PASS", Value: p.RegistryPass},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "buildah-cache",
+									MountPath: buildCacheMountAt,
+								},
 							},
 							// Buildah needs elevated privileges to create overlay mounts.
 							SecurityContext: &corev1.SecurityContext{

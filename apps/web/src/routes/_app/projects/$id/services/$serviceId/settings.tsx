@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Save, Trash2 } from "lucide-react"
+import { Loader2, Save, Trash2, Eraser } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { services as servicesApi } from "@/lib/api"
+import { services as servicesApi, projects as projectsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -54,6 +54,10 @@ function SettingsTab() {
     },
   })
 
+  const clearCacheMutation = useMutation({
+    mutationFn: () => projectsApi.clearBuildCache(orgId, projectId, token),
+  })
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-40">
@@ -100,6 +104,40 @@ function SettingsTab() {
             Save
           </Button>
         </div>
+      </div>
+
+      {/* ── Build cache ────────────────────────────────────────── */}
+      <div className="space-y-4">
+        <div className="border-b border-border/40 pb-2">
+          <p className="text-sm font-medium">Build cache</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Buildah layer cache is shared across all services in this project.
+            Clear it to force a clean rebuild (e.g. after a corrupted cache or
+            to free disk space). The cache is recreated automatically on the
+            next deploy.
+          </p>
+        </div>
+        {clearCacheMutation.isError && (
+          <p className="text-xs text-destructive">
+            {(clearCacheMutation.error as Error).message}
+          </p>
+        )}
+        {clearCacheMutation.isSuccess && (
+          <p className="text-xs text-emerald-400">Cache cleared — next build starts fresh.</p>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={clearCacheMutation.isPending}
+          onClick={() => clearCacheMutation.mutate()}
+        >
+          {clearCacheMutation.isPending
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <Eraser className="h-3.5 w-3.5" />
+          }
+          Clear build cache
+        </Button>
       </div>
 
       {/* ── Danger zone ────────────────────────────────────────── */}
