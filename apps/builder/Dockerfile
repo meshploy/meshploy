@@ -30,7 +30,8 @@ RUN curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/instal
 RUN adduser -D builder && \
     mkdir -p /home/builder/.config/containers && \
     printf '[storage]\ndriver = "overlay"\n[storage.options]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
-    > /home/builder/.config/containers/storage.conf
+    > /home/builder/.config/containers/storage.conf && \
+    chown -R builder:builder /home/builder/.config
 
 # ── Build script ──────────────────────────────────────────────────────────────
 COPY meshploy-build /usr/local/bin/meshploy-build
