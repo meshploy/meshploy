@@ -66,6 +66,17 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
+					// Use ndots:1 so external hostnames like github.com are
+					// queried directly without appending cluster search domains.
+					// Alpine's musl libc resolver sends all search domain variants
+					// in parallel and picks the first response — without this,
+					// github.com.mesh.<domain> matches the wildcard zone and
+					// returns the gateway IP instead of the real GitHub IP.
+					DNSConfig: &corev1.PodDNSConfig{
+						Options: []corev1.PodDNSConfigOption{
+							{Name: "ndots", Value: func() *string { s := "1"; return &s }()},
+						},
+					},
 					// Run builds on nodes labelled meshploy.com/role=builder.
 					// Falls back to any node if none are labelled.
 					NodeSelector: map[string]string{BuilderNodeLabel: BuilderNodeValue},
