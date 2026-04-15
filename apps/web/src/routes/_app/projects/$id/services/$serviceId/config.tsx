@@ -199,7 +199,9 @@ function ResourcesSection({ projectId, serviceId }: { projectId: string; service
         <Field label="Node">
           <Select value={form.nodeId} onValueChange={(v) => setForm((f) => ({ ...f, nodeId: v ?? "" }))}>
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-              <SelectValue placeholder="Auto-schedule" />
+              <SelectValue placeholder="Auto-schedule">
+                {form.nodeId ? workerNodes.find((n) => n.id === form.nodeId)?.name ?? form.nodeId : "Auto-schedule"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="">Auto-schedule</SelectItem>
@@ -334,7 +336,7 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
   useEffect(() => {
     if (bc) {
       setForm({
-        gitIntegrationId: "",
+        gitIntegrationId: bc.git_integration_id ?? "",
         gitRepo: bc.git_repo,
         branch: bc.branch,
         builder: bc.builder as "nixpacks" | "railpack" | "dockerfile",
@@ -367,6 +369,7 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
         branch: form.branch,
         builder: form.builder,
         dockerfile_path: form.builder === "dockerfile" ? form.dockerfilePath : undefined,
+        git_integration_id: form.gitIntegrationId || undefined,
         builder_node: form.builderNode,
         builder_cpu_request: form.builderCPURequest,
         builder_memory_request: form.builderMemoryRequest,
@@ -404,10 +407,10 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
               <SelectValue placeholder={
                 connectedGit.length === 0
                   ? "No connected integrations"
-                  : bc?.git_repo
-                  ? `Currently: ${bc.git_repo}`
                   : "Select integration to change repo…"
-              } />
+              }>
+                {connectedGit.find((g) => g.id === form.gitIntegrationId)?.name}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {connectedGit.map((g) => (
@@ -419,45 +422,57 @@ function BuildSourceSection({ projectId, serviceId }: { projectId: string; servi
 
         <div className="grid grid-cols-2 gap-4">
           <Field label={reposFetching ? "Repository (loading…)" : "Repository"}>
-            {form.gitIntegrationId ? (
-              <Select
-                value={form.gitRepo}
-                onValueChange={(v) => setForm((f) => ({ ...f, gitRepo: v ?? "" }))}
-                disabled={reposFetching}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue placeholder={reposFetching ? "Loading…" : "Select repo…"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {repoList.map((r) => (
-                    <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <input value={form.gitRepo} onChange={(e) => setForm((f) => ({ ...f, gitRepo: e.target.value }))} className={inputCls} />
-            )}
+            <Select
+              value={form.gitRepo}
+              onValueChange={(v) => {
+                const repo = repoList.find((r) => r.full_name === v)
+                setForm((f) => ({ ...f, gitRepo: v ?? "", branch: repo?.default_branch ?? f.branch }))
+              }}
+              disabled={!form.gitIntegrationId || reposFetching}
+            >
+              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                <SelectValue placeholder={
+                  !form.gitIntegrationId ? "Select an integration to change…" :
+                  reposFetching ? "Loading…" :
+                  repoList.length === 0 ? "No accessible repositories" :
+                  "Select a repository…"
+                } />
+              </SelectTrigger>
+              <SelectContent>
+                {/* Ensure current value always renders in trigger even when list hasn't loaded */}
+                {form.gitRepo && !repoList.find((r) => r.full_name === form.gitRepo) && (
+                  <SelectItem value={form.gitRepo}>{form.gitRepo}</SelectItem>
+                )}
+                {repoList.map((r) => (
+                  <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label={branchesFetching ? "Branch (loading…)" : "Branch"}>
-            {form.gitIntegrationId && form.gitRepo ? (
-              <Select
-                value={form.branch}
-                onValueChange={(v) => setForm((f) => ({ ...f, branch: v ?? "main" }))}
-                disabled={branchesFetching}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue placeholder={branchesFetching ? "Loading…" : "Select branch…"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {branchList.map((b) => (
-                    <SelectItem key={b} value={b}>{b}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <input value={form.branch} onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))} className={inputCls} />
-            )}
+            <Select
+              value={form.branch}
+              onValueChange={(v) => setForm((f) => ({ ...f, branch: v ?? "main" }))}
+              disabled={!form.gitIntegrationId || !form.gitRepo || branchesFetching}
+            >
+              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                <SelectValue placeholder={
+                  !form.gitRepo ? "Select a repo first" :
+                  branchesFetching ? "Loading…" :
+                  "Select a branch…"
+                } />
+              </SelectTrigger>
+              <SelectContent>
+                {/* Ensure current value always renders in trigger even when list hasn't loaded */}
+                {form.branch && !branchList.find((b) => b === form.branch) && (
+                  <SelectItem value={form.branch}>{form.branch}</SelectItem>
+                )}
+                {branchList.map((b) => (
+                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
         </div>
 

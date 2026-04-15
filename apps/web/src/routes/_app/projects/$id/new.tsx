@@ -28,6 +28,7 @@ import {
   registries as registryApi,
   toNode,
   type CreateServiceBody,
+  type ApiNode,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -54,6 +55,9 @@ interface FormState {
   builder: Builder
   registryIntegrationId: string
   nodeId: string | null
+  builderNodeName: string | null  // k8s_node_name; null = auto-schedule
+  builderCPURequest: string
+  builderMemoryRequest: string
   replicas: number
   cpuRequest: string
   cpuLimit: string
@@ -72,6 +76,9 @@ const INITIAL: FormState = {
   builder: "nixpacks",
   registryIntegrationId: "",
   nodeId: null,
+  builderNodeName: null,
+  builderCPURequest: "1000m",
+  builderMemoryRequest: "1Gi",
   replicas: 1,
   cpuRequest: "100m",
   cpuLimit: "500m",
@@ -128,10 +135,14 @@ function NewResourcePage() {
       if (form.source === "image") {
         body.image = form.image
       } else {
-        body.git_repo                = form.gitRepo
-        body.branch                  = form.gitBranch
-        body.builder                 = form.builder
-        body.registry_integration_id = form.registryIntegrationId || undefined
+        body.git_integration_id       = form.gitIntegrationId || undefined
+        body.git_repo                 = form.gitRepo
+        body.branch                   = form.gitBranch
+        body.builder                  = form.builder
+        body.registry_integration_id  = form.registryIntegrationId || undefined
+        body.builder_node             = form.builderNodeName ?? ""
+        body.builder_cpu_request      = form.builderCPURequest || undefined
+        body.builder_memory_request   = form.builderMemoryRequest || undefined
       }
       return servicesApi.create(orgId!, projectId, body, token)
     },
@@ -270,15 +281,18 @@ function ServiceForm({
     enabled: !!orgId,
   })
 
-  const { data: allNodes = [] } = useQuery({
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
-    select: (raw) => raw.map(toNode),
   })
 
-  const workerNodes = allNodes.filter(
-    (n) => n.k8sMember && n.status === "online" && n.k3sRole === "agent"
+  const workerNodes = rawNodes
+    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
+    .map(toNode)
+
+  const builderNodes = rawNodes.filter(
+    (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
   )
 
   return (
@@ -339,7 +353,9 @@ function ServiceForm({
                         ? "No connected integrations — add one in Integrations"
                         : "Select a git integration…"
                     }
-                  />
+                  >
+                    {connectedGit.find((g) => g.id === form.gitIntegrationId)?.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {connectedGit.map((g) => (
@@ -438,7 +454,9 @@ function ServiceForm({
                         ? "No registries — add one in Integrations"
                         : "Select a registry to push the built image…"
                     }
-                  />
+                  >
+                    {registryList.find((r) => r.id === form.registryIntegrationId)?.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {registryList.map((r) => (
@@ -452,6 +470,53 @@ function ServiceForm({
           </div>
         )}
       </Section>
+
+      {/* ── Section: Build ───────────────────────────────────── */}
+      {form.source === "git" && (
+        <Section title="Build" subtitle="Configure where and how the build job runs">
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <Server className="h-3.5 w-3.5" /> Builder node
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <NodeCard
+                label="Auto-schedule"
+                sub="Any builder node"
+                selected={form.builderNodeName === null}
+                onClick={() => patch({ builderNodeName: null })}
+              />
+              {builderNodes.map((node) => (
+                <NodeCard
+                  key={node.k8s_node_name}
+                  label={node.name}
+                  sub={node.tailscale_ip}
+                  selected={form.builderNodeName === node.k8s_node_name}
+                  onClick={() => patch({ builderNodeName: node.k8s_node_name })}
+                  online
+                />
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Builder CPU request">
+              <input
+                value={form.builderCPURequest}
+                onChange={(e) => patch({ builderCPURequest: e.target.value })}
+                placeholder="1000m"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Builder memory request">
+              <input
+                value={form.builderMemoryRequest}
+                onChange={(e) => patch({ builderMemoryRequest: e.target.value })}
+                placeholder="1Gi"
+                className={inputCls}
+              />
+            </Field>
+          </div>
+        </Section>
+      )}
 
       {/* ── Section: Deployment ──────────────────────────────── */}
       <Section title="Deployment" subtitle="Choose where this service runs and how many replicas to start">

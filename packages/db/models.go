@@ -307,8 +307,9 @@ type BuildConfig struct {
 	Builder   BuilderType `gorm:"type:varchar(15);not null"      json:"builder"`
 
 	// Git source
-	GitRepo  string `json:"git_repo"`
-	Branch   string `gorm:"default:'main'"        json:"branch"`
+	GitIntegrationID *uuid.UUID `gorm:"type:uuid"              json:"git_integration_id"`
+	GitRepo           string    `json:"git_repo"`
+	Branch            string    `gorm:"default:'main'"         json:"branch"`
 	RootDir  string `gorm:"default:'.'"`           // root of the app within the repo
 	// Dockerfile builder
 	DockerfilePath string     `gorm:"default:'Dockerfile'" json:"dockerfile_path"`

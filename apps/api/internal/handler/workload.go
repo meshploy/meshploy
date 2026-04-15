@@ -43,13 +43,16 @@ type CreateWorkloadInput struct {
 		MemoryLimit   string  `json:"memory_limit,omitempty"`
 		// Optional build config — a BuildConfig row is created alongside the
 		// Service when git_repo is provided.
+		GitIntegrationID      *string `json:"git_integration_id,omitempty"`
 		GitRepo               string  `json:"git_repo,omitempty"`
 		Branch                string  `json:"branch,omitempty"`
 		Builder               string  `json:"builder,omitempty"`
 		DockerfilePath        string  `json:"dockerfile_path,omitempty"`
 		RegistryIntegrationID *string `json:"registry_integration_id,omitempty"`
 		// BuilderNode is the k8s_node_name to pin builds to ("" = auto-schedule).
-		BuilderNode string `json:"builder_node,omitempty"`
+		BuilderNode          string `json:"builder_node,omitempty"`
+		BuilderCPURequest    string `json:"builder_cpu_request,omitempty"`
+		BuilderMemoryRequest string `json:"builder_memory_request,omitempty"`
 	}
 }
 
@@ -188,6 +191,14 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		}
 		registryID = &id
 	}
+	var gitIntegrationID *uuid.UUID
+	if input.Body.GitIntegrationID != nil {
+		id, err := parseUUID(*input.Body.GitIntegrationID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid git_integration_id")
+		}
+		gitIntegrationID = &id
+	}
 
 	service, err := h.svc.Workloads.Create(ctx, projectID, svc.CreateWorkloadInput{
 		Name:                  input.Body.Name,
@@ -199,12 +210,15 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		CPULimit:              input.Body.CPULimit,
 		MemoryRequest:         input.Body.MemoryRequest,
 		MemoryLimit:           input.Body.MemoryLimit,
+		GitIntegrationID:      gitIntegrationID,
 		GitRepo:               input.Body.GitRepo,
 		Branch:                input.Body.Branch,
 		Builder:               db.BuilderType(input.Body.Builder),
 		DockerfilePath:        input.Body.DockerfilePath,
 		RegistryIntegrationID: registryID,
 		BuilderNode:           input.Body.BuilderNode,
+		BuilderCPURequest:     input.Body.BuilderCPURequest,
+		BuilderMemoryRequest:  input.Body.BuilderMemoryRequest,
 	})
 	if err != nil {
 		return nil, err
@@ -347,6 +361,7 @@ type PatchBuildConfigInput struct {
 	ProjectID string `path:"projectId"`
 	ServiceID string `path:"serviceId"`
 	Body      struct {
+		GitIntegrationID      *string `json:"git_integration_id"`
 		GitRepo               *string `json:"git_repo"`
 		Branch                *string `json:"branch"`
 		Builder               *string `json:"builder"`
@@ -380,6 +395,13 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		BuilderNode:          input.Body.BuilderNode,
 		BuilderCPURequest:    input.Body.BuilderCPURequest,
 		BuilderMemoryRequest: input.Body.BuilderMemoryRequest,
+	}
+	if input.Body.GitIntegrationID != nil {
+		id, err := parseUUID(*input.Body.GitIntegrationID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid git_integration_id")
+		}
+		in.GitIntegrationID = &id
 	}
 	if input.Body.Builder != nil {
 		bt := db.BuilderType(*input.Body.Builder)
