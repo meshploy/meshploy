@@ -352,6 +352,7 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	zero := int64(0)
 	var stream io.ReadCloser
 	streamDeadline := time.Now().Add(3 * time.Minute)
+	attempt := 0
 	for {
 		req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 			Follow:    true,
@@ -374,6 +375,10 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 			}
 			sendDone()
 			return nil
+		}
+		attempt++
+		if attempt%5 == 0 {
+			sendLine(fmt.Sprintf("Waiting for container to start (attempt %d)…", attempt))
 		}
 		select {
 		case <-ctx.Done():
