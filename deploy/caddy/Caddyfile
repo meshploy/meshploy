@@ -32,7 +32,12 @@ app.{$DOMAIN} {
         }
     }
     handle /api/* {
-        reverse_proxy localhost:4000
+        reverse_proxy localhost:4000 {
+            # flush_interval -1 disables response buffering so SSE log streams
+            # are forwarded to the client immediately instead of being held
+            # until the connection closes.
+            flush_interval -1
+        }
     }
     handle {
         reverse_proxy localhost:5173
