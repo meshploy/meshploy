@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Rocket, ScrollText } from "lucide-react"
+import { Loader2, Rocket, ScrollText, Trash2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
@@ -145,6 +145,21 @@ function DeploymentRow({
   projectId: string
   serviceId: string
 }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const queryClient = useQueryClient()
+  const isActive = ACTIVE_STATUSES.has(deployment.status)
+
+  const cancelMutation = useMutation({
+    mutationFn: () => deploymentsApi.cancel(orgId, projectId, serviceId, deployment.id, token),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deploymentsApi.deleteRecord(orgId, projectId, serviceId, deployment.id, token),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] }),
+  })
+
   return (
     <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
       {/* Status dot */}
@@ -167,8 +182,8 @@ function DeploymentRow({
         )}
       </div>
 
-      {/* Time + view logs */}
-      <div className="flex items-center gap-3 shrink-0">
+      {/* Time + actions */}
+      <div className="flex items-center gap-2 shrink-0">
         <span className="text-xs text-muted-foreground">
           {formatRelativeTime(new Date(deployment.created_at))}
         </span>
@@ -178,8 +193,33 @@ function DeploymentRow({
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ScrollText className="h-3 w-3" />
-          View logs
+          Logs
         </Link>
+        {isActive ? (
+          <button
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+            title="Cancel deployment"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+          >
+            {cancelMutation.isPending
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <X className="h-3 w-3" />
+            }
+          </button>
+        ) : (
+          <button
+            onClick={() => deleteMutation.mutate()}
+            disabled={deleteMutation.isPending}
+            title="Delete record"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+          >
+            {deleteMutation.isPending
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <Trash2 className="h-3 w-3" />
+            }
+          </button>
+        )}
       </div>
     </div>
   )

@@ -35,9 +35,21 @@ if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
     while IFS= read -r line; do
         # Skip blank lines and comments
         [[ -z "$line" || "$line" == \#* ]] && continue
-        NIXPACKS_ENV_FLAGS+=(--env "$line")
-        RAILPACK_EXPORTS+="export $(printf '%q' "$line"); "
-        DOCKERFILE_BUILD_ARG_FLAGS+=(--build-arg "$line")
+        key="${line%%=*}"
+        value="${line#*=}"
+        # Strip one layer of surrounding single or double quotes from the value.
+        # Users often write KEY="value with spaces" — the quotes are shell syntax
+        # and should not be part of the actual value passed to the build tool.
+        if [[ ${#value} -ge 2 ]]; then
+            first="${value:0:1}" last="${value: -1}"
+            if [[ "$first" == '"' && "$last" == '"' ]] || \
+               [[ "$first" == "'" && "$last" == "'" ]]; then
+                value="${value:1:${#value}-2}"
+            fi
+        fi
+        NIXPACKS_ENV_FLAGS+=(--env "${key}=${value}")
+        RAILPACK_EXPORTS+="export $(printf '%q=%q' "${key}" "${value}"); "
+        DOCKERFILE_BUILD_ARG_FLAGS+=(--build-arg "${key}=${value}")
     done <<< "${BUILD_ENV_VARS}"
 fi
 
