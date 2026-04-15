@@ -136,6 +136,15 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetServiceBuildEnvVars)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "put-service-build-env-vars",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/env-vars",
+		Summary:     "Set build-time environment variables for a service",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.PutServiceBuildEnvVars)
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
@@ -340,7 +349,6 @@ type PatchBuildConfigInput struct {
 		Builder               *string `json:"builder"`
 		DockerfilePath        *string `json:"dockerfile_path"`
 		RegistryIntegrationID *string `json:"registry_integration_id"` // "" = clear
-		BuildEnvVars          *string `json:"build_env_vars"`           // nil = no change; "" = clear
 	}
 }
 
@@ -363,7 +371,6 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		GitRepo:        input.Body.GitRepo,
 		Branch:         input.Body.Branch,
 		DockerfilePath: input.Body.DockerfilePath,
-		BuildEnvVars:   input.Body.BuildEnvVars,
 	}
 	if input.Body.Builder != nil {
 		bt := db.BuilderType(*input.Body.Builder)
@@ -402,5 +409,33 @@ func (h *Handler) GetServiceBuildEnvVars(ctx context.Context, input *WorkloadPat
 	}
 	out := &GetBuildEnvVarsOutput{}
 	out.Body.BuildEnvVars = val
+	return out, nil
+}
+
+type PutBuildEnvVarsInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	ServiceID string `path:"serviceId"`
+	Body      struct {
+		BuildEnvVars string `json:"build_env_vars"`
+	}
+}
+
+func (h *Handler) PutServiceBuildEnvVars(ctx context.Context, input *PutBuildEnvVarsInput) (*GetBuildEnvVarsOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	_, err = h.svc.Workloads.UpsertBuildConfig(ctx, serviceID, svc.UpdateBuildConfigInput{
+		BuildEnvVars: &input.Body.BuildEnvVars,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := &GetBuildEnvVarsOutput{}
+	out.Body.BuildEnvVars = input.Body.BuildEnvVars
 	return out, nil
 }

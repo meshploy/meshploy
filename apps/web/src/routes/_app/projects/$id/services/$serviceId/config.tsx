@@ -17,7 +17,6 @@ import {
   gitIntegrations as gitApi,
   nodes as nodesApi,
   toNode,
-  type UpdateBuildConfigBody,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -246,7 +245,7 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
 
   const mutation = useMutation({
     mutationFn: () =>
-      buildConfigsApi.update(orgId, projectId, serviceId, { build_env_vars: envVars } as UpdateBuildConfigBody, token),
+      buildConfigsApi.putBuildEnvVars(orgId, projectId, serviceId, envVars, token),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["build-env-vars", orgId, projectId, serviceId] })
     },
