@@ -17,6 +17,7 @@ import {
   gitIntegrations as gitApi,
   nodes as nodesApi,
   toNode,
+  type UpdateBuildConfigBody,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -224,6 +225,69 @@ function ResourcesSection({ projectId, serviceId }: { projectId: string; service
   )
 }
 
+// ─── Build env vars section ───────────────────────────────────────────────────
+
+function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const queryClient = useQueryClient()
+  const [envVars, setEnvVars] = useState("")
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["build-env-vars", orgId, projectId, serviceId],
+    queryFn: () => buildConfigsApi.getBuildEnvVars(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+    retry: false,
+  })
+
+  useEffect(() => {
+    if (data !== undefined) setEnvVars(data.build_env_vars)
+  }, [data])
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      buildConfigsApi.update(orgId, projectId, serviceId, { build_env_vars: envVars } as UpdateBuildConfigBody, token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["build-env-vars", orgId, projectId, serviceId] })
+    },
+  })
+
+  if (isError) return null // no build config yet
+
+  return (
+    <Section
+      title="Build environment variables"
+      subtitle="Injected at build time only — not available at runtime. One KEY=VALUE per line. For nixpacks: passed as --env flags (e.g. NIXPACKS_INSTALL_CMD=npm install). For dockerfile: passed as --build-arg."
+    >
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground py-4">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span className="text-xs">Loading…</span>
+        </div>
+      ) : (
+        <Textarea
+          value={envVars}
+          onChange={(e) => setEnvVars(e.target.value)}
+          placeholder={"NIXPACKS_INSTALL_CMD=npm install\nNODE_ENV=production"}
+          className="font-mono text-xs min-h-[120px] resize-y bg-muted/20 border-border/60"
+        />
+      )}
+      {mutation.isError && (
+        <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
+      )}
+      {mutation.isSuccess && (
+        <p className="text-xs text-emerald-400">Saved.</p>
+      )}
+      <div className="flex justify-end">
+        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending || isLoading}>
+          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Save
+        </Button>
+      </div>
+    </Section>
+  )
+}
+
 // ─── Build source section ─────────────────────────────────────────────────────
 
 function BuildSourceSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
@@ -423,6 +487,7 @@ function ConfigTab() {
   return (
     <div className="p-6 max-w-2xl space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
+      <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <ResourcesSection projectId={projectId} serviceId={serviceId} />
       <BuildSourceSection projectId={projectId} serviceId={serviceId} />
     </div>

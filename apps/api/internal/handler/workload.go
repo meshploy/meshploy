@@ -127,6 +127,15 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.UpsertServiceBuildConfig)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-service-build-env-vars",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/env-vars",
+		Summary:     "Get build-time environment variables for a service",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetServiceBuildEnvVars)
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
@@ -331,6 +340,13 @@ type PatchBuildConfigInput struct {
 		Builder               *string `json:"builder"`
 		DockerfilePath        *string `json:"dockerfile_path"`
 		RegistryIntegrationID *string `json:"registry_integration_id"` // "" = clear
+		BuildEnvVars          *string `json:"build_env_vars"`           // nil = no change; "" = clear
+	}
+}
+
+type GetBuildEnvVarsOutput struct {
+	Body struct {
+		BuildEnvVars string `json:"build_env_vars"`
 	}
 }
 
@@ -347,6 +363,7 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		GitRepo:        input.Body.GitRepo,
 		Branch:         input.Body.Branch,
 		DockerfilePath: input.Body.DockerfilePath,
+		BuildEnvVars:   input.Body.BuildEnvVars,
 	}
 	if input.Body.Builder != nil {
 		bt := db.BuilderType(*input.Body.Builder)
@@ -369,4 +386,21 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		return nil, err
 	}
 	return &GetBuildConfigOutput{Body: bc}, nil
+}
+
+func (h *Handler) GetServiceBuildEnvVars(ctx context.Context, input *WorkloadPathInput) (*GetBuildEnvVarsOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	val, err := h.svc.Workloads.GetBuildEnvVars(ctx, serviceID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	out := &GetBuildEnvVarsOutput{}
+	out.Body.BuildEnvVars = val
+	return out, nil
 }

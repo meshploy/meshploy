@@ -169,13 +169,23 @@ func (s *WorkloadService) GetBuildConfig(ctx context.Context, serviceID uuid.UUI
 	return &bc, nil
 }
 
+// GetBuildEnvVars returns the decrypted build-time env vars for a service.
+func (s *WorkloadService) GetBuildEnvVars(ctx context.Context, serviceID uuid.UUID) (string, error) {
+	bc, err := s.GetBuildConfig(ctx, serviceID)
+	if err != nil {
+		return "", err
+	}
+	return string(bc.BuildEnvVars), nil
+}
+
 type UpdateBuildConfigInput struct {
 	GitRepo               *string
 	Branch                *string
 	Builder               *db.BuilderType
 	DockerfilePath        *string
 	RegistryIntegrationID *uuid.UUID
-	ClearRegistry         bool // when true, set registry_integration_id to NULL
+	ClearRegistry         bool    // when true, set registry_integration_id to NULL
+	BuildEnvVars          *string // nil = no change; "" = clear
 }
 
 // UpsertBuildConfig creates or updates the BuildConfig for a service.
@@ -209,6 +219,9 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 		bc.RegistryIntegrationID = nil
 	} else if in.RegistryIntegrationID != nil {
 		bc.RegistryIntegrationID = in.RegistryIntegrationID
+	}
+	if in.BuildEnvVars != nil {
+		bc.BuildEnvVars = db.EncryptedString(*in.BuildEnvVars)
 	}
 	if isNew {
 		err = s.db.WithContext(ctx).Create(&bc).Error

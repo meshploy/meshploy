@@ -451,6 +451,7 @@ export interface UpdateBuildConfigBody {
   builder?: "nixpacks" | "railpack" | "dockerfile"
   dockerfile_path?: string
   registry_integration_id?: string  // "" = clear
+  build_env_vars?: string           // nil = no change; "" = clear
 }
 
 export const buildConfigs = {
@@ -465,6 +466,13 @@ export const buildConfigs = {
     apiFetch<ApiBuildConfig>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/build-config`,
       { method: "PATCH", body: JSON.stringify(body) },
+      token
+    ),
+
+  getBuildEnvVars: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<{ build_env_vars: string }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/build-config/env-vars`,
+      {},
       token
     ),
 }

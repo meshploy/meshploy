@@ -314,6 +314,11 @@ type BuildConfig struct {
 	DockerfilePath string     `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
 	BuildArgs      EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"build_args"`
 
+	// Build-time environment variables — KEY=VALUE, one per line.
+	// Passed to nixpacks (--env), railpack (export), or dockerfile (--build-arg).
+	// Encrypted at rest; accessed via GET .../build-config/env-vars.
+	BuildEnvVars EncryptedString `gorm:"type:text" json:"-"`
+
 	// Registry to push the built image to.
 	// nil = use the internal mesh registry (default, zero-config CE experience).
 	RegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"registry_integration_id"`
