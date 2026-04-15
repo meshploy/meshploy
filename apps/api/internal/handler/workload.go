@@ -259,16 +259,16 @@ type PatchWorkloadInput struct {
 	ProjectID string `path:"projectId"`
 	ServiceID string `path:"serviceId"`
 	Body      struct {
-		Name          *string `json:"name"`
-		Image         *string `json:"image"`
+		Name          *string `json:"name,omitempty"`
+		Image         *string `json:"image,omitempty"`
 		// node_id: omit = no change, "" = auto-schedule, UUID = pin to node
-		NodeID        *string `json:"node_id"`
-		Replicas      *int    `json:"replicas"`
-		CPURequest    *string `json:"cpu_request"`
-		CPULimit      *string `json:"cpu_limit"`
-		MemoryRequest *string `json:"memory_request"`
-		MemoryLimit   *string `json:"memory_limit"`
-		EnvVars       *string `json:"env_vars"`
+		NodeID        *string `json:"node_id,omitempty"`
+		Replicas      *int    `json:"replicas,omitempty"`
+		CPURequest    *string `json:"cpu_request,omitempty"`
+		CPULimit      *string `json:"cpu_limit,omitempty"`
+		MemoryRequest *string `json:"memory_request,omitempty"`
+		MemoryLimit   *string `json:"memory_limit,omitempty"`
+		EnvVars       *string `json:"env_vars,omitempty"`
 	}
 }
 
