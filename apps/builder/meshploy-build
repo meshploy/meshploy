@@ -83,6 +83,10 @@ if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────
+# --cache-from requires a bare repository reference (no tag/digest).
+# Strip the tag from IMAGE_DEST: "registry/repo:tag" → "registry/repo"
+CACHE_FROM_REPO="${IMAGE_DEST%:*}"
+
 case "${BUILDER}" in
   nixpacks)
     log "Building with Nixpacks → ${IMAGE_DEST}"
@@ -97,7 +101,7 @@ case "${BUILDER}" in
     # only layers from a real successful push are considered.
     buildah build \
         --layers \
-        --cache-from "${IMAGE_DEST}" \
+        --cache-from "${CACHE_FROM_REPO}" \
         --file "${WORKDIR}/.nixpacks/Dockerfile" \
         --tag "${IMAGE_DEST}" \
         "${WORKDIR}"
@@ -112,7 +116,7 @@ case "${BUILDER}" in
     railpack build . --generate-dockerfile --output /tmp/railpack-out
     buildah build \
         --layers \
-        --cache-from "${IMAGE_DEST}" \
+        --cache-from "${CACHE_FROM_REPO}" \
         --file /tmp/railpack-out/Dockerfile \
         --tag "${IMAGE_DEST}" \
         /tmp/railpack-out
@@ -124,7 +128,7 @@ case "${BUILDER}" in
     [[ -f "${DOCKERFILE}" ]] || die "Dockerfile not found at ${DOCKERFILE}"
     buildah build \
         --layers \
-        --cache-from "${IMAGE_DEST}" \
+        --cache-from "${CACHE_FROM_REPO}" \
         --file "${DOCKERFILE}" \
         --tag "${IMAGE_DEST}" \
         "${DOCKERFILE_BUILD_ARG_FLAGS[@]+"${DOCKERFILE_BUILD_ARG_FLAGS[@]}"}" \
