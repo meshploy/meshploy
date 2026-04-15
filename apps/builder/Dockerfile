@@ -19,7 +19,8 @@ RUN apk add --no-cache \
     netavark \
     aardvark-dns \
     fuse-overlayfs \
-    passt
+    passt \
+    mise
 
 # ── Nixpacks ───────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://nixpacks.com/install.sh | bash && \
