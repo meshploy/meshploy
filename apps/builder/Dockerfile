@@ -20,7 +20,10 @@ RUN apk add --no-cache \
     aardvark-dns \
     fuse-overlayfs \
     passt \
-    mise
+    mise \
+    gcompat && \
+    mkdir -p /lib64 && \
+    ln -sf /lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
 
 # ── Nixpacks ───────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://nixpacks.com/install.sh | bash && \
