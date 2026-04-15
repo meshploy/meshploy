@@ -1,0 +1,80 @@
+import { cn } from "@/lib/utils"
+
+export const inputCls =
+  "w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
+
+export function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="border-b border-border/40 pb-2">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        {subtitle && (
+          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+        )}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+export function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string
+  required?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-muted-foreground">
+        {label}
+        {required && <span className="text-destructive ml-0.5">*</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+export function NodeCard({
+  label,
+  sub,
+  selected,
+  onClick,
+  online,
+}: {
+  label: string
+  sub: string
+  selected: boolean
+  onClick: () => void
+  online?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-col gap-0.5 rounded-lg border-2 px-3 py-2.5 text-left transition-all min-w-[120px]",
+        selected
+          ? "border-primary bg-primary/5"
+          : "border-border/60 bg-card hover:border-border hover:bg-muted/20"
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        {online && (
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+        )}
+        <span className="text-xs font-medium text-foreground truncate">{label}</span>
+      </div>
+      <span className="text-[11px] text-muted-foreground font-mono truncate">{sub}</span>
+    </button>
+  )
+}

@@ -6,15 +6,13 @@ import { Button } from "@/components/ui/button"
 import { services as servicesApi, projects as projectsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { inputCls } from "@/components/services/form-primitives"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/settings"
 )({
   component: SettingsTab,
 })
-
-const inputCls =
-  "w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
 
 function SettingsTab() {
   const { id: projectId, serviceId } = useParams({
