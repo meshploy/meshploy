@@ -120,12 +120,30 @@ case "${BUILDER}" in
 
   railpack)
     log "Building with Railpack → ${IMAGE_DEST}"
-    # railpack 0.23+ builds directly via BuildKit — no Dockerfile is generated.
-    # --name tags the resulting image; --progress plain gives streaming log output.
+    # Railpack requires a BuildKit daemon. Start rootless buildkitd, wait for
+    # the socket, then run railpack. --oci-worker-no-process-sandbox is required
+    # in containers where full kernel namespace sandboxing is unavailable.
+    BUILDKIT_SOCK="/tmp/buildkitd.sock"
+    buildkitd \
+        --addr "unix://${BUILDKIT_SOCK}" \
+        --root "/tmp/buildkit-root" \
+        --oci-worker-no-process-sandbox \
+        2>/tmp/buildkitd.log &
+    BUILDKITD_PID=$!
+    export BUILDKIT_HOST="unix://${BUILDKIT_SOCK}"
+    log "Waiting for buildkitd…"
+    for i in $(seq 1 30); do
+        [ -S "${BUILDKIT_SOCK}" ] && break
+        sleep 1
+    done
+    [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed to start"; }
+
     railpack build . \
         --name "${IMAGE_DEST}" \
         --progress plain \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}"
+
+    kill "${BUILDKITD_PID}" 2>/dev/null || true
     ;;
 
   dockerfile)
