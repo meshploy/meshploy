@@ -133,10 +133,10 @@ case "${BUILDER}" in
     export BUILDKIT_HOST="unix://${BUILDKIT_SOCK}"
     log "Waiting for buildkitd…"
     for i in $(seq 1 30); do
-        [ -S "${BUILDKIT_SOCK}" ] && break
+        buildctl --addr "unix://${BUILDKIT_SOCK}" debug workers >/dev/null 2>&1 && break
         sleep 1
     done
-    [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed to start"; }
+    buildctl --addr "unix://${BUILDKIT_SOCK}" debug workers >/dev/null 2>&1 || { cat /tmp/buildkitd.log; die "buildkitd failed to start"; }
 
     railpack build . \
         --name "${IMAGE_DEST}" \
