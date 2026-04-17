@@ -127,7 +127,6 @@ case "${BUILDER}" in
     buildkitd \
         --addr "unix://${BUILDKIT_SOCK}" \
         --root "/tmp/buildkit-root" \
-        --oci-worker-no-process-sandbox \
         2>/tmp/buildkitd.log &
     BUILDKITD_PID=$!
     export BUILDKIT_HOST="unix://${BUILDKIT_SOCK}"
