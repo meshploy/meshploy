@@ -34,6 +34,19 @@ RUN curl -fsSL https://nixpacks.com/install.sh | bash && \
 RUN curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/install.sh | bash && \
     railpack --version
 
+# ── Pre-seed railpack's mise cache with the musl binary ───────────────────────
+# Railpack downloads a versioned mise binary to /tmp/railpack/mise/mise-<ver>
+# at runtime and validates it before use. On Alpine (musl), it downloads the
+# glibc build which fails. We pre-download the musl build to the same path so
+# railpack finds it already there and skips the download.
+# Update MISE_VERSION when upgrading railpack if the version in the error changes.
+RUN MISE_VERSION="2026.3.17" && \
+    mkdir -p /tmp/railpack/mise && \
+    curl -fsSL \
+      "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-x64-musl" \
+      -o "/tmp/railpack/mise/mise-${MISE_VERSION}" && \
+    chmod +x "/tmp/railpack/mise/mise-${MISE_VERSION}"
+
 # ── Buildah rootless setup ────────────────────────────────────────────────────
 RUN adduser -D builder && \
     echo "builder:100000:65536" >> /etc/subuid && \
