@@ -34,6 +34,15 @@ RUN curl -fsSL https://nixpacks.com/install.sh | bash && \
 RUN curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/install.sh | bash && \
     railpack --version
 
+# ── Buildah rootless setup ────────────────────────────────────────────────────
+RUN adduser -D builder && \
+    echo "builder:100000:65536" >> /etc/subuid && \
+    echo "builder:100000:65536" >> /etc/subgid && \
+    mkdir -p /home/builder/.config/containers && \
+    printf '[storage]\ndriver = "overlay"\n[storage.options]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
+    > /home/builder/.config/containers/storage.conf && \
+    chown -R builder:builder /home/builder/.config
+
 # ── Pre-seed railpack's mise cache with the musl binary ───────────────────────
 # Railpack downloads a versioned mise binary to /tmp/railpack/mise/mise-<ver>
 # at runtime and validates it before use. On Alpine (musl), it downloads the
@@ -45,16 +54,8 @@ RUN MISE_VERSION="2026.3.17" && \
     curl -fsSL \
       "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-x64-musl" \
       -o "/tmp/railpack/mise/mise-${MISE_VERSION}" && \
-    chmod +x "/tmp/railpack/mise/mise-${MISE_VERSION}"
-
-# ── Buildah rootless setup ────────────────────────────────────────────────────
-RUN adduser -D builder && \
-    echo "builder:100000:65536" >> /etc/subuid && \
-    echo "builder:100000:65536" >> /etc/subgid && \
-    mkdir -p /home/builder/.config/containers && \
-    printf '[storage]\ndriver = "overlay"\n[storage.options]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
-    > /home/builder/.config/containers/storage.conf && \
-    chown -R builder:builder /home/builder/.config
+    chmod +x "/tmp/railpack/mise/mise-${MISE_VERSION}" && \
+    chown -R builder:builder /tmp/railpack
 
 # ── Build script ──────────────────────────────────────────────────────────────
 COPY meshploy-build /usr/local/bin/meshploy-build
