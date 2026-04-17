@@ -661,14 +661,16 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     fi
   fi
 
-  # --force-reauth is always needed when specifying --authkey; it re-authenticates
-  # silently (no browser) and is safe to pass unconditionally.
+  # --force-reauth re-authenticates silently with the authkey (no browser).
+  # --reset clears any pre-existing non-default settings (e.g. exit-node,
+  # shields-up) that would cause tailscale to reject the up command.
   sudo tailscale up \
     --login-server="$HEADSCALE_URL" \
     --authkey="$PREAUTH_KEY" \
     --hostname="$NODE_HOSTNAME" \
     --accept-routes \
     --force-reauth \
+    --reset \
     || die "tailscale up failed — check: sudo tailscale status"
 
   # Wait up to 15 s for the WireGuard IP to be assigned.
