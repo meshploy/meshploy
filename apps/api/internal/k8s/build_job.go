@@ -132,7 +132,12 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 					// in parallel and picks the first response — without this,
 					// github.com.mesh.<domain> matches the wildcard zone and
 					// returns the gateway IP instead of the real GitHub IP.
+					// dnsPolicy None + explicit nameservers: bypass CoreDNS entirely.
+					// Build pods only need external DNS (github.com for clone) and
+					// the registry is accessed by IP (100.64.x.x), not hostname.
+					DNSPolicy: corev1.DNSNone,
 					DNSConfig: &corev1.PodDNSConfig{
+						Nameservers: []string{"1.1.1.1", "8.8.8.8"},
 						Options: []corev1.PodDNSConfigOption{
 							{Name: "ndots", Value: func() *string { s := "1"; return &s }()},
 						},
