@@ -73,53 +73,77 @@ function DeploymentLogsPage() {
     const url = `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}/logs/stream`
 
     ;(async () => {
-      try {
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-        })
-        if (!res.ok || !res.body) {
-          setLogLines(["Error: failed to connect to log stream"])
-          setStreaming(false)
-          return
-        }
+      // Reconnect on network drops — long builds can outlive proxy timeouts.
+      // The server replays all existing log from the start on reconnect so we
+      // clear and re-render rather than appending duplicates.
+      const MAX_RETRIES = 50
+      let attempt = 0
 
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buf = ""
+      while (attempt <= MAX_RETRIES) {
+        if (controller.signal.aborted) break
+        try {
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          })
+          if (!res.ok || !res.body) {
+            setLogLines(["Error: failed to connect to log stream"])
+            setStreaming(false)
+            return
+          }
 
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) break
-          buf += decoder.decode(value, { stream: true })
+          // Reset log on each reconnect — server replays full history
+          setLogLines([])
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buf = ""
+          let completed = false
 
-          // Parse SSE events from the buffer
-          const events = buf.split("\n\n")
-          buf = events.pop() ?? ""
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value, { stream: true })
 
-          for (const event of events) {
-            const lines = event.split("\n")
-            const eventLine = lines.find((l) => l.startsWith("event:"))
-            const dataLine = lines.find((l) => l.startsWith("data:"))
+            const events = buf.split("\n\n")
+            buf = events.pop() ?? ""
 
-            if (eventLine?.includes("done")) {
-              setStreamDone(true)
-              setStreaming(false)
-              return
-            }
-            if (dataLine) {
-              const text = dataLine.slice("data:".length).trimStart()
-              setLogLines((prev) => [...prev, text])
+            for (const event of events) {
+              const lines = event.split("\n")
+              const eventLine = lines.find((l) => l.startsWith("event:"))
+              const dataLine = lines.find((l) => l.startsWith("data:"))
+
+              if (eventLine?.includes("done")) {
+                setStreamDone(true)
+                setStreaming(false)
+                completed = true
+                return
+              }
+              if (dataLine) {
+                const text = dataLine.slice("data:".length).trimStart()
+                setLogLines((prev) => [...prev, text])
+              }
             }
           }
+
+          // Stream ended cleanly without a done event — treat as complete
+          if (!completed) {
+            setStreamDone(true)
+            setStreaming(false)
+          }
+          return
+        } catch (err: unknown) {
+          if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) return
+          attempt++
+          if (attempt > MAX_RETRIES) {
+            setLogLines((prev) => [...prev, `Stream error: ${(err as Error).message} (gave up after ${MAX_RETRIES} retries)`])
+            break
+          }
+          const delay = Math.min(1000 * attempt, 8000)
+          setLogLines((prev) => [...prev, `--- stream disconnected, reconnecting in ${delay / 1000}s (attempt ${attempt}/${MAX_RETRIES}) ---`])
+          await new Promise((r) => setTimeout(r, delay))
         }
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name !== "AbortError") {
-          setLogLines((prev) => [...prev, `Stream error: ${err.message}`])
-        }
-      } finally {
-        setStreaming(false)
       }
+      setStreaming(false)
     })()
 
     return () => {

@@ -212,8 +212,10 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 
 	s.setStatus(a.deployment.ID, db.DeploymentBuilding, "Build job created: "+a.jobName)
 
-	// Wait for the job to finish (up to 30 minutes).
-	result := appk8s.WaitForJob(ctx, s.k8s, a.namespace, a.jobName, 30*time.Minute)
+	// Wait for the job to finish (up to 60 minutes).
+	// First-time builds without layer cache (railpack native snapshotter, large
+	// repos) can easily exceed 30 minutes.
+	result := appk8s.WaitForJob(ctx, s.k8s, a.namespace, a.jobName, 60*time.Minute)
 
 	if !result.Success {
 		s.failDeployment(a.deployment.ID, result.Log)
