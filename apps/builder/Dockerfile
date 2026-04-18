@@ -28,9 +28,10 @@ RUN apk add --no-cache \
     ln -sf /lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
 
 # ── Buildah root config ────────────────────────────────────────────────────────
-# Running as root: use native overlay (no fuse-overlayfs needed).
+# Running as root: use native overlay. Storage path matches the PVC mount point
+# in the K8s Job spec (/var/lib/containers/storage) so layers persist across builds.
 RUN mkdir -p /root/.config/containers && \
-    printf '[storage]\ndriver = "overlay"\n' \
+    printf '[storage]\ndriver = "overlay"\ngraphRoot = "/var/lib/containers/storage"\n' \
     > /root/.config/containers/storage.conf
 
 # ── Nixpacks ───────────────────────────────────────────────────────────────────

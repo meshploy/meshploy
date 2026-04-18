@@ -124,10 +124,20 @@ case "${BUILDER}" in
     # the socket, then run railpack. --oci-worker-no-process-sandbox is required
     # in containers where full kernel namespace sandboxing is unavailable.
     BUILDKIT_SOCK="/tmp/buildkitd.sock"
+
+    # Tell buildkitd the internal registry is plain HTTP (not HTTPS).
+    mkdir -p /tmp/buildkit-config
+    cat > /tmp/buildkit-config/buildkitd.toml <<EOF
+[registry."${REGISTRY_HOST}"]
+  http = true
+  insecure = true
+EOF
+
     buildkitd \
         --addr "unix://${BUILDKIT_SOCK}" \
         --root "/tmp/buildkit-root" \
         --oci-worker-snapshotter=native \
+        --config /tmp/buildkit-config/buildkitd.toml \
         2>/tmp/buildkitd.log &
     BUILDKITD_PID=$!
     export BUILDKIT_HOST="unix://${BUILDKIT_SOCK}"

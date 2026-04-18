@@ -23,11 +23,13 @@ const (
 	BuilderNodeLabel = "meshploy.com/role"
 	BuilderNodeValue = "builder"
 
-	// buildCachePVC is the PVC name used to persist buildah's layer cache.
-	// Created once per namespace; reused across all builds in that namespace.
-	buildCachePVC     = "buildah-layer-cache"
-	buildCacheSize    = "20Gi"
-	buildCacheMountAt = "/home/builder/.local/share/containers/storage"
+	// buildCachePVC is the shared PVC for all build caches in a namespace.
+	// Subpaths partition it: "buildah" for buildah/nixpacks layers,
+	// "buildkit" for railpack's BuildKit layer cache.
+	buildCachePVC          = "build-cache"
+	buildCacheSize         = "20Gi"
+	buildahCacheMountAt    = "/var/lib/containers/storage"  // root buildah storage
+	buildkitCacheMountAt   = "/tmp/buildkit-root"           // buildkitd --root
 )
 
 // BuildJobParams holds everything the build job needs.
@@ -161,10 +163,8 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 					},
 					Volumes: []corev1.Volume{
 						{
-							// Persist buildah's layer cache across builds so nix
-							// package downloads and base image layers are not
-							// re-fetched on every job.
-							Name: "buildah-cache",
+							// Single PVC shared by both buildah and buildkitd via subpaths.
+							Name: "build-cache",
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: buildCachePVC,
@@ -200,8 +200,16 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "buildah-cache",
-									MountPath: buildCacheMountAt,
+									// buildah (nixpacks/dockerfile) layer cache
+									Name:      "build-cache",
+									MountPath: buildahCacheMountAt,
+									SubPath:   "buildah",
+								},
+								{
+									// buildkitd (railpack) layer cache
+									Name:      "build-cache",
+									MountPath: buildkitCacheMountAt,
+									SubPath:   "buildkit",
 								},
 							},
 							// Buildah needs elevated privileges to create overlay mounts.
