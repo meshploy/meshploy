@@ -151,7 +151,7 @@ EOF
 
     railpack build . \
         --name "${IMAGE_DEST}" \
-        --push \
+        -push \
         --progress plain \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}"
 
