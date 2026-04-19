@@ -149,11 +149,14 @@ EOF
     [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed to start"; }
     sleep 2
 
+    # Railpack exports the built image as a docker-format tarball to stdout.
+    # Redirect stdout to a temp file so the binary blob doesn't fill the K8s
+    # log pipe and hang the build. Progress (stderr) stays in the log.
     railpack build . \
         --name "${IMAGE_DEST}" \
-        -push \
         --progress plain \
-        "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}"
+        "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
+        > /tmp/railpack-image.tar
 
     kill "${BUILDKITD_PID}" 2>/dev/null || true
     ;;
@@ -185,7 +188,12 @@ case "${BUILDER}" in
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
   railpack)
-    log "Push handled by railpack BuildKit solve."
+    log "Pushing ${IMAGE_DEST}…"
+    # Load the docker-format tarball railpack wrote to /tmp/railpack-image.tar
+    # into buildah's local store, then push to the registry.
+    # buildah handles HTTP registries via the registries.conf written above.
+    buildah pull "docker-archive:///tmp/railpack-image.tar"
+    buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
 esac
 
