@@ -149,16 +149,42 @@ EOF
     [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed to start"; }
     sleep 2
 
-    # Railpack exports the built image as a docker-format tarball to stdout.
-    # Redirect stdout to a temp file so the binary blob doesn't fill the K8s
-    # log pipe and hang the build. Progress (stderr) stays in the log.
+    # Railpack writes everything (plan text, BuildKit progress, image tarball)
+    # to stdout. Draining stdout through a FIFO to a file lets it complete
+    # without blocking on the K8s log pipe's 64KB buffer.
+    # Progress (#N lines) also lands in the file, so we extract the tar
+    # portion afterwards using the fact that docker archives always begin
+    # with a "manifest.json" entry.
+    RAILPACK_RAW="/tmp/railpack-raw.bin"
+    mkfifo /tmp/railpack-fifo
+    cat /tmp/railpack-fifo > "${RAILPACK_RAW}" &
+    DRAIN_PID=$!
+
+    log "Running railpack build (output buffered — plan and progress not visible here)…"
     railpack build . \
         --name "${IMAGE_DEST}" \
         --progress plain \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
-        > /tmp/railpack-image.tar
+        > /tmp/railpack-fifo
+
+    wait "${DRAIN_PID}"
+    rm -f /tmp/railpack-fifo
 
     kill "${BUILDKITD_PID}" 2>/dev/null || true
+
+    # Extract the docker archive from the raw output.
+    # The binary tar begins at the first "manifest.json" entry; anything
+    # before it is text (railpack plan + build progress).
+    RAILPACK_TAR="/tmp/railpack-image.tar"
+    TAR_OFFSET=$(grep -abo 'manifest.json' "${RAILPACK_RAW}" | head -1 | cut -d: -f1)
+    TAR_OFFSET="${TAR_OFFSET:-0}"
+    if [ "${TAR_OFFSET}" -gt 0 ]; then
+        log "Extracting docker archive (stripping ${TAR_OFFSET}-byte text prefix)…"
+        tail -c "+$((TAR_OFFSET + 1))" "${RAILPACK_RAW}" > "${RAILPACK_TAR}"
+        rm -f "${RAILPACK_RAW}"
+    else
+        mv "${RAILPACK_RAW}" "${RAILPACK_TAR}"
+    fi
     ;;
 
   dockerfile)
