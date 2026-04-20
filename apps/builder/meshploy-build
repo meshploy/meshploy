@@ -149,26 +149,17 @@ EOF
     [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed to start"; }
     sleep 2
 
-    # Railpack writes everything (plan text, BuildKit progress, image tarball)
-    # to stdout. Draining stdout through a FIFO to a file lets it complete
-    # without blocking on the K8s log pipe's 64KB buffer.
-    # Progress (#N lines) also lands in the file, so we extract the tar
-    # portion afterwards using the fact that docker archives always begin
-    # with a "manifest.json" entry.
+    # Railpack writes the docker-format image tarball (and build progress) to
+    # stdout. Piping through dd drains stdout directly to a temp file at disk
+    # speed, bypassing the K8s log pipe's slow 64KB buffer that caused the
+    # "sending tarball" hang. Any progress railpack writes to stderr remains
+    # visible in the build log.
     RAILPACK_RAW="/tmp/railpack-raw.bin"
-    mkfifo /tmp/railpack-fifo
-    cat /tmp/railpack-fifo > "${RAILPACK_RAW}" &
-    DRAIN_PID=$!
-
-    log "Running railpack build (output buffered — plan and progress not visible here)…"
     railpack build . \
         --name "${IMAGE_DEST}" \
         --progress plain \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
-        > /tmp/railpack-fifo
-
-    wait "${DRAIN_PID}"
-    rm -f /tmp/railpack-fifo
+        | dd bs=65536 of="${RAILPACK_RAW}" status=none
 
     kill "${BUILDKITD_PID}" 2>/dev/null || true
 
