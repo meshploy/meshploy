@@ -94,9 +94,17 @@ if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────
-# --cache-from requires a bare repository reference (no tag/digest).
-# Strip the tag from IMAGE_DEST: "registry/repo:tag" → "registry/repo"
-CACHE_FROM_REPO="${IMAGE_DEST%:*}"
+# Strip tag to get the bare repo ref for --cache-from.
+# Guard: if IMAGE_DEST has no tag (e.g. a registry with a port like
+# host:5000/app) the naive %:* pattern would eat the port instead of the tag.
+# Only strip when the final path component (after the last /) contains a colon.
+_IMAGE_FINAL="${IMAGE_DEST##*/}"
+if [[ "${_IMAGE_FINAL}" == *:* ]]; then
+    CACHE_FROM_REPO="${IMAGE_DEST%:*}"
+else
+    CACHE_FROM_REPO="${IMAGE_DEST}"
+fi
+unset _IMAGE_FINAL
 
 case "${BUILDER}" in
   nixpacks)
@@ -133,44 +141,84 @@ case "${BUILDER}" in
   insecure = true
 EOF
 
-    buildkitd \
-        --addr "unix://${BUILDKIT_SOCK}" \
-        --root "/tmp/buildkit-root" \
-        --oci-worker-snapshotter=native \
-        --config /tmp/buildkit-config/buildkitd.toml \
-        2>/tmp/buildkitd.log &
-    BUILDKITD_PID=$!
+    start_buildkitd() {
+        buildkitd \
+            --addr "unix://${BUILDKIT_SOCK}" \
+            --root "/tmp/buildkit-root" \
+            --oci-worker-snapshotter=native \
+            --config /tmp/buildkit-config/buildkitd.toml \
+            2>/tmp/buildkitd.log &
+        BUILDKITD_PID=$!
+        for i in $(seq 1 30); do
+            [ -S "${BUILDKIT_SOCK}" ] && break
+            sleep 1
+        done
+    }
+
     export BUILDKIT_HOST="unix://${BUILDKIT_SOCK}"
-    log "Waiting for buildkitd…"
-    for i in $(seq 1 30); do
-        [ -S "${BUILDKIT_SOCK}" ] && break
+
+    log "Starting buildkitd…"
+    start_buildkitd
+    [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd socket not created"; }
+
+    # Health-check: buildkitd socket can exist while it is still recovering
+    # stale/corrupt PVC state from a previous cancelled build. Give it 10s to
+    # respond; if it doesn't, wipe the state and restart clean.
+    log "Checking buildkitd responsiveness…"
+    BUILDKITD_OK=0
+    for i in $(seq 1 10); do
+        buildctl --addr "unix://${BUILDKIT_SOCK}" debug workers > /dev/null 2>&1 \
+            && BUILDKITD_OK=1 && break
         sleep 1
     done
-    [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed to start"; }
-    sleep 2
 
-    # Railpack writes the docker-format image tarball (and build progress) to
-    # stdout. Piping through dd drains stdout directly to a temp file at disk
-    # speed, bypassing the K8s log pipe's slow 64KB buffer that caused the
-    # "sending tarball" hang. Any progress railpack writes to stderr remains
-    # visible in the build log.
+    if [ "${BUILDKITD_OK}" -eq 0 ]; then
+        log "buildkitd unresponsive — clearing stale PVC state and restarting…"
+        kill "${BUILDKITD_PID}" 2>/dev/null || true
+        sleep 2
+        rm -rf /tmp/buildkit-root/
+        rm -f "${BUILDKIT_SOCK}"
+        start_buildkitd
+        [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed after state reset"; }
+        sleep 3
+    fi
+
+    # Railpack outputs a docker-format image tarball to stdout, preceded by
+    # its build plan and progress text. Pipe through cat to drain stdout into
+    # a temp file — this keeps the binary out of the K8s log pipe (which
+    # drains too slowly and caused the "sending tarball" hang). Any progress
+    # railpack writes to stderr remains visible in the build log.
     RAILPACK_RAW="/tmp/railpack-raw.bin"
+    RAILPACK_TAR="/tmp/railpack-image.tar"
     railpack build . \
         --name "${IMAGE_DEST}" \
         --progress plain \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
-        | dd bs=65536 of="${RAILPACK_RAW}" status=none
+        | cat > "${RAILPACK_RAW}"
 
     kill "${BUILDKITD_PID}" 2>/dev/null || true
 
-    # Extract the docker archive from the raw output.
-    # The binary tar begins at the first "manifest.json" entry; anything
-    # before it is text (railpack plan + build progress).
-    RAILPACK_TAR="/tmp/railpack-image.tar"
-    TAR_OFFSET=$(grep -abo 'manifest.json' "${RAILPACK_RAW}" | head -1 | cut -d: -f1)
-    TAR_OFFSET="${TAR_OFFSET:-0}"
+    # Locate the docker archive within the raw output by scanning forward in
+    # 512-byte steps (tar block size) until tar validates the header.
+    # Using tar itself is correct regardless of text prefix length, file
+    # ordering inside the archive, or whether the user's build output contains
+    # substrings like "manifest.json".
+    log "Locating docker archive boundary…"
+    TAR_OFFSET=0
+    TAR_FOUND=0
+    while [ "${TAR_OFFSET}" -lt 65536 ]; do
+        if tail -c "+$((TAR_OFFSET + 1))" "${RAILPACK_RAW}" \
+                | tar -t > /dev/null 2>&1; then
+            TAR_FOUND=1
+            break
+        fi
+        TAR_OFFSET=$((TAR_OFFSET + 512))
+    done
+    [ "${TAR_FOUND}" -eq 1 ] \
+        || die "No valid docker archive in railpack output — build likely failed"
+
     if [ "${TAR_OFFSET}" -gt 0 ]; then
-        log "Extracting docker archive (stripping ${TAR_OFFSET}-byte text prefix)…"
+        log "Stripping ${TAR_OFFSET}-byte text prefix from railpack output…"
         tail -c "+$((TAR_OFFSET + 1))" "${RAILPACK_RAW}" > "${RAILPACK_TAR}"
         rm -f "${RAILPACK_RAW}"
     else
@@ -197,19 +245,19 @@ EOF
 esac
 
 # ── Push ──────────────────────────────────────────────────────────────────────
-# railpack build pushes directly via BuildKit when --name is a registry ref.
-# nixpacks and dockerfile build into buildah's local store and need an explicit push.
+# All three builders ultimately push via buildah.
+# nixpacks/dockerfile: image is already in buildah's local store after `buildah build`.
+# railpack: image was exported as a docker-format tar; load it first, then push.
+# buildah uses registries.conf (written above) to reach HTTP registries.
 case "${BUILDER}" in
   nixpacks|dockerfile)
     log "Pushing ${IMAGE_DEST}…"
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
   railpack)
-    log "Pushing ${IMAGE_DEST}…"
-    # Load the docker-format tarball railpack wrote to /tmp/railpack-image.tar
-    # into buildah's local store, then push to the registry.
-    # buildah handles HTTP registries via the registries.conf written above.
+    log "Loading railpack image into local store…"
     buildah pull "docker-archive:///tmp/railpack-image.tar"
+    log "Pushing ${IMAGE_DEST}…"
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
 esac
