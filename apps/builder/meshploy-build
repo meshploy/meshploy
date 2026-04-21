@@ -142,6 +142,8 @@ case "${BUILDER}" in
 EOF
 
     start_buildkitd() {
+        rm -f "${BUILDKIT_SOCK}"
+        > /tmp/buildkitd.log          # reset log so readiness grep is unambiguous
         buildkitd \
             --addr "unix://${BUILDKIT_SOCK}" \
             --root "/tmp/buildkit-root" \
@@ -149,50 +151,37 @@ EOF
             --config /tmp/buildkit-config/buildkitd.toml \
             2>/tmp/buildkitd.log &
         BUILDKITD_PID=$!
-        for i in $(seq 1 30); do
-            [ -S "${BUILDKIT_SOCK}" ] && break
+    }
+
+    # Returns 0 when buildkitd prints "running server" (gRPC listener active).
+    # buildkitd emits this line only after workers are initialised, so it is a
+    # reliable readiness signal — unlike polling via buildctl which returns fast
+    # gRPC errors while the daemon is still starting up.
+    wait_buildkitd_ready() {
+        local secs="${1:-30}"
+        for i in $(seq 1 "${secs}"); do
+            grep -q "running server" /tmp/buildkitd.log 2>/dev/null && return 0
             sleep 1
         done
+        return 1
     }
 
     export BUILDKIT_HOST="unix://${BUILDKIT_SOCK}"
 
     log "Starting buildkitd…"
     start_buildkitd
-    [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd socket not created"; }
 
-    # Health-check: buildkitd socket can exist while it is still recovering
-    # stale/corrupt PVC state from a previous cancelled build. Give it 10s to
-    # respond; if it doesn't, wipe the state and restart clean.
-    # timeout 3: bounds each gRPC probe — buildkitd can have an open socket but
-    # never process requests when stuck recovering corrupt overlay state.
     log "Checking buildkitd responsiveness…"
-    BUILDKITD_OK=0
-    for i in $(seq 1 10); do
-        timeout 3 buildctl --addr "unix://${BUILDKIT_SOCK}" debug workers \
-            > /dev/null 2>&1 && BUILDKITD_OK=1 && break
-        sleep 1
-    done
-
-    if [ "${BUILDKITD_OK}" -eq 0 ]; then
+    if ! wait_buildkitd_ready 20; then
         log "buildkitd unresponsive — clearing stale PVC state and restarting…"
         kill "${BUILDKITD_PID}" 2>/dev/null || true
         sleep 2
         # /tmp/buildkit-root is a PVC subpath mount — the mount point itself
         # cannot be deleted ("Resource busy"). Delete only its contents.
         find /tmp/buildkit-root -mindepth 1 -delete 2>/dev/null || true
-        rm -f "${BUILDKIT_SOCK}"
         start_buildkitd
-        [ -S "${BUILDKIT_SOCK}" ] || { cat /tmp/buildkitd.log; die "buildkitd failed after state reset"; }
-        # Wait for buildkitd to become responsive after clean restart.
-        for i in $(seq 1 15); do
-            timeout 3 buildctl --addr "unix://${BUILDKIT_SOCK}" debug workers \
-                > /dev/null 2>&1 && break
-            sleep 1
-        done
-        timeout 3 buildctl --addr "unix://${BUILDKIT_SOCK}" debug workers \
-            > /dev/null 2>&1 \
-            || { cat /tmp/buildkitd.log; die "buildkitd not responding after state reset"; }
+        wait_buildkitd_ready 30 \
+            || { cat /tmp/buildkitd.log; die "buildkitd failed to start after state reset"; }
     fi
 
     # Railpack outputs a docker-format image tarball to stdout, preceded by
