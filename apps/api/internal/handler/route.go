@@ -46,6 +46,8 @@ type CreateRouteInput struct {
 		TargetIP   string  `json:"target_ip"`
 		TargetPort int     `json:"target_port" minimum:"1" maximum:"65535"`
 		ServiceID  *string `json:"service_id"`
+		NodeID     *string `json:"node_id"`
+		Port       int     `json:"port" minimum:"1" maximum:"65535"`
 	}
 }
 
@@ -185,10 +187,21 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 		parsedDomainID = &id
 	}
 
+	var parsedNodeID *uuid.UUID
+	if input.Body.NodeID != nil {
+		id, err := parseUUID(*input.Body.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		parsedNodeID = &id
+	}
+
 	route, err := h.svc.Routes.Create(ctx, svc.CreateRouteInput{
 		OrgID:      orgID,
 		ProjectID:  projectID,
 		ServiceID:  parsedServiceID,
+		NodeID:     parsedNodeID,
+		Port:       input.Body.Port,
 		DomainID:   parsedDomainID,
 		Zone:       db.RouteZone(input.Body.Zone),
 		Subdomain:  input.Body.Subdomain,

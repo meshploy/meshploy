@@ -83,6 +83,10 @@ func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, in UpdateNod
 
 // SetHeadscaleID stores the Headscale peer ID on the node for stable lookups.
 // Called after self-registration and as a lazy backfill during enrichNodes.
+func (s *NodeService) SetPublicIP(ctx context.Context, nodeID uuid.UUID, publicIP string) error {
+	return s.db.WithContext(ctx).Model(&db.Node{}).Where("id = ?", nodeID).Update("public_ip", publicIP).Error
+}
+
 func (s *NodeService) SetHeadscaleID(ctx context.Context, nodeID uuid.UUID, headscaleID string) error {
 	return s.db.WithContext(ctx).Model(&db.Node{}).Where("id = ?", nodeID).Update("headscale_id", headscaleID).Error
 }

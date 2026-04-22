@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Clock,
   Database,
+  Globe,
   Loader2,
   Server,
   Zap,
@@ -26,9 +27,13 @@ import {
   nodes as nodesApi,
   services as servicesApi,
   registries as registryApi,
+  routes as routesApi,
+  domains as domainsApi,
   toNode,
   type CreateServiceBody,
   type ApiNode,
+  type ApiService,
+  type ApiDomain,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -42,7 +47,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ResourceType = "service" | "job" | "cron-job" | "database"
+type ResourceType = "service" | "route" | "job" | "cron-job" | "database"
 type AppSource = "git" | "image"
 type Builder = "nixpacks" | "railpack" | "dockerfile"
 
@@ -97,6 +102,7 @@ const RESOURCE_TYPES: {
   soon?: boolean
 }[] = [
   { type: "service",  icon: Box,      label: "Service"  },
+  { type: "route",    icon: Globe,    label: "Route"    },
   { type: "job",      icon: Zap,      label: "Job",      soon: true },
   { type: "cron-job", icon: Clock,    label: "Cron Job", soon: true },
   { type: "database", icon: Database, label: "Database", soon: true },
@@ -225,6 +231,8 @@ function NewResourcePage() {
               error={createMutation.error as Error | null}
               onCreate={() => createMutation.mutate()}
             />
+          ) : resourceType === "route" ? (
+            <RouteForm projectId={projectId} />
           ) : (
             <ComingSoonForm type={resourceType} />
           )}
@@ -606,6 +614,357 @@ function ServiceForm({
       >
         {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Create service
+      </Button>
+    </div>
+  )
+}
+
+// ─── Route form ───────────────────────────────────────────────────────────────
+
+type RouteZone = "public" | "internal"
+type DomainMode = "subdomain" | "custom"
+type TargetMode = "service" | "node"
+
+interface RouteFormState {
+  zone: RouteZone
+  domainId: string
+  domainMode: DomainMode
+  subdomain: string
+  customHostname: string
+  targetMode: TargetMode
+  serviceId: string
+  nodeId: string
+  port: string
+}
+
+const ROUTE_INITIAL: RouteFormState = {
+  zone: "public",
+  domainId: "",
+  domainMode: "subdomain",
+  subdomain: "",
+  customHostname: "",
+  targetMode: "service",
+  serviceId: "",
+  nodeId: "",
+  port: "",
+}
+
+function RouteForm({ projectId }: { projectId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const navigate = useNavigate()
+
+  const [rf, setRf] = useState<RouteFormState>(ROUTE_INITIAL)
+  const patchRf = (p: Partial<RouteFormState>) => setRf((s) => ({ ...s, ...p }))
+
+  const { data: domainList = [] } = useQuery<ApiDomain[]>({
+    queryKey: ["domains", orgId],
+    queryFn: () => domainsApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: serviceList = [] } = useQuery<ApiService[]>({
+    queryKey: ["services", orgId, projectId],
+    queryFn: () => servicesApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId!, token),
+    enabled: !!orgId,
+  })
+
+  const verifiedDomains = domainList.filter((d) => d.verified)
+  const allNodes = rawNodes.filter((n) => n.status === "online")
+  const gatewayNode = rawNodes.find((n) => n.k3s_role === "server")
+  const selectedDomain = verifiedDomains.find((d) => d.id === rf.domainId)
+
+  const hostnamePreview = (() => {
+    if (rf.zone === "public" && rf.domainMode === "custom") {
+      return rf.customHostname || "your-domain.com"
+    }
+    if (!selectedDomain || !rf.subdomain) return null
+    if (rf.zone === "internal") {
+      return `${rf.subdomain}.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
+    }
+    return `${rf.subdomain}.${selectedDomain.base_domain}`
+  })()
+
+  const canCreate =
+    (rf.zone === "public" && rf.domainMode === "custom"
+      ? rf.customHostname.trim().length > 0
+      : rf.domainId.length > 0 && rf.subdomain.trim().length > 0) &&
+    (rf.targetMode === "service"
+      ? rf.serviceId.length > 0
+      : rf.nodeId.length > 0 && rf.port.trim().length > 0)
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const body: Parameters<typeof routesApi.create>[2] = {
+        zone: rf.zone,
+      }
+      if (rf.zone === "public" && rf.domainMode === "custom") {
+        body.hostname = rf.customHostname
+      } else {
+        body.domain_id = rf.domainId
+        body.subdomain = rf.subdomain
+      }
+      if (rf.targetMode === "service") {
+        body.service_id = rf.serviceId
+      } else {
+        body.node_id = rf.nodeId
+        body.port = parseInt(rf.port, 10)
+      }
+      return routesApi.create(orgId, projectId, body, token)
+    },
+    onSuccess: () => {
+      navigate({ to: "/projects/$id/routes", params: { id: projectId } })
+    },
+  })
+
+  return (
+    <div className="space-y-8">
+      {/* ── Section: Zone ───────────────────────────────────── */}
+      <Section title="Zone" subtitle="Where is this route exposed?">
+        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
+          {(["public", "internal"] as RouteZone[]).map((z) => (
+            <button
+              key={z}
+              onClick={() => patchRf({ zone: z, domainMode: "subdomain" })}
+              className={cn(
+                "px-4 py-2 text-sm capitalize transition-colors",
+                rf.zone === z
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+              )}
+            >
+              {z}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {rf.zone === "public"
+            ? "Accessible from the internet via your public domain."
+            : "Only accessible within the mesh network via an internal subdomain."}
+        </p>
+      </Section>
+
+      {/* ── Section: Domain ─────────────────────────────────── */}
+      <Section
+        title="Domain"
+        subtitle={
+          rf.zone === "internal"
+            ? "Choose a domain and subdomain for internal routing."
+            : "Choose a subdomain on a verified domain, or point a custom domain."
+        }
+      >
+        {rf.zone === "public" && (
+          <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit mb-4">
+            {(["subdomain", "custom"] as DomainMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => patchRf({ domainMode: m })}
+                className={cn(
+                  "px-4 py-2 text-sm transition-colors",
+                  rf.domainMode === m
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                )}
+              >
+                {m === "subdomain" ? "Subdomain" : "Custom domain"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {rf.zone === "public" && rf.domainMode === "custom" ? (
+          <div className="space-y-4">
+            <Field label="Hostname" required>
+              <input
+                value={rf.customHostname}
+                onChange={(e) => patchRf({ customHostname: e.target.value })}
+                placeholder="app.example.com"
+                className={inputCls}
+              />
+            </Field>
+            {gatewayNode?.public_ip && (
+              <div className="rounded-md border border-border/40 bg-muted/10 px-3 py-2.5 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">DNS instruction</p>
+                <p className="text-xs text-muted-foreground">
+                  Create an <span className="font-mono text-foreground">A</span> record pointing{" "}
+                  <span className="font-mono text-foreground">{rf.customHostname || "your-domain.com"}</span> →{" "}
+                  <span className="font-mono text-foreground">{gatewayNode.public_ip}</span>
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Field label="Domain" required>
+              <Select
+                value={rf.domainId}
+                onValueChange={(v) => patchRf({ domainId: v ?? "", subdomain: "" })}
+              >
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue
+                    placeholder={
+                      verifiedDomains.length === 0
+                        ? "No verified domains — add one in Domains"
+                        : "Select a domain…"
+                    }
+                  >
+                    {selectedDomain?.base_domain}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {verifiedDomains.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.base_domain}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Subdomain" required>
+              <div className="flex items-center gap-0">
+                <input
+                  value={rf.subdomain}
+                  onChange={(e) => patchRf({ subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
+                  placeholder="api"
+                  className={cn(inputCls, "rounded-r-none")}
+                  disabled={!rf.domainId}
+                />
+                {selectedDomain && (
+                  <span className="h-9 flex items-center px-3 text-sm text-muted-foreground bg-muted/20 border border-l-0 border-border/60 rounded-r-md whitespace-nowrap">
+                    {rf.zone === "internal"
+                      ? `.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
+                      : `.${selectedDomain.base_domain}`}
+                  </span>
+                )}
+              </div>
+            </Field>
+
+            {hostnamePreview && rf.subdomain && (
+              <p className="text-xs text-muted-foreground">
+                Route will be created for{" "}
+                <span className="font-mono text-foreground">{hostnamePreview}</span>
+              </p>
+            )}
+          </div>
+        )}
+      </Section>
+
+      {/* ── Section: Target ─────────────────────────────────── */}
+      <Section
+        title="Target"
+        subtitle="Where should traffic be forwarded?"
+      >
+        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit mb-4">
+          {(["service", "node"] as TargetMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => patchRf({ targetMode: m, serviceId: "", nodeId: "", port: "" })}
+              className={cn(
+                "px-4 py-2 text-sm capitalize transition-colors",
+                rf.targetMode === m
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+              )}
+            >
+              {m === "service" ? "Service" : "Node + port"}
+            </button>
+          ))}
+        </div>
+
+        {rf.targetMode === "service" ? (
+          <Field label="Service" required>
+            <Select
+              value={rf.serviceId}
+              onValueChange={(v) => patchRf({ serviceId: v ?? "" })}
+            >
+              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                <SelectValue
+                  placeholder={
+                    serviceList.length === 0
+                      ? "No services in this project"
+                      : "Select a service…"
+                  }
+                >
+                  {serviceList.find((s) => s.id === rf.serviceId)?.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {serviceList.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              The service must be pinned to a specific node. Traffic routes via the node's mesh IP.
+            </p>
+          </Field>
+        ) : (
+          <div className="grid grid-cols-[1fr_120px] gap-4">
+            <Field label="Node" required>
+              <Select
+                value={rf.nodeId}
+                onValueChange={(v) => patchRf({ nodeId: v ?? "" })}
+              >
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue
+                    placeholder={
+                      allNodes.length === 0
+                        ? "No online nodes"
+                        : "Select a node…"
+                    }
+                  >
+                    {allNodes.find((n) => n.id === rf.nodeId)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {allNodes.map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.name}
+                      <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Port" required>
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                value={rf.port}
+                onChange={(e) => patchRf({ port: e.target.value })}
+                placeholder="8080"
+                className={inputCls}
+              />
+            </Field>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Error ────────────────────────────────────────────── */}
+      {createMutation.error && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+          <p className="text-xs text-destructive">{(createMutation.error as Error).message}</p>
+        </div>
+      )}
+
+      {/* ── Submit ───────────────────────────────────────────── */}
+      <Button
+        className="w-full gap-2"
+        disabled={!canCreate || createMutation.isPending}
+        onClick={() => createMutation.mutate()}
+      >
+        {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Create route
       </Button>
     </div>
   )

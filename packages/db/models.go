@@ -254,6 +254,9 @@ type Node struct {
 	MeshRole MeshRole `gorm:"type:varchar(20);not null;default:''" json:"mesh_role"`
 	// workload_builder | workload | builder — controls k8s labels/taints applied to this node
 
+	// Public IP — set on gateway (server) nodes only; used for DNS instructions.
+	PublicIP string `gorm:"not null;default:''" json:"public_ip"`
+
 	// Capacity — populated by node agent heartbeat
 	CPUCores float32 `json:"cpu_cores"`
 	MemoryGB float32 `json:"memory_gb"`

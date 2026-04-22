@@ -98,6 +98,8 @@ export interface ApiNode {
   k8s_node_name: string
   // Active project namespaces on this node
   active_projects: string[]
+  // Public internet IP (gateway/server nodes only)
+  public_ip: string
 }
 
 export interface ApiProject {
@@ -549,11 +551,13 @@ export const routes = {
     body: {
       domain_id?: string
       zone: string
-      subdomain: string
+      subdomain?: string
       hostname?: string
-      target_ip: string
-      target_port: number
       service_id?: string
+      node_id?: string
+      port?: number
+      target_ip?: string
+      target_port?: number
     },
     token: string
   ) =>
