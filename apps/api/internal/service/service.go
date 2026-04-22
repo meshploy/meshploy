@@ -73,8 +73,22 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		if db.WithContext(ctx).Model(&meshdb.Node{}).
 			Where("organization_id = ? AND tailscale_ip = ?", orgID, c.GatewayIP).
 			Count(&nodeCount).Error == nil && nodeCount == 0 {
-			if _, err := nodes.Register(ctx, orgID, c.GatewayHostname, c.GatewayIP, meshdb.K3sRoleServer); err != nil {
+			node, err := nodes.Register(ctx, orgID, c.GatewayHostname, c.GatewayIP, meshdb.K3sRoleServer)
+			if err != nil {
 				log.Printf("warning: seed gateway node: %v", err)
+			} else if c.PublicIP != "" {
+				if err := nodes.SetPublicIP(ctx, node.ID, c.PublicIP); err != nil {
+					log.Printf("warning: set gateway public IP: %v", err)
+				}
+			}
+		} else if c.PublicIP != "" {
+			// Backfill PublicIP on existing gateway node if not yet set.
+			var gw meshdb.Node
+			if db.WithContext(ctx).Where("organization_id = ? AND tailscale_ip = ?", orgID, c.GatewayIP).
+				First(&gw).Error == nil && gw.PublicIP == "" {
+				if err := nodes.SetPublicIP(ctx, gw.ID, c.PublicIP); err != nil {
+					log.Printf("warning: backfill gateway public IP: %v", err)
+				}
 			}
 		}
 		if err := domains.CreateSeeded(ctx, orgID, c.Domain); err != nil {

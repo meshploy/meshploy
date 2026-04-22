@@ -17,7 +17,9 @@ type RouteService struct {
 type CreateRouteInput struct {
 	OrgID     uuid.UUID
 	ProjectID uuid.UUID
-	ServiceID *uuid.UUID
+	ServiceID *uuid.UUID // service target — backend resolves IP:port
+	NodeID    *uuid.UUID // node target — use with Port
+	Port      int        // port for node target
 
 	// Domain-based fields (preferred path)
 	DomainID *uuid.UUID
@@ -51,6 +53,26 @@ func (s *RouteService) Get(ctx context.Context, routeID uuid.UUID) (*db.Route, e
 }
 
 func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Route, error) {
+	// Resolve target from service or node.
+	if in.ServiceID != nil {
+		var svc db.Service
+		if err := s.db.WithContext(ctx).Preload("Node").First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
+			return nil, huma.Error404NotFound("service not found")
+		}
+		if svc.NodeID == nil || svc.Node == nil {
+			return nil, huma.Error422UnprocessableEntity("service must be pinned to a specific node to create a route — set a target node when creating the service")
+		}
+		in.TargetIP = svc.Node.TailscaleIP
+		in.TargetPort = 8080
+	} else if in.NodeID != nil {
+		var node db.Node
+		if err := s.db.WithContext(ctx).First(&node, "id = ?", *in.NodeID).Error; err != nil {
+			return nil, huma.Error404NotFound("node not found")
+		}
+		in.TargetIP = node.TailscaleIP
+		in.TargetPort = in.Port
+	}
+
 	hostname := in.Hostname
 
 	if in.DomainID != nil {

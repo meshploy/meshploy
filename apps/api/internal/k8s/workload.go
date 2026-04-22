@@ -70,7 +70,7 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 				Image:           p.Image,
 				ImagePullPolicy: corev1.PullAlways,
 				Ports: []corev1.ContainerPort{
-					{ContainerPort: p.Port, Protocol: corev1.ProtocolTCP},
+					{ContainerPort: p.Port, HostPort: p.Port, Protocol: corev1.ProtocolTCP},
 				},
 				Env:       p.Env,
 				Resources: resources,
