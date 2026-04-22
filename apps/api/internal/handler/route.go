@@ -38,16 +38,16 @@ type CreateRouteInput struct {
 	Body      struct {
 		// Domain-based (preferred): supply domain_id + zone + subdomain.
 		// Meshploy derives the full hostname and enforces reserved-subdomain rules.
-		DomainID  *string `json:"domain_id"`  // UUID of a verified Domain
-		Zone      string  `json:"zone"`       // "public" | "internal" | "preview"
-		Subdomain string  `json:"subdomain"`  // prefix only, e.g. "keeper"
+		DomainID  *string `json:"domain_id,omitempty"`  // UUID of a verified Domain
+		Zone      string  `json:"zone"`                // "public" | "internal" | "preview"
+		Subdomain string  `json:"subdomain,omitempty"` // prefix only, e.g. "keeper"
 		// Legacy / manual: supply a raw hostname when domain_id is omitted.
-		Hostname   *string `json:"hostname"`
-		TargetIP   *string `json:"target_ip"`
-		TargetPort *int    `json:"target_port"`
-		ServiceID  *string `json:"service_id"`
-		NodeID     *string `json:"node_id"`
-		Port       *int    `json:"port"`
+		Hostname   *string `json:"hostname,omitempty"`
+		TargetIP   *string `json:"target_ip,omitempty"`
+		TargetPort *int    `json:"target_port,omitempty"`
+		ServiceID  *string `json:"service_id,omitempty"`
+		NodeID     *string `json:"node_id,omitempty"`
+		Port       *int    `json:"port,omitempty"`
 	}
 }
 
