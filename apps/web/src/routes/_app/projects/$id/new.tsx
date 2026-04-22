@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import {
   Box,
@@ -42,6 +42,9 @@ import { inputCls, Section, Field, NodeCard } from "@/components/services/form-p
 // ─── Route ───────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute("/_app/projects/$id/new")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    type: (search.type as ResourceType | undefined) ?? "service",
+  }),
   component: NewResourcePage,
 })
 
@@ -116,7 +119,8 @@ function NewResourcePage() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
 
-  const [resourceType, setResourceType] = useState<ResourceType>("service")
+  const { type: initialType } = Route.useSearch()
+  const [resourceType, setResourceType] = useState<ResourceType>(initialType)
   const [form, setForm] = useState<FormState>(INITIAL)
 
   const patch = (partial: Partial<FormState>) =>
@@ -678,6 +682,14 @@ function RouteForm({ projectId }: { projectId: string }) {
   const verifiedDomains = domainList.filter((d) => d.verified)
   const allNodes = rawNodes.filter((n) => n.status === "online")
   const gatewayNode = rawNodes.find((n) => n.k3s_role === "server")
+
+  // Auto-select first verified domain
+  useEffect(() => {
+    if (verifiedDomains.length > 0 && !rf.domainId) {
+      patchRf({ domainId: verifiedDomains[0].id })
+    }
+  }, [verifiedDomains.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const selectedDomain = verifiedDomains.find((d) => d.id === rf.domainId)
 
   const hostnamePreview = (() => {
@@ -801,32 +813,9 @@ function RouteForm({ projectId }: { projectId: string }) {
           </div>
         ) : (
           <div className="space-y-4">
-            <Field label="Domain" required>
-              <Select
-                value={rf.domainId}
-                onValueChange={(v) => patchRf({ domainId: v ?? "", subdomain: "" })}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue
-                    placeholder={
-                      verifiedDomains.length === 0
-                        ? "No verified domains — add one in Domains"
-                        : "Select a domain…"
-                    }
-                  >
-                    {selectedDomain?.base_domain}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {verifiedDomains.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.base_domain}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-
+            {verifiedDomains.length === 0 && (
+              <p className="text-xs text-muted-foreground">No verified domains — add one in Domains first.</p>
+            )}
             <Field label="Subdomain" required>
               <div className="flex items-center gap-0">
                 <input
