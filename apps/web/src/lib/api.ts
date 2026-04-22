@@ -218,6 +218,7 @@ export interface ApiService {
   type: "application" | "database"
   status: "running" | "stopped" | "deploying" | "failed"
   image: string
+  port: number
   replicas: number
   cpu_request: string
   cpu_limit: string
@@ -360,6 +361,7 @@ export interface ApiDeployment {
 }
 
 export interface CreateServiceBody {
+  port?: number
   name: string
   image?: string
   node_id?: string

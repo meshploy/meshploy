@@ -224,8 +224,11 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 
 	s.setStatus(a.deployment.ID, db.DeploymentDeploying, result.Log)
 
-	// Determine the container port (default 8080 if not set).
-	port := int32(8080)
+	// Use the service's configured port, fall back to 3000.
+	port := int32(a.svc.Port)
+	if port == 0 {
+		port = 3000
+	}
 
 	// Resolve node name if a specific node is pinned.
 	nodeName := ""
@@ -243,6 +246,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		Image:         a.imageName,
 		Port:          port,
 		Replicas:      int32(a.svc.Replicas),
+		Env:           runtimeEnvVars(string(a.svc.EnvVars), port),
 		CPURequest:    a.svc.CPURequest,
 		CPULimit:      a.svc.CPULimit,
 		MemoryRequest: a.svc.MemoryRequest,
@@ -556,6 +560,39 @@ func (s *DeploymentService) waitForBuildPod(ctx context.Context, namespace, jobN
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// runtimeEnvVars parses a raw .env block into K8s EnvVar slice and ensures
+// PORT is set to the container port. The user-supplied value wins if present.
+func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
+	portStr := fmt.Sprintf("%d", port)
+	hasPort := false
+	var envs []corev1.EnvVar
+	for _, line := range strings.Split(envBlock, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 1 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		// Strip surrounding quotes.
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
+		if key == "PORT" {
+			hasPort = true
+			portStr = val
+		}
+		envs = append(envs, corev1.EnvVar{Name: key, Value: val})
+	}
+	if !hasPort {
+		envs = append(envs, corev1.EnvVar{Name: "PORT", Value: portStr})
+	}
+	return envs
 }
 
 // slugify converts a name to a K8s-safe lowercase slug.

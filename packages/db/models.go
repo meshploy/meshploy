@@ -284,6 +284,7 @@ type Service struct {
 
 	Status   ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
 	Replicas int           `gorm:"not null;default:1"                          json:"replicas"`
+	Port     int           `gorm:"not null;default:3000"                       json:"port"` // container listen port
 
 	// K8s resource spec (standard K8s quantity strings)
 	CPURequest    string `gorm:"not null;default:'100m'"  json:"cpu_request"`
