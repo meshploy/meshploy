@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -75,9 +76,27 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 				return nil, huma.Error422UnprocessableEntity("service has no running pods — deploy it first")
 			}
 			k8sNodeName := pods.Items[0].Spec.NodeName
-			var node db.Node
-			if err := s.db.WithContext(ctx).Where("k8s_node_name = ?", k8sNodeName).First(&node).Error; err != nil {
+
+			// Resolve K8s node → mesh IP via InternalIP addresses, then fall back to name match.
+			k8sNode, err := s.k8s.CoreV1().Nodes().Get(ctx, k8sNodeName, metav1.GetOptions{})
+			if err != nil {
 				return nil, huma.Error422UnprocessableEntity("could not resolve mesh node for service — ensure the worker is registered")
+			}
+			var node db.Node
+			found := false
+			for _, addr := range k8sNode.Status.Addresses {
+				if addr.Type == corev1.NodeInternalIP {
+					if err := s.db.WithContext(ctx).Where("tailscale_ip = ?", addr.Address).First(&node).Error; err == nil {
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				// Fall back to matching by node name.
+				if err := s.db.WithContext(ctx).Where("name = ?", k8sNodeName).First(&node).Error; err != nil {
+					return nil, huma.Error422UnprocessableEntity("could not resolve mesh node for service — ensure the worker is registered")
+				}
 			}
 			in.TargetIP = node.TailscaleIP
 		} else {
