@@ -18,6 +18,7 @@ type CreateWorkloadInput struct {
 	Image   string
 	NodeID  *uuid.UUID // nil = let K3s schedule
 	EnvVars string     // raw .env block, stored as EncryptedString
+	Port    int        // container listen port; 0 = default (3000)
 
 	// K8s resource spec — optional, defaults applied by the model
 	CPURequest    string
@@ -56,6 +57,10 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	if replicas == 0 {
 		replicas = 1
 	}
+	port := in.Port
+	if port == 0 {
+		port = 3000
+	}
 	service := &db.Service{
 		ProjectID: projectID,
 		NodeID:    in.NodeID,
@@ -64,6 +69,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		Image:     in.Image,
 		Status:    db.ServiceStopped,
 		Replicas:  replicas,
+		Port:      port,
 		EnvVars:   db.EncryptedString(in.EnvVars),
 	}
 

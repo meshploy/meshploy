@@ -58,6 +58,19 @@ app.{$DOMAIN} {
     }
 }
 
+# ── Public workload routes — wildcard ────────────────────────────────────────
+# Wildcard cert covers all public service subdomains (e.g. auth-ui.{DOMAIN}).
+# Uses the same DNS-01 zone file as the named subdomains above.
+# Proxy reads the Host header → route cache lookup → forwards to worker mesh IP.
+*.{$DOMAIN} {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.{$DOMAIN}
+        }
+    }
+    reverse_proxy localhost:8081
+}
+
 # ── Internal mesh traffic — wildcard ─────────────────────────────────────────
 # Wildcard cert requires DNS-01 — uses its own NS-delegated challenge zone.
 # resolvers points at the authoritative CoreDNS so CertMagic queries it

@@ -36,6 +36,7 @@ type CreateWorkloadInput struct {
 		Image         string  `json:"image,omitempty"`
 		NodeID        *string `json:"node_id,omitempty"`        // nil = auto-schedule
 		EnvVars       string  `json:"env_vars,omitempty"`       // raw .env block, encrypted at rest
+		Port          int     `json:"port,omitempty"`           // container listen port; 0 = default (3000)
 		Replicas      int     `json:"replicas,omitempty"`       // 0 = use service layer default (1)
 		CPURequest    string  `json:"cpu_request,omitempty"`
 		CPULimit      string  `json:"cpu_limit,omitempty"`
@@ -205,6 +206,7 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		Image:                 input.Body.Image,
 		NodeID:                nodeID,
 		EnvVars:               input.Body.EnvVars,
+		Port:                  input.Body.Port,
 		Replicas:              input.Body.Replicas,
 		CPURequest:            input.Body.CPURequest,
 		CPULimit:              input.Body.CPULimit,

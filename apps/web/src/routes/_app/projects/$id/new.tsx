@@ -67,6 +67,7 @@ interface FormState {
   builderNodeName: string | null  // k8s_node_name; null = auto-schedule
   builderCPURequest: string
   builderMemoryRequest: string
+  port: number
   replicas: number
   cpuRequest: string
   cpuLimit: string
@@ -88,6 +89,7 @@ const INITIAL: FormState = {
   builderNodeName: null,
   builderCPURequest: "1000m",
   builderMemoryRequest: "1Gi",
+  port: 3000,
   replicas: 1,
   cpuRequest: "100m",
   cpuLimit: "500m",
@@ -136,6 +138,7 @@ function NewResourcePage() {
     mutationFn: () => {
       const body: CreateServiceBody = {
         name: form.name,
+        port: form.port,
         replicas: form.replicas,
         cpu_request: form.cpuRequest || undefined,
         cpu_limit: form.cpuLimit || undefined,
@@ -558,17 +561,30 @@ function ServiceForm({
           </div>
         </div>
 
-        {/* Replicas */}
-        <Field label="Replicas">
-          <input
-            type="number"
-            min={1}
-            max={20}
-            value={form.replicas}
-            onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
-            className={cn(inputCls, "w-24")}
-          />
-        </Field>
+        {/* Port + Replicas */}
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Port" required>
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={form.port}
+              onChange={(e) => patch({ port: parseInt(e.target.value) || 3000 })}
+              placeholder="3000"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Replicas">
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={form.replicas}
+              onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
+              className={inputCls}
+            />
+          </Field>
+        </div>
       </Section>
 
       {/* ── Section: Resources (advanced, collapsible) ───────── */}

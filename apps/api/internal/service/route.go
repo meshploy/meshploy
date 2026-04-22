@@ -102,7 +102,11 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		} else {
 			return nil, huma.Error422UnprocessableEntity("service must be pinned to a specific node to create a route (K8s not configured)")
 		}
-		in.TargetPort = 8080
+		targetPort := svc.Port
+		if targetPort == 0 {
+			targetPort = 3000
+		}
+		in.TargetPort = targetPort
 	} else if in.NodeID != nil {
 		var node db.Node
 		if err := s.db.WithContext(ctx).First(&node, "id = ?", *in.NodeID).Error; err != nil {
