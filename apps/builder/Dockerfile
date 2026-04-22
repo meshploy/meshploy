@@ -37,7 +37,8 @@ RUN mkdir -p /root/.config/containers && \
 # ── buildctl (BuildKit client) ────────────────────────────────────────────────
 # Alpine's buildkit apk only ships buildkitd. buildctl is in the same upstream
 # release tarball — extract it to match the installed daemon version.
-RUN BUILDKIT_VERSION="$(buildkitd --version | awk '{print $3}')" && \
+RUN BUILDKIT_VERSION="$(buildkitd --version | awk '{print $3}' | sed 's/^v//')" && \
+    echo "buildkitd version: ${BUILDKIT_VERSION}" && \
     curl -fsSL \
       "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" \
     | tar -xz -C /usr/local/bin --strip-components=1 bin/buildctl && \
