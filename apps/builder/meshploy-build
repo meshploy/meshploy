@@ -184,47 +184,24 @@ EOF
             || { cat /tmp/buildkitd.log; die "buildkitd failed to start after state reset"; }
     fi
 
-    # Railpack outputs a docker-format image tarball to stdout, preceded by
-    # its build plan and progress text. Pipe through cat to drain stdout into
-    # a temp file — this keeps the binary out of the K8s log pipe (which
-    # drains too slowly and caused the "sending tarball" hang). Any progress
-    # railpack writes to stderr remains visible in the build log.
-    RAILPACK_RAW="/tmp/railpack-raw.bin"
-    RAILPACK_TAR="/tmp/railpack-image.tar"
-    railpack build . \
-        --name "${IMAGE_DEST}" \
-        --progress plain \
-        "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
-        | cat > "${RAILPACK_RAW}"
+    # Generate the railpack build plan, then drive BuildKit directly via buildctl.
+    # Using type=image,push=true bypasses the railpack CLI's docker-tar-to-stdout
+    # output entirely — no stdout capture, no tar boundary scan, no separate push.
+    log "Preparing railpack build plan…"
+    railpack prepare . \
+        "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}"
+
+    log "Building and pushing via BuildKit frontend → ${IMAGE_DEST}"
+    buildctl build \
+        --addr "unix://${BUILDKIT_SOCK}" \
+        --frontend=gateway.v0 \
+        --opt source=ghcr.io/railwayapp/railpack-frontend \
+        --local context="${WORKDIR}" \
+        --local dockerfile="${WORKDIR}" \
+        --output "type=image,name=${IMAGE_DEST},push=true,registry.insecure=true" \
+        --progress plain
 
     kill "${BUILDKITD_PID}" 2>/dev/null || true
-
-    # Locate the docker archive within the raw output by scanning forward in
-    # 512-byte steps (tar block size) until tar validates the header.
-    # Using tar itself is correct regardless of text prefix length, file
-    # ordering inside the archive, or whether the user's build output contains
-    # substrings like "manifest.json".
-    log "Locating docker archive boundary…"
-    TAR_OFFSET=0
-    TAR_FOUND=0
-    while [ "${TAR_OFFSET}" -lt 65536 ]; do
-        if tail -c "+$((TAR_OFFSET + 1))" "${RAILPACK_RAW}" \
-                | tar -t > /dev/null 2>&1; then
-            TAR_FOUND=1
-            break
-        fi
-        TAR_OFFSET=$((TAR_OFFSET + 512))
-    done
-    [ "${TAR_FOUND}" -eq 1 ] \
-        || die "No valid docker archive in railpack output — build likely failed"
-
-    if [ "${TAR_OFFSET}" -gt 0 ]; then
-        log "Stripping ${TAR_OFFSET}-byte text prefix from railpack output…"
-        tail -c "+$((TAR_OFFSET + 1))" "${RAILPACK_RAW}" > "${RAILPACK_TAR}"
-        rm -f "${RAILPACK_RAW}"
-    else
-        mv "${RAILPACK_RAW}" "${RAILPACK_TAR}"
-    fi
     ;;
 
   dockerfile)
@@ -246,18 +223,11 @@ EOF
 esac
 
 # ── Push ──────────────────────────────────────────────────────────────────────
-# All three builders ultimately push via buildah.
-# nixpacks/dockerfile: image is already in buildah's local store after `buildah build`.
-# railpack: image was exported as a docker-format tar; load it first, then push.
+# nixpacks/dockerfile: image is in buildah's local store after `buildah build`.
+# railpack: already pushed to the registry by buildctl above — nothing to do.
 # buildah uses registries.conf (written above) to reach HTTP registries.
 case "${BUILDER}" in
   nixpacks|dockerfile)
-    log "Pushing ${IMAGE_DEST}…"
-    buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
-    ;;
-  railpack)
-    log "Loading railpack image into local store…"
-    buildah pull "docker-archive:///tmp/railpack-image.tar"
     log "Pushing ${IMAGE_DEST}…"
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
