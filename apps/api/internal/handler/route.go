@@ -42,12 +42,12 @@ type CreateRouteInput struct {
 		Zone      string  `json:"zone"`       // "public" | "internal" | "preview"
 		Subdomain string  `json:"subdomain"`  // prefix only, e.g. "keeper"
 		// Legacy / manual: supply a raw hostname when domain_id is omitted.
-		Hostname   string  `json:"hostname"`
-		TargetIP   string  `json:"target_ip"`
-		TargetPort int     `json:"target_port" minimum:"1" maximum:"65535"`
+		Hostname   *string `json:"hostname"`
+		TargetIP   *string `json:"target_ip"`
+		TargetPort *int    `json:"target_port"`
 		ServiceID  *string `json:"service_id"`
 		NodeID     *string `json:"node_id"`
-		Port       int     `json:"port" minimum:"1" maximum:"65535"`
+		Port       *int    `json:"port"`
 	}
 }
 
@@ -196,18 +196,31 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 		parsedNodeID = &id
 	}
 
+	derefStr := func(s *string) string {
+		if s == nil {
+			return ""
+		}
+		return *s
+	}
+	derefInt := func(n *int) int {
+		if n == nil {
+			return 0
+		}
+		return *n
+	}
+
 	route, err := h.svc.Routes.Create(ctx, svc.CreateRouteInput{
 		OrgID:      orgID,
 		ProjectID:  projectID,
 		ServiceID:  parsedServiceID,
 		NodeID:     parsedNodeID,
-		Port:       input.Body.Port,
+		Port:       derefInt(input.Body.Port),
 		DomainID:   parsedDomainID,
 		Zone:       db.RouteZone(input.Body.Zone),
 		Subdomain:  input.Body.Subdomain,
-		Hostname:   input.Body.Hostname,
-		TargetIP:   input.Body.TargetIP,
-		TargetPort: input.Body.TargetPort,
+		Hostname:   derefStr(input.Body.Hostname),
+		TargetIP:   derefStr(input.Body.TargetIP),
+		TargetPort: derefInt(input.Body.TargetPort),
 	})
 	if err != nil {
 		return nil, err

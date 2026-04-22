@@ -1,10 +1,8 @@
-import { createFileRoute, useParams } from "@tanstack/react-router"
-import { useState } from "react"
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Globe, Loader2, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { NewRouteModal } from "@/components/routes/new-route-modal"
 import { routes as routesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -17,7 +15,7 @@ function RoutesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/routes" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const [modalOpen, setModalOpen] = useState(false)
+  const navigate = useNavigate()
 
   const { data: routeList = [], isLoading } = useQuery({
     queryKey: ["routes", orgId, projectId],
@@ -25,17 +23,11 @@ function RoutesTab() {
     enabled: !!orgId,
   })
 
+  const goToNew = () =>
+    navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "route" } })
+
   return (
     <div className="p-6 space-y-4">
-      {orgId && (
-        <NewRouteModal
-          open={modalOpen}
-          onOpenChange={setModalOpen}
-          orgId={orgId}
-          projectId={projectId}
-        />
-      )}
-
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium">Routes</h2>
@@ -44,7 +36,7 @@ function RoutesTab() {
             <span className="text-xs text-muted-foreground">{routeList.length}</span>
           )}
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setModalOpen(true)}>
+        <Button size="sm" className="gap-1.5" onClick={goToNew}>
           <Plus className="h-3.5 w-3.5" />
           New Route
         </Button>
@@ -61,7 +53,7 @@ function RoutesTab() {
             <p className="text-sm text-muted-foreground">No routes configured</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">Map a hostname to a service or mesh device</p>
           </div>
-          <Button variant="outline" size="sm" className="gap-1.5 mt-1" onClick={() => setModalOpen(true)}>
+          <Button size="sm" className="gap-1.5 mt-1" onClick={goToNew}>
             <Plus className="h-3.5 w-3.5" />
             New Route
           </Button>
