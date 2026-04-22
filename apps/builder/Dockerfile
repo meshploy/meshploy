@@ -1,6 +1,6 @@
 # Meshploy Builder Image
 # Runs as the build container inside K8s Jobs.
-# Contains: git, nixpacks, railpack, buildah, buildkitd.
+# Contains: git, nixpacks, railpack, buildah, buildkitd, buildctl.
 # Runs as root — build jobs are ephemeral and mesh-internal.
 #
 # Build: docker build -t ghcr.io/meshploy/builder:latest apps/builder/
@@ -33,6 +33,15 @@ RUN apk add --no-cache \
 RUN mkdir -p /root/.config/containers && \
     printf '[storage]\ndriver = "overlay"\ngraphRoot = "/var/lib/containers/storage"\n' \
     > /root/.config/containers/storage.conf
+
+# ── buildctl (BuildKit client) ────────────────────────────────────────────────
+# Alpine's buildkit apk only ships buildkitd. buildctl is in the same upstream
+# release tarball — extract it to match the installed daemon version.
+RUN BUILDKIT_VERSION="$(buildkitd --version | awk '{print $3}')" && \
+    curl -fsSL \
+      "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" \
+    | tar -xz -C /usr/local/bin --strip-components=1 bin/buildctl && \
+    buildctl --version
 
 # ── Nixpacks ───────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://nixpacks.com/install.sh | bash && \
