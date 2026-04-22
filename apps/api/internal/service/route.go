@@ -8,10 +8,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 type RouteService struct {
-	db *gorm.DB
+	db  *gorm.DB
+	k8s kubernetes.Interface // nil when K8s is not configured
 }
 
 type CreateRouteInput struct {
@@ -56,13 +59,30 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 	// Resolve target from service or node.
 	if in.ServiceID != nil {
 		var svc db.Service
-		if err := s.db.WithContext(ctx).Preload("Node").First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
+		if err := s.db.WithContext(ctx).Preload("Node").Preload("Project").First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
 			return nil, huma.Error404NotFound("service not found")
 		}
-		if svc.NodeID == nil || svc.Node == nil {
-			return nil, huma.Error422UnprocessableEntity("service must be pinned to a specific node to create a route — set a target node when creating the service")
+		if svc.NodeID != nil && svc.Node != nil {
+			// Service is pinned to a specific node — use it directly.
+			in.TargetIP = svc.Node.TailscaleIP
+		} else if s.k8s != nil {
+			// Auto-scheduled: find the actual node the pod is running on via K8s.
+			podSlug := slugify(svc.Name)
+			namespace := svc.Project.Slug
+			selector := fmt.Sprintf("app=%s,managed-by=meshploy", podSlug)
+			pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+			if err != nil || len(pods.Items) == 0 {
+				return nil, huma.Error422UnprocessableEntity("service has no running pods — deploy it first")
+			}
+			k8sNodeName := pods.Items[0].Spec.NodeName
+			var node db.Node
+			if err := s.db.WithContext(ctx).Where("k8s_node_name = ?", k8sNodeName).First(&node).Error; err != nil {
+				return nil, huma.Error422UnprocessableEntity("could not resolve mesh node for service — ensure the worker is registered")
+			}
+			in.TargetIP = node.TailscaleIP
+		} else {
+			return nil, huma.Error422UnprocessableEntity("service must be pinned to a specific node to create a route (K8s not configured)")
 		}
-		in.TargetIP = svc.Node.TailscaleIP
 		in.TargetPort = 8080
 	} else if in.NodeID != nil {
 		var node db.Node
