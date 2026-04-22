@@ -29,6 +29,7 @@ WORKDIR="/tmp/workspace"
 # Build arrays of flags for each builder from the non-empty, non-comment lines.
 NIXPACKS_ENV_FLAGS=()
 RAILPACK_ENV_FLAGS=()
+RAILPACK_SECRET_FLAGS=()
 DOCKERFILE_BUILD_ARG_FLAGS=()
 
 if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
@@ -50,6 +51,10 @@ if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
         NIXPACKS_ENV_FLAGS+=(--env "${key}=${value}")
         RAILPACK_ENV_FLAGS+=(--env "${key}=${value}")
         DOCKERFILE_BUILD_ARG_FLAGS+=(--build-arg "${key}=${value}")
+        # Railpack embeds build env vars as BuildKit secrets in the plan.
+        # Export + --secret makes them available to buildctl.
+        export "${key}=${value}"
+        RAILPACK_SECRET_FLAGS+=(--secret "id=${key},env=${key}")
     done <<< "${BUILD_ENV_VARS}"
 fi
 
@@ -199,7 +204,8 @@ EOF
         --local context="${WORKDIR}" \
         --local dockerfile="${WORKDIR}" \
         --output "type=image,name=${IMAGE_DEST},push=true,registry.insecure=true" \
-        --progress plain
+        --progress plain \
+        "${RAILPACK_SECRET_FLAGS[@]+"${RAILPACK_SECRET_FLAGS[@]}"}"
 
     kill "${BUILDKITD_PID}" 2>/dev/null || true
     ;;
