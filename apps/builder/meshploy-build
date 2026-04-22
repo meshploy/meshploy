@@ -189,6 +189,7 @@ EOF
     # output entirely — no stdout capture, no tar boundary scan, no separate push.
     log "Preparing railpack build plan…"
     railpack prepare . \
+        --plan-out "${WORKDIR}/railpack-plan.json" \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}"
 
     log "Building and pushing via BuildKit frontend → ${IMAGE_DEST}"
