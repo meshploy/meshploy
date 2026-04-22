@@ -569,6 +569,13 @@ export const routes = {
       token
     ),
 
+  get: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiDbRoute>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
+      {},
+      token
+    ),
+
   delete: (orgId: string, projectId: string, routeId: string, token: string) =>
     apiFetch<void>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
