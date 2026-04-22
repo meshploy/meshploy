@@ -64,6 +64,12 @@ function RoutesTab() {
             <div
               key={route.id}
               className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors cursor-pointer"
+              onClick={() =>
+                navigate({
+                  to: "/projects/$id/routes/$routeId",
+                  params: { id: projectId, routeId: route.id },
+                })
+              }
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground font-mono">{route.hostname}</p>

@@ -265,7 +265,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	// Update service image + status.
 	now := time.Now()
 	s.db.Model(&db.Deployment{}).Where("id = ?", a.deployment.ID).Updates(map[string]any{
-		"status":      db.DeploymentRunning,
+		"status":      db.DeploymentSuccess,
 		"log":         result.Log + "\nDeployment applied successfully.",
 		"deployed_at": &now,
 	})
