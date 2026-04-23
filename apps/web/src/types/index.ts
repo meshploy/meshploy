@@ -55,6 +55,7 @@ export interface Project {
   slug: string
   organizationId: string
   servicesCount: number
+  databasesCount: number
   routesCount: number
   createdAt: Date
 }

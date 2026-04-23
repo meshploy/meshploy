@@ -109,6 +109,11 @@ export interface ApiProject {
   organization_id: string
   created_at: string
   updated_at: string
+  // Resource counts — embedded by the list endpoint (single SQL aggregation).
+  // Extend ProjectCounts in the Go service layer when adding new resource types.
+  services_count: number
+  databases_count: number
+  routes_count: number
 }
 
 // ─── Adapters (API → frontend types) ─────────────────────────────────────────
@@ -155,8 +160,9 @@ export function toProject(p: ApiProject): Project {
     name: p.name,
     slug: p.slug,
     organizationId: p.organization_id,
-    servicesCount: 0,
-    routesCount: 0,
+    servicesCount: p.services_count ?? 0,
+    databasesCount: p.databases_count ?? 0,
+    routesCount: p.routes_count ?? 0,
     createdAt: new Date(p.created_at),
   }
 }

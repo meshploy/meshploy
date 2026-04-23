@@ -14,6 +14,14 @@ const SEGMENT_LABELS: Record<string, string> = {
   settings:     "Settings",
   services:     "Services",
   deployments:  "Deployments",
+  routes:       "Routes",
+  jobs:         "Jobs",
+  "cron-jobs":  "Cron Jobs",
+  databases:    "Databases",
+  pipelines:    "Pipelines",
+  domains:      "Domains",
+  config:       "Config",
+  logs:         "Logs",
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

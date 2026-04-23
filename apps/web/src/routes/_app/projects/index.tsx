@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useState } from "react"
+import type React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { FolderKanban, Globe, Loader2, Plus, Server, ServerCrash } from "lucide-react"
 import { projects as projectsApi, toProject } from "@/lib/api"
+import type { Project } from "@/types"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -81,43 +83,54 @@ function ProjectsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {projectList.map((project) => (
-            <Link
-              key={project.id}
-              to="/projects/$id"
-              params={{ id: project.id }}
-              className="group flex flex-col gap-4 rounded-lg border border-border/60 bg-card p-5 hover:border-border hover:bg-card/80 transition-all"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/10 shrink-0">
-                    <FolderKanban className="h-4 w-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground leading-tight">{project.name}</p>
-                    <code className="text-[10px] font-mono text-muted-foreground">ns/{project.slug}</code>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 pt-1 border-t border-border/40">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Server className="h-3 w-3" />
-                  <span>{project.servicesCount} service{project.servicesCount !== 1 ? "s" : ""}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Globe className="h-3 w-3" />
-                  <span>{project.routesCount} route{project.routesCount !== 1 ? "s" : ""}</span>
-                </div>
-                <span className="ml-auto text-[11px] text-muted-foreground/40">
-                  {formatRelativeTime(project.createdAt)}
-                </span>
-              </div>
-            </Link>
+            <ProjectCard key={project.id} project={project} />
           ))}
         </div>
       )}
 
       <NewProjectModal open={modalOpen} onOpenChange={setModalOpen} />
     </div>
+  )
+}
+
+function ProjectCard({ project }: { project: Project }) {
+  const counts = [
+    { icon: <Server className="h-3 w-3" />, label: "service", n: project.servicesCount },
+    { icon: <Globe className="h-3 w-3" />, label: "route", n: project.routesCount },
+    ...(project.databasesCount > 0
+      ? [{ icon: null as React.ReactNode, label: "db", n: project.databasesCount }]
+      : []),
+  ]
+
+  return (
+    <Link
+      to="/projects/$id"
+      params={{ id: project.id }}
+      className="group flex flex-col gap-4 rounded-lg border border-border/60 bg-card p-5 hover:border-border hover:bg-card/80 transition-all"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/10 shrink-0">
+            <FolderKanban className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground leading-tight">{project.name}</p>
+            <code className="text-[10px] font-mono text-muted-foreground">ns/{project.slug}</code>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 pt-1 border-t border-border/40">
+        {counts.map(({ icon, label, n }) => (
+          <div key={label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {icon}
+            <span>{n} {label}{n !== 1 ? "s" : ""}</span>
+          </div>
+        ))}
+        <span className="ml-auto text-[11px] text-muted-foreground/40">
+          {formatRelativeTime(project.createdAt)}
+        </span>
+      </div>
+    </Link>
   )
 }
