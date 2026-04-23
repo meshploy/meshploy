@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Globe, Loader2, ServerCrash, Trash2 } from "lucide-react"
+import { ArrowLeft, ExternalLink, Globe, Loader2, ServerCrash, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -119,6 +119,14 @@ function RouteDetailPage() {
             >
               {route.zone}
             </Badge>
+            <a
+              href={`https://${route.hostname}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 font-mono">
             → {route.target_ip}:{route.target_port}

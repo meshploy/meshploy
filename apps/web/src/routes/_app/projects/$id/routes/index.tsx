@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, Loader2, Plus } from "lucide-react"
+import { ExternalLink, Globe, Loader2, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { routes as routesApi } from "@/lib/api"
@@ -77,9 +77,20 @@ function RoutesTab() {
                   → {route.target_ip}:{route.target_port}
                 </code>
               </div>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4.5 shrink-0">
-                {route.zone}
-              </Badge>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4.5">
+                  {route.zone}
+                </Badge>
+                <a
+                  href={`https://${route.hostname}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
             </div>
           ))}
         </div>
