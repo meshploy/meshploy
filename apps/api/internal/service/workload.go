@@ -120,6 +120,7 @@ type UpdateWorkloadInput struct {
 	UpdateNode    bool       // when true, NodeID is applied (nil = auto-schedule)
 	NodeID        *uuid.UUID
 	Replicas      *int
+	Port          *int
 	CPURequest    *string
 	CPULimit      *string
 	MemoryRequest *string
@@ -140,6 +141,9 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	}
 	if in.Replicas != nil {
 		updates["replicas"] = *in.Replicas
+	}
+	if in.Port != nil {
+		updates["port"] = *in.Port
 	}
 	if in.CPURequest != nil {
 		updates["cpu_request"] = *in.CPURequest

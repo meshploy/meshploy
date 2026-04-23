@@ -29,6 +29,7 @@ import {
 import { mockStorage, mockNotifications } from "@/lib/mock-data"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { inputCls, Field } from "@/components/services/form-primitives"
 import type { NotificationChannel } from "@/types"
 
 type GitProvider = "github" | "gitlab" | "gitea"
@@ -308,7 +309,6 @@ function AddGitSourceDialog({ open, onClose, orgId, token, onSuccess }: {
   const isPAT = authMethod === "pat"
   const isGitLabOrGitea = provider === "gitlab" || provider === "gitea"
 
-  const inputCls = "w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
   const monoCls = inputCls + " font-mono"
 
   return (
@@ -378,17 +378,14 @@ function AddGitSourceDialog({ open, onClose, orgId, token, onSuccess }: {
             </div>
 
             {/* Instance URL (both methods) */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                {provider === "gitlab" ? <>Instance URL <span className="text-muted-foreground/50 font-normal">(leave empty for gitlab.com)</span></> : "Instance URL"}
-              </label>
+            <Field label={provider === "gitlab" ? "Instance URL (leave empty for gitlab.com)" : "Instance URL"}>
               <input type="url"
                 placeholder={provider === "gitlab" ? "https://gitlab.example.com" : "https://gitea.example.com"}
                 value={baseURL} onChange={(e) => setBaseURL(e.target.value)}
                 required={provider === "gitea"}
                 className={monoCls}
               />
-            </div>
+            </Field>
 
             {/* ── PAT instructions ── */}
             {isPAT && (
@@ -448,41 +445,30 @@ function AddGitSourceDialog({ open, onClose, orgId, token, onSuccess }: {
             )}
 
             {/* Group / Org scoping */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                {provider === "gitlab" ? "Group name" : "Organization name"}
-                {" "}<span className="text-muted-foreground/50 font-normal">(optional — scopes repo access)</span>
-              </label>
+            <Field label={provider === "gitlab" ? "Group name (optional)" : "Organization name (optional)"}>
               <input type="text"
                 placeholder={provider === "gitlab" ? "e.g. my-group or my-group/sub-group" : "e.g. my-org"}
                 value={groups} onChange={(e) => setGroups(e.target.value)}
                 className={inputCls}
               />
-              <p className="text-[11px] text-muted-foreground/60">
-                {provider === "gitlab"
-                  ? "Leave empty to list all accessible repos. Set to a group path to scope to that group."
-                  : "Leave empty to list all accessible repos. Set to an org name to scope to that org."}
-              </p>
-            </div>
+            </Field>
 
             {/* Label */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Label</label>
+            <Field label="Label" required>
               <input type="text"
                 placeholder={provider === "gitlab" ? "e.g. my-gitlab-org" : "e.g. my-gitea-org"}
-                value={name} onChange={(e) => setName(e.target.value)} required
+                value={name} onChange={(e) => setName(e.target.value)}
                 className={inputCls}
               />
-            </div>
+            </Field>
 
             {/* PAT fields */}
             {isPAT && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Personal access token</label>
+              <Field label="Personal access token" required>
                 <div className="flex items-center gap-1">
                   <input type={showPAT ? "text" : "password"}
                     value={pat} onChange={(e) => setPAT(e.target.value)}
-                    required autoComplete="new-password"
+                    autoComplete="new-password"
                     placeholder={provider === "gitlab" ? "glpat-…" : ""}
                     className={`flex-1 ${monoCls}`}
                   />
@@ -491,37 +477,31 @@ function AddGitSourceDialog({ open, onClose, orgId, token, onSuccess }: {
                     {showPAT ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground/60">Stored encrypted with AES-256-GCM</p>
-              </div>
+                <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
+              </Field>
             )}
 
             {/* OAuth fields */}
             {!isPAT && (
               <>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    {provider === "gitlab" ? "Application ID" : "Client ID"}
-                  </label>
+                <Field label={provider === "gitlab" ? "Application ID" : "Client ID"} required>
                   <input type="text" value={clientID} onChange={(e) => setClientID(e.target.value)}
-                    required autoComplete="off" className={monoCls}
+                    autoComplete="off" className={monoCls}
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    {provider === "gitlab" ? "Application Secret" : "Client Secret"}
-                  </label>
+                </Field>
+                <Field label={provider === "gitlab" ? "Application Secret" : "Client Secret"} required>
                   <div className="flex items-center gap-1">
                     <input type={showSecret ? "text" : "password"}
                       value={clientSecret} onChange={(e) => setClientSecret(e.target.value)}
-                      required autoComplete="new-password" className={`flex-1 ${monoCls}`}
+                      autoComplete="new-password" className={`flex-1 ${monoCls}`}
                     />
                     <button type="button" onClick={() => setShowSecret((v) => !v)}
                       className="p-2 text-muted-foreground hover:text-foreground transition-colors">
                       {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  <p className="text-[11px] text-muted-foreground/60">Stored encrypted with AES-256-GCM</p>
-                </div>
+                  <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
+                </Field>
               </>
             )}
 
@@ -754,11 +734,9 @@ function AddRegistryDialog({ open, onClose, orgId, token, onSuccess }: {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-1">
-          {/* Provider */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Provider</label>
+          <Field label="Provider">
             <Select value={provider} onValueChange={(v) => setProvider(v as RegistryProvider)}>
-              <SelectTrigger className="w-full h-9 px-3 text-sm bg-input/30 border-border/60">
+              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -767,91 +745,54 @@ function AddRegistryDialog({ open, onClose, orgId, token, onSuccess }: {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
 
-          {/* Name */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Label</label>
-            <input
-              type="text"
-              placeholder="e.g. production-ghcr"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+          <Field label="Label" required>
+            <input type="text" placeholder="e.g. production-ghcr"
+              value={name} onChange={(e) => setName(e.target.value)}
+              className={inputCls}
             />
-          </div>
+          </Field>
 
-          {/* Endpoint — only for providers that need it */}
           {providerMeta.needsEndpoint && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Registry endpoint</label>
-              <input
-                type="text"
-                placeholder={providerMeta.namespacePlaceholder}
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+            <Field label="Registry endpoint">
+              <input type="text" placeholder={providerMeta.namespacePlaceholder}
+                value={endpoint} onChange={(e) => setEndpoint(e.target.value)}
+                className={inputCls + " font-mono"}
               />
-            </div>
+            </Field>
           )}
 
-          {/* Namespace */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              Namespace <span className="text-muted-foreground/50 font-normal">(optional)</span>
-            </label>
-            <input
-              type="text"
-              placeholder={providerMeta.namespacePlaceholder}
-              value={namespace}
-              onChange={(e) => setNamespace(e.target.value)}
-              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+          <Field label="Namespace (optional)">
+            <input type="text" placeholder={providerMeta.namespacePlaceholder}
+              value={namespace} onChange={(e) => setNamespace(e.target.value)}
+              className={inputCls + " font-mono"}
             />
-          </div>
+          </Field>
 
-          {/* Username */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">{providerMeta.userLabel}</label>
-            <input
-              type="text"
-              value={username}
+          <Field label={providerMeta.userLabel} required>
+            <input type="text" value={username}
               onChange={(e) => setUsername(e.target.value)}
-              required
-              autoComplete="off"
-              className="w-full rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              autoComplete="off" className={inputCls}
             />
-          </div>
+          </Field>
 
-          {/* Password / token */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">{providerMeta.passLabel}</label>
+          <Field label={providerMeta.passLabel} required>
             <div className="flex items-center gap-1">
-              <input
-                type={showPass ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
+              <input type={showPass ? "text" : "password"}
+                value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
-                className="flex-1 rounded-md border border-border/60 bg-input/30 px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                className={"flex-1 " + inputCls + " font-mono"}
               />
-              <button
-                type="button"
-                onClick={() => setShowPass((v) => !v)}
-                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-              >
+              <button type="button" onClick={() => setShowPass((v) => !v)}
+                className="p-2 text-muted-foreground hover:text-foreground transition-colors">
                 {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <p className="text-[11px] text-muted-foreground/60">Stored encrypted with AES-256-GCM</p>
-          </div>
+            <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
+          </Field>
 
-          {error && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              {error}
-            </div>
-          )}
+          {error && <ErrorBanner message={error} />}
         </form>
 
         <DialogFooter showCloseButton>

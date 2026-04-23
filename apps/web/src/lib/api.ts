@@ -450,6 +450,7 @@ export interface UpdateServiceBody {
   image?: string
   node_id?: string     // "" = auto-schedule, UUID = pin to node
   replicas?: number
+  port?: number
   cpu_request?: string
   cpu_limit?: string
   memory_request?: string

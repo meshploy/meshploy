@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { routes as routesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { Section } from "@/components/services/form-primitives"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/$routeId")({
   component: RouteDetailPage,
@@ -100,11 +101,8 @@ function RouteDetailPage() {
       </div>
 
       {/* Danger zone */}
-      <div className="rounded-lg border border-destructive/30 overflow-hidden">
-        <div className="px-4 py-3 bg-destructive/5">
-          <p className="text-xs font-medium text-destructive">Danger Zone</p>
-        </div>
-        <div className="px-4 py-4 flex items-center justify-between gap-4">
+      <Section title="Danger zone" subtitle="Permanent actions that cannot be undone." danger>
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-medium">Delete route</p>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -112,43 +110,22 @@ function RouteDetailPage() {
             </p>
           </div>
           {!confirmDelete ? (
-            <Button
-              variant="destructive"
-              size="sm"
-              className="shrink-0 gap-1.5"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
+            <Button variant="destructive" size="sm" className="shrink-0 gap-1.5" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="h-3.5 w-3.5" />Delete
             </Button>
           ) : (
             <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setConfirmDelete(false)}
-                disabled={deleteMutation.isPending}
-              >
+              <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)} disabled={deleteMutation.isPending}>
                 Cancel
               </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => deleteMutation.mutate()}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5" />
-                )}
+              <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 Confirm delete
               </Button>
             </div>
           )}
         </div>
-      </div>
+      </Section>
     </div>
   )
 }
