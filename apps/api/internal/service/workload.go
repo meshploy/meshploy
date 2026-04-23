@@ -5,12 +5,15 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	appk8s "github.com/meshploy/apps/api/internal/k8s"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
+	"k8s.io/client-go/kubernetes"
 )
 
 type WorkloadService struct {
-	db *gorm.DB
+	db  *gorm.DB
+	k8s kubernetes.Interface // nil when K8s is not configured
 }
 
 type CreateWorkloadInput struct {
@@ -109,14 +112,39 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 }
 
 func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
-	if err := s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Update("status", db.ServiceRunning).Error; err != nil {
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+	if svc.Image == "" {
+		return nil, errors.New("service has never been deployed — trigger a deployment first")
+	}
+	if s.k8s != nil {
+		replicas := int32(svc.Replicas)
+		if replicas == 0 {
+			replicas = 1
+		}
+		if err := appk8s.ScaleDeployment(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, replicas); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.db.WithContext(ctx).Model(&svc).Update("status", db.ServiceRunning).Error; err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, serviceID)
 }
 
 func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
-	if err := s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Update("status", db.ServiceStopped).Error; err != nil {
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+	if s.k8s != nil {
+		if err := appk8s.ScaleDeployment(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, 0); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.db.WithContext(ctx).Model(&svc).Update("status", db.ServiceStopped).Error; err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, serviceID)

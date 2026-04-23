@@ -140,7 +140,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Orgs:            &OrgService{db: db},
 		Projects:        &ProjectService{db: db},
 		Nodes:           nodes,
-		Workloads:       &WorkloadService{db: db},
+		Workloads:       &WorkloadService{db: db, k8s: k8sClient},
 		Domains:         domains,
 		Routes:          &RouteService{db: db, k8s: k8sClient},
 		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc},

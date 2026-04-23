@@ -144,6 +144,21 @@ func ApplyService(ctx context.Context, client kubernetes.Interface, name, namesp
 	return err
 }
 
+// ScaleDeployment sets the replica count on an existing Deployment.
+// If the Deployment does not exist (not yet deployed) the call is a no-op.
+func ScaleDeployment(ctx context.Context, client kubernetes.Interface, name, namespace string, replicas int32) error {
+	scale, err := client.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get scale: %w", err)
+	}
+	scale.Spec.Replicas = replicas
+	_, err = client.AppsV1().Deployments(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+	return err
+}
+
 // DeleteWorkload removes the Deployment and Service for a service.
 func DeleteWorkload(ctx context.Context, client kubernetes.Interface, name, namespace string) error {
 	dp := client.AppsV1().Deployments(namespace)
