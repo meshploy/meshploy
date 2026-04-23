@@ -31,7 +31,7 @@ func (s *OrgService) ListForUser(ctx context.Context, userID uuid.UUID) ([]db.Or
 	orgs := make([]db.Organization, 0)
 	err := s.db.WithContext(ctx).
 		Joins("JOIN organization_members ON organization_members.organization_id = organizations.id").
-		Where("organization_members.user_id = ? AND organization_members.deleted_at IS NULL", userID).
+		Where("organization_members.user_id = ?", userID).
 		Find(&orgs).Error
 	return orgs, err
 }

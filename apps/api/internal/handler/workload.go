@@ -108,6 +108,24 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 	}, h.DeleteWorkload)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "start-service",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/start",
+		Summary:     "Start a service",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.StartService)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "stop-service",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/stop",
+		Summary:     "Stop a service",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.StopService)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-service-env-vars",
 		Method:      "GET",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/env-vars",
@@ -252,6 +270,36 @@ func (h *Handler) DeleteWorkload(ctx context.Context, input *WorkloadPathInput) 
 		return nil, huma.Error400BadRequest("invalid service id")
 	}
 	return nil, h.svc.Workloads.Delete(ctx, serviceID)
+}
+
+func (h *Handler) StartService(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := uuid.Parse(input.ServiceID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid service id")
+	}
+	svc, err := h.svc.Workloads.Start(ctx, serviceID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &GetWorkloadOutput{Body: svc}, nil
+}
+
+func (h *Handler) StopService(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := uuid.Parse(input.ServiceID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid service id")
+	}
+	svc, err := h.svc.Workloads.Stop(ctx, serviceID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &GetWorkloadOutput{Body: svc}, nil
 }
 
 // ─── PATCH service ────────────────────────────────────────────────────────────

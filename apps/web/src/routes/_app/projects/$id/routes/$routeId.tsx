@@ -1,13 +1,13 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Globe, Loader2, ServerCrash, Trash2 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { routes as routesApi } from "@/lib/api"
+import { routes as routesApi, services as servicesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Section } from "@/components/services/form-primitives"
+import { Section, Field, inputCls } from "@/components/services/form-primitives"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/$routeId")({
   component: RouteDetailPage,
@@ -27,10 +27,45 @@ function RouteDetailPage() {
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  const [targetMode, setTargetMode] = useState<"service" | "manual">("manual")
+  const [selectedServiceId, setSelectedServiceId] = useState("")
+  const [targetIP, setTargetIP] = useState("")
+  const [targetPort, setTargetPort] = useState(80)
+
   const { data: route, isLoading, isError } = useQuery({
     queryKey: ["route", orgId, projectId, routeId],
     queryFn: () => routesApi.get(orgId!, projectId, routeId, token),
     enabled: !!orgId,
+  })
+
+  const { data: allServices = [] } = useQuery({
+    queryKey: ["services", orgId, projectId],
+    queryFn: () => servicesApi.list(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  const serviceList = allServices.filter((s) => s.type === "application")
+
+  useEffect(() => {
+    if (!route) return
+    if (route.service_id) {
+      setTargetMode("service")
+      setSelectedServiceId(route.service_id)
+    } else {
+      setTargetMode("manual")
+    }
+    setTargetIP(route.target_ip)
+    setTargetPort(route.target_port)
+  }, [route])
+
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      const body =
+        targetMode === "service"
+          ? { service_id: selectedServiceId || null, target_ip: targetIP, target_port: targetPort }
+          : { service_id: null as string | null, target_ip: targetIP, target_port: targetPort }
+      return routesApi.update(orgId!, projectId, routeId, body, token)
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] }),
   })
 
   const deleteMutation = useMutation({
@@ -99,6 +134,89 @@ function RouteDetailPage() {
         {route.service_id && <DetailRow label="Service ID" value={route.service_id} mono />}
         <DetailRow label="Created" value={new Date(route.created_at).toLocaleString()} />
       </div>
+
+      {/* Target */}
+      <Section title="Target" subtitle="Change where this route forwards traffic.">
+        <div className="space-y-4">
+          <div className="flex items-center gap-1 p-1 rounded-md bg-muted/30 border border-border/40 w-fit">
+            <button
+              onClick={() => setTargetMode("service")}
+              className={`px-3 py-1 text-xs rounded transition-colors ${
+                targetMode === "service"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Service
+            </button>
+            <button
+              onClick={() => setTargetMode("manual")}
+              className={`px-3 py-1 text-xs rounded transition-colors ${
+                targetMode === "manual"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Manual
+            </button>
+          </div>
+
+          {targetMode === "service" ? (
+            <Field label="Service">
+              <select
+                value={selectedServiceId}
+                onChange={(e) => setSelectedServiceId(e.target.value)}
+                className={inputCls}
+              >
+                <option value="">— none —</option>
+                {serviceList.map((svc) => (
+                  <option key={svc.id} value={svc.id}>
+                    {svc.name} :{svc.port}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Target IP">
+                <input
+                  type="text"
+                  value={targetIP}
+                  onChange={(e) => setTargetIP(e.target.value)}
+                  placeholder="10.0.0.1"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Target Port">
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={targetPort}
+                  onChange={(e) => setTargetPort(parseInt(e.target.value) || 80)}
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+          )}
+
+          {updateMutation.isError && (
+            <p className="text-xs text-destructive">
+              {(updateMutation.error as Error)?.message ?? "Failed to update route"}
+            </p>
+          )}
+
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => updateMutation.mutate()}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Save changes
+          </Button>
+        </div>
+      </Section>
 
       {/* Danger zone */}
       <Section title="Danger zone" subtitle="Permanent actions that cannot be undone." danger>

@@ -425,6 +425,20 @@ export const services = {
       { method: "DELETE" },
       token
     ),
+
+  start: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiService>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/start`,
+      { method: "POST" },
+      token
+    ),
+
+  stop: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiService>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/stop`,
+      { method: "POST" },
+      token
+    ),
 }
 
 export interface ApiBuildConfig {
@@ -574,6 +588,19 @@ export const routes = {
     apiFetch<ApiDbRoute>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
       {},
+      token
+    ),
+
+  update: (
+    orgId: string,
+    projectId: string,
+    routeId: string,
+    body: { service_id?: string | null; target_ip: string; target_port: number },
+    token: string
+  ) =>
+    apiFetch<ApiDbRoute>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
       token
     ),
 

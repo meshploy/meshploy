@@ -163,15 +163,41 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 	return route, s.db.WithContext(ctx).Create(route).Error
 }
 
-func (s *RouteService) Update(ctx context.Context, routeID uuid.UUID, targetIP string, targetPort int) (*db.Route, error) {
+type UpdateRouteInput struct {
+	// ServiceID: non-nil = link to service and auto-resolve target IP/port.
+	// nil = unlink (use TargetIP/TargetPort directly).
+	ServiceID  *uuid.UUID
+	UpdateServiceID bool // when true, ServiceID field is applied (allows explicit unlink)
+	TargetIP   string
+	TargetPort int
+}
+
+func (s *RouteService) Update(ctx context.Context, routeID uuid.UUID, in UpdateRouteInput) (*db.Route, error) {
 	var route db.Route
 	if err := s.db.WithContext(ctx).First(&route, "id = ?", routeID).Error; err != nil {
 		return nil, err
 	}
-	err := s.db.WithContext(ctx).Model(&route).Updates(map[string]any{
-		"target_ip":   targetIP,
-		"target_port": targetPort,
-	}).Error
+
+	updates := map[string]any{
+		"target_ip":   in.TargetIP,
+		"target_port": in.TargetPort,
+	}
+
+	if in.UpdateServiceID {
+		updates["service_id"] = in.ServiceID
+		if in.ServiceID != nil {
+			var svc db.Service
+			if err := s.db.WithContext(ctx).Preload("Node").First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
+				return nil, huma.Error400BadRequest("service not found")
+			}
+			if svc.Node != nil {
+				updates["target_ip"] = svc.Node.TailscaleIP
+			}
+			updates["target_port"] = svc.Port
+		}
+	}
+
+	err := s.db.WithContext(ctx).Model(&route).Updates(updates).Error
 	return &route, err
 }
 
