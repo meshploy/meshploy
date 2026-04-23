@@ -171,11 +171,14 @@ function RouteDetailPage() {
             </button>
           </div>
 
-          {targetMode === "service" ? (
+          {targetMode === "service" ? (() => {
+            const selectedSvc = serviceList.find((x) => x.id === selectedServiceId)
+            const selectedLabel = selectedSvc ? `${selectedSvc.name} :${selectedSvc.port}` : "— none —"
+            return (
             <Field label="Service">
               <Select value={selectedServiceId} onValueChange={(v) => setSelectedServiceId(v ?? "")}>
                 <SelectTrigger className="w-full h-9 text-sm">
-                  <SelectValue placeholder="— none —" />
+                  <SelectValue placeholder="— none —">{selectedLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">— none —</SelectItem>
@@ -187,7 +190,8 @@ function RouteDetailPage() {
                 </SelectContent>
               </Select>
             </Field>
-          ) : (
+            )
+          })() : (
             <div className="grid grid-cols-2 gap-4">
               <Field label="Target IP">
                 <Input
