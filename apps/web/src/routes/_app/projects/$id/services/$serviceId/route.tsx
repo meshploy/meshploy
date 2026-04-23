@@ -82,7 +82,7 @@ function ServiceLayout() {
               </Badge>
             </div>
             <div className="flex items-center gap-1.5">
-              {(service.status === "stopped" || service.status === "failed") && (
+              {(service.status === "stopped" || service.status === "failed") && !!service.image && (
                 <Button
                   size="sm"
                   variant="outline"
