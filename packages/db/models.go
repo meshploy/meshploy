@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // ---------------------------------------------------------------------------
@@ -159,10 +158,9 @@ const (
 // ---------------------------------------------------------------------------
 
 type Base struct {
-	ID        uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index"                                          json:"-"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -186,9 +184,9 @@ type Organization struct {
 	HeadscalePreAuthKey       EncryptedString `gorm:"type:text" json:"-"`
 	HeadscalePreAuthKeyExpiry *time.Time      `                 json:"-"`
 
-	Members  []OrganizationMember `gorm:"foreignKey:OrganizationID" json:"-"`
-	Projects []Project            `gorm:"foreignKey:OrganizationID" json:"-"`
-	Nodes    []Node               `gorm:"foreignKey:OrganizationID" json:"-"`
+	Members  []OrganizationMember `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
+	Projects []Project            `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
+	Nodes    []Node               `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 type OrganizationMember struct {
@@ -232,9 +230,9 @@ type Project struct {
 	// Service-level env vars override these when the same key appears.
 	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
-	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
-	Services     []Service    `gorm:"foreignKey:ProjectID"      json:"-"`
-	Routes       []Route      `gorm:"foreignKey:ProjectID"      json:"-"`
+	Organization Organization `gorm:"foreignKey:OrganizationID"                         json:"-"`
+	Services     []Service    `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
+	Routes       []Route      `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 }
 
 type Node struct {
@@ -296,12 +294,12 @@ type Service struct {
 	// Merged with project-level env vars at deploy time; service keys win on conflict.
 	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
-	Project        Project         `gorm:"foreignKey:ProjectID"  json:"-"`
-	Node           *Node           `gorm:"foreignKey:NodeID"     json:"-"`
-	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID"  json:"-"`
-	DatabaseConfig *DatabaseConfig `gorm:"foreignKey:ServiceID"  json:"-"`
-	Routes         []Route         `gorm:"foreignKey:ServiceID"  json:"-"`
-	Deployments    []Deployment    `gorm:"foreignKey:ServiceID"  json:"-"`
+	Project        Project         `gorm:"foreignKey:ProjectID"                              json:"-"`
+	Node           *Node           `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"     json:"-"`
+	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
+	DatabaseConfig *DatabaseConfig `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
+	Routes         []Route         `gorm:"foreignKey:ServiceID;constraint:OnDelete:SET NULL"  json:"-"`
+	Deployments    []Deployment    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
 }
 
 // BuildConfig holds app-specific build settings. 1:1 with Service (type=application).
@@ -341,8 +339,9 @@ type BuildConfig struct {
 	LastBuiltImage string     `json:"last_built_image"`
 	LastBuiltAt    *time.Time `json:"last_built_at"`
 
-	Service             Service              `gorm:"foreignKey:ServiceID"             json:"-"`
-	RegistryIntegration *RegistryIntegration `gorm:"foreignKey:RegistryIntegrationID" json:"-"`
+	Service             Service              `gorm:"foreignKey:ServiceID"                                        json:"-"`
+	GitIntegration      *GitIntegration      `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL"    json:"-"`
+	RegistryIntegration *RegistryIntegration `gorm:"foreignKey:RegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
 // DatabaseConfig holds managed-database settings. 1:1 with Service (type=database).
@@ -462,8 +461,8 @@ type StorageIntegration struct {
 	AccessKeyID     EncryptedString `gorm:"type:text;not null" json:"-"`
 	SecretAccessKey EncryptedString `gorm:"type:text;not null" json:"-"`
 
-	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
-	BackupConfigs []BackupConfig `gorm:"foreignKey:StorageIntegrationID" json:"-"`
+	Organization Organization   `gorm:"foreignKey:OrganizationID"                               json:"-"`
+	BackupConfigs []BackupConfig `gorm:"foreignKey:StorageIntegrationID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 func (StorageIntegration) TableName() string { return "storage_integrations" }

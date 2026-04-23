@@ -1,7 +1,8 @@
 import { createFileRoute, Link, Outlet, useParams } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { Loader2, ServerCrash } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Loader2, Play, ServerCrash, Square } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { services as servicesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -29,11 +30,24 @@ function ServiceLayout() {
   const { id: projectId, serviceId } = useParams({ from: "/_app/projects/$id/services/$serviceId" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const queryClient = useQueryClient()
+
+  const queryKey = ["service", orgId, projectId, serviceId]
 
   const { data: service, isLoading, isError } = useQuery({
-    queryKey: ["service", orgId, projectId, serviceId],
+    queryKey,
     queryFn: () => servicesApi.get(orgId!, projectId, serviceId, token),
     enabled: !!orgId,
+  })
+
+  const startMutation = useMutation({
+    mutationFn: () => servicesApi.start(orgId!, projectId, serviceId, token),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  })
+
+  const stopMutation = useMutation({
+    mutationFn: () => servicesApi.stop(orgId!, projectId, serviceId, token),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   })
 
   if (isLoading) {
@@ -58,13 +72,47 @@ function ServiceLayout() {
       {/* Service sub-header */}
       <div className="border-b border-border/40 bg-muted/10">
         <div className="px-6 pt-3.5 pb-0">
-          <div className="flex items-center gap-2 mb-2.5">
-            <span className="text-sm font-medium">{service.name}</span>
-            <Badge
-              className={`text-[10px] px-1.5 py-0 h-4 border ${STATUS_STYLES[service.status] ?? STATUS_STYLES.stopped}`}
-            >
-              {service.status}
-            </Badge>
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{service.name}</span>
+              <Badge
+                className={`text-[10px] px-1.5 py-0 h-4 border ${STATUS_STYLES[service.status] ?? STATUS_STYLES.stopped}`}
+              >
+                {service.status}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {(service.status === "stopped" || service.status === "failed") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 h-7 text-xs"
+                  onClick={() => startMutation.mutate()}
+                  disabled={startMutation.isPending}
+                >
+                  {startMutation.isPending
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <Play className="h-3 w-3" />
+                  }
+                  Start
+                </Button>
+              )}
+              {(service.status === "running" || service.status === "deploying") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 h-7 text-xs"
+                  onClick={() => stopMutation.mutate()}
+                  disabled={stopMutation.isPending}
+                >
+                  {stopMutation.isPending
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <Square className="h-3 w-3" />
+                  }
+                  Stop
+                </Button>
+              )}
+            </div>
           </div>
 
           <nav className="flex items-center -mb-px">

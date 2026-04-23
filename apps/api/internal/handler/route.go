@@ -60,8 +60,9 @@ type UpdateRouteInput struct {
 	ProjectID string `path:"projectId"`
 	RouteID   string `path:"routeId"`
 	Body      struct {
-		TargetIP   string `json:"target_ip"`
-		TargetPort int    `json:"target_port" minimum:"1" maximum:"65535"`
+		ServiceID  *string `json:"service_id"`  // null = unlink; omit field = no change
+		TargetIP   string  `json:"target_ip"`
+		TargetPort int     `json:"target_port" minimum:"1" maximum:"65535"`
 	}
 }
 
@@ -251,7 +252,23 @@ func (h *Handler) UpdateRoute(ctx context.Context, input *UpdateRouteInput) (*Up
 	if err != nil {
 		return nil, err
 	}
-	route, err := h.svc.Routes.Update(ctx, routeID, input.Body.TargetIP, input.Body.TargetPort)
+
+	in := svc.UpdateRouteInput{
+		TargetIP:   input.Body.TargetIP,
+		TargetPort: input.Body.TargetPort,
+	}
+	if input.Body.ServiceID != nil {
+		in.UpdateServiceID = true
+		if *input.Body.ServiceID != "" {
+			sid, err := parseUUID(*input.Body.ServiceID)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invalid service_id")
+			}
+			in.ServiceID = &sid
+		}
+	}
+
+	route, err := h.svc.Routes.Update(ctx, routeID, in)
 	if err != nil {
 		return nil, notFound(err)
 	}

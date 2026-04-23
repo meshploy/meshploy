@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { services as servicesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { formatRelativeTime } from "@/lib/utils"
 import type { ServiceStatus } from "@/types"
 
 export const Route = createFileRoute("/_app/projects/$id/services/")({
@@ -88,9 +89,9 @@ function ServicesTab() {
                     {svc.status}
                   </Badge>
                 </div>
-                <code className="text-[11px] font-mono text-muted-foreground/70 mt-0.5 block truncate">
-                  {svc.image || "no image yet"}
-                </code>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  :{svc.port} · {svc.node_id ? "node pinned" : "auto-scheduled"} · updated {formatRelativeTime(new Date(svc.updated_at))}
+                </p>
               </div>
               <span className="text-xs text-muted-foreground shrink-0">×{svc.replicas}</span>
             </div>

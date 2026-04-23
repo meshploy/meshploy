@@ -108,6 +108,20 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	})
 }
 
+func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
+	if err := s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Update("status", db.ServiceRunning).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, serviceID)
+}
+
+func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
+	if err := s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Update("status", db.ServiceStopped).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, serviceID)
+}
+
 func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error {
 	return s.db.WithContext(ctx).Delete(&db.Service{}, "id = ?", serviceID).Error
 }

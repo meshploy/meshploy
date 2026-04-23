@@ -109,13 +109,14 @@ func Migrate(db *gorm.DB) error {
 }
 
 // applyConstraints creates DB-level constraints that GORM's AutoMigrate
-// cannot express via struct tags alone.
+// cannot express via struct tags alone, and ensures all FK constraints carry
+// the correct ON DELETE behavior (idempotent — safe to run on every startup).
 func applyConstraints(db *gorm.DB) error {
 	stmts := []string{
 		// Exactly one owner per organization
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
 		 ON organization_members (organization_id)
-		 WHERE role = 'owner' AND deleted_at IS NULL`,
+		 WHERE role = 'owner'`,
 	}
 
 	for _, stmt := range stmts {
@@ -123,5 +124,72 @@ func applyConstraints(db *gorm.DB) error {
 			return err
 		}
 	}
+
+	type fkSpec struct {
+		table, column, refTable, onDelete string
+	}
+	fks := []fkSpec{
+		// Organization → children CASCADE
+		{"organization_members", "organization_id", "organizations", "CASCADE"},
+		{"projects", "organization_id", "organizations", "CASCADE"},
+		{"nodes", "organization_id", "organizations", "CASCADE"},
+		{"node_registration_tokens", "organization_id", "organizations", "CASCADE"},
+		{"storage_integrations", "organization_id", "organizations", "CASCADE"},
+		{"registry_integrations", "organization_id", "organizations", "CASCADE"},
+		{"git_integrations", "organization_id", "organizations", "CASCADE"},
+		{"notification_channels", "organization_id", "organizations", "CASCADE"},
+		{"domains", "organization_id", "organizations", "CASCADE"},
+		{"resource_permissions", "organization_id", "organizations", "CASCADE"},
+		// Project → children CASCADE
+		{"services", "project_id", "projects", "CASCADE"},
+		{"routes", "project_id", "projects", "CASCADE"},
+		// Service → children CASCADE
+		{"build_configs", "service_id", "services", "CASCADE"},
+		{"database_configs", "service_id", "services", "CASCADE"},
+		{"deployments", "service_id", "services", "CASCADE"},
+		{"backup_configs", "service_id", "services", "CASCADE"},
+		// Sibling connections SET NULL
+		{"services", "node_id", "nodes", "SET NULL"},
+		{"routes", "service_id", "services", "SET NULL"},
+		{"build_configs", "git_integration_id", "git_integrations", "SET NULL"},
+		{"build_configs", "registry_integration_id", "registry_integrations", "SET NULL"},
+		{"backup_configs", "storage_integration_id", "storage_integrations", "CASCADE"},
+	}
+
+	for _, fk := range fks {
+		if err := ensureFK(db, fk.table, fk.column, fk.refTable, fk.onDelete); err != nil {
+			return fmt.Errorf("ensureFK %s.%s: %w", fk.table, fk.column, err)
+		}
+	}
+
 	return nil
+}
+
+// ensureFK drops any existing FK constraint on table.column and recreates it
+// with the specified ON DELETE behavior. Idempotent across restarts.
+func ensureFK(db *gorm.DB, table, column, refTable, onDelete string) error {
+	var constraints []string
+	db.Raw(`
+		SELECT tc.constraint_name
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu
+			ON tc.constraint_name = kcu.constraint_name
+			AND tc.table_schema = kcu.table_schema
+		WHERE tc.constraint_type = 'FOREIGN KEY'
+			AND tc.table_schema = 'public'
+			AND tc.table_name = ?
+			AND kcu.column_name = ?
+	`, table, column).Scan(&constraints)
+
+	for _, c := range constraints {
+		if err := db.Exec(fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS "%s"`, table, c)).Error; err != nil {
+			return err
+		}
+	}
+
+	name := fmt.Sprintf("fk_%s_%s", table, column)
+	return db.Exec(fmt.Sprintf(
+		`ALTER TABLE %s ADD CONSTRAINT "%s" FOREIGN KEY (%s) REFERENCES %s(id) ON DELETE %s`,
+		table, name, column, refTable, onDelete,
+	)).Error
 }
