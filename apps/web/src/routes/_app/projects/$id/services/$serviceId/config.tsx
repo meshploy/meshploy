@@ -147,6 +147,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     builderCPURequest: "1000m",
     builderMemoryRequest: "1Gi",
     nodeId: "",
+    port: 3000,
     replicas: 1,
     cpuRequest: "100m",
     cpuLimit: "500m",
@@ -172,6 +173,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       builderCPURequest: bc?.builder_cpu_request || "1000m",
       builderMemoryRequest: bc?.builder_memory_request || "1Gi",
       nodeId: service.node_id ?? "",
+      port: service.port ?? 3000,
       replicas: service.replicas,
       cpuRequest: service.cpu_request,
       cpuLimit: service.cpu_limit,
@@ -202,6 +204,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       const updatedSvc = await servicesApi.update(orgId, projectId, serviceId, {
         image: form.source === "image" ? form.image : "",
         node_id: form.nodeId,
+        port: form.port,
         replicas: form.replicas,
         cpu_request: form.cpuRequest,
         cpu_limit: form.cpuLimit,
@@ -399,11 +402,18 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           </div>
         </div>
 
-        <Field label="Replicas">
-          <input type="number" min={1} max={20} value={form.replicas}
-            onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
-            className={cn(inputCls, "w-24")} />
-        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Port">
+            <input type="number" min={1} max={65535} value={form.port}
+              onChange={(e) => patch({ port: parseInt(e.target.value) || 3000 })}
+              className={inputCls} />
+          </Field>
+          <Field label="Replicas">
+            <input type="number" min={1} max={20} value={form.replicas}
+              onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
+              className={inputCls} />
+          </Field>
+        </div>
       </Section>
 
       {/* ── Resource limits (collapsible) ─────────────────────── */}

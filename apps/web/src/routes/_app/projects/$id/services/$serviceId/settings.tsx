@@ -1,12 +1,12 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Save, Trash2, Eraser } from "lucide-react"
+import { Eraser, Loader2, Save, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { services as servicesApi, projects as projectsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { inputCls } from "@/components/services/form-primitives"
+import { inputCls, Section, Field } from "@/components/services/form-primitives"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/settings"
@@ -67,21 +67,17 @@ function SettingsTab() {
   const canDelete = deleteConfirm === service?.name
 
   return (
-    <div className="p-6 max-w-xl space-y-8">
+    <div className="p-6 max-w-2xl space-y-6">
       {/* ── Rename ─────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="border-b border-border/40 pb-2">
-          <p className="text-sm font-medium">Service name</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Changing the name does not affect the K8s workload name.
-          </p>
-        </div>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className={inputCls}
-          placeholder="Service name"
-        />
+      <Section title="Service name" subtitle="Changing the name does not affect the K8s workload name.">
+        <Field label="Name">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Service name"
+            className={inputCls}
+          />
+        </Field>
         {renameMutation.isError && (
           <p className="text-xs text-destructive">{(renameMutation.error as Error).message}</p>
         )}
@@ -102,23 +98,15 @@ function SettingsTab() {
             Save
           </Button>
         </div>
-      </div>
+      </Section>
 
       {/* ── Build cache ────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="border-b border-border/40 pb-2">
-          <p className="text-sm font-medium">Build cache</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Buildah layer cache is shared across all services in this project.
-            Clear it to force a clean rebuild (e.g. after a corrupted cache or
-            to free disk space). The cache is recreated automatically on the
-            next deploy.
-          </p>
-        </div>
+      <Section
+        title="Build cache"
+        subtitle="Buildah layer cache is shared across all services in this project. Clear it to force a clean rebuild (e.g. after a corrupted cache or to free disk space). The cache is recreated automatically on the next deploy."
+      >
         {clearCacheMutation.isError && (
-          <p className="text-xs text-destructive">
-            {(clearCacheMutation.error as Error).message}
-          </p>
+          <p className="text-xs text-destructive">{(clearCacheMutation.error as Error).message}</p>
         )}
         {clearCacheMutation.isSuccess && (
           <p className="text-xs text-emerald-400">Cache cleared — next build starts fresh.</p>
@@ -136,17 +124,10 @@ function SettingsTab() {
           }
           Clear build cache
         </Button>
-      </div>
+      </Section>
 
       {/* ── Danger zone ────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="border-b border-destructive/30 pb-2">
-          <p className="text-sm font-medium text-destructive">Danger zone</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Permanent actions that cannot be undone.
-          </p>
-        </div>
-
+      <Section title="Danger zone" subtitle="Permanent actions that cannot be undone." danger>
         <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 space-y-4">
           <div>
             <p className="text-sm font-medium">Delete service</p>
@@ -155,23 +136,17 @@ function SettingsTab() {
               The K8s workload is not automatically removed.
             </p>
           </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">
-              Type <span className="font-mono text-foreground">{service?.name}</span> to confirm
-            </label>
+          <Field label={`Type "${service?.name}" to confirm`}>
             <input
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
               placeholder={service?.name}
               className={inputCls}
             />
-          </div>
-
+          </Field>
           {deleteMutation.isError && (
             <p className="text-xs text-destructive">{(deleteMutation.error as Error).message}</p>
           )}
-
           <Button
             variant="destructive"
             size="sm"
@@ -186,7 +161,7 @@ function SettingsTab() {
             Delete service
           </Button>
         </div>
-      </div>
+      </Section>
     </div>
   )
 }

@@ -6,19 +6,26 @@ export const inputCls =
 export function Section({
   title,
   subtitle,
+  danger,
+  action,
   children,
 }: {
   title: string
   subtitle?: string
+  danger?: boolean
+  action?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <div className="space-y-4">
-      <div className="border-b border-border/40 pb-2">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
-        )}
+      <div className={cn("border-b pb-2 flex items-start justify-between gap-2", danger ? "border-destructive/30" : "border-border/40")}>
+        <div>
+          <p className={cn("text-sm font-medium", danger ? "text-destructive" : "text-foreground")}>{title}</p>
+          {subtitle && (
+            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+          )}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
       </div>
       {children}
     </div>

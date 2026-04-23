@@ -266,6 +266,7 @@ type PatchWorkloadInput struct {
 		// node_id: omit = no change, "" = auto-schedule, UUID = pin to node
 		NodeID        *string `json:"node_id,omitempty"`
 		Replicas      *int    `json:"replicas,omitempty"`
+		Port          *int    `json:"port,omitempty"`
 		CPURequest    *string `json:"cpu_request,omitempty"`
 		CPULimit      *string `json:"cpu_limit,omitempty"`
 		MemoryRequest *string `json:"memory_request,omitempty"`
@@ -287,6 +288,7 @@ func (h *Handler) PatchWorkload(ctx context.Context, input *PatchWorkloadInput) 
 		Name:          input.Body.Name,
 		Image:         input.Body.Image,
 		Replicas:      input.Body.Replicas,
+		Port:          input.Body.Port,
 		CPURequest:    input.Body.CPURequest,
 		CPULimit:      input.Body.CPULimit,
 		MemoryRequest: input.Body.MemoryRequest,
