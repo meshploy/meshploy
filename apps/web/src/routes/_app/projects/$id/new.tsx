@@ -884,34 +884,46 @@ function RouteForm({ projectId }: { projectId: string }) {
         </div>
 
         {rf.targetMode === "service" ? (
-          <Field label="Service" required>
-            <Select
-              value={rf.serviceId}
-              onValueChange={(v) => patchRf({ serviceId: v ?? "" })}
-            >
-              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue
-                  placeholder={
-                    serviceList.length === 0
-                      ? "No services in this project"
-                      : "Select a service…"
-                  }
-                >
-                  {serviceList.find((s) => s.id === rf.serviceId)?.name}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {serviceList.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-1.5">
-              The service must be pinned to a specific node. Traffic routes via the node's mesh IP.
-            </p>
-          </Field>
+          <div className="space-y-3">
+            <Field label="Service" required>
+              <Select
+                value={rf.serviceId}
+                onValueChange={(v) => patchRf({ serviceId: v ?? "" })}
+              >
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue
+                    placeholder={
+                      serviceList.length === 0
+                        ? "No services in this project"
+                        : "Select a service…"
+                    }
+                  >
+                    {serviceList.find((s) => s.id === rf.serviceId)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {serviceList.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                      <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            {rf.serviceId && (() => {
+              const svc = serviceList.find((s) => s.id === rf.serviceId)
+              return svc ? (
+                <div className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">Port</span>
+                  <span className="font-mono text-xs text-foreground">{svc.port}</span>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    Configured on the service · change in service settings
+                  </span>
+                </div>
+              ) : null
+            })()}
+          </div>
         ) : (
           <div className="grid grid-cols-[1fr_120px] gap-4">
             <Field label="Node" required>
