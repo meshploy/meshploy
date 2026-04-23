@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/meshploy/packages/db"
+	svc "github.com/meshploy/apps/api/internal/service"
 )
 
 type ListProjectsInput struct {
@@ -12,7 +13,7 @@ type ListProjectsInput struct {
 }
 
 type ListProjectsOutput struct {
-	Body []db.Project
+	Body []svc.ProjectWithCounts
 }
 
 type ProjectPathInput struct {
@@ -113,7 +114,7 @@ func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*
 	if err != nil {
 		return nil, err
 	}
-	projects, err := h.svc.Projects.List(ctx, orgID)
+	projects, err := h.svc.Projects.ListWithCounts(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}

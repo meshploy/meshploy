@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button"
 import { routes as routesApi, services as servicesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Section, Field, inputCls } from "@/components/services/form-primitives"
+import { Section, Field } from "@/components/services/form-primitives"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/$routeId")({
   component: RouteDetailPage,
@@ -163,38 +165,39 @@ function RouteDetailPage() {
 
           {targetMode === "service" ? (
             <Field label="Service">
-              <select
-                value={selectedServiceId}
-                onChange={(e) => setSelectedServiceId(e.target.value)}
-                className={inputCls}
-              >
-                <option value="">— none —</option>
-                {serviceList.map((svc) => (
-                  <option key={svc.id} value={svc.id}>
-                    {svc.name} :{svc.port}
-                  </option>
-                ))}
-              </select>
+              <Select value={selectedServiceId} onValueChange={(v) => setSelectedServiceId(v ?? "")}>
+                <SelectTrigger className="w-full h-9 text-sm">
+                  <SelectValue placeholder="— none —" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">— none —</SelectItem>
+                  {serviceList.map((svc) => (
+                    <SelectItem key={svc.id} value={svc.id}>
+                      {svc.name} :{svc.port}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
           ) : (
             <div className="grid grid-cols-2 gap-4">
               <Field label="Target IP">
-                <input
+                <Input
                   type="text"
                   value={targetIP}
                   onChange={(e) => setTargetIP(e.target.value)}
                   placeholder="10.0.0.1"
-                  className={inputCls}
+                  className="h-9 text-sm"
                 />
               </Field>
               <Field label="Target Port">
-                <input
+                <Input
                   type="number"
                   min={1}
                   max={65535}
                   value={targetPort}
                   onChange={(e) => setTargetPort(parseInt(e.target.value) || 80)}
-                  className={inputCls}
+                  className="h-9 text-sm"
                 />
               </Field>
             </div>

@@ -38,6 +38,7 @@ import {
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
+import { Input } from "@/components/ui/input"
 
 // ─── Route ───────────────────────────────────────────────────────────────────
 
@@ -564,24 +565,22 @@ function ServiceForm({
         {/* Port + Replicas */}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Port" required>
-            <input
+            <Input
               type="number"
               min={1}
               max={65535}
               value={form.port}
               onChange={(e) => patch({ port: parseInt(e.target.value) || 3000 })}
               placeholder="3000"
-              className={inputCls}
             />
           </Field>
           <Field label="Replicas">
-            <input
+            <Input
               type="number"
               min={1}
               max={20}
               value={form.replicas}
               onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
-              className={inputCls}
             />
           </Field>
         </div>
@@ -953,14 +952,13 @@ function RouteForm({ projectId }: { projectId: string }) {
               </Select>
             </Field>
             <Field label="Port" required>
-              <input
+              <Input
                 type="number"
                 min={1}
                 max={65535}
                 value={rf.port}
                 onChange={(e) => patchRf({ port: e.target.value })}
                 placeholder="8080"
-                className={inputCls}
               />
             </Field>
           </div>
