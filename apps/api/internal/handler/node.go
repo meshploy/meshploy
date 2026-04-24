@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -538,12 +540,18 @@ type ClusterJoinTokenOutput struct {
 	}
 }
 
+const k3sTokenPath = "/var/lib/rancher/k3s/server/node-token"
+
 func (h *Handler) GetClusterJoinToken(ctx context.Context, _ *struct{}) (*ClusterJoinTokenOutput, error) {
 	if _, err := requireUser(ctx); err != nil {
 		return nil, err
 	}
 	out := &ClusterJoinTokenOutput{}
-	if h.cfg != nil {
+	// Read from filesystem at request time so rotated tokens are always current.
+	if raw, err := os.ReadFile(k3sTokenPath); err == nil {
+		out.Body.Token = strings.TrimSpace(string(raw))
+	} else if h.cfg != nil && h.cfg.K3sToken != "" {
+		// Fallback to env var (dev / non-gateway environments).
 		out.Body.Token = h.cfg.K3sToken
 	}
 	out.Body.ServerURL = "https://100.64.0.1:6443"
