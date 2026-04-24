@@ -17,6 +17,15 @@ export function formatRelativeTime(date: Date | null | undefined): string {
   return `${days}d ago`
 }
 
+export function projectColorHue(id: string): number {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash << 5) - hash + id.charCodeAt(i)
+    hash |= 0
+  }
+  return Math.abs(hash) % 360
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
   const k = 1024
