@@ -2,23 +2,13 @@ import { createFileRoute, Link, Outlet, useParams, useRouterState } from "@tanst
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Loader2, ServerCrash } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { projects as projectsApi } from "@/lib/api"
+import { projects as projectsApi, toProject } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/projects/$id")({
   component: ProjectLayout,
 })
-
-const TABS = [
-  { label: "Services",  to: "/projects/$id/services"  },
-  { label: "Jobs",      to: "/projects/$id/jobs"       },
-  { label: "Cron Jobs", to: "/projects/$id/cron-jobs"  },
-  { label: "Databases", to: "/projects/$id/databases"  },
-  { label: "Pipelines", to: "/projects/$id/pipelines"  },
-  { label: "Routes",    to: "/projects/$id/routes"     },
-  { label: "Settings",  to: "/projects/$id/settings"   },
-] as const
 
 function ProjectLayout() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id" })
@@ -30,11 +20,12 @@ function ProjectLayout() {
   const isWizard = pathname.endsWith("/new")
   if (isWizard) return <Outlet />
 
-  const { data: project, isLoading, isError } = useQuery({
+  const { data: rawProject, isLoading, isError } = useQuery({
     queryKey: ["project", orgId, projectId],
     queryFn: () => projectsApi.get(orgId!, projectId, token),
     enabled: !!orgId,
   })
+  const project = rawProject ? toProject(rawProject) : undefined
 
   if (isLoading) {
     return (
@@ -53,6 +44,14 @@ function ProjectLayout() {
       </div>
     )
   }
+
+  const tabs = [
+    { label: "Services",  count: project.servicesCount,  to: "/projects/$id/services"  as const },
+    { label: "Databases", count: project.databasesCount, to: "/projects/$id/databases" as const },
+    { label: "Routes",    count: project.routesCount,    to: "/projects/$id/routes"    as const },
+    { label: "Secrets",   count: null,                   to: "/projects/$id/settings"  as const },
+    { label: "Settings",  count: null,                   to: "/projects/$id/settings"  as const },
+  ]
 
   return (
     <div className="flex flex-col min-h-full">
@@ -76,11 +75,11 @@ function ProjectLayout() {
             </code>
           </div>
 
-          {/* Tab strip */}
+          {/* Tab strip with counts */}
           <nav className="flex items-center gap-0 -mb-px">
-            {TABS.map(({ label, to }) => (
+            {tabs.map(({ label, count, to }) => (
               <Link
-                key={to}
+                key={label}
                 to={to}
                 params={{ id: projectId }}
                 className={cn(
@@ -96,6 +95,9 @@ function ProjectLayout() {
                 activeOptions={{ exact: false }}
               >
                 {label}
+                {count != null && (
+                  <span className="ml-1.5 text-[11px] text-muted-foreground/60 tabular-nums">· {count}</span>
+                )}
               </Link>
             ))}
           </nav>
