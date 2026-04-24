@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
+import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -77,36 +78,15 @@ function ClusterPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Node topology */}
+        {/* Mesh topology visualization */}
         <div className="rounded-lg border border-border/60 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border/40 bg-muted/20">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Node topology</p>
+          <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Mesh topology</p>
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4.5">WireGuard</Badge>
           </div>
-          {clusterNodes.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No nodes in the cluster yet.
-            </div>
-          ) : (
-            <div className="divide-y divide-border/30">
-              {[...servers, ...agents].map((node) => (
-                <div key={node.id} className="flex items-center gap-3 px-4 py-3">
-                  <NodeStatusDot status={node.status} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{node.name}</p>
-                    <code className="text-[11px] font-mono text-muted-foreground">{node.tailscaleIP}</code>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant={node.k3sRole === "server" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0 h-4.5">
-                      {node.k3sRole}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {node.cpuCores ? `${node.cpuCores}c/${node.memoryGB}G` : "—"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="p-4">
+            <MeshGraph nodes={clusterNodes} height={260} />
+          </div>
         </div>
 
         <div className="space-y-4">
