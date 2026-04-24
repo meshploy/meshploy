@@ -22,7 +22,7 @@ type ProjectPathInput struct {
 }
 
 type GetProjectOutput struct {
-	Body *db.Project
+	Body *svc.ProjectWithCounts
 }
 
 type CreateProjectInput struct {
@@ -144,7 +144,7 @@ func (h *Handler) GetProject(ctx context.Context, input *ProjectPathInput) (*Get
 	if err != nil {
 		return nil, err
 	}
-	project, err := h.svc.Projects.Get(ctx, projectID)
+	project, err := h.svc.Projects.GetWithCounts(ctx, projectID)
 	if err != nil {
 		return nil, notFound(err)
 	}

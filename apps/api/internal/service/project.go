@@ -99,6 +99,29 @@ func (s *ProjectService) Get(ctx context.Context, projectID uuid.UUID) (*db.Proj
 	return &project, err
 }
 
+func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID) (*ProjectWithCounts, error) {
+	project, err := s.Get(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	var counts []ProjectCounts
+	s.db.WithContext(ctx).Raw(`
+		SELECT
+			s.project_id,
+			COUNT(*) FILTER (WHERE s.type = 'application') AS services_count,
+			COUNT(*) FILTER (WHERE s.type = 'database')    AS databases_count,
+			(SELECT COUNT(*) FROM routes r WHERE r.project_id = s.project_id) AS routes_count
+		FROM services s
+		WHERE s.project_id = ?
+		GROUP BY s.project_id
+	`, projectID).Scan(&counts)
+	result := &ProjectWithCounts{Project: *project}
+	if len(counts) > 0 {
+		result.ProjectCounts = counts[0]
+	}
+	return result, nil
+}
+
 func (s *ProjectService) Create(ctx context.Context, orgID uuid.UUID, name, slug string) (*db.Project, error) {
 	project := &db.Project{OrganizationID: orgID, Name: name, Slug: slug}
 	return project, s.db.WithContext(ctx).Create(project).Error
