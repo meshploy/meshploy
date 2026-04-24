@@ -3,11 +3,49 @@ import { useQuery } from "@tanstack/react-query"
 import { Loader2, Plus, Server } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { services as servicesApi } from "@/lib/api"
+import { services as servicesApi, type ApiService } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import type { ServiceStatus } from "@/types"
+
+function ServiceCard({ svc, onClick }: { svc: ApiService; onClick: () => void }) {
+  const statusStyle = STATUS_STYLES[svc.status] ?? STATUS_STYLES.stopped
+  return (
+    <div
+      onClick={onClick}
+      className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4 hover:border-border transition-all cursor-pointer"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted border border-border/60 shrink-0">
+            <Server className="h-3.5 w-3.5 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground leading-tight">{svc.name}</p>
+            <p className="text-[11px] text-muted-foreground">port :{svc.port} · ×{svc.replicas}</p>
+          </div>
+        </div>
+        <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border shrink-0 ${statusStyle}`}>
+          {svc.status}
+        </Badge>
+      </div>
+
+      <div className="border-t border-border/40 pt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
+        <div>
+          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Image</p>
+          <code className="text-[11px] font-mono text-muted-foreground truncate block">
+            {svc.image || "—"}
+          </code>
+        </div>
+        <div>
+          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Updated</p>
+          <p className="text-[11px] text-muted-foreground">{formatRelativeTime(new Date(svc.updated_at))}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export const Route = createFileRoute("/_app/projects/$id/services/")({
   component: ServicesTab,
@@ -75,26 +113,13 @@ function ServicesTab() {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+        <div className="grid gap-3 md:grid-cols-2">
           {serviceList.map((svc) => (
-            <div
+            <ServiceCard
               key={svc.id}
+              svc={svc}
               onClick={() => navigate({ to: "/projects/$id/services/$serviceId/deployments", params: { id: projectId, serviceId: svc.id } })}
-              className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors cursor-pointer"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-foreground">{svc.name}</p>
-                  <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border ${STATUS_STYLES[svc.status]}`}>
-                    {svc.status}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  :{svc.port} · {svc.node_id ? "node pinned" : "auto-scheduled"} · updated {formatRelativeTime(new Date(svc.updated_at))}
-                </p>
-              </div>
-              <span className="text-xs text-muted-foreground shrink-0">×{svc.replicas}</span>
-            </div>
+            />
           ))}
         </div>
       )}

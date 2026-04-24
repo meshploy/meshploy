@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import { ArrowLeft, Check, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -193,6 +193,9 @@ function DeploymentLogsPage() {
         )}
       </div>
 
+      {/* Progress stepper */}
+      {deployment && <DeploymentStepper status={deployment.status} />}
+
       {/* Log terminal */}
       <div className="flex-1 rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden flex flex-col min-h-0">
         {/* Terminal bar */}
@@ -237,6 +240,64 @@ function DeploymentLogsPage() {
           <div ref={bottomRef} />
         </div>
       </div>
+    </div>
+  )
+}
+
+const STEPS: { key: ApiDeployment["status"][]; label: string; sub: string }[] = [
+  { key: ["pending"],            label: "Queued",         sub: "Waiting for a builder node" },
+  { key: ["building"],           label: "Building",       sub: "Cloning repo & building image" },
+  { key: ["deploying", "running"], label: "Deploying",    sub: "Rolling update to cluster" },
+  { key: ["success"],            label: "Live",           sub: "All replicas healthy" },
+]
+
+function stepIndex(status: ApiDeployment["status"]) {
+  if (status === "failed") return -1
+  return STEPS.findIndex((s) => s.key.includes(status))
+}
+
+function DeploymentStepper({ status }: { status: ApiDeployment["status"] }) {
+  const current = stepIndex(status)
+  const failed = status === "failed"
+
+  return (
+    <div className="flex items-center gap-0 rounded-lg border border-border/60 bg-card px-4 py-3">
+      {STEPS.map((step, i) => {
+        const done = !failed && current > i
+        const active = !failed && current === i
+        const upcoming = failed ? false : current < i
+
+        return (
+          <div key={step.label} className="flex items-center flex-1 min-w-0">
+            {/* Step */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 text-[11px] font-semibold transition-colors
+                ${done    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : ""}
+                ${active  ? "bg-primary/20 text-primary border border-primary/30" : ""}
+                ${upcoming ? "bg-muted text-muted-foreground/40 border border-border/60" : ""}
+                ${failed  ? "bg-destructive/10 text-destructive border border-destructive/20" : ""}
+              `}>
+                {done ? <Check className="h-3 w-3" /> : active ? <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" /> : i + 1}
+              </div>
+              <div className="min-w-0 hidden sm:block">
+                <p className={`text-xs font-medium leading-tight ${done ? "text-emerald-400" : active ? "text-foreground" : "text-muted-foreground/40"}`}>
+                  {step.label}
+                </p>
+                <p className="text-[10px] text-muted-foreground/40 truncate">{step.sub}</p>
+              </div>
+            </div>
+            {/* Connector */}
+            {i < STEPS.length - 1 && (
+              <div className={`flex-1 h-px mx-3 ${done ? "bg-emerald-500/30" : "bg-border/40"}`} />
+            )}
+          </div>
+        )
+      })}
+      {failed && (
+        <div className="ml-4 shrink-0">
+          <span className="text-xs text-destructive font-medium">failed</span>
+        </div>
+      )}
     </div>
   )
 }
