@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
 import {
+  Home,
   FolderKanban,
   Server,
   Network,
@@ -15,11 +16,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { OrgSwitcher } from "./org-switcher"
 
 const NAV_ITEMS = [
-  { href: "/projects", icon: FolderKanban, label: "Projects" },
-  { href: "/nodes", icon: Server, label: "Nodes" },
-  { href: "/cluster", icon: Network, label: "Cluster" },
-  { href: "/integrations", icon: Plug, label: "Integrations" },
-  { href: "/settings", icon: Settings, label: "Settings" },
+  { href: "/", icon: Home, label: "Overview", exact: true },
+  { href: "/projects", icon: FolderKanban, label: "Projects", exact: false },
+  { href: "/nodes", icon: Server, label: "Nodes", exact: false },
+  { href: "/cluster", icon: Network, label: "Cluster", exact: false },
+  { href: "/integrations", icon: Plug, label: "Integrations", exact: false },
+  { href: "/settings", icon: Settings, label: "Settings", exact: false },
 ] as const
 
 export function AppSidebar() {
@@ -46,7 +48,7 @@ export function AppSidebar() {
       {/* Navigation */}
       <nav className="flex flex-col gap-0.5 p-2 flex-1 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
-          const isActive = pathname.startsWith(item.href)
+          const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href)
 
           if (sidebarCollapsed) {
             return (

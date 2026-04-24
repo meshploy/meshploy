@@ -13,6 +13,7 @@ export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
 })
 
 const SERVICE_TABS = [
+  { label: "Overview",    to: "/projects/$id/services/$serviceId/overview"    },
   { label: "Deployments", to: "/projects/$id/services/$serviceId/deployments" },
   { label: "Config",      to: "/projects/$id/services/$serviceId/config"      },
   { label: "Logs",        to: "/projects/$id/services/$serviceId/logs"        },

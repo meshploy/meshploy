@@ -36,6 +36,7 @@ import { Route as AppProjectsIdRoutesRouteIdRouteImport } from './routes/_app/pr
 import { Route as AppProjectsIdServicesServiceIdRouteRouteImport } from './routes/_app/projects/$id/services/$serviceId/route'
 import { Route as AppProjectsIdServicesServiceIdIndexRouteImport } from './routes/_app/projects/$id/services/$serviceId/index'
 import { Route as AppProjectsIdServicesServiceIdSettingsRouteImport } from './routes/_app/projects/$id/services/$serviceId/settings'
+import { Route as AppProjectsIdServicesServiceIdOverviewRouteImport } from './routes/_app/projects/$id/services/$serviceId/overview'
 import { Route as AppProjectsIdServicesServiceIdLogsRouteImport } from './routes/_app/projects/$id/services/$serviceId/logs'
 import { Route as AppProjectsIdServicesServiceIdConfigRouteImport } from './routes/_app/projects/$id/services/$serviceId/config'
 import { Route as AppProjectsIdServicesServiceIdDeploymentsIndexRouteImport } from './routes/_app/projects/$id/services/$serviceId/deployments/index'
@@ -180,6 +181,12 @@ const AppProjectsIdServicesServiceIdSettingsRoute =
     path: '/settings',
     getParentRoute: () => AppProjectsIdServicesServiceIdRouteRoute,
   } as any)
+const AppProjectsIdServicesServiceIdOverviewRoute =
+  AppProjectsIdServicesServiceIdOverviewRouteImport.update({
+    id: '/overview',
+    path: '/overview',
+    getParentRoute: () => AppProjectsIdServicesServiceIdRouteRoute,
+  } as any)
 const AppProjectsIdServicesServiceIdLogsRoute =
   AppProjectsIdServicesServiceIdLogsRouteImport.update({
     id: '/logs',
@@ -231,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
+  '/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
   '/projects/$id/services/$serviceId/settings': typeof AppProjectsIdServicesServiceIdSettingsRoute
   '/projects/$id/services/$serviceId/': typeof AppProjectsIdServicesServiceIdIndexRoute
   '/projects/$id/services/$serviceId/deployments/$deploymentId': typeof AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRoute
@@ -259,6 +267,7 @@ export interface FileRoutesByTo {
   '/projects/$id/services': typeof AppProjectsIdServicesIndexRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
+  '/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
   '/projects/$id/services/$serviceId/settings': typeof AppProjectsIdServicesServiceIdSettingsRoute
   '/projects/$id/services/$serviceId': typeof AppProjectsIdServicesServiceIdIndexRoute
   '/projects/$id/services/$serviceId/deployments/$deploymentId': typeof AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRoute
@@ -293,6 +302,7 @@ export interface FileRoutesById {
   '/_app/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
   '/_app/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/_app/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
+  '/_app/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
   '/_app/projects/$id/services/$serviceId/settings': typeof AppProjectsIdServicesServiceIdSettingsRoute
   '/_app/projects/$id/services/$serviceId/': typeof AppProjectsIdServicesServiceIdIndexRoute
   '/_app/projects/$id/services/$serviceId/deployments/$deploymentId': typeof AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRoute
@@ -326,6 +336,7 @@ export interface FileRouteTypes {
     | '/projects/$id/services/'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
+    | '/projects/$id/services/$serviceId/overview'
     | '/projects/$id/services/$serviceId/settings'
     | '/projects/$id/services/$serviceId/'
     | '/projects/$id/services/$serviceId/deployments/$deploymentId'
@@ -354,6 +365,7 @@ export interface FileRouteTypes {
     | '/projects/$id/services'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
+    | '/projects/$id/services/$serviceId/overview'
     | '/projects/$id/services/$serviceId/settings'
     | '/projects/$id/services/$serviceId'
     | '/projects/$id/services/$serviceId/deployments/$deploymentId'
@@ -387,6 +399,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$id/services/'
     | '/_app/projects/$id/services/$serviceId/config'
     | '/_app/projects/$id/services/$serviceId/logs'
+    | '/_app/projects/$id/services/$serviceId/overview'
     | '/_app/projects/$id/services/$serviceId/settings'
     | '/_app/projects/$id/services/$serviceId/'
     | '/_app/projects/$id/services/$serviceId/deployments/$deploymentId'
@@ -589,6 +602,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdServicesServiceIdSettingsRouteImport
       parentRoute: typeof AppProjectsIdServicesServiceIdRouteRoute
     }
+    '/_app/projects/$id/services/$serviceId/overview': {
+      id: '/_app/projects/$id/services/$serviceId/overview'
+      path: '/overview'
+      fullPath: '/projects/$id/services/$serviceId/overview'
+      preLoaderRoute: typeof AppProjectsIdServicesServiceIdOverviewRouteImport
+      parentRoute: typeof AppProjectsIdServicesServiceIdRouteRoute
+    }
     '/_app/projects/$id/services/$serviceId/logs': {
       id: '/_app/projects/$id/services/$serviceId/logs'
       path: '/logs'
@@ -636,6 +656,7 @@ const AppProjectsIdRoutesRouteWithChildren =
 interface AppProjectsIdServicesServiceIdRouteRouteChildren {
   AppProjectsIdServicesServiceIdConfigRoute: typeof AppProjectsIdServicesServiceIdConfigRoute
   AppProjectsIdServicesServiceIdLogsRoute: typeof AppProjectsIdServicesServiceIdLogsRoute
+  AppProjectsIdServicesServiceIdOverviewRoute: typeof AppProjectsIdServicesServiceIdOverviewRoute
   AppProjectsIdServicesServiceIdSettingsRoute: typeof AppProjectsIdServicesServiceIdSettingsRoute
   AppProjectsIdServicesServiceIdIndexRoute: typeof AppProjectsIdServicesServiceIdIndexRoute
   AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRoute: typeof AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRoute
@@ -648,6 +669,8 @@ const AppProjectsIdServicesServiceIdRouteRouteChildren: AppProjectsIdServicesSer
       AppProjectsIdServicesServiceIdConfigRoute,
     AppProjectsIdServicesServiceIdLogsRoute:
       AppProjectsIdServicesServiceIdLogsRoute,
+    AppProjectsIdServicesServiceIdOverviewRoute:
+      AppProjectsIdServicesServiceIdOverviewRoute,
     AppProjectsIdServicesServiceIdSettingsRoute:
       AppProjectsIdServicesServiceIdSettingsRoute,
     AppProjectsIdServicesServiceIdIndexRoute:
