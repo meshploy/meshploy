@@ -1,3 +1,4 @@
+import { SiPostgresql, SiMysql, SiRedis, SiMongodb } from "@icons-pack/react-simple-icons"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
@@ -644,6 +645,17 @@ function ServiceForm({
 
 type DbEngine = "postgres" | "mysql" | "redis" | "mongodb"
 
+function DbEngineLogo({ engine, className }: { engine: DbEngine; className?: string }) {
+  const icons = {
+    postgres: SiPostgresql,
+    mysql: SiMysql,
+    redis: SiRedis,
+    mongodb: SiMongodb,
+  }
+  const Icon = icons[engine]
+  return <Icon className={className} />
+}
+
 const ENGINE_OPTIONS: { value: DbEngine; label: string; versions: string[]; defaultPort: number }[] = [
   { value: "postgres", label: "PostgreSQL", versions: ["18", "17", "16", "15", "14", "13"], defaultPort: 5432 },
   { value: "mysql",    label: "MySQL",      versions: ["8.0", "5.7"],           defaultPort: 3306 },
@@ -739,7 +751,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
                   : "border-border/60 bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/30"
               )}
             >
-              <Database className="h-4 w-4 shrink-0" />
+              <DbEngineLogo engine={eng.value} className="h-4 w-4 shrink-0" />
               <span className="text-sm font-medium">{eng.label}</span>
             </button>
           ))}

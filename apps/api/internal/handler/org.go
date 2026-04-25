@@ -48,8 +48,16 @@ type UpdateOrgOutput struct {
 	Body *db.Organization
 }
 
+type MemberDTO struct {
+	ID        string        `json:"id"`
+	UserID    string        `json:"user_id"`
+	Role      db.MemberRole `json:"role"`
+	UserName  string        `json:"user_name"`
+	UserEmail string        `json:"user_email"`
+}
+
 type ListMembersOutput struct {
-	Body []db.OrganizationMember
+	Body []MemberDTO
 }
 
 type AddMemberInput struct {
@@ -61,7 +69,7 @@ type AddMemberInput struct {
 }
 
 type AddMemberOutput struct {
-	Body *db.OrganizationMember
+	Body *MemberDTO
 }
 
 type UpdateMemberInput struct {
@@ -265,6 +273,16 @@ func (h *Handler) DeleteOrg(ctx context.Context, input *OrgPathInput) (*struct{}
 	return nil, h.svc.Orgs.Delete(ctx, orgID)
 }
 
+func toMemberDTO(m db.OrganizationMember) MemberDTO {
+	return MemberDTO{
+		ID:        m.ID.String(),
+		UserID:    m.UserID.String(),
+		Role:      m.Role,
+		UserName:  m.User.Username,
+		UserEmail: m.User.Email,
+	}
+}
+
 func (h *Handler) ListMembers(ctx context.Context, input *OrgPathInput) (*ListMembersOutput, error) {
 	if _, err := requireUser(ctx); err != nil {
 		return nil, err
@@ -277,7 +295,11 @@ func (h *Handler) ListMembers(ctx context.Context, input *OrgPathInput) (*ListMe
 	if err != nil {
 		return nil, err
 	}
-	return &ListMembersOutput{Body: members}, nil
+	dtos := make([]MemberDTO, len(members))
+	for i, m := range members {
+		dtos[i] = toMemberDTO(m)
+	}
+	return &ListMembersOutput{Body: dtos}, nil
 }
 
 func (h *Handler) AddMember(ctx context.Context, input *AddMemberInput) (*AddMemberOutput, error) {
@@ -295,7 +317,8 @@ func (h *Handler) AddMember(ctx context.Context, input *AddMemberInput) (*AddMem
 	if err != nil {
 		return nil, notFound(err)
 	}
-	return &AddMemberOutput{Body: member}, nil
+	dto := toMemberDTO(*member)
+	return &AddMemberOutput{Body: &dto}, nil
 }
 
 func (h *Handler) UpdateMember(ctx context.Context, input *UpdateMemberInput) (*struct{}, error) {

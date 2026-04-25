@@ -88,7 +88,11 @@ func (s *OrgService) AddMember(ctx context.Context, orgID uuid.UUID, in AddMembe
 		UserID:         user.ID,
 		Role:           in.Role,
 	}
-	return member, s.db.WithContext(ctx).Create(member).Error
+	if err := s.db.WithContext(ctx).Create(member).Error; err != nil {
+		return nil, err
+	}
+	member.User = user
+	return member, nil
 }
 
 func (s *OrgService) UpdateMemberRole(ctx context.Context, orgID, userID uuid.UUID, role db.MemberRole) error {
