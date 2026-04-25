@@ -131,10 +131,12 @@ func dbContainerPort(engine db.DatabaseEngine) int {
 		return 5432
 	case db.DatabaseMySQL:
 		return 3306
-	case db.DatabaseRedis:
+	case db.DatabaseRedis, db.DatabaseDragonfly:
 		return 6379
 	case db.DatabaseMongoDB:
 		return 27017
+	case db.DatabaseClickHouse:
+		return 9000
 	default:
 		return 5432
 	}
@@ -157,13 +159,13 @@ func (s *DBExplorerService) Schema(ctx context.Context, serviceID uuid.UUID) ([]
 	defer stop()
 
 	switch dc.Engine {
-	case "postgres":
+	case db.DatabasePostgres, db.DatabaseClickHouse:
 		return s.pgSchema(ctx, dc, addr)
-	case "mysql":
+	case db.DatabaseMySQL:
 		return s.mysqlSchema(ctx, dc, addr)
-	case "redis":
+	case db.DatabaseRedis, db.DatabaseDragonfly:
 		return s.redisSchema(ctx, dc, addr)
-	case "mongodb":
+	case db.DatabaseMongoDB:
 		return nil, fmt.Errorf("mongodb schema introspection not yet supported")
 	default:
 		return nil, fmt.Errorf("unsupported engine: %s", dc.Engine)
@@ -327,13 +329,13 @@ func (s *DBExplorerService) Query(ctx context.Context, serviceID uuid.UUID, quer
 	defer stop()
 
 	switch dc.Engine {
-	case "postgres":
+	case db.DatabasePostgres, db.DatabaseClickHouse:
 		return s.pgQuery(ctx, dc, addr, query, readOnly)
-	case "mysql":
+	case db.DatabaseMySQL:
 		return s.mysqlQuery(ctx, dc, addr, query, readOnly)
-	case "redis":
+	case db.DatabaseRedis, db.DatabaseDragonfly:
 		return s.redisQuery(ctx, dc, addr, query)
-	case "mongodb":
+	case db.DatabaseMongoDB:
 		return nil, fmt.Errorf("mongodb query not yet supported")
 	default:
 		return nil, fmt.Errorf("unsupported engine: %s", dc.Engine)

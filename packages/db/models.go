@@ -72,10 +72,12 @@ const (
 type DatabaseEngine string
 
 const (
-	DatabasePostgres DatabaseEngine = "postgres"
-	DatabaseMySQL    DatabaseEngine = "mysql"
-	DatabaseRedis    DatabaseEngine = "redis"
-	DatabaseMongoDB  DatabaseEngine = "mongodb"
+	DatabasePostgres    DatabaseEngine = "postgres"
+	DatabaseMySQL       DatabaseEngine = "mysql"
+	DatabaseRedis       DatabaseEngine = "redis"
+	DatabaseMongoDB     DatabaseEngine = "mongodb"
+	DatabaseDragonfly   DatabaseEngine = "dragonfly"
+	DatabaseClickHouse  DatabaseEngine = "clickhouse"
 )
 
 type DeploymentStatus string
