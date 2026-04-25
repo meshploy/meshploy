@@ -54,6 +54,11 @@ type CreateWorkloadInput struct {
 		BuilderNode          string `json:"builder_node,omitempty"`
 		BuilderCPURequest    string `json:"builder_cpu_request,omitempty"`
 		BuilderMemoryRequest string `json:"builder_memory_request,omitempty"`
+		// Database-specific fields — only used when type == "database"
+		Type      string `json:"type,omitempty"`       // "application" | "database"
+		Engine    string `json:"engine,omitempty"`     // "postgres" | "mysql" | "redis" | "mongodb"
+		Version   string `json:"version,omitempty"`    // e.g. "16", "8.0", "7"
+		StorageGB int    `json:"storage_gb,omitempty"` // GiB; 0 = default (10)
 	}
 }
 
@@ -239,6 +244,10 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		BuilderNode:           input.Body.BuilderNode,
 		BuilderCPURequest:     input.Body.BuilderCPURequest,
 		BuilderMemoryRequest:  input.Body.BuilderMemoryRequest,
+		Type:                  db.ServiceType(input.Body.Type),
+		Engine:                db.DatabaseEngine(input.Body.Engine),
+		Version:               input.Body.Version,
+		StorageGB:             input.Body.StorageGB,
 	})
 	if err != nil {
 		return nil, err
