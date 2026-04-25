@@ -1,10 +1,18 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, Server, Box, ExternalLink } from "lucide-react"
-import { services as servicesApi, routes as routesApi, nodes as nodesApi, toNode } from "@/lib/api"
+import { Globe, Server, Box, Database, ExternalLink } from "lucide-react"
+import {
+  services as servicesApi,
+  routes as routesApi,
+  nodes as nodesApi,
+  toNode,
+  type ApiNode,
+  type ApiDatabaseConfig,
+} from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { useState } from "react"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/overview"
@@ -21,6 +29,38 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 gap-3">
+      <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider shrink-0">{label}</span>
+      <code className="text-[11px] font-mono text-foreground truncate flex-1 text-right">{value}</code>
+      <button
+        onClick={() => { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+        className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 text-xs"
+      >
+        {copied ? "✓" : "copy"}
+      </button>
+    </div>
+  )
+}
+
+const ENGINE_LABELS: Record<string, string> = {
+  postgres: "PostgreSQL", mysql: "MySQL", redis: "Redis", mongodb: "MongoDB",
+}
+
+function buildConnectionString(dc: ApiDatabaseConfig, host: string, port?: number): string {
+  const portStr = port ? `:${port}` : ""
+  const pass = encodeURIComponent(dc.db_password)
+  switch (dc.engine) {
+    case "postgres":  return `postgres://${dc.db_user}:${pass}@${host}${portStr}/${dc.db_name}`
+    case "mysql":     return `mysql://${dc.db_user}:${pass}@${host}${portStr}/${dc.db_name}`
+    case "redis":     return dc.db_password ? `redis://:${pass}@${host}${portStr}` : `redis://${host}${portStr}`
+    case "mongodb":   return `mongodb://${dc.db_user}:${pass}@${host}${portStr}/${dc.db_name}`
+    default:          return `${host}${portStr}`
+  }
+}
+
 function ServiceOverviewTab() {
   const { id: projectId, serviceId } = useParams({
     from: "/_app/projects/$id/services/$serviceId/overview",
@@ -34,7 +74,7 @@ function ServiceOverviewTab() {
     enabled: !!orgId,
   })
 
-  const { data: rawNodes = [] } = useQuery({
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
@@ -44,34 +84,72 @@ function ServiceOverviewTab() {
   const { data: projectRoutes = [] } = useQuery({
     queryKey: ["routes", orgId, projectId],
     queryFn: () => routesApi.list(orgId!, projectId, token),
-    enabled: !!orgId,
+    enabled: !!orgId && service?.type !== "database",
+  })
+
+  const { data: dc } = useQuery<ApiDatabaseConfig>({
+    queryKey: ["database-config", orgId, projectId, serviceId],
+    queryFn: () => servicesApi.getDatabaseConfig(orgId!, projectId, serviceId, token),
+    enabled: !!orgId && service?.type === "database",
   })
 
   if (!service) return null
 
-  const node = service.node_id ? nodes.find((n) => n.id === service.node_id) : null
+  const isDatabase = service.type === "database"
+  const node = service.node_id
+    ? nodes.find((n) => n.id === service.node_id)
+    : nodes.find((n) => n.status === "online" && n.k8s_member)
   const attachedRoutes = projectRoutes.filter((r) => r.service_id === service.id)
+
+  // Connection strings for database services
+  const internalConnStr = dc ? buildConnectionString(dc, `${dc.slug}.svc.cluster.local`) : null
+  const meshConnStr = dc?.node_port && node?.tailscaleIP
+    ? buildConnectionString(dc, node.tailscaleIP, dc.node_port)
+    : null
 
   return (
     <div className="p-6 space-y-4">
       {/* Stat tiles */}
       <div className="grid gap-3 grid-cols-3">
-        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <Box className="h-3 w-3" /> Replicas
-          </p>
-          <p className="text-2xl font-semibold tabular-nums">{service.replicas}</p>
-          <p className="text-xs text-muted-foreground">
-            {service.status === "running" ? "all healthy" : service.status}
-          </p>
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <Globe className="h-3 w-3" /> Routes
-          </p>
-          <p className="text-2xl font-semibold tabular-nums">{attachedRoutes.length}</p>
-          <p className="text-xs text-muted-foreground">attached</p>
-        </div>
+        {isDatabase ? (
+          <>
+            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Database className="h-3 w-3" /> Engine
+              </p>
+              <p className="text-xl font-semibold tabular-nums leading-tight">
+                {dc ? ENGINE_LABELS[dc.engine] ?? dc.engine : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">{dc?.version ?? ""}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Box className="h-3 w-3" /> Storage
+              </p>
+              <p className="text-2xl font-semibold tabular-nums">{dc?.storage_gb ?? "—"}</p>
+              <p className="text-xs text-muted-foreground">GiB allocated</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Box className="h-3 w-3" /> Replicas
+              </p>
+              <p className="text-2xl font-semibold tabular-nums">{service.replicas}</p>
+              <p className="text-xs text-muted-foreground">
+                {service.status === "running" ? "all healthy" : service.status}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Globe className="h-3 w-3" /> Routes
+              </p>
+              <p className="text-2xl font-semibold tabular-nums">{attachedRoutes.length}</p>
+              <p className="text-xs text-muted-foreground">attached</p>
+            </div>
+          </>
+        )}
         <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
           <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
             <Server className="h-3 w-3" /> Port
@@ -84,7 +162,7 @@ function ServiceOverviewTab() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Current deployment */}
+        {/* Current deployment — shared */}
         <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
           <div className="px-4 py-3 border-b border-border/40">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Current deployment</p>
@@ -97,59 +175,93 @@ function ServiceOverviewTab() {
               }
             </InfoRow>
             <InfoRow label="Node">
-              {node
+              {service.node_id && node
                 ? <span className="flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${node.status === "online" ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />{node.name}</span>
                 : <span className="text-muted-foreground/50">auto-scheduled</span>
               }
             </InfoRow>
-            <InfoRow label="Mesh IP">
-              {node?.tailscaleIP
-                ? <code className="text-[11px] font-mono">{node.tailscaleIP}:{service.port}</code>
-                : <span className="text-muted-foreground/50">—</span>
-              }
-            </InfoRow>
-            <InfoRow label="Replicas">
-              <span>{service.replicas} / {service.replicas}</span>
-            </InfoRow>
+            {!isDatabase && (
+              <InfoRow label="Mesh IP">
+                {node?.tailscaleIP
+                  ? <code className="text-[11px] font-mono">{node.tailscaleIP}:{service.port}</code>
+                  : <span className="text-muted-foreground/50">—</span>
+                }
+              </InfoRow>
+            )}
+            {!isDatabase && (
+              <InfoRow label="Replicas">
+                <span>{service.replicas} / {service.replicas}</span>
+              </InfoRow>
+            )}
             <InfoRow label="Last updated">
               <span>{formatRelativeTime(new Date(service.updated_at))}</span>
             </InfoRow>
           </div>
         </div>
 
-        {/* Attached routes */}
-        <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border/40">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Attached routes</p>
+        {/* Right panel: DB credentials+connections or attached routes */}
+        {isDatabase ? (
+          <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/40">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Connection</p>
+            </div>
+            {!dc ? (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground/50">Provision the database to see connection details</div>
+            ) : (
+              <div className="px-4 py-1">
+                {dc.engine !== "redis" && <InfoRow label="Database"><code className="text-[11px] font-mono">{dc.db_name}</code></InfoRow>}
+                {dc.engine !== "redis" && <InfoRow label="Username"><code className="text-[11px] font-mono">{dc.db_user}</code></InfoRow>}
+                <InfoRow label="Password"><code className="text-[11px] font-mono">{dc.db_password}</code></InfoRow>
+                <InfoRow label="Slug"><code className="text-[11px] font-mono">{dc.slug}</code></InfoRow>
+                {internalConnStr && <CopyRow label="Internal" value={internalConnStr} />}
+                {meshConnStr
+                  ? <CopyRow label="Mesh" value={meshConnStr} />
+                  : (
+                    <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+                      <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">Mesh</span>
+                      <span className="text-xs text-muted-foreground/40 italic">
+                        {dc.node_port ? "resolving node…" : "not provisioned"}
+                      </span>
+                    </div>
+                  )
+                }
+              </div>
+            )}
           </div>
-          {attachedRoutes.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground/50">
-              No routes attached
+        ) : (
+          <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/40">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Attached routes</p>
             </div>
-          ) : (
-            <div className="divide-y divide-border/30">
-              {attachedRoutes.map((r) => (
-                <div key={r.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                  <div className="min-w-0">
-                    <code className="text-xs font-mono text-foreground truncate block">{r.hostname}</code>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {r.zone} · {r.target_ip}:{r.target_port}
-                    </p>
+            {attachedRoutes.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground/50">
+                No routes attached
+              </div>
+            ) : (
+              <div className="divide-y divide-border/30">
+                {attachedRoutes.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                    <div className="min-w-0">
+                      <code className="text-xs font-mono text-foreground truncate block">{r.hostname}</code>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {r.zone} · {r.target_ip}:{r.target_port}
+                      </p>
+                    </div>
+                    <a
+                      href={`https://${r.hostname}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
                   </div>
-                  <a
-                    href={`https://${r.hostname}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
