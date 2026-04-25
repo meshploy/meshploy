@@ -37,8 +37,9 @@ type SchemaColumn struct {
 	Nullable bool   `json:"nullable"`
 }
 
-// loadConfig fetches the DatabaseConfig for a service and returns it along
-// with the in-cluster hostname: {slug}.{namespace}.svc.cluster.local
+// loadConfig fetches the DatabaseConfig and returns the host:port to dial.
+// The API runs outside the K8s cluster so it connects via NodePort over the
+// Tailscale mesh using any online node's IP.
 func (s *DBExplorerService) loadConfig(ctx context.Context, serviceID uuid.UUID) (*db.DatabaseConfig, string, error) {
 	var dc db.DatabaseConfig
 	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err != nil {
@@ -47,13 +48,20 @@ func (s *DBExplorerService) loadConfig(ctx context.Context, serviceID uuid.UUID)
 	if dc.Slug == "" {
 		return nil, "", fmt.Errorf("database not provisioned yet")
 	}
-
-	var svc db.Service
-	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
-		return nil, "", fmt.Errorf("service not found")
+	if dc.NodePort == 0 {
+		return nil, "", fmt.Errorf("NodePort not yet assigned — wait for provisioning to complete")
 	}
-	host := fmt.Sprintf("%s.%s.svc.cluster.local", dc.Slug, svc.Project.Slug)
-	return &dc, host, nil
+
+	// Pick any online node reachable over the mesh.
+	var node db.Node
+	if err := s.db.WithContext(ctx).
+		Where("status = ? AND k8s_member = ?", "online", true).
+		First(&node).Error; err != nil {
+		return nil, "", fmt.Errorf("no online cluster node found")
+	}
+
+	addr := fmt.Sprintf("%s:%d", node.TailscaleIP, dc.NodePort)
+	return &dc, addr, nil
 }
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -77,9 +85,9 @@ func (s *DBExplorerService) Schema(ctx context.Context, serviceID uuid.UUID) ([]
 	}
 }
 
-func (s *DBExplorerService) pgSchema(ctx context.Context, dc *db.DatabaseConfig, host string) ([]SchemaTable, error) {
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		dc.DBUser, string(dc.DBPassword), host, 5432, dc.DBName)
+func (s *DBExplorerService) pgSchema(ctx context.Context, dc *db.DatabaseConfig, addr string) ([]SchemaTable, error) {
+	dsn := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+		dc.DBUser, string(dc.DBPassword), addr, dc.DBName)
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -101,9 +109,9 @@ func (s *DBExplorerService) pgSchema(ctx context.Context, dc *db.DatabaseConfig,
 	return collectSchema(rows)
 }
 
-func (s *DBExplorerService) mysqlSchema(ctx context.Context, dc *db.DatabaseConfig, host string) ([]SchemaTable, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-		dc.DBUser, string(dc.DBPassword), host, 3306, dc.DBName)
+func (s *DBExplorerService) mysqlSchema(ctx context.Context, dc *db.DatabaseConfig, addr string) ([]SchemaTable, error) {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s",
+		dc.DBUser, string(dc.DBPassword), addr, dc.DBName)
 	sqlDB, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -144,9 +152,9 @@ func (s *DBExplorerService) mysqlSchema(ctx context.Context, dc *db.DatabaseConf
 	return result, nil
 }
 
-func (s *DBExplorerService) redisSchema(ctx context.Context, dc *db.DatabaseConfig, host string) ([]SchemaTable, error) {
+func (s *DBExplorerService) redisSchema(ctx context.Context, dc *db.DatabaseConfig, addr string) ([]SchemaTable, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", host, 6379),
+		Addr:     addr,
 		Password: string(dc.DBPassword),
 	})
 	defer rdb.Close()
@@ -238,9 +246,9 @@ func (s *DBExplorerService) Query(ctx context.Context, serviceID uuid.UUID, quer
 	}
 }
 
-func (s *DBExplorerService) pgQuery(ctx context.Context, dc *db.DatabaseConfig, host, query string, readOnly bool) (*QueryResult, error) {
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		dc.DBUser, string(dc.DBPassword), host, 5432, dc.DBName)
+func (s *DBExplorerService) pgQuery(ctx context.Context, dc *db.DatabaseConfig, addr, query string, readOnly bool) (*QueryResult, error) {
+	dsn := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+		dc.DBUser, string(dc.DBPassword), addr, dc.DBName)
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -278,9 +286,9 @@ func (s *DBExplorerService) pgQuery(ctx context.Context, dc *db.DatabaseConfig, 
 	return result, nil
 }
 
-func (s *DBExplorerService) mysqlQuery(ctx context.Context, dc *db.DatabaseConfig, host, query string, readOnly bool) (*QueryResult, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-		dc.DBUser, string(dc.DBPassword), host, 3306, dc.DBName)
+func (s *DBExplorerService) mysqlQuery(ctx context.Context, dc *db.DatabaseConfig, addr, query string, readOnly bool) (*QueryResult, error) {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s",
+		dc.DBUser, string(dc.DBPassword), addr, dc.DBName)
 	sqlDB, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -317,9 +325,9 @@ func (s *DBExplorerService) mysqlQuery(ctx context.Context, dc *db.DatabaseConfi
 	return result, nil
 }
 
-func (s *DBExplorerService) redisQuery(ctx context.Context, dc *db.DatabaseConfig, host, command string) (*QueryResult, error) {
+func (s *DBExplorerService) redisQuery(ctx context.Context, dc *db.DatabaseConfig, addr, command string) (*QueryResult, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", host, 6379),
+		Addr:     addr,
 		Password: string(dc.DBPassword),
 	})
 	defer rdb.Close()
