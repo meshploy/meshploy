@@ -467,6 +467,37 @@ export const services = {
       { method: "POST" },
       token
     ),
+
+  dbSchema: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiSchemaTable[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/db/schema`,
+      {},
+      token
+    ),
+
+  dbQuery: (orgId: string, projectId: string, serviceId: string, query: string, readOnly: boolean, token: string) =>
+    apiFetch<ApiQueryResult>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/db/query`,
+      { method: "POST", body: JSON.stringify({ query, read_only: readOnly }) },
+      token
+    ),
+}
+
+export interface ApiSchemaColumn {
+  name: string
+  data_type: string
+  nullable: boolean
+}
+
+export interface ApiSchemaTable {
+  name: string
+  columns: ApiSchemaColumn[]
+}
+
+export interface ApiQueryResult {
+  columns: string[]
+  rows: string[][]
+  count: number
 }
 
 export interface ApiDatabaseConfig {
