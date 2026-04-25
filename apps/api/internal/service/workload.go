@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	appk8s "github.com/meshploy/apps/api/internal/k8s"
@@ -43,10 +46,13 @@ type CreateWorkloadInput struct {
 	BuilderMemoryRequest  string // "" = default (1Gi)
 
 	// Database-specific fields — used when Type == "database"
-	Type      db.ServiceType
-	Engine    db.DatabaseEngine
-	Version   string
-	StorageGB int
+	Type       db.ServiceType
+	Engine     db.DatabaseEngine
+	Version    string
+	StorageGB  int
+	DBName     string
+	DBUser     string
+	DBPassword string
 }
 
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
@@ -149,6 +155,15 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	})
 }
 
+// dbSlug generates a stable K8s resource name: {slugify(name)}-{6 random hex chars}.
+func dbSlug(name string) string {
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	base := strings.ToLower(name)
+	base = strings.NewReplacer(" ", "-", "_", "-").Replace(base)
+	return base + "-" + hex.EncodeToString(b)
+}
+
 func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUID, in CreateWorkloadInput) (*db.Service, error) {
 	if in.Engine == "" {
 		in.Engine = db.DatabasePostgres
@@ -171,6 +186,20 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 	if storageGB == 0 {
 		storageGB = 10
 	}
+	dbName := in.DBName
+	if dbName == "" {
+		dbName = strings.ToLower(in.Name)
+	}
+	dbUser := in.DBUser
+	if dbUser == "" {
+		dbUser = strings.ToLower(in.Name)
+	}
+	dbPassword := in.DBPassword
+	if dbPassword == "" {
+		b := make([]byte, 12)
+		_, _ = rand.Read(b)
+		dbPassword = hex.EncodeToString(b)
+	}
 	service := &db.Service{
 		ProjectID: projectID,
 		NodeID:    in.NodeID,
@@ -186,10 +215,14 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 			return err
 		}
 		dc := &db.DatabaseConfig{
-			ServiceID: service.ID,
-			Engine:    in.Engine,
-			Version:   version,
-			StorageGB: storageGB,
+			ServiceID:  service.ID,
+			Engine:     in.Engine,
+			Version:    version,
+			StorageGB:  storageGB,
+			Slug:       dbSlug(in.Name),
+			DBName:     dbName,
+			DBUser:     dbUser,
+			DBPassword: db.EncryptedString(dbPassword),
 		}
 		return tx.Create(dc).Error
 	})
@@ -232,6 +265,12 @@ func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Se
 		return nil, err
 	}
 	return s.Get(ctx, serviceID)
+}
+
+func (s *WorkloadService) GetDatabaseConfig(ctx context.Context, serviceID uuid.UUID) (*db.DatabaseConfig, error) {
+	var dc db.DatabaseConfig
+	err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error
+	return &dc, err
 }
 
 func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error {

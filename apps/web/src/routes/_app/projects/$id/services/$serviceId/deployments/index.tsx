@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Rocket, ScrollText, Trash2, X } from "lucide-react"
+import { services as servicesApi } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
@@ -40,6 +41,14 @@ function DeploymentsTab() {
   })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+
+  const { data: service } = useQuery({
+    queryKey: ["service", orgId, projectId, serviceId],
+    queryFn: () => servicesApi.get(orgId!, projectId, serviceId, token),
+    enabled: !!orgId,
+    staleTime: 30_000,
+  })
+  const isDatabase = service?.type === "database"
   const queryClient = useQueryClient()
 
   const queryKey = ["deployments", orgId, projectId, serviceId]
@@ -85,7 +94,7 @@ function DeploymentsTab() {
           ) : (
             <Rocket className="h-3.5 w-3.5" />
           )}
-          Deploy
+          {isDatabase ? "Provision" : "Deploy"}
         </Button>
       </div>
 
@@ -107,7 +116,7 @@ function DeploymentsTab() {
           <div className="text-center">
             <p className="text-sm text-muted-foreground">No deployments yet</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              Trigger a deployment to build and deploy this service
+              {isDatabase ? "Provision the database to start it" : "Trigger a deployment to build and deploy this service"}
             </p>
           </div>
           <Button
@@ -117,7 +126,7 @@ function DeploymentsTab() {
             disabled={triggerMutation.isPending}
           >
             <Rocket className="h-3.5 w-3.5" />
-            Deploy now
+            {isDatabase ? "Provision now" : "Deploy now"}
           </Button>
         </div>
       ) : (

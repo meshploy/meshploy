@@ -352,9 +352,16 @@ type DatabaseConfig struct {
 	Version   string         `gorm:"not null"                       json:"version"` // e.g. "15", "8.0", "7"
 	StorageGB int            `gorm:"not null;default:10"            json:"storage_gb"`
 
-	// Auto-generated connection string stored encrypted directly on this record.
-	// Meshploy populates this when the database is provisioned.
-	ConnectionString EncryptedString `gorm:"type:text" json:"-"`
+	// K8s resource name: {slugify(name)}-{random6}. Stable after creation.
+	Slug string `gorm:"not null;default:''" json:"slug"`
+
+	// User-supplied credentials (encrypted at rest, exposed in API for connection strings).
+	DBName     string          `gorm:"not null;default:''" json:"db_name"`
+	DBUser     string          `gorm:"not null;default:''" json:"db_user"`
+	DBPassword EncryptedString `gorm:"type:text"           json:"db_password"`
+
+	// NodePort assigned by K8s for direct mesh access. 0 = not yet provisioned.
+	NodePort int `gorm:"default:0" json:"node_port"`
 
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }

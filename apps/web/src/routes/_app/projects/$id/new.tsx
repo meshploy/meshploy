@@ -645,7 +645,7 @@ function ServiceForm({
 type DbEngine = "postgres" | "mysql" | "redis" | "mongodb"
 
 const ENGINE_OPTIONS: { value: DbEngine; label: string; versions: string[]; defaultPort: number }[] = [
-  { value: "postgres", label: "PostgreSQL", versions: ["16", "15", "14", "13"], defaultPort: 5432 },
+  { value: "postgres", label: "PostgreSQL", versions: ["18", "17", "16", "15", "14", "13"], defaultPort: 5432 },
   { value: "mysql",    label: "MySQL",      versions: ["8.0", "5.7"],           defaultPort: 3306 },
   { value: "redis",    label: "Redis",      versions: ["7", "6"],               defaultPort: 6379 },
   { value: "mongodb",  label: "MongoDB",    versions: ["7", "6"],               defaultPort: 27017 },
@@ -657,6 +657,9 @@ interface DbFormState {
   version: string
   storageGB: number
   nodeId: string | null
+  dbName: string
+  dbUser: string
+  dbPassword: string
 }
 
 const DB_INITIAL: DbFormState = {
@@ -665,6 +668,9 @@ const DB_INITIAL: DbFormState = {
   version: "16",
   storageGB: 10,
   nodeId: null,
+  dbName: "",
+  dbUser: "",
+  dbPassword: "",
 }
 
 function DatabaseForm({ projectId }: { projectId: string }) {
@@ -695,6 +701,9 @@ function DatabaseForm({ projectId }: { projectId: string }) {
         version: dbf.version,
         storage_gb: dbf.storageGB,
         node_id: dbf.nodeId ?? undefined,
+        db_name: dbf.dbName || undefined,
+        db_user: dbf.dbUser || undefined,
+        db_password: dbf.dbPassword || undefined,
       }, token),
     onSuccess: (service) => {
       navigate({ to: "/projects/$id/databases", params: { id: projectId } })
@@ -747,6 +756,36 @@ function DatabaseForm({ projectId }: { projectId: string }) {
               ))}
             </SelectContent>
           </Select>
+        </Field>
+      </Section>
+
+      <Section title="Credentials" subtitle="Leave blank to use the service name as db/user and auto-generate a password.">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Database name">
+            <input
+              value={dbf.dbName}
+              onChange={(e) => patchDbf({ dbName: e.target.value })}
+              placeholder={dbf.name || "my-postgres"}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Username">
+            <input
+              value={dbf.dbUser}
+              onChange={(e) => patchDbf({ dbUser: e.target.value })}
+              placeholder={dbf.name || "my-postgres"}
+              className={inputCls}
+            />
+          </Field>
+        </div>
+        <Field label="Password">
+          <input
+            value={dbf.dbPassword}
+            onChange={(e) => patchDbf({ dbPassword: e.target.value })}
+            placeholder="Auto-generated if left blank"
+            className={inputCls}
+            type="text"
+          />
         </Field>
       </Section>
 

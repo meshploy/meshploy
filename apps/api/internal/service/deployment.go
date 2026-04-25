@@ -69,6 +69,9 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		return nil, fmt.Errorf("service not found: %w", err)
 	}
 
+	if svc.Type == db.ServiceTypeDatabase {
+		return s.provisionDatabase(ctx, &svc)
+	}
 	if svc.Type != db.ServiceTypeApplication {
 		return nil, fmt.Errorf("only application services can be deployed via build pipeline")
 	}
@@ -640,4 +643,184 @@ func slugify(s string) string {
 	s = strings.ReplaceAll(s, " ", "-")
 	s = strings.ReplaceAll(s, "_", "-")
 	return s
+}
+
+// ─── Database provisioning ────────────────────────────────────────────────────
+
+// dbDataPath returns the container data directory for each engine.
+func dbDataPath(engine db.DatabaseEngine) string {
+	switch engine {
+	case db.DatabaseMySQL:
+		return "/var/lib/mysql"
+	case db.DatabaseRedis:
+		return "/data"
+	case db.DatabaseMongoDB:
+		return "/data/db"
+	default: // postgres
+		return "/var/lib/postgresql/data"
+	}
+}
+
+// dbEnvVars returns the env vars required to initialise the database container.
+func dbEnvVars(dc db.DatabaseConfig) []corev1.EnvVar {
+	pass := string(dc.DBPassword)
+	switch dc.Engine {
+	case db.DatabasePostgres:
+		return []corev1.EnvVar{
+			{Name: "POSTGRES_DB", Value: dc.DBName},
+			{Name: "POSTGRES_USER", Value: dc.DBUser},
+			{Name: "POSTGRES_PASSWORD", Value: pass},
+			{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},
+		}
+	case db.DatabaseMySQL:
+		return []corev1.EnvVar{
+			{Name: "MYSQL_DATABASE", Value: dc.DBName},
+			{Name: "MYSQL_USER", Value: dc.DBUser},
+			{Name: "MYSQL_PASSWORD", Value: pass},
+			{Name: "MYSQL_ROOT_PASSWORD", Value: pass},
+		}
+	case db.DatabaseRedis:
+		if pass != "" {
+			return []corev1.EnvVar{{Name: "REDIS_PASSWORD", Value: pass}}
+		}
+		return nil
+	case db.DatabaseMongoDB:
+		return []corev1.EnvVar{
+			{Name: "MONGO_INITDB_ROOT_USERNAME", Value: dc.DBUser},
+			{Name: "MONGO_INITDB_ROOT_PASSWORD", Value: pass},
+			{Name: "MONGO_INITDB_DATABASE", Value: dc.DBName},
+		}
+	default:
+		return nil
+	}
+}
+
+func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Service) (*db.Deployment, error) {
+	var dc db.DatabaseConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err != nil {
+		return nil, fmt.Errorf("database config not found")
+	}
+
+	deploymentID := uuid.New()
+	deployment := db.Deployment{
+		Base:      db.Base{ID: deploymentID},
+		ServiceID: svc.ID,
+		Status:    db.DeploymentDeploying,
+		Image:     svc.Image,
+		Log:       "Provisioning database…\n",
+	}
+	if err := s.db.WithContext(ctx).Create(&deployment).Error; err != nil {
+		return nil, fmt.Errorf("create deployment record: %w", err)
+	}
+
+	go func() {
+		bgCtx := context.Background()
+
+		namespace := ""
+		var project db.Project
+		if err := s.db.Where("id = ?", svc.ProjectID).First(&project).Error; err == nil {
+			namespace = project.Slug
+		}
+
+		appendLog := func(msg string) {
+			s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).
+				Update("log", gorm.Expr("log || ?", msg+"\n"))
+		}
+
+		appendLog("Ensuring namespace " + namespace + "…")
+		if err := appk8s.EnsureNamespace(bgCtx, s.k8s, namespace); err != nil {
+			s.failDeployment(deploymentID, "failed to ensure namespace: "+err.Error())
+			return
+		}
+
+		nodeName := ""
+		if svc.NodeID != nil {
+			var node db.Node
+			if err := s.db.Where("id = ?", svc.NodeID).First(&node).Error; err == nil {
+				nodeName = node.Name
+			}
+		}
+
+		slug := dc.Slug
+		if slug == "" {
+			slug = slugify(svc.Name)
+		}
+
+		appendLog("Applying database workload…")
+		wp := appk8s.DatabaseWorkloadParams{
+			Name:      slug,
+			Namespace: namespace,
+			Image:     svc.Image,
+			Port:      int32(svc.Port),
+			Env:       dbEnvVars(dc),
+			StorageGB: dc.StorageGB,
+			DataPath:  dbDataPath(dc.Engine),
+			NodeName:  nodeName,
+		}
+		if err := appk8s.ApplyDatabaseDeployment(bgCtx, s.k8s, wp); err != nil {
+			s.failDeployment(deploymentID, "failed to apply K8s workload: "+err.Error())
+			return
+		}
+		// ClusterIP service for intra-cluster access.
+		if err := appk8s.ApplyService(bgCtx, s.k8s, slug, namespace, int32(svc.Port)); err != nil {
+			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
+			return
+		}
+		// NodePort service for direct mesh access.
+		appendLog("Creating NodePort service for mesh access…")
+		nodePort, err := appk8s.ApplyNodePortService(bgCtx, s.k8s, slug, namespace, int32(svc.Port))
+		if err != nil {
+			appendLog("warning: NodePort service failed: " + err.Error())
+		} else {
+			s.db.Model(&db.DatabaseConfig{}).Where("service_id = ?", svc.ID).
+				Update("node_port", nodePort)
+		}
+
+		now := time.Now()
+		s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
+			"status":      db.DeploymentSuccess,
+			"log":         gorm.Expr("log || ?", "Database provisioned successfully.\n"),
+			"deployed_at": &now,
+		})
+		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
+			"status": db.ServiceRunning,
+		})
+	}()
+
+	return &deployment, nil
+}
+
+// ResetDatabase deletes the data PVC and re-provisions the database workload.
+// All stored data is permanently lost.
+func (s *DeploymentService) ResetDatabase(ctx context.Context, serviceID uuid.UUID) (*db.Deployment, error) {
+	if s.k8s == nil {
+		return nil, fmt.Errorf("kubernetes is not configured on this instance")
+	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, fmt.Errorf("service not found")
+	}
+	if svc.Type != db.ServiceTypeDatabase {
+		return nil, fmt.Errorf("reset is only supported for database services")
+	}
+
+	namespace := svc.Project.Slug
+	var dc db.DatabaseConfig
+	_ = s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error
+	slug := dc.Slug
+	if slug == "" {
+		slug = slugify(svc.Name)
+	}
+
+	// Scale to 0 first so the PVC is not in use.
+	if err := appk8s.ScaleDeployment(ctx, s.k8s, slug, namespace, 0); err != nil {
+		return nil, fmt.Errorf("scale down before reset: %w", err)
+	}
+	if err := appk8s.DeleteDatabasePVC(ctx, s.k8s, slug, namespace); err != nil {
+		return nil, fmt.Errorf("delete PVC: %w", err)
+	}
+
+	// Mark service stopped, then re-provision.
+	s.db.Model(&db.Service{}).Where("id = ?", serviceID).Update("status", db.ServiceStopped)
+	return s.provisionDatabase(ctx, &svc)
 }
