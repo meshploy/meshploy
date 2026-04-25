@@ -52,12 +52,12 @@ func (s *DBExplorerService) loadConfig(ctx context.Context, serviceID uuid.UUID)
 		return nil, "", fmt.Errorf("NodePort not yet assigned — wait for provisioning to complete")
 	}
 
-	// Pick any online node reachable over the mesh.
+	// Pick any online node with a k3s role (cluster member) reachable over the mesh.
 	var node db.Node
 	if err := s.db.WithContext(ctx).
-		Where("status = ? AND k8s_member = ?", "online", true).
+		Where("status = ? AND k3s_version != ''", db.NodeOnline).
 		First(&node).Error; err != nil {
-		return nil, "", fmt.Errorf("no online cluster node found")
+		return nil, "", fmt.Errorf("no online cluster node found — ensure at least one node is online")
 	}
 
 	addr := fmt.Sprintf("%s:%d", node.TailscaleIP, dc.NodePort)
