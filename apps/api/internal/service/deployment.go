@@ -537,6 +537,13 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 	}
 	namespace := svc.Project.Slug
 	podSlug := slugify(svc.Name)
+	// Database pods are labeled with the stable slug stored in DatabaseConfig.
+	if svc.Type == db.ServiceTypeDatabase {
+		var dc db.DatabaseConfig
+		if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err == nil && dc.Slug != "" {
+			podSlug = dc.Slug
+		}
+	}
 	selector := fmt.Sprintf("app=%s,managed-by=meshploy", podSlug)
 
 	// Find the running pod.

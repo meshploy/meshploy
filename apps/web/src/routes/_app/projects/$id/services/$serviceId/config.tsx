@@ -561,10 +561,12 @@ function DatabaseConfigSection({ projectId, serviceId }: { projectId: string; se
   const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId, token),
-    enabled: !!orgId && !!service?.node_id,
+    enabled: !!orgId,
     staleTime: 60_000,
   })
+  // Prefer the pinned node; fall back to any online worker (NodePort is reachable on any node IP).
   const serviceNode = rawNodes.find((n) => n.id === service?.node_id)
+    ?? rawNodes.find((n) => n.status === "online" && n.k8s_member)
 
   if (dcLoading) return (
     <div className="flex items-center gap-2 py-8 text-muted-foreground">
