@@ -31,7 +31,7 @@ function LoginPage() {
       const orgList = await orgs.list(token)
       setOrgs(orgList.map((o) => ({ id: o.id, name: o.name, slug: o.slug })))
     },
-    onSuccess: () => navigate({ to: "/nodes" }),
+    onSuccess: () => navigate({ to: "/" }),
     onError: (err) => {
       setError(err instanceof ApiError ? err.detail : "Something went wrong")
     },

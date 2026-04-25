@@ -46,7 +46,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 }
 
 const ENGINE_LABELS: Record<string, string> = {
-  postgres: "PostgreSQL", mysql: "MySQL", redis: "Redis", mongodb: "MongoDB",
+  postgres: "PostgreSQL", mysql: "MySQL", redis: "Redis", mongodb: "MongoDB", dragonfly: "Dragonfly", clickhouse: "ClickHouse",
 }
 
 function buildConnectionString(dc: ApiDatabaseConfig, host: string, port?: number): string {
