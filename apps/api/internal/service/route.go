@@ -201,6 +201,30 @@ func (s *RouteService) Update(ctx context.Context, routeID uuid.UUID, in UpdateR
 	return &route, err
 }
 
+// SyncRouteIP re-resolves the target IP from the service's current node.
+// Used when a pod has been rescheduled and the stored IP is stale.
+func (s *RouteService) SyncRouteIP(ctx context.Context, routeID uuid.UUID) (*db.Route, error) {
+	var route db.Route
+	if err := s.db.WithContext(ctx).First(&route, "id = ?", routeID).Error; err != nil {
+		return nil, err
+	}
+	if route.ServiceID == nil {
+		return nil, huma.Error400BadRequest("route is not linked to a service")
+	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Node").First(&svc, "id = ?", *route.ServiceID).Error; err != nil {
+		return nil, huma.Error400BadRequest("linked service not found")
+	}
+	if svc.Node == nil {
+		return nil, huma.Error422UnprocessableEntity("service has no node assigned — trigger a deployment first")
+	}
+	err := s.db.WithContext(ctx).Model(&route).Updates(map[string]any{
+		"target_ip":   svc.Node.TailscaleIP,
+		"target_port": svc.Port,
+	}).Error
+	return &route, err
+}
+
 func (s *RouteService) Delete(ctx context.Context, routeID uuid.UUID) error {
 	return s.db.WithContext(ctx).Delete(&db.Route{}, "id = ?", routeID).Error
 }

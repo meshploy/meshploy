@@ -124,6 +124,15 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 		Tags:        []string{"Routes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DeleteRoute)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "sync-route-ip",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/sync",
+		Summary:     "Re-resolve route target IP from current service node",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SyncRouteIP)
 }
 
 func (h *Handler) ListOrgRoutes(ctx context.Context, input *ListOrgRoutesInput) (*ListRoutesOutput, error) {
@@ -284,4 +293,19 @@ func (h *Handler) DeleteRoute(ctx context.Context, input *RoutePathInput) (*stru
 		return nil, err
 	}
 	return nil, h.svc.Routes.Delete(ctx, routeID)
+}
+
+func (h *Handler) SyncRouteIP(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	routeID, err := parseUUID(input.RouteID)
+	if err != nil {
+		return nil, err
+	}
+	route, err := h.svc.Routes.SyncRouteIP(ctx, routeID)
+	if err != nil {
+		return nil, err
+	}
+	return &GetRouteOutput{Body: route}, nil
 }

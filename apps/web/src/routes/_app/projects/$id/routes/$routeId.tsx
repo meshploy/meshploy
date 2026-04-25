@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, ExternalLink, Globe, Loader2, ServerCrash, Trash2 } from "lucide-react"
+import { ArrowLeft, ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -70,6 +70,11 @@ function RouteDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] }),
   })
 
+  const syncMutation = useMutation({
+    mutationFn: () => routesApi.syncIP(orgId!, projectId, routeId, token),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] }),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => routesApi.delete(orgId!, projectId, routeId, token),
     onSuccess: () => {
@@ -132,6 +137,21 @@ function RouteDetailPage() {
             → {route.target_ip}:{route.target_port}
           </p>
         </div>
+        {route.service_id && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-7 text-xs shrink-0"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            title="Re-resolve target IP from current service node"
+          >
+            {syncMutation.isPending
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <RefreshCw className="h-3 w-3" />}
+            Sync IP
+          </Button>
+        )}
       </div>
 
       {/* Details */}
