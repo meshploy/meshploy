@@ -412,7 +412,7 @@ export interface CreateServiceBody {
   builder_memory_request?: string // "" = default (1Gi)
   // Database-specific fields
   type?: "application" | "database"
-  engine?: "postgres" | "mysql" | "redis" | "mongodb"
+  engine?: "postgres" | "mysql" | "redis" | "mongodb" | "dragonfly" | "clickhouse"
   version?: string
   storage_gb?: number
   db_name?: string
@@ -526,7 +526,7 @@ export interface ApiQueryResult {
 export interface ApiDatabaseConfig {
   id: string
   service_id: string
-  engine: "postgres" | "mysql" | "redis" | "mongodb"
+  engine: "postgres" | "mysql" | "redis" | "mongodb" | "dragonfly" | "clickhouse"
   version: string
   storage_gb: number
   slug: string
