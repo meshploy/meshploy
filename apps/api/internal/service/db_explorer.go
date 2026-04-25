@@ -470,6 +470,9 @@ func pgxRowsToResult(rows pgx.Rows) (*QueryResult, error) {
 			break
 		}
 	}
+	if allRows == nil {
+		allRows = [][]interface{}{}
+	}
 	return &QueryResult{Columns: cols, Rows: allRows, Count: len(allRows)}, nil
 }
 
@@ -496,6 +499,9 @@ func sqlRowsToResult(rows *sql.Rows) (*QueryResult, error) {
 		if len(allRows) >= maxRows {
 			break
 		}
+	}
+	if allRows == nil {
+		allRows = [][]interface{}{}
 	}
 	return &QueryResult{Columns: cols, Rows: allRows, Count: len(allRows)}, nil
 }
