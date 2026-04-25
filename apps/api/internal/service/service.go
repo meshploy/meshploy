@@ -11,6 +11,7 @@ import (
 	meshdb "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type Services struct {
@@ -37,9 +38,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	// K8s client is optional — log a warning if not available.
 	var k8sClient kubernetes.Interface
+	var k8sRestCfg *rest.Config
 	if c != nil {
 		var err error
-		k8sClient, err = appk8s.NewClient(c.KubeconfigPath, c.K3sServerURL)
+		k8sClient, k8sRestCfg, err = appk8s.NewClientWithConfig(c.KubeconfigPath, c.K3sServerURL)
 		if err != nil {
 			log.Printf("warning: K8s not available (%v) — build/deploy features disabled", err)
 		}
@@ -147,7 +149,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc},
 		GitIntegrations: gitSvc,
 		Registries:      registries,
-		DBExplorer:      &DBExplorerService{db: db},
+		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
 		Headscale:       headscaleSvc,
 		K8s:             k8sClient,
 	}
