@@ -2,7 +2,7 @@ import { createFileRoute, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Database, Loader2, Save, Server } from "lucide-react"
+import { Loader2, Save, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -20,7 +20,6 @@ import {
   registries as registryApi,
   toNode,
   type ApiNode,
-  type ApiDatabaseConfig,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -513,144 +512,6 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
   )
 }
 
-// ─── Database config section ──────────────────────────────────────────────────
-
-const ENGINE_LABELS: Record<string, string> = {
-  postgres: "PostgreSQL",
-  mysql:    "MySQL",
-  redis:    "Redis",
-  mongodb:  "MongoDB",
-}
-
-function CopyRow({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
-  const [copied, setCopied] = useState(false)
-  const copy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
-  }
-  return (
-    <div className="flex items-center gap-4 px-4 py-3">
-      <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
-      <span className={`text-xs flex-1 truncate ${mono ? "font-mono text-foreground" : "text-foreground"}`}>{value}</span>
-      <button onClick={copy} className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 text-xs">
-        {copied ? "✓" : "copy"}
-      </button>
-    </div>
-  )
-}
-
-function DatabaseConfigSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-
-  const { data: dc, isLoading: dcLoading } = useQuery<ApiDatabaseConfig>({
-    queryKey: ["database-config", orgId, projectId, serviceId],
-    queryFn: () => servicesApi.getDatabaseConfig(orgId, projectId, serviceId, token),
-    enabled: !!orgId,
-  })
-
-  const { data: service } = useQuery({
-    queryKey: ["service", orgId, projectId, serviceId],
-    queryFn: () => servicesApi.get(orgId, projectId, serviceId, token),
-    enabled: !!orgId,
-    staleTime: 30_000,
-  })
-
-  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
-    queryKey: ["nodes", orgId],
-    queryFn: () => nodesApi.list(orgId, token),
-    enabled: !!orgId,
-    staleTime: 60_000,
-  })
-  // Prefer the pinned node; fall back to any online worker (NodePort is reachable on any node IP).
-  const serviceNode = rawNodes.find((n) => n.id === service?.node_id)
-    ?? rawNodes.find((n) => n.status === "online" && n.k8s_member)
-
-  if (dcLoading) return (
-    <div className="flex items-center gap-2 py-8 text-muted-foreground">
-      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-    </div>
-  )
-  if (!dc) return null
-
-  // Derive the K8s namespace from the project slug (same logic as the API)
-  const namespace = projectId // we use the projectId as a proxy; ideally the project slug
-  // Internal K8s DNS connection string
-  const internalHost = `${dc.slug}.svc.cluster.local`
-  const connStr = buildConnectionString(dc, internalHost, dc.engine === "redis" ? null : dc.db_name)
-
-  // NodePort mesh connection
-  const meshHost = serviceNode?.tailscale_ip
-  const meshConnStr = dc.node_port && meshHost
-    ? buildConnectionString(dc, meshHost, dc.engine === "redis" ? null : dc.db_name, dc.node_port)
-    : null
-
-  return (
-    <>
-      <Section title="Database" subtitle="Engine and storage. To change engine or version, reset and re-create.">
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          <CopyRow label="Engine"    value={`${ENGINE_LABELS[dc.engine] ?? dc.engine} ${dc.version}`} mono={false} />
-          <CopyRow label="Storage"   value={`${dc.storage_gb} GiB`} mono={false} />
-          <CopyRow label="Slug"      value={dc.slug} />
-        </div>
-      </Section>
-
-      <Section title="Credentials" subtitle="Credentials are encrypted at rest.">
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          {dc.engine !== "redis" && <CopyRow label="Database" value={dc.db_name} />}
-          {dc.engine !== "redis" && <CopyRow label="Username" value={dc.db_user} />}
-          <CopyRow label="Password"  value={dc.db_password} />
-          <CopyRow label="Port"      value={String(service?.port ?? "")} />
-        </div>
-      </Section>
-
-      <Section title="Connection strings" subtitle="Use the internal host within the same project. Use the mesh host from other nodes on the VPN.">
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          <CopyRow label="Internal (K8s)" value={connStr} />
-          {meshConnStr
-            ? <CopyRow label="Mesh (NodePort)" value={meshConnStr} />
-            : (
-              <div className="flex items-center gap-4 px-4 py-3">
-                <span className="text-xs text-muted-foreground w-28 shrink-0">Mesh (NodePort)</span>
-                <span className="text-xs text-muted-foreground/50 italic">
-                  {dc.node_port ? "Node IP not resolved yet" : "Provision the database to get a NodePort"}
-                </span>
-              </div>
-            )
-          }
-        </div>
-      </Section>
-    </>
-  )
-}
-
-function buildConnectionString(
-  dc: ApiDatabaseConfig,
-  host: string,
-  dbName: string | null,
-  port?: number
-): string {
-  const p = port ?? 0
-  const portStr = p ? `:${p}` : ""
-  const pass = encodeURIComponent(dc.db_password)
-  switch (dc.engine) {
-    case "postgres":
-      return `postgres://${dc.db_user}:${pass}@${host}${portStr}/${dbName ?? dc.db_name}`
-    case "mysql":
-      return `mysql://${dc.db_user}:${pass}@${host}${portStr}/${dbName ?? dc.db_name}`
-    case "redis":
-      return dc.db_password
-        ? `redis://:${pass}@${host}${portStr}`
-        : `redis://${host}${portStr}`
-    case "mongodb":
-      return `mongodb://${dc.db_user}:${pass}@${host}${portStr}/${dbName ?? dc.db_name}`
-    default:
-      return `${host}${portStr}`
-  }
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ConfigTab() {
@@ -670,9 +531,7 @@ function ConfigTab() {
 
   return (
     <div className="p-6 max-w-2xl space-y-6">
-      {isDatabase ? (
-        <DatabaseConfigSection projectId={projectId} serviceId={serviceId} />
-      ) : (
+      {!isDatabase && (
         <>
           <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
           <SourceDeploySection projectId={projectId} serviceId={serviceId} />
