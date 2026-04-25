@@ -195,6 +195,24 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.ResetDatabase)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "db-schema",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/schema",
+		Summary:     "Introspect database schema",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.DBSchema)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "db-query",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/query",
+		Summary:     "Execute a database query",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.DBQuery)
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
@@ -592,4 +610,54 @@ func (h *Handler) ResetDatabase(ctx context.Context, input *WorkloadPathInput) (
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &ResetDatabaseOutput{Body: dep}, nil
+}
+
+// ─── DB Explorer ──────────────────────────────────────────────────────────────
+
+type DBSchemaOutput struct {
+	Body []svc.SchemaTable
+}
+
+func (h *Handler) DBSchema(ctx context.Context, input *WorkloadPathInput) (*DBSchemaOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	tables, err := h.svc.DBExplorer.Schema(ctx, serviceID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return &DBSchemaOutput{Body: tables}, nil
+}
+
+type DBQueryInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	ServiceID string `path:"serviceId"`
+	Body      struct {
+		Query    string `json:"query" minLength:"1"`
+		ReadOnly bool   `json:"read_only"`
+	}
+}
+
+type DBQueryOutput struct {
+	Body *svc.QueryResult
+}
+
+func (h *Handler) DBQuery(ctx context.Context, input *DBQueryInput) (*DBQueryOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := h.svc.DBExplorer.Query(ctx, serviceID, input.Body.Query, input.Body.ReadOnly)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return &DBQueryOutput{Body: result}, nil
 }
