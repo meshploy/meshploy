@@ -165,7 +165,7 @@
 
   /* Semantic */
   --destructive: oklch(0.65 0.20 25);
-  --border: oklch(0.21 0.005 90);
+  --border: oklch(0.28 0.005 90);
   --input: oklch(0.17 0.004 90);
   --ring: oklch(0.72 0.17 160);
 
@@ -183,7 +183,7 @@
   --sidebar-primary-foreground: oklch(0.09 0 0);
   --sidebar-accent: oklch(0.15 0.004 90);
   --sidebar-accent-foreground: oklch(0.97 0 0);
-  --sidebar-border: oklch(0.18 0.004 90);
+  --sidebar-border: oklch(0.22 0.004 90);
   --sidebar-ring: oklch(0.72 0.17 160);
 }
 
