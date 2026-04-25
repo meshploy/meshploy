@@ -49,6 +49,7 @@ function DeploymentsTab() {
     staleTime: 30_000,
   })
   const isDatabase = service?.type === "database"
+  const isProvisioned = isDatabase && (service?.status === "running" || service?.status === "stopped")
   const queryClient = useQueryClient()
 
   const queryKey = ["deployments", orgId, projectId, serviceId]
@@ -83,19 +84,21 @@ function DeploymentsTab() {
           )}
         </div>
 
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => triggerMutation.mutate()}
-          disabled={triggerMutation.isPending}
-        >
-          {triggerMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Rocket className="h-3.5 w-3.5" />
-          )}
-          {isDatabase ? "Provision" : "Deploy"}
-        </Button>
+        {!isProvisioned && (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => triggerMutation.mutate()}
+            disabled={triggerMutation.isPending}
+          >
+            {triggerMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Rocket className="h-3.5 w-3.5" />
+            )}
+            {isDatabase ? "Provision" : "Deploy"}
+          </Button>
+        )}
       </div>
 
       {triggerMutation.isError && (
