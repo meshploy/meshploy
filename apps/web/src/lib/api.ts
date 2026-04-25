@@ -616,6 +616,13 @@ export const routes = {
       { method: "DELETE" },
       token
     ),
+
+  syncIP: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiDbRoute>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/sync`,
+      { method: "POST" },
+      token
+    ),
 }
 
 // ─── Git Integrations ─────────────────────────────────────────────────────────

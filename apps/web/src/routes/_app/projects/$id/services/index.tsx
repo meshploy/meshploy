@@ -118,7 +118,7 @@ function ServicesTab() {
             <ServiceCard
               key={svc.id}
               svc={svc}
-              onClick={() => navigate({ to: "/projects/$id/services/$serviceId/deployments", params: { id: projectId, serviceId: svc.id } })}
+              onClick={() => navigate({ to: "/projects/$id/services/$serviceId", params: { id: projectId, serviceId: svc.id } })}
             />
           ))}
         </div>
