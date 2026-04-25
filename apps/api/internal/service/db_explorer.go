@@ -1,10 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
@@ -12,10 +16,17 @@ import (
 	db "github.com/meshploy/packages/db"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/transport/spdy"
 )
 
 type DBExplorerService struct {
-	db *gorm.DB
+	db      *gorm.DB
+	k8s     kubernetes.Interface
+	restCfg *rest.Config
 }
 
 // QueryResult holds the tabular result of a DB query.
@@ -37,47 +48,121 @@ type SchemaColumn struct {
 	Nullable bool   `json:"nullable"`
 }
 
-// loadConfig fetches the DatabaseConfig and returns the host:port to dial.
-// The API runs outside the K8s cluster so it connects via NodePort over the
-// Tailscale mesh using any online node's IP.
-func (s *DBExplorerService) loadConfig(ctx context.Context, serviceID uuid.UUID) (*db.DatabaseConfig, string, error) {
+// loadDC fetches the DatabaseConfig and the running pod name for a service.
+func (s *DBExplorerService) loadDC(ctx context.Context, serviceID uuid.UUID) (*db.DatabaseConfig, string, string, error) {
 	var dc db.DatabaseConfig
 	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err != nil {
-		return nil, "", fmt.Errorf("database config not found")
+		return nil, "", "", fmt.Errorf("database config not found")
 	}
 	if dc.Slug == "" {
-		return nil, "", fmt.Errorf("database not provisioned yet")
+		return nil, "", "", fmt.Errorf("database not provisioned yet")
 	}
-	if dc.NodePort == 0 {
-		return nil, "", fmt.Errorf("NodePort not yet assigned — wait for provisioning to complete")
-	}
-
-	// Pick any registered node — NodePort is reachable on all mesh nodes.
-	var node db.Node
-	if err := s.db.WithContext(ctx).
-		Where("tailscale_ip != ''").
-		First(&node).Error; err != nil {
-		return nil, "", fmt.Errorf("no cluster node found — register a node first")
+	if s.k8s == nil {
+		return nil, "", "", fmt.Errorf("kubernetes not configured")
 	}
 
-	addr := fmt.Sprintf("%s:%d", node.TailscaleIP, dc.NodePort)
-	return &dc, addr, nil
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, "", "", fmt.Errorf("service not found")
+	}
+
+	pods, err := s.k8s.CoreV1().Pods(svc.Project.Slug).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("app=%s,managed-by=meshploy", dc.Slug),
+	})
+	if err != nil || len(pods.Items) == 0 {
+		return nil, "", "", fmt.Errorf("no running pod found — is the database running?")
+	}
+
+	return &dc, svc.Project.Slug, pods.Items[0].Name, nil
+}
+
+// openPortForward opens a kubectl port-forward tunnel to the given pod/port.
+// Returns the local address (127.0.0.1:localPort) and a stop function.
+func (s *DBExplorerService) openPortForward(ctx context.Context, namespace, podName string, remotePort int) (string, func(), error) {
+	transport, upgrader, err := spdy.RoundTripperFor(s.restCfg)
+	if err != nil {
+		return "", nil, fmt.Errorf("spdy transport: %w", err)
+	}
+
+	url := s.restCfg.Host + fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/portforward", namespace, podName)
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, parseURL(url))
+
+	stopCh := make(chan struct{})
+	readyCh := make(chan struct{})
+	var outBuf, errBuf bytes.Buffer
+
+	fw, err := portforward.New(dialer, []string{fmt.Sprintf("0:%d", remotePort)}, stopCh, readyCh, &outBuf, &errBuf)
+	if err != nil {
+		return "", nil, fmt.Errorf("portforward: %w", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- fw.ForwardPorts() }()
+
+	select {
+	case <-readyCh:
+	case err := <-errCh:
+		return "", nil, fmt.Errorf("portforward start: %w", err)
+	case <-ctx.Done():
+		close(stopCh)
+		return "", nil, ctx.Err()
+	}
+
+	ports, err := fw.GetPorts()
+	if err != nil || len(ports) == 0 {
+		close(stopCh)
+		return "", nil, fmt.Errorf("get forwarded port: %w", err)
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", ports[0].Local)
+	stop := func() { close(stopCh) }
+	return addr, stop, nil
+}
+
+func parseURL(raw string) *url.URL {
+	u, _ := url.Parse(raw)
+	return u
+}
+
+// dbContainerPort returns the default container port for a database engine.
+func dbContainerPort(engine db.DatabaseEngine) int {
+	switch engine {
+	case db.DatabasePostgres:
+		return 5432
+	case db.DatabaseMySQL:
+		return 3306
+	case db.DatabaseRedis:
+		return 6379
+	case db.DatabaseMongoDB:
+		return 27017
+	default:
+		return 5432
+	}
 }
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 func (s *DBExplorerService) Schema(ctx context.Context, serviceID uuid.UUID) ([]SchemaTable, error) {
-	dc, host, err := s.loadConfig(ctx, serviceID)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	dc, namespace, podName, err := s.loadDC(ctx, serviceID)
 	if err != nil {
 		return nil, err
 	}
+	addr, stop, err := s.openPortForward(ctx, namespace, podName, dbContainerPort(dc.Engine))
+	if err != nil {
+		return nil, fmt.Errorf("port-forward: %w", err)
+	}
+	defer stop()
+
 	switch dc.Engine {
 	case "postgres":
-		return s.pgSchema(ctx, dc, host)
+		return s.pgSchema(ctx, dc, addr)
 	case "mysql":
-		return s.mysqlSchema(ctx, dc, host)
+		return s.mysqlSchema(ctx, dc, addr)
 	case "redis":
-		return s.redisSchema(ctx, dc, host)
+		return s.redisSchema(ctx, dc, addr)
 	case "mongodb":
 		return nil, fmt.Errorf("mongodb schema introspection not yet supported")
 	default:
@@ -228,17 +313,26 @@ func collectSchema(rows pgx.Rows) ([]SchemaTable, error) {
 const maxRows = 200
 
 func (s *DBExplorerService) Query(ctx context.Context, serviceID uuid.UUID, query string, readOnly bool) (*QueryResult, error) {
-	dc, host, err := s.loadConfig(ctx, serviceID)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	dc, namespace, podName, err := s.loadDC(ctx, serviceID)
 	if err != nil {
 		return nil, err
 	}
+	addr, stop, err := s.openPortForward(ctx, namespace, podName, dbContainerPort(dc.Engine))
+	if err != nil {
+		return nil, fmt.Errorf("port-forward: %w", err)
+	}
+	defer stop()
+
 	switch dc.Engine {
 	case "postgres":
-		return s.pgQuery(ctx, dc, host, query, readOnly)
+		return s.pgQuery(ctx, dc, addr, query, readOnly)
 	case "mysql":
-		return s.mysqlQuery(ctx, dc, host, query, readOnly)
+		return s.mysqlQuery(ctx, dc, addr, query, readOnly)
 	case "redis":
-		return s.redisQuery(ctx, dc, host, query)
+		return s.redisQuery(ctx, dc, addr, query)
 	case "mongodb":
 		return nil, fmt.Errorf("mongodb query not yet supported")
 	default:
