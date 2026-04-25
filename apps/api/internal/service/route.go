@@ -215,11 +215,33 @@ func (s *RouteService) SyncRouteIP(ctx context.Context, routeID uuid.UUID) (*db.
 	if err := s.db.WithContext(ctx).Preload("Node").First(&svc, "id = ?", *route.ServiceID).Error; err != nil {
 		return nil, huma.Error400BadRequest("linked service not found")
 	}
-	if svc.Node == nil {
-		return nil, huma.Error422UnprocessableEntity("service has no node assigned — trigger a deployment first")
+	var targetIP string
+	if svc.Node != nil {
+		targetIP = svc.Node.TailscaleIP
+	} else {
+		// Auto-scheduled: find the actual node by querying the running pod.
+		if s.k8s == nil {
+			return nil, huma.Error422UnprocessableEntity("kubernetes not configured — cannot resolve auto-scheduled node")
+		}
+		var project db.Project
+		if err := s.db.WithContext(ctx).First(&project, "id = ?", svc.ProjectID).Error; err != nil {
+			return nil, huma.Error422UnprocessableEntity("project not found")
+		}
+		pods, err := s.k8s.CoreV1().Pods(project.Slug).List(ctx, metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("app=%s,managed-by=meshploy", slugify(svc.Name)),
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return nil, huma.Error422UnprocessableEntity("no running pod found — deploy the service first")
+		}
+		nodeName := pods.Items[0].Spec.NodeName
+		var node db.Node
+		if err := s.db.WithContext(ctx).First(&node, "name = ?", nodeName).Error; err != nil {
+			return nil, huma.Error422UnprocessableEntity("node '" + nodeName + "' not found in Meshploy — is it registered?")
+		}
+		targetIP = node.TailscaleIP
 	}
 	err := s.db.WithContext(ctx).Model(&route).Updates(map[string]any{
-		"target_ip":   svc.Node.TailscaleIP,
+		"target_ip":   targetIP,
 		"target_port": svc.Port,
 	}).Error
 	return &route, err
