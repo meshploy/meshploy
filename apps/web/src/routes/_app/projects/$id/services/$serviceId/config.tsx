@@ -553,7 +553,7 @@ function SchemaTree({ tables }: { tables: ApiSchemaTable[] }) {
 }
 
 function ResultsTable({ result }: { result: ApiQueryResult }) {
-  if (result.columns.length === 0) return (
+  if (!result.columns?.length) return (
     <p className="text-xs text-muted-foreground/50 p-4">Query executed — no rows returned.</p>
   )
   return (
@@ -567,7 +567,7 @@ function ResultsTable({ result }: { result: ApiQueryResult }) {
           </tr>
         </thead>
         <tbody>
-          {result.rows.map((row, i) => (
+          {(result.rows ?? []).map((row, i) => (
             <tr key={i} className="border-b border-border/20 hover:bg-muted/10">
               {row.map((cell, j) => (
                 <td key={j} className="px-3 py-1.5 font-mono text-foreground/80 whitespace-nowrap max-w-[300px] truncate">{String(cell)}</td>
