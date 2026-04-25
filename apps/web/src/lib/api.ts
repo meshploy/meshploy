@@ -387,6 +387,11 @@ export interface CreateServiceBody {
   builder_node?: string          // "" = auto-schedule
   builder_cpu_request?: string   // "" = default (1000m)
   builder_memory_request?: string // "" = default (1Gi)
+  // Database-specific fields
+  type?: "application" | "database"
+  engine?: "postgres" | "mysql" | "redis" | "mongodb"
+  version?: string
+  storage_gb?: number
 }
 
 export const services = {

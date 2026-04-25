@@ -108,10 +108,10 @@ const RESOURCE_TYPES: {
   soon?: boolean
 }[] = [
   { type: "service",  icon: Box,      label: "Service"  },
+  { type: "database", icon: Database, label: "Database" },
   { type: "route",    icon: Globe,    label: "Route"    },
   { type: "job",      icon: Zap,      label: "Job",      soon: true },
   { type: "cron-job", icon: Clock,    label: "Cron Job", soon: true },
-  { type: "database", icon: Database, label: "Database", soon: true },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -239,6 +239,8 @@ function NewResourcePage() {
               error={createMutation.error as Error | null}
               onCreate={() => createMutation.mutate()}
             />
+          ) : resourceType === "database" ? (
+            <DatabaseForm projectId={projectId} />
           ) : resourceType === "route" ? (
             <RouteForm projectId={projectId} />
           ) : (
@@ -633,6 +635,168 @@ function ServiceForm({
       >
         {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Create service
+      </Button>
+    </div>
+  )
+}
+
+// ─── Database form ────────────────────────────────────────────────────────────
+
+type DbEngine = "postgres" | "mysql" | "redis" | "mongodb"
+
+const ENGINE_OPTIONS: { value: DbEngine; label: string; versions: string[]; defaultPort: number }[] = [
+  { value: "postgres", label: "PostgreSQL", versions: ["16", "15", "14", "13"], defaultPort: 5432 },
+  { value: "mysql",    label: "MySQL",      versions: ["8.0", "5.7"],           defaultPort: 3306 },
+  { value: "redis",    label: "Redis",      versions: ["7", "6"],               defaultPort: 6379 },
+  { value: "mongodb",  label: "MongoDB",    versions: ["7", "6"],               defaultPort: 27017 },
+]
+
+interface DbFormState {
+  name: string
+  engine: DbEngine
+  version: string
+  storageGB: number
+  nodeId: string | null
+}
+
+const DB_INITIAL: DbFormState = {
+  name: "",
+  engine: "postgres",
+  version: "16",
+  storageGB: 10,
+  nodeId: null,
+}
+
+function DatabaseForm({ projectId }: { projectId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const navigate = useNavigate()
+
+  const [dbf, setDbf] = useState<DbFormState>(DB_INITIAL)
+  const patchDbf = (p: Partial<DbFormState>) => setDbf((s) => ({ ...s, ...p }))
+
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId!, token),
+    enabled: !!orgId,
+  })
+  const workerNodes = rawNodes
+    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
+    .map(toNode)
+
+  const selectedEngine = ENGINE_OPTIONS.find((e) => e.value === dbf.engine)!
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      servicesApi.create(orgId, projectId, {
+        name: dbf.name,
+        type: "database",
+        engine: dbf.engine,
+        version: dbf.version,
+        storage_gb: dbf.storageGB,
+        node_id: dbf.nodeId ?? undefined,
+      }, token),
+    onSuccess: (service) => {
+      navigate({ to: "/projects/$id/databases", params: { id: projectId } })
+    },
+  })
+
+  const canCreate = dbf.name.trim().length > 0
+
+  return (
+    <div className="space-y-8">
+      <Section title="Basic info" subtitle="Give your database a name">
+        <Field label="Database name" required>
+          <input
+            value={dbf.name}
+            onChange={(e) => patchDbf({ name: e.target.value })}
+            placeholder="my-postgres"
+            className={inputCls}
+            autoFocus
+          />
+        </Field>
+      </Section>
+
+      <Section title="Engine" subtitle="Choose the database engine and version">
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {ENGINE_OPTIONS.map((eng) => (
+            <button
+              key={eng.value}
+              onClick={() => patchDbf({ engine: eng.value, version: eng.versions[0] })}
+              className={cn(
+                "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
+                dbf.engine === eng.value
+                  ? "border-primary/50 bg-primary/10 text-foreground"
+                  : "border-border/60 bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/30"
+              )}
+            >
+              <Database className="h-4 w-4 shrink-0" />
+              <span className="text-sm font-medium">{eng.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <Field label="Version">
+          <Select value={dbf.version} onValueChange={(v) => patchDbf({ version: v ?? selectedEngine.versions[0] })}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {selectedEngine.versions.map((v) => (
+                <SelectItem key={v} value={v}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </Section>
+
+      <Section title="Storage" subtitle="Persistent volume size for this database">
+        <Field label="Storage (GiB)">
+          <Input
+            type="number"
+            min={1}
+            max={1000}
+            value={dbf.storageGB}
+            onChange={(e) => patchDbf({ storageGB: Math.max(1, parseInt(e.target.value) || 10) })}
+            className="h-9 text-sm"
+          />
+        </Field>
+      </Section>
+
+      <Section title="Placement" subtitle="Choose which node this database runs on">
+        <div className="flex flex-wrap gap-2">
+          <NodeCard
+            label="Auto-schedule"
+            sub="Let K3s decide"
+            selected={dbf.nodeId === null}
+            onClick={() => patchDbf({ nodeId: null })}
+          />
+          {workerNodes.map((node) => (
+            <NodeCard
+              key={node.id}
+              label={node.name}
+              sub={node.tailscaleIP}
+              selected={dbf.nodeId === node.id}
+              onClick={() => patchDbf({ nodeId: node.id })}
+              online
+            />
+          ))}
+        </div>
+      </Section>
+
+      {createMutation.isError && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+          <p className="text-xs text-destructive">{(createMutation.error as Error).message}</p>
+        </div>
+      )}
+
+      <Button
+        className="w-full gap-2"
+        disabled={!canCreate || createMutation.isPending}
+        onClick={() => createMutation.mutate()}
+      >
+        {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Create database
       </Button>
     </div>
   )

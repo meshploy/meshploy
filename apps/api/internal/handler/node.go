@@ -170,6 +170,14 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 			r.MemoryGB = kn.memoryGB
 			r.DiskGB = kn.diskGB
 			r.K3sVersion = kn.k3sVersion
+			// Merge live K8s labels so callers can filter by meshploy.com/role etc.
+			if len(kn.Labels) > 0 {
+				labels := make(db.JSONObject, len(kn.Labels))
+				for k, v := range kn.Labels {
+					labels[k] = v
+				}
+				r.K3sLabels = labels
+			}
 			// Reflect live cluster readiness in the status field.
 			if kn.ready {
 				r.Status = db.NodeOnline

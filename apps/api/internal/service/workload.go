@@ -41,6 +41,12 @@ type CreateWorkloadInput struct {
 	BuilderNode           string // "" = auto-schedule on any builder node
 	BuilderCPURequest     string // "" = default (1000m)
 	BuilderMemoryRequest  string // "" = default (1Gi)
+
+	// Database-specific fields — used when Type == "database"
+	Type      db.ServiceType
+	Engine    db.DatabaseEngine
+	Version   string
+	StorageGB int
 }
 
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
@@ -55,7 +61,39 @@ func (s *WorkloadService) Get(ctx context.Context, serviceID uuid.UUID) (*db.Ser
 	return &service, err
 }
 
+// dbDefaults returns the default image, port, and storage for a managed-database engine.
+func dbDefaults(engine db.DatabaseEngine, version string) (image string, port int) {
+	if version == "" {
+		switch engine {
+		case db.DatabasePostgres:
+			version = "16"
+		case db.DatabaseMySQL:
+			version = "8.0"
+		case db.DatabaseRedis:
+			version = "7"
+		case db.DatabaseMongoDB:
+			version = "7"
+		}
+	}
+	switch engine {
+	case db.DatabasePostgres:
+		return "postgres:" + version, 5432
+	case db.DatabaseMySQL:
+		return "mysql:" + version, 3306
+	case db.DatabaseRedis:
+		return "redis:" + version, 6379
+	case db.DatabaseMongoDB:
+		return "mongo:" + version, 27017
+	default:
+		return "postgres:" + version, 5432
+	}
+}
+
 func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in CreateWorkloadInput) (*db.Service, error) {
+	if in.Type == db.ServiceTypeDatabase {
+		return s.createDatabase(ctx, projectID, in)
+	}
+
 	replicas := in.Replicas
 	if replicas == 0 {
 		replicas = 1
@@ -108,6 +146,52 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			BuilderMemoryRequest:  in.BuilderMemoryRequest,
 		}
 		return tx.Create(bc).Error
+	})
+}
+
+func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUID, in CreateWorkloadInput) (*db.Service, error) {
+	if in.Engine == "" {
+		in.Engine = db.DatabasePostgres
+	}
+	image, port := dbDefaults(in.Engine, in.Version)
+	version := in.Version
+	if version == "" {
+		switch in.Engine {
+		case db.DatabasePostgres:
+			version = "16"
+		case db.DatabaseMySQL:
+			version = "8.0"
+		case db.DatabaseRedis:
+			version = "7"
+		case db.DatabaseMongoDB:
+			version = "7"
+		}
+	}
+	storageGB := in.StorageGB
+	if storageGB == 0 {
+		storageGB = 10
+	}
+	service := &db.Service{
+		ProjectID: projectID,
+		NodeID:    in.NodeID,
+		Name:      in.Name,
+		Type:      db.ServiceTypeDatabase,
+		Image:     image,
+		Status:    db.ServiceStopped,
+		Replicas:  1,
+		Port:      port,
+	}
+	return service, s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(service).Error; err != nil {
+			return err
+		}
+		dc := &db.DatabaseConfig{
+			ServiceID: service.ID,
+			Engine:    in.Engine,
+			Version:   version,
+			StorageGB: storageGB,
+		}
+		return tx.Create(dc).Error
 	})
 }
 
