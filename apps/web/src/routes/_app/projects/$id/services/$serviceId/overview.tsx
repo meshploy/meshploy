@@ -98,7 +98,9 @@ function ServiceOverviewTab() {
   const isDatabase = service.type === "database"
   const node = service.node_id
     ? nodes.find((n) => n.id === service.node_id)
-    : nodes.find((n) => n.status === "online" && n.k8s_member)
+    : rawNodes.find((n) => n.status === "online" && n.k8s_member)
+      ? toNode(rawNodes.find((n) => n.status === "online" && n.k8s_member)!)
+      : null
   const attachedRoutes = projectRoutes.filter((r) => r.service_id === service.id)
 
   // Connection strings for database services
