@@ -79,6 +79,10 @@ func dbDefaults(engine db.DatabaseEngine, version string) (image string, port in
 			version = "7"
 		case db.DatabaseMongoDB:
 			version = "7"
+		case db.DatabaseDragonfly:
+			version = "latest"
+		case db.DatabaseClickHouse:
+			version = "24"
 		}
 	}
 	switch engine {
@@ -90,6 +94,10 @@ func dbDefaults(engine db.DatabaseEngine, version string) (image string, port in
 		return "redis:" + version, 6379
 	case db.DatabaseMongoDB:
 		return "mongo:" + version, 27017
+	case db.DatabaseDragonfly:
+		return "docker.dragonflydb.io/dragonflydb/dragonfly:" + version, 6379
+	case db.DatabaseClickHouse:
+		return "clickhouse/clickhouse-server:" + version, 9000
 	default:
 		return "postgres:" + version, 5432
 	}

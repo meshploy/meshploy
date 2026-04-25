@@ -1,4 +1,4 @@
-import { SiPostgresql, SiMysql, SiRedis, SiMongodb } from "@icons-pack/react-simple-icons"
+import { SiPostgresql, SiMysql, SiRedis, SiMongodb, SiClickhouse } from "@icons-pack/react-simple-icons"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
@@ -643,24 +643,32 @@ function ServiceForm({
 
 // ─── Database form ────────────────────────────────────────────────────────────
 
-type DbEngine = "postgres" | "mysql" | "redis" | "mongodb"
+type DbEngine = "postgres" | "mysql" | "redis" | "mongodb" | "dragonfly" | "clickhouse"
 
 function DbEngineLogo({ engine, className }: { engine: DbEngine; className?: string }) {
-  const icons = {
+  if (engine === "dragonfly") return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2C9.5 2 7.5 3.5 7.5 5.5c0 .8.3 1.5.8 2.1C6.5 8.2 5 9.8 5 11.7c0 1.2.6 2.3 1.5 3C6 15.4 5.5 16.2 5.5 17c0 1.7 1.3 3 3 3 .5 0 1-.1 1.4-.4.5.3 1.1.4 1.6.4h1c.5 0 1.1-.1 1.6-.4.4.2.9.4 1.4.4 1.7 0 3-1.3 3-3 0-.8-.5-1.6-1-2.3.9-.7 1.5-1.8 1.5-3 0-1.9-1.5-3.5-3.3-4.1.5-.6.8-1.3.8-2.1C18.5 3.5 16.5 2 14 2h-2zm0 2h2c1.4 0 2.5.9 2.5 1.5S15.4 7 14 7h-2C10.6 7 9.5 6.1 9.5 5.5S10.6 4 12 4z" opacity=".9"/>
+    </svg>
+  )
+  const icons: Record<string, React.ComponentType<{ className?: string }>> = {
     postgres: SiPostgresql,
     mysql: SiMysql,
     redis: SiRedis,
     mongodb: SiMongodb,
+    clickhouse: SiClickhouse,
   }
   const Icon = icons[engine]
-  return <Icon className={className} />
+  return Icon ? <Icon className={className} /> : null
 }
 
 const ENGINE_OPTIONS: { value: DbEngine; label: string; versions: string[]; defaultPort: number }[] = [
-  { value: "postgres", label: "PostgreSQL", versions: ["18", "17", "16", "15", "14", "13"], defaultPort: 5432 },
-  { value: "mysql",    label: "MySQL",      versions: ["8.0", "5.7"],           defaultPort: 3306 },
-  { value: "redis",    label: "Redis",      versions: ["7", "6"],               defaultPort: 6379 },
-  { value: "mongodb",  label: "MongoDB",    versions: ["7", "6"],               defaultPort: 27017 },
+  { value: "postgres",   label: "PostgreSQL",  versions: ["17", "16", "15", "14", "13"], defaultPort: 5432 },
+  { value: "mysql",      label: "MySQL",       versions: ["8.0", "5.7"],                 defaultPort: 3306 },
+  { value: "redis",      label: "Redis",       versions: ["7", "6"],                     defaultPort: 6379 },
+  { value: "mongodb",    label: "MongoDB",     versions: ["7", "6"],                     defaultPort: 27017 },
+  { value: "dragonfly",  label: "Dragonfly",   versions: ["latest"],                     defaultPort: 6379 },
+  { value: "clickhouse", label: "ClickHouse",  versions: ["24", "23"],                   defaultPort: 9000 },
 ]
 
 interface DbFormState {
@@ -739,7 +747,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
       </Section>
 
       <Section title="Engine" subtitle="Choose the database engine and version">
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           {ENGINE_OPTIONS.map((eng) => (
             <button
               key={eng.value}

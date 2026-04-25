@@ -659,10 +659,12 @@ func dbDataPath(engine db.DatabaseEngine) string {
 	switch engine {
 	case db.DatabaseMySQL:
 		return "/var/lib/mysql"
-	case db.DatabaseRedis:
+	case db.DatabaseRedis, db.DatabaseDragonfly:
 		return "/data"
 	case db.DatabaseMongoDB:
 		return "/data/db"
+	case db.DatabaseClickHouse:
+		return "/var/lib/clickhouse"
 	default: // postgres
 		return "/var/lib/postgresql/data"
 	}
@@ -686,11 +688,17 @@ func dbEnvVars(dc db.DatabaseConfig) []corev1.EnvVar {
 			{Name: "MYSQL_PASSWORD", Value: pass},
 			{Name: "MYSQL_ROOT_PASSWORD", Value: pass},
 		}
-	case db.DatabaseRedis:
+	case db.DatabaseRedis, db.DatabaseDragonfly:
 		if pass != "" {
 			return []corev1.EnvVar{{Name: "REDIS_PASSWORD", Value: pass}}
 		}
 		return nil
+	case db.DatabaseClickHouse:
+		return []corev1.EnvVar{
+			{Name: "CLICKHOUSE_DB", Value: dc.DBName},
+			{Name: "CLICKHOUSE_USER", Value: dc.DBUser},
+			{Name: "CLICKHOUSE_PASSWORD", Value: pass},
+		}
 	case db.DatabaseMongoDB:
 		return []corev1.EnvVar{
 			{Name: "MONGO_INITDB_ROOT_USERNAME", Value: dc.DBUser},
