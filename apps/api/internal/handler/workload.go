@@ -55,10 +55,13 @@ type CreateWorkloadInput struct {
 		BuilderCPURequest    string `json:"builder_cpu_request,omitempty"`
 		BuilderMemoryRequest string `json:"builder_memory_request,omitempty"`
 		// Database-specific fields — only used when type == "database"
-		Type      string `json:"type,omitempty"`       // "application" | "database"
-		Engine    string `json:"engine,omitempty"`     // "postgres" | "mysql" | "redis" | "mongodb"
-		Version   string `json:"version,omitempty"`    // e.g. "16", "8.0", "7"
-		StorageGB int    `json:"storage_gb,omitempty"` // GiB; 0 = default (10)
+		Type       string `json:"type,omitempty"`        // "application" | "database"
+		Engine     string `json:"engine,omitempty"`      // "postgres" | "mysql" | "redis" | "mongodb"
+		Version    string `json:"version,omitempty"`     // e.g. "16", "8.0", "7"
+		StorageGB  int    `json:"storage_gb,omitempty"`  // GiB; 0 = default (10)
+		DBName     string `json:"db_name,omitempty"`     // defaults to service name
+		DBUser     string `json:"db_user,omitempty"`     // defaults to service name
+		DBPassword string `json:"db_password,omitempty"` // auto-generated if empty
 	}
 }
 
@@ -174,6 +177,24 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.PutServiceBuildEnvVars)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-database-config",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/database-config",
+		Summary:     "Get database config for a database service",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetDatabaseConfig)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "reset-database",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/reset",
+		Summary:     "Wipe and re-provision a database (destructive)",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ResetDatabase)
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
@@ -248,6 +269,9 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		Engine:                db.DatabaseEngine(input.Body.Engine),
 		Version:               input.Body.Version,
 		StorageGB:             input.Body.StorageGB,
+		DBName:                input.Body.DBName,
+		DBUser:                input.Body.DBUser,
+		DBPassword:            input.Body.DBPassword,
 	})
 	if err != nil {
 		return nil, err
@@ -530,4 +554,42 @@ func (h *Handler) PutServiceBuildEnvVars(ctx context.Context, input *PutBuildEnv
 	out := &GetBuildEnvVarsOutput{}
 	out.Body.BuildEnvVars = input.Body.BuildEnvVars
 	return out, nil
+}
+
+type GetDatabaseConfigOutput struct {
+	Body *db.DatabaseConfig
+}
+
+func (h *Handler) GetDatabaseConfig(ctx context.Context, input *WorkloadPathInput) (*GetDatabaseConfigOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	dc, err := h.svc.Workloads.GetDatabaseConfig(ctx, serviceID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &GetDatabaseConfigOutput{Body: dc}, nil
+}
+
+type ResetDatabaseOutput struct {
+	Body *db.Deployment
+}
+
+func (h *Handler) ResetDatabase(ctx context.Context, input *WorkloadPathInput) (*ResetDatabaseOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	dep, err := h.svc.Deployments.ResetDatabase(ctx, serviceID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return &ResetDatabaseOutput{Body: dep}, nil
 }

@@ -12,13 +12,21 @@ export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
   component: ServiceLayout,
 })
 
-const SERVICE_TABS = [
+const APP_TABS = [
   { label: "Overview",    to: "/projects/$id/services/$serviceId/overview"    },
   { label: "Deployments", to: "/projects/$id/services/$serviceId/deployments" },
   { label: "Config",      to: "/projects/$id/services/$serviceId/config"      },
   { label: "Logs",        to: "/projects/$id/services/$serviceId/logs"        },
   { label: "Settings",    to: "/projects/$id/services/$serviceId/settings"    },
-] as const
+]
+
+const DB_TABS = [
+  { label: "Overview",    to: "/projects/$id/services/$serviceId/overview"    },
+  { label: "Deployments", to: "/projects/$id/services/$serviceId/deployments" },
+  { label: "Database",    to: "/projects/$id/services/$serviceId/config"      },
+  { label: "Logs",        to: "/projects/$id/services/$serviceId/logs"        },
+  { label: "Settings",    to: "/projects/$id/services/$serviceId/settings"    },
+]
 
 const STATUS_STYLES: Record<string, string> = {
   running:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -117,7 +125,7 @@ function ServiceLayout() {
           </div>
 
           <nav className="flex items-center -mb-px">
-            {SERVICE_TABS.map(({ label, to }) => (
+            {(service.type === "database" ? DB_TABS : APP_TABS).map(({ label, to }) => (
               <Link
                 key={to}
                 to={to}

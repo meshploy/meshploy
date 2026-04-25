@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Eraser, Loader2, Save, Trash2 } from "lucide-react"
+import { Eraser, Loader2, RotateCcw, Save, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { services as servicesApi, projects as projectsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -56,6 +56,16 @@ function SettingsTab() {
     mutationFn: () => projectsApi.clearBuildCache(orgId, projectId, token),
   })
 
+  const resetDbMutation = useMutation({
+    mutationFn: () => servicesApi.reset(orgId, projectId, serviceId, token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["service", orgId, projectId, serviceId] })
+      queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] })
+    },
+  })
+
+  const [resetConfirm, setResetConfirm] = useState(false)
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-40">
@@ -100,34 +110,70 @@ function SettingsTab() {
         </div>
       </Section>
 
-      {/* ── Build cache ────────────────────────────────────────── */}
-      <Section
-        title="Build cache"
-        subtitle="Buildah layer cache is shared across all services in this project. Clear it to force a clean rebuild (e.g. after a corrupted cache or to free disk space). The cache is recreated automatically on the next deploy."
-      >
-        {clearCacheMutation.isError && (
-          <p className="text-xs text-destructive">{(clearCacheMutation.error as Error).message}</p>
-        )}
-        {clearCacheMutation.isSuccess && (
-          <p className="text-xs text-emerald-400">Cache cleared — next build starts fresh.</p>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={clearCacheMutation.isPending}
-          onClick={() => clearCacheMutation.mutate()}
+      {/* ── Build cache (application only) ─────────────────────── */}
+      {service?.type !== "database" && (
+        <Section
+          title="Build cache"
+          subtitle="Buildah layer cache is shared across all services in this project. Clear it to force a clean rebuild (e.g. after a corrupted cache or to free disk space). The cache is recreated automatically on the next deploy."
         >
-          {clearCacheMutation.isPending
-            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : <Eraser className="h-3.5 w-3.5" />
-          }
-          Clear build cache
-        </Button>
-      </Section>
+          {clearCacheMutation.isError && (
+            <p className="text-xs text-destructive">{(clearCacheMutation.error as Error).message}</p>
+          )}
+          {clearCacheMutation.isSuccess && (
+            <p className="text-xs text-emerald-400">Cache cleared — next build starts fresh.</p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={clearCacheMutation.isPending}
+            onClick={() => clearCacheMutation.mutate()}
+          >
+            {clearCacheMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Eraser className="h-3.5 w-3.5" />
+            }
+            Clear build cache
+          </Button>
+        </Section>
+      )}
 
       {/* ── Danger zone ────────────────────────────────────────── */}
       <Section title="Danger zone" subtitle="Permanent actions that cannot be undone." danger>
+        {service?.type === "database" && (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium">Reset database</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Deletes the persistent volume and re-provisions the database. All data is permanently lost.
+              </p>
+            </div>
+            {resetDbMutation.isError && (
+              <p className="text-xs text-destructive">{(resetDbMutation.error as Error).message}</p>
+            )}
+            {!resetConfirm ? (
+              <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => setResetConfirm(true)}>
+                <RotateCcw className="h-3.5 w-3.5" /> Reset database
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setResetConfirm(false)} disabled={resetDbMutation.isPending}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={resetDbMutation.isPending}
+                  onClick={() => { resetDbMutation.mutate(); setResetConfirm(false) }}
+                >
+                  {resetDbMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                  Yes, wipe and reset
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 space-y-4">
           <div>
             <p className="text-sm font-medium">Delete service</p>

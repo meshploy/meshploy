@@ -392,6 +392,9 @@ export interface CreateServiceBody {
   engine?: "postgres" | "mysql" | "redis" | "mongodb"
   version?: string
   storage_gb?: number
+  db_name?: string
+  db_user?: string
+  db_password?: string
 }
 
 export const services = {
@@ -450,6 +453,33 @@ export const services = {
       { method: "POST" },
       token
     ),
+
+  getDatabaseConfig: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiDatabaseConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/database-config`,
+      {},
+      token
+    ),
+
+  reset: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiDeployment>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/reset`,
+      { method: "POST" },
+      token
+    ),
+}
+
+export interface ApiDatabaseConfig {
+  id: string
+  service_id: string
+  engine: "postgres" | "mysql" | "redis" | "mongodb"
+  version: string
+  storage_gb: number
+  slug: string
+  db_name: string
+  db_user: string
+  db_password: string
+  node_port: number
 }
 
 export interface ApiBuildConfig {
