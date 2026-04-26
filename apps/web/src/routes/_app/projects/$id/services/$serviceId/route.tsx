@@ -133,7 +133,7 @@ function ServiceLayout() {
                 className={cn(
                   "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap",
                   "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60",
-                  "data-[status=active]:text-foreground data-[status=active]:border-foreground/60"
+                  "data-[status=active]:text-foreground data-[status=active]:border-foreground/25"
                 )}
                 activeOptions={{ exact: false }}
               >
