@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useState } from "react"
+import React, { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Bell, Box, ChevronLeft, Eye, EyeOff, GitBranch, HardDrive,
   Loader2, Settings2, AlertCircle,
 } from "lucide-react"
+import { SiGithub, SiGitlab, SiGitea } from "@icons-pack/react-simple-icons"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import {
@@ -152,10 +153,10 @@ function ComingSoon({ label }: { label: string }) {
 type GitProvider = "github" | "gitlab" | "gitea"
 type AuthMethod  = "pat" | "oauth"
 
-const GIT_PROVIDERS: { value: GitProvider; label: string }[] = [
-  { value: "github", label: "GitHub" },
-  { value: "gitlab", label: "GitLab" },
-  { value: "gitea",  label: "Gitea"  },
+const GIT_PROVIDERS: { value: GitProvider; label: string; icon: React.ElementType }[] = [
+  { value: "github", label: "GitHub", icon: SiGithub },
+  { value: "gitlab", label: "GitLab", icon: SiGitlab  },
+  { value: "gitea",  label: "Gitea",  icon: SiGitea   },
 ]
 
 function GitForm({ onSuccess }: { onSuccess: () => void }) {
@@ -241,7 +242,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Provider</p>
         <div className="grid grid-cols-3 gap-2">
-          {GIT_PROVIDERS.map(({ value, label }) => (
+          {GIT_PROVIDERS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
               type="button"
@@ -253,6 +254,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                   : "border-border/60 bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/30"
               )}
             >
+              <Icon size={15} />
               {label}
             </button>
           ))}

@@ -84,14 +84,9 @@ function ProjectLayout() {
                 params={{ id: projectId }}
                 className={cn(
                   "px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap",
-                  "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60"
+                  "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60",
+                  "data-[status=active]:text-foreground data-[status=active]:border-foreground/60"
                 )}
-                activeProps={{
-                  className: cn(
-                    "px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap",
-                    "text-foreground border-foreground/40"
-                  ),
-                }}
                 activeOptions={{ exact: false }}
               >
                 {label}
