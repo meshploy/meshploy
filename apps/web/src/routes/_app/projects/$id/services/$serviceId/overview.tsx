@@ -1,6 +1,6 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, Server, Box, Database, ExternalLink } from "lucide-react"
+import { Globe, Server, Box, Database, ExternalLink, Copy, Check } from "lucide-react"
 import {
   services as servicesApi,
   routes as routesApi,
@@ -37,9 +37,10 @@ function CopyRow({ label, value }: { label: string; value: string }) {
       <code className="text-[11px] font-mono text-foreground truncate flex-1 text-right">{value}</code>
       <button
         onClick={() => { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-        className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 text-xs"
+        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0"
+        title="Copy"
       >
-        {copied ? "✓" : "copy"}
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       </button>
     </div>
   )
@@ -211,10 +212,10 @@ function ServiceOverviewTab() {
               <div className="px-4 py-8 text-center text-sm text-muted-foreground/50">Provision the database to see connection details</div>
             ) : (
               <div className="px-4 py-1">
-                {dc.engine !== "redis" && <InfoRow label="Database"><code className="text-[11px] font-mono">{dc.db_name}</code></InfoRow>}
-                {dc.engine !== "redis" && <InfoRow label="Username"><code className="text-[11px] font-mono">{dc.db_user}</code></InfoRow>}
-                <InfoRow label="Password"><code className="text-[11px] font-mono">{dc.db_password}</code></InfoRow>
-                <InfoRow label="Slug"><code className="text-[11px] font-mono">{dc.slug}</code></InfoRow>
+                {dc.engine !== "redis" && <CopyRow label="Database" value={dc.db_name} />}
+                {dc.engine !== "redis" && <CopyRow label="Username" value={dc.db_user} />}
+                <CopyRow label="Password" value={dc.db_password} />
+                <CopyRow label="Slug" value={dc.slug} />
                 {internalConnStr && <CopyRow label="Internal" value={internalConnStr} />}
                 {meshConnStr
                   ? <CopyRow label="Mesh" value={meshConnStr} />
