@@ -137,7 +137,7 @@ function ServiceLayout() {
                 activeProps={{
                   className: cn(
                     "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap",
-                    "text-foreground border-primary font-medium"
+                    "text-foreground border-foreground/40"
                   ),
                 }}
                 activeOptions={{ exact: false }}
