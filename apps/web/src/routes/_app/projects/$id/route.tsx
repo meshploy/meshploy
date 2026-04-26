@@ -49,7 +49,7 @@ function ProjectLayout() {
     { label: "Services",  count: project.servicesCount,  to: "/projects/$id/services"  as const },
     { label: "Databases", count: project.databasesCount, to: "/projects/$id/databases" as const },
     { label: "Routes",    count: project.routesCount,    to: "/projects/$id/routes"    as const },
-    { label: "Secrets",   count: null,                   to: "/projects/$id/settings"  as const },
+    { label: "Secrets",   count: null,                   to: "/projects/$id/secrets"   as const },
     { label: "Settings",  count: null,                   to: "/projects/$id/settings"  as const },
   ]
 
@@ -85,7 +85,7 @@ function ProjectLayout() {
                 className={cn(
                   "px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap",
                   "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60",
-                  "data-[status=active]:text-foreground data-[status=active]:border-foreground/60"
+                  "data-[status=active]:text-foreground data-[status=active]:border-foreground/25"
                 )}
                 activeOptions={{ exact: false }}
               >
