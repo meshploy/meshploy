@@ -14,6 +14,7 @@ import {
   Info,
   KeyRound,
   Loader2,
+  Plus,
   Server,
   Trash2,
   Zap,
