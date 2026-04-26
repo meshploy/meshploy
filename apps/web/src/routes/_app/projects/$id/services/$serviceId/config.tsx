@@ -2,7 +2,7 @@ import { createFileRoute, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect, useRef } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown, ChevronRight, Loader2, Play, Save, Server, Terminal } from "lucide-react"
+import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, Play, Plus, Save, Server, Terminal, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -18,10 +18,12 @@ import {
   gitIntegrations as gitApi,
   nodes as nodesApi,
   registries as registryApi,
+  secrets as secretsApi,
   toNode,
   type ApiNode,
   type ApiSchemaTable,
   type ApiQueryResult,
+  type ApiSecretAttachment,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -87,6 +89,168 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
         </Button>
       </div>
     </Section>
+  )
+}
+
+// ─── Secrets section ──────────────────────────────────────────────────────────
+
+function SecretsSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc = useQueryClient()
+
+  const [showAdd, setShowAdd] = useState(false)
+  const [selectedSecretId, setSelectedSecretId] = useState("")
+  const [envKey, setEnvKey] = useState("")
+
+  const { data: attachments = [], isLoading } = useQuery({
+    queryKey: ["secret-attachments", orgId, projectId, serviceId],
+    queryFn: () => secretsApi.listAttachments(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: projectSecrets = [] } = useQuery({
+    queryKey: ["secrets", orgId, projectId],
+    queryFn: () => secretsApi.list(orgId, projectId, token),
+    enabled: !!orgId && showAdd,
+  })
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["secret-attachments", orgId, projectId, serviceId] })
+
+  const attachMut = useMutation({
+    mutationFn: () => secretsApi.attach(orgId, projectId, serviceId, { secret_id: selectedSecretId, env_key: envKey.trim() }, token),
+    onSuccess: () => { setShowAdd(false); setSelectedSecretId(""); setEnvKey(""); invalidate() },
+  })
+
+  const detachMut = useMutation({
+    mutationFn: (attachmentId: string) => secretsApi.detach(orgId, projectId, serviceId, attachmentId, token),
+    onSuccess: invalidate,
+  })
+
+  const attachedIds = new Set(attachments.map((a) => a.secret_id))
+  const availableSecrets = projectSecrets.filter((s) => !attachedIds.has(s.id))
+
+  return (
+    <Section
+      title="Secrets"
+      subtitle="Inject project secrets as environment variables at runtime."
+    >
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span className="text-xs">Loading…</span>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {attachments.length > 0 && (
+            <div className="rounded-lg border border-border/60 overflow-hidden">
+              {attachments.map((a, i) => (
+                <AttachmentRow
+                  key={a.id}
+                  attachment={a}
+                  last={i === attachments.length - 1}
+                  onDetach={() => detachMut.mutate(a.id)}
+                  isDetaching={detachMut.isPending && detachMut.variables === a.id}
+                />
+              ))}
+            </div>
+          )}
+
+          {showAdd ? (
+            <div className="rounded-lg border border-border/60 bg-card p-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Secret</label>
+                  <Select value={selectedSecretId} onValueChange={(v) => {
+                    setSelectedSecretId(v ?? "")
+                    const s = projectSecrets.find((ps) => ps.id === v)
+                    if (s && !envKey) setEnvKey(s.name)
+                  }}>
+                    <SelectTrigger className="w-full! h-8 text-xs bg-muted/20 border-border/60">
+                      <SelectValue placeholder={availableSecrets.length === 0 ? "No secrets available" : "Select a secret…"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSecrets.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Env key</label>
+                  <input
+                    className={inputCls}
+                    placeholder="ENV_VAR_NAME"
+                    value={envKey}
+                    onChange={(e) => setEnvKey(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => attachMut.mutate()}
+                  disabled={!selectedSecretId || !envKey.trim() || attachMut.isPending}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-40 transition-opacity"
+                >
+                  {attachMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                  Attach
+                </button>
+                <button
+                  onClick={() => { setShowAdd(false); setSelectedSecretId(""); setEnvKey("") }}
+                  className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-3 w-3" /> Cancel
+                </button>
+              </div>
+              {attachMut.isError && (
+                <p className="text-xs text-destructive">{(attachMut.error as Error).message}</p>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" /> Attach secret
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Priority note */}
+      <div className="flex items-start gap-2 text-xs text-muted-foreground/60 bg-muted/20 rounded-md px-3 py-2">
+        <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <span>Inline env vars take priority — if a secret key matches a variable defined above, the inline value wins.</span>
+      </div>
+    </Section>
+  )
+}
+
+function AttachmentRow({
+  attachment, last, onDetach, isDetaching,
+}: {
+  attachment: ApiSecretAttachment
+  last: boolean
+  onDetach: () => void
+  isDetaching: boolean
+}) {
+  return (
+    <div className={cn("flex items-center gap-3 px-3 py-2.5", !last && "border-b border-border/40")}>
+      <KeyRound className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <code className="text-xs font-mono text-muted-foreground truncate">{attachment.secret_name}</code>
+        <span className="text-muted-foreground/30 text-xs">→</span>
+        <code className="text-xs font-mono text-foreground truncate">{attachment.env_key}</code>
+      </div>
+      <button
+        onClick={onDetach}
+        disabled={isDetaching}
+        className="text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-40 shrink-0"
+        title="Detach"
+      >
+        {isDetaching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+      </button>
+    </div>
   )
 }
 
@@ -746,6 +910,7 @@ function ConfigTab() {
   return (
     <div className="p-6 max-w-2xl space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
+      <SecretsSection projectId={projectId} serviceId={serviceId} />
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SourceDeploySection projectId={projectId} serviceId={serviceId} />
     </div>

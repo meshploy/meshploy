@@ -25,6 +25,7 @@ type Services struct {
 	Deployments     *DeploymentService
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
+	Secrets         *SecretService
 	DBExplorer      *DBExplorerService
 	Headscale       *HeadscaleService   // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
@@ -146,9 +147,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Workloads:       &WorkloadService{db: db, k8s: k8sClient},
 		Domains:         domains,
 		Routes:          &RouteService{db: db, k8s: k8sClient},
-		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc},
+		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}},
 		GitIntegrations: gitSvc,
 		Registries:      registries,
+		Secrets:         &SecretService{db: db},
 		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
 		Headscale:       headscaleSvc,
 		K8s:             k8sClient,
