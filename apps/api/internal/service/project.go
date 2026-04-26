@@ -20,6 +20,7 @@ type ProjectCounts struct {
 	ServicesCount  int       `gorm:"column:services_count"  json:"services_count"`
 	DatabasesCount int       `gorm:"column:databases_count" json:"databases_count"`
 	RoutesCount    int       `gorm:"column:routes_count"    json:"routes_count"`
+	SecretsCount   int       `gorm:"column:secrets_count"   json:"secrets_count"`
 }
 
 // ProjectWithCounts bundles a project with its resource counts.
@@ -58,7 +59,8 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			p.id AS project_id,
 			COALESCE(s.services_count,  0) AS services_count,
 			COALESCE(s.databases_count, 0) AS databases_count,
-			COALESCE(r.routes_count,    0) AS routes_count
+			COALESCE(r.routes_count,    0) AS routes_count,
+			COALESCE(sec.secrets_count, 0) AS secrets_count
 		FROM projects p
 		LEFT JOIN (
 			SELECT project_id,
@@ -74,8 +76,14 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			WHERE project_id IN ?
 			GROUP BY project_id
 		) r ON r.project_id = p.id
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS secrets_count
+			FROM secrets
+			WHERE project_id IN ?
+			GROUP BY project_id
+		) sec ON sec.project_id = p.id
 		WHERE p.id IN ?
-	`, projectIDs, projectIDs, projectIDs).Scan(&counts)
+	`, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts)
 
 	// Index counts by project ID for O(1) lookup.
 	countMap := make(map[uuid.UUID]ProjectCounts, len(counts))
@@ -110,7 +118,8 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 			s.project_id,
 			COUNT(*) FILTER (WHERE s.type = 'application') AS services_count,
 			COUNT(*) FILTER (WHERE s.type = 'database')    AS databases_count,
-			(SELECT COUNT(*) FROM routes r WHERE r.project_id = s.project_id) AS routes_count
+			(SELECT COUNT(*) FROM routes r WHERE r.project_id = s.project_id) AS routes_count,
+			(SELECT COUNT(*) FROM secrets sec WHERE sec.project_id = s.project_id) AS secrets_count
 		FROM services s
 		WHERE s.project_id = ?
 		GROUP BY s.project_id

@@ -122,6 +122,7 @@ export interface ApiProject {
   services_count: number
   databases_count: number
   routes_count: number
+  secrets_count: number
 }
 
 // ─── Adapters (API → frontend types) ─────────────────────────────────────────
@@ -171,6 +172,7 @@ export function toProject(p: ApiProject): Project {
     servicesCount: p.services_count ?? 0,
     databasesCount: p.databases_count ?? 0,
     routesCount: p.routes_count ?? 0,
+    secretsCount: p.secrets_count ?? 0,
     createdAt: new Date(p.created_at),
   }
 }
