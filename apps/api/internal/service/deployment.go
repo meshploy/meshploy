@@ -19,10 +19,11 @@ import (
 )
 
 type DeploymentService struct {
-	db  *gorm.DB
-	cfg *config.Config
-	k8s kubernetes.Interface // nil when K8s is not configured
-	git *GitIntegrationService
+	db      *gorm.DB
+	cfg     *config.Config
+	k8s     kubernetes.Interface // nil when K8s is not configured
+	git     *GitIntegrationService
+	secrets *SecretService
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -242,6 +243,10 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 
+	// Merge secrets into env vars (service-level env vars win over secrets on key collision).
+	secretEnvs, _ := s.secrets.ResolveForService(ctx, a.svc.ID)
+	envVars := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), secretEnvs)
+
 	// Apply K8s Deployment + Service.
 	wp := appk8s.WorkloadParams{
 		Name:          slugify(a.svc.Name),
@@ -249,7 +254,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		Image:         a.imageName,
 		Port:          port,
 		Replicas:      int32(a.svc.Replicas),
-		Env:           runtimeEnvVars(string(a.svc.EnvVars), port),
+		Env:           envVars,
 		CPURequest:    a.svc.CPURequest,
 		CPULimit:      a.svc.CPULimit,
 		MemoryRequest: a.svc.MemoryRequest,
@@ -640,6 +645,24 @@ func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
 	}
 	if !hasPort {
 		envs = append(envs, corev1.EnvVar{Name: "PORT", Value: portStr})
+	}
+	return envs
+}
+
+// mergeSecretEnvs appends secret key-value pairs to the existing env slice,
+// skipping any key that the explicit env block already defines (explicit wins).
+func mergeSecretEnvs(envs []corev1.EnvVar, secrets map[string]string) []corev1.EnvVar {
+	if len(secrets) == 0 {
+		return envs
+	}
+	existing := make(map[string]struct{}, len(envs))
+	for _, e := range envs {
+		existing[e.Name] = struct{}{}
+	}
+	for k, v := range secrets {
+		if _, ok := existing[k]; !ok {
+			envs = append(envs, corev1.EnvVar{Name: k, Value: v})
+		}
 	}
 	return envs
 }

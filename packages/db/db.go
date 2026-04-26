@@ -73,6 +73,10 @@ func Migrate(db *gorm.DB) error {
 		&BuildConfig{},
 		&DatabaseConfig{},
 
+		// Secrets
+		&Secret{},
+		&ServiceSecret{},
+
 		// Traffic (Domain must migrate before Route for FK constraint)
 		&Route{},
 
@@ -117,6 +121,12 @@ func applyConstraints(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
 		 ON organization_members (organization_id)
 		 WHERE role = 'owner'`,
+		// Secret names must be unique within a project
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_secrets_project_name
+		 ON secrets (project_id, name)`,
+		// No duplicate env keys per service
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_secrets_env_key
+		 ON service_secrets (service_id, env_key)`,
 	}
 
 	for _, stmt := range stmts {
@@ -143,7 +153,10 @@ func applyConstraints(db *gorm.DB) error {
 		// Project → children CASCADE
 		{"services", "project_id", "projects", "CASCADE"},
 		{"routes", "project_id", "projects", "CASCADE"},
+		{"secrets", "project_id", "projects", "CASCADE"},
 		// Service → children CASCADE
+		{"service_secrets", "service_id", "services", "CASCADE"},
+		{"service_secrets", "secret_id", "secrets", "CASCADE"},
 		{"build_configs", "service_id", "services", "CASCADE"},
 		{"database_configs", "service_id", "services", "CASCADE"},
 		{"deployments", "service_id", "services", "CASCADE"},
