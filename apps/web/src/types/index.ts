@@ -57,6 +57,7 @@ export interface Project {
   servicesCount: number
   databasesCount: number
   routesCount: number
+  secretsCount: number
   createdAt: Date
 }
 

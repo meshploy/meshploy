@@ -1,7 +1,7 @@
-import { createFileRoute, useParams } from "@tanstack/react-router"
+import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Eye, EyeOff, KeyRound, Loader2, Pencil, Plus, Trash2, Check, X } from "lucide-react"
+import { Check, Eye, EyeOff, KeyRound, Loader2, Pencil, Plus, Trash2, X } from "lucide-react"
 import { secrets as secretsApi, type ApiSecret } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -19,11 +19,6 @@ function SecretsPage() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const qc = useQueryClient()
 
-  const [showAdd, setShowAdd] = useState(false)
-  const [newName, setNewName] = useState("")
-  const [newValue, setNewValue] = useState("")
-  const [showNewValue, setShowNewValue] = useState(false)
-
   const { data: list = [], isLoading } = useQuery({
     queryKey: ["secrets", orgId, projectId],
     queryFn: () => secretsApi.list(orgId, projectId, token),
@@ -32,114 +27,70 @@ function SecretsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["secrets", orgId, projectId] })
 
-  const addMut = useMutation({
-    mutationFn: () => secretsApi.create(orgId, projectId, { name: newName.trim(), value: newValue }, token),
-    onSuccess: () => { setNewName(""); setNewValue(""); setShowAdd(false); invalidate() },
-  })
-
   const deleteMut = useMutation({
     mutationFn: (id: string) => secretsApi.delete(orgId, projectId, id, token),
     onSuccess: invalidate,
   })
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium">Secrets</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Encrypted key-value pairs. Attach them to services to inject as environment variables at deploy time.
-          </p>
+          {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+          {!isLoading && <span className="text-xs text-muted-foreground">{list.length}</span>}
         </div>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowAdd(true)}>
-          <Plus className="h-3.5 w-3.5" /> New secret
-        </Button>
+        <Link to="/projects/$id/secrets/new" params={{ id: projectId }}>
+          <Button size="sm" className="gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> New secret
+          </Button>
+        </Link>
       </div>
 
-      {/* Add form */}
-      {showAdd && (
-        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">New secret</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Name</label>
-              <input
-                className={inputCls}
-                placeholder="e.g. DATABASE_URL"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Value</label>
-              <div className="relative">
-                <input
-                  className={cn(inputCls, "pr-8")}
-                  type={showNewValue ? "text" : "password"}
-                  placeholder="Secret value"
-                  value={newValue}
-                  onChange={(e) => setNewValue(e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewValue((v) => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
-                >
-                  {showNewValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => addMut.mutate()}
-              disabled={!newName.trim() || !newValue || addMut.isPending}
-            >
-              {addMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-              Save
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setShowAdd(false); setNewName(""); setNewValue("") }}>
-              Cancel
-            </Button>
-          </div>
-          {addMut.isError && (
-            <p className="text-xs text-destructive">{(addMut.error as Error).message}</p>
-          )}
-        </div>
-      )}
-
-      {/* List */}
       {isLoading ? (
-        <div className="flex items-center gap-2 text-muted-foreground py-8">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        <div className="flex items-center justify-center h-40">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         </div>
-      ) : list.length === 0 && !showAdd ? (
-        <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-muted/50">
-            <KeyRound className="h-4 w-4 text-muted-foreground/60" />
+      ) : list.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/60 py-14 flex flex-col items-center gap-3">
+          <KeyRound className="h-7 w-7 text-muted-foreground/40" />
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">No secrets yet</p>
+            <p className="text-xs text-muted-foreground/60 mt-0.5">Create encrypted key-value pairs and attach them to services</p>
           </div>
-          <p className="text-sm text-muted-foreground">No secrets yet</p>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowAdd(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add your first secret
-          </Button>
+          <Link to="/projects/$id/secrets/new" params={{ id: projectId }}>
+            <Button size="sm" className="gap-1.5 mt-1">
+              <Plus className="h-3.5 w-3.5" /> New secret
+            </Button>
+          </Link>
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden">
-          {list.map((s, i) => (
-            <SecretRow
-              key={s.id}
-              secret={s}
-              last={i === list.length - 1}
-              orgId={orgId}
-              projectId={projectId}
-              token={token}
-              onDelete={() => deleteMut.mutate(s.id)}
-              isDeleting={deleteMut.isPending && deleteMut.variables === s.id}
-              onUpdated={invalidate}
-            />
-          ))}
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/40 bg-muted/20">
+                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[220px]">Value</th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[160px]">Updated</th>
+                <th className="px-4 py-2.5 w-[72px]" />
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((s, i) => (
+                <SecretRow
+                  key={s.id}
+                  secret={s}
+                  last={i === list.length - 1}
+                  orgId={orgId}
+                  projectId={projectId}
+                  token={token}
+                  onDelete={() => deleteMut.mutate(s.id)}
+                  isDeleting={deleteMut.isPending && deleteMut.variables === s.id}
+                  onUpdated={invalidate}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -167,24 +118,33 @@ function SecretRow({
     onSuccess: () => { setEditing(false); onUpdated() },
   })
 
+  const relTime = new Date(secret.updated_at).toLocaleDateString(undefined, {
+    month: "short", day: "numeric", year: "numeric",
+  })
+
   return (
-    <div className={cn(
-      "flex items-center gap-3 px-4 py-3",
-      !last && "border-b border-border/40"
-    )}>
-      <KeyRound className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-      <div className="flex-1 min-w-0">
-        <code className="text-xs font-mono text-foreground">{secret.name}</code>
+    <tr className={cn("hover:bg-muted/10 transition-colors", !last && "border-b border-border/30")}>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+          <code className="text-xs font-mono text-foreground">{secret.name}</code>
+        </div>
+      </td>
+      <td className="px-4 py-3">
         {editing ? (
-          <div className="flex items-center gap-2 mt-1.5">
-            <div className="relative flex-1">
+          <div className="flex items-center gap-1.5">
+            <div className="relative flex-1 min-w-0">
               <input
-                className={cn(inputCls, "pr-8 text-xs h-7")}
+                className={cn(inputCls, "pr-7 text-xs h-7")}
                 type={showEdit ? "text" : "password"}
                 placeholder="New value"
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") updateMut.mutate()
+                  if (e.key === "Escape") setEditing(false)
+                }}
               />
               <button
                 type="button"
@@ -194,30 +154,31 @@ function SecretRow({
                 {showEdit ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
               </button>
             </div>
-            <button
-              onClick={() => updateMut.mutate()}
-              disabled={!editValue || updateMut.isPending}
-              className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-            >
+            <button onClick={() => updateMut.mutate()} disabled={!editValue || updateMut.isPending} className="text-muted-foreground hover:text-foreground disabled:opacity-40 shrink-0">
               {updateMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
             </button>
-            <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground">
+            <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground shrink-0">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
         ) : (
-          <p className="text-[11px] text-muted-foreground/50 mt-0.5">••••••••</p>
+          <span className="text-xs font-mono text-muted-foreground/40 tracking-widest">••••••••</span>
         )}
-      </div>
-      {!editing && (
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={() => { setEditing(true); setEditValue("") }}
-            className="p-1.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-            title="Edit value"
-          >
-            <Pencil className="h-3 w-3" />
-          </button>
+      </td>
+      <td className="px-4 py-3">
+        <span className="text-xs text-muted-foreground/60">{relTime}</span>
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-0.5">
+          {!editing && (
+            <button
+              onClick={() => { setEditing(true); setEditValue("") }}
+              className="p-1.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+              title="Edit value"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
           <button
             onClick={onDelete}
             disabled={isDeleting}
@@ -227,7 +188,7 @@ function SecretRow({
             {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
           </button>
         </div>
-      )}
-    </div>
+      </td>
+    </tr>
   )
 }

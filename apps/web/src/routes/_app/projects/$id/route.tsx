@@ -49,7 +49,7 @@ function ProjectLayout() {
     { label: "Services",  count: project.servicesCount,  to: "/projects/$id/services"  as const },
     { label: "Databases", count: project.databasesCount, to: "/projects/$id/databases" as const },
     { label: "Routes",    count: project.routesCount,    to: "/projects/$id/routes"    as const },
-    { label: "Secrets",   count: null,                   to: "/projects/$id/secrets"   as const },
+    { label: "Secrets",   count: project.secretsCount,   to: "/projects/$id/secrets"   as const },
     { label: "Settings",  count: null,                   to: "/projects/$id/settings"  as const },
   ]
 
