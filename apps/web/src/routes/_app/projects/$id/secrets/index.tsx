@@ -9,12 +9,12 @@ import { Button } from "@/components/ui/button"
 import { inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
 
-export const Route = createFileRoute("/_app/projects/$id/secrets")({
+export const Route = createFileRoute("/_app/projects/$id/secrets/")({
   component: SecretsPage,
 })
 
 function SecretsPage() {
-  const { id: projectId } = useParams({ from: "/_app/projects/$id/secrets" })
+  const { id: projectId } = useParams({ from: "/_app/projects/$id/secrets/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const qc = useQueryClient()
@@ -40,7 +40,7 @@ function SecretsPage() {
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{list.length}</span>}
         </div>
-        <Link to="/projects/$id/secrets/new" params={{ id: projectId }}>
+        <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "secret" }}>
           <Button size="sm" className="gap-1.5">
             <Plus className="h-3.5 w-3.5" /> New secret
           </Button>
@@ -58,7 +58,7 @@ function SecretsPage() {
             <p className="text-sm text-muted-foreground">No secrets yet</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">Create encrypted key-value pairs and attach them to services</p>
           </div>
-          <Link to="/projects/$id/secrets/new" params={{ id: projectId }}>
+          <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "secret" }}>
             <Button size="sm" className="gap-1.5 mt-1">
               <Plus className="h-3.5 w-3.5" /> New secret
             </Button>
