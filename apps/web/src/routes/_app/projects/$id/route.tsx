@@ -89,7 +89,7 @@ function ProjectLayout() {
                 activeProps={{
                   className: cn(
                     "px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap",
-                    "text-foreground border-primary font-medium"
+                    "text-foreground border-foreground/40"
                   ),
                 }}
                 activeOptions={{ exact: false }}
