@@ -37,6 +37,7 @@ import {
   routes as routesApi,
   domains as domainsApi,
   secrets as secretsApi,
+  jobs as jobsApi,
   toNode,
   type CreateServiceBody,
   type ApiNode,
@@ -119,8 +120,8 @@ const RESOURCE_TYPES: {
   { type: "database", icon: Database, label: "Database" },
   { type: "route",    icon: Globe,    label: "Route"    },
   { type: "secret",   icon: KeyRound, label: "Secret"   },
-  { type: "job",      icon: Zap,      label: "Job",      soon: true },
-  { type: "cron-job", icon: Clock,    label: "Cron Job", soon: true },
+  { type: "job",      icon: Zap,      label: "Job"      },
+  { type: "cron-job", icon: Clock,    label: "Cron Job" },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -254,6 +255,8 @@ function NewResourcePage() {
             <RouteForm projectId={projectId} />
           ) : resourceType === "secret" ? (
             <SecretForm projectId={projectId} />
+          ) : resourceType === "job" || resourceType === "cron-job" ? (
+            <JobForm projectId={projectId} isCron={resourceType === "cron-job"} />
           ) : (
             <ComingSoonForm type={resourceType} />
           )}
@@ -1364,6 +1367,230 @@ function SecretForm({ projectId }: { projectId: string }) {
       >
         {saveMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Save {filledCount > 0 ? `${filledCount} secret${filledCount !== 1 ? "s" : ""}` : "secrets"}
+      </Button>
+    </div>
+  )
+}
+
+// ─── Job / Cron Job form ─────────────────────────────────────────────────────
+
+interface JobFormState {
+  name: string
+  image: string
+  command: string
+  schedule: string
+  concurrencyPolicy: "Allow" | "Forbid" | "Replace"
+  envVars: string
+  nodeId: string | null
+  showResources: boolean
+  cpuRequest: string
+  cpuLimit: string
+  memoryRequest: string
+  memoryLimit: string
+}
+
+const JOB_INITIAL: JobFormState = {
+  name: "",
+  image: "",
+  command: "",
+  schedule: "",
+  concurrencyPolicy: "Allow",
+  envVars: "",
+  nodeId: null,
+  showResources: false,
+  cpuRequest: "100m",
+  cpuLimit: "500m",
+  memoryRequest: "128Mi",
+  memoryLimit: "512Mi",
+}
+
+function JobForm({ projectId, isCron }: { projectId: string; isCron: boolean }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  const [jf, setJf] = useState<JobFormState>(JOB_INITIAL)
+  const patch = (p: Partial<JobFormState>) => setJf((s) => ({ ...s, ...p }))
+
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId!, token),
+    enabled: !!orgId,
+  })
+  const workerNodes = rawNodes
+    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
+    .map(toNode)
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      jobsApi.create(orgId, projectId, {
+        name: jf.name,
+        is_cron: isCron,
+        image: jf.image,
+        command: jf.command || undefined,
+        schedule: isCron ? jf.schedule : undefined,
+        concurrency_policy: isCron ? jf.concurrencyPolicy : undefined,
+        cpu_request: jf.cpuRequest || undefined,
+        cpu_limit: jf.cpuLimit || undefined,
+        memory_request: jf.memoryRequest || undefined,
+        memory_limit: jf.memoryLimit || undefined,
+        env_vars: jf.envVars || undefined,
+        node_id: jf.nodeId ?? undefined,
+      }, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      navigate({ to: "/projects/$id/jobs", params: { id: projectId } })
+    },
+  })
+
+  const canCreate =
+    jf.name.trim().length > 0 &&
+    jf.image.trim().length > 0 &&
+    (!isCron || jf.schedule.trim().length > 0)
+
+  return (
+    <div className="space-y-8">
+      <Section title="Basic info" subtitle={isCron ? "Give your cron job a name" : "Give your job a name"}>
+        <Field label="Name" required>
+          <input
+            value={jf.name}
+            onChange={(e) => patch({ name: e.target.value })}
+            placeholder={isCron ? "nightly-cleanup" : "db-migrate"}
+            className={inputCls}
+            autoFocus
+          />
+        </Field>
+      </Section>
+
+      <Section title="Image" subtitle="Docker image to run">
+        <Field label="Image" required>
+          <input
+            value={jf.image}
+            onChange={(e) => patch({ image: e.target.value })}
+            placeholder="alpine:latest"
+            className={inputCls}
+          />
+        </Field>
+        <Field label="Command">
+          <input
+            value={jf.command}
+            onChange={(e) => patch({ command: e.target.value })}
+            placeholder="sh -c 'echo hello'"
+            className={inputCls}
+          />
+        </Field>
+      </Section>
+
+      {isCron && (
+        <Section title="Schedule" subtitle="Standard cron expression (UTC)">
+          <Field label="Cron expression" required>
+            <input
+              value={jf.schedule}
+              onChange={(e) => patch({ schedule: e.target.value })}
+              placeholder="0 2 * * *"
+              className={cn(inputCls, "font-mono")}
+            />
+          </Field>
+          <Field label="Concurrency policy">
+            <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
+              {(["Allow", "Forbid", "Replace"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => patch({ concurrencyPolicy: p })}
+                  className={cn(
+                    "px-3 py-2 text-sm transition-colors",
+                    jf.concurrencyPolicy === p
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {jf.concurrencyPolicy === "Allow" && "Multiple runs can overlap."}
+              {jf.concurrencyPolicy === "Forbid" && "Skip new run if previous is still running."}
+              {jf.concurrencyPolicy === "Replace" && "Cancel the running job and start a new one."}
+            </p>
+          </Field>
+        </Section>
+      )}
+
+      <Section title="Environment" subtitle="Variables injected at runtime">
+        <Field label="Env vars">
+          <textarea
+            value={jf.envVars}
+            onChange={(e) => patch({ envVars: e.target.value })}
+            placeholder={"DATABASE_URL=postgres://...\nDEBUG=true"}
+            rows={4}
+            className={cn(inputCls, "resize-y font-mono text-xs")}
+          />
+        </Field>
+      </Section>
+
+      <Section title="Placement" subtitle="Choose which node this job runs on">
+        <div className="flex flex-wrap gap-2">
+          <NodeCard
+            label="Auto-schedule"
+            sub="Let K3s decide"
+            selected={jf.nodeId === null}
+            onClick={() => patch({ nodeId: null })}
+          />
+          {workerNodes.map((node) => (
+            <NodeCard
+              key={node.id}
+              label={node.name}
+              sub={node.tailscaleIP}
+              selected={jf.nodeId === node.id}
+              onClick={() => patch({ nodeId: node.id })}
+              online
+            />
+          ))}
+        </div>
+      </Section>
+
+      <div className="rounded-lg border border-border/40">
+        <button
+          onClick={() => patch({ showResources: !jf.showResources })}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <span className="font-medium">Resource limits</span>
+          <ChevronDown className={cn("h-4 w-4 transition-transform", jf.showResources ? "rotate-180" : "")} />
+        </button>
+        {jf.showResources && (
+          <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
+            <Field label="CPU request">
+              <input value={jf.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label="CPU limit">
+              <input value={jf.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label="Memory request">
+              <input value={jf.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label="Memory limit">
+              <input value={jf.memoryLimit} onChange={(e) => patch({ memoryLimit: e.target.value })} className={inputCls} />
+            </Field>
+          </div>
+        )}
+      </div>
+
+      {createMutation.isError && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+          <p className="text-xs text-destructive">{(createMutation.error as Error).message}</p>
+        </div>
+      )}
+
+      <Button
+        className="w-full gap-2"
+        disabled={!canCreate || createMutation.isPending}
+        onClick={() => createMutation.mutate()}
+      >
+        {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Create {isCron ? "cron job" : "job"}
       </Button>
     </div>
   )

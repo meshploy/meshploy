@@ -100,6 +100,24 @@ const (
 	BackupFailed  BackupStatus = "failed"
 )
 
+type JobStatus string
+
+const (
+	JobStatusIdle    JobStatus = "idle"    // cron job waiting for next fire
+	JobStatusPending JobStatus = "pending"
+	JobStatusRunning JobStatus = "running"
+	JobStatusSuccess JobStatus = "success"
+	JobStatusFailed  JobStatus = "failed"
+)
+
+type ConcurrencyPolicy string
+
+const (
+	ConcurrencyAllow   ConcurrencyPolicy = "Allow"   // run concurrently
+	ConcurrencyForbid  ConcurrencyPolicy = "Forbid"  // skip if previous still running
+	ConcurrencyReplace ConcurrencyPolicy = "Replace" // cancel previous, start new
+)
+
 type NotificationChannelType string
 
 const (
@@ -236,6 +254,7 @@ type Project struct {
 	Services     []Service    `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 	Routes       []Route      `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 	Secrets      []Secret     `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
+	Jobs         []Job        `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 }
 
 // Secret is a project-scoped, AES-256-GCM encrypted key-value pair.
@@ -480,6 +499,67 @@ type Deployment struct {
 
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+// Job represents a one-shot task (IsCron=false) or a scheduled recurring task (IsCron=true).
+// Maps to batch/v1 Job (one-shot) or batch/v1 CronJob (scheduled) in K8s.
+type Job struct {
+	Base
+	ProjectID uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
+	NodeID    *uuid.UUID `gorm:"type:uuid;index"         json:"node_id"` // nil = auto-schedule
+	Name      string    `gorm:"not null"                 json:"name"`
+	IsCron    bool      `gorm:"not null;default:false"   json:"is_cron"`
+
+	// Source — image only for now; git builds can be added later.
+	Image   string `gorm:"not null;default:''" json:"image"`
+	Command string `gorm:"not null;default:''" json:"command"` // overrides container CMD; space-separated
+
+	// Runtime resources
+	CPURequest    string `gorm:"not null;default:'100m'"  json:"cpu_request"`
+	CPULimit      string `gorm:"not null;default:'500m'"  json:"cpu_limit"`
+	MemoryRequest string `gorm:"not null;default:'128Mi'" json:"memory_request"`
+	MemoryLimit   string `gorm:"not null;default:'512Mi'" json:"memory_limit"`
+
+	// Env vars — AES-256-GCM encrypted, same pattern as Service.EnvVars.
+	EnvVars EncryptedString `gorm:"type:text" json:"-"`
+
+	// Cron-only fields (ignored when IsCron=false)
+	Schedule          string            `gorm:"not null;default:''"       json:"schedule"`           // standard cron: "0 2 * * *"
+	ConcurrencyPolicy ConcurrencyPolicy `gorm:"type:varchar(10);not null;default:'Allow'" json:"concurrency_policy"`
+	HistoryLimit      int               `gorm:"not null;default:5"        json:"history_limit"`      // how many completed JobRuns to retain
+
+	// Status — reflects the most recent run.
+	Status    JobStatus  `gorm:"type:varchar(10);not null;default:'idle'" json:"status"`
+	LastRunAt *time.Time `json:"last_run_at"`
+
+	// Stable K8s resource name assigned at creation (e.g. "myjob-a3f2b1").
+	K8sName string `gorm:"not null;default:''" json:"k8s_name"`
+
+	Project Project `gorm:"foreignKey:ProjectID"                           json:"-"`
+	Node    *Node   `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL" json:"-"`
+	Runs    []JobRun `gorm:"foreignKey:JobID;constraint:OnDelete:CASCADE"  json:"-"`
+}
+
+func (Job) TableName() string { return "jobs" }
+
+// JobRun records a single execution of a Job (analogous to Deployment for services).
+type JobRun struct {
+	Base
+	JobID      uuid.UUID `gorm:"type:uuid;not null;index"                    json:"job_id"`
+	Status     JobStatus `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	Log        string    `gorm:"type:text;not null;default:''"               json:"log"`
+	// K8s batch/v1 Job name for this specific run (e.g. "myjob-a3f2b1-1714123456").
+	K8sJobName string `gorm:"not null;default:''" json:"k8s_job_name"`
+
+	Job Job `gorm:"foreignKey:JobID" json:"-"`
+}
+
+func (JobRun) TableName() string { return "job_runs" }
 
 // ---------------------------------------------------------------------------
 // Integrations

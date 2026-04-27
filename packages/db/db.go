@@ -83,6 +83,10 @@ func Migrate(db *gorm.DB) error {
 		// Deployment History
 		&Deployment{},
 
+		// Jobs & Cron Jobs
+		&Job{},
+		&JobRun{},
+
 		// Integrations
 		&StorageIntegration{},
 		&RegistryIntegration{},
@@ -127,6 +131,9 @@ func applyConstraints(db *gorm.DB) error {
 		// No duplicate env keys per service
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_secrets_env_key
 		 ON service_secrets (service_id, env_key)`,
+		// Job names must be unique within a project
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_project_name
+		 ON jobs (project_id, name)`,
 	}
 
 	for _, stmt := range stmts {
@@ -154,6 +161,11 @@ func applyConstraints(db *gorm.DB) error {
 		{"services", "project_id", "projects", "CASCADE"},
 		{"routes", "project_id", "projects", "CASCADE"},
 		{"secrets", "project_id", "projects", "CASCADE"},
+		{"jobs", "project_id", "projects", "CASCADE"},
+		// Job → children CASCADE
+		{"job_runs", "job_id", "jobs", "CASCADE"},
+		// Job → node SET NULL
+		{"jobs", "node_id", "nodes", "SET NULL"},
 		// Service → children CASCADE
 		{"service_secrets", "service_id", "services", "CASCADE"},
 		{"service_secrets", "secret_id", "secrets", "CASCADE"},

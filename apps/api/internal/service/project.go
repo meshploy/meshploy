@@ -21,6 +21,7 @@ type ProjectCounts struct {
 	DatabasesCount int       `gorm:"column:databases_count" json:"databases_count"`
 	RoutesCount    int       `gorm:"column:routes_count"    json:"routes_count"`
 	SecretsCount   int       `gorm:"column:secrets_count"   json:"secrets_count"`
+	JobsCount      int       `gorm:"column:jobs_count"      json:"jobs_count"`
 }
 
 // ProjectWithCounts bundles a project with its resource counts.
@@ -60,7 +61,8 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			COALESCE(s.services_count,  0) AS services_count,
 			COALESCE(s.databases_count, 0) AS databases_count,
 			COALESCE(r.routes_count,    0) AS routes_count,
-			COALESCE(sec.secrets_count, 0) AS secrets_count
+			COALESCE(sec.secrets_count, 0) AS secrets_count,
+			COALESCE(j.jobs_count,      0) AS jobs_count
 		FROM projects p
 		LEFT JOIN (
 			SELECT project_id,
@@ -82,8 +84,14 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			WHERE project_id IN ?
 			GROUP BY project_id
 		) sec ON sec.project_id = p.id
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS jobs_count
+			FROM jobs
+			WHERE project_id IN ?
+			GROUP BY project_id
+		) j ON j.project_id = p.id
 		WHERE p.id IN ?
-	`, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts)
+	`, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts)
 
 	// Index counts by project ID for O(1) lookup.
 	countMap := make(map[uuid.UUID]ProjectCounts, len(counts))
@@ -119,7 +127,8 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 			COUNT(*) FILTER (WHERE s.type = 'application') AS services_count,
 			COUNT(*) FILTER (WHERE s.type = 'database')    AS databases_count,
 			(SELECT COUNT(*) FROM routes r WHERE r.project_id = s.project_id) AS routes_count,
-			(SELECT COUNT(*) FROM secrets sec WHERE sec.project_id = s.project_id) AS secrets_count
+			(SELECT COUNT(*) FROM secrets sec WHERE sec.project_id = s.project_id) AS secrets_count,
+			(SELECT COUNT(*) FROM jobs j WHERE j.project_id = s.project_id) AS jobs_count
 		FROM services s
 		WHERE s.project_id = ?
 		GROUP BY s.project_id
