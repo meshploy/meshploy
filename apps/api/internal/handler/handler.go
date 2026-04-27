@@ -28,4 +28,5 @@ func (h *Handler) Register(api huma.API) {
 	h.registerGitIntegrationRoutes(api)
 	h.registerRegistryRoutes(api)
 	h.registerSecretRoutes(api)
+	h.registerJobRoutes(api)
 }

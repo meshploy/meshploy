@@ -26,6 +26,7 @@ type Services struct {
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
 	Secrets         *SecretService
+	Jobs            *JobService
 	DBExplorer      *DBExplorerService
 	Headscale       *HeadscaleService   // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
@@ -151,6 +152,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		GitIntegrations: gitSvc,
 		Registries:      registries,
 		Secrets:         &SecretService{db: db},
+		Jobs:            &JobService{db: db},
 		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
 		Headscale:       headscaleSvc,
 		K8s:             k8sClient,

@@ -58,6 +58,42 @@ export interface Project {
   databasesCount: number
   routesCount: number
   secretsCount: number
+  jobsCount: number
+  createdAt: Date
+}
+
+export type JobStatus = "idle" | "pending" | "running" | "success" | "failed"
+export type ConcurrencyPolicy = "Allow" | "Forbid" | "Replace"
+
+export interface Job {
+  id: string
+  projectId: string
+  nodeId: string | null
+  name: string
+  isCron: boolean
+  image: string
+  command: string
+  schedule: string
+  concurrencyPolicy: ConcurrencyPolicy
+  historyLimit: number
+  cpuRequest: string
+  cpuLimit: string
+  memoryRequest: string
+  memoryLimit: string
+  status: JobStatus
+  lastRunAt: Date | null
+  k8sName: string
+  createdAt: Date
+}
+
+export interface JobRun {
+  id: string
+  jobId: string
+  status: JobStatus
+  startedAt: Date | null
+  finishedAt: Date | null
+  log: string
+  k8sJobName: string
   createdAt: Date
 }
 
