@@ -28,14 +28,13 @@ import { Route as AppProjectsIdSettingsRouteImport } from './routes/_app/project
 import { Route as AppProjectsIdRoutesRouteImport } from './routes/_app/projects/$id/routes'
 import { Route as AppProjectsIdPipelinesRouteImport } from './routes/_app/projects/$id/pipelines'
 import { Route as AppProjectsIdNewRouteImport } from './routes/_app/projects/$id/new'
-import { Route as AppProjectsIdJobsRouteImport } from './routes/_app/projects/$id/jobs'
 import { Route as AppProjectsIdDatabasesRouteImport } from './routes/_app/projects/$id/databases'
-import { Route as AppProjectsIdCronJobsRouteImport } from './routes/_app/projects/$id/cron-jobs'
 import { Route as AppProjectsIdServicesIndexRouteImport } from './routes/_app/projects/$id/services/index'
 import { Route as AppProjectsIdSecretsIndexRouteImport } from './routes/_app/projects/$id/secrets/index'
 import { Route as AppProjectsIdRoutesIndexRouteImport } from './routes/_app/projects/$id/routes/index'
 import { Route as AppProjectsIdJobsIndexRouteImport } from './routes/_app/projects/$id/jobs/index'
 import { Route as AppProjectsIdRoutesRouteIdRouteImport } from './routes/_app/projects/$id/routes/$routeId'
+import { Route as AppProjectsIdJobsJobIdRouteImport } from './routes/_app/projects/$id/jobs/$jobId'
 import { Route as AppProjectsIdServicesServiceIdRouteRouteImport } from './routes/_app/projects/$id/services/$serviceId/route'
 import { Route as AppProjectsIdServicesServiceIdIndexRouteImport } from './routes/_app/projects/$id/services/$serviceId/index'
 import { Route as AppProjectsIdServicesServiceIdSettingsRouteImport } from './routes/_app/projects/$id/services/$serviceId/settings'
@@ -138,19 +137,9 @@ const AppProjectsIdNewRoute = AppProjectsIdNewRouteImport.update({
   path: '/new',
   getParentRoute: () => AppProjectsIdRouteRoute,
 } as any)
-const AppProjectsIdJobsRoute = AppProjectsIdJobsRouteImport.update({
-  id: '/jobs',
-  path: '/jobs',
-  getParentRoute: () => AppProjectsIdRouteRoute,
-} as any)
 const AppProjectsIdDatabasesRoute = AppProjectsIdDatabasesRouteImport.update({
   id: '/databases',
   path: '/databases',
-  getParentRoute: () => AppProjectsIdRouteRoute,
-} as any)
-const AppProjectsIdCronJobsRoute = AppProjectsIdCronJobsRouteImport.update({
-  id: '/cron-jobs',
-  path: '/cron-jobs',
   getParentRoute: () => AppProjectsIdRouteRoute,
 } as any)
 const AppProjectsIdServicesIndexRoute =
@@ -172,9 +161,9 @@ const AppProjectsIdRoutesIndexRoute =
     getParentRoute: () => AppProjectsIdRoutesRoute,
   } as any)
 const AppProjectsIdJobsIndexRoute = AppProjectsIdJobsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppProjectsIdJobsRoute,
+  id: '/jobs/',
+  path: '/jobs/',
+  getParentRoute: () => AppProjectsIdRouteRoute,
 } as any)
 const AppProjectsIdRoutesRouteIdRoute =
   AppProjectsIdRoutesRouteIdRouteImport.update({
@@ -182,6 +171,11 @@ const AppProjectsIdRoutesRouteIdRoute =
     path: '/$routeId',
     getParentRoute: () => AppProjectsIdRoutesRoute,
   } as any)
+const AppProjectsIdJobsJobIdRoute = AppProjectsIdJobsJobIdRouteImport.update({
+  id: '/jobs/$jobId',
+  path: '/jobs/$jobId',
+  getParentRoute: () => AppProjectsIdRouteRoute,
+} as any)
 const AppProjectsIdServicesServiceIdRouteRoute =
   AppProjectsIdServicesServiceIdRouteRouteImport.update({
     id: '/services/$serviceId',
@@ -244,15 +238,14 @@ export interface FileRoutesByFullPath {
   '/nodes/': typeof AppNodesIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
-  '/projects/$id/cron-jobs': typeof AppProjectsIdCronJobsRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
-  '/projects/$id/jobs': typeof AppProjectsIdJobsRouteWithChildren
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
   '/projects/$id/routes': typeof AppProjectsIdRoutesRouteWithChildren
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/projects/$id/': typeof AppProjectsIdIndexRoute
   '/projects/$id/services/$serviceId': typeof AppProjectsIdServicesServiceIdRouteRouteWithChildren
+  '/projects/$id/jobs/$jobId': typeof AppProjectsIdJobsJobIdRoute
   '/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
   '/projects/$id/jobs/': typeof AppProjectsIdJobsIndexRoute
   '/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
@@ -278,12 +271,12 @@ export interface FileRoutesByTo {
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
-  '/projects/$id/cron-jobs': typeof AppProjectsIdCronJobsRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/projects/$id': typeof AppProjectsIdIndexRoute
+  '/projects/$id/jobs/$jobId': typeof AppProjectsIdJobsJobIdRoute
   '/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
   '/projects/$id/jobs': typeof AppProjectsIdJobsIndexRoute
   '/projects/$id/routes': typeof AppProjectsIdRoutesIndexRoute
@@ -313,15 +306,14 @@ export interface FileRoutesById {
   '/_app/nodes/': typeof AppNodesIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
-  '/_app/projects/$id/cron-jobs': typeof AppProjectsIdCronJobsRoute
   '/_app/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
-  '/_app/projects/$id/jobs': typeof AppProjectsIdJobsRouteWithChildren
   '/_app/projects/$id/new': typeof AppProjectsIdNewRoute
   '/_app/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
   '/_app/projects/$id/routes': typeof AppProjectsIdRoutesRouteWithChildren
   '/_app/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/_app/projects/$id/': typeof AppProjectsIdIndexRoute
   '/_app/projects/$id/services/$serviceId': typeof AppProjectsIdServicesServiceIdRouteRouteWithChildren
+  '/_app/projects/$id/jobs/$jobId': typeof AppProjectsIdJobsJobIdRoute
   '/_app/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
   '/_app/projects/$id/jobs/': typeof AppProjectsIdJobsIndexRoute
   '/_app/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
@@ -350,15 +342,14 @@ export interface FileRouteTypes {
     | '/nodes/'
     | '/projects/'
     | '/settings/'
-    | '/projects/$id/cron-jobs'
     | '/projects/$id/databases'
-    | '/projects/$id/jobs'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
     | '/projects/$id/routes'
     | '/projects/$id/settings'
     | '/projects/$id/'
     | '/projects/$id/services/$serviceId'
+    | '/projects/$id/jobs/$jobId'
     | '/projects/$id/routes/$routeId'
     | '/projects/$id/jobs/'
     | '/projects/$id/routes/'
@@ -384,12 +375,12 @@ export interface FileRouteTypes {
     | '/nodes'
     | '/projects'
     | '/settings'
-    | '/projects/$id/cron-jobs'
     | '/projects/$id/databases'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
     | '/projects/$id/settings'
     | '/projects/$id'
+    | '/projects/$id/jobs/$jobId'
     | '/projects/$id/routes/$routeId'
     | '/projects/$id/jobs'
     | '/projects/$id/routes'
@@ -418,15 +409,14 @@ export interface FileRouteTypes {
     | '/_app/nodes/'
     | '/_app/projects/'
     | '/_app/settings/'
-    | '/_app/projects/$id/cron-jobs'
     | '/_app/projects/$id/databases'
-    | '/_app/projects/$id/jobs'
     | '/_app/projects/$id/new'
     | '/_app/projects/$id/pipelines'
     | '/_app/projects/$id/routes'
     | '/_app/projects/$id/settings'
     | '/_app/projects/$id/'
     | '/_app/projects/$id/services/$serviceId'
+    | '/_app/projects/$id/jobs/$jobId'
     | '/_app/projects/$id/routes/$routeId'
     | '/_app/projects/$id/jobs/'
     | '/_app/projects/$id/routes/'
@@ -581,25 +571,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdNewRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
     }
-    '/_app/projects/$id/jobs': {
-      id: '/_app/projects/$id/jobs'
-      path: '/jobs'
-      fullPath: '/projects/$id/jobs'
-      preLoaderRoute: typeof AppProjectsIdJobsRouteImport
-      parentRoute: typeof AppProjectsIdRouteRoute
-    }
     '/_app/projects/$id/databases': {
       id: '/_app/projects/$id/databases'
       path: '/databases'
       fullPath: '/projects/$id/databases'
       preLoaderRoute: typeof AppProjectsIdDatabasesRouteImport
-      parentRoute: typeof AppProjectsIdRouteRoute
-    }
-    '/_app/projects/$id/cron-jobs': {
-      id: '/_app/projects/$id/cron-jobs'
-      path: '/cron-jobs'
-      fullPath: '/projects/$id/cron-jobs'
-      preLoaderRoute: typeof AppProjectsIdCronJobsRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
     }
     '/_app/projects/$id/services/': {
@@ -625,10 +601,10 @@ declare module '@tanstack/react-router' {
     }
     '/_app/projects/$id/jobs/': {
       id: '/_app/projects/$id/jobs/'
-      path: '/'
+      path: '/jobs'
       fullPath: '/projects/$id/jobs/'
       preLoaderRoute: typeof AppProjectsIdJobsIndexRouteImport
-      parentRoute: typeof AppProjectsIdJobsRoute
+      parentRoute: typeof AppProjectsIdRouteRoute
     }
     '/_app/projects/$id/routes/$routeId': {
       id: '/_app/projects/$id/routes/$routeId'
@@ -636,6 +612,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/$id/routes/$routeId'
       preLoaderRoute: typeof AppProjectsIdRoutesRouteIdRouteImport
       parentRoute: typeof AppProjectsIdRoutesRoute
+    }
+    '/_app/projects/$id/jobs/$jobId': {
+      id: '/_app/projects/$id/jobs/$jobId'
+      path: '/jobs/$jobId'
+      fullPath: '/projects/$id/jobs/$jobId'
+      preLoaderRoute: typeof AppProjectsIdJobsJobIdRouteImport
+      parentRoute: typeof AppProjectsIdRouteRoute
     }
     '/_app/projects/$id/services/$serviceId': {
       id: '/_app/projects/$id/services/$serviceId'
@@ -696,17 +679,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AppProjectsIdJobsRouteChildren {
-  AppProjectsIdJobsIndexRoute: typeof AppProjectsIdJobsIndexRoute
-}
-
-const AppProjectsIdJobsRouteChildren: AppProjectsIdJobsRouteChildren = {
-  AppProjectsIdJobsIndexRoute: AppProjectsIdJobsIndexRoute,
-}
-
-const AppProjectsIdJobsRouteWithChildren =
-  AppProjectsIdJobsRoute._addFileChildren(AppProjectsIdJobsRouteChildren)
-
 interface AppProjectsIdRoutesRouteChildren {
   AppProjectsIdRoutesRouteIdRoute: typeof AppProjectsIdRoutesRouteIdRoute
   AppProjectsIdRoutesIndexRoute: typeof AppProjectsIdRoutesIndexRoute
@@ -754,23 +726,21 @@ const AppProjectsIdServicesServiceIdRouteRouteWithChildren =
   )
 
 interface AppProjectsIdRouteRouteChildren {
-  AppProjectsIdCronJobsRoute: typeof AppProjectsIdCronJobsRoute
   AppProjectsIdDatabasesRoute: typeof AppProjectsIdDatabasesRoute
-  AppProjectsIdJobsRoute: typeof AppProjectsIdJobsRouteWithChildren
   AppProjectsIdNewRoute: typeof AppProjectsIdNewRoute
   AppProjectsIdPipelinesRoute: typeof AppProjectsIdPipelinesRoute
   AppProjectsIdRoutesRoute: typeof AppProjectsIdRoutesRouteWithChildren
   AppProjectsIdSettingsRoute: typeof AppProjectsIdSettingsRoute
   AppProjectsIdIndexRoute: typeof AppProjectsIdIndexRoute
   AppProjectsIdServicesServiceIdRouteRoute: typeof AppProjectsIdServicesServiceIdRouteRouteWithChildren
+  AppProjectsIdJobsJobIdRoute: typeof AppProjectsIdJobsJobIdRoute
+  AppProjectsIdJobsIndexRoute: typeof AppProjectsIdJobsIndexRoute
   AppProjectsIdSecretsIndexRoute: typeof AppProjectsIdSecretsIndexRoute
   AppProjectsIdServicesIndexRoute: typeof AppProjectsIdServicesIndexRoute
 }
 
 const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
-  AppProjectsIdCronJobsRoute: AppProjectsIdCronJobsRoute,
   AppProjectsIdDatabasesRoute: AppProjectsIdDatabasesRoute,
-  AppProjectsIdJobsRoute: AppProjectsIdJobsRouteWithChildren,
   AppProjectsIdNewRoute: AppProjectsIdNewRoute,
   AppProjectsIdPipelinesRoute: AppProjectsIdPipelinesRoute,
   AppProjectsIdRoutesRoute: AppProjectsIdRoutesRouteWithChildren,
@@ -778,6 +748,8 @@ const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
   AppProjectsIdIndexRoute: AppProjectsIdIndexRoute,
   AppProjectsIdServicesServiceIdRouteRoute:
     AppProjectsIdServicesServiceIdRouteRouteWithChildren,
+  AppProjectsIdJobsJobIdRoute: AppProjectsIdJobsJobIdRoute,
+  AppProjectsIdJobsIndexRoute: AppProjectsIdJobsIndexRoute,
   AppProjectsIdSecretsIndexRoute: AppProjectsIdSecretsIndexRoute,
   AppProjectsIdServicesIndexRoute: AppProjectsIdServicesIndexRoute,
 }
