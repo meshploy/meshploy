@@ -1,8 +1,7 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router"
-import { useState } from "react"
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Clock, Loader2, Play, Plus, Trash2, Zap } from "lucide-react"
-import { jobs as jobsApi, type ApiJob, type ApiJobRun } from "@/lib/api"
+import { Clock, Loader2, Play, Trash2, Zap } from "lucide-react"
+import { jobs as jobsApi, type ApiJob } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
@@ -106,9 +105,7 @@ function JobsPage() {
             <JobSection
               title="Jobs"
               jobs={oneShot}
-              orgId={orgId}
               projectId={projectId}
-              token={token}
               onDelete={(id) => deleteMut.mutate(id)}
               onTrigger={(id) => triggerMut.mutate(id)}
               deletingId={deleteMut.isPending ? deleteMut.variables : undefined}
@@ -119,9 +116,7 @@ function JobsPage() {
             <JobSection
               title="Cron Jobs"
               jobs={crons}
-              orgId={orgId}
               projectId={projectId}
-              token={token}
               onDelete={(id) => deleteMut.mutate(id)}
               onTrigger={(id) => triggerMut.mutate(id)}
               deletingId={deleteMut.isPending ? deleteMut.variables : undefined}
@@ -135,13 +130,11 @@ function JobsPage() {
 }
 
 function JobSection({
-  title, jobs, orgId, projectId, token, onDelete, onTrigger, deletingId, triggeringId,
+  title, jobs, projectId, onDelete, onTrigger, deletingId, triggeringId,
 }: {
   title: string
   jobs: ApiJob[]
-  orgId: string
   projectId: string
-  token: string
   onDelete: (id: string) => void
   onTrigger: (id: string) => void
   deletingId?: string
@@ -169,9 +162,7 @@ function JobSection({
                 key={job.id}
                 job={job}
                 last={i === jobs.length - 1}
-                orgId={orgId}
                 projectId={projectId}
-                token={token}
                 onDelete={() => onDelete(job.id)}
                 onTrigger={() => onTrigger(job.id)}
                 isDeleting={deletingId === job.id}
@@ -186,34 +177,26 @@ function JobSection({
 }
 
 function JobRow({
-  job, last, orgId, projectId, token, onDelete, onTrigger, isDeleting, isTriggering,
+  job, last, projectId, onDelete, onTrigger, isDeleting, isTriggering,
 }: {
   job: ApiJob
   last: boolean
-  orgId: string
   projectId: string
-  token: string
   onDelete: () => void
   onTrigger: () => void
   isDeleting: boolean
   isTriggering: boolean
 }) {
-  const [expanded, setExpanded] = useState(false)
-
-  const { data: runs = [] } = useQuery({
-    queryKey: ["job-runs", orgId, projectId, job.id],
-    queryFn: () => jobsApi.listRuns(orgId, projectId, job.id, token),
-    enabled: expanded,
-  })
+  const navigate = useNavigate()
 
   return (
     <>
       <tr
         className={cn(
           "hover:bg-muted/10 transition-colors cursor-pointer",
-          !last && !expanded && "border-b border-border/30"
+          !last && "border-b border-border/30"
         )}
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => navigate({ to: "/projects/$id/jobs/$jobId", params: { id: projectId, jobId: job.id } })}
       >
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
@@ -266,39 +249,6 @@ function JobRow({
           </div>
         </td>
       </tr>
-
-      {expanded && (
-        <tr className={cn(!last && "border-b border-border/30")}>
-          <td colSpan={5} className="px-4 py-3 bg-muted/5">
-            <RunHistory runs={runs} />
-          </td>
-        </tr>
-      )}
     </>
-  )
-}
-
-function RunHistory({ runs }: { runs: ApiJobRun[] }) {
-  if (runs.length === 0) {
-    return <p className="text-xs text-muted-foreground/50 py-1">No runs yet — click Run now to trigger one.</p>
-  }
-  return (
-    <div className="space-y-1">
-      <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">Run history</p>
-      {runs.map((run) => (
-        <div key={run.id} className="flex items-center gap-3 text-xs">
-          <div className={statusDot(run.status)} />
-          <span className="text-muted-foreground/70 capitalize w-16 shrink-0">{run.status}</span>
-          <span className="text-muted-foreground/50">
-            {run.started_at ? new Date(run.started_at).toLocaleString() : new Date(run.created_at).toLocaleString()}
-          </span>
-          {run.finished_at && run.started_at && (
-            <span className="text-muted-foreground/40">
-              {Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)}s
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
   )
 }
