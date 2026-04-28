@@ -26,6 +26,7 @@ type Services struct {
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
 	Storage         *StorageService
+	Backups         *BackupService
 	Secrets         *SecretService
 	Jobs            *JobService
 	DBExplorer      *DBExplorerService
@@ -153,6 +154,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		GitIntegrations: gitSvc,
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
+		Backups:         &BackupService{db: db},
 		Secrets:         &SecretService{db: db},
 		Jobs:            &JobService{db: db},
 		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},

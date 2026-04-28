@@ -1,14 +1,26 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Crown, Globe, Loader2, Plus, Shield, User, Check, Pencil, X } from "lucide-react"
+import { AlertCircle, Crown, Globe, HardDrive, Loader2, Plus, Shield, Trash2, User, Check, Pencil, X } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { orgs as orgsApi, domains as domainsApi, type ApiDomain, type ApiOrgMember } from "@/lib/api"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select"
+import {
+  orgs as orgsApi,
+  domains as domainsApi,
+  storage as storageApi,
+  backups as backupsApi,
+  type ApiDomain,
+  type ApiOrgMember,
+  type ApiStorageIntegration,
+  type ApiSystemBackupConfig,
+} from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Section } from "@/components/services/form-primitives"
+import { Section, inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
 import type { OrgRole } from "@/types"
 
@@ -46,6 +58,8 @@ function SettingsPage() {
       <GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} />
 
       <PrimaryDomainSection />
+
+      <SystemBackupSection />
 
       <MembersSection />
     </div>
@@ -138,6 +152,200 @@ function PrimaryDomainSection() {
         </p>
       ) : (
         <DomainCard domain={domain} />
+      )}
+    </Section>
+  )
+}
+
+function SystemBackupSection() {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [storageId, setStorageId]   = useState("")
+  const [schedule,  setSchedule]    = useState("0 2 * * *")
+  const [retention, setRetention]   = useState("30")
+  const [prefix,    setPrefix]      = useState("")
+  const [error,     setError]       = useState<string | null>(null)
+
+  const { data: storageList = [] } = useQuery({
+    queryKey: ["storage-integrations", orgId],
+    queryFn: () => storageApi.list(orgId, token).then((r) => r ?? []),
+    enabled: !!orgId,
+  })
+
+  const { data: cfg, isLoading } = useQuery({
+    queryKey: ["system-backup", orgId],
+    queryFn: () => backupsApi.getSystem(orgId, token),
+    enabled: !!orgId,
+  })
+
+  const upsertMut = useMutation({
+    mutationFn: () => backupsApi.upsertSystem(orgId, {
+      storage_integration_id: storageId,
+      schedule: schedule.trim(),
+      retention_days: parseInt(retention) || 30,
+      path_prefix: prefix.trim() || undefined,
+      enabled: true,
+    }, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["system-backup", orgId] })
+      setEditing(false)
+      setError(null)
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  const toggleMut = useMutation({
+    mutationFn: (enabled: boolean) => backupsApi.upsertSystem(orgId, {
+      storage_integration_id: cfg!.storage_integration_id,
+      schedule: cfg!.schedule,
+      retention_days: cfg!.retention_days,
+      path_prefix: cfg!.path_prefix,
+      enabled,
+    }, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["system-backup", orgId] }),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => backupsApi.deleteSystem(orgId, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["system-backup", orgId] }),
+  })
+
+  function startEdit(existing?: ApiSystemBackupConfig) {
+    setStorageId(existing?.storage_integration_id ?? storageList[0]?.id ?? "")
+    setSchedule(existing?.schedule ?? "0 2 * * *")
+    setRetention(String(existing?.retention_days ?? 30))
+    setPrefix(existing?.path_prefix ?? "")
+    setError(null)
+    setEditing(true)
+  }
+
+  const selectedStorage = storageList.find((s: ApiStorageIntegration) => s.id === storageId)
+
+  return (
+    <Section
+      title="System Backup"
+      subtitle="Automated backup of Meshploy's own database to object storage"
+      action={
+        !isLoading && !editing && cfg && (
+          <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => startEdit(cfg)}>
+            <Pencil className="h-3 w-3" /> Edit
+          </Button>
+        )
+      }
+    >
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /><span>Loading…</span>
+        </div>
+      ) : storageList.length === 0 ? (
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <HardDrive className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+          <span>No storage integrations configured. <Link to="/integrations/new" search={{ category: "storage" }} className="text-primary hover:underline">Add one</Link> to enable system backups.</span>
+        </div>
+      ) : editing ? (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground/60">Storage</label>
+            <Select value={storageId} onValueChange={setStorageId}>
+              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                <SelectValue>{selectedStorage?.name ?? "Select storage"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {storageList.map((s: ApiStorageIntegration) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground/60">Schedule (cron)</label>
+              <input value={schedule} onChange={(e) => setSchedule(e.target.value)}
+                placeholder="0 2 * * *"
+                className={cn(inputCls, "font-mono")} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground/60">Retention (days)</label>
+              <input type="number" min={1} value={retention} onChange={(e) => setRetention(e.target.value)}
+                className={inputCls} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground/60">Path prefix (optional)</label>
+            <input value={prefix} onChange={(e) => setPrefix(e.target.value)}
+              placeholder="e.g. meshploy/system"
+              className={cn(inputCls, "font-mono")} />
+          </div>
+          {error && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{error}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => upsertMut.mutate()} disabled={upsertMut.isPending || !storageId || !schedule.trim()}>
+              {upsertMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+              {cfg ? "Save changes" : "Enable backup"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setError(null) }}>Cancel</Button>
+          </div>
+        </div>
+      ) : cfg ? (
+        <div className="rounded-lg border border-border/60 px-4 py-3.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2 w-2 rounded-full shrink-0", cfg.enabled ? "bg-emerald-400" : "bg-muted-foreground/30")} />
+              <span className="text-sm font-medium">{cfg.enabled ? "Active" : "Paused"}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => toggleMut.mutate(!cfg.enabled)}
+                disabled={toggleMut.isPending}
+                className="p-1.5 text-xs text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
+                title={cfg.enabled ? "Pause" : "Resume"}
+              >
+                {toggleMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : cfg.enabled ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                onClick={() => deleteMut.mutate()}
+                disabled={deleteMut.isPending}
+                className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
+                title="Remove backup config"
+              >
+                {deleteMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+          </div>
+          <div className="text-xs text-muted-foreground/70 space-y-0.5">
+            <div className="flex items-center gap-3">
+              <span><span className="text-muted-foreground/40">schedule</span> <code className="font-mono text-foreground/80">{cfg.schedule}</code></span>
+              <span><span className="text-muted-foreground/40">retention</span> {cfg.retention_days}d</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span><span className="text-muted-foreground/40">storage</span> {storageList.find((s: ApiStorageIntegration) => s.id === cfg.storage_integration_id)?.name ?? cfg.storage_integration_id}</span>
+              {cfg.path_prefix && <span><span className="text-muted-foreground/40">prefix</span> <code className="font-mono">{cfg.path_prefix}</code></span>}
+            </div>
+            {cfg.last_backup_status && (
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", {
+                  "bg-yellow-400 animate-pulse": cfg.last_backup_status === "running" || cfg.last_backup_status === "pending",
+                  "bg-emerald-400": cfg.last_backup_status === "success",
+                  "bg-destructive": cfg.last_backup_status === "failed",
+                })} />
+                <span className="capitalize">{cfg.last_backup_status}</span>
+                {cfg.last_backup_at && <span className="text-muted-foreground/40">· {new Date(cfg.last_backup_at).toLocaleString()}</span>}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground flex-1">No backup configured for the system database.</p>
+          <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => startEdit()}>
+            <Plus className="h-3.5 w-3.5" /> Configure
+          </Button>
+        </div>
       )}
     </Section>
   )

@@ -383,6 +383,101 @@ export const storage = {
     ),
 }
 
+// ─── Backup configs ───────────────────────────────────────────────────────────
+
+export interface ApiBackupConfig {
+  id: string
+  service_id: string
+  storage_integration_id: string
+  schedule: string
+  retention_days: number
+  path_prefix: string
+  enabled: boolean
+  last_backup_at: string | null
+  last_backup_status: "pending" | "running" | "success" | "failed" | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ApiSystemBackupConfig {
+  id: string
+  organization_id: string
+  storage_integration_id: string
+  schedule: string
+  retention_days: number
+  path_prefix: string
+  enabled: boolean
+  last_backup_at: string | null
+  last_backup_status: "pending" | "running" | "success" | "failed" | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateBackupBody {
+  storage_integration_id: string
+  schedule: string
+  retention_days?: number
+  path_prefix?: string
+}
+
+export interface UpdateBackupBody {
+  schedule?: string
+  retention_days?: number
+  path_prefix?: string
+  enabled?: boolean
+}
+
+export const backups = {
+  list: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiBackupConfig[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/backups`,
+      {},
+      token
+    ),
+
+  create: (orgId: string, projectId: string, serviceId: string, body: CreateBackupBody, token: string) =>
+    apiFetch<ApiBackupConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/backups`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  update: (orgId: string, projectId: string, serviceId: string, id: string, body: UpdateBackupBody, token: string) =>
+    apiFetch<ApiBackupConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/backups/${id}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+      token
+    ),
+
+  delete: (orgId: string, projectId: string, serviceId: string, id: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/backups/${id}`,
+      { method: "DELETE" },
+      token
+    ),
+
+  getSystem: (orgId: string, token: string) =>
+    apiFetch<ApiSystemBackupConfig | null>(
+      `/api/v1/orgs/${orgId}/system-backup`,
+      {},
+      token
+    ),
+
+  upsertSystem: (orgId: string, body: { storage_integration_id: string; schedule: string; retention_days?: number; path_prefix?: string; enabled: boolean }, token: string) =>
+    apiFetch<ApiSystemBackupConfig>(
+      `/api/v1/orgs/${orgId}/system-backup`,
+      { method: "PUT", body: JSON.stringify(body) },
+      token
+    ),
+
+  deleteSystem: (orgId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/system-backup`,
+      { method: "DELETE" },
+      token
+    ),
+}
+
 // ─── Cluster ──────────────────────────────────────────────────────────────────
 
 export const cluster = {

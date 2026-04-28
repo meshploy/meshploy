@@ -41,6 +41,7 @@ import { Route as AppProjectsIdServicesServiceIdSettingsRouteImport } from './ro
 import { Route as AppProjectsIdServicesServiceIdOverviewRouteImport } from './routes/_app/projects/$id/services/$serviceId/overview'
 import { Route as AppProjectsIdServicesServiceIdLogsRouteImport } from './routes/_app/projects/$id/services/$serviceId/logs'
 import { Route as AppProjectsIdServicesServiceIdConfigRouteImport } from './routes/_app/projects/$id/services/$serviceId/config'
+import { Route as AppProjectsIdServicesServiceIdBackupsRouteImport } from './routes/_app/projects/$id/services/$serviceId/backups'
 import { Route as AppProjectsIdServicesServiceIdDeploymentsIndexRouteImport } from './routes/_app/projects/$id/services/$serviceId/deployments/index'
 import { Route as AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRouteImport } from './routes/_app/projects/$id/services/$serviceId/deployments/$deploymentId'
 
@@ -212,6 +213,12 @@ const AppProjectsIdServicesServiceIdConfigRoute =
     path: '/config',
     getParentRoute: () => AppProjectsIdServicesServiceIdRouteRoute,
   } as any)
+const AppProjectsIdServicesServiceIdBackupsRoute =
+  AppProjectsIdServicesServiceIdBackupsRouteImport.update({
+    id: '/backups',
+    path: '/backups',
+    getParentRoute: () => AppProjectsIdServicesServiceIdRouteRoute,
+  } as any)
 const AppProjectsIdServicesServiceIdDeploymentsIndexRoute =
   AppProjectsIdServicesServiceIdDeploymentsIndexRouteImport.update({
     id: '/deployments/',
@@ -251,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
   '/projects/$id/secrets/': typeof AppProjectsIdSecretsIndexRoute
   '/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
+  '/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
   '/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
@@ -282,6 +290,7 @@ export interface FileRoutesByTo {
   '/projects/$id/routes': typeof AppProjectsIdRoutesIndexRoute
   '/projects/$id/secrets': typeof AppProjectsIdSecretsIndexRoute
   '/projects/$id/services': typeof AppProjectsIdServicesIndexRoute
+  '/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
   '/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
@@ -319,6 +328,7 @@ export interface FileRoutesById {
   '/_app/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
   '/_app/projects/$id/secrets/': typeof AppProjectsIdSecretsIndexRoute
   '/_app/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
+  '/_app/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/_app/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/_app/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
   '/_app/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
@@ -355,6 +365,7 @@ export interface FileRouteTypes {
     | '/projects/$id/routes/'
     | '/projects/$id/secrets/'
     | '/projects/$id/services/'
+    | '/projects/$id/services/$serviceId/backups'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
     | '/projects/$id/services/$serviceId/overview'
@@ -386,6 +397,7 @@ export interface FileRouteTypes {
     | '/projects/$id/routes'
     | '/projects/$id/secrets'
     | '/projects/$id/services'
+    | '/projects/$id/services/$serviceId/backups'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
     | '/projects/$id/services/$serviceId/overview'
@@ -422,6 +434,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$id/routes/'
     | '/_app/projects/$id/secrets/'
     | '/_app/projects/$id/services/'
+    | '/_app/projects/$id/services/$serviceId/backups'
     | '/_app/projects/$id/services/$serviceId/config'
     | '/_app/projects/$id/services/$serviceId/logs'
     | '/_app/projects/$id/services/$serviceId/overview'
@@ -662,6 +675,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdServicesServiceIdConfigRouteImport
       parentRoute: typeof AppProjectsIdServicesServiceIdRouteRoute
     }
+    '/_app/projects/$id/services/$serviceId/backups': {
+      id: '/_app/projects/$id/services/$serviceId/backups'
+      path: '/backups'
+      fullPath: '/projects/$id/services/$serviceId/backups'
+      preLoaderRoute: typeof AppProjectsIdServicesServiceIdBackupsRouteImport
+      parentRoute: typeof AppProjectsIdServicesServiceIdRouteRoute
+    }
     '/_app/projects/$id/services/$serviceId/deployments/': {
       id: '/_app/projects/$id/services/$serviceId/deployments/'
       path: '/deployments'
@@ -693,6 +713,7 @@ const AppProjectsIdRoutesRouteWithChildren =
   AppProjectsIdRoutesRoute._addFileChildren(AppProjectsIdRoutesRouteChildren)
 
 interface AppProjectsIdServicesServiceIdRouteRouteChildren {
+  AppProjectsIdServicesServiceIdBackupsRoute: typeof AppProjectsIdServicesServiceIdBackupsRoute
   AppProjectsIdServicesServiceIdConfigRoute: typeof AppProjectsIdServicesServiceIdConfigRoute
   AppProjectsIdServicesServiceIdLogsRoute: typeof AppProjectsIdServicesServiceIdLogsRoute
   AppProjectsIdServicesServiceIdOverviewRoute: typeof AppProjectsIdServicesServiceIdOverviewRoute
@@ -704,6 +725,8 @@ interface AppProjectsIdServicesServiceIdRouteRouteChildren {
 
 const AppProjectsIdServicesServiceIdRouteRouteChildren: AppProjectsIdServicesServiceIdRouteRouteChildren =
   {
+    AppProjectsIdServicesServiceIdBackupsRoute:
+      AppProjectsIdServicesServiceIdBackupsRoute,
     AppProjectsIdServicesServiceIdConfigRoute:
       AppProjectsIdServicesServiceIdConfigRoute,
     AppProjectsIdServicesServiceIdLogsRoute:

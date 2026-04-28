@@ -665,6 +665,25 @@ type BackupConfig struct {
 
 func (BackupConfig) TableName() string { return "backup_configs" }
 
+// SystemBackupConfig defines a scheduled backup of Meshploy's own database for an org.
+// At most one row per org (uniqueIndex on organization_id).
+type SystemBackupConfig struct {
+	Base
+	OrganizationID       uuid.UUID     `gorm:"type:uuid;not null;uniqueIndex" json:"organization_id"`
+	StorageIntegrationID uuid.UUID     `gorm:"type:uuid;not null"             json:"storage_integration_id"`
+	Schedule             string        `gorm:"not null"                       json:"schedule"`
+	RetentionDays        int           `gorm:"not null;default:30"            json:"retention_days"`
+	PathPrefix           string        `json:"path_prefix"`
+	Enabled              bool          `gorm:"default:true"                   json:"enabled"`
+	LastBackupAt         *time.Time    `json:"last_backup_at"`
+	LastBackupStatus     *BackupStatus `json:"last_backup_status"`
+
+	Organization       Organization       `gorm:"foreignKey:OrganizationID"       json:"-"`
+	StorageIntegration StorageIntegration `gorm:"foreignKey:StorageIntegrationID" json:"-"`
+}
+
+func (SystemBackupConfig) TableName() string { return "system_backup_configs" }
+
 // NotificationChannel defines a webhook/email destination for org-level events.
 // Config JSONB schema depends on Type:
 //   slack/discord: {"webhook_url": "https://..."}
