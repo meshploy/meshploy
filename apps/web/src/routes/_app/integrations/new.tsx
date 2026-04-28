@@ -518,7 +518,7 @@ function StorageForm({ onSuccess }: { onSuccess: () => void }) {
         <Field label="Provider">
           <Select value={provider} onValueChange={(v) => { setProvider(v as StorageProvider); setEndpoint(""); setError(null) }}>
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-              <SelectValue />
+              <SelectValue>{providerMeta.label}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {STORAGE_PROVIDERS.map((p) => (
@@ -657,7 +657,7 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
         <Field label="Provider">
           <Select value={provider} onValueChange={(v) => setProvider(v as RegistryProvider)}>
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-              <SelectValue />
+              <SelectValue>{providerMeta.label}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {REGISTRY_PROVIDERS.map((p) => (
