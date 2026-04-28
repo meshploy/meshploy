@@ -248,7 +248,7 @@ function SystemBackupSection() {
         <div className="space-y-3">
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground/60">Storage</label>
-            <Select value={storageId} onValueChange={setStorageId}>
+            <Select value={storageId} onValueChange={(v) => v && setStorageId(v)}>
               <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
                 <SelectValue>{selectedStorage?.name ?? "Select storage"}</SelectValue>
               </SelectTrigger>
