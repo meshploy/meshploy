@@ -6,10 +6,12 @@ import { Badge } from "@/components/ui/badge"
 import {
   gitIntegrations as gitApi,
   registries as registriesApi,
+  storage as storageApi,
   type ApiGitIntegration,
   type ApiRegistryIntegration,
+  type ApiStorageIntegration,
 } from "@/lib/api"
-import { mockStorage, mockNotifications } from "@/lib/mock-data"
+import { mockNotifications } from "@/lib/mock-data"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import type { NotificationChannel } from "@/types"
@@ -118,28 +120,8 @@ function IntegrationsPage() {
       {/* ── Container Registries ───────────────────────────────────────────── */}
       <RegistrySection orgId={orgId} token={token} />
 
-      {/* ── Object Storage (mock / coming soon) ────────────────────────────── */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <SectionHeader
-            icon={<HardDrive className="h-4 w-4" />}
-            title="Object Storage"
-            description="Store database backups and build artifacts"
-          />
-          <button disabled className="flex items-center gap-1.5 text-xs text-muted-foreground/40 border border-border/40 px-2.5 py-1.5 rounded-md cursor-not-allowed">
-            <Plus className="h-3 w-3" />Add storage
-          </button>
-        </div>
-        {mockStorage.length === 0 ? (
-          <EmptyState icon={<HardDrive className="h-7 w-7" />} title="No storage configured" description="Coming soon — connect S3, R2, or MinIO for backups" />
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {mockStorage.map((sto) => (
-              <IntegrationCard key={sto.id} name={sto.name} providerKey={sto.provider} meta={`${sto.bucket}${sto.region ? ` · ${sto.region}` : ""}`} />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* ── Object Storage ─────────────────────────────────────────────────── */}
+      <StorageSection orgId={orgId} token={token} />
 
       {/* ── Notification Channels (mock / coming soon) ─────────────────────── */}
       <section className="space-y-3">
@@ -227,6 +209,105 @@ function RegistrySection({ orgId, token }: { orgId: string; token: string }) {
         </div>
       )}
     </section>
+  )
+}
+
+// ─── Storage section ──────────────────────────────────────────────────────────
+
+function StorageSection({ orgId, token }: { orgId: string; token: string }) {
+  const qc = useQueryClient()
+
+  const { data: list = [], isLoading } = useQuery({
+    queryKey: ["storage-integrations", orgId],
+    queryFn: () => storageApi.list(orgId, token).then((r) => r ?? []),
+    enabled: !!orgId,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => storageApi.delete(orgId, id, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["storage-integrations", orgId] }),
+  })
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <SectionHeader
+          icon={<HardDrive className="h-4 w-4" />}
+          title="Object Storage"
+          description="Store database backups and build artifacts"
+        />
+        <Link
+          to="/integrations/new"
+          search={{ category: "storage" }}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+        >
+          <Plus className="h-3 w-3" />Add storage
+        </Link>
+      </div>
+
+      {isLoading ? (
+        <LoadingRow />
+      ) : list.length === 0 ? (
+        <EmptyState
+          icon={<HardDrive className="h-7 w-7" />}
+          title="No storage configured"
+          description="Connect S3, R2, or MinIO to enable database backups"
+        >
+          <Link
+            to="/integrations/new"
+            search={{ category: "storage" }}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+          >
+            <Plus className="h-3 w-3" />Add storage
+          </Link>
+        </EmptyState>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {list.map((sto) => (
+            <StorageCard
+              key={sto.id}
+              integration={sto}
+              onDelete={() => deleteMutation.mutate(sto.id)}
+              isDeleting={deleteMutation.isPending && deleteMutation.variables === sto.id}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ─── Storage card ─────────────────────────────────────────────────────────────
+
+function StorageCard({ integration, onDelete, isDeleting }: {
+  integration: ApiStorageIntegration
+  onDelete: () => void
+  isDeleting: boolean
+}) {
+  const meta = [integration.bucket, integration.region].filter(Boolean).join(" · ")
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
+      <ProviderIcon provider={integration.provider} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-foreground truncate">{integration.name}</p>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
+            connected
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">{PROVIDER_LABELS[integration.provider] ?? integration.provider}</p>
+        {meta && <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>}
+      </div>
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={isDeleting}
+        className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
+        title="Remove"
+      >
+        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+      </button>
+    </div>
   )
 }
 
