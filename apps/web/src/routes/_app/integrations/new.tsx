@@ -14,8 +14,11 @@ import {
 import {
   gitIntegrations as gitApi,
   registries as registriesApi,
+  storage as storageApi,
   type RegistryProvider,
+  type StorageProvider,
   type CreateRegistryBody,
+  type CreateStorageBody,
   type ApiRegistryIntegration,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -41,7 +44,7 @@ type Category = "git" | "registry" | "storage" | "notifications"
 const CATEGORIES: { id: Category; icon: typeof GitBranch; label: string; description: string; soon?: boolean }[] = [
   { id: "git",           icon: GitBranch, label: "Git Source",         description: "GitHub, GitLab, or Gitea" },
   { id: "registry",      icon: Box,       label: "Container Registry", description: "Docker Hub, GHCR, ECR, GCR" },
-  { id: "storage",       icon: HardDrive, label: "Object Storage",     description: "S3, R2, or MinIO",          soon: true },
+  { id: "storage",       icon: HardDrive, label: "Object Storage",     description: "S3, R2, or MinIO" },
   { id: "notifications", icon: Bell,      label: "Notifications",      description: "Slack, Discord, webhooks",  soon: true },
 ]
 
@@ -110,8 +113,11 @@ function NewIntegrationPage() {
           {category === "registry" && (
             <RegistryForm onSuccess={() => navigate({ to: "/integrations" })} />
           )}
-          {(category === "storage" || category === "notifications") && (
-            <ComingSoon label={CATEGORIES.find((c) => c.id === category)!.label} />
+          {category === "storage" && (
+            <StorageForm onSuccess={() => navigate({ to: "/integrations" })} />
+          )}
+          {category === "notifications" && (
+            <ComingSoon label="Notifications" />
           )}
         </main>
       </div>
@@ -447,6 +453,146 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Storage form ─────────────────────────────────────────────────────────────
+
+const STORAGE_PROVIDERS: { value: StorageProvider; label: string; needsEndpoint: boolean; endpointPlaceholder?: string }[] = [
+  { value: "s3",    label: "Amazon S3",     needsEndpoint: false },
+  { value: "r2",    label: "Cloudflare R2", needsEndpoint: true,  endpointPlaceholder: "https://<account-id>.r2.cloudflarestorage.com" },
+  { value: "minio", label: "MinIO",         needsEndpoint: true,  endpointPlaceholder: "https://minio.example.com" },
+  { value: "b2",    label: "Backblaze B2",  needsEndpoint: true,  endpointPlaceholder: "https://s3.us-west-004.backblazeb2.com" },
+]
+
+function StorageForm({ onSuccess }: { onSuccess: () => void }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc    = useQueryClient()
+
+  const [provider,    setProvider]    = useState<StorageProvider>("s3")
+  const [name,        setName]        = useState("")
+  const [endpoint,    setEndpoint]    = useState("")
+  const [region,      setRegion]      = useState("")
+  const [bucket,      setBucket]      = useState("")
+  const [accessKeyId, setAccessKeyId] = useState("")
+  const [secretKey,   setSecretKey]   = useState("")
+  const [showSecret,  setShowSecret]  = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+
+  const providerMeta = STORAGE_PROVIDERS.find((p) => p.value === provider)!
+
+  const mutation = useMutation({
+    mutationFn: (body: CreateStorageBody) => storageApi.create(orgId, body, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["storage-integrations", orgId] })
+      onSuccess()
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  function submit() {
+    setError(null)
+    mutation.mutate({
+      name: name.trim(),
+      provider,
+      endpoint: endpoint.trim() || undefined,
+      region: region.trim() || undefined,
+      bucket: bucket.trim(),
+      access_key_id: accessKeyId.trim(),
+      secret_access_key: secretKey,
+    })
+  }
+
+  const monoCls = inputCls + " font-mono"
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold">Object Storage</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">Connect an S3-compatible bucket for database backups</p>
+      </div>
+
+      <div className="space-y-4">
+        <Field label="Provider">
+          <Select value={provider} onValueChange={(v) => { setProvider(v as StorageProvider); setEndpoint(""); setError(null) }}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STORAGE_PROVIDERS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label="Label" required>
+          <input type="text" placeholder="e.g. production-backups"
+            value={name} onChange={(e) => setName(e.target.value)}
+            className={inputCls}
+          />
+        </Field>
+
+        {providerMeta.needsEndpoint && (
+          <Field label="Endpoint" required>
+            <input type="text" placeholder={providerMeta.endpointPlaceholder}
+              value={endpoint} onChange={(e) => setEndpoint(e.target.value)}
+              className={monoCls}
+            />
+          </Field>
+        )}
+
+        {provider === "s3" && (
+          <Field label="Region" required>
+            <input type="text" placeholder="us-east-1"
+              value={region} onChange={(e) => setRegion(e.target.value)}
+              className={monoCls}
+            />
+          </Field>
+        )}
+
+        <Field label="Bucket" required>
+          <input type="text" placeholder="my-backups-bucket"
+            value={bucket} onChange={(e) => setBucket(e.target.value)}
+            className={monoCls}
+          />
+        </Field>
+
+        <Field label="Access key ID" required>
+          <input type="text" value={accessKeyId}
+            onChange={(e) => setAccessKeyId(e.target.value)}
+            autoComplete="off" className={monoCls}
+          />
+        </Field>
+
+        <Field label="Secret access key" required>
+          <div className="flex items-center gap-1">
+            <input type={showSecret ? "text" : "password"}
+              value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
+              autoComplete="new-password"
+              className={`flex-1 ${monoCls}`}
+            />
+            <button type="button" onClick={() => setShowSecret((v) => !v)}
+              className="p-2 text-muted-foreground hover:text-foreground transition-colors">
+              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
+        </Field>
+
+        {error && <ErrorBanner message={error} />}
+
+        <Button
+          onClick={submit}
+          disabled={mutation.isPending || !name || !bucket || !accessKeyId || !secretKey || (providerMeta.needsEndpoint && !endpoint) || (provider === "s3" && !region)}
+          className="gap-1.5"
+        >
+          {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Add storage
+        </Button>
+      </div>
     </div>
   )
 }

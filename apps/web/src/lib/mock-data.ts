@@ -1,16 +1,4 @@
-import type { StorageIntegration, NotificationChannel } from "@/types"
-
-export const mockStorage: StorageIntegration[] = [
-  {
-    id: "sto_01",
-    name: "Backups — R2",
-    provider: "r2",
-    endpoint: "https://abc123.r2.cloudflarestorage.com",
-    bucket: "meshploy-backups",
-    organizationId: "org_01jf3m2n4k5p6q7r8s9t0u1v2w",
-    createdAt: new Date("2024-11-01"),
-  },
-]
+import type { NotificationChannel } from "@/types"
 
 export const mockNotifications: NotificationChannel[] = [
   {
