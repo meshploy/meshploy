@@ -28,6 +28,7 @@ type Services struct {
 	Storage         *StorageService
 	Backups         *BackupService
 	Notifications   *NotificationService
+	EmailConfig     *EmailConfigService
 	Secrets         *SecretService
 	Jobs            *JobService
 	DBExplorer      *DBExplorerService
@@ -157,6 +158,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Storage:         &StorageService{db: db},
 		Backups:         &BackupService{db: db},
 		Notifications:   &NotificationService{db: db},
+		EmailConfig:     &EmailConfigService{db: db},
 		Secrets:         &SecretService{db: db},
 		Jobs:            &JobService{db: db},
 		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},

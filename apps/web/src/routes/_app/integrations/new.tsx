@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import React, { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import React, { useEffect, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Bell, Box, ChevronLeft, Eye, EyeOff, GitBranch, HardDrive,
+  Bell, Box, ChevronLeft, Eye, EyeOff, GitBranch, HardDrive, Mail,
   Loader2, Settings2, AlertCircle,
 } from "lucide-react"
 import { SiGithub, SiGitlab, SiGitea } from "@icons-pack/react-simple-icons"
@@ -16,12 +16,14 @@ import {
   registries as registriesApi,
   storage as storageApi,
   notifications as notificationsApi,
+  emailConfig as emailConfigApi,
   type RegistryProvider,
   type StorageProvider,
   type NotificationChannelType,
   type CreateRegistryBody,
   type CreateStorageBody,
   type ApiRegistryIntegration,
+  type SaveEmailConfigBody,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -31,7 +33,7 @@ import { cn } from "@/lib/utils"
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 const searchSchema = z.object({
-  category: z.enum(["git", "registry", "storage", "notifications"]).optional().default("git"),
+  category: z.enum(["git", "registry", "storage", "notifications", "email"]).optional().default("git"),
 })
 
 export const Route = createFileRoute("/_app/integrations/new")({
@@ -41,13 +43,14 @@ export const Route = createFileRoute("/_app/integrations/new")({
 
 // ─── Category definitions ─────────────────────────────────────────────────────
 
-type Category = "git" | "registry" | "storage" | "notifications"
+type Category = "git" | "registry" | "storage" | "notifications" | "email"
 
 const CATEGORIES: { id: Category; icon: typeof GitBranch; label: string; description: string; soon?: boolean }[] = [
   { id: "git",           icon: GitBranch, label: "Git Source",         description: "GitHub, GitLab, or Gitea" },
   { id: "registry",      icon: Box,       label: "Container Registry", description: "Docker Hub, GHCR, ECR, GCR" },
   { id: "storage",       icon: HardDrive, label: "Object Storage",     description: "S3, R2, or MinIO" },
   { id: "notifications", icon: Bell,      label: "Notifications",      description: "Email or webhook alerts" },
+  { id: "email",         icon: Mail,      label: "Email Provider",     description: "SMTP for outbound email" },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -120,6 +123,9 @@ function NewIntegrationPage() {
           )}
           {category === "notifications" && (
             <NotificationsForm onSuccess={() => navigate({ to: "/integrations" })} />
+          )}
+          {category === "email" && (
+            <EmailProviderForm onSuccess={() => navigate({ to: "/integrations" })} />
           )}
         </main>
       </div>
@@ -876,6 +882,156 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
         {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Add channel
       </Button>
+    </div>
+  )
+}
+
+// ─── Email provider form ──────────────────────────────────────────────────────
+
+function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
+  const token  = useAuthStore((s) => s.token)!
+  const orgId  = useOrgStore((s) => s.currentOrg?.id)!
+  const qc     = useQueryClient()
+
+  const [host,        setHost]        = useState("")
+  const [port,        setPort]        = useState("587")
+  const [username,    setUsername]    = useState("")
+  const [password,    setPassword]    = useState("")
+  const [fromAddress, setFromAddress] = useState("")
+  const [fromName,    setFromName]    = useState("")
+  const [useTLS,      setUseTLS]      = useState(true)
+  const [showPass,    setShowPass]    = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+
+  // Pre-fill from existing config if present.
+  const { data: existing } = useQuery({
+    queryKey: ["email-config", orgId],
+    queryFn: () => emailConfigApi.get(orgId, token).catch(() => null),
+    enabled: !!orgId,
+  })
+
+  const prefilled = existing != null
+  useEffect(() => {
+    if (!existing) return
+    setHost(existing.host)
+    setPort(String(existing.port))
+    setUsername(existing.username)
+    setFromAddress(existing.from_address)
+    setFromName(existing.from_name)
+    setUseTLS(existing.use_tls)
+  }, [existing])
+
+  const mutation = useMutation({
+    mutationFn: (body: SaveEmailConfigBody) => emailConfigApi.save(orgId, body, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["email-config", orgId] })
+      onSuccess()
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  function submit() {
+    setError(null)
+    mutation.mutate({
+      host: host.trim(),
+      port: parseInt(port, 10) || 587,
+      username: username.trim(),
+      password,
+      from_address: fromAddress.trim(),
+      from_name: fromName.trim() || undefined,
+      use_tls: useTLS,
+    })
+  }
+
+  const monoCls = inputCls + " font-mono"
+  const isValid = host.trim() && fromAddress.trim() && (!prefilled ? password : true)
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold">Email Provider</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Configure outbound SMTP for email notifications. One provider per organization.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <Field label="SMTP host" required>
+              <input type="text" placeholder="smtp.example.com"
+                value={host} onChange={(e) => setHost(e.target.value)}
+                className={monoCls}
+              />
+            </Field>
+          </div>
+          <Field label="Port" required>
+            <input type="number" placeholder="587"
+              value={port} onChange={(e) => setPort(e.target.value)}
+              min={1} max={65535}
+              className={monoCls}
+            />
+          </Field>
+        </div>
+
+        <Field label="Username">
+          <input type="text" placeholder="user@example.com"
+            value={username} onChange={(e) => setUsername(e.target.value)}
+            autoComplete="off"
+            className={inputCls}
+          />
+        </Field>
+
+        <Field label={prefilled ? "Password (leave empty to keep current)" : "Password"} required={!prefilled}>
+          <div className="flex items-center gap-1">
+            <input
+              type={showPass ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder={prefilled ? "unchanged" : ""}
+              className={`flex-1 ${monoCls}`}
+            />
+            <button type="button" onClick={() => setShowPass((v) => !v)}
+              className="p-2 text-muted-foreground hover:text-foreground transition-colors">
+              {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
+        </Field>
+
+        <Field label="From address" required>
+          <input type="email" placeholder="noreply@yourcompany.com"
+            value={fromAddress} onChange={(e) => setFromAddress(e.target.value)}
+            className={inputCls}
+          />
+        </Field>
+
+        <Field label="From name (optional)">
+          <input type="text" placeholder="Meshploy"
+            value={fromName} onChange={(e) => setFromName(e.target.value)}
+            className={inputCls}
+          />
+        </Field>
+
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={useTLS} onChange={(e) => setUseTLS(e.target.checked)}
+            className="h-3.5 w-3.5 rounded accent-primary"
+          />
+          <span className="text-xs text-muted-foreground">Use TLS / STARTTLS</span>
+        </label>
+
+        {error && <ErrorBanner message={error} />}
+
+        <Button
+          onClick={submit}
+          disabled={mutation.isPending || !isValid}
+          className="gap-1.5"
+        >
+          {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {prefilled ? "Update provider" : "Save provider"}
+        </Button>
+      </div>
     </div>
   )
 }

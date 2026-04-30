@@ -1,17 +1,19 @@
 import { createFileRoute, useSearch, useNavigate, Link } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Bell, Box, GitBranch, HardDrive, Loader2, Plus, Trash2, Download, RefreshCw } from "lucide-react"
+import { Bell, Box, GitBranch, HardDrive, Loader2, Mail, Pencil, Plus, Trash2, Download, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import {
   gitIntegrations as gitApi,
   registries as registriesApi,
   storage as storageApi,
   notifications as notificationsApi,
+  emailConfig as emailConfigApi,
   type ApiGitIntegration,
   type ApiRegistryIntegration,
   type ApiStorageIntegration,
   type ApiNotificationChannel,
+  type ApiOrgEmailConfig,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -125,6 +127,9 @@ function IntegrationsPage() {
 
       {/* ── Notification Channels ──────────────────────────────────────────── */}
       <NotificationsSection orgId={orgId} token={token} />
+
+      {/* ── Email Provider ─────────────────────────────────────────────────── */}
+      <EmailProviderSection orgId={orgId} token={token} />
     </div>
   )
 }
@@ -613,6 +618,116 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Email provider section ───────────────────────────────────────────────────
+
+function EmailProviderSection({ orgId, token }: { orgId: string; token: string }) {
+  const qc       = useQueryClient()
+  const navigate = useNavigate()
+
+  const { data: cfg, isLoading } = useQuery({
+    queryKey: ["email-config", orgId],
+    queryFn: () => emailConfigApi.get(orgId, token).catch(() => null),
+    enabled: !!orgId,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => emailConfigApi.delete(orgId, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["email-config", orgId] }),
+  })
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <SectionHeader
+          icon={<Mail className="h-4 w-4" />}
+          title="Email Provider"
+          description="Outbound SMTP for email notification channels"
+        />
+        {!isLoading && !cfg && (
+          <button
+            onClick={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+          >
+            <Plus className="h-3 w-3" />Configure
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <LoadingRow />
+      ) : !cfg ? (
+        <EmptyState
+          icon={<Mail className="h-7 w-7" />}
+          title="No email provider configured"
+          description="Set up SMTP so email notification channels can send alerts"
+        >
+          <button
+            onClick={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+          >
+            <Plus className="h-3 w-3" />Configure
+          </button>
+        </EmptyState>
+      ) : (
+        <EmailProviderCard
+          cfg={cfg}
+          onEdit={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
+          onDelete={() => deleteMutation.mutate()}
+          isDeleting={deleteMutation.isPending}
+        />
+      )}
+    </section>
+  )
+}
+
+function EmailProviderCard({ cfg, onEdit, onDelete, isDeleting }: {
+  cfg: ApiOrgEmailConfig
+  onEdit: () => void
+  onDelete: () => void
+  isDeleting: boolean
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4 max-w-sm">
+      <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted shrink-0">
+        <Mail className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-foreground truncate">{cfg.host}</p>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
+            configured
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Port {cfg.port} · {cfg.use_tls ? "TLS" : "No TLS"}
+        </p>
+        <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">
+          from: {cfg.from_name ? `${cfg.from_name} <${cfg.from_address}>` : cfg.from_address}
+        </p>
+      </div>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="p-1 text-muted-foreground/40 hover:text-foreground transition-colors"
+          title="Edit"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={isDeleting}
+          className="p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
+          title="Remove"
+        >
+          {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+        </button>
+      </div>
     </div>
   )
 }
