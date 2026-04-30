@@ -9,10 +9,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// resolveProject returns the project ID from the --project flag, the local
+// .meshploy file, or exits with a helpful error.
+func resolveProject(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	link, err := config.LoadProjectLink()
+	if err == nil && link != nil && link.ProjectID != "" {
+		return link.ProjectID
+	}
+	fmt.Fprintln(os.Stderr, "error: no project specified. Use --project <id|slug> or run: meshploy link <project>")
+	os.Exit(1)
+	return ""
+}
+
 var (
 	cfgAPIURL string // --api-url flag override
-	cfgToken  string // loaded at startup
-
 	loadedCfg *config.Config
 )
 
