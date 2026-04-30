@@ -51,7 +51,21 @@ type UpdateDomainOutput struct {
 	Body *db.Domain
 }
 
+type DomainCheckInput struct {
+	Domain string `query:"domain" required:"true"`
+}
+
 func (h *Handler) registerDomainRoutes(api huma.API) {
+	// Internal endpoint — called by Caddy before issuing an On-Demand TLS cert.
+	// No auth: returns 200 if the hostname belongs to a verified custom-domain route.
+	huma.Register(api, huma.Operation{
+		OperationID: "domain-check",
+		Method:      "GET",
+		Path:        "/api/v1/internal/domain-check",
+		Summary:     "Caddy ask endpoint for On-Demand TLS",
+		Tags:        []string{"Internal"},
+	}, h.DomainCheck)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "list-domains",
 		Method:      "GET",
@@ -179,4 +193,13 @@ func (h *Handler) VerifyDomain(ctx context.Context, input *DomainPathInput) (*Ge
 		return nil, err
 	}
 	return &GetDomainOutput{Body: domain}, nil
+}
+
+// DomainCheck is called by Caddy's on_demand_tls ask mechanism before it issues
+// a TLS cert for an unknown hostname. Returns 200 only for verified custom domains.
+func (h *Handler) DomainCheck(ctx context.Context, input *DomainCheckInput) (*struct{}, error) {
+	if !h.svc.Routes.IsCustomDomainVerified(ctx, input.Domain) {
+		return nil, huma.Error403Forbidden("domain not verified")
+	}
+	return &struct{}{}, nil
 }
