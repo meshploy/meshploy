@@ -1,6 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useState } from "react"
-import type React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { FolderKanban, Globe, Loader2, Plus, Server, ServerCrash } from "lucide-react"
 import { projects as projectsApi, toProject } from "@/lib/api"
@@ -8,7 +6,7 @@ import type { Project } from "@/types"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime, projectColorHue } from "@/lib/utils"
-import { NewProjectModal } from "@/components/projects/new-project-modal"
+import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/_app/projects/")({
   component: ProjectsPage,
@@ -17,7 +15,6 @@ export const Route = createFileRoute("/_app/projects/")({
 function ProjectsPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const [modalOpen, setModalOpen] = useState(false)
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["projects", orgId],
@@ -56,13 +53,10 @@ function ProjectsPage() {
             {projectList.length} project{projectList.length !== 1 ? "s" : ""} · each maps to a K3s namespace
           </p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Project
-        </button>
+        <Button size="sm" render={<Link to="/projects/new" />}>
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          New project
+        </Button>
       </div>
 
       {projectList.length === 0 ? (
@@ -72,13 +66,10 @@ function ProjectsPage() {
             <p className="text-sm text-muted-foreground">No projects yet</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">Create a project to start deploying services</p>
           </div>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 transition-colors mt-1"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New Project
-          </button>
+          <Button size="sm" render={<Link to="/projects/new" />} className="mt-1">
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            New project
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -88,7 +79,6 @@ function ProjectsPage() {
         </div>
       )}
 
-      <NewProjectModal open={modalOpen} onOpenChange={setModalOpen} />
     </div>
   )
 }
