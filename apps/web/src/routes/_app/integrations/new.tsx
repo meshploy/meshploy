@@ -15,8 +15,10 @@ import {
   gitIntegrations as gitApi,
   registries as registriesApi,
   storage as storageApi,
+  notifications as notificationsApi,
   type RegistryProvider,
   type StorageProvider,
+  type NotificationChannelType,
   type CreateRegistryBody,
   type CreateStorageBody,
   type ApiRegistryIntegration,
@@ -45,7 +47,7 @@ const CATEGORIES: { id: Category; icon: typeof GitBranch; label: string; descrip
   { id: "git",           icon: GitBranch, label: "Git Source",         description: "GitHub, GitLab, or Gitea" },
   { id: "registry",      icon: Box,       label: "Container Registry", description: "Docker Hub, GHCR, ECR, GCR" },
   { id: "storage",       icon: HardDrive, label: "Object Storage",     description: "S3, R2, or MinIO" },
-  { id: "notifications", icon: Bell,      label: "Notifications",      description: "Slack, Discord, webhooks",  soon: true },
+  { id: "notifications", icon: Bell,      label: "Notifications",      description: "Email or webhook alerts" },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -117,7 +119,7 @@ function NewIntegrationPage() {
             <StorageForm onSuccess={() => navigate({ to: "/integrations" })} />
           )}
           {category === "notifications" && (
-            <ComingSoon label="Notifications" />
+            <NotificationsForm onSuccess={() => navigate({ to: "/integrations" })} />
           )}
         </main>
       </div>
@@ -723,6 +725,157 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
           Add registry
         </Button>
       </div>
+    </div>
+  )
+}
+
+// ─── Notifications form ───────────────────────────────────────────────────────
+
+const ALL_EVENTS = [
+  { value: "deploy.success", label: "Deploy succeeded" },
+  { value: "deploy.failed",  label: "Deploy failed"    },
+  { value: "node.offline",   label: "Node went offline" },
+  { value: "backup.success", label: "Backup succeeded" },
+  { value: "backup.failed",  label: "Backup failed"    },
+]
+
+function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc    = useQueryClient()
+
+  const [type,    setType]    = useState<NotificationChannelType>("webhook")
+  const [name,    setName]    = useState("")
+  const [url,     setUrl]     = useState("")
+  const [secret,  setSecret]  = useState("")
+  const [address, setAddress] = useState("")
+  const [events,  setEvents]  = useState<string[]>(["deploy.failed", "node.offline"])
+  const [showSecret, setShowSecret] = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+
+  const toggleEvent = (ev: string) =>
+    setEvents((prev) => prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev])
+
+  const config: Record<string, string> =
+    type === "email" ? { address } : secret ? { url, secret } : { url }
+
+  const mutation = useMutation({
+    mutationFn: () => notificationsApi.create(orgId, { name: name.trim(), type, config, events }, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notification-channels", orgId] })
+      onSuccess()
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  const isValid = name.trim() &&
+    (type === "email" ? address.trim() : url.trim()) &&
+    events.length > 0
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-sm font-semibold">Add notification channel</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Get alerted when events happen in your org</p>
+      </div>
+
+      <div className="space-y-4">
+        {/* Channel type */}
+        <Field label="Channel type">
+          <Select value={type} onValueChange={(v) => v && setType(v as NotificationChannelType)}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+              <SelectValue>{type === "email" ? "Email" : "Webhook"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="webhook">Webhook</SelectItem>
+              <SelectItem value="email">Email</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+
+        {/* Name */}
+        <Field label="Name">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={type === "email" ? "ops-email" : "deploy-webhook"}
+            className={inputCls}
+          />
+        </Field>
+
+        {/* Type-specific config */}
+        {type === "webhook" ? (
+          <>
+            <Field label="URL">
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com/hooks/meshploy"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Secret (optional)" hint="Sent as X-Meshploy-Signature header">
+              <div className="relative">
+                <input
+                  type={showSecret ? "text" : "password"}
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder="optional signing secret"
+                  className={cn(inputCls, "pr-9")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret((s) => !s)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
+                >
+                  {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            </Field>
+          </>
+        ) : (
+          <Field label="Email address">
+            <input
+              type="email"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="ops@company.com"
+              className={inputCls}
+            />
+          </Field>
+        )}
+
+        {/* Events */}
+        <Field label="Notify on">
+          <div className="space-y-1.5 pt-0.5">
+            {ALL_EVENTS.map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-2.5 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={events.includes(value)}
+                  onChange={() => toggleEvent(value)}
+                  className="h-3.5 w-3.5 rounded accent-primary"
+                />
+                <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+                  {label}
+                </span>
+                <code className="text-[10px] font-mono text-muted-foreground/50">{value}</code>
+              </label>
+            ))}
+          </div>
+        </Field>
+      </div>
+
+      {error && <ErrorBanner message={error} />}
+
+      <Button
+        onClick={() => mutation.mutate()}
+        disabled={mutation.isPending || !isValid}
+        className="gap-1.5"
+      >
+        {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Add channel
+      </Button>
     </div>
   )
 }
