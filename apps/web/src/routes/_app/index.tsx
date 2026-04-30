@@ -53,7 +53,7 @@ function OverviewPage() {
             {org?.name} · {nodeList.length} node{nodeList.length !== 1 ? "s" : ""} · {projectList.length} project{projectList.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <Button size="sm" render={<Link to="/projects" />}>
+        <Button size="sm" render={<Link to="/projects/new" />}>
           <Plus className="h-3.5 w-3.5 mr-1" />
           New project
         </Button>
