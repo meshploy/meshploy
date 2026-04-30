@@ -14,10 +14,12 @@ set -euo pipefail
 
 REINSTALL=false
 WIPE_DATA=false
+AUTO_MODE=false
 for arg in "$@"; do
   case "$arg" in
     --reinstall) REINSTALL=true ;;
     --wipe-data) WIPE_DATA=true ;;
+    --auto)      AUTO_MODE=true ;;
   esac
 done
 
@@ -47,6 +49,16 @@ hr()      { echo -e "${BLUE}─────────────────�
 ask() {
   # ask <variable_name> <prompt> [default]
   local var="$1" prompt="$2" default="${3:-}"
+  if $AUTO_MODE; then
+    local existing="${!var:-}"
+    [[ -z "$existing" ]] && existing="$default"
+    if [[ -n "$existing" ]]; then
+      info "Auto: $prompt → $existing"
+      printf -v "$var" '%s' "$existing"
+      return
+    fi
+    die "Auto mode: $var is required but not set. Export it before running, or remove --auto."
+  fi
   local display_default=""
   [[ -n "$default" ]] && display_default=" ${BLUE}[${default}]${RESET}"
   while true; do
@@ -63,6 +75,15 @@ ask() {
 
 ask_secret() {
   local var="$1" prompt="$2"
+  if $AUTO_MODE; then
+    local existing="${!var:-}"
+    if [[ -n "$existing" ]]; then
+      info "Auto: $prompt → (set from environment)"
+      printf -v "$var" '%s' "$existing"
+      return
+    fi
+    die "Auto mode: $var is required but not set. Export it before running, or remove --auto."
+  fi
   while true; do
     printf "  ${BOLD}%s${RESET} (hidden): " "$prompt"
     read -rs input; echo
@@ -78,6 +99,11 @@ ask_yn() {
   # ask_yn <prompt> [Y/n]
   local prompt="$1" default="${2:-y}"
   local hint="[Y/n]"; [[ "$default" == "n" ]] && hint="[y/N]"
+  if $AUTO_MODE; then
+    info "Auto: $prompt → $default"
+    [[ "$default" =~ ^[Yy]$ ]]
+    return
+  fi
   printf "  ${BOLD}%s${RESET} %s: " "$prompt" "$hint"
   read -r yn
   yn="${yn:-$default}"
@@ -198,13 +224,22 @@ echo
 echo -e "  ${BOLD}1)${RESET} Master  — runs the Meshploy control plane, DNS, proxy, and Headscale"
 echo -e "  ${BOLD}2)${RESET} Worker  — joins an existing Meshploy mesh as a compute node"
 echo
-printf "  ${BOLD}Select node type${RESET} [1/2]: "
-read -r NODE_TYPE
-case "$NODE_TYPE" in
-  1|master|Master) NODE_TYPE="master" ;;
-  2|worker|Worker) NODE_TYPE="worker" ;;
-  *) die "Invalid selection. Enter 1 (master) or 2 (worker)." ;;
-esac
+if $AUTO_MODE && [[ -n "${NODE_TYPE:-}" ]]; then
+  case "$NODE_TYPE" in
+    1|master|Master) NODE_TYPE="master" ;;
+    2|worker|Worker) NODE_TYPE="worker" ;;
+    *) die "Auto mode: NODE_TYPE must be 'master' or 'worker', got: '$NODE_TYPE'" ;;
+  esac
+  info "Auto: node type → $NODE_TYPE"
+else
+  printf "  ${BOLD}Select node type${RESET} [1/2]: "
+  read -r NODE_TYPE
+  case "$NODE_TYPE" in
+    1|master|Master) NODE_TYPE="master" ;;
+    2|worker|Worker) NODE_TYPE="worker" ;;
+    *) die "Invalid selection. Enter 1 (master) or 2 (worker)." ;;
+  esac
+fi
 success "Node type: ${BOLD}$NODE_TYPE${RESET}"
 
 # =============================================================================

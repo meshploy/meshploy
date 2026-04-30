@@ -1,10 +1,15 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -12,6 +17,7 @@ import (
 const (
 	installScript   = "/opt/meshploy/install.sh"
 	uninstallScript = "/opt/meshploy/uninstall.sh"
+	deployEnvFile   = "/opt/meshploy/.env"
 )
 
 var nodeCmd = &cobra.Command{
@@ -167,12 +173,244 @@ var nodeTokenRotateCmd = &cobra.Command{
 	},
 }
 
+// ── node init ─────────────────────────────────────────────────────────────────
+
+var nodeInitCmd = &cobra.Command{
+	Use:   "init <user@host>",
+	Short: "Initialize a remote machine as a Meshploy node over SSH",
+	Long: `Connects to a remote machine via SSH, pipes the node installer, and
+automatically passes all required values (API URL, registration token,
+Headscale URL, preauth key, k3s join token) so the machine joins the
+mesh without any manual steps.
+
+Values are read from /opt/meshploy/.env on the master. A fresh Headscale
+preauth key is generated automatically; use --preauth-key to override.
+
+Examples:
+  meshploy node init root@192.168.1.10
+  meshploy node init ubuntu@10.0.0.5 --identity-file ~/.ssh/id_ed25519
+  meshploy node init admin@worker.internal --port 2222`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identityFile, _ := cmd.Flags().GetString("identity-file")
+		sshPort, _ := cmd.Flags().GetInt("port")
+		preauthKeyOverride, _ := cmd.Flags().GetString("preauth-key")
+
+		if _, err := os.Stat(installScript); os.IsNotExist(err) {
+			return fmt.Errorf(
+				"install script not found at %s\n\n"+
+					"meshploy node init must be run from the master node where Meshploy is installed.",
+				installScript,
+			)
+		}
+
+		// Fetch (or create) a registration token.
+		c := apiClient()
+		regToken, err := c.GetRegistrationToken(orgID())
+		if err != nil {
+			return fmt.Errorf("fetch registration token: %w", err)
+		}
+		if regToken == "" {
+			regToken, err = c.RotateRegistrationToken(orgID())
+			if err != nil {
+				return fmt.Errorf("create registration token: %w", err)
+			}
+		}
+
+		// Always-present env vars.
+		envVars := map[string]string{
+			"MESHPLOY_API_URL": loadedCfg.APIURL,
+			"MESHPLOY_TOKEN":   regToken,
+			"NODE_TYPE":        "worker",
+		}
+
+		// Enrich from /opt/meshploy/.env when available.
+		dotenv, err := parseDotEnv(deployEnvFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not read %s: %v\n", deployEnvFile, err)
+			fmt.Fprintln(os.Stderr, "         HEADSCALE_URL, K3S_SERVER_URL and K3S_JOIN_TOKEN will not be pre-filled.")
+		} else {
+			domain := dotenv["DOMAIN"]
+			meshIP := dotenv["MESH_IP"]
+			k3sToken := dotenv["K3S_TOKEN"]
+			headscaleAPIKey := dotenv["HEADSCALE_API_KEY"]
+
+			if domain != "" {
+				envVars["HEADSCALE_URL"] = "https://headscale." + domain
+			}
+			if meshIP != "" {
+				envVars["K3S_SERVER_URL"] = "https://" + meshIP + ":6443"
+			}
+			if k3sToken != "" {
+				envVars["K3S_JOIN_TOKEN"] = k3sToken
+			}
+
+			// Generate a fresh Headscale preauth key (or use the override).
+			if preauthKeyOverride != "" {
+				envVars["PREAUTH_KEY"] = preauthKeyOverride
+			} else if domain != "" && headscaleAPIKey != "" {
+				headscaleURL := "https://headscale." + domain
+				fmt.Println("Generating Headscale preauth key…")
+				key, keyErr := headscaleCreatePreauthKey(headscaleURL, headscaleAPIKey)
+				if keyErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not generate Headscale preauth key: %v\n", keyErr)
+					fmt.Fprintln(os.Stderr, "         The installer will prompt for it interactively.")
+				} else {
+					envVars["PREAUTH_KEY"] = key
+					fmt.Println("✔  Headscale preauth key generated.")
+				}
+			} else {
+				fmt.Fprintln(os.Stderr, "warning: HEADSCALE_API_KEY not found in .env — preauth key will be prompted interactively.")
+			}
+		}
+
+		// Build SSH argument list.
+		sshArgs := []string{"-o", "StrictHostKeyChecking=accept-new"}
+		if identityFile != "" {
+			sshArgs = append(sshArgs, "-i", identityFile)
+		}
+		if sshPort != 22 {
+			sshArgs = append(sshArgs, "-p", fmt.Sprintf("%d", sshPort))
+		}
+		sshArgs = append(sshArgs, args[0])
+
+		// Build the env prefix for the remote command.
+		envParts := make([]string, 0, len(envVars))
+		for k, v := range envVars {
+			envParts = append(envParts, k+"="+shellQuote(v))
+		}
+		// bash -s -- --auto: positional args after "--" are passed to the script as $@.
+		remoteCmd := fmt.Sprintf("env %s bash -s -- --auto", strings.Join(envParts, " "))
+		sshArgs = append(sshArgs, remoteCmd)
+
+		fmt.Printf("Connecting to %s and running node installer…\n\n", args[0])
+
+		f, err := os.Open(installScript)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		ssh := exec.Command("ssh", sshArgs...)
+		ssh.Stdin = f
+		ssh.Stdout = os.Stdout
+		ssh.Stderr = os.Stderr
+		return ssh.Run()
+	},
+}
+
+// shellQuote wraps a string in single quotes, escaping any embedded single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+// parseDotEnv parses a KEY=VALUE file, ignoring blank lines and comments.
+func parseDotEnv(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		// Strip surrounding quotes if present.
+		if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+			v = v[1 : len(v)-1]
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// headscaleCreatePreauthKey generates a fresh 1-hour reusable preauth key via
+// the Headscale REST API, scoped to the "meshploy" user.
+func headscaleCreatePreauthKey(headscaleURL, apiKey string) (string, error) {
+	hc := &http.Client{Timeout: 10 * time.Second}
+
+	// Resolve the numeric user ID for "meshploy".
+	req, err := http.NewRequest(http.MethodGet, headscaleURL+"/api/v1/user", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := hc.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("list users: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var userBody struct {
+		Users []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"users"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&userBody); err != nil {
+		return "", fmt.Errorf("list users decode: %w", err)
+	}
+	var userID string
+	for _, u := range userBody.Users {
+		if u.Name == "meshploy" {
+			userID = u.ID
+			break
+		}
+	}
+	if userID == "" {
+		return "", fmt.Errorf("headscale user 'meshploy' not found")
+	}
+
+	// Create a 1-hour reusable preauth key.
+	payload, _ := json.Marshal(map[string]any{
+		"user":       userID,
+		"reusable":   true,
+		"ephemeral":  false,
+		"expiration": time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+	req2, err := http.NewRequest(http.MethodPost, headscaleURL+"/api/v1/preauthkey", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req2.Header.Set("Authorization", "Bearer "+apiKey)
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err := hc.Do(req2)
+	if err != nil {
+		return "", fmt.Errorf("create preauth key: %w", err)
+	}
+	defer resp2.Body.Close()
+
+	var keyBody struct {
+		PreAuthKey struct {
+			Key string `json:"key"`
+		} `json:"preAuthKey"`
+	}
+	if err := json.NewDecoder(resp2.Body).Decode(&keyBody); err != nil {
+		return "", fmt.Errorf("decode preauth key: %w", err)
+	}
+	if keyBody.PreAuthKey.Key == "" {
+		return "", fmt.Errorf("headscale returned empty preauth key (HTTP %d)", resp2.StatusCode)
+	}
+	return keyBody.PreAuthKey.Key, nil
+}
+
 func init() {
 	nodeDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 	nodeUninstallCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompts")
 
+	nodeInitCmd.Flags().StringP("identity-file", "i", "", "SSH identity file (private key)")
+	nodeInitCmd.Flags().IntP("port", "P", 22, "SSH port on the remote host")
+	nodeInitCmd.Flags().StringP("preauth-key", "k", "", "Headscale preauth key (auto-generated from /opt/meshploy/.env if omitted)")
+
 	nodeTokenCmd.AddCommand(nodeTokenGetCmd, nodeTokenRotateCmd)
-	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd)
+	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd)
 	rootCmd.AddCommand(nodeCmd)
 }
 

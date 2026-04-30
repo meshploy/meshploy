@@ -62,6 +62,36 @@ func decode[T any](resp *http.Response) (T, error) {
 	return out, nil
 }
 
+func decodePtr[T any](resp *http.Response) (*T, error) {
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+	}
+	var out T
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &out, nil
+}
+
+func (c *Client) doNoContent(method, path string) error {
+	resp, err := c.do(method, path, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+func ErrNotFound(resource, ref string) error {
+	return fmt.Errorf("%s %q not found", resource, ref)
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 type LoginInput struct {
