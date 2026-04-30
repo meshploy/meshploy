@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useParams, useRouterState } from "@tanst
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Loader2, ServerCrash } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { projects as projectsApi, toProject } from "@/lib/api"
+import { projects as projectsApi, services as servicesApi, toProject } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -26,6 +26,18 @@ function ProjectLayout() {
     enabled: !!orgId,
   })
   const project = rawProject ? toProject(rawProject) : undefined
+
+  // Detect when we're inside a service detail so we can highlight the correct
+  // project-level tab. A database service lives at /services/$serviceId but
+  // should activate the "Databases" tab, not "Services".
+  const serviceDetailMatch = pathname.match(/\/services\/([^/?#]+)/)
+  const detailServiceId = serviceDetailMatch?.[1]
+  const { data: detailService } = useQuery({
+    queryKey: ["service", orgId, projectId, detailServiceId],
+    queryFn: () => servicesApi.get(orgId!, projectId, detailServiceId!, token),
+    enabled: !!orgId && !!detailServiceId,
+  })
+  const inDatabaseDetail = detailService?.type === "database"
 
   if (isLoading) {
     return (
@@ -77,26 +89,39 @@ function ProjectLayout() {
           </div>
 
           {/* Tab strip with counts */}
+          {/* activeSegment: immediate child of /projects/:id/ in the current URL */}
+          {(() => {
+            const activeSegment = pathname.split(`/projects/${projectId}/`)[1]?.split("/")[0] ?? ""
+            return (
           <nav className="flex items-center gap-0 -mb-px">
-            {tabs.map(({ label, count, to }) => (
+            {tabs.map(({ label, count, to }) => {
+              const seg = to.split("/").at(-1)!
+              const isActive =
+                label === "Databases" && inDatabaseDetail ? true :
+                label === "Services"  && inDatabaseDetail ? false :
+                activeSegment === seg
+              return (
               <Link
                 key={label}
                 to={to}
                 params={{ id: projectId }}
                 className={cn(
                   "px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap",
-                  "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60",
-                  "data-[status=active]:text-foreground data-[status=active]:border-foreground/25"
+                  isActive
+                    ? "text-foreground border-foreground/25"
+                    : "text-muted-foreground border-transparent hover:text-foreground hover:border-border/60"
                 )}
-                activeOptions={{ exact: false }}
               >
                 {label}
                 {count != null && (
                   <span className="ml-1.5 text-[11px] text-muted-foreground/60 tabular-nums">· {count}</span>
                 )}
               </Link>
-            ))}
+              )
+            })}
           </nav>
+            )
+          })()}
         </div>
       </div>
 

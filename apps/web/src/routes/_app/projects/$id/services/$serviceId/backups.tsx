@@ -59,7 +59,7 @@ function ServiceBackupsPage() {
   })
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
+    <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-medium">Backups</h2>
@@ -261,7 +261,7 @@ function BackupForm({ orgId, projectId, serviceId, token, storageList, onSuccess
   })
 
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/10 p-4 space-y-4">
+    <div className="rounded-lg border border-border/60 bg-muted/10 p-4 space-y-4 max-w-2xl">
       <p className="text-xs font-medium text-muted-foreground">New backup schedule</p>
 
       <div className="space-y-3">
