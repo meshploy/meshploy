@@ -8,10 +8,22 @@
 #   - *.internal uses DNS-01 with NS delegation to its own zone
 #     (_acme-challenge.internal.{DOMAIN}). resolvers points CertMagic at the
 #     authoritative CoreDNS directly, bypassing recursive resolver caching.
+#   - Custom user domains use On-Demand TLS (HTTP-01). Caddy asks the API
+#     before issuing — only domains verified by the user receive a cert.
 #
 # Prerequisites:
 #   - DNS A records for headscale, api, app pointing to PUBLIC_IP (written by install.sh)
 #   - NS delegation for {DOMAIN} pointing to this server
+
+{
+    on_demand_tls {
+        # Only issue On-Demand certs for custom domains verified in Meshploy.
+        # Prevents cert issuance for domains the user hasn't proved they own.
+        ask http://localhost:4000/api/v1/internal/domain-check
+        interval 2m
+        burst 5
+    }
+}
 
 # ── Headscale control plane ──────────────────────────────────────────────────
 headscale.{$DOMAIN} {
@@ -83,6 +95,18 @@ app.{$DOMAIN} {
             zone_file_path /etc/coredns/zones/_acme-challenge.internal.{$DOMAIN}
         }
         resolvers {$PUBLIC_IP}
+    }
+    reverse_proxy localhost:8081
+}
+
+# ── Custom user domains (On-Demand TLS) ──────────────────────────────────────
+# Catchall for any hostname not matched by the blocks above (e.g. myapp.com).
+# Caddy calls the ask endpoint before issuing a cert. Only hostnames with
+# custom_domain_verified=true in the routes table get a cert — this prevents
+# domain hijacking by users who register a hostname they don't control.
+:443 {
+    tls {
+        on_demand
     }
     reverse_proxy localhost:8081
 }

@@ -133,6 +133,15 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 		Tags:        []string{"Routes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.SyncRouteIP)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "verify-custom-hostname",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname",
+		Summary:     "Verify DNS ownership of a custom-domain route via TXT record",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.VerifyCustomHostname)
 }
 
 func (h *Handler) ListOrgRoutes(ctx context.Context, input *ListOrgRoutesInput) (*ListRoutesOutput, error) {
@@ -304,6 +313,21 @@ func (h *Handler) SyncRouteIP(ctx context.Context, input *RoutePathInput) (*GetR
 		return nil, err
 	}
 	route, err := h.svc.Routes.SyncRouteIP(ctx, routeID)
+	if err != nil {
+		return nil, err
+	}
+	return &GetRouteOutput{Body: route}, nil
+}
+
+func (h *Handler) VerifyCustomHostname(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	routeID, err := parseUUID(input.RouteID)
+	if err != nil {
+		return nil, err
+	}
+	route, err := h.svc.Routes.VerifyCustomHostname(ctx, routeID)
 	if err != nil {
 		return nil, err
 	}

@@ -473,6 +473,10 @@ type Route struct {
 	Hostname  string     `gorm:"uniqueIndex;not null"       json:"hostname"`  // hot-path proxy lookup (denormalised)
 	TargetIP  string     `gorm:"not null"                   json:"target_ip"` // Headscale mesh IP
 	TargetPort int       `gorm:"not null"                   json:"target_port"`
+	// Custom-domain verification. Only relevant when DomainID IS NULL.
+	// Caddy's domain-check endpoint returns 200 only when this is true.
+	CustomDomainVerified    bool   `gorm:"default:false"        json:"custom_domain_verified"`
+	CustomDomainVerifyToken string `gorm:"not null;default:''"  json:"custom_domain_verify_token"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`

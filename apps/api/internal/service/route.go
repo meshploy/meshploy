@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -160,6 +161,17 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		TargetIP:       in.TargetIP,
 		TargetPort:     in.TargetPort,
 	}
+
+	// Auto-generate a verify token for custom-domain routes so the user can
+	// prove DNS ownership before Caddy will issue an On-Demand TLS cert.
+	if in.DomainID == nil && hostname != "" {
+		token, err := generateVerifyToken()
+		if err != nil {
+			return nil, fmt.Errorf("generate custom domain verify token: %w", err)
+		}
+		route.CustomDomainVerifyToken = token
+	}
+
 	return route, s.db.WithContext(ctx).Create(route).Error
 }
 
@@ -249,4 +261,38 @@ func (s *RouteService) SyncRouteIP(ctx context.Context, routeID uuid.UUID) (*db.
 
 func (s *RouteService) Delete(ctx context.Context, routeID uuid.UUID) error {
 	return s.db.WithContext(ctx).Delete(&db.Route{}, "id = ?", routeID).Error
+}
+
+// VerifyCustomHostname checks the DNS TXT record for a custom-domain route and,
+// on success, marks it verified so Caddy's domain-check endpoint returns 200.
+// TXT record expected: _meshploy-verify.{hostname} = {custom_domain_verify_token}
+func (s *RouteService) VerifyCustomHostname(ctx context.Context, routeID uuid.UUID) (*db.Route, error) {
+	route, err := s.Get(ctx, routeID)
+	if err != nil {
+		return nil, huma.Error404NotFound("route not found")
+	}
+	if route.DomainID != nil {
+		return nil, huma.Error400BadRequest("route uses a managed domain — no custom-domain verification needed")
+	}
+	if route.CustomDomainVerified {
+		return route, nil
+	}
+	records, err := net.LookupTXT("_meshploy-verify." + route.Hostname)
+	if err != nil || !containsToken(records, route.CustomDomainVerifyToken) {
+		return nil, huma.Error422UnprocessableEntity("TXT record not found or not yet propagated")
+	}
+	route.CustomDomainVerified = true
+	err = s.db.WithContext(ctx).Model(route).Update("custom_domain_verified", true).Error
+	return route, err
+}
+
+// IsCustomDomainVerified is the fast lookup used by the domain-check endpoint.
+// Returns true only for routes with a custom (unmanaged) hostname that has been
+// explicitly verified via DNS TXT record.
+func (s *RouteService) IsCustomDomainVerified(ctx context.Context, hostname string) bool {
+	var route db.Route
+	err := s.db.WithContext(ctx).
+		Where("hostname = ? AND domain_id IS NULL AND custom_domain_verified = ?", hostname, true).
+		First(&route).Error
+	return err == nil
 }
