@@ -814,7 +814,7 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
                 className={inputCls}
               />
             </Field>
-            <Field label="Secret (optional)" hint="Sent as X-Meshploy-Signature header">
+            <Field label="Secret (optional)">
               <div className="relative">
                 <input
                   type={showSecret ? "text" : "password"}
