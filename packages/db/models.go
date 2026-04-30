@@ -711,6 +711,25 @@ type NotificationChannel struct {
 
 func (NotificationChannel) TableName() string { return "notification_channels" }
 
+// OrgEmailConfig stores the outbound SMTP provider for an org (singleton).
+// Email notification channels reference this config when sending alerts.
+// Password is AES-256-GCM encrypted at rest.
+type OrgEmailConfig struct {
+	Base
+	OrganizationID uuid.UUID       `gorm:"type:uuid;uniqueIndex;not null" json:"organization_id"`
+	Host           string          `gorm:"not null"                       json:"host"`
+	Port           int             `gorm:"not null;default:587"           json:"port"`
+	Username       string          `gorm:"not null"                       json:"username"`
+	Password       EncryptedString `gorm:"type:text"                      json:"-"`
+	FromAddress    string          `gorm:"not null"                       json:"from_address"`
+	FromName       string          `gorm:"not null;default:''"            json:"from_name"`
+	UseTLS         bool            `gorm:"default:true"                   json:"use_tls"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+}
+
+func (OrgEmailConfig) TableName() string { return "org_email_configs" }
+
 // ---------------------------------------------------------------------------
 // Templates
 // ---------------------------------------------------------------------------

@@ -96,6 +96,7 @@ func Migrate(db *gorm.DB) error {
 		&BackupConfig{},
 		&SystemBackupConfig{},
 		&NotificationChannel{},
+		&OrgEmailConfig{},
 
 		// Templates
 		&Template{},
