@@ -20,8 +20,6 @@
         # Only issue On-Demand certs for custom domains verified in Meshploy.
         # Prevents cert issuance for domains the user hasn't proved they own.
         ask http://localhost:4000/api/v1/internal/domain-check
-        interval 2m
-        burst 5
     }
 }
 
