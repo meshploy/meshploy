@@ -1,6 +1,9 @@
 # Local documentation
 docs/
 
+# Local notes (personal, not committed)
+TODO.md
+
 # Go workspace
 go.work.sum
 
