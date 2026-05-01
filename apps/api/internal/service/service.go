@@ -32,8 +32,9 @@ type Services struct {
 	Secrets         *SecretService
 	Jobs            *JobService
 	DBExplorer      *DBExplorerService
-	Headscale       *HeadscaleService   // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
+	Headscale       *HeadscaleService    // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
+	K8sRestConfig   *rest.Config         // nil if KUBECONFIG unavailable
 }
 
 func New(db *gorm.DB, cfg ...*config.Config) *Services {
@@ -164,5 +165,6 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
 		Headscale:       headscaleSvc,
 		K8s:             k8sClient,
+		K8sRestConfig:   k8sRestCfg,
 	}
 }

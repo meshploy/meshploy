@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/meshploy/apps/api/internal/config"
 	"github.com/meshploy/apps/api/internal/service"
 )
@@ -15,7 +16,7 @@ func New(cfg *config.Config, svc *service.Services) *Handler {
 	return &Handler{cfg: cfg, svc: svc}
 }
 
-// Register wires all route groups onto the Huma API instance.
+// Register wires all Huma (OpenAPI) routes onto the router.
 func (h *Handler) Register(api huma.API) {
 	h.registerAuthRoutes(api)
 	h.registerOrgRoutes(api)
@@ -33,4 +34,23 @@ func (h *Handler) Register(api huma.API) {
 	h.registerEmailConfigRoutes(api)
 	h.registerSecretRoutes(api)
 	h.registerJobRoutes(api)
+}
+
+// RegisterRaw wires routes that need raw http.HandlerFunc access:
+// OAuth redirects, SSE log streams, and WebSocket connections.
+func (h *Handler) RegisterRaw(r chi.Router) {
+	// Git OAuth / App callbacks
+	r.Get("/api/v1/github/app-callback", h.GitHubAppCallback)
+	r.Get("/api/v1/github/callback", h.GitHubCallback)
+	r.Get("/api/v1/gitlab/callback", h.GitLabOAuthCallback)
+	r.Get("/api/v1/gitea/callback", h.GiteaOAuthCallback)
+
+	// SSE log streams
+	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream",
+		h.StreamDeploymentLogs)
+	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream",
+		h.StreamServiceLogs)
+
+	// WebSocket: node terminal
+	r.Get("/api/v1/orgs/{orgId}/nodes/{nodeId}/terminal", h.NodeTerminal)
 }

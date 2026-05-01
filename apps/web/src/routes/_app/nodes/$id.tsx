@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   XCircle,
   Trash2,
+  SquareTerminal,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,7 @@ import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { useTabStore } from "@/store/tab-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { useState } from "react"
 
@@ -34,6 +36,7 @@ function NodeDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const openTab = useTabStore((s) => s.openTab)
 
   const { data: node, isLoading, isError, error } = useQuery({
     queryKey: ["node", orgId, id],
@@ -94,17 +97,34 @@ function NodeDetailPage() {
           </div>
         </div>
 
-        {/* Delete — server/gateway node cannot be removed */}
+        {/* Actions — terminal + delete, worker nodes only */}
         {node.k3sRole !== "server" && !confirmDelete ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
-            onClick={() => setConfirmDelete(true)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Remove
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={node.status !== "online"}
+              onClick={() => openTab({
+                id: node.id,
+                type: "terminal",
+                label: node.name,
+                payload: { nodeId: node.id, nodeLabel: node.name, nodeMeshIP: node.tailscaleIP },
+              })}
+            >
+              <SquareTerminal className="h-3.5 w-3.5" />
+              Terminal
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove
+            </Button>
+          </div>
         ) : node.k3sRole !== "server" && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Remove this node?</span>

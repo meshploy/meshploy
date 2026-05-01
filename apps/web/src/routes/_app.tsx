@@ -3,6 +3,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar"
 import { Topbar } from "@/components/layout/topbar"
 import { TabBar } from "@/components/layout/tab-bar"
 import { DBExplorer } from "@/components/explorer/db-explorer"
+import { NodeTerminal } from "@/components/terminal/node-terminal"
 import { useAuthStore } from "@/store/auth-store"
 import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
@@ -46,15 +47,8 @@ function SessionContent({ tab }: { tab: SessionTab }) {
   }
   if (tab.type === "terminal") {
     const payload = tab.payload as TerminalPayload
-    return <TerminalPlaceholder payload={payload} />
+    return <NodeTerminal payload={payload} />
   }
   return null
 }
 
-function TerminalPlaceholder({ payload }: { payload: TerminalPayload }) {
-  return (
-    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-      Terminal — {payload.nodeLabel}
-    </div>
-  )
-}
