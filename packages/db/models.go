@@ -189,9 +189,11 @@ type Base struct {
 
 type User struct {
 	Base
-	Username string `gorm:"uniqueIndex;not null" json:"username"`
-	Email    string `gorm:"uniqueIndex;not null" json:"email"`
-	Password string `json:"-"`
+	Username    string          `gorm:"uniqueIndex;not null" json:"username"`
+	Email       string          `gorm:"uniqueIndex;not null" json:"email"`
+	Password    string          `json:"-"`
+	TOTPSecret  EncryptedString `gorm:"type:text"            json:"-"`
+	TOTPEnabled bool            `gorm:"not null;default:false" json:"totp_enabled"`
 }
 
 type Organization struct {

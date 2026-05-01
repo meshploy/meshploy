@@ -24,8 +24,9 @@ function RegisterPage() {
   const registerMutation = useMutation({
     mutationFn: async () => {
       await auth.register(username, email, password)
-      // Auto-login after registration
-      const { token } = await auth.login(email, password)
+      // Auto-login after registration (new accounts never have 2FA)
+      const result = await auth.login(email, password)
+      const token = result.token!
       const payload = JSON.parse(atob(token.split(".")[1]))
       setAuth(token, payload.uid)
       const orgList = await orgs.list(token)
