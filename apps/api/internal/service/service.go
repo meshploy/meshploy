@@ -51,6 +51,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		k8sClient, k8sRestCfg, err = appk8s.NewClientWithConfig(c.KubeconfigPath, c.K3sServerURL)
 		if err != nil {
 			log.Printf("warning: K8s not available (%v) — build/deploy features disabled", err)
+		} else {
+			go appk8s.CleanupOrphanedShellPods(context.Background(), k8sClient)
 		}
 	}
 
