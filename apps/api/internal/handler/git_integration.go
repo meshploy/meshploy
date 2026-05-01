@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	db "github.com/meshploy/packages/db"
 )
@@ -329,18 +328,6 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		}
 		return &struct{}{}, nil
 	})
-}
-
-// RegisterRaw wires routes that need raw http.HandlerFunc access (302 redirects, SSE).
-func (h *Handler) RegisterRaw(r chi.Router) {
-	r.Get("/api/v1/github/app-callback", h.GitHubAppCallback)
-	r.Get("/api/v1/github/callback", h.GitHubCallback)
-	r.Get("/api/v1/gitlab/callback", h.GitLabOAuthCallback)
-	r.Get("/api/v1/gitea/callback", h.GiteaOAuthCallback)
-	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream",
-		h.StreamDeploymentLogs)
-	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream",
-		h.StreamServiceLogs)
 }
 
 // GitHubAppCallback handles the redirect back from GitHub after manifest app creation.
