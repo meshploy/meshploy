@@ -1,6 +1,6 @@
-import { createFileRoute, Link, Outlet, useParams, useRouterState } from "@tanstack/react-router"
+import { createFileRoute, Outlet, useParams, useRouterState } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronRight, Loader2, ServerCrash } from "lucide-react"
+import { Loader2, ServerCrash } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { projects as projectsApi, services as servicesApi, toProject } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -71,15 +71,6 @@ function ProjectLayout() {
       {/* Header */}
       <div className="border-b border-border/60 bg-background">
         <div className="px-6 pt-5 pb-0">
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
-            <Link to="/projects" className="hover:text-foreground transition-colors">
-              Projects
-            </Link>
-            <ChevronRight className="h-3 w-3" />
-            <span className="text-foreground">{project.name}</span>
-          </div>
-
           {/* Project name + slug */}
           <div className="flex items-center gap-2.5 mb-4">
             <h1 className="text-lg font-semibold tracking-tight">{project.name}</h1>

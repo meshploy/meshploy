@@ -122,7 +122,7 @@ export function NodeTerminal({ payload }: { payload: TerminalPayload }) {
     "bg-amber-400"
 
   return (
-    <div className="h-full flex flex-col bg-[#0a0a0a]">
+    <div className="relative h-full flex flex-col bg-[#0a0a0a]">
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
         <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} ${connState === "connecting" ? "animate-pulse" : ""}`} />
