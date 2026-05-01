@@ -250,7 +250,7 @@ function SystemBackupSection() {
         </div>
       ) : editing ? (
         <div className="space-y-3">
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground/60">Storage</label>
             <Select value={storageId} onValueChange={(v) => v && setStorageId(v)}>
               <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
@@ -264,19 +264,19 @@ function SystemBackupSection() {
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
+            <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground/60">Schedule (cron)</label>
               <input value={schedule} onChange={(e) => setSchedule(e.target.value)}
                 placeholder="0 2 * * *"
                 className={cn(inputCls, "font-mono")} />
             </div>
-            <div className="space-y-1">
+            <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground/60">Retention (days)</label>
               <input type="number" min={1} value={retention} onChange={(e) => setRetention(e.target.value)}
                 className={inputCls} />
             </div>
           </div>
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground/60">Path prefix (optional)</label>
             <input value={prefix} onChange={(e) => setPrefix(e.target.value)}
               placeholder="e.g. meshploy/system"
@@ -459,7 +459,7 @@ function TwoFactorSection() {
                 <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Manual entry key</p>
                 <code className="text-xs font-mono text-foreground/80 break-all">{secret}</code>
               </div>
-              <div className="space-y-1.5 pt-1">
+              <div className="flex flex-col gap-1.5 pt-1">
                 <label className="text-xs text-muted-foreground/60">Verification code</label>
                 <input
                   value={code}

@@ -2,7 +2,7 @@ import { useRouterState, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Home } from "lucide-react"
 import { UserMenu } from "./user-menu"
-import { projects as projectsApi, services as servicesApi } from "@/lib/api"
+import { projects as projectsApi, services as servicesApi, nodes as nodesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -26,7 +26,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type ResourceType = "project" | "service" | "deployment" | "static" | "uuid"
+type ResourceType = "project" | "service" | "deployment" | "node" | "static" | "uuid"
 
 interface BreadcrumbEntry {
   segment: string
@@ -59,6 +59,8 @@ function parsePath(segments: string[]): BreadcrumbEntry[] {
       entries.push({ segment, href, type: "service", projectId })
     } else if (prev === "deployments") {
       entries.push({ segment, href, type: "deployment", projectId, serviceId })
+    } else if (prev === "nodes") {
+      entries.push({ segment, href, type: "node" })
     } else {
       entries.push({ segment, href, type: "uuid" })
     }
@@ -87,10 +89,18 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
     staleTime: 5 * 60 * 1000,
   })
 
+  const nodeQuery = useQuery({
+    queryKey: ["node", orgId, entry.segment],
+    queryFn: () => nodesApi.get(orgId!, entry.segment, token!),
+    enabled: !!orgId && !!token && entry.type === "node",
+    staleTime: 5 * 60 * 1000,
+  })
+
   if (entry.type === "static") return <>{SEGMENT_LABELS[entry.segment] ?? entry.segment}</>
   if (entry.type === "deployment") return <>{entry.segment.slice(0, 8)}</>
   if (entry.type === "project") return <>{projectQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "service") return <>{serviceQuery.data?.name ?? entry.segment.slice(0, 8)}</>
+  if (entry.type === "node") return <>{nodeQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   return <>{entry.segment.slice(0, 8)}</>
 }
 
