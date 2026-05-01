@@ -16,7 +16,7 @@ export function TabBar() {
   if (tabs.length === 0) return null
 
   return (
-    <div className="flex items-end gap-0 border-b border-border/40 bg-background px-2 overflow-x-auto shrink-0 scrollbar-none">
+    <div className="flex items-end gap-0 border-b border-border/40 bg-background overflow-x-auto shrink-0 scrollbar-none">
       {/* Main tab — always first */}
       <Tab
         label="Main"
@@ -64,10 +64,10 @@ function Tab({
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors shrink-0 border-b-2 -mb-px",
+        "group relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors shrink-0 border-b-2 border-r border-r-border/30 -mb-px",
         active
-          ? "border-primary text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
+          ? "border-b-primary text-foreground"
+          : "border-b-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
       )}
     >
       {icon}

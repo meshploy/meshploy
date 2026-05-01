@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { Topbar } from "@/components/layout/topbar"
 import { TabBar } from "@/components/layout/tab-bar"
+import { DBExplorer } from "@/components/explorer/db-explorer"
 import { useAuthStore } from "@/store/auth-store"
 import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
@@ -41,21 +42,13 @@ function AppLayout() {
 function SessionContent({ tab }: { tab: SessionTab }) {
   if (tab.type === "explorer") {
     const payload = tab.payload as ExplorerPayload
-    return <ExplorerPlaceholder payload={payload} />
+    return <DBExplorer projectId={payload.projectId} serviceId={payload.serviceId} />
   }
   if (tab.type === "terminal") {
     const payload = tab.payload as TerminalPayload
     return <TerminalPlaceholder payload={payload} />
   }
   return null
-}
-
-function ExplorerPlaceholder({ payload }: { payload: ExplorerPayload }) {
-  return (
-    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-      Database Explorer — {payload.dbName}
-    </div>
-  )
 }
 
 function TerminalPlaceholder({ payload }: { payload: TerminalPayload }) {
