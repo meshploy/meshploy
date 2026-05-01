@@ -1,8 +1,8 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, Play, Plus, Save, Server, Terminal, Trash2, X } from "lucide-react"
+import { Info, KeyRound, Loader2, Plus, Save, Server, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -21,8 +21,6 @@ import {
   secrets as secretsApi,
   toNode,
   type ApiNode,
-  type ApiSchemaTable,
-  type ApiQueryResult,
   type ApiSecretAttachment,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -678,234 +676,12 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
   )
 }
 
-// ─── DB Explorer ─────────────────────────────────────────────────────────────
-
-function SchemaTree({ tables }: { tables: ApiSchemaTable[] }) {
-  const [open, setOpen] = useState<Record<string, boolean>>({})
-  if (tables.length === 0) return (
-    <p className="text-xs text-muted-foreground/50 px-3 py-4">No tables found</p>
-  )
-  return (
-    <div className="text-xs">
-      {tables.map((t) => (
-        <div key={t.name}>
-          <button
-            onClick={() => setOpen((s) => ({ ...s, [t.name]: !s[t.name] }))}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 hover:bg-muted/30 transition-colors text-left"
-          >
-            {open[t.name]
-              ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-              : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-            }
-            <span className="font-mono text-foreground/80 truncate">{t.name}</span>
-            <span className="ml-auto text-muted-foreground/40 shrink-0">{t.columns.length}</span>
-          </button>
-          {open[t.name] && (
-            <div className="pl-7 pb-1">
-              {t.columns.map((c) => (
-                <div key={c.name} className="flex items-center gap-2 py-0.5 px-2">
-                  <span className="font-mono text-foreground/60 truncate">{c.name}</span>
-                  <span className="text-muted-foreground/40 shrink-0 text-[10px]">{c.data_type}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ResultsTable({ result }: { result: ApiQueryResult }) {
-  if (!result.columns?.length) return (
-    <p className="text-xs text-muted-foreground/50 p-4">Query executed — no rows returned.</p>
-  )
-  return (
-    <div className="overflow-auto">
-      <table className="w-full text-xs border-collapse">
-        <thead>
-          <tr className="border-b border-border/40 bg-muted/20">
-            {result.columns.map((col) => (
-              <th key={col} className="px-3 py-2 text-left font-medium text-muted-foreground/70 whitespace-nowrap">{col}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {(result.rows ?? []).map((row, i) => (
-            <tr key={i} className="border-b border-border/20 hover:bg-muted/10">
-              {row.map((cell, j) => (
-                <td key={j} className="px-3 py-1.5 font-mono text-foreground/80 whitespace-nowrap max-w-[300px] truncate">{String(cell)}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {result.count >= 200 && (
-        <p className="text-[10px] text-muted-foreground/40 px-3 py-2">Showing first 200 rows.</p>
-      )}
-    </div>
-  )
-}
-
-function DBExplorer({ projectId, serviceId }: { projectId: string; serviceId: string }) {
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-  const [query, setQuery] = useState("SELECT * FROM ")
-  const [readOnly, setReadOnly] = useState(true)
-  const [result, setResult] = useState<ApiQueryResult | null>(null)
-  const [queryError, setQueryError] = useState<string | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const { data: schema = [], isLoading: schemaLoading } = useQuery<ApiSchemaTable[]>({
-    queryKey: ["db-schema", orgId, projectId, serviceId],
-    queryFn: () => servicesApi.dbSchema(orgId, projectId, serviceId, token),
-    staleTime: 60_000,
-  })
-
-  const runMutation = useMutation({
-    mutationFn: () => servicesApi.dbQuery(orgId, projectId, serviceId, query.trim(), readOnly, token),
-    onSuccess: (data) => { setResult(data); setQueryError(null) },
-    onError: (e) => { setQueryError((e as Error).message); setResult(null) },
-  })
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-      e.preventDefault()
-      runMutation.mutate()
-    }
-  }
-
-  return (
-    <div className="flex h-[calc(100vh-200px)] min-h-[500px]">
-      {/* Schema sidebar */}
-      <div className="w-52 shrink-0 border-r border-border/40 overflow-y-auto">
-        <div className="px-3 py-2 border-b border-border/40 flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Schema</span>
-          {schemaLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/40" />}
-        </div>
-        <SchemaTree tables={schema} />
-      </div>
-
-      {/* Editor + results */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Query editor */}
-        <div className="border-b border-border/40">
-          <textarea
-            ref={textareaRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            spellCheck={false}
-            className="w-full bg-transparent font-mono text-xs text-foreground resize-none outline-none p-3 min-h-[120px]"
-            placeholder="SELECT * FROM ..."
-          />
-          <div className="flex items-center gap-3 px-3 py-2 border-t border-border/30 bg-muted/10">
-            <Button
-              size="sm"
-              className="gap-1.5 h-7"
-              onClick={() => runMutation.mutate()}
-              disabled={runMutation.isPending || !query.trim()}
-            >
-              {runMutation.isPending
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Play className="h-3.5 w-3.5" />
-              }
-              Run
-            </Button>
-            <span className="text-[10px] text-muted-foreground/40">Ctrl+Enter</span>
-            <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={readOnly}
-                onChange={(e) => setReadOnly(e.target.checked)}
-                className="accent-primary"
-              />
-              Read-only
-            </label>
-            {!readOnly && (
-              <span className="text-[10px] text-amber-400/70">writes enabled</span>
-            )}
-          </div>
-        </div>
-
-        {/* Results */}
-        <div className="flex-1 overflow-auto">
-          {queryError && (
-            <div className="m-3 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
-              <p className="text-xs font-mono text-destructive">{queryError}</p>
-            </div>
-          )}
-          {result && <ResultsTable result={result} />}
-          {!result && !queryError && (
-            <div className="flex items-center justify-center h-full text-muted-foreground/30 gap-2">
-              <Terminal className="h-5 w-5" />
-              <span className="text-sm">Run a query to see results</span>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function DBTab({ projectId, serviceId }: { projectId: string; serviceId: string }) {
-  const [open, setOpen] = useState(false)
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-  const { data: service } = useQuery({
-    queryKey: ["service", orgId, projectId, serviceId],
-    queryFn: () => servicesApi.get(orgId, projectId, serviceId, token),
-    enabled: !!orgId,
-    staleTime: 30_000,
-  })
-  const isRunning = service?.status === "running"
-
-  return (
-    <div className="p-6 space-y-4">
-      {!open ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <Terminal className="h-8 w-8 text-muted-foreground/30" />
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground">Database Explorer</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Browse schema and run queries against your live database</p>
-          </div>
-          <Button
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setOpen(true)}
-            disabled={!isRunning}
-          >
-            <Terminal className="h-3.5 w-3.5" />
-            {isRunning ? "Open Explorer" : "Database not running"}
-          </Button>
-        </div>
-      ) : (
-        <DBExplorer projectId={projectId} serviceId={serviceId} />
-      )}
-    </div>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ConfigTab() {
   const { id: projectId, serviceId } = useParams({
     from: "/_app/projects/$id/services/$serviceId/config",
   })
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-
-  const { data: service } = useQuery({
-    queryKey: ["service", orgId, projectId, serviceId],
-    queryFn: () => servicesApi.get(orgId, projectId, serviceId, token),
-    enabled: !!orgId,
-  })
-
-  const isDatabase = service?.type === "database"
-
-  if (isDatabase) {
-    return <DBTab projectId={projectId} serviceId={serviceId} />
-  }
 
   return (
     <div className="p-6 max-w-2xl space-y-6">

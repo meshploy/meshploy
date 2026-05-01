@@ -1,6 +1,6 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, Server, Box, Database, ExternalLink, Copy, Check } from "lucide-react"
+import { Globe, Server, Box, Database, ExternalLink, Copy, Check, Table2 } from "lucide-react"
 import {
   services as servicesApi,
   routes as routesApi,
@@ -11,8 +11,10 @@ import {
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { useTabStore } from "@/store/tab-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { useState } from "react"
+import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/overview"
@@ -68,6 +70,7 @@ function ServiceOverviewTab() {
   })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const openTab = useTabStore((s) => s.openTab)
 
   const { data: service } = useQuery({
     queryKey: ["service", orgId, projectId, serviceId],
@@ -205,8 +208,23 @@ function ServiceOverviewTab() {
         {/* Right panel: DB credentials+connections or attached routes */}
         {isDatabase ? (
           <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-border/40">
+            <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Connection</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 gap-1.5 text-[11px] px-2"
+                disabled={service.status !== "running"}
+                onClick={() => openTab({
+                  id: serviceId,
+                  type: "explorer",
+                  label: service.name,
+                  payload: { serviceId, projectId, dbName: service.name },
+                })}
+              >
+                <Table2 className="h-3 w-3" />
+                Open Explorer
+              </Button>
             </div>
             {!dc ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground/50">Provision the database to see connection details</div>
