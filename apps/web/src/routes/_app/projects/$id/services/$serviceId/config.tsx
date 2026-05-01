@@ -157,7 +157,7 @@ function SecretsSection({ projectId, serviceId }: { projectId: string; serviceId
           {showAdd ? (
             <div className="rounded-lg border border-border/60 bg-card p-3 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <label className="text-xs text-muted-foreground">Secret</label>
                   <Select value={selectedSecretId} onValueChange={(v) => {
                     setSelectedSecretId(v ?? "")
@@ -174,7 +174,7 @@ function SecretsSection({ projectId, serviceId }: { projectId: string; serviceId
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <label className="text-xs text-muted-foreground">Env key</label>
                   <input
                     className={inputCls}
