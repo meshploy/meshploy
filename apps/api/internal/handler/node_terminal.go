@@ -143,8 +143,8 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
 			Container: "shell",
-			// chroot into host filesystem → real root shell on the node
-			Command: []string{"chroot", "/host", "bash", "-l"},
+			// chroot into host filesystem → real root shell on the node, starting at /root
+			Command: []string{"chroot", "/host", "bash", "-c", "cd /root && exec bash -l"},
 			Stdin:   true,
 			Stdout:  true,
 			Stderr:  true,
