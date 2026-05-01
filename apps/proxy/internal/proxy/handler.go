@@ -57,7 +57,7 @@ const notFoundPage = `<!doctype html>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0a0a0a;color:#a1a1aa;font-family:ui-monospace,monospace;
          display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
-    .card{border:1px solid #27272a;border-radius:12px;padding:2.5rem 3rem;max-width:420px;width:100%;text-align:center}
+    .card{border:1px solid #27272a;border-radius:12px;padding:2.5rem 3rem;max-width:420px;width:100%%;text-align:center}
     .code{font-size:3rem;font-weight:700;color:#3f3f46;margin-bottom:1rem}
     h1{font-size:1rem;font-weight:600;color:#e4e4e7;margin-bottom:.5rem}
     p{font-size:.8rem;line-height:1.6;margin-bottom:1.5rem}

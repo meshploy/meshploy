@@ -1,7 +1,10 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { Topbar } from "@/components/layout/topbar"
+import { TabBar } from "@/components/layout/tab-bar"
 import { useAuthStore } from "@/store/auth-store"
+import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload } from "@/store/tab-store"
+import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: () => {
@@ -12,15 +15,53 @@ export const Route = createFileRoute("/_app")({
 })
 
 function AppLayout() {
+  const { tabs, activeTabId } = useTabStore()
+
   return (
     <div className="flex h-full">
       <AppSidebar />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Topbar />
-        <main className="flex-1 overflow-y-auto">
-          <Outlet />
+        <TabBar />
+        <main className="flex-1 overflow-hidden flex flex-col min-h-0">
+          <div className={cn("flex-1 overflow-y-auto", activeTabId !== null && "hidden")}>
+            <Outlet />
+          </div>
+          {tabs.map((tab) => (
+            <div key={tab.id} className={cn("flex-1 overflow-hidden", activeTabId !== tab.id && "hidden")}>
+              <SessionContent tab={tab} />
+            </div>
+          ))}
         </main>
       </div>
+    </div>
+  )
+}
+
+function SessionContent({ tab }: { tab: SessionTab }) {
+  if (tab.type === "explorer") {
+    const payload = tab.payload as ExplorerPayload
+    return <ExplorerPlaceholder payload={payload} />
+  }
+  if (tab.type === "terminal") {
+    const payload = tab.payload as TerminalPayload
+    return <TerminalPlaceholder payload={payload} />
+  }
+  return null
+}
+
+function ExplorerPlaceholder({ payload }: { payload: ExplorerPayload }) {
+  return (
+    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+      Database Explorer — {payload.dbName}
+    </div>
+  )
+}
+
+function TerminalPlaceholder({ payload }: { payload: TerminalPayload }) {
+  return (
+    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+      Terminal — {payload.nodeLabel}
     </div>
   )
 }
