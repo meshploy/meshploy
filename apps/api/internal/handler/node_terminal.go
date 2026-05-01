@@ -159,6 +159,13 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ── Bridge WebSocket ↔ exec ───────────────────────────────────────────────
+	// execCtx is cancelled the moment the WebSocket reader exits (client closed
+	// tab / browser). This unblocks StreamWithContext so the defer DeleteShellPod
+	// fires even though gorilla hijacks the connection and r.Context() is never
+	// cancelled by the HTTP server.
+	execCtx, execCancel := context.WithCancel(ctx)
+	defer execCancel()
+
 	stdinR, stdinW := io.Pipe()
 	defer stdinW.Close()
 
@@ -172,6 +179,7 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 	// WebSocket → stdin (+ resize handling)
 	go func() {
 		defer stdinW.Close()
+		defer execCancel() // unblock StreamWithContext when WS closes
 		for {
 			msgType, msg, err := conn.ReadMessage()
 			if err != nil {
@@ -211,7 +219,7 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+	err = executor.StreamWithContext(execCtx, remotecommand.StreamOptions{
 		Stdin:             stdinR,
 		Stdout:            stdoutW,
 		Stderr:            stdoutW, // merge stderr into stdout for the terminal
