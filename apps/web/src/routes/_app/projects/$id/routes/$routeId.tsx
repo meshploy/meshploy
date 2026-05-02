@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
+import { ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ function RouteDetailPage() {
   const { id: projectId, routeId } = useParams({ from: "/_app/projects/$id/routes/$routeId" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -83,7 +84,7 @@ function RouteDetailPage() {
     },
   })
 
-  const goBack = () => navigate({ to: "/projects/$id/routes", params: { id: projectId } })
+
 
   if (isLoading) {
     return (
@@ -104,13 +105,6 @@ function RouteDetailPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-2xl">
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" className="gap-1.5 -ml-1 h-7 text-muted-foreground" onClick={goBack}>
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Routes
-        </Button>
-      </div>
-
       {/* Header */}
       <div className="flex items-start gap-3">
         <div className="h-9 w-9 rounded-md bg-muted/40 border border-border/40 flex items-center justify-center shrink-0">
