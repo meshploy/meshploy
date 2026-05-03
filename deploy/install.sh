@@ -773,14 +773,11 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     if [[ -n "$_NODE_ID" ]]; then
       success "Node '${NODE_HOSTNAME}' registered in Meshploy (role: ${NODE_MESH_ROLE})"
       # Save node identity so uninstall.sh can self-deregister via the API.
-      mkdir -p /etc/meshploy
-      cat > /etc/meshploy/node.conf <<NODECONF
-NODE_ID=${_NODE_ID}
-NODE_NAME=${NODE_HOSTNAME}
-MESHPLOY_API_URL=${MESHPLOY_API_URL}
-MESHPLOY_TOKEN=${MESHPLOY_TOKEN}
-NODECONF
-      chmod 600 /etc/meshploy/node.conf
+      sudo mkdir -p /etc/meshploy
+      printf 'NODE_ID=%s\nNODE_NAME=%s\nMESHPLOY_API_URL=%s\nMESHPLOY_TOKEN=%s\n' \
+        "${_NODE_ID}" "${NODE_HOSTNAME}" "${MESHPLOY_API_URL}" "${MESHPLOY_TOKEN}" \
+        | sudo tee /etc/meshploy/node.conf > /dev/null
+      sudo chmod 600 /etc/meshploy/node.conf
       success "Node identity saved to /etc/meshploy/node.conf"
     else
       warn "Auto-registration failed. You can register manually in the dashboard."
@@ -819,7 +816,7 @@ NODECONF
       header "Joining k3s cluster"
       info "Installing k3s agent and joining ${K3S_SERVER_URL}…"
       if ! curl -sfL https://get.k3s.io | \
-          K3S_URL="$K3S_SERVER_URL" \
+          sudo K3S_URL="$K3S_SERVER_URL" \
           K3S_TOKEN="$K3S_JOIN_TOKEN" \
           K3S_NODE_NAME="$NODE_HOSTNAME" \
           sh -s - agent \
@@ -832,28 +829,24 @@ NODECONF
 
       # Wait for the agent to come up
       MAX_K3S_WAIT=30; K3S_WAITED=0
-      until systemctl is-active --quiet k3s-agent 2>/dev/null; do
+      until sudo systemctl is-active --quiet k3s-agent 2>/dev/null; do
         sleep 2; K3S_WAITED=$((K3S_WAITED+2))
         [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && { warn "k3s-agent not active yet — check: journalctl -u k3s-agent"; break; }
         printf "."
       done
       echo
-      systemctl is-active --quiet k3s-agent \
+      sudo systemctl is-active --quiet k3s-agent \
         && success "k3s agent is running — node joined the cluster" \
         || warn "k3s agent may still be starting. Check: systemctl status k3s-agent"
 
       # ── Configure containerd to trust the built-in registry (HTTP) ───────────
       # _K3S_HOST is the gateway mesh IP extracted from K3S_SERVER_URL above.
       info "Configuring containerd registry mirror for built-in registry…"
-      mkdir -p /etc/rancher/k3s
-      cat > /etc/rancher/k3s/registries.yaml <<REGEOF
-mirrors:
-  "${_K3S_HOST}:5000":
-    endpoint:
-      - "http://${_K3S_HOST}:5000"
-REGEOF
+      sudo mkdir -p /etc/rancher/k3s
+      printf 'mirrors:\n  "%s:5000":\n    endpoint:\n      - "http://%s:5000"\n' \
+        "${_K3S_HOST}" "${_K3S_HOST}" | sudo tee /etc/rancher/k3s/registries.yaml > /dev/null
       success "Wrote /etc/rancher/k3s/registries.yaml (mirror: ${_K3S_HOST}:5000)"
-      systemctl restart k3s-agent
+      sudo systemctl restart k3s-agent
       success "k3s-agent restarted to pick up registry config"
     fi
   else

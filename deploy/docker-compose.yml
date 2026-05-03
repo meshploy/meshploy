@@ -103,6 +103,7 @@ services:
     volumes:
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
       - /opt/meshploy/install.sh:/opt/meshploy/install.sh:ro
+      - /opt/meshploy/uninstall.sh:/opt/meshploy/uninstall.sh:ro
     depends_on:
       postgres:
         condition: service_healthy
