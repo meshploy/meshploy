@@ -142,7 +142,7 @@ function NodeRegistrationTokenPanel() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const queryClient = useQueryClient()
   const [visible, setVisible] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ["node-registration-token", orgId],
@@ -160,10 +160,10 @@ function NodeRegistrationTokenPanel() {
     },
   })
 
-  const copy = async (text: string) => {
+  const copy = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopiedField(field)
+    setTimeout(() => setCopiedField(null), 2000)
   }
 
   const meshApiUrl = "http://100.64.0.1:4000"
@@ -224,9 +224,9 @@ function NodeRegistrationTokenPanel() {
                   size="icon"
                   variant="ghost"
                   className="h-8 w-8 shrink-0"
-                  onClick={() => copy(regToken)}
+                  onClick={() => copy(regToken, "token")}
                 >
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedField === "token" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>
               </div>
             </div>
@@ -245,9 +245,9 @@ function NodeRegistrationTokenPanel() {
                   size="icon"
                   variant="ghost"
                   className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => copy(curlCommand.replace(/\\\n  /g, " "))}
+                  onClick={() => copy(curlCommand.replace(/\\\n  /g, " "), "cmd")}
                 >
-                  {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                  {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground/60">
@@ -267,7 +267,7 @@ function HeadscalePreAuthKeyPanel() {
   const token = useAuthStore((s) => s.token)!
   const queryClient = useQueryClient()
   const [visible, setVisible] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ["headscale-preauth-key"],
@@ -286,10 +286,10 @@ function HeadscalePreAuthKeyPanel() {
     },
   })
 
-  const copy = async (text: string) => {
+  const copy = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopiedField(field)
+    setTimeout(() => setCopiedField(null), 2000)
   }
 
   const headscaleUrl = data?.headscale_url || ""
@@ -336,8 +336,8 @@ function HeadscalePreAuthKeyPanel() {
                 <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
                   {headscaleUrl}
                 </code>
-                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(headscaleUrl)}>
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(headscaleUrl, "url")}>
+                  {copiedField === "url" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>
               </div>
             </div>
@@ -354,8 +354,8 @@ function HeadscalePreAuthKeyPanel() {
                     <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
                       {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(activeKey)}>
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(activeKey, "key")}>
+                      {copiedField === "key" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                 </div>
@@ -374,9 +374,9 @@ function HeadscalePreAuthKeyPanel() {
                       size="icon"
                       variant="ghost"
                       className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => copy(tailscaleCmd.replace(/\\\n  /g, " "))}
+                      onClick={() => copy(tailscaleCmd.replace(/\\\n  /g, " "), "cmd")}
                     >
-                      {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                      {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                     </Button>
                   </div>
                   <p className="text-[11px] text-muted-foreground/60">
@@ -401,7 +401,7 @@ function HeadscalePreAuthKeyPanel() {
 function K3sJoinTokenPanel() {
   const token = useAuthStore((s) => s.token)!
   const [visible, setVisible] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ["cluster-join-token"],
@@ -411,10 +411,10 @@ function K3sJoinTokenPanel() {
   const k3sToken = data?.token ?? ""
   const serverUrl = data?.server_url ?? "https://100.64.0.1:6443"
 
-  const copy = async (text: string) => {
+  const copy = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopiedField(field)
+    setTimeout(() => setCopiedField(null), 2000)
   }
 
   const installCmd = k3sToken
@@ -449,8 +449,8 @@ function K3sJoinTokenPanel() {
                 <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
                   {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </Button>
-                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(k3sToken)}>
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(k3sToken, "token")}>
+                  {copiedField === "token" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>
               </div>
             </div>
@@ -469,9 +469,9 @@ function K3sJoinTokenPanel() {
                   size="icon"
                   variant="ghost"
                   className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => copy(installCmd.replace(/\\\n  /g, " "))}
+                  onClick={() => copy(installCmd.replace(/\\\n  /g, " "), "cmd")}
                 >
-                  {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                  {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground/60">
