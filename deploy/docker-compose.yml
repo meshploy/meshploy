@@ -102,6 +102,7 @@ services:
       - "host.meshploy.internal:${HOST_GATEWAY_IP}"
     volumes:
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
+      - /opt/meshploy/install.sh:/opt/meshploy/install.sh:ro
     depends_on:
       postgres:
         condition: service_healthy
