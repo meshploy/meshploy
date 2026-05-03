@@ -45,7 +45,7 @@ confirm() {
 }
 
 # Resolve deploy dir — works whether run from /tmp, the repo, or /opt/meshploy/deploy
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
 DEPLOY_DIR="/opt/meshploy/deploy"
 if [[ -f "$DEPLOY_DIR/docker-compose.yml" ]]; then
   cd "$DEPLOY_DIR"

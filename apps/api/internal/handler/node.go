@@ -776,3 +776,13 @@ func (h *Handler) ServeInstallScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript")
 	http.ServeFile(w, r, "/opt/meshploy/install.sh")
 }
+
+// ServeUninstallScript serves deploy/uninstall.sh (mounted at /opt/meshploy/uninstall.sh) to authenticated users.
+func (h *Handler) ServeUninstallScript(w http.ResponseWriter, r *http.Request) {
+	if _, err := requireUser(r.Context()); err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "text/x-shellscript")
+	http.ServeFile(w, r, "/opt/meshploy/uninstall.sh")
+}

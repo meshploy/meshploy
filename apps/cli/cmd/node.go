@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/meshploy/apps/cli/internal/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -57,7 +58,7 @@ var nodeListCmd = &cobra.Command{
 
 var nodeDeleteCmd = &cobra.Command{
 	Use:   "delete <node-id>",
-	Short: "Delete a node from the cluster and Meshploy",
+	Short: "Delete a node by ID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		nodeID := args[0]
@@ -76,6 +77,117 @@ var nodeDeleteCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("✔  Node %s deleted.\n", nodeID)
+		return nil
+	},
+}
+
+var nodeRemoveCmd = &cobra.Command{
+	Use:   "remove <name> <user@host>",
+	Short: "Uninstall a node cleanly and remove it from the cluster",
+	Long: `SSHes into the node, stops and removes k3s agent and Tailscale,
+then deletes the node record from Headscale and the Meshploy DB.
+
+Works with both root and non-root users — sudo password will be prompted
+if required (a PTY is allocated for the SSH session).
+
+Examples:
+  meshploy node remove enthesus-pc feds@192.168.0.140
+  meshploy node remove worker-1 root@10.0.0.5 --identity-file ~/.ssh/id_ed25519`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name        := args[0]
+		sshTarget   := args[1]
+		yes, _      := cmd.Flags().GetBool("yes")
+		identityFile, _ := cmd.Flags().GetString("identity-file")
+		sshPort, _  := cmd.Flags().GetInt("port")
+
+		// ── Look up node by name ──────────────────────────────────────────────
+		c := apiClient()
+		nodes, err := c.ListNodes(orgID())
+		if err != nil {
+			return fmt.Errorf("list nodes: %w", err)
+		}
+		var found *client.Node
+		for i := range nodes {
+			if nodes[i].Name == name {
+				found = &nodes[i]
+				break
+			}
+		}
+		if found == nil {
+			return fmt.Errorf("no node named %q", name)
+		}
+
+		if !yes {
+			fmt.Printf("Remove node %q (%s) via %s?\n", found.Name, found.ID, sshTarget)
+			fmt.Print("This will uninstall k3s agent, disconnect Tailscale, and delete the node record. [y/N]: ")
+			var answer string
+			fmt.Scanln(&answer)
+			if answer != "y" && answer != "Y" {
+				fmt.Println("Aborted.")
+				return nil
+			}
+		}
+
+		// ── Download uninstall script from API ────────────────────────────────
+		fmt.Println("\nDownloading uninstall script…")
+		uninstallURL := strings.TrimRight(loadedCfg.APIURL, "/") + "/uninstall.sh"
+		req, _ := http.NewRequest("GET", uninstallURL, nil)
+		req.Header.Set("Authorization", "Bearer "+loadedCfg.Token)
+		httpClient := &http.Client{Timeout: 30 * time.Second}
+		resp, err := httpClient.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			return fmt.Errorf("download uninstall script: could not fetch from %s", uninstallURL)
+		}
+		scriptBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read uninstall script: %w", err)
+		}
+		scriptContent := string(scriptBytes)
+
+		// ── Base SSH args ─────────────────────────────────────────────────────
+		baseArgs := []string{"-o", "StrictHostKeyChecking=accept-new"}
+		if identityFile != "" {
+			baseArgs = append(baseArgs, "-i", identityFile)
+		}
+		if sshPort != 22 {
+			baseArgs = append(baseArgs, "-p", fmt.Sprintf("%d", sshPort))
+		}
+
+		fmt.Printf("\nConnecting to %s…\n\n", sshTarget)
+
+		// Step 1: upload uninstall script (no PTY needed)
+		tmpScript := "/tmp/.meshploy-uninstall.sh"
+		step1 := exec.Command("ssh", append(baseArgs, sshTarget,
+			fmt.Sprintf("cat > %s && chmod +x %s", tmpScript, tmpScript))...)
+		step1.Stdin = strings.NewReader(scriptContent)
+		step1.Stderr = os.Stderr
+		if err := step1.Run(); err != nil {
+			return fmt.Errorf("upload uninstall script: %w", err)
+		}
+
+		// Step 2: execute with PTY — sudo can prompt for password, script handles
+		// k3s removal, self-deregistration via /etc/meshploy/node.conf, and Tailscale logout.
+		step2 := exec.Command("ssh", append(baseArgs, "-t", sshTarget,
+			fmt.Sprintf("TERM=xterm-256color bash %s --worker --yes; _rc=$?; rm -f %s; exit $_rc", tmpScript, tmpScript))...)
+		step2.Stdin = os.Stdin
+		step2.Stdout = os.Stdout
+		step2.Stderr = os.Stderr
+		if err := step2.Run(); err != nil {
+			return fmt.Errorf("remote uninstall failed: %w", err)
+		}
+
+		// ── Delete from DB + Headscale (fallback if self-deregister failed) ───
+		fmt.Printf("\nRemoving node record from Meshploy…\n")
+		if err := c.DeleteNode(orgID(), found.ID); err != nil {
+			// Non-fatal: self-deregister in uninstall.sh may have already removed it.
+			fmt.Printf("  (node record already removed or not found: %v)\n", err)
+		}
+		fmt.Printf("✔  Node %q removed.\n", found.Name)
 		return nil
 	},
 }
@@ -474,6 +586,24 @@ Examples:
 			return fmt.Errorf("preauth key is required")
 		}
 
+		// ── Node scheduling role ──────────────────────────────────────────────
+		fmt.Println()
+		fmt.Println("Node scheduling role:")
+		fmt.Println("  1) workload_builder (default) — runs workloads AND build jobs")
+		fmt.Println("  2) workload                   — workloads only")
+		fmt.Println("  3) builder                    — build jobs only")
+		fmt.Println()
+		roleChoice := promptDefault(sc, "Role [1/2/3]", "1")
+		var nodeRoleChoice string
+		switch roleChoice {
+		case "2":
+			nodeRoleChoice = "2"
+		case "3":
+			nodeRoleChoice = "3"
+		default:
+			nodeRoleChoice = "1"
+		}
+
 		// ── Download install script ───────────────────────────────────────────
 		fmt.Println("\nDownloading install script…")
 		scriptContent, err := downloadInstallScript(loadedCfg.APIURL, loadedCfg.Token, githubPAT)
@@ -488,6 +618,7 @@ Examples:
 			"HEADSCALE_URL":    headscaleURL,
 			"PREAUTH_KEY":      preauthKey,
 			"MESHPLOY_TOKEN":   regToken,
+			"NODE_ROLE_CHOICE": nodeRoleChoice,
 			"MESHPLOY_API_URL": meshAPIURL,
 			"TERM":             "xterm-256color",
 		}
@@ -577,7 +708,11 @@ func init() {
 	nodeAddCmd.Flags().String("token", "", "GitHub PAT for downloading install script (or set GITHUB_PAT env var)")
 
 	nodeTokenCmd.AddCommand(nodeTokenGetCmd, nodeTokenRotateCmd)
-	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd, nodeAddCmd)
+	nodeRemoveCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
+	nodeRemoveCmd.Flags().StringP("identity-file", "i", "", "SSH identity file (private key)")
+	nodeRemoveCmd.Flags().IntP("port", "P", 22, "SSH port on the remote host")
+	nodeRemoveCmd.Flags().String("token", "", "GitHub PAT for fallback script download (or set GITHUB_PAT)")
+	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeRemoveCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd, nodeAddCmd)
 	rootCmd.AddCommand(nodeCmd)
 }
 
