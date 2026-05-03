@@ -24,14 +24,15 @@ for arg in "$@"; do
 done
 
 # ── Self-bootstrap ────────────────────────────────────────────────────────────
-# install.sh is always invoked via get.sh which downloads the deploy/ folder
-# first. If someone runs install.sh directly without the config files present,
-# tell them to use get.sh instead.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Config files (coredns/, headscale/, caddy/) are only needed for the master
+# path. Worker installs piped via 'meshploy node add' run without them.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
 if [[ ! -f "$SCRIPT_DIR/coredns/Corefile" ]]; then
-  echo "Config files not found. Please run via get.sh:"
-  echo "  curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o /tmp/get.sh && sudo bash /tmp/get.sh"
-  exit 1
+  if ! ($AUTO_MODE && [[ "${NODE_TYPE:-}" =~ ^(2|worker|Worker)$ ]]); then
+    echo "Config files not found. Please run via get.sh:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o /tmp/get.sh && sudo bash /tmp/get.sh"
+    exit 1
+  fi
 fi
 
 # ── Colours ───────────────────────────────────────────────────────────────────
