@@ -728,7 +728,6 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   echo -e "  ${CYAN}2)${RESET} workload          — customer workloads only"
   echo -e "  ${CYAN}3)${RESET} builder           — build jobs only (tainted, workloads won't land here)"
   echo
-  NODE_ROLE_CHOICE="1"
   ask NODE_ROLE_CHOICE "Choose role [1/2/3]" "1"
   case "$NODE_ROLE_CHOICE" in
     2) NODE_MESH_ROLE="workload" ;;

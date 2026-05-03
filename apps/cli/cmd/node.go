@@ -10,13 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/meshploy/apps/cli/internal/client"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 const (
@@ -571,19 +569,30 @@ Examples:
 			return fmt.Errorf("headscale URL is required (use --headscale-url or enter it at the prompt)")
 		}
 
-		// ── Preauth key (prompt if not provided) ──────────────────────────────
+		// ── Preauth key (auto-fetch, or prompt as fallback) ───────────────────
 		if preauthKey == "" {
-			fmt.Printf("\nGenerate a preauth key at: %s → Cluster → Add a worker node\n\n", strings.Replace(loadedCfg.APIURL, "://api.", "://app.", 1))
-			fmt.Print("Preauth key: ")
-			keyBytes, err := term.ReadPassword(int(syscall.Stdin))
-			fmt.Println()
-			if err != nil {
-				return fmt.Errorf("read preauth key: %w", err)
+			preauth, err := c.GetHeadscalePreAuthKey()
+			if err == nil && preauth.Key != "" {
+				preauthKey = preauth.Key
+				fmt.Println("  Preauth key fetched automatically.")
+				if headscaleURL == "" && preauth.HeadscaleURL != "" {
+					headscaleURL = preauth.HeadscaleURL
+					fmt.Printf("  Headscale URL from API: %s\n", headscaleURL)
+				}
+			} else {
+				// Fallback: generate a new one
+				preauth, err = c.CreateHeadscalePreAuthKey()
+				if err == nil && preauth.Key != "" {
+					preauthKey = preauth.Key
+					fmt.Println("  Generated new preauth key.")
+					if headscaleURL == "" && preauth.HeadscaleURL != "" {
+						headscaleURL = preauth.HeadscaleURL
+					}
+				}
 			}
-			preauthKey = strings.TrimSpace(string(keyBytes))
 		}
 		if preauthKey == "" {
-			return fmt.Errorf("preauth key is required")
+			return fmt.Errorf("could not obtain preauth key — use --preauth-key to provide one manually")
 		}
 
 		// ── Node scheduling role ──────────────────────────────────────────────
@@ -611,6 +620,12 @@ Examples:
 			return fmt.Errorf("download install script: %w", err)
 		}
 
+		// ── Fetch k3s join token (so auto mode can join the cluster) ─────────
+		k3sJoin, err := c.GetK3sJoinToken()
+		if err != nil {
+			fmt.Printf("  warning: could not fetch k3s join token (%v) — node will not join the cluster automatically\n", err)
+		}
+
 		// ── Build env vars ────────────────────────────────────────────────────
 		meshAPIURL := "http://100.64.0.1:4000"
 		envVars := map[string]string{
@@ -621,6 +636,12 @@ Examples:
 			"NODE_ROLE_CHOICE": nodeRoleChoice,
 			"MESHPLOY_API_URL": meshAPIURL,
 			"TERM":             "xterm-256color",
+		}
+		if k3sJoin.Token != "" {
+			envVars["K3S_JOIN_TOKEN"] = k3sJoin.Token
+		}
+		if k3sJoin.ServerURL != "" {
+			envVars["K3S_SERVER_URL"] = k3sJoin.ServerURL
 		}
 
 		// ── Base SSH args (no PTY) ────────────────────────────────────────────
