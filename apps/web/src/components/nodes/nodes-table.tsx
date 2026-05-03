@@ -20,7 +20,6 @@ export function NodesTable({ nodes }: NodesTableProps) {
             <TableHead className="text-xs font-medium text-muted-foreground w-45">Name</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground">Mesh IP</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground">Role</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground">Headscale</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground">Cluster</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground">Resources</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground">K3s</TableHead>
@@ -51,12 +50,6 @@ export function NodesTable({ nodes }: NodesTableProps) {
                 </Badge>
               </TableCell>
               <TableCell className="py-3.5">
-                <div className="flex items-center gap-1.5">
-                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${node.headscaleOnline ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
-                  <span className="text-xs text-muted-foreground">{node.headscaleOnline ? "Online" : "Offline"}</span>
-                </div>
-              </TableCell>
-              <TableCell className="py-3.5">
                 {node.k8sMember ? (
                   <Badge className="text-[10px] px-1.5 py-0 h-4.5 bg-emerald-500/10 text-emerald-400 border-emerald-500/20 border">
                     In Cluster
@@ -76,9 +69,13 @@ export function NodesTable({ nodes }: NodesTableProps) {
                 <code className="text-xs font-mono text-muted-foreground/70">{node.k3sVersion}</code>
               </TableCell>
               <TableCell className="py-3.5 text-right">
-                <span className={node.status === "online" ? "text-xs text-emerald-400/80" : "text-xs text-muted-foreground/50"}>
-                  {formatRelativeTime(node.lastSeenAt ?? node.headscaleLastSeen)}
-                </span>
+                {node.status === "online" ? (
+                  <span className="text-xs text-emerald-400/80">Online</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground/50">
+                    {formatRelativeTime(node.lastSeenAt ?? node.headscaleLastSeen)}
+                  </span>
+                )}
               </TableCell>
             </TableRow>
           ))}

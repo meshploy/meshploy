@@ -104,6 +104,7 @@ services:
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
       - /opt/meshploy/install.sh:/opt/meshploy/install.sh:ro
       - /opt/meshploy/uninstall.sh:/opt/meshploy/uninstall.sh:ro
+      - /var/lib/rancher/k3s/server/node-token:/var/lib/rancher/k3s/server/node-token:ro
     depends_on:
       postgres:
         condition: service_healthy
