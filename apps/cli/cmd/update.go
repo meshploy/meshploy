@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -109,8 +110,9 @@ func downloadReplace(pat, assetURL, dest string) error {
 		return fmt.Errorf("download HTTP %d: %s", resp.StatusCode, string(b))
 	}
 
-	// Write to a temp file next to the current binary so rename is atomic.
-	tmp, err := os.CreateTemp("", "meshploy-update-*")
+	// Write to a temp file in the same directory as the binary so rename is
+	// atomic (cross-device rename fails when /tmp is a separate filesystem).
+	tmp, err := os.CreateTemp(filepath.Dir(dest), "meshploy-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
