@@ -23,7 +23,7 @@ export function NodesTable({ nodes }: NodesTableProps) {
             <TableHead className="text-xs font-medium text-muted-foreground">Cluster</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground">Resources</TableHead>
             <TableHead className="text-xs font-medium text-muted-foreground">K3s</TableHead>
-            <TableHead className="text-xs font-medium text-muted-foreground text-right">Last Seen</TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground w-36">Last Seen</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -65,8 +65,8 @@ export function NodesTable({ nodes }: NodesTableProps) {
               <TableCell className="py-3.5">
                 <code className="text-xs font-mono text-muted-foreground/70">{node.k3sVersion}</code>
               </TableCell>
-              <TableCell className="py-3.5 text-right">
-                <div className="flex items-center justify-end gap-1.5">
+              <TableCell className="py-3.5">
+                <div className="flex items-center gap-1.5">
                   <NodeStatusDot status={node.status} />
                   {node.status === "online" ? (
                     <span className="text-xs text-emerald-400/80">Connected</span>

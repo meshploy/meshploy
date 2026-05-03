@@ -19,6 +19,7 @@ function NodesPage() {
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
     select: (raw) => raw.map(toNode),
+    refetchInterval: 15_000,
   })
 
   if (isLoading) {
