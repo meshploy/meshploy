@@ -6,17 +6,12 @@ type Secret struct {
 	CreatedAt string `json:"created_at"`
 }
 
-type secretsListBody struct {
-	Secrets []Secret `json:"secrets"`
-}
-
 func (c *Client) ListSecrets(orgID, projectID string) ([]Secret, error) {
 	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/secrets", nil)
 	if err != nil {
 		return nil, err
 	}
-	out, err := decode[secretsListBody](resp)
-	return out.Secrets, err
+	return decode[[]Secret](resp)
 }
 
 func (c *Client) SetSecret(orgID, projectID, name, value string) (*Secret, error) {

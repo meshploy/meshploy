@@ -17,10 +17,6 @@ type Service struct {
 	CreatedAt string `json:"created_at"`
 }
 
-type servicesListBody struct {
-	Services []Service `json:"services"`
-}
-
 type Deployment struct {
 	ID        string `json:"id"`
 	Status    string `json:"status"`
@@ -32,8 +28,7 @@ func (c *Client) ListServices(orgID, projectID string) ([]Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := decode[servicesListBody](resp)
-	return out.Services, err
+	return decode[[]Service](resp)
 }
 
 func (c *Client) Deploy(orgID, projectID, serviceID string) (*Deployment, error) {

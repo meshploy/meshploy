@@ -10,10 +10,6 @@ type Route struct {
 	CreatedAt  string  `json:"created_at"`
 }
 
-type routesListBody struct {
-	Routes []Route `json:"routes"`
-}
-
 type CreateRouteBody struct {
 	// Domain-based (preferred)
 	DomainID  *string `json:"domain_id,omitempty"`
@@ -38,8 +34,7 @@ func (c *Client) ListRoutes(orgID, projectID string) ([]Route, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := decode[routesListBody](resp)
-	return out.Routes, err
+	return decode[[]Route](resp)
 }
 
 func (c *Client) CreateRoute(orgID, projectID string, body CreateRouteBody) (*Route, error) {
