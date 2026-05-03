@@ -144,17 +144,12 @@ type Node struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-type nodesListBody struct {
-	Nodes []Node `json:"nodes"`
-}
-
 func (c *Client) ListNodes(orgID string) ([]Node, error) {
 	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/nodes", nil)
 	if err != nil {
 		return nil, err
 	}
-	out, err := decode[nodesListBody](resp)
-	return out.Nodes, err
+	return decode[[]Node](resp)
 }
 
 func (c *Client) DeleteNode(orgID, nodeID string) error {
@@ -178,17 +173,12 @@ type Org struct {
 	Slug string `json:"slug"`
 }
 
-type orgsListBody struct {
-	Orgs []Org `json:"organizations"`
-}
-
 func (c *Client) ListOrgs() ([]Org, error) {
 	resp, err := c.do("GET", "/api/v1/orgs", nil)
 	if err != nil {
 		return nil, err
 	}
-	out, err := decode[orgsListBody](resp)
-	return out.Orgs, err
+	return decode[[]Org](resp)
 }
 
 // ── Registration token ────────────────────────────────────────────────────────

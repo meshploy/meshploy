@@ -7,17 +7,12 @@ type Project struct {
 	CreatedAt string `json:"created_at"`
 }
 
-type projectsListBody struct {
-	Projects []Project `json:"projects"`
-}
-
 func (c *Client) ListProjects(orgID string) ([]Project, error) {
 	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects", nil)
 	if err != nil {
 		return nil, err
 	}
-	out, err := decode[projectsListBody](resp)
-	return out.Projects, err
+	return decode[[]Project](resp)
 }
 
 func (c *Client) CreateProject(orgID, name string) (*Project, error) {
