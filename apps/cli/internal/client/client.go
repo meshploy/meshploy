@@ -100,15 +100,34 @@ type LoginInput struct {
 }
 
 type LoginOutput struct {
+	Token        string `json:"token"`
+	TOTPRequired bool   `json:"totp_required"`
+	MFAToken     string `json:"mfa_token"`
+}
+
+type completeTOTPInput struct {
+	MFAToken string `json:"mfa_token"`
+	Code     string `json:"code"`
+}
+
+type tokenBody2 struct {
 	Token string `json:"token"`
 }
 
-func (c *Client) Login(email, password string) (string, error) {
+func (c *Client) Login(email, password string) (LoginOutput, error) {
 	resp, err := c.do("POST", "/api/v1/auth/login", LoginInput{Email: email, Password: password})
+	if err != nil {
+		return LoginOutput{}, err
+	}
+	return decode[LoginOutput](resp)
+}
+
+func (c *Client) CompleteTOTPLogin(mfaToken, code string) (string, error) {
+	resp, err := c.do("POST", "/api/v1/auth/totp", completeTOTPInput{MFAToken: mfaToken, Code: code})
 	if err != nil {
 		return "", err
 	}
-	out, err := decode[LoginOutput](resp)
+	out, err := decode[tokenBody2](resp)
 	return out.Token, err
 }
 
