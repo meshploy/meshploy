@@ -475,8 +475,8 @@ Examples:
 		}
 
 		// ── Download install script ───────────────────────────────────────────
-		fmt.Println("\nDownloading install script from GitHub…")
-		scriptContent, err := downloadInstallScript(githubPAT)
+		fmt.Println("\nDownloading install script…")
+		scriptContent, err := downloadInstallScript(loadedCfg.APIURL, loadedCfg.Token, githubPAT)
 		if err != nil {
 			return fmt.Errorf("download install script: %w", err)
 		}
@@ -516,33 +516,38 @@ Examples:
 	},
 }
 
-// downloadInstallScript fetches deploy/install.sh from the GitHub release.
-func downloadInstallScript(pat string) (string, error) {
-	// Try the release asset first; fall back to raw file from the default branch.
-	assetURL, err := resolveAssetURL(pat, "install.sh")
-	if err != nil {
-		// Fall back to raw GitHub URL.
-		assetURL = "https://raw.githubusercontent.com/" + githubRepo + "/main/deploy/install.sh"
+// downloadInstallScript fetches install.sh from the Meshploy API (primary,
+// authenticated) or from GitHub raw (fallback, requires --token for private repos).
+func downloadInstallScript(apiURL, apiToken, githubPAT string) (string, error) {
+	type attempt struct {
+		url   string
+		token string
+		auth  string // header prefix: "Bearer" or "token"
+	}
+	attempts := []attempt{
+		{apiURL + "/install.sh", apiToken, "Bearer"},
+		{"https://raw.githubusercontent.com/" + githubRepo + "/main/deploy/install.sh", githubPAT, "token"},
 	}
 
-	req, _ := http.NewRequest("GET", assetURL, nil)
-	if pat != "" {
-		req.Header.Set("Authorization", "token "+pat)
+	for _, a := range attempts {
+		if a.token == "" {
+			continue
+		}
+		req, _ := http.NewRequest("GET", a.url, nil)
+		req.Header.Set("Authorization", a.auth+" "+a.token)
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			continue
+		}
+		b, err := io.ReadAll(resp.Body)
+		return string(b), err
 	}
-	req.Header.Set("Accept", "application/octet-stream")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
-	}
-	b, err := io.ReadAll(resp.Body)
-	return string(b), err
+	return "", fmt.Errorf("could not fetch install script — ensure you are logged in or pass --token for private GitHub repos")
 }
 
 func init() {

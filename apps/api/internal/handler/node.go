@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -764,4 +765,15 @@ func meshRoleLabelsMatch(labels map[string]string, role db.MeshRole) bool {
 	default: // workload
 		return !hasLabel
 	}
+}
+
+// ServeInstallScript serves /opt/meshploy/install.sh to authenticated users.
+func (h *Handler) ServeInstallScript(w http.ResponseWriter, r *http.Request) {
+	if _, err := requireUser(r.Context()); err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	const path = "/opt/meshploy/install.sh"
+	w.Header().Set("Content-Type", "text/x-shellscript")
+	http.ServeFile(w, r, path)
 }
