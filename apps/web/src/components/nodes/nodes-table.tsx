@@ -34,10 +34,7 @@ export function NodesTable({ nodes }: NodesTableProps) {
               onClick={() => navigate({ to: "/nodes/$id", params: { id: node.id } })}
             >
               <TableCell className="py-3.5">
-                <div className="flex items-center gap-2.5">
-                  <NodeStatusDot status={node.status} />
-                  <span className="text-sm font-medium text-foreground">{node.name}</span>
-                </div>
+                <span className="text-sm font-medium text-foreground">{node.name}</span>
               </TableCell>
               <TableCell className="py-3.5">
                 <code className="text-xs font-mono text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
@@ -69,13 +66,16 @@ export function NodesTable({ nodes }: NodesTableProps) {
                 <code className="text-xs font-mono text-muted-foreground/70">{node.k3sVersion}</code>
               </TableCell>
               <TableCell className="py-3.5 text-right">
-                {node.status === "online" ? (
-                  <span className="text-xs text-emerald-400/80">Online</span>
-                ) : (
-                  <span className="text-xs text-muted-foreground/50">
-                    {formatRelativeTime(node.lastSeenAt ?? node.headscaleLastSeen)}
-                  </span>
-                )}
+                <div className="flex items-center justify-end gap-1.5">
+                  <NodeStatusDot status={node.status} />
+                  {node.status === "online" ? (
+                    <span className="text-xs text-emerald-400/80">Connected</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/50">
+                      {formatRelativeTime(node.lastSeenAt ?? node.headscaleLastSeen)}
+                    </span>
+                  )}
+                </div>
               </TableCell>
             </TableRow>
           ))}
