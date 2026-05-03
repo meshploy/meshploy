@@ -47,9 +47,23 @@ var loginCmd = &cobra.Command{
 		}
 
 		c := client.New(apiURL, "")
-		token, err := c.Login(email, string(passBytes))
+		result, err := c.Login(email, string(passBytes))
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
+		}
+
+		token := result.Token
+		if result.TOTPRequired {
+			fmt.Print("Two-factor code: ")
+			codeBytes, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Println()
+			if err != nil {
+				return fmt.Errorf("read code: %w", err)
+			}
+			token, err = c.CompleteTOTPLogin(result.MFAToken, strings.TrimSpace(string(codeBytes)))
+			if err != nil {
+				return fmt.Errorf("2FA verification failed: %w", err)
+			}
 		}
 
 		// Resolve the single org for this CE install.
