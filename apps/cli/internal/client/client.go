@@ -165,6 +165,40 @@ func (c *Client) DeleteNode(orgID, nodeID string) error {
 	return nil
 }
 
+type K3sJoinToken struct {
+	Token     string `json:"token"`
+	ServerURL string `json:"server_url"`
+}
+
+func (c *Client) GetK3sJoinToken() (K3sJoinToken, error) {
+	resp, err := c.do("GET", "/api/v1/cluster/join-token", nil)
+	if err != nil {
+		return K3sJoinToken{}, err
+	}
+	return decode[K3sJoinToken](resp)
+}
+
+type HeadscalePreAuthKey struct {
+	Key          string `json:"key"`
+	HeadscaleURL string `json:"headscale_url"`
+}
+
+func (c *Client) GetHeadscalePreAuthKey() (HeadscalePreAuthKey, error) {
+	resp, err := c.do("GET", "/api/v1/cluster/headscale-preauth-key", nil)
+	if err != nil {
+		return HeadscalePreAuthKey{}, err
+	}
+	return decode[HeadscalePreAuthKey](resp)
+}
+
+func (c *Client) CreateHeadscalePreAuthKey() (HeadscalePreAuthKey, error) {
+	resp, err := c.do("POST", "/api/v1/cluster/headscale-preauth-key", nil)
+	if err != nil {
+		return HeadscalePreAuthKey{}, err
+	}
+	return decode[HeadscalePreAuthKey](resp)
+}
+
 // ── Org ───────────────────────────────────────────────────────────────────────
 
 type Org struct {

@@ -127,9 +127,8 @@ if $WORKER; then
   # ── Deregister from Meshploy ─────────────────────────────────────────────────
   # Must happen before tailscale logout — the API is reachable over the mesh.
   header "Deregistering from Meshploy"
-  if [[ -f /etc/meshploy/node.conf ]]; then
-    # shellcheck source=/dev/null
-    source /etc/meshploy/node.conf
+  if sudo test -f /etc/meshploy/node.conf 2>/dev/null; then
+    eval "$(sudo cat /etc/meshploy/node.conf)"
     if [[ -n "${NODE_ID:-}" && -n "${MESHPLOY_API_URL:-}" && -n "${MESHPLOY_TOKEN:-}" ]]; then
       if confirm "Remove '${NODE_NAME:-$NODE_ID}' from Meshploy, Headscale, and k3s cluster?"; then
         _DEREG_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
@@ -140,7 +139,7 @@ if $WORKER; then
           2>/dev/null || echo "000")"
         if [[ "$_DEREG_STATUS" == "200" || "$_DEREG_STATUS" == "204" ]]; then
           success "Node deregistered — removed from Meshploy DB, Headscale, and k3s cluster"
-          rm -f /etc/meshploy/node.conf
+          sudo rm -f /etc/meshploy/node.conf
         else
           warn "Deregister API returned HTTP ${_DEREG_STATUS} — node may still appear in dashboard"
           warn "Delete it manually: Nodes → ${NODE_NAME:-$NODE_ID} → Remove"
