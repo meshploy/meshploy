@@ -188,7 +188,7 @@ type tokenBody struct {
 }
 
 func (c *Client) GetRegistrationToken(orgID string) (string, error) {
-	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/nodes/registration-token", nil)
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/node-registration-token", nil)
 	if err != nil {
 		return "", err
 	}
@@ -197,7 +197,7 @@ func (c *Client) GetRegistrationToken(orgID string) (string, error) {
 }
 
 func (c *Client) RotateRegistrationToken(orgID string) (string, error) {
-	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/nodes/registration-token", nil)
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/node-registration-token", nil)
 	if err != nil {
 		return "", err
 	}
