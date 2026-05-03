@@ -492,28 +492,39 @@ Examples:
 			"TERM":             "xterm-256color",
 		}
 
-		// ── Build SSH args ────────────────────────────────────────────────────
-		sshArgs := []string{"-o", "StrictHostKeyChecking=accept-new"}
+		// ── Base SSH args (no PTY) ────────────────────────────────────────────
+		baseArgs := []string{"-o", "StrictHostKeyChecking=accept-new"}
 		if identityFile != "" {
-			sshArgs = append(sshArgs, "-i", identityFile)
+			baseArgs = append(baseArgs, "-i", identityFile)
 		}
 		if sshPort != 22 {
-			sshArgs = append(sshArgs, "-p", fmt.Sprintf("%d", sshPort))
+			baseArgs = append(baseArgs, "-p", fmt.Sprintf("%d", sshPort))
 		}
-		sshArgs = append(sshArgs, args[0])
 
 		envParts := make([]string, 0, len(envVars))
 		for k, v := range envVars {
 			envParts = append(envParts, k+"="+shellQuote(v))
 		}
-		sshArgs = append(sshArgs, fmt.Sprintf("env %s bash -s -- --auto", strings.Join(envParts, " ")))
+		envPrefix := strings.Join(envParts, " ")
 
 		fmt.Printf("Connecting to %s…\n\n", args[0])
-		ssh := exec.Command("ssh", sshArgs...)
-		ssh.Stdin = strings.NewReader(scriptContent)
-		ssh.Stdout = os.Stdout
-		ssh.Stderr = os.Stderr
-		return ssh.Run()
+
+		// ── Step 1: pipe script to temp file (no PTY needed) ─────────────────
+		tmpScript := "/tmp/.meshploy-install.sh"
+		step1 := exec.Command("ssh", append(baseArgs, args[0], fmt.Sprintf("cat > %s && chmod +x %s", tmpScript, tmpScript))...)
+		step1.Stdin = strings.NewReader(scriptContent)
+		step1.Stderr = os.Stderr
+		if err := step1.Run(); err != nil {
+			return fmt.Errorf("upload install script: %w", err)
+		}
+
+		// ── Step 2: execute with PTY so sudo can prompt for password ─────────
+		step2 := exec.Command("ssh", append(baseArgs, "-t", args[0],
+			fmt.Sprintf("env %s bash %s --auto; _rc=$?; rm -f %s; exit $_rc", envPrefix, tmpScript, tmpScript))...)
+		step2.Stdin = os.Stdin
+		step2.Stdout = os.Stdout
+		step2.Stderr = os.Stderr
+		return step2.Run()
 	},
 }
 
