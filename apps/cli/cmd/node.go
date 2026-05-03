@@ -489,6 +489,7 @@ Examples:
 			"PREAUTH_KEY":      preauthKey,
 			"MESHPLOY_TOKEN":   regToken,
 			"MESHPLOY_API_URL": meshAPIURL,
+			"TERM":             "xterm-256color",
 		}
 
 		// ── Build SSH args ────────────────────────────────────────────────────
