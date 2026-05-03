@@ -1,17 +1,21 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const (
@@ -401,6 +405,146 @@ func headscaleCreatePreauthKey(headscaleURL, apiKey string) (string, error) {
 	return keyBody.PreAuthKey.Key, nil
 }
 
+// ── node add ──────────────────────────────────────────────────────────────────
+
+var nodeAddCmd = &cobra.Command{
+	Use:   "add <user@host>",
+	Short: "Bootstrap a remote machine as a worker node (runs from any machine)",
+	Long: `Downloads the Meshploy install script and runs it on the target machine
+over SSH. Unlike 'node init', this command can run from any machine — it
+does not require the master node's local files.
+
+It auto-fetches the registration token from the API. You will be prompted
+for the Headscale URL and a preauth key (generate one in the Meshploy UI
+under Cluster → Add a worker node, or via 'node init' on the master).
+
+Examples:
+  meshploy node add root@192.168.1.10
+  meshploy node add ubuntu@10.0.0.5 --identity-file ~/.ssh/id_ed25519
+  meshploy node add admin@worker.internal --headscale-url https://headscale.example.com`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identityFile, _ := cmd.Flags().GetString("identity-file")
+		sshPort, _      := cmd.Flags().GetInt("port")
+		headscaleURL, _ := cmd.Flags().GetString("headscale-url")
+		preauthKey, _   := cmd.Flags().GetString("preauth-key")
+		githubPAT, _    := cmd.Flags().GetString("token")
+
+		sc := bufio.NewScanner(os.Stdin)
+
+		// ── Registration token (auto) ─────────────────────────────────────────
+		c := apiClient()
+		regToken, err := c.GetRegistrationToken(orgID())
+		if err != nil {
+			return fmt.Errorf("fetch registration token: %w", err)
+		}
+		if regToken == "" {
+			fmt.Println("No registration token found, generating one…")
+			regToken, err = c.RotateRegistrationToken(orgID())
+			if err != nil {
+				return fmt.Errorf("create registration token: %w", err)
+			}
+		}
+
+		// ── Headscale URL (guess or prompt) ───────────────────────────────────
+		if headscaleURL == "" {
+			// Heuristic: api.example.com → headscale.example.com
+			guessed := strings.Replace(loadedCfg.APIURL, "://api.", "://headscale.", 1)
+			if guessed == loadedCfg.APIURL {
+				guessed = ""
+			}
+			headscaleURL = promptDefault(sc, "Headscale URL", guessed)
+		}
+		if headscaleURL == "" {
+			return fmt.Errorf("headscale URL is required (use --headscale-url or enter it at the prompt)")
+		}
+
+		// ── Preauth key (prompt if not provided) ──────────────────────────────
+		if preauthKey == "" {
+			fmt.Printf("\nGenerate a preauth key at: %s → Cluster → Add a worker node\n\n", strings.Replace(loadedCfg.APIURL, "://api.", "://app.", 1))
+			fmt.Print("Preauth key: ")
+			keyBytes, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Println()
+			if err != nil {
+				return fmt.Errorf("read preauth key: %w", err)
+			}
+			preauthKey = strings.TrimSpace(string(keyBytes))
+		}
+		if preauthKey == "" {
+			return fmt.Errorf("preauth key is required")
+		}
+
+		// ── Download install script ───────────────────────────────────────────
+		fmt.Println("\nDownloading install script from GitHub…")
+		scriptContent, err := downloadInstallScript(githubPAT)
+		if err != nil {
+			return fmt.Errorf("download install script: %w", err)
+		}
+
+		// ── Build env vars ────────────────────────────────────────────────────
+		meshAPIURL := "http://100.64.0.1:4000"
+		envVars := map[string]string{
+			"NODE_TYPE":        "worker",
+			"HEADSCALE_URL":    headscaleURL,
+			"PREAUTH_KEY":      preauthKey,
+			"MESHPLOY_TOKEN":   regToken,
+			"MESHPLOY_API_URL": meshAPIURL,
+		}
+
+		// ── Build SSH args ────────────────────────────────────────────────────
+		sshArgs := []string{"-o", "StrictHostKeyChecking=accept-new"}
+		if identityFile != "" {
+			sshArgs = append(sshArgs, "-i", identityFile)
+		}
+		if sshPort != 22 {
+			sshArgs = append(sshArgs, "-p", fmt.Sprintf("%d", sshPort))
+		}
+		sshArgs = append(sshArgs, args[0])
+
+		envParts := make([]string, 0, len(envVars))
+		for k, v := range envVars {
+			envParts = append(envParts, k+"="+shellQuote(v))
+		}
+		sshArgs = append(sshArgs, fmt.Sprintf("env %s bash -s -- --auto", strings.Join(envParts, " ")))
+
+		fmt.Printf("Connecting to %s…\n\n", args[0])
+		ssh := exec.Command("ssh", sshArgs...)
+		ssh.Stdin = strings.NewReader(scriptContent)
+		ssh.Stdout = os.Stdout
+		ssh.Stderr = os.Stderr
+		return ssh.Run()
+	},
+}
+
+// downloadInstallScript fetches deploy/install.sh from the GitHub release.
+func downloadInstallScript(pat string) (string, error) {
+	// Try the release asset first; fall back to raw file from the default branch.
+	assetURL, err := resolveAssetURL(pat, "install.sh")
+	if err != nil {
+		// Fall back to raw GitHub URL.
+		assetURL = "https://raw.githubusercontent.com/" + githubRepo + "/main/deploy/install.sh"
+	}
+
+	req, _ := http.NewRequest("GET", assetURL, nil)
+	if pat != "" {
+		req.Header.Set("Authorization", "token "+pat)
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+	}
+	b, err := io.ReadAll(resp.Body)
+	return string(b), err
+}
+
 func init() {
 	nodeDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 	nodeUninstallCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompts")
@@ -409,8 +553,14 @@ func init() {
 	nodeInitCmd.Flags().IntP("port", "P", 22, "SSH port on the remote host")
 	nodeInitCmd.Flags().StringP("preauth-key", "k", "", "Headscale preauth key (auto-generated from /opt/meshploy/.env if omitted)")
 
+	nodeAddCmd.Flags().StringP("identity-file", "i", "", "SSH identity file (private key)")
+	nodeAddCmd.Flags().IntP("port", "P", 22, "SSH port on the remote host")
+	nodeAddCmd.Flags().String("headscale-url", "", "Headscale URL (e.g. https://headscale.example.com)")
+	nodeAddCmd.Flags().StringP("preauth-key", "k", "", "Headscale preauth key")
+	nodeAddCmd.Flags().String("token", "", "GitHub PAT for downloading install script (or set GITHUB_PAT env var)")
+
 	nodeTokenCmd.AddCommand(nodeTokenGetCmd, nodeTokenRotateCmd)
-	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd)
+	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd, nodeAddCmd)
 	rootCmd.AddCommand(nodeCmd)
 }
 
