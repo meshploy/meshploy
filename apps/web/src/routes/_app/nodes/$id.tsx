@@ -87,12 +87,14 @@ function NodeDetailPage() {
             </div>
             <div className="flex items-center gap-3 mt-0.5">
               <code className="text-xs font-mono text-muted-foreground">{node.tailscaleIP}</code>
-              <span className="text-xs text-muted-foreground">
-                {(() => {
-                  const seen = node.lastSeenAt ?? node.headscaleLastSeen
-                  return seen ? `Last seen ${formatRelativeTime(seen)}` : "Never seen"
-                })()}
-              </span>
+              {node.status !== "online" && (
+                <span className="text-xs text-muted-foreground">
+                  {(() => {
+                    const seen = node.lastSeenAt ?? node.headscaleLastSeen
+                    return seen ? `Last seen ${formatRelativeTime(seen)}` : "Never seen"
+                  })()}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -171,7 +173,7 @@ function NodeDetailPage() {
               {node.headscaleFQDN && (
                 <InfoRow icon={<Globe className="h-3.5 w-3.5" />} label="Mesh Domain" value={node.headscaleFQDN} mono />
               )}
-              {node.headscaleLastSeen && (
+              {node.headscaleLastSeen && !node.headscaleOnline && (
                 <InfoRow
                   icon={<Clock className="h-3.5 w-3.5" />}
                   label="Last Seen"
