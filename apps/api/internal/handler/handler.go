@@ -39,6 +39,9 @@ func (h *Handler) Register(api huma.API) {
 // RegisterRaw wires routes that need raw http.HandlerFunc access:
 // OAuth redirects, SSE log streams, and WebSocket connections.
 func (h *Handler) RegisterRaw(r chi.Router) {
+	// Install script — handler calls requireUser internally to enforce auth.
+	r.Get("/install.sh", h.ServeInstallScript)
+
 	// Git OAuth / App callbacks
 	r.Get("/api/v1/github/app-callback", h.GitHubAppCallback)
 	r.Get("/api/v1/github/callback", h.GitHubCallback)
