@@ -473,6 +473,8 @@ type PatchBuildConfigInput struct {
 		BuilderNode           *string `json:"builder_node,omitempty"`             // "" = auto-schedule
 		BuilderCPURequest     *string `json:"builder_cpu_request,omitempty"`
 		BuilderMemoryRequest  *string `json:"builder_memory_request,omitempty"`
+		RollbackEnabled       *bool   `json:"rollback_enabled,omitempty"`
+		ImageRetention        *int    `json:"image_retention,omitempty"`
 	}
 }
 
@@ -498,6 +500,8 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		BuilderNode:          input.Body.BuilderNode,
 		BuilderCPURequest:    input.Body.BuilderCPURequest,
 		BuilderMemoryRequest: input.Body.BuilderMemoryRequest,
+		RollbackEnabled:      input.Body.RollbackEnabled,
+		ImageRetention:       input.Body.ImageRetention,
 	}
 	if input.Body.GitIntegrationID != nil {
 		id, err := parseUUID(*input.Body.GitIntegrationID)

@@ -80,6 +80,26 @@ func (h *Handler) registerDeploymentRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: 204,
 	}, h.DeleteDeploymentRecord)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "rollback-deployment",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/rollback",
+		Summary:       "Roll back to a previous successful deployment",
+		Tags:          []string{"Deployments"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 202,
+	}, h.RollbackDeployment)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "retry-deployment",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/retry",
+		Summary:       "Retry a failed deployment",
+		Tags:          []string{"Deployments"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 202,
+	}, h.RetryDeployment)
 }
 
 func (h *Handler) TriggerDeployment(ctx context.Context, input *ListDeploymentsInput) (*GetDeploymentOutput, error) {
@@ -143,6 +163,36 @@ func (h *Handler) CancelDeployment(ctx context.Context, input *DeploymentPathInp
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return nil, nil
+}
+
+func (h *Handler) RollbackDeployment(ctx context.Context, input *DeploymentPathInput) (*GetDeploymentOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	deploymentID, err := parseUUID(input.DeploymentID)
+	if err != nil {
+		return nil, err
+	}
+	dep, err := h.svc.Deployments.Rollback(ctx, deploymentID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &GetDeploymentOutput{Body: dep}, nil
+}
+
+func (h *Handler) RetryDeployment(ctx context.Context, input *DeploymentPathInput) (*GetDeploymentOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	deploymentID, err := parseUUID(input.DeploymentID)
+	if err != nil {
+		return nil, err
+	}
+	dep, err := h.svc.Deployments.Retry(ctx, deploymentID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &GetDeploymentOutput{Body: dep}, nil
 }
 
 func (h *Handler) DeleteDeploymentRecord(ctx context.Context, input *DeploymentPathInput) (*struct{}, error) {

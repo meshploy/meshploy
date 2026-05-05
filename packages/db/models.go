@@ -390,6 +390,11 @@ type BuildConfig struct {
 	LastBuiltImage string     `json:"last_built_image"`
 	LastBuiltAt    *time.Time `json:"last_built_at"`
 
+	// Rollback — when enabled, old images are pruned from the registry after each
+	// successful build, keeping only the last ImageRetention deployments' images.
+	RollbackEnabled bool `gorm:"not null;default:false" json:"rollback_enabled"`
+	ImageRetention  int  `gorm:"not null;default:5"     json:"image_retention"`
+
 	Service             Service              `gorm:"foreignKey:ServiceID"                                        json:"-"`
 	GitIntegration      *GitIntegration      `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL"    json:"-"`
 	RegistryIntegration *RegistryIntegration `gorm:"foreignKey:RegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`

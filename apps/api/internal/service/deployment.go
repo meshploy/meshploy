@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -289,6 +290,9 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 	s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(serviceUpdates)
+
+	// Prune old images from the registry (best-effort, non-blocking).
+	go s.pruneOldImages(context.Background(), a.svc.ID, a.bc)
 }
 
 // resolveScheduledNode queries K8s for the node the pod landed on and returns
@@ -401,6 +405,184 @@ func (s *DeploymentService) ClearBuildCache(ctx context.Context, namespace strin
 		return fmt.Errorf("kubernetes is not configured on this instance")
 	}
 	return appk8s.DeleteBuildCachePVC(ctx, s.k8s, namespace)
+}
+
+// ─── Rollback ─────────────────────────────────────────────────────────────────
+
+// Rollback re-deploys the image from a previous successful deployment without
+// triggering a new build. Returns a new Deployment record immediately.
+func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID) (*db.Deployment, error) {
+	if s.k8s == nil {
+		return nil, fmt.Errorf("kubernetes is not configured on this instance")
+	}
+	var target db.Deployment
+	if err := s.db.WithContext(ctx).Preload("Service.Project").First(&target, "id = ?", deploymentID).Error; err != nil {
+		return nil, fmt.Errorf("deployment not found")
+	}
+	if target.Status != db.DeploymentSuccess {
+		return nil, fmt.Errorf("can only roll back to a successful deployment")
+	}
+	if target.Image == "" {
+		return nil, fmt.Errorf("deployment has no image reference stored")
+	}
+
+	now := time.Now()
+	dep := &db.Deployment{
+		ServiceID:  target.ServiceID,
+		Status:     db.DeploymentDeploying,
+		Image:      target.Image,
+		Log:        fmt.Sprintf("Rolling back to deployment %s (%s)\n", target.ID.String()[:8], target.Image),
+		DeployedAt: &now,
+	}
+	if err := s.db.WithContext(ctx).Create(dep).Error; err != nil {
+		return nil, err
+	}
+
+	svc := target.Service
+	namespace := svc.Project.Slug
+
+	go func() {
+		port := int32(svc.Port)
+		if port == 0 {
+			port = 3000
+		}
+		nodeName := ""
+		if svc.NodeID != nil {
+			var node db.Node
+			if err := s.db.First(&node, svc.NodeID).Error; err == nil {
+				nodeName = node.Name
+			}
+		}
+		secretEnvs, _ := s.secrets.ResolveForService(context.Background(), svc.ID)
+		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs)
+		wp := appk8s.WorkloadParams{
+			Name:          slugify(svc.Name),
+			Namespace:     namespace,
+			Image:         target.Image,
+			Port:          port,
+			Replicas:      int32(svc.Replicas),
+			Env:           envVars,
+			CPURequest:    svc.CPURequest,
+			CPULimit:      svc.CPULimit,
+			MemoryRequest: svc.MemoryRequest,
+			MemoryLimit:   svc.MemoryLimit,
+			NodeName:      nodeName,
+		}
+		if err := appk8s.ApplyDeployment(context.Background(), s.k8s, wp); err != nil {
+			s.failDeployment(dep.ID, "rollback failed: "+err.Error())
+			return
+		}
+		if err := appk8s.ApplyService(context.Background(), s.k8s, slugify(svc.Name), namespace, port); err != nil {
+			s.failDeployment(dep.ID, "rollback failed to apply K8s service: "+err.Error())
+			return
+		}
+		finishedAt := time.Now()
+		s.db.Model(&db.Deployment{}).Where("id = ?", dep.ID).Updates(map[string]any{
+			"status":      db.DeploymentSuccess,
+			"log":         dep.Log + "Rollback applied successfully.",
+			"deployed_at": &finishedAt,
+		})
+		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
+			"image":  target.Image,
+			"status": db.ServiceRunning,
+		})
+	}()
+
+	return dep, nil
+}
+
+// Retry re-triggers a fresh build+deploy for a failed deployment's service.
+func (s *DeploymentService) Retry(ctx context.Context, deploymentID uuid.UUID) (*db.Deployment, error) {
+	var dep db.Deployment
+	if err := s.db.WithContext(ctx).First(&dep, "id = ?", deploymentID).Error; err != nil {
+		return nil, fmt.Errorf("deployment not found")
+	}
+	if dep.Status != db.DeploymentFailed {
+		return nil, fmt.Errorf("can only retry a failed deployment")
+	}
+	return s.Trigger(ctx, TriggerInput{ServiceID: dep.ServiceID})
+}
+
+// ─── Registry cleanup ─────────────────────────────────────────────────────────
+
+// pruneOldImages deletes registry manifests for successful deployments beyond
+// the retention count. Called in a background goroutine after each successful build.
+func (s *DeploymentService) pruneOldImages(ctx context.Context, serviceID uuid.UUID, bc db.BuildConfig) {
+	if !bc.RollbackEnabled || bc.ImageRetention <= 0 {
+		return
+	}
+	var deployments []db.Deployment
+	s.db.WithContext(ctx).
+		Where("service_id = ? AND status = ? AND image != ''", serviceID, db.DeploymentSuccess).
+		Order("created_at DESC").
+		Find(&deployments)
+	if len(deployments) <= bc.ImageRetention {
+		return
+	}
+	host, user, pass, err := s.resolveRegistry(ctx, &bc)
+	if err != nil {
+		return
+	}
+	for _, dep := range deployments[bc.ImageRetention:] {
+		s.deleteRegistryImage(host, user, pass, dep.Image)
+	}
+}
+
+// deleteRegistryImage soft-deletes a manifest from the registry.
+// image format: "registryHost/name:tag"
+func (s *DeploymentService) deleteRegistryImage(host, user, pass, image string) {
+	// Strip registry host prefix: "host/name:tag" → "name:tag"
+	withoutHost := strings.TrimPrefix(image, strings.TrimSuffix(host, "/")+"/")
+	// Split name and tag on last ":"
+	lastColon := strings.LastIndex(withoutHost, ":")
+	if lastColon < 0 {
+		return
+	}
+	name := withoutHost[:lastColon]
+	tag := withoutHost[lastColon+1:]
+
+	scheme := "https"
+	if !strings.HasPrefix(host, "https://") {
+		scheme = "http"
+	}
+	registryBase := scheme + "://" + strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Step 1: resolve manifest digest.
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/v2/%s/manifests/%s", registryBase, name, tag), nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+	if user != "" {
+		req.SetBasicAuth(user, pass)
+	}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return
+	}
+	digest := resp.Header.Get("Docker-Content-Digest")
+	resp.Body.Close()
+	if digest == "" {
+		return
+	}
+
+	// Step 2: delete the manifest.
+	req2, err := http.NewRequest("DELETE", fmt.Sprintf("%s/v2/%s/manifests/%s", registryBase, name, digest), nil)
+	if err != nil {
+		return
+	}
+	if user != "" {
+		req2.SetBasicAuth(user, pass)
+	}
+	resp2, err := client.Do(req2)
+	if err == nil && resp2 != nil {
+		resp2.Body.Close()
+	}
 }
 
 // ─── Log streaming ────────────────────────────────────────────────────────────
