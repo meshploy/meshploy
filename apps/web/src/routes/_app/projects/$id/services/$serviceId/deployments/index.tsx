@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, RefreshCw, Rocket, RotateCcw, ScrollText, Trash2, X } from "lucide-react"
+import { Loader2, Rocket, RotateCcw, ScrollText, Trash2, X } from "lucide-react"
 import { services as servicesApi, buildConfigs as buildConfigsApi } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -189,10 +189,6 @@ function DeploymentRow({
     onSuccess: invalidate,
   })
 
-  const retryMutation = useMutation({
-    mutationFn: () => deploymentsApi.retry(orgId, projectId, serviceId, deployment.id, token),
-    onSuccess: invalidate,
-  })
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
@@ -250,16 +246,7 @@ function DeploymentRow({
                 {rollbackMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
               </button>
             )}
-            {deployment.status === "failed" && (
-              <button
-                onClick={() => retryMutation.mutate()}
-                disabled={retryMutation.isPending}
-                title="Retry this deployment"
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-              >
-                {retryMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-              </button>
-            )}
+
             <button
               onClick={() => deleteMutation.mutate()}
               disabled={deleteMutation.isPending}

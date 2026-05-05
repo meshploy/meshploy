@@ -261,43 +261,54 @@ function DeploymentStepper({ status }: { status: ApiDeployment["status"] }) {
   const failed = status === "failed"
 
   return (
-    <div className="flex items-center gap-0 rounded-lg border border-border/60 bg-card px-4 py-3">
+    <div className="flex items-center">
       {STEPS.map((step, i) => {
-        const done = !failed && current > i
-        const active = !failed && current === i
-        const upcoming = failed ? false : current < i
+        const done    = !failed && current > i
+        const active  = !failed && current === i
+        const isFailed = failed && i === Math.max(current, 0)
+
+        const boxCls = done
+          ? "border-emerald-500/30 bg-emerald-500/5"
+          : active
+          ? "border-primary/40 bg-primary/5"
+          : isFailed
+          ? "border-destructive/30 bg-destructive/5"
+          : "border-border/50 bg-card"
+
+        const labelCls = done
+          ? "text-emerald-400"
+          : active
+          ? "text-foreground"
+          : isFailed
+          ? "text-destructive"
+          : "text-muted-foreground/40"
+
+        const lineCls = done ? "bg-emerald-500/30" : "bg-border/40"
 
         return (
           <div key={step.label} className="flex items-center flex-1 min-w-0">
-            {/* Step */}
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 text-[11px] font-semibold transition-colors
+            {/* Step box */}
+            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border shrink-0 transition-colors ${boxCls}`}>
+              <div className={`flex items-center justify-center w-5 h-5 rounded-full shrink-0 text-[11px] font-semibold
                 ${done    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : ""}
-                ${active  ? "bg-primary/20 text-primary border border-primary/30" : ""}
-                ${upcoming ? "bg-muted text-muted-foreground/40 border border-border/60" : ""}
-                ${failed  ? "bg-destructive/10 text-destructive border border-destructive/20" : ""}
+                ${active  ? "bg-primary/20 text-primary border border-primary/40" : ""}
+                ${isFailed ? "bg-destructive/10 text-destructive border border-destructive/20" : ""}
+                ${!done && !active && !isFailed ? "bg-muted text-muted-foreground/30 border border-border/50" : ""}
               `}>
                 {done ? <Check className="h-3 w-3" /> : active ? <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" /> : i + 1}
               </div>
-              <div className="min-w-0 hidden sm:block">
-                <p className={`text-xs font-medium leading-tight ${done ? "text-emerald-400" : active ? "text-foreground" : "text-muted-foreground/40"}`}>
-                  {step.label}
-                </p>
-                <p className="text-[10px] text-muted-foreground/40 truncate">{step.sub}</p>
+              <div className="hidden sm:block">
+                <p className={`text-xs font-medium leading-tight ${labelCls}`}>{step.label}</p>
+                <p className="text-[10px] text-muted-foreground/40 mt-0.5">{step.sub}</p>
               </div>
             </div>
-            {/* Connector */}
+            {/* Connector — touches box borders */}
             {i < STEPS.length - 1 && (
-              <div className={`flex-1 h-px mx-3 ${done ? "bg-emerald-500/30" : "bg-border/40"}`} />
+              <div className={`flex-1 h-px ${lineCls}`} />
             )}
           </div>
         )
       })}
-      {failed && (
-        <div className="ml-4 shrink-0">
-          <span className="text-xs text-destructive font-medium">failed</span>
-        </div>
-      )}
     </div>
   )
 }

@@ -605,10 +605,12 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       {mutation.isSuccess && (
         <p className="text-xs text-emerald-400">Saved.</p>
       )}
-      <Button className="w-full gap-2" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-        {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        Save changes
-      </Button>
+      <div className="flex justify-end">
+        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Save changes
+        </Button>
+      </div>
     </div>
   )
 }
@@ -723,49 +725,51 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
       title="Rollback"
       subtitle="Keep previous deployment images so you can roll back instantly without a rebuild."
     >
-      <Field label="Enable rollback">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            onClick={() => setEnabled((v) => !v)}
-            className={cn(
-              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none",
-              enabled ? "bg-primary" : "bg-input"
-            )}
-          >
-            <span
+      <div className="space-y-4">
+        <Field label="Enable rollback">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              onClick={() => setEnabled((v) => !v)}
               className={cn(
-                "pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-lg transition-transform",
-                enabled ? "translate-x-4" : "translate-x-0"
+                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none",
+                enabled ? "bg-primary" : "bg-input"
               )}
-            />
-          </button>
-          <span className="text-xs text-muted-foreground">
-            {enabled ? "Enabled" : "Disabled"}
-          </span>
-        </div>
-      </Field>
-
-      {enabled && (
-        <Field label="Images to keep">
-          <input
-            type="number"
-            min={1}
-            max={50}
-            value={retention}
-            onChange={(e) => setRetention(e.target.value)}
-            className={cn(inputCls, "w-24")}
-          />
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-lg transition-transform",
+                  enabled ? "translate-x-4" : "translate-x-0"
+                )}
+              />
+            </button>
+            <span className="text-xs text-muted-foreground">
+              {enabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
         </Field>
-      )}
 
-      <div className="flex justify-end pt-1">
-        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending || isLoading}>
-          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Save
-        </Button>
+        {enabled && (
+          <Field label="Images to keep">
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={retention}
+              onChange={(e) => setRetention(e.target.value)}
+              className={cn(inputCls, "w-24")}
+            />
+          </Field>
+        )}
+
+        <div className="flex justify-end">
+          <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending || isLoading}>
+            {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save
+          </Button>
+        </div>
       </div>
     </Section>
   )
