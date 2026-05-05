@@ -381,6 +381,8 @@ type UpdateBuildConfigInput struct {
 	BuilderNode           *string // nil = no change; "" = auto-schedule
 	BuilderCPURequest     *string // nil = no change; "" = use default (1000m)
 	BuilderMemoryRequest  *string // nil = no change; "" = use default (1Gi)
+	RollbackEnabled       *bool
+	ImageRetention        *int
 }
 
 // UpsertBuildConfig creates or updates the BuildConfig for a service.
@@ -429,6 +431,12 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.BuilderMemoryRequest != nil {
 		bc.BuilderMemoryRequest = *in.BuilderMemoryRequest
+	}
+	if in.RollbackEnabled != nil {
+		bc.RollbackEnabled = *in.RollbackEnabled
+	}
+	if in.ImageRetention != nil {
+		bc.ImageRetention = *in.ImageRetention
 	}
 	if isNew {
 		err = s.db.WithContext(ctx).Create(&bc).Error

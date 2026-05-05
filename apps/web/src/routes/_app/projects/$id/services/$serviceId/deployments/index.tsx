@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Rocket, ScrollText, Trash2, X } from "lucide-react"
-import { services as servicesApi } from "@/lib/api"
+import { Loader2, RefreshCw, Rocket, RotateCcw, ScrollText, Trash2, X } from "lucide-react"
+import { services as servicesApi, buildConfigs as buildConfigsApi } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
@@ -50,6 +50,14 @@ function DeploymentsTab() {
   })
   const isDatabase = service?.type === "database"
   const isProvisioned = isDatabase && (service?.status === "running" || service?.status === "stopped")
+
+  const { data: bc } = useQuery({
+    queryKey: ["build-config", orgId, projectId, serviceId],
+    queryFn: () => buildConfigsApi.get(orgId!, projectId, serviceId, token),
+    enabled: !!orgId && service?.type === "application",
+    retry: false,
+  })
+  const rollbackEnabled = bc?.rollback_enabled ?? false
   const queryClient = useQueryClient()
 
   const queryKey = ["deployments", orgId, projectId, serviceId]
@@ -140,6 +148,7 @@ function DeploymentsTab() {
               deployment={dep}
               projectId={projectId}
               serviceId={serviceId}
+              rollbackEnabled={rollbackEnabled}
             />
           ))}
         </div>
@@ -152,24 +161,37 @@ function DeploymentRow({
   deployment,
   projectId,
   serviceId,
+  rollbackEnabled,
 }: {
   deployment: ApiDeployment
   projectId: string
   serviceId: string
+  rollbackEnabled: boolean
 }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
   const isActive = ACTIVE_STATUSES.has(deployment.status)
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] })
 
   const cancelMutation = useMutation({
     mutationFn: () => deploymentsApi.cancel(orgId, projectId, serviceId, deployment.id, token),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] }),
+    onSuccess: invalidate,
   })
 
   const deleteMutation = useMutation({
     mutationFn: () => deploymentsApi.deleteRecord(orgId, projectId, serviceId, deployment.id, token),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] }),
+    onSuccess: invalidate,
+  })
+
+  const rollbackMutation = useMutation({
+    mutationFn: () => deploymentsApi.rollback(orgId, projectId, serviceId, deployment.id, token),
+    onSuccess: invalidate,
+  })
+
+  const retryMutation = useMutation({
+    mutationFn: () => deploymentsApi.retry(orgId, projectId, serviceId, deployment.id, token),
+    onSuccess: invalidate,
   })
 
   return (
@@ -214,23 +236,39 @@ function DeploymentRow({
             title="Cancel deployment"
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
           >
-            {cancelMutation.isPending
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <X className="h-3 w-3" />
-            }
+            {cancelMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
           </button>
         ) : (
-          <button
-            onClick={() => deleteMutation.mutate()}
-            disabled={deleteMutation.isPending}
-            title="Delete record"
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-          >
-            {deleteMutation.isPending
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <Trash2 className="h-3 w-3" />
-            }
-          </button>
+          <>
+            {rollbackEnabled && deployment.status === "success" && (
+              <button
+                onClick={() => rollbackMutation.mutate()}
+                disabled={rollbackMutation.isPending}
+                title="Roll back to this deployment"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                {rollbackMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+              </button>
+            )}
+            {deployment.status === "failed" && (
+              <button
+                onClick={() => retryMutation.mutate()}
+                disabled={retryMutation.isPending}
+                title="Retry this deployment"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                {retryMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              </button>
+            )}
+            <button
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              title="Delete record"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            </button>
+          </>
         )}
       </div>
     </div>

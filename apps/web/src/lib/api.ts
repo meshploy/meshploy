@@ -737,6 +737,8 @@ export interface ApiBuildConfig {
   builder_memory_request: string
   last_built_image: string
   last_built_at: string | null
+  rollback_enabled: boolean
+  image_retention: number
   created_at: string
   updated_at: string
 }
@@ -765,6 +767,8 @@ export interface UpdateBuildConfigBody {
   builder_node?: string             // "" = auto-schedule, node name = pin
   builder_cpu_request?: string      // "" = default (1000m)
   builder_memory_request?: string   // "" = default (1Gi)
+  rollback_enabled?: boolean
+  image_retention?: number
 }
 
 export const buildConfigs = {
@@ -830,6 +834,20 @@ export const deployments = {
     apiFetch<void>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}/record`,
       { method: "DELETE" },
+      token
+    ),
+
+  rollback: (orgId: string, projectId: string, serviceId: string, deploymentId: string, token: string) =>
+    apiFetch<ApiDeployment>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}/rollback`,
+      { method: "POST" },
+      token
+    ),
+
+  retry: (orgId: string, projectId: string, serviceId: string, deploymentId: string, token: string) =>
+    apiFetch<ApiDeployment>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}/retry`,
+      { method: "POST" },
       token
     ),
 }

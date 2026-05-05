@@ -676,6 +676,101 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
   )
 }
 
+// ─── Rollback section ─────────────────────────────────────────────────────────
+
+function RollbackSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const queryClient = useQueryClient()
+
+  const { data: service } = useQuery({
+    queryKey: ["service", orgId, projectId, serviceId],
+    queryFn: () => servicesApi.get(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: bc, isLoading } = useQuery({
+    queryKey: ["build-config", orgId, projectId, serviceId],
+    queryFn: () => buildConfigsApi.get(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+    retry: false,
+  })
+
+  const [enabled, setEnabled] = useState(false)
+  const [retention, setRetention] = useState("5")
+
+  useEffect(() => {
+    if (bc) {
+      setEnabled(bc.rollback_enabled ?? false)
+      setRetention(String(bc.image_retention ?? 5))
+    }
+  }, [bc])
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      buildConfigsApi.update(orgId, projectId, serviceId, {
+        rollback_enabled: enabled,
+        image_retention: parseInt(retention) || 5,
+      }, token),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["build-config", orgId, projectId, serviceId] }),
+  })
+
+  // Only show for application services that have a build config
+  if (service?.type !== "application" || (!isLoading && !bc)) return null
+
+  return (
+    <Section
+      title="Rollback"
+      subtitle="Keep previous deployment images so you can roll back instantly without a rebuild."
+    >
+      <Field label="Enable rollback">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            onClick={() => setEnabled((v) => !v)}
+            className={cn(
+              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none",
+              enabled ? "bg-primary" : "bg-input"
+            )}
+          >
+            <span
+              className={cn(
+                "pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-lg transition-transform",
+                enabled ? "translate-x-4" : "translate-x-0"
+              )}
+            />
+          </button>
+          <span className="text-xs text-muted-foreground">
+            {enabled ? "Enabled" : "Disabled"}
+          </span>
+        </div>
+      </Field>
+
+      {enabled && (
+        <Field label="Images to keep">
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={retention}
+            onChange={(e) => setRetention(e.target.value)}
+            className={cn(inputCls, "w-24")}
+          />
+        </Field>
+      )}
+
+      <div className="flex justify-end pt-1">
+        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending || isLoading}>
+          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Save
+        </Button>
+      </div>
+    </Section>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ConfigTab() {
@@ -689,6 +784,7 @@ function ConfigTab() {
       <SecretsSection projectId={projectId} serviceId={serviceId} />
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SourceDeploySection projectId={projectId} serviceId={serviceId} />
+      <RollbackSection projectId={projectId} serviceId={serviceId} />
     </div>
   )
 }
