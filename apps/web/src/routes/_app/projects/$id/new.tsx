@@ -13,12 +13,15 @@ import {
   Globe,
   Info,
   KeyRound,
+  Layers,
   Loader2,
   Plus,
   Server,
   Trash2,
   Zap,
 } from "lucide-react"
+import CodeMirror from "@uiw/react-codemirror"
+import { yaml } from "@codemirror/lang-yaml"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -38,6 +41,7 @@ import {
   domains as domainsApi,
   secrets as secretsApi,
   jobs as jobsApi,
+  stacks as stacksApi,
   toNode,
   type CreateServiceBody,
   type ApiNode,
@@ -60,7 +64,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ResourceType = "service" | "route" | "job" | "cron-job" | "database" | "secret"
+type ResourceType = "service" | "route" | "job" | "cron-job" | "database" | "secret" | "stack"
 type AppSource = "git" | "image"
 type Builder = "nixpacks" | "railpack" | "dockerfile"
 
@@ -117,6 +121,7 @@ const RESOURCE_TYPES: {
   soon?: boolean
 }[] = [
   { type: "service",  icon: Box,      label: "Service"  },
+  { type: "stack",    icon: Layers,   label: "Stack"    },
   { type: "database", icon: Database, label: "Database" },
   { type: "route",    icon: Globe,    label: "Route"    },
   { type: "secret",   icon: KeyRound, label: "Secret"   },
@@ -249,6 +254,8 @@ function NewResourcePage() {
               error={createMutation.error as Error | null}
               onCreate={() => createMutation.mutate()}
             />
+          ) : resourceType === "stack" ? (
+            <StackForm projectId={projectId} />
           ) : resourceType === "database" ? (
             <DatabaseForm projectId={projectId} />
           ) : resourceType === "route" ? (
@@ -1592,6 +1599,132 @@ function JobForm({ projectId, isCron }: { projectId: string; isCron: boolean }) 
         {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Create {isCron ? "cron job" : "job"}
       </Button>
+    </div>
+  )
+}
+
+// ─── Stack form ───────────────────────────────────────────────────────────────
+
+const DEFAULT_STACK_SPEC = `services:
+  web:
+    image: ""
+    x-meshploy:
+      source:
+        git: ""
+        branch: main
+      build:
+        builder: nixpacks
+      deploy:
+        replicas: 1
+        port: 3000
+`
+
+function StackForm({ projectId }: { projectId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const [name, setName] = useState("")
+  const [spec, setSpec] = useState(DEFAULT_STACK_SPEC)
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      stacksApi.create(orgId!, projectId, { name: name.trim(), spec }, token),
+    onSuccess: (stack) => {
+      queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
+      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      navigate({
+        to: "/projects/$id/stacks/$stackId/editor",
+        params: { id: projectId, stackId: stack.id },
+      })
+    },
+  })
+
+  const createAndApplyMutation = useMutation({
+    mutationFn: async () => {
+      const stack = await stacksApi.create(orgId!, projectId, { name: name.trim(), spec }, token)
+      await stacksApi.apply(orgId!, projectId, stack.id, token)
+      return stack
+    },
+    onSuccess: (stack) => {
+      queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
+      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      navigate({
+        to: "/projects/$id/stacks/$stackId/services",
+        params: { id: projectId, stackId: stack.id },
+      })
+    },
+  })
+
+  const canCreate = name.trim().length > 0
+  const isPending = createMutation.isPending || createAndApplyMutation.isPending
+  const error = (createMutation.error || createAndApplyMutation.error) as Error | null
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold">New Stack</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Deploy a group of services together using a Docker Compose spec.
+        </p>
+      </div>
+
+      <Section title="Name">
+        <Field label="Stack name">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="my-stack"
+            className={inputCls}
+          />
+        </Field>
+      </Section>
+
+      <Section title="Compose Spec" subtitle="Docker Compose YAML with optional x-meshploy extensions">
+        <div className="rounded-md border border-border/60 overflow-hidden">
+          <CodeMirror
+            value={spec}
+            height="360px"
+            theme="dark"
+            extensions={[yaml()]}
+            onChange={setSpec}
+            style={{ fontSize: 13 }}
+            basicSetup={{
+              lineNumbers: true,
+              foldGutter: true,
+              autocompletion: true,
+              indentOnInput: true,
+            }}
+          />
+        </div>
+      </Section>
+
+      {error && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+          <p className="text-xs text-destructive">{error.message}</p>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          className="flex-1 gap-2"
+          disabled={!canCreate || isPending}
+          onClick={() => createMutation.mutate()}
+        >
+          {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Create stack
+        </Button>
+        <Button
+          className="flex-1 gap-2"
+          disabled={!canCreate || isPending}
+          onClick={() => createAndApplyMutation.mutate()}
+        >
+          {createAndApplyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Create & Apply
+        </Button>
+      </div>
     </div>
   )
 }
