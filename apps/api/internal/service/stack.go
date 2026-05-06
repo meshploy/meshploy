@@ -97,10 +97,21 @@ type composeService struct {
 }
 
 type meshployExt struct {
-	Source   *meshploySource   `yaml:"source"`
-	Build    *meshployBuild    `yaml:"build"`
-	Deploy   *meshployDeploy   `yaml:"deploy"`
-	Rollback *meshployRollback `yaml:"rollback"`
+	Type     string             `yaml:"type"`
+	Source   *meshploySource    `yaml:"source"`
+	Build    *meshployBuild     `yaml:"build"`
+	Deploy   *meshployDeploy    `yaml:"deploy"`
+	Rollback *meshployRollback  `yaml:"rollback"`
+	Database *meshployDatabase  `yaml:"database"`
+}
+
+type meshployDatabase struct {
+	Engine    string `yaml:"engine"`
+	Version   string `yaml:"version"`
+	StorageGB int    `yaml:"storage_gb"`
+	DBName    string `yaml:"db_name"`
+	DBUser    string `yaml:"db_user"`
+	DBPassword string `yaml:"db_password"`
 }
 
 type meshploySource struct {
@@ -209,30 +220,54 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			}
 		}
 
+		isDatabase := ext != nil && ext.Type == "database"
+
 		existingSvc, exists := existingByName[svcName]
 		if !exists {
-			// Create new service.
-			input := CreateWorkloadInput{
-				StackID:       &stackID,
-				Name:          svcName,
-				Type:          meshdb.ServiceTypeApplication,
-				Image:         svcDef.Image,
-				Port:          port,
-				Replicas:      replicas,
-				CPURequest:    cpuRequest,
-				CPULimit:      cpuLimit,
-				MemoryRequest: memRequest,
-				MemoryLimit:   memLimit,
-				EnvVars:       envVarsStr,
+			var svc *meshdb.Service
+			var createErr error
+
+			if isDatabase && ext.Database != nil {
+				dbInput := CreateWorkloadInput{
+					StackID:   &stackID,
+					Name:      svcName,
+					Type:      meshdb.ServiceTypeDatabase,
+					Port:      port,
+					Replicas:  replicas,
+					Engine:    meshdb.DatabaseEngine(ext.Database.Engine),
+					Version:   ext.Database.Version,
+					StorageGB: ext.Database.StorageGB,
+					DBName:    ext.Database.DBName,
+					DBUser:    ext.Database.DBUser,
+					DBPassword: ext.Database.DBPassword,
+				}
+				if dbInput.StorageGB == 0 {
+					dbInput.StorageGB = 10
+				}
+				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
+			} else {
+				input := CreateWorkloadInput{
+					StackID:       &stackID,
+					Name:          svcName,
+					Type:          meshdb.ServiceTypeApplication,
+					Image:         svcDef.Image,
+					Port:          port,
+					Replicas:      replicas,
+					CPURequest:    cpuRequest,
+					CPULimit:      cpuLimit,
+					MemoryRequest: memRequest,
+					MemoryLimit:   memLimit,
+					EnvVars:       envVarsStr,
+				}
+				svc, createErr = s.workload.Create(ctx, stack.ProjectID, input)
 			}
-			svc, err := s.workload.Create(ctx, stack.ProjectID, input)
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: create failed: %v", svcName, err))
+			if createErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: create failed: %v", svcName, createErr))
 				continue
 			}
 
-			// Create build config if source or builder is specified.
-			if ext != nil && (ext.Source != nil || ext.Build != nil) {
+			// Create build config if source or builder is specified (app only).
+			if !isDatabase && ext != nil && (ext.Source != nil || ext.Build != nil) {
 				if err := s.applyBuildConfig(ctx, svc.ID, svcDef); err != nil {
 					result.Errors = append(result.Errors, fmt.Sprintf("%s: build config failed: %v", svcName, err))
 				}
