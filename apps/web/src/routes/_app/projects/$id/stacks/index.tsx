@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Layers, Plus, Trash2, PlayCircle, AlertCircle } from "lucide-react"
+import { Loader2, Layers, Plus, Trash2, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { stacks as stacksApi, type ApiStack } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/")({
   component: StacksTab,
@@ -17,20 +18,6 @@ const STATUS_STYLES: Record<ApiStack["status"], string> = {
   applying: "bg-amber-500/10 text-amber-400 border-amber-500/20",
   failed:   "bg-destructive/10 text-destructive border-destructive/20",
 }
-
-const DEFAULT_SPEC = `services:
-  web:
-    image: ""
-    x-meshploy:
-      source:
-        git: ""
-        branch: main
-      build:
-        builder: nixpacks
-      deploy:
-        replicas: 1
-        port: 3000
-`
 
 function StackCard({ stack, projectId }: { stack: ApiStack; projectId: string }) {
   const token = useAuthStore((s) => s.token)!
@@ -93,7 +80,6 @@ function StacksTab() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const queryKey = ["stacks", orgId, projectId]
 
   const { data: stackList = [], isLoading } = useQuery({
@@ -102,16 +88,8 @@ function StacksTab() {
     enabled: !!orgId,
   })
 
-  const createMutation = useMutation({
-    mutationFn: () => stacksApi.create(orgId!, projectId, {
-      name: `stack-${Date.now()}`,
-      spec: DEFAULT_SPEC,
-    }, token),
-    onSuccess: (stack) => {
-      queryClient.invalidateQueries({ queryKey })
-      navigate({ to: "/projects/$id/stacks/$stackId", params: { id: projectId, stackId: stack.id } })
-    },
-  })
+  const goToNew = () =>
+    navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "stack" } })
 
   return (
     <div className="p-6 space-y-4">
@@ -126,14 +104,9 @@ function StacksTab() {
         <Button
           size="sm"
           className="gap-1.5"
-          onClick={() => createMutation.mutate()}
-          disabled={createMutation.isPending}
+          onClick={goToNew}
         >
-          {createMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" />
-          )}
+          <Plus className="h-3.5 w-3.5" />
           New Stack
         </Button>
       </div>
@@ -154,8 +127,7 @@ function StacksTab() {
           <Button
             size="sm"
             className="gap-1.5 mt-1"
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending}
+            onClick={goToNew}
           >
             <Plus className="h-3.5 w-3.5" />
             New Stack
@@ -169,13 +141,6 @@ function StacksTab() {
         </div>
       )}
 
-      {createMutation.isError && (
-        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
-          <p className="text-xs text-destructive">
-            {(createMutation.error as Error)?.message ?? "Failed to create stack"}
-          </p>
-        </div>
-      )}
     </div>
   )
 }

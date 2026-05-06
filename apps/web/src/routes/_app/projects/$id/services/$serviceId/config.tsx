@@ -22,6 +22,7 @@ import {
   toNode,
   type ApiNode,
   type ApiSecretAttachment,
+  type UpdateServiceBody,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -366,8 +367,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
   const mutation = useMutation({
     mutationFn: async () => {
       // Always update service fields
-      const updatedSvc = await servicesApi.update(orgId, projectId, serviceId, {
-        image: form.source === "image" ? form.image : "",
+      const svcBody: UpdateServiceBody = {
         node_id: form.nodeId,
         port: form.port,
         replicas: form.replicas,
@@ -375,7 +375,13 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
         cpu_limit: form.cpuLimit,
         memory_request: form.memoryRequest,
         memory_limit: form.memoryLimit,
-      }, token)
+      }
+      // Only send image when using docker image source — for git-based services,
+      // omitting it preserves the built image already stored on the service row.
+      if (form.source === "image") {
+        svcBody.image = form.image
+      }
+      const updatedSvc = await servicesApi.update(orgId, projectId, serviceId, svcBody, token)
       // Update build config when git source
       if (form.source === "git") {
         await buildConfigsApi.update(orgId, projectId, serviceId, {
