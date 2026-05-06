@@ -20,9 +20,8 @@ import {
   Trash2,
   Zap,
 } from "lucide-react"
-import CodeMirror from "@uiw/react-codemirror"
-import { yaml } from "@codemirror/lang-yaml"
 import { cn } from "@/lib/utils"
+import { StackEditor } from "@/components/stacks/stack-editor"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -1682,22 +1681,7 @@ function StackForm({ projectId }: { projectId: string }) {
       </Section>
 
       <Section title="Compose Spec" subtitle="Docker Compose YAML with optional x-meshploy extensions">
-        <div className="rounded-md border border-border/60 overflow-hidden">
-          <CodeMirror
-            value={spec}
-            height="360px"
-            theme="dark"
-            extensions={[yaml()]}
-            onChange={setSpec}
-            style={{ fontSize: 13 }}
-            basicSetup={{
-              lineNumbers: true,
-              foldGutter: true,
-              autocompletion: true,
-              indentOnInput: true,
-            }}
-          />
-        </div>
+        <StackEditor value={spec} onChange={setSpec} minHeight="360px" />
       </Section>
 
       {error && (
