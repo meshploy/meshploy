@@ -2,12 +2,11 @@ import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect } from "react"
 import { Loader2, Save, PlayCircle } from "lucide-react"
-import CodeMirror from "@uiw/react-codemirror"
-import { yaml } from "@codemirror/lang-yaml"
 import { Button } from "@/components/ui/button"
 import { stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { StackEditor } from "@/components/stacks/stack-editor"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId/editor")({
   component: StackEditorTab,
@@ -118,24 +117,14 @@ function StackEditorTab() {
       )}
 
       {/* Editor */}
-      <div className="flex-1 overflow-auto">
-        <CodeMirror
+      <div className="flex-1 overflow-auto p-4">
+        <StackEditor
           value={spec}
-          height="100%"
-          minHeight="400px"
-          theme="dark"
-          extensions={[yaml()]}
           onChange={(value) => {
             setSpec(value)
             setDirty(value !== (stack?.spec ?? ""))
           }}
-          style={{ fontSize: 13 }}
-          basicSetup={{
-            lineNumbers: true,
-            foldGutter: true,
-            autocompletion: true,
-            indentOnInput: true,
-          }}
+          minHeight="calc(100vh - 200px)"
         />
       </div>
 
