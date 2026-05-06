@@ -20,6 +20,7 @@ type Services struct {
 	Projects        *ProjectService
 	Nodes           *NodeService
 	Workloads       *WorkloadService
+	Stacks          *StackService
 	Domains         *DomainService
 	Routes          *RouteService
 	Deployments     *DeploymentService
@@ -147,12 +148,15 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		}()
 	}
 
+	workloads := &WorkloadService{db: db, k8s: k8sClient}
+
 	return &Services{
 		Auth:            auth,
 		Orgs:            &OrgService{db: db},
 		Projects:        &ProjectService{db: db},
 		Nodes:           nodes,
-		Workloads:       &WorkloadService{db: db, k8s: k8sClient},
+		Workloads:       workloads,
+		Stacks:          &StackService{db: db, workload: workloads},
 		Domains:         domains,
 		Routes:          &RouteService{db: db, k8s: k8sClient},
 		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}},

@@ -59,6 +59,7 @@ export interface Project {
   routesCount: number
   secretsCount: number
   jobsCount: number
+  stacksCount: number
   createdAt: Date
 }
 

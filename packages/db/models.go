@@ -158,6 +158,14 @@ const (
 	TemplateCategoryApplication TemplateCategory = "application"
 )
 
+type StackStatus string
+
+const (
+	StackIdle     StackStatus = "idle"
+	StackApplying StackStatus = "applying"
+	StackFailed   StackStatus = "failed"
+)
+
 type ResourceType string
 
 const (
@@ -321,6 +329,7 @@ type Node struct {
 type Service struct {
 	Base
 	ProjectID uuid.UUID   `gorm:"type:uuid;not null;index"                     json:"project_id"`
+	StackID   *uuid.UUID  `gorm:"type:uuid;index"                              json:"stack_id"` // nullable — service may belong to a stack
 	NodeID    *uuid.UUID  `gorm:"type:uuid;index"                              json:"node_id"` // nullable = let K3s schedule
 	Name      string      `gorm:"not null"                                     json:"name"`
 	Type      ServiceType `gorm:"type:varchar(15);not null;default:'application'" json:"type"`
@@ -421,6 +430,22 @@ type DatabaseConfig struct {
 
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }
+
+// Stack is a Docker Compose-style group of services defined by a single YAML spec.
+// Services that belong to a stack have their StackID set to this row's ID.
+type Stack struct {
+	Base
+	ProjectID     uuid.UUID   `gorm:"type:uuid;not null;index"                      json:"project_id"`
+	Name          string      `gorm:"not null"                                      json:"name"`
+	Spec          string      `gorm:"type:text;not null;default:''"                 json:"spec"` // raw YAML (Meshploy Compose Spec)
+	Status        StackStatus `gorm:"type:varchar(10);not null;default:'idle'"      json:"status"`
+	LastAppliedAt *time.Time  `json:"last_applied_at"`
+
+	Project  Project   `gorm:"foreignKey:ProjectID"                            json:"-"`
+	Services []Service `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
+}
+
+func (Stack) TableName() string { return "stacks" }
 
 // NodeRegistrationToken is a long-lived pre-shared token that allows a worker
 // node to self-register into the org's node list without a user JWT.

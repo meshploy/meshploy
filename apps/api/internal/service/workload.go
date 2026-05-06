@@ -23,6 +23,7 @@ type CreateWorkloadInput struct {
 	Name    string
 	Image   string
 	NodeID  *uuid.UUID // nil = let K3s schedule
+	StackID *uuid.UUID // nil = not part of a stack
 	EnvVars string     // raw .env block, stored as EncryptedString
 	Port    int        // container listen port; 0 = default (3000)
 
@@ -119,6 +120,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	service := &db.Service{
 		ProjectID: projectID,
 		NodeID:    in.NodeID,
+		StackID:   in.StackID,
 		Name:      in.Name,
 		Type:      db.ServiceTypeApplication,
 		Image:     in.Image,

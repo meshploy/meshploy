@@ -60,6 +60,7 @@ function ProjectLayout() {
   const tabs = [
     { label: "Services",  count: project.servicesCount,  to: "/projects/$id/services"  as const },
     { label: "Databases", count: project.databasesCount, to: "/projects/$id/databases" as const },
+    { label: "Stacks",    count: project.stacksCount,    to: "/projects/$id/stacks"    as const },
     { label: "Routes",    count: project.routesCount,    to: "/projects/$id/routes"    as const },
     { label: "Secrets",   count: project.secretsCount,   to: "/projects/$id/secrets"   as const },
     { label: "Jobs",      count: project.jobsCount,      to: "/projects/$id/jobs"      as const },
