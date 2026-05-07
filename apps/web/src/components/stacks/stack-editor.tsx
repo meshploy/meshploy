@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import CodeMirror from "@uiw/react-codemirror"
 import { yaml } from "@codemirror/lang-yaml"
-import { Plus, Trash2, Code2, LayoutGrid, ChevronDown, Server } from "lucide-react"
+import { Plus, Trash2, Code2, LayoutGrid, ChevronDown, Server, Wand2 } from "lucide-react"
 import {
   SiPostgresql, SiMysql, SiRedis, SiMongodb, SiClickhouse,
 } from "@icons-pack/react-simple-icons"
@@ -97,6 +97,101 @@ function dbVersions(engine: string) {
   return DB_ENGINES.find((e) => e.value === engine)?.versions ?? ["latest"]
 }
 
+// ─── Compose conversion ───────────────────────────────────────────────────────
+
+const DB_IMAGE_PATTERN: Record<string, string> = {
+  postgres: "postgres", postgresql: "postgres",
+  mysql: "mysql", mariadb: "mysql",
+  redis: "redis",
+  mongo: "mongodb", mongodb: "mongodb",
+  clickhouse: "clickhouse",
+  dragonfly: "dragonfly",
+}
+
+function detectDbEngine(image: string): string | null {
+  const name = image.split(":")[0].split("/").pop()?.toLowerCase() ?? ""
+  return DB_IMAGE_PATTERN[name] ?? null
+}
+
+function imageVersion(image: string): string | null {
+  const tag = image.split(":")[1]
+  return tag && tag !== "latest" ? tag : null
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractPort(ports: any): number | null {
+  if (!Array.isArray(ports) || ports.length === 0) return null
+  const first = ports[0]
+  if (typeof first === "string") {
+    // "host:container" or "container" or "ip:host:container"
+    const parts = first.split(":")
+    const p = parseInt(parts[parts.length - 1])
+    return isNaN(p) ? null : p
+  }
+  if (typeof first === "object" && first !== null) {
+    // { target: 3000, published: 80 } — use target (container port)
+    const p = parseInt((first as Record<string, unknown>).target as string)
+    return isNaN(p) ? null : p
+  }
+  return null
+}
+
+// Returns true if any service in the spec is missing an x-meshploy block.
+export function specNeedsConversion(spec: string): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = parseYaml(spec) as any
+    const svcs = doc?.services
+    if (!svcs || typeof svcs !== "object") return false
+    return Object.values(svcs).some((s) => !(s as Record<string, unknown>)?.["x-meshploy"])
+  } catch {
+    return false
+  }
+}
+
+// Enrich a plain Docker Compose spec with x-meshploy defaults.
+// Services that already have x-meshploy are left untouched.
+export function convertCompose(spec: string): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = parseYaml(spec) as any
+    if (!doc?.services || typeof doc.services !== "object") return spec
+
+    for (const svc of Object.values(doc.services) as Record<string, unknown>[]) {
+      if (!svc || svc["x-meshploy"]) continue
+
+      const image = (svc.image as string) ?? ""
+      const dbEngine = detectDbEngine(image)
+      const detectedPort = extractPort(svc.ports)
+
+      if (dbEngine) {
+        const defaultPort = dbDefaultPort(dbEngine)
+        const ver = imageVersion(image) ?? dbVersions(dbEngine)[0]
+        svc["x-meshploy"] = {
+          type: "database",
+          database: { engine: dbEngine, version: ver, storage_gb: 10 },
+          deploy: { port: detectedPort ?? defaultPort, replicas: 1 },
+        }
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const deploy: Record<string, any> = {
+          port: detectedPort ?? 3000,
+          replicas: 1,
+          cpu_request: "100m",
+          cpu_limit: "500m",
+          memory_request: "128Mi",
+          memory_limit: "512Mi",
+        }
+        svc["x-meshploy"] = { deploy }
+      }
+    }
+
+    return stringifyYaml(doc, { lineWidth: 120 })
+  } catch {
+    return spec
+  }
+}
+
 // ─── YAML ↔ Visual ────────────────────────────────────────────────────────────
 
 export function yamlToVisual(spec: string): VisualService[] {
@@ -125,6 +220,7 @@ export function yamlToVisual(spec: string): VisualService[] {
           dbStorageGB: db.storage_gb ?? 10,
           port: mp?.deploy?.port ?? dbDefaultPort(engine),
           replicas: mp?.deploy?.replicas ?? 1,
+          nodeId: mp?.deploy?.node ?? "",
         }
       }
 
@@ -174,12 +270,18 @@ export function visualToYaml(services: VisualService[]): string {
 
     if (s.serviceType === "database") {
       const engine = s.dbEngine || "postgres"
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dbDeploy: Record<string, any> = {
+        port: s.port || dbDefaultPort(engine),
+        replicas: s.replicas || 1,
+      }
+      if (s.nodeId) dbDeploy.node = s.nodeId
       svcs[name] = {
         image: `${engine}:${s.dbVersion || "latest"}`,
         "x-meshploy": {
           type: "database",
           database: { engine, version: s.dbVersion || "latest", storage_gb: s.dbStorageGB || 10 },
-          deploy: { port: s.port || dbDefaultPort(engine), replicas: s.replicas || 1 },
+          deploy: dbDeploy,
         },
       }
       continue
@@ -233,6 +335,7 @@ interface StackEditorProps {
 export function StackEditor({ value, onChange, minHeight = "360px" }: StackEditorProps) {
   const [mode, setMode] = useState<"yaml" | "visual">("yaml")
   const [visual, setVisual] = useState<VisualService[]>([])
+  const [justConverted, setJustConverted] = useState(false)
 
   const switchToVisual = useCallback(() => {
     setVisual(yamlToVisual(value))
@@ -244,19 +347,41 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
     setMode("yaml")
   }, [visual, onChange])
 
+  const handleConvert = useCallback(() => {
+    onChange(convertCompose(value))
+    setJustConverted(true)
+    setTimeout(() => setJustConverted(false), 2000)
+  }, [value, onChange])
+
   const patchService = (key: string, patch: Partial<VisualService>) =>
     setVisual((prev) => prev.map((s) => (s._key === key ? { ...s, ...patch } : s)))
 
   const addService = () => setVisual((prev) => [...prev, newService()])
   const removeService = (key: string) => setVisual((prev) => prev.filter((s) => s._key !== key))
 
+  const canConvert = mode === "yaml" && specNeedsConversion(value)
+
   return (
     <div className="flex flex-col rounded-md border border-border/60 overflow-hidden">
       {/* Mode toggle bar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-muted/20 shrink-0">
-        <span className="text-xs text-muted-foreground font-medium">
-          {mode === "yaml" ? "YAML" : "Visual"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground font-medium">
+            {mode === "yaml" ? "YAML" : "Visual"}
+          </span>
+          {canConvert && (
+            <button
+              onClick={handleConvert}
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
+            >
+              <Wand2 className="h-3 w-3" />
+              {justConverted ? "Done!" : "Add Meshploy config"}
+            </button>
+          )}
+          {justConverted && !canConvert && (
+            <span className="text-[11px] text-emerald-400/80 font-mono">converted</span>
+          )}
+        </div>
         <div className="flex items-center rounded-md border border-border/60 overflow-hidden text-xs">
           <button
             onClick={() => { if (mode === "visual") switchToYaml() }}
@@ -406,7 +531,7 @@ function ServiceCard({
 
       <div className="p-4 space-y-5">
         {svc.serviceType === "database" ? (
-          <DatabaseFields svc={svc} onChange={onChange} />
+          <DatabaseFields svc={svc} onChange={onChange} workerNodes={workerNodes} />
         ) : (
           <AppFields
             svc={svc}
@@ -711,9 +836,12 @@ function AppFields({
 function DatabaseFields({
   svc,
   onChange,
+  workerNodes,
 }: {
   svc: VisualService
   onChange: (p: Partial<VisualService>) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  workerNodes: any[]
 }) {
   return (
     <div className="space-y-5">
@@ -781,6 +909,32 @@ function DatabaseFields({
             className={inputCls}
           />
         </Field>
+      </div>
+
+      <div className="border-t border-border/40" />
+      <SectionHeader title="Deployment" subtitle="Where this database runs" />
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+          <Server className="h-3 w-3" />Target node
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <NodeCard
+            label="Auto-schedule"
+            sub="Let K3s decide"
+            selected={svc.nodeId === ""}
+            onClick={() => onChange({ nodeId: "" })}
+          />
+          {workerNodes.map((node) => (
+            <NodeCard
+              key={node.id}
+              label={node.name}
+              sub={node.tailscaleIP ?? ""}
+              selected={svc.nodeId === node.id}
+              onClick={() => onChange({ nodeId: node.id })}
+              online
+            />
+          ))}
+        </div>
       </div>
     </div>
   )
