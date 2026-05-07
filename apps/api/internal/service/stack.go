@@ -205,6 +205,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		}
 		cpuRequest, cpuLimit := "100m", "500m"
 		memRequest, memLimit := "128Mi", "512Mi"
+		var nodeID *uuid.UUID
 		if ext != nil && ext.Deploy != nil {
 			if ext.Deploy.CPURequest != "" {
 				cpuRequest = ext.Deploy.CPURequest
@@ -217,6 +218,11 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			}
 			if ext.Deploy.MemoryLimit != "" {
 				memLimit = ext.Deploy.MemoryLimit
+			}
+			if ext.Deploy.Node != "" {
+				if id, err := uuid.Parse(ext.Deploy.Node); err == nil {
+					nodeID = &id
+				}
 			}
 		}
 
@@ -258,6 +264,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					MemoryRequest: memRequest,
 					MemoryLimit:   memLimit,
 					EnvVars:       envVarsStr,
+					NodeID:        nodeID,
 				}
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, input)
 			}

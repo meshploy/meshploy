@@ -3,20 +3,20 @@ import { useQuery } from "@tanstack/react-query"
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import CodeMirror from "@uiw/react-codemirror"
 import { yaml } from "@codemirror/lang-yaml"
-import { Plus, Trash2, Code2, LayoutGrid } from "lucide-react"
+import { Plus, Trash2, Code2, LayoutGrid, ChevronDown, Server } from "lucide-react"
 import {
   SiPostgresql, SiMysql, SiRedis, SiMongodb, SiClickhouse,
 } from "@icons-pack/react-simple-icons"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { inputCls, Field } from "@/components/services/form-primitives"
-import { gitIntegrations as gitApi } from "@/lib/api"
+import { inputCls, Field, NodeCard } from "@/components/services/form-primitives"
+import { gitIntegrations as gitApi, nodes as nodesApi, toNode, type ApiNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { cn } from "@/lib/utils"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 export type VisualBuilder = "nixpacks" | "railpack" | "dockerfile"
 
@@ -29,6 +29,8 @@ const DB_ENGINES = [
   { value: "dragonfly",  label: "Dragonfly",    versions: ["latest"],                     port: 6379,  icon: null },
 ]
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export interface VisualService {
   _key: string
   serviceType: "app" | "database"
@@ -39,10 +41,19 @@ export interface VisualService {
   integrationId: string
   gitRepo: string
   gitBranch: string
+  // App — build (git only)
   builder: VisualBuilder
+  builderNodeName: string   // k8s_node_name or "" for auto
+  builderCPURequest: string
+  builderMemoryRequest: string
   // App — deploy
   port: number | ""
   replicas: number | ""
+  nodeId: string            // node UUID or "" for auto
+  cpuRequest: string
+  cpuLimit: string
+  memoryRequest: string
+  memoryLimit: string
   // Database
   dbEngine: string
   dbVersion: string
@@ -62,31 +73,39 @@ function newService(): VisualService {
     gitRepo: "",
     gitBranch: "main",
     builder: "nixpacks",
+    builderNodeName: "",
+    builderCPURequest: "1000m",
+    builderMemoryRequest: "1Gi",
     port: 3000,
     replicas: 1,
+    nodeId: "",
+    cpuRequest: "100m",
+    cpuLimit: "500m",
+    memoryRequest: "128Mi",
+    memoryLimit: "512Mi",
     dbEngine: "postgres",
     dbVersion: "16",
     dbStorageGB: 10,
   }
 }
 
-function defaultDbPort(engine: string): number {
+function dbDefaultPort(engine: string) {
   return DB_ENGINES.find((e) => e.value === engine)?.port ?? 5432
 }
 
-function defaultDbVersions(engine: string): string[] {
+function dbVersions(engine: string) {
   return DB_ENGINES.find((e) => e.value === engine)?.versions ?? ["latest"]
 }
 
 // ─── YAML ↔ Visual ────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function yamlToVisual(spec: string): VisualService[] {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const doc = parseYaml(spec) as any
     const svcs = doc?.services
     if (!svcs || typeof svcs !== "object") return []
+
     return Object.entries(svcs).map(([name, raw]) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const svc = raw as any
@@ -95,46 +114,49 @@ export function yamlToVisual(spec: string): VisualService[] {
 
       if (isDb) {
         const db = mp?.database ?? {}
+        const engine = db.engine ?? "postgres"
         return {
+          ...newService(),
           _key: crypto.randomUUID(),
           serviceType: "database" as const,
           name,
-          source: "image",
-          image: "",
-          integrationId: "",
-          gitRepo: "",
-          gitBranch: "main",
-          builder: "nixpacks",
-          port: mp?.deploy?.port ?? defaultDbPort(db.engine ?? "postgres"),
-          replicas: mp?.deploy?.replicas ?? 1,
-          dbEngine: db.engine ?? "postgres",
-          dbVersion: db.version ?? "16",
+          dbEngine: engine,
+          dbVersion: db.version ?? dbVersions(engine)[0],
           dbStorageGB: db.storage_gb ?? 10,
+          port: mp?.deploy?.port ?? dbDefaultPort(engine),
+          replicas: mp?.deploy?.replicas ?? 1,
         }
       }
 
-      const integrationId: string = mp?.source?.integration_id ?? ""
-      const gitRepo: string = mp?.source?.git ?? ""
-      const gitBranch: string = mp?.source?.branch ?? "main"
-      const builder: VisualBuilder = mp?.build?.builder ?? "nixpacks"
+      const src = mp?.source ?? {}
+      const build = mp?.build ?? {}
+      const deploy = mp?.deploy ?? {}
       const image: string = svc?.image ?? ""
-      const source = integrationId || gitRepo ? "git" : image ? "image" : "git"
+      const integrationId: string = src.integration_id ?? ""
+      const gitRepo: string = src.git ?? ""
+      const source: "image" | "git" = integrationId || gitRepo ? "git" : image ? "image" : "git"
 
       return {
+        ...newService(),
         _key: crypto.randomUUID(),
         serviceType: "app" as const,
         name,
-        source: source as "image" | "git",
+        source,
         image,
         integrationId,
         gitRepo,
-        gitBranch,
-        builder,
-        port: mp?.deploy?.port ?? 3000,
-        replicas: mp?.deploy?.replicas ?? 1,
-        dbEngine: "postgres",
-        dbVersion: "16",
-        dbStorageGB: 10,
+        gitBranch: src.branch ?? "main",
+        builder: build.builder ?? "nixpacks",
+        builderNodeName: build.builder_node ?? "",
+        builderCPURequest: build.builder_cpu_request ?? "1000m",
+        builderMemoryRequest: build.builder_memory_request ?? "1Gi",
+        port: deploy.port ?? 3000,
+        replicas: deploy.replicas ?? 1,
+        nodeId: deploy.node ?? "",
+        cpuRequest: deploy.cpu_request ?? "100m",
+        cpuLimit: deploy.cpu_limit ?? "500m",
+        memoryRequest: deploy.memory_request ?? "128Mi",
+        memoryLimit: deploy.memory_limit ?? "512Mi",
       }
     })
   } catch {
@@ -146,44 +168,57 @@ export function visualToYaml(services: VisualService[]): string {
   if (services.length === 0) return "services: {}\n"
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svcs: Record<string, any> = {}
+
   for (const s of services) {
     const name = s.name.trim() || "service"
+
     if (s.serviceType === "database") {
       const engine = s.dbEngine || "postgres"
       svcs[name] = {
         image: `${engine}:${s.dbVersion || "latest"}`,
         "x-meshploy": {
           type: "database",
-          database: {
-            engine,
-            version: s.dbVersion || "latest",
-            storage_gb: s.dbStorageGB || 10,
-          },
-          deploy: {
-            port: s.port || defaultDbPort(engine),
-            replicas: s.replicas || 1,
-          },
+          database: { engine, version: s.dbVersion || "latest", storage_gb: s.dbStorageGB || 10 },
+          deploy: { port: s.port || dbDefaultPort(engine), replicas: s.replicas || 1 },
         },
       }
-    } else {
+      continue
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deploy: Record<string, any> = {
+      port: s.port || 3000,
+      replicas: s.replicas || 1,
+    }
+    if (s.nodeId) deploy.node = s.nodeId
+    if (s.cpuRequest)    deploy.cpu_request    = s.cpuRequest
+    if (s.cpuLimit)      deploy.cpu_limit      = s.cpuLimit
+    if (s.memoryRequest) deploy.memory_request = s.memoryRequest
+    if (s.memoryLimit)   deploy.memory_limit   = s.memoryLimit
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mp: Record<string, any> = { deploy }
+
+    if (s.source === "git") {
+      mp.source = {
+        integration_id: s.integrationId,
+        git: s.gitRepo,
+        branch: s.gitBranch,
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mp: any = {
-        deploy: { port: s.port || 3000, replicas: s.replicas || 1 },
-      }
-      if (s.source === "git") {
-        mp.source = {
-          integration_id: s.integrationId,
-          git: s.gitRepo,
-          branch: s.gitBranch,
-        }
-        mp.build = { builder: s.builder }
-      }
-      svcs[name] = {
-        image: s.source === "image" ? s.image : "",
-        "x-meshploy": mp,
-      }
+      const build: Record<string, any> = { builder: s.builder }
+      if (s.builderNodeName)        build.builder_node            = s.builderNodeName
+      if (s.builderCPURequest)      build.builder_cpu_request     = s.builderCPURequest
+      if (s.builderMemoryRequest)   build.builder_memory_request  = s.builderMemoryRequest
+      mp.build = build
+    }
+
+    svcs[name] = {
+      image: s.source === "image" ? s.image : "",
+      "x-meshploy": mp,
     }
   }
+
   return stringifyYaml({ services: svcs }, { lineWidth: 120 })
 }
 
@@ -205,8 +240,7 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
   }, [value])
 
   const switchToYaml = useCallback(() => {
-    const next = visualToYaml(visual)
-    onChange(next)
+    onChange(visualToYaml(visual))
     setMode("yaml")
   }, [visual, onChange])
 
@@ -214,9 +248,7 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
     setVisual((prev) => prev.map((s) => (s._key === key ? { ...s, ...patch } : s)))
 
   const addService = () => setVisual((prev) => [...prev, newService()])
-
-  const removeService = (key: string) =>
-    setVisual((prev) => prev.filter((s) => s._key !== key))
+  const removeService = (key: string) => setVisual((prev) => prev.filter((s) => s._key !== key))
 
   return (
     <div className="flex flex-col rounded-md border border-border/60 overflow-hidden">
@@ -230,9 +262,7 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
             onClick={() => { if (mode === "visual") switchToYaml() }}
             className={cn(
               "flex items-center gap-1.5 px-2.5 py-1 transition-colors",
-              mode === "yaml"
-                ? "bg-primary/10 text-primary font-medium"
-                : "text-muted-foreground hover:text-foreground"
+              mode === "yaml" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
             )}
           >
             <Code2 className="h-3 w-3" />
@@ -243,9 +273,7 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
             onClick={() => { if (mode === "yaml") switchToVisual() }}
             className={cn(
               "flex items-center gap-1.5 px-2.5 py-1 transition-colors",
-              mode === "visual"
-                ? "bg-primary/10 text-primary font-medium"
-                : "text-muted-foreground hover:text-foreground"
+              mode === "visual" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
             )}
           >
             <LayoutGrid className="h-3 w-3" />
@@ -262,22 +290,12 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
           extensions={[yaml()]}
           onChange={onChange}
           style={{ fontSize: 13 }}
-          basicSetup={{
-            lineNumbers: true,
-            foldGutter: true,
-            autocompletion: true,
-            indentOnInput: true,
-          }}
+          basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true, indentOnInput: true }}
         />
       ) : (
-        <div
-          className="flex flex-col gap-3 p-4 overflow-y-auto"
-          style={{ minHeight }}
-        >
+        <div className="flex flex-col gap-3 p-4 overflow-y-auto" style={{ minHeight }}>
           {visual.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-6">
-              No services. Add one below.
-            </p>
+            <p className="text-xs text-muted-foreground text-center py-6">No services. Add one below.</p>
           )}
           {visual.map((svc) => (
             <ServiceCard
@@ -336,8 +354,18 @@ function ServiceCard({
     staleTime: 2 * 60_000,
   })
 
-  const dbEngineOpts = DB_ENGINES
-  const dbVersionOpts = defaultDbVersions(svc.dbEngine)
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId, token),
+    enabled: !!orgId,
+    staleTime: 30_000,
+  })
+  const workerNodes = rawNodes
+    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
+    .map(toNode)
+  const builderNodes = rawNodes.filter(
+    (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
+  )
 
   return (
     <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
@@ -347,18 +375,15 @@ function ServiceCard({
           value={svc.name}
           onChange={(e) => onChange({ name: e.target.value })}
           placeholder="service-name"
-          className="flex-1 bg-transparent text-sm font-medium text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+          className="flex-1 bg-transparent text-sm font-medium text-foreground placeholder:text-muted-foreground/40 focus:outline-none min-w-0"
         />
-
         {/* App / Database toggle */}
-        <div className="flex items-center rounded-md border border-border/60 overflow-hidden text-[11px]">
+        <div className="flex items-center rounded-md border border-border/60 overflow-hidden text-[11px] shrink-0">
           <button
             onClick={() => onChange({ serviceType: "app" })}
             className={cn(
               "px-2.5 py-1 transition-colors",
-              svc.serviceType === "app"
-                ? "bg-primary/10 text-primary font-medium"
-                : "text-muted-foreground hover:text-foreground"
+              svc.serviceType === "app" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
             )}
           >
             App
@@ -368,27 +393,20 @@ function ServiceCard({
             onClick={() => onChange({ serviceType: "database" })}
             className={cn(
               "px-2.5 py-1 transition-colors",
-              svc.serviceType === "database"
-                ? "bg-primary/10 text-primary font-medium"
-                : "text-muted-foreground hover:text-foreground"
+              svc.serviceType === "database" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
             )}
           >
             Database
           </button>
         </div>
-
-        <button
-          onClick={onRemove}
-          className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-        >
+        <button onClick={onRemove} className="text-muted-foreground hover:text-destructive transition-colors shrink-0">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Body */}
-      <div className="p-3 space-y-3">
+      <div className="p-4 space-y-5">
         {svc.serviceType === "database" ? (
-          <DatabaseFields svc={svc} onChange={onChange} engineOpts={dbEngineOpts} versionOpts={dbVersionOpts} />
+          <DatabaseFields svc={svc} onChange={onChange} />
         ) : (
           <AppFields
             svc={svc}
@@ -398,6 +416,8 @@ function ServiceCard({
             branchList={branchList}
             reposFetching={reposFetching}
             branchesFetching={branchesFetching}
+            workerNodes={workerNodes}
+            builderNodes={builderNodes}
           />
         )}
       </div>
@@ -405,7 +425,7 @@ function ServiceCard({
   )
 }
 
-// ─── App fields ───────────────────────────────────────────────────────────────
+// ─── AppFields ────────────────────────────────────────────────────────────────
 
 function AppFields({
   svc,
@@ -415,6 +435,8 @@ function AppFields({
   branchList,
   reposFetching,
   branchesFetching,
+  workerNodes,
+  builderNodes,
 }: {
   svc: VisualService
   onChange: (p: Partial<VisualService>) => void
@@ -425,212 +447,285 @@ function AppFields({
   branchList: string[]
   reposFetching: boolean
   branchesFetching: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  workerNodes: any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  builderNodes: any[]
 }) {
+  const [showResources, setShowResources] = useState(false)
+
   return (
-    <>
-      {/* Source toggle */}
-      <Field label="Source">
-        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-          {(["git", "image"] as const).map((src) => (
-            <button
-              key={src}
-              onClick={() => onChange({ source: src })}
-              className={cn(
-                "px-4 py-1.5 text-xs transition-colors",
-                svc.source === src
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-              )}
-            >
-              {src === "git" ? "Git repository" : "Docker image"}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {svc.source === "image" ? (
-        <Field label="Image" required>
-          <input
-            value={svc.image}
-            onChange={(e) => onChange({ image: e.target.value })}
-            placeholder="nginx:alpine"
-            className={inputCls}
-          />
+    <div className="space-y-5">
+      {/* ── Source ── */}
+      <SectionHeader title="Source" />
+      <div className="space-y-4">
+        <Field label="Source">
+          <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
+            {(["git", "image"] as const).map((src) => (
+              <button
+                key={src}
+                onClick={() => onChange({ source: src })}
+                className={cn(
+                  "px-4 py-1.5 text-sm transition-colors",
+                  svc.source === src
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                )}
+              >
+                {src === "git" ? "Git repository" : "Docker image"}
+              </button>
+            ))}
+          </div>
         </Field>
-      ) : (
-        <>
-          <Field label="Git integration" required>
-            <Select
-              value={svc.integrationId}
-              onValueChange={(v) =>
-                onChange({ integrationId: v ?? "", gitRepo: "", gitBranch: "" })
-              }
-            >
-              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue
-                  placeholder={
-                    connectedGit.length === 0
-                      ? "No connected integrations"
-                      : "Select a git integration…"
-                  }
-                >
-                  {connectedGit.find((g) => g.id === svc.integrationId)?.name}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {connectedGit.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
 
-          <Field
-            label={reposFetching ? "Repository (loading…)" : "Repository"}
-            required
-          >
-            <Select
-              value={svc.gitRepo}
-              onValueChange={(v) => {
-                const repo = repoList.find((r) => r.full_name === v)
-                onChange({ gitRepo: v ?? "", gitBranch: repo?.default_branch ?? "" })
-              }}
-              disabled={!svc.integrationId || reposFetching}
-            >
-              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue
-                  placeholder={
-                    !svc.integrationId
-                      ? "Select an integration first"
-                      : reposFetching
-                      ? "Loading repositories…"
-                      : repoList.length === 0
-                      ? "No accessible repositories"
-                      : "Select a repository…"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {repoList.map((r) => (
-                  <SelectItem key={r.full_name} value={r.full_name}>
-                    {r.full_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {svc.source === "image" ? (
+          <Field label="Image" required>
+            <input
+              value={svc.image}
+              onChange={(e) => onChange({ image: e.target.value })}
+              placeholder="nginx:alpine"
+              className={inputCls}
+            />
           </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label={branchesFetching ? "Branch (loading…)" : "Branch"}
-              required
-            >
+        ) : (
+          <>
+            <Field label="Git integration" required>
               <Select
-                value={svc.gitBranch}
-                onValueChange={(v) => onChange({ gitBranch: v ?? "" })}
-                disabled={!svc.gitRepo || branchesFetching}
+                value={svc.integrationId}
+                onValueChange={(v) => onChange({ integrationId: v ?? "", gitRepo: "", gitBranch: "" })}
               >
                 <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue
-                    placeholder={
-                      !svc.gitRepo
-                        ? "Select a repo first"
-                        : branchesFetching
-                        ? "Loading branches…"
-                        : "Select a branch…"
-                    }
-                  />
+                  <SelectValue placeholder={connectedGit.length === 0 ? "No connected integrations" : "Select a git integration…"}>
+                    {connectedGit.find((g) => g.id === svc.integrationId)?.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {branchList.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
-                    </SelectItem>
+                  {connectedGit.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
 
-            <Field label="Builder">
+            <Field label={reposFetching ? "Repository (loading…)" : "Repository"} required>
               <Select
-                value={svc.builder}
-                onValueChange={(v) => onChange({ builder: (v ?? "nixpacks") as VisualBuilder })}
+                value={svc.gitRepo}
+                onValueChange={(v) => {
+                  const repo = repoList.find((r) => r.full_name === v)
+                  onChange({ gitRepo: v ?? "", gitBranch: repo?.default_branch ?? "" })
+                }}
+                disabled={!svc.integrationId || reposFetching}
               >
                 <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue />
+                  <SelectValue placeholder={
+                    !svc.integrationId ? "Select an integration first"
+                    : reposFetching ? "Loading repositories…"
+                    : repoList.length === 0 ? "No accessible repositories"
+                    : "Select a repository…"
+                  } />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="nixpacks">Nixpacks</SelectItem>
-                  <SelectItem value="railpack">Railpack</SelectItem>
-                  <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                  {repoList.map((r) => (
+                    <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label={branchesFetching ? "Branch (loading…)" : "Branch"} required>
+                <Select
+                  value={svc.gitBranch}
+                  onValueChange={(v) => onChange({ gitBranch: v ?? "" })}
+                  disabled={!svc.gitRepo || branchesFetching}
+                >
+                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                    <SelectValue placeholder={
+                      !svc.gitRepo ? "Select a repo first"
+                      : branchesFetching ? "Loading branches…"
+                      : "Select a branch…"
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branchList.map((b) => (
+                      <SelectItem key={b} value={b}>{b}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Builder">
+                <Select
+                  value={svc.builder}
+                  onValueChange={(v) => onChange({ builder: (v ?? "nixpacks") as VisualBuilder })}
+                >
+                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
+                    <SelectItem value="railpack">Railpack</SelectItem>
+                    <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Build config (git only) ── */}
+      {svc.source === "git" && (
+        <>
+          <div className="border-t border-border/40" />
+          <SectionHeader title="Build" subtitle="Where and how the build job runs" />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Server className="h-3 w-3" />Builder node
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <NodeCard
+                  label="Auto-schedule"
+                  sub="Any builder node"
+                  selected={svc.builderNodeName === ""}
+                  onClick={() => onChange({ builderNodeName: "" })}
+                />
+                {builderNodes.map((node) => (
+                  <NodeCard
+                    key={node.k8s_node_name}
+                    label={node.name}
+                    sub={node.tailscale_ip ?? ""}
+                    selected={svc.builderNodeName === node.k8s_node_name}
+                    onClick={() => onChange({ builderNodeName: node.k8s_node_name })}
+                    online
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Builder CPU request">
+                <input
+                  value={svc.builderCPURequest}
+                  onChange={(e) => onChange({ builderCPURequest: e.target.value })}
+                  placeholder="1000m"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Builder memory request">
+                <input
+                  value={svc.builderMemoryRequest}
+                  onChange={(e) => onChange({ builderMemoryRequest: e.target.value })}
+                  placeholder="1Gi"
+                  className={inputCls}
+                />
+              </Field>
+            </div>
           </div>
         </>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Port">
-          <input
-            type="number"
-            value={svc.port}
-            onChange={(e) =>
-              onChange({ port: e.target.value === "" ? "" : Number(e.target.value) })
-            }
-            placeholder="3000"
-            className={inputCls}
-          />
-        </Field>
-        <Field label="Replicas">
-          <input
-            type="number"
-            value={svc.replicas}
-            onChange={(e) =>
-              onChange({ replicas: e.target.value === "" ? "" : Number(e.target.value) })
-            }
-            placeholder="1"
-            min={1}
-            className={inputCls}
-          />
-        </Field>
+      {/* ── Deployment ── */}
+      <div className="border-t border-border/40" />
+      <SectionHeader title="Deployment" subtitle="Where this service runs" />
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Server className="h-3 w-3" />Target node
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <NodeCard
+              label="Auto-schedule"
+              sub="Let K3s decide"
+              selected={svc.nodeId === ""}
+              onClick={() => onChange({ nodeId: "" })}
+            />
+            {workerNodes.map((node) => (
+              <NodeCard
+                key={node.id}
+                label={node.name}
+                sub={node.tailscaleIP ?? ""}
+                selected={svc.nodeId === node.id}
+                onClick={() => onChange({ nodeId: node.id })}
+                online
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Port" required>
+            <input
+              type="number"
+              value={svc.port}
+              onChange={(e) => onChange({ port: e.target.value === "" ? "" : Number(e.target.value) })}
+              placeholder="3000"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Replicas">
+            <input
+              type="number"
+              value={svc.replicas}
+              onChange={(e) => onChange({ replicas: e.target.value === "" ? "" : Number(e.target.value) })}
+              placeholder="1"
+              min={1}
+              className={inputCls}
+            />
+          </Field>
+        </div>
+
+        {/* Resource limits — collapsible */}
+        <div className="rounded-lg border border-border/40">
+          <button
+            onClick={() => setShowResources((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span className="font-medium text-xs">Resource limits</span>
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showResources && "rotate-180")} />
+          </button>
+          {showResources && (
+            <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
+              <Field label="CPU request">
+                <input value={svc.cpuRequest} onChange={(e) => onChange({ cpuRequest: e.target.value })} placeholder="100m" className={inputCls} />
+              </Field>
+              <Field label="CPU limit">
+                <input value={svc.cpuLimit} onChange={(e) => onChange({ cpuLimit: e.target.value })} placeholder="500m" className={inputCls} />
+              </Field>
+              <Field label="Memory request">
+                <input value={svc.memoryRequest} onChange={(e) => onChange({ memoryRequest: e.target.value })} placeholder="128Mi" className={inputCls} />
+              </Field>
+              <Field label="Memory limit">
+                <input value={svc.memoryLimit} onChange={(e) => onChange({ memoryLimit: e.target.value })} placeholder="512Mi" className={inputCls} />
+              </Field>
+            </div>
+          )}
+        </div>
       </div>
-    </>
+    </div>
   )
 }
 
-// ─── Database fields ──────────────────────────────────────────────────────────
+// ─── DatabaseFields ───────────────────────────────────────────────────────────
 
 function DatabaseFields({
   svc,
   onChange,
-  engineOpts,
-  versionOpts,
 }: {
   svc: VisualService
   onChange: (p: Partial<VisualService>) => void
-  engineOpts: typeof DB_ENGINES
-  versionOpts: string[]
 }) {
   return (
-    <>
-      {/* Engine picker */}
+    <div className="space-y-5">
+      <SectionHeader title="Engine" />
       <Field label="Engine">
         <div className="grid grid-cols-3 gap-2">
-          {engineOpts.map((eng) => {
+          {DB_ENGINES.map((eng) => {
             const Icon = eng.icon
             return (
               <button
                 key={eng.value}
-                onClick={() =>
-                  onChange({
-                    dbEngine: eng.value,
-                    dbVersion: eng.versions[0],
-                    port: eng.port,
-                  })
-                }
+                onClick={() => onChange({ dbEngine: eng.value, dbVersion: eng.versions[0], port: eng.port })}
                 className={cn(
                   "flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-colors",
                   svc.dbEngine === eng.value
@@ -650,51 +745,54 @@ function DatabaseFields({
         </div>
       </Field>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-4">
         <Field label="Version">
           <Select
             value={svc.dbVersion}
-            onValueChange={(v) => onChange({ dbVersion: v ?? versionOpts[0] })}
+            onValueChange={(v) => onChange({ dbVersion: v ?? dbVersions(svc.dbEngine)[0] })}
           >
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {versionOpts.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
-                </SelectItem>
+              {dbVersions(svc.dbEngine).map((v) => (
+                <SelectItem key={v} value={v}>{v}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
-
         <Field label="Storage (GB)">
           <input
             type="number"
             value={svc.dbStorageGB}
-            onChange={(e) =>
-              onChange({ dbStorageGB: e.target.value === "" ? "" : Number(e.target.value) })
-            }
+            onChange={(e) => onChange({ dbStorageGB: e.target.value === "" ? "" : Number(e.target.value) })}
             placeholder="10"
             min={1}
             className={inputCls}
           />
         </Field>
-
         <Field label="Replicas">
           <input
             type="number"
             value={svc.replicas}
-            onChange={(e) =>
-              onChange({ replicas: e.target.value === "" ? "" : Number(e.target.value) })
-            }
+            onChange={(e) => onChange({ replicas: e.target.value === "" ? "" : Number(e.target.value) })}
             placeholder="1"
             min={1}
             className={inputCls}
           />
         </Field>
       </div>
-    </>
+    </div>
+  )
+}
+
+// ─── SectionHeader ────────────────────────────────────────────────────────────
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+    </div>
   )
 }
