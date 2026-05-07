@@ -140,16 +140,13 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 	s.db.WithContext(ctx).Raw(`
 		SELECT
 			? AS project_id,
-			COUNT(*) FILTER (WHERE s.type = 'application') AS services_count,
-			COUNT(*) FILTER (WHERE s.type = 'database')    AS databases_count,
-			(SELECT COUNT(*) FROM routes r WHERE r.project_id = ?) AS routes_count,
+			(SELECT COUNT(*) FROM services s WHERE s.project_id = ? AND s.type = 'application') AS services_count,
+			(SELECT COUNT(*) FROM services s WHERE s.project_id = ? AND s.type = 'database')    AS databases_count,
+			(SELECT COUNT(*) FROM routes r   WHERE r.project_id   = ?) AS routes_count,
 			(SELECT COUNT(*) FROM secrets sec WHERE sec.project_id = ?) AS secrets_count,
-			(SELECT COUNT(*) FROM jobs j WHERE j.project_id = ?) AS jobs_count,
-			(SELECT COUNT(*) FROM stacks st WHERE st.project_id = ?) AS stacks_count,
-			(SELECT COUNT(*) FROM volumes v WHERE v.project_id = ?) AS volumes_count
-		FROM services s
-		WHERE s.project_id = ?
-		GROUP BY s.project_id
+			(SELECT COUNT(*) FROM jobs j     WHERE j.project_id   = ?) AS jobs_count,
+			(SELECT COUNT(*) FROM stacks st  WHERE st.project_id  = ?) AS stacks_count,
+			(SELECT COUNT(*) FROM volumes v  WHERE v.project_id   = ?) AS volumes_count
 	`, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID).Scan(&counts)
 	result := &ProjectWithCounts{Project: *project}
 	if len(counts) > 0 {
