@@ -11,6 +11,7 @@ import {
   Eye,
   EyeOff,
   Globe,
+  HardDrive,
   Info,
   KeyRound,
   Layers,
@@ -41,6 +42,7 @@ import {
   secrets as secretsApi,
   jobs as jobsApi,
   stacks as stacksApi,
+  volumes as volumesApi,
   toNode,
   type CreateServiceBody,
   type ApiNode,
@@ -63,7 +65,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ResourceType = "service" | "route" | "job" | "cron-job" | "database" | "secret" | "stack"
+type ResourceType = "service" | "route" | "job" | "cron-job" | "database" | "secret" | "stack" | "volume"
 type AppSource = "git" | "image"
 type Builder = "nixpacks" | "railpack" | "dockerfile"
 
@@ -118,14 +120,16 @@ const RESOURCE_TYPES: {
   icon: typeof Box
   label: string
   soon?: boolean
+  divider?: boolean
 }[] = [
-  { type: "service",  icon: Box,      label: "Service"  },
-  { type: "stack",    icon: Layers,   label: "Stack"    },
-  { type: "database", icon: Database, label: "Database" },
-  { type: "route",    icon: Globe,    label: "Route"    },
-  { type: "secret",   icon: KeyRound, label: "Secret"   },
-  { type: "job",      icon: Zap,      label: "Job"      },
-  { type: "cron-job", icon: Clock,    label: "Cron Job" },
+  { type: "service",  icon: Box,       label: "Service"  },
+  { type: "database", icon: Database,  label: "Database" },
+  { type: "route",    icon: Globe,     label: "Route"    },
+  { type: "stack",    icon: Layers,    label: "Stack"    },
+  { type: "volume",   icon: HardDrive, label: "Volume"   },
+  { type: "secret",   icon: KeyRound,  label: "Secret",  divider: true },
+  { type: "job",      icon: Zap,       label: "Job"      },
+  { type: "cron-job", icon: Clock,     label: "Cron Job" },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -216,28 +220,30 @@ function NewResourcePage() {
             Resource type
           </p>
           <nav className="space-y-0.5">
-            {RESOURCE_TYPES.map(({ type, icon: Icon, label, soon }) => (
-              <button
-                key={type}
-                onClick={() => !soon && setResourceType(type)}
-                disabled={soon}
-                className={cn(
-                  "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
-                  resourceType === type && !soon
-                    ? "bg-primary/10 text-primary font-medium"
-                    : soon
-                    ? "text-muted-foreground/40 cursor-not-allowed"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="flex-1">{label}</span>
-                {soon && (
-                  <span className="text-[9px] font-mono border border-border/40 px-1 py-px rounded text-muted-foreground/40">
-                    soon
-                  </span>
-                )}
-              </button>
+            {RESOURCE_TYPES.map(({ type, icon: Icon, label, soon, divider }) => (
+              <div key={type}>
+                {divider && <div className="my-1.5 border-t border-border/30" />}
+                <button
+                  onClick={() => !soon && setResourceType(type)}
+                  disabled={soon}
+                  className={cn(
+                    "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
+                    resourceType === type && !soon
+                      ? "bg-primary/10 text-primary font-medium"
+                      : soon
+                      ? "text-muted-foreground/40 cursor-not-allowed"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1">{label}</span>
+                  {soon && (
+                    <span className="text-[9px] font-mono border border-border/40 px-1 py-px rounded text-muted-foreground/40">
+                      soon
+                    </span>
+                  )}
+                </button>
+              </div>
             ))}
           </nav>
         </aside>
@@ -263,6 +269,8 @@ function NewResourcePage() {
             <SecretForm projectId={projectId} />
           ) : resourceType === "job" || resourceType === "cron-job" ? (
             <JobForm projectId={projectId} isCron={resourceType === "cron-job"} />
+          ) : resourceType === "volume" ? (
+            <VolumeForm projectId={projectId} />
           ) : (
             <ComingSoonForm type={resourceType} />
           )}
@@ -1714,6 +1722,79 @@ function StackForm({ projectId }: { projectId: string }) {
 }
 
 // ─── Coming soon placeholder ──────────────────────────────────────────────────
+
+// ─── Volume form ─────────────────────────────────────────────────────────────
+
+function VolumeForm({ projectId }: { projectId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const navigate = useNavigate()
+  const [name, setName] = useState("")
+  const [storageGB, setStorageGB] = useState(5)
+
+  const createMutation = useMutation({
+    mutationFn: () => volumesApi.create(orgId!, projectId, { name, storage_gb: storageGB }, token),
+    onSuccess: () => navigate({ to: "/projects/$id/volumes", params: { id: projectId } }),
+  })
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold">New Volume</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          A persistent volume backed by a Kubernetes PVC. Attach it to an application service after creation.
+        </p>
+      </div>
+
+      {/* Replica tradeoff callout */}
+      <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-3">
+        <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-300/80 space-y-1">
+          <p className="font-medium text-amber-300">Replicas vs persistence</p>
+          <p>
+            Volumes use ReadWriteOnce access — they can only be mounted to pods on a single node at a time.
+            Attaching a volume to a service automatically scales it to 1 replica. To scale out, detach the volume first.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <Field label="Name" required>
+          <input
+            className={inputCls}
+            placeholder="uploads"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
+
+        <Field label="Size (GB)">
+          <input
+            type="number"
+            min={1}
+            max={500}
+            className={inputCls}
+            value={storageGB}
+            onChange={(e) => setStorageGB(Number(e.target.value))}
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">Default: 5 GB. Can be increased but not decreased after creation.</p>
+        </Field>
+      </div>
+
+      {createMutation.error && (
+        <p className="text-xs text-destructive">{(createMutation.error as Error).message}</p>
+      )}
+
+      <Button
+        disabled={!name.trim() || createMutation.isPending}
+        onClick={() => createMutation.mutate()}
+      >
+        {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+        Create volume
+      </Button>
+    </div>
+  )
+}
 
 function ComingSoonForm({ type }: { type: ResourceType }) {
   const label = RESOURCE_TYPES.find((r) => r.type === type)?.label ?? type

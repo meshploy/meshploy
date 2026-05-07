@@ -354,6 +354,13 @@ type Service struct {
 	// Merged with project-level env vars at deploy time; service keys win on conflict.
 	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
+	// Healthcheck probe — JSON-encoded []string command, zero int fields mean "use K8s default".
+	HealthcheckCmd             string `gorm:"type:text;default:''"  json:"healthcheck_cmd,omitempty"`
+	HealthcheckIntervalSecs    int32  `gorm:"default:0"             json:"healthcheck_interval_secs,omitempty"`
+	HealthcheckTimeoutSecs     int32  `gorm:"default:0"             json:"healthcheck_timeout_secs,omitempty"`
+	HealthcheckRetries         int32  `gorm:"default:0"             json:"healthcheck_retries,omitempty"`
+	HealthcheckStartPeriodSecs int32  `gorm:"default:0"             json:"healthcheck_start_period_secs,omitempty"`
+
 	Project        Project         `gorm:"foreignKey:ProjectID"                              json:"-"`
 	Node           *Node           `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"     json:"-"`
 	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
@@ -446,6 +453,45 @@ type Stack struct {
 }
 
 func (Stack) TableName() string { return "stacks" }
+
+// ---------------------------------------------------------------------------
+// Volumes — project-scoped persistent storage (backed by K8s PVCs)
+// ---------------------------------------------------------------------------
+
+type VolumeStatus string
+
+const (
+	VolumePending VolumeStatus = "pending" // PVC not yet provisioned
+	VolumeReady   VolumeStatus = "ready"   // PVC bound and available
+)
+
+type Volume struct {
+	Base
+	ProjectID uuid.UUID    `gorm:"type:uuid;not null;index"           json:"project_id"`
+	Name      string       `gorm:"not null"                           json:"name"`
+	Slug      string       `gorm:"not null;uniqueIndex"               json:"slug"` // K8s PVC name
+	StorageGB int          `gorm:"not null;default:5"                 json:"storage_gb"`
+	Status    VolumeStatus `gorm:"type:varchar(15);default:'pending'" json:"status"`
+
+	Project Project       `gorm:"foreignKey:ProjectID"                            json:"-"`
+	Mounts  []VolumeMount `gorm:"foreignKey:VolumeID;constraint:OnDelete:CASCADE" json:"mounts,omitempty"`
+}
+
+func (Volume) TableName() string { return "volumes" }
+
+// VolumeMount represents a volume attached to a service at a given mount path.
+// A volume can only be attached to one service at a time (enforced in the service layer).
+type VolumeMount struct {
+	Base
+	VolumeID  uuid.UUID `gorm:"type:uuid;not null;index"  json:"volume_id"`
+	ServiceID uuid.UUID `gorm:"type:uuid;not null;index"  json:"service_id"`
+	MountPath string    `gorm:"not null"                   json:"mount_path"`
+
+	Volume  Volume  `gorm:"foreignKey:VolumeID"                                     json:"volume,omitempty"`
+	Service Service `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"        json:"-"`
+}
+
+func (VolumeMount) TableName() string { return "volume_mounts" }
 
 // NodeRegistrationToken is a long-lived pre-shared token that allows a worker
 // node to self-register into the org's node list without a user JWT.

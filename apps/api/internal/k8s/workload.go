@@ -29,6 +29,19 @@ type WorkloadParams struct {
 
 	// NodeName pins the pod to a specific node (optional).
 	NodeName string
+
+	// Optional K8s liveness and readiness probes (both use the same spec when set).
+	LivenessProbe  *corev1.Probe
+	ReadinessProbe *corev1.Probe
+
+	// User-managed volume mounts (backed by standalone PVCs).
+	VolumeMounts []VolumeAttachment
+}
+
+// VolumeAttachment wires a standalone PVC into a container at a given path.
+type VolumeAttachment struct {
+	PVCName   string // K8s PVC name
+	MountPath string
 }
 
 // ApplyDeployment creates or updates a K8s Deployment.
@@ -63,19 +76,35 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 		}
 	}
 
-	podSpec := corev1.PodSpec{
-		Containers: []corev1.Container{
-			{
-				Name:            p.Name,
-				Image:           p.Image,
-				ImagePullPolicy: corev1.PullAlways,
-				Ports: []corev1.ContainerPort{
-					{ContainerPort: p.Port, HostPort: p.Port, Protocol: corev1.ProtocolTCP},
-				},
-				Env:       p.Env,
-				Resources: resources,
-			},
+	container := corev1.Container{
+		Name:            p.Name,
+		Image:           p.Image,
+		ImagePullPolicy: corev1.PullAlways,
+		Ports: []corev1.ContainerPort{
+			{ContainerPort: p.Port, HostPort: p.Port, Protocol: corev1.ProtocolTCP},
 		},
+		Env:            p.Env,
+		Resources:      resources,
+		LivenessProbe:  p.LivenessProbe,
+		ReadinessProbe: p.ReadinessProbe,
+	}
+	var podVolumes []corev1.Volume
+	for i, va := range p.VolumeMounts {
+		volName := fmt.Sprintf("vol-%d", i)
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      volName,
+			MountPath: va.MountPath,
+		})
+		podVolumes = append(podVolumes, corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: va.PVCName},
+			},
+		})
+	}
+	podSpec := corev1.PodSpec{
+		Containers: []corev1.Container{container},
+		Volumes:    podVolumes,
 	}
 	if p.NodeName != "" {
 		podSpec.NodeName = p.NodeName
@@ -154,6 +183,9 @@ type DatabaseWorkloadParams struct {
 	StorageGB int    // PVC size in GiB
 	DataPath  string // mount path inside container
 	NodeName  string // "" = auto-schedule
+
+	LivenessProbe  *corev1.Probe
+	ReadinessProbe *corev1.Probe
 }
 
 // ApplyDatabaseDeployment creates-or-updates a PVC and Deployment for a managed database.
@@ -190,19 +222,20 @@ func ApplyDatabaseDeployment(ctx context.Context, client kubernetes.Interface, p
 
 	labels := map[string]string{"app": p.Name, "managed-by": "meshploy"}
 	replicas := int32(1)
-	podSpec := corev1.PodSpec{
-		Containers: []corev1.Container{
-			{
-				Name:            p.Name,
-				Image:           p.Image,
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Ports:           []corev1.ContainerPort{{ContainerPort: p.Port, Protocol: corev1.ProtocolTCP}},
-				Env:             p.Env,
-				VolumeMounts: []corev1.VolumeMount{
-					{Name: "data", MountPath: p.DataPath},
-				},
-			},
+	dbContainer := corev1.Container{
+		Name:            p.Name,
+		Image:           p.Image,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Ports:           []corev1.ContainerPort{{ContainerPort: p.Port, Protocol: corev1.ProtocolTCP}},
+		Env:             p.Env,
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "data", MountPath: p.DataPath},
 		},
+		LivenessProbe:  p.LivenessProbe,
+		ReadinessProbe: p.ReadinessProbe,
+	}
+	podSpec := corev1.PodSpec{
+		Containers: []corev1.Container{dbContainer},
 		Volumes: []corev1.Volume{
 			{
 				Name: "data",

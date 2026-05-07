@@ -73,6 +73,8 @@ func Migrate(db *gorm.DB) error {
 		&Service{},
 		&BuildConfig{},
 		&DatabaseConfig{},
+		&Volume{},
+		&VolumeMount{},
 
 		// Secrets
 		&Secret{},

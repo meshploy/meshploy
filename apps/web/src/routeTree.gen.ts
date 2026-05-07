@@ -30,6 +30,7 @@ import { Route as AppProjectsIdRoutesRouteImport } from './routes/_app/projects/
 import { Route as AppProjectsIdPipelinesRouteImport } from './routes/_app/projects/$id/pipelines'
 import { Route as AppProjectsIdNewRouteImport } from './routes/_app/projects/$id/new'
 import { Route as AppProjectsIdDatabasesRouteImport } from './routes/_app/projects/$id/databases'
+import { Route as AppProjectsIdVolumesIndexRouteImport } from './routes/_app/projects/$id/volumes/index'
 import { Route as AppProjectsIdStacksIndexRouteImport } from './routes/_app/projects/$id/stacks/index'
 import { Route as AppProjectsIdServicesIndexRouteImport } from './routes/_app/projects/$id/services/index'
 import { Route as AppProjectsIdSecretsIndexRouteImport } from './routes/_app/projects/$id/secrets/index'
@@ -154,6 +155,12 @@ const AppProjectsIdDatabasesRoute = AppProjectsIdDatabasesRouteImport.update({
   path: '/databases',
   getParentRoute: () => AppProjectsIdRouteRoute,
 } as any)
+const AppProjectsIdVolumesIndexRoute =
+  AppProjectsIdVolumesIndexRouteImport.update({
+    id: '/volumes/',
+    path: '/volumes/',
+    getParentRoute: () => AppProjectsIdRouteRoute,
+  } as any)
 const AppProjectsIdStacksIndexRoute =
   AppProjectsIdStacksIndexRouteImport.update({
     id: '/stacks/',
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/secrets/': typeof AppProjectsIdSecretsIndexRoute
   '/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
   '/projects/$id/stacks/': typeof AppProjectsIdStacksIndexRoute
+  '/projects/$id/volumes/': typeof AppProjectsIdVolumesIndexRoute
   '/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
@@ -339,6 +347,7 @@ export interface FileRoutesByTo {
   '/projects/$id/secrets': typeof AppProjectsIdSecretsIndexRoute
   '/projects/$id/services': typeof AppProjectsIdServicesIndexRoute
   '/projects/$id/stacks': typeof AppProjectsIdStacksIndexRoute
+  '/projects/$id/volumes': typeof AppProjectsIdVolumesIndexRoute
   '/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
@@ -383,6 +392,7 @@ export interface FileRoutesById {
   '/_app/projects/$id/secrets/': typeof AppProjectsIdSecretsIndexRoute
   '/_app/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
   '/_app/projects/$id/stacks/': typeof AppProjectsIdStacksIndexRoute
+  '/_app/projects/$id/volumes/': typeof AppProjectsIdVolumesIndexRoute
   '/_app/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/_app/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/_app/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
@@ -426,6 +436,7 @@ export interface FileRouteTypes {
     | '/projects/$id/secrets/'
     | '/projects/$id/services/'
     | '/projects/$id/stacks/'
+    | '/projects/$id/volumes/'
     | '/projects/$id/services/$serviceId/backups'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/projects/$id/secrets'
     | '/projects/$id/services'
     | '/projects/$id/stacks'
+    | '/projects/$id/volumes'
     | '/projects/$id/services/$serviceId/backups'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
@@ -506,6 +518,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$id/secrets/'
     | '/_app/projects/$id/services/'
     | '/_app/projects/$id/stacks/'
+    | '/_app/projects/$id/volumes/'
     | '/_app/projects/$id/services/$serviceId/backups'
     | '/_app/projects/$id/services/$serviceId/config'
     | '/_app/projects/$id/services/$serviceId/logs'
@@ -671,6 +684,13 @@ declare module '@tanstack/react-router' {
       path: '/databases'
       fullPath: '/projects/$id/databases'
       preLoaderRoute: typeof AppProjectsIdDatabasesRouteImport
+      parentRoute: typeof AppProjectsIdRouteRoute
+    }
+    '/_app/projects/$id/volumes/': {
+      id: '/_app/projects/$id/volumes/'
+      path: '/volumes'
+      fullPath: '/projects/$id/volumes/'
+      preLoaderRoute: typeof AppProjectsIdVolumesIndexRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
     }
     '/_app/projects/$id/stacks/': {
@@ -899,6 +919,7 @@ interface AppProjectsIdRouteRouteChildren {
   AppProjectsIdSecretsIndexRoute: typeof AppProjectsIdSecretsIndexRoute
   AppProjectsIdServicesIndexRoute: typeof AppProjectsIdServicesIndexRoute
   AppProjectsIdStacksIndexRoute: typeof AppProjectsIdStacksIndexRoute
+  AppProjectsIdVolumesIndexRoute: typeof AppProjectsIdVolumesIndexRoute
 }
 
 const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
@@ -917,6 +938,7 @@ const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
   AppProjectsIdSecretsIndexRoute: AppProjectsIdSecretsIndexRoute,
   AppProjectsIdServicesIndexRoute: AppProjectsIdServicesIndexRoute,
   AppProjectsIdStacksIndexRoute: AppProjectsIdStacksIndexRoute,
+  AppProjectsIdVolumesIndexRoute: AppProjectsIdVolumesIndexRoute,
 }
 
 const AppProjectsIdRouteRouteWithChildren =

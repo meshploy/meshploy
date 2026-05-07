@@ -60,6 +60,7 @@ export interface Project {
   secretsCount: number
   jobsCount: number
   stacksCount: number
+  volumesCount: number
   createdAt: Date
 }
 
