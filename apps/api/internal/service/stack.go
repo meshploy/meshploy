@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,11 +91,104 @@ type composeSpec struct {
 }
 
 type composeService struct {
-	Image       string            `yaml:"image"`
-	Command     []string          `yaml:"command"`
-	Environment map[string]string `yaml:"environment"`
-	Ports       []string          `yaml:"ports"`
-	MeshployExt *meshployExt      `yaml:"x-meshploy"`
+	Image       string              `yaml:"image"`
+	Command     []string            `yaml:"command"`
+	Environment composeEnv          `yaml:"environment"`
+	Ports       []string            `yaml:"ports"`
+	Healthcheck *composeHealthcheck `yaml:"healthcheck"`
+	MeshployExt *meshployExt        `yaml:"x-meshploy"`
+}
+
+type composeHealthcheck struct {
+	Test        []string `yaml:"test"`
+	Interval    string   `yaml:"interval"`
+	Timeout     string   `yaml:"timeout"`
+	Retries     int32    `yaml:"retries"`
+	StartPeriod string   `yaml:"start_period"`
+	Disable     bool     `yaml:"disable"`
+}
+
+// composeEnv handles both Docker Compose environment formats:
+//   map format:  KEY: VALUE
+//   list format: - KEY=VALUE  (or - KEY for passthrough, which is skipped)
+type composeEnv map[string]string
+
+func (e *composeEnv) UnmarshalYAML(value *yaml.Node) error {
+	*e = make(composeEnv)
+	switch value.Kind {
+	case yaml.MappingNode:
+		return value.Decode((*map[string]string)(e))
+	case yaml.SequenceNode:
+		var list []string
+		if err := value.Decode(&list); err != nil {
+			return err
+		}
+		for _, item := range list {
+			parts := strings.SplitN(item, "=", 2)
+			if len(parts) == 2 {
+				(*e)[parts[0]] = parts[1]
+			}
+			// items without "=" are passthrough references — skip
+		}
+		return nil
+	}
+	return nil
+}
+
+// containerPortFromPorts extracts the container (right-hand) port from a
+// Docker Compose ports entry. Handles:
+//   "3000"               → 3000
+//   "4180:3000"          → 3000  (host:container)
+//   "127.0.0.1:4180:3000" → 3000  (ip:host:container)
+func containerPortFromPorts(ports []string) int {
+	if len(ports) == 0 {
+		return 0
+	}
+	parts := strings.Split(strings.TrimSpace(ports[0]), ":")
+	p, err := strconv.Atoi(strings.TrimSpace(parts[len(parts)-1]))
+	if err != nil || p <= 0 {
+		return 0
+	}
+	return p
+}
+
+// parseDurationSeconds converts a Docker Compose duration string (e.g. "30s", "1m")
+// to an integer number of seconds. Returns 0 on parse failure.
+func parseDurationSeconds(s string) int32 {
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return int32(d.Seconds())
+}
+
+// parseHealthcheck converts a composeHealthcheck to a JSON-encoded command string
+// and probe timing fields ready to store on the Service row.
+func parseHealthcheck(hc *composeHealthcheck) (cmd string, interval, timeout, retries, startPeriod int32) {
+	if hc == nil || hc.Disable || len(hc.Test) == 0 {
+		return
+	}
+	var execCmd []string
+	switch hc.Test[0] {
+	case "CMD":
+		execCmd = hc.Test[1:]
+	case "CMD-SHELL":
+		if len(hc.Test) >= 2 {
+			execCmd = []string{"/bin/sh", "-c", strings.Join(hc.Test[1:], " ")}
+		}
+	default:
+		execCmd = hc.Test
+	}
+	if len(execCmd) > 0 {
+		if b, err := json.Marshal(execCmd); err == nil {
+			cmd = string(b)
+		}
+	}
+	interval = parseDurationSeconds(hc.Interval)
+	timeout = parseDurationSeconds(hc.Timeout)
+	retries = hc.Retries
+	startPeriod = parseDurationSeconds(hc.StartPeriod)
+	return
 }
 
 type meshployExt struct {
@@ -195,9 +290,15 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		}
 		envVarsStr := strings.Join(envParts, "\n")
 
-		port := 3000
+		port := 0
 		if ext != nil && ext.Deploy != nil && ext.Deploy.Port > 0 {
 			port = ext.Deploy.Port
+		}
+		if port == 0 {
+			port = containerPortFromPorts(svcDef.Ports)
+		}
+		if port == 0 {
+			port = 3000
 		}
 		replicas := 1
 		if ext != nil && ext.Deploy != nil && ext.Deploy.Replicas > 0 {
@@ -228,6 +329,9 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 
 		isDatabase := ext != nil && ext.Type == "database"
 
+		// Parse healthcheck probe fields.
+		hcCmd, hcInterval, hcTimeout, hcRetries, hcStartPeriod := parseHealthcheck(svcDef.Healthcheck)
+
 		existingSvc, exists := existingByName[svcName]
 		if !exists {
 			var svc *meshdb.Service
@@ -245,7 +349,12 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					StorageGB: ext.Database.StorageGB,
 					DBName:    ext.Database.DBName,
 					DBUser:    ext.Database.DBUser,
-					DBPassword: ext.Database.DBPassword,
+					DBPassword:                 ext.Database.DBPassword,
+					HealthcheckCmd:             hcCmd,
+					HealthcheckIntervalSecs:    hcInterval,
+					HealthcheckTimeoutSecs:     hcTimeout,
+					HealthcheckRetries:         hcRetries,
+					HealthcheckStartPeriodSecs: hcStartPeriod,
 				}
 				if dbInput.StorageGB == 0 {
 					dbInput.StorageGB = 10
@@ -253,18 +362,23 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
 			} else {
 				input := CreateWorkloadInput{
-					StackID:       &stackID,
-					Name:          svcName,
-					Type:          meshdb.ServiceTypeApplication,
-					Image:         svcDef.Image,
-					Port:          port,
-					Replicas:      replicas,
-					CPURequest:    cpuRequest,
-					CPULimit:      cpuLimit,
-					MemoryRequest: memRequest,
-					MemoryLimit:   memLimit,
-					EnvVars:       envVarsStr,
-					NodeID:        nodeID,
+					StackID:                    &stackID,
+					Name:                       svcName,
+					Type:                       meshdb.ServiceTypeApplication,
+					Image:                      svcDef.Image,
+					Port:                       port,
+					Replicas:                   replicas,
+					CPURequest:                 cpuRequest,
+					CPULimit:                   cpuLimit,
+					MemoryRequest:              memRequest,
+					MemoryLimit:                memLimit,
+					EnvVars:                    envVarsStr,
+					NodeID:                     nodeID,
+					HealthcheckCmd:             hcCmd,
+					HealthcheckIntervalSecs:    hcInterval,
+					HealthcheckTimeoutSecs:     hcTimeout,
+					HealthcheckRetries:         hcRetries,
+					HealthcheckStartPeriodSecs: hcStartPeriod,
 				}
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, input)
 			}
@@ -283,13 +397,18 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		} else {
 			// Update existing service.
 			updates := map[string]any{
-				"image":          svcDef.Image,
-				"port":           port,
-				"replicas":       replicas,
-				"cpu_request":    cpuRequest,
-				"cpu_limit":      cpuLimit,
-				"memory_request": memRequest,
-				"memory_limit":   memLimit,
+				"image":                    svcDef.Image,
+				"port":                     port,
+				"replicas":                 replicas,
+				"cpu_request":              cpuRequest,
+				"cpu_limit":                cpuLimit,
+				"memory_request":           memRequest,
+				"memory_limit":             memLimit,
+				"healthcheck_cmd":          hcCmd,
+				"healthcheck_interval_secs":    hcInterval,
+				"healthcheck_timeout_secs":     hcTimeout,
+				"healthcheck_retries":          hcRetries,
+				"healthcheck_start_period_secs": hcStartPeriod,
 			}
 			if err := s.db.WithContext(ctx).Model(&existingSvc).Updates(updates).Error; err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: update failed: %v", svcName, err))

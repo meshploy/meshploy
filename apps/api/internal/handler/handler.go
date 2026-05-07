@@ -35,6 +35,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerSecretRoutes(api)
 	h.registerJobRoutes(api)
 	h.registerStackRoutes(api)
+	h.registerVolumeRoutes(api)
 }
 
 // RegisterRaw wires routes that need raw http.HandlerFunc access:

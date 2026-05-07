@@ -21,6 +21,7 @@ type Services struct {
 	Nodes           *NodeService
 	Workloads       *WorkloadService
 	Stacks          *StackService
+	Volumes         *VolumeService
 	Domains         *DomainService
 	Routes          *RouteService
 	Deployments     *DeploymentService
@@ -149,6 +150,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	}
 
 	workloads := &WorkloadService{db: db, k8s: k8sClient}
+	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}}
 
 	return &Services{
 		Auth:            auth,
@@ -157,9 +159,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Nodes:           nodes,
 		Workloads:       workloads,
 		Stacks:          &StackService{db: db, workload: workloads},
+		Volumes:         &VolumeService{db: db, k8s: k8sClient, deployment: deployments},
 		Domains:         domains,
 		Routes:          &RouteService{db: db, k8s: k8sClient},
-		Deployments:     &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}},
+		Deployments:     deployments,
 		GitIntegrations: gitSvc,
 		Registries:      registries,
 		Storage:         &StorageService{db: db},

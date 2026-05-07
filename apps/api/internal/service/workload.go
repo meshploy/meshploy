@@ -54,6 +54,13 @@ type CreateWorkloadInput struct {
 	DBName     string
 	DBUser     string
 	DBPassword string
+
+	// Healthcheck probe fields (from compose healthcheck: or API input)
+	HealthcheckCmd             string
+	HealthcheckIntervalSecs    int32
+	HealthcheckTimeoutSecs     int32
+	HealthcheckRetries         int32
+	HealthcheckStartPeriodSecs int32
 }
 
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
@@ -118,16 +125,21 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		port = 3000
 	}
 	service := &db.Service{
-		ProjectID: projectID,
-		NodeID:    in.NodeID,
-		StackID:   in.StackID,
-		Name:      in.Name,
-		Type:      db.ServiceTypeApplication,
-		Image:     in.Image,
-		Status:    db.ServiceStopped,
-		Replicas:  replicas,
-		Port:      port,
-		EnvVars:   db.EncryptedString(in.EnvVars),
+		ProjectID:                  projectID,
+		NodeID:                     in.NodeID,
+		StackID:                    in.StackID,
+		Name:                       in.Name,
+		Type:                       db.ServiceTypeApplication,
+		Image:                      in.Image,
+		Status:                     db.ServiceStopped,
+		Replicas:                   replicas,
+		Port:                       port,
+		EnvVars:                    db.EncryptedString(in.EnvVars),
+		HealthcheckCmd:             in.HealthcheckCmd,
+		HealthcheckIntervalSecs:    in.HealthcheckIntervalSecs,
+		HealthcheckTimeoutSecs:     in.HealthcheckTimeoutSecs,
+		HealthcheckRetries:         in.HealthcheckRetries,
+		HealthcheckStartPeriodSecs: in.HealthcheckStartPeriodSecs,
 	}
 
 	return service, s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

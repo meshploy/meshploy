@@ -3,6 +3,7 @@ package service
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -249,18 +250,23 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	envVars := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), secretEnvs)
 
 	// Apply K8s Deployment + Service.
+	probe := buildProbeFromService(&a.svc)
+	volMounts := resolveServiceVolumeMounts(ctx, s.db, a.svc.ID)
 	wp := appk8s.WorkloadParams{
-		Name:          slugify(a.svc.Name),
-		Namespace:     a.namespace,
-		Image:         a.imageName,
-		Port:          port,
-		Replicas:      int32(a.svc.Replicas),
-		Env:           envVars,
-		CPURequest:    a.svc.CPURequest,
-		CPULimit:      a.svc.CPULimit,
-		MemoryRequest: a.svc.MemoryRequest,
-		MemoryLimit:   a.svc.MemoryLimit,
-		NodeName:      nodeName,
+		Name:           slugify(a.svc.Name),
+		Namespace:      a.namespace,
+		Image:          a.imageName,
+		Port:           port,
+		Replicas:       int32(a.svc.Replicas),
+		Env:            envVars,
+		CPURequest:     a.svc.CPURequest,
+		CPULimit:       a.svc.CPULimit,
+		MemoryRequest:  a.svc.MemoryRequest,
+		MemoryLimit:    a.svc.MemoryLimit,
+		NodeName:       nodeName,
+		VolumeMounts:   volMounts,
+		LivenessProbe:  probe,
+		ReadinessProbe: probe,
 	}
 	if err := appk8s.ApplyDeployment(ctx, s.k8s, wp); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
@@ -345,6 +351,83 @@ func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
 		Joins("JOIN deployments ON deployments.service_id = services.id").
 		Where("deployments.id = ?", id).
 		Update("status", db.ServiceStopped)
+}
+
+// ReapplyService re-applies the K8s Deployment for a running service using its
+// current DB config (image, env, resources, volume mounts, probes). Called by
+// VolumeService after attach/detach so changes take effect without a new build.
+func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.UUID) error {
+	if s.k8s == nil {
+		return nil
+	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return err
+	}
+	if svc.Status != db.ServiceRunning || svc.Image == "" {
+		return nil
+	}
+	port := int32(svc.Port)
+	if port == 0 {
+		port = 3000
+	}
+	nodeName := ""
+	if svc.NodeID != nil {
+		var node db.Node
+		if s.db.WithContext(ctx).First(&node, svc.NodeID).Error == nil {
+			nodeName = node.Name
+		}
+	}
+	secretEnvs, _ := s.secrets.ResolveForService(ctx, svc.ID)
+	envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs)
+	volMounts := resolveServiceVolumeMounts(ctx, s.db, serviceID)
+	probe := buildProbeFromService(&svc)
+	return appk8s.ApplyDeployment(ctx, s.k8s, appk8s.WorkloadParams{
+		Name:           slugify(svc.Name),
+		Namespace:      svc.Project.Slug,
+		Image:          svc.Image,
+		Port:           port,
+		Replicas:       int32(svc.Replicas),
+		Env:            envVars,
+		CPURequest:     svc.CPURequest,
+		CPULimit:       svc.CPULimit,
+		MemoryRequest:  svc.MemoryRequest,
+		MemoryLimit:    svc.MemoryLimit,
+		NodeName:       nodeName,
+		VolumeMounts:   volMounts,
+		LivenessProbe:  probe,
+		ReadinessProbe: probe,
+	})
+}
+
+// buildProbeFromService constructs a K8s exec probe from the healthcheck fields
+// stored on the service row. Returns nil when no healthcheck is configured.
+func buildProbeFromService(svc *db.Service) *corev1.Probe {
+	if svc.HealthcheckCmd == "" {
+		return nil
+	}
+	var cmd []string
+	if err := json.Unmarshal([]byte(svc.HealthcheckCmd), &cmd); err != nil || len(cmd) == 0 {
+		return nil
+	}
+	probe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			Exec: &corev1.ExecAction{Command: cmd},
+		},
+	}
+	if svc.HealthcheckIntervalSecs > 0 {
+		probe.PeriodSeconds = svc.HealthcheckIntervalSecs
+	}
+	if svc.HealthcheckTimeoutSecs > 0 {
+		probe.TimeoutSeconds = svc.HealthcheckTimeoutSecs
+	}
+	if svc.HealthcheckRetries > 0 {
+		probe.FailureThreshold = svc.HealthcheckRetries
+	}
+	if svc.HealthcheckStartPeriodSecs > 0 {
+		probe.InitialDelaySeconds = svc.HealthcheckStartPeriodSecs
+	}
+	return probe
 }
 
 // resolveRegistry returns registry credentials from the build config or
@@ -967,15 +1050,18 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 		}
 
 		appendLog("Applying database workload…")
+		dbProbe := buildProbeFromService(svc)
 		wp := appk8s.DatabaseWorkloadParams{
-			Name:      slug,
-			Namespace: namespace,
-			Image:     svc.Image,
-			Port:      int32(svc.Port),
-			Env:       dbEnvVars(dc),
-			StorageGB: dc.StorageGB,
-			DataPath:  dbDataPath(dc.Engine),
-			NodeName:  nodeName,
+			Name:           slug,
+			Namespace:      namespace,
+			Image:          svc.Image,
+			Port:           int32(svc.Port),
+			Env:            dbEnvVars(dc),
+			StorageGB:      dc.StorageGB,
+			DataPath:       dbDataPath(dc.Engine),
+			NodeName:       nodeName,
+			LivenessProbe:  dbProbe,
+			ReadinessProbe: dbProbe,
 		}
 		if err := appk8s.ApplyDatabaseDeployment(bgCtx, s.k8s, wp); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s workload: "+err.Error())
