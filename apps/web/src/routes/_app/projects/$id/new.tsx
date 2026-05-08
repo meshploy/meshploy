@@ -1581,6 +1581,7 @@ interface JobFormState {
   isScheduled: boolean
   schedule: string
   concurrencyPolicy: "Allow" | "Forbid" | "Replace"
+  historyLimit: number
   envVars: string
   nodeId: string | null
   showResources: boolean
@@ -1597,6 +1598,7 @@ const JOB_INITIAL: JobFormState = {
   isScheduled: false,
   schedule: "",
   concurrencyPolicy: "Allow",
+  historyLimit: 5,
   envVars: "",
   nodeId: null,
   showResources: false,
@@ -1633,6 +1635,7 @@ function JobForm({ projectId }: { projectId: string }) {
         command: jf.command || undefined,
         schedule: jf.isScheduled ? jf.schedule : undefined,
         concurrency_policy: jf.isScheduled ? jf.concurrencyPolicy : undefined,
+        history_limit: jf.isScheduled ? jf.historyLimit : undefined,
         cpu_request: jf.cpuRequest || undefined,
         cpu_limit: jf.cpuLimit || undefined,
         memory_request: jf.memoryRequest || undefined,
@@ -1721,29 +1724,42 @@ function JobForm({ projectId }: { projectId: string }) {
                 className={cn(inputCls, "font-mono")}
               />
             </Field>
-            <Field label="Concurrency policy">
-              <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-                {(["Allow", "Forbid", "Replace"] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => patch({ concurrencyPolicy: p })}
-                    className={cn(
-                      "px-3 py-2 text-sm transition-colors",
-                      jf.concurrencyPolicy === p
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                    )}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {jf.concurrencyPolicy === "Allow" && "Multiple runs can overlap."}
-                {jf.concurrencyPolicy === "Forbid" && "Skip new run if previous is still running."}
-                {jf.concurrencyPolicy === "Replace" && "Cancel the running job and start a new one."}
-              </p>
-            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Concurrency policy">
+                <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
+                  {(["Allow", "Forbid", "Replace"] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => patch({ concurrencyPolicy: p })}
+                      className={cn(
+                        "px-3 py-2 text-sm transition-colors",
+                        jf.concurrencyPolicy === p
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                      )}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {jf.concurrencyPolicy === "Allow" && "Multiple runs can overlap."}
+                  {jf.concurrencyPolicy === "Forbid" && "Skip new run if previous is still running."}
+                  {jf.concurrencyPolicy === "Replace" && "Cancel the running job and start a new one."}
+                </p>
+              </Field>
+              <Field label="History limit">
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={jf.historyLimit}
+                  onChange={(e) => patch({ historyLimit: parseInt(e.target.value) || 5 })}
+                  className={inputCls}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Completed runs to keep.</p>
+              </Field>
+            </div>
           </div>
         )}
       </div>
