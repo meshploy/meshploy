@@ -747,6 +747,22 @@ type BackupConfig struct {
 
 func (BackupConfig) TableName() string { return "backup_configs" }
 
+// VolumeBackupConfig defines an automated backup schedule for a Volume (PVC → S3).
+// At most one config per volume (uniqueIndex on volume_id).
+type VolumeBackupConfig struct {
+	Base
+	VolumeID             uuid.UUID    `gorm:"type:uuid;not null;uniqueIndex" json:"volume_id"`
+	StorageIntegrationID uuid.UUID    `gorm:"type:uuid;not null"             json:"storage_integration_id"`
+	Schedule             string       `gorm:"not null"                       json:"schedule"`
+	RetentionDays        int          `gorm:"not null;default:30"            json:"retention_days"`
+	PathPrefix           string       `json:"path_prefix"`
+	Enabled              bool         `gorm:"default:true"                   json:"enabled"`
+	LastBackupAt         *time.Time   `json:"last_backup_at"`
+	LastBackupStatus     *BackupStatus `json:"last_backup_status"`
+}
+
+func (VolumeBackupConfig) TableName() string { return "volume_backup_configs" }
+
 // SystemBackupConfig defines a scheduled backup of Meshploy's own database for an org.
 // At most one row per org (uniqueIndex on organization_id).
 type SystemBackupConfig struct {

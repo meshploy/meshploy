@@ -1452,5 +1452,54 @@ export const volumes = {
       {},
       token
     ),
+
+  getBackup: (orgId: string, projectId: string, volumeId: string, token: string) =>
+    apiFetch<ApiVolumeBackupConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/volumes/${volumeId}/backup`,
+      {},
+      token
+    ),
+
+  upsertBackup: (
+    orgId: string,
+    projectId: string,
+    volumeId: string,
+    body: {
+      storage_integration_id: string
+      schedule: string
+      retention_days: number
+      path_prefix?: string
+      enabled: boolean
+    },
+    token: string,
+  ) =>
+    apiFetch<ApiVolumeBackupConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/volumes/${volumeId}/backup`,
+      { method: "PUT", body: JSON.stringify(body) },
+      token
+    ),
+
+  deleteBackup: (orgId: string, projectId: string, volumeId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/volumes/${volumeId}/backup`,
+      { method: "DELETE" },
+      token
+    ),
+}
+
+// ─── Volume backup config ──────────────────────────────────────────────────────
+
+export interface ApiVolumeBackupConfig {
+  id: string
+  volume_id: string
+  storage_integration_id: string
+  schedule: string
+  retention_days: number
+  path_prefix: string
+  enabled: boolean
+  last_backup_at: string | null
+  last_backup_status: "pending" | "running" | "success" | "failed" | null
+  created_at: string
+  updated_at: string
 }
 

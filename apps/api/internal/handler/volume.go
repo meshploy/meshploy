@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/meshploy/apps/api/internal/service"
 	"github.com/meshploy/packages/db"
 )
 
@@ -73,6 +74,25 @@ type ListVolumeMountsOutput struct {
 	Body []db.VolumeMount
 }
 
+type VolumeBackupConfigOutput struct {
+	Body *db.VolumeBackupConfig
+}
+
+type UpsertVolumeBackupBody struct {
+	StorageIntegrationID string `json:"storage_integration_id"`
+	Schedule             string `json:"schedule"`
+	RetentionDays        int    `json:"retention_days"`
+	PathPrefix           string `json:"path_prefix,omitempty"`
+	Enabled              bool   `json:"enabled"`
+}
+
+type UpsertVolumeBackupInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	VolumeID  string `path:"volumeId"`
+	Body      UpsertVolumeBackupBody
+}
+
 // ─── Route registration ───────────────────────────────────────────────────────
 
 func (h *Handler) registerVolumeRoutes(api huma.API) {
@@ -128,6 +148,28 @@ func (h *Handler) registerVolumeRoutes(api huma.API) {
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/mounts",
 		Tags:        []string{"volumes"},
 	}, h.ListServiceMounts)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-volume-backup",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/backup",
+		Tags:        []string{"volumes"},
+	}, h.GetVolumeBackup)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "upsert-volume-backup",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/backup",
+		Tags:        []string{"volumes"},
+	}, h.UpsertVolumeBackup)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-volume-backup",
+		Method:        "DELETE",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/backup",
+		Tags:          []string{"volumes"},
+		DefaultStatus: 204,
+	}, h.DeleteVolumeBackup)
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -237,4 +279,59 @@ func (h *Handler) ListServiceMounts(ctx context.Context, input *ServiceMountsPat
 		return nil, huma.Error500InternalServerError("failed to list mounts: " + err.Error())
 	}
 	return &ListVolumeMountsOutput{Body: mounts}, nil
+}
+
+func (h *Handler) GetVolumeBackup(ctx context.Context, input *VolumePathInput) (*VolumeBackupConfigOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	volumeID, err := uuid.Parse(input.VolumeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid volume ID")
+	}
+	cfg, err := h.svc.Volumes.GetBackupConfig(ctx, volumeID)
+	if err != nil {
+		return nil, huma.Error404NotFound("no backup config")
+	}
+	return &VolumeBackupConfigOutput{Body: cfg}, nil
+}
+
+func (h *Handler) UpsertVolumeBackup(ctx context.Context, input *UpsertVolumeBackupInput) (*VolumeBackupConfigOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	volumeID, err := uuid.Parse(input.VolumeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid volume ID")
+	}
+	storageID, err := uuid.Parse(input.Body.StorageIntegrationID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid storage_integration_id")
+	}
+	retention := input.Body.RetentionDays
+	if retention <= 0 {
+		retention = 30
+	}
+	cfg, err := h.svc.Volumes.UpsertBackupConfig(ctx, volumeID, service.VolumeBackupConfigInput{
+		StorageIntegrationID: storageID,
+		Schedule:             input.Body.Schedule,
+		RetentionDays:        retention,
+		PathPrefix:           input.Body.PathPrefix,
+		Enabled:              input.Body.Enabled,
+	})
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &VolumeBackupConfigOutput{Body: cfg}, nil
+}
+
+func (h *Handler) DeleteVolumeBackup(ctx context.Context, input *VolumePathInput) (*struct{}, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	volumeID, err := uuid.Parse(input.VolumeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid volume ID")
+	}
+	return nil, h.svc.Volumes.DeleteBackupConfig(ctx, volumeID)
 }

@@ -194,3 +194,65 @@ func resolveServiceVolumeMounts(ctx context.Context, gdb *gorm.DB, serviceID uui
 
 // ErrVolumeNotFound is returned when a volume is not found.
 var ErrVolumeNotFound = errors.New("volume not found")
+
+// ─── Backup config ────────────────────────────────────────────────────────────
+
+type VolumeBackupConfigInput struct {
+	StorageIntegrationID uuid.UUID
+	Schedule             string
+	RetentionDays        int
+	PathPrefix           string
+	Enabled              bool
+}
+
+func (s *VolumeService) GetBackupConfig(ctx context.Context, volumeID uuid.UUID) (*db.VolumeBackupConfig, error) {
+	var cfg db.VolumeBackupConfig
+	err := s.db.WithContext(ctx).Where("volume_id = ?", volumeID).First(&cfg).Error
+	if err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func (s *VolumeService) UpsertBackupConfig(ctx context.Context, volumeID uuid.UUID, input VolumeBackupConfigInput) (*db.VolumeBackupConfig, error) {
+	prefix := input.PathPrefix
+	if prefix == "" {
+		prefix = "volumes/" + volumeID.String()
+	}
+	cfg := db.VolumeBackupConfig{
+		VolumeID:             volumeID,
+		StorageIntegrationID: input.StorageIntegrationID,
+		Schedule:             input.Schedule,
+		RetentionDays:        input.RetentionDays,
+		PathPrefix:           prefix,
+		Enabled:              input.Enabled,
+	}
+	err := s.db.WithContext(ctx).
+		Where(db.VolumeBackupConfig{VolumeID: volumeID}).
+		Assign(db.VolumeBackupConfig{
+			StorageIntegrationID: cfg.StorageIntegrationID,
+			Schedule:             cfg.Schedule,
+			RetentionDays:        cfg.RetentionDays,
+			PathPrefix:           cfg.PathPrefix,
+			Enabled:              cfg.Enabled,
+		}).
+		FirstOrCreate(&cfg).Error
+	if err != nil {
+		return nil, err
+	}
+	// Update fields on existing row.
+	err = s.db.WithContext(ctx).Model(&cfg).Updates(map[string]any{
+		"storage_integration_id": cfg.StorageIntegrationID,
+		"schedule":               cfg.Schedule,
+		"retention_days":         cfg.RetentionDays,
+		"path_prefix":            cfg.PathPrefix,
+		"enabled":                cfg.Enabled,
+	}).Error
+	return &cfg, err
+}
+
+func (s *VolumeService) DeleteBackupConfig(ctx context.Context, volumeID uuid.UUID) error {
+	return s.db.WithContext(ctx).
+		Where("volume_id = ?", volumeID).
+		Delete(&db.VolumeBackupConfig{}).Error
+}
