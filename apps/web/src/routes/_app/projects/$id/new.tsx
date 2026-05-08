@@ -6,7 +6,6 @@ import {
   Box,
   ChevronLeft,
   ChevronDown,
-  Clock,
   Database,
   Eye,
   EyeOff,
@@ -65,7 +64,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ResourceType = "service" | "route" | "job" | "cron-job" | "database" | "secret" | "stack" | "volume"
+type ResourceType = "service" | "route" | "job" | "database" | "secret" | "stack" | "volume"
 type AppSource = "git" | "image"
 type Builder = "nixpacks" | "railpack" | "dockerfile"
 
@@ -129,7 +128,6 @@ const RESOURCE_TYPES: {
   { type: "volume",   icon: HardDrive, label: "Volume"   },
   { type: "secret",   icon: KeyRound,  label: "Secret",  divider: true },
   { type: "job",      icon: Zap,       label: "Job"      },
-  { type: "cron-job", icon: Clock,     label: "Cron Job" },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -267,8 +265,8 @@ function NewResourcePage() {
             <RouteForm projectId={projectId} />
           ) : resourceType === "secret" ? (
             <SecretForm projectId={projectId} />
-          ) : resourceType === "job" || resourceType === "cron-job" ? (
-            <JobForm projectId={projectId} isCron={resourceType === "cron-job"} />
+          ) : resourceType === "job" ? (
+            <JobForm projectId={projectId} />
           ) : resourceType === "volume" ? (
             <VolumeForm projectId={projectId} />
           ) : (
@@ -1392,6 +1390,7 @@ interface JobFormState {
   name: string
   image: string
   command: string
+  isScheduled: boolean
   schedule: string
   concurrencyPolicy: "Allow" | "Forbid" | "Replace"
   envVars: string
@@ -1407,6 +1406,7 @@ const JOB_INITIAL: JobFormState = {
   name: "",
   image: "",
   command: "",
+  isScheduled: false,
   schedule: "",
   concurrencyPolicy: "Allow",
   envVars: "",
@@ -1418,7 +1418,7 @@ const JOB_INITIAL: JobFormState = {
   memoryLimit: "512Mi",
 }
 
-function JobForm({ projectId, isCron }: { projectId: string; isCron: boolean }) {
+function JobForm({ projectId }: { projectId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
@@ -1440,11 +1440,11 @@ function JobForm({ projectId, isCron }: { projectId: string; isCron: boolean }) 
     mutationFn: () =>
       jobsApi.create(orgId, projectId, {
         name: jf.name,
-        is_cron: isCron,
+        is_cron: jf.isScheduled,
         image: jf.image,
         command: jf.command || undefined,
-        schedule: isCron ? jf.schedule : undefined,
-        concurrency_policy: isCron ? jf.concurrencyPolicy : undefined,
+        schedule: jf.isScheduled ? jf.schedule : undefined,
+        concurrency_policy: jf.isScheduled ? jf.concurrencyPolicy : undefined,
         cpu_request: jf.cpuRequest || undefined,
         cpu_limit: jf.cpuLimit || undefined,
         memory_request: jf.memoryRequest || undefined,
@@ -1462,16 +1462,16 @@ function JobForm({ projectId, isCron }: { projectId: string; isCron: boolean }) 
   const canCreate =
     jf.name.trim().length > 0 &&
     jf.image.trim().length > 0 &&
-    (!isCron || jf.schedule.trim().length > 0)
+    (!jf.isScheduled || jf.schedule.trim().length > 0)
 
   return (
     <div className="space-y-8">
-      <Section title="Basic info" subtitle={isCron ? "Give your cron job a name" : "Give your job a name"}>
+      <Section title="Basic info" subtitle="Give your job a name">
         <Field label="Name" required>
           <input
             value={jf.name}
             onChange={(e) => patch({ name: e.target.value })}
-            placeholder={isCron ? "nightly-cleanup" : "db-migrate"}
+            placeholder={jf.isScheduled ? "nightly-cleanup" : "db-migrate"}
             className={inputCls}
             autoFocus
           />
@@ -1497,41 +1497,62 @@ function JobForm({ projectId, isCron }: { projectId: string; isCron: boolean }) 
         </Field>
       </Section>
 
-      {isCron && (
-        <Section title="Schedule" subtitle="Standard cron expression (UTC)">
-          <Field label="Cron expression" required>
-            <input
-              value={jf.schedule}
-              onChange={(e) => patch({ schedule: e.target.value })}
-              placeholder="0 2 * * *"
-              className={cn(inputCls, "font-mono")}
-            />
-          </Field>
-          <Field label="Concurrency policy">
-            <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-              {(["Allow", "Forbid", "Replace"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => patch({ concurrencyPolicy: p })}
-                  className={cn(
-                    "px-3 py-2 text-sm transition-colors",
-                    jf.concurrencyPolicy === p
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                  )}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {jf.concurrencyPolicy === "Allow" && "Multiple runs can overlap."}
-              {jf.concurrencyPolicy === "Forbid" && "Skip new run if previous is still running."}
-              {jf.concurrencyPolicy === "Replace" && "Cancel the running job and start a new one."}
-            </p>
-          </Field>
-        </Section>
-      )}
+      <div className="rounded-lg border border-border/40 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => patch({ isScheduled: !jf.isScheduled })}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-muted/20 transition-colors"
+        >
+          <div>
+            <p className="font-medium text-foreground text-left">Run on a schedule</p>
+            <p className="text-xs text-muted-foreground text-left mt-0.5">Repeat this job on a cron expression</p>
+          </div>
+          <div className={cn(
+            "w-9 h-5 rounded-full transition-colors relative shrink-0",
+            jf.isScheduled ? "bg-primary" : "bg-muted"
+          )}>
+            <div className={cn(
+              "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform",
+              jf.isScheduled ? "translate-x-4" : "translate-x-0.5"
+            )} />
+          </div>
+        </button>
+        {jf.isScheduled && (
+          <div className="border-t border-border/40 px-4 pb-4 pt-4 space-y-4">
+            <Field label="Cron expression" required>
+              <input
+                value={jf.schedule}
+                onChange={(e) => patch({ schedule: e.target.value })}
+                placeholder="0 2 * * *"
+                className={cn(inputCls, "font-mono")}
+              />
+            </Field>
+            <Field label="Concurrency policy">
+              <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
+                {(["Allow", "Forbid", "Replace"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => patch({ concurrencyPolicy: p })}
+                    className={cn(
+                      "px-3 py-2 text-sm transition-colors",
+                      jf.concurrencyPolicy === p
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                    )}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {jf.concurrencyPolicy === "Allow" && "Multiple runs can overlap."}
+                {jf.concurrencyPolicy === "Forbid" && "Skip new run if previous is still running."}
+                {jf.concurrencyPolicy === "Replace" && "Cancel the running job and start a new one."}
+              </p>
+            </Field>
+          </div>
+        )}
+      </div>
 
       <Section title="Environment" subtitle="Variables injected at runtime">
         <Field label="Env vars">
@@ -1604,7 +1625,7 @@ function JobForm({ projectId, isCron }: { projectId: string; isCron: boolean }) 
         onClick={() => createMutation.mutate()}
       >
         {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        Create {isCron ? "cron job" : "job"}
+        Create {jf.isScheduled ? "cron job" : "job"}
       </Button>
     </div>
   )

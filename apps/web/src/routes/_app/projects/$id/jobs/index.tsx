@@ -48,9 +48,6 @@ function JobsPage() {
     },
   })
 
-  const crons = list.filter((j) => j.is_cron)
-  const oneShot = list.filter((j) => !j.is_cron)
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -59,18 +56,11 @@ function JobsPage() {
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{list.length}</span>}
         </div>
-        <div className="flex items-center gap-2">
-          <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }}>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Zap className="h-3.5 w-3.5" /> New job
-            </Button>
-          </Link>
-          <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "cron-job" }}>
-            <Button size="sm" className="gap-1.5">
-              <Clock className="h-3.5 w-3.5" /> New cron job
-            </Button>
-          </Link>
-        </div>
+        <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }}>
+          <Button size="sm" className="gap-1.5">
+            <Zap className="h-3.5 w-3.5" /> New job
+          </Button>
+        </Link>
       </div>
 
       {isLoading ? (
@@ -86,53 +76,29 @@ function JobsPage() {
               Create one-shot jobs or scheduled cron jobs
             </p>
           </div>
-          <div className="flex gap-2 mt-1">
-            <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }}>
-              <Button size="sm" variant="outline" className="gap-1.5">
-                <Zap className="h-3.5 w-3.5" /> New job
-              </Button>
-            </Link>
-            <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "cron-job" }}>
-              <Button size="sm" className="gap-1.5">
-                <Clock className="h-3.5 w-3.5" /> New cron job
-              </Button>
-            </Link>
-          </div>
+          <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }} className="mt-1">
+            <Button size="sm" className="gap-1.5">
+              <Zap className="h-3.5 w-3.5" /> New job
+            </Button>
+          </Link>
         </div>
       ) : (
-        <div className="space-y-6">
-          {oneShot.length > 0 && (
-            <JobSection
-              title="Jobs"
-              jobs={oneShot}
-              projectId={projectId}
-              onDelete={(id) => deleteMut.mutate(id)}
-              onTrigger={(id) => triggerMut.mutate(id)}
-              deletingId={deleteMut.isPending ? deleteMut.variables : undefined}
-              triggeringId={triggerMut.isPending ? triggerMut.variables : undefined}
-            />
-          )}
-          {crons.length > 0 && (
-            <JobSection
-              title="Cron Jobs"
-              jobs={crons}
-              projectId={projectId}
-              onDelete={(id) => deleteMut.mutate(id)}
-              onTrigger={(id) => triggerMut.mutate(id)}
-              deletingId={deleteMut.isPending ? deleteMut.variables : undefined}
-              triggeringId={triggerMut.isPending ? triggerMut.variables : undefined}
-            />
-          )}
-        </div>
+        <JobSection
+          jobs={list}
+          projectId={projectId}
+          onDelete={(id) => deleteMut.mutate(id)}
+          onTrigger={(id) => triggerMut.mutate(id)}
+          deletingId={deleteMut.isPending ? deleteMut.variables : undefined}
+          triggeringId={triggerMut.isPending ? triggerMut.variables : undefined}
+        />
       )}
     </div>
   )
 }
 
 function JobSection({
-  title, jobs, projectId, onDelete, onTrigger, deletingId, triggeringId,
+  jobs, projectId, onDelete, onTrigger, deletingId, triggeringId,
 }: {
-  title: string
   jobs: ApiJob[]
   projectId: string
   onDelete: (id: string) => void
@@ -141,11 +107,7 @@ function JobSection({
   triggeringId?: string
 }) {
   return (
-    <div>
-      <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2 px-1">
-        {title}
-      </p>
-      <div className="rounded-lg border border-border/60 overflow-hidden">
+    <div className="rounded-lg border border-border/60 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border/40 bg-muted/20">
@@ -171,7 +133,6 @@ function JobSection({
             ))}
           </tbody>
         </table>
-      </div>
     </div>
   )
 }
