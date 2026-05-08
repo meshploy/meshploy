@@ -22,6 +22,9 @@ import {
   Zap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import CodeMirror from "@uiw/react-codemirror"
+import { StreamLanguage } from "@codemirror/language"
+import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { StackEditor } from "@/components/stacks/stack-editor"
 import { Button } from "@/components/ui/button"
 import {
@@ -1672,13 +1675,19 @@ function JobForm({ projectId }: { projectId: string }) {
             className={inputCls}
           />
         </Field>
-        <Field label="Command">
-          <input
-            value={jf.command}
-            onChange={(e) => patch({ command: e.target.value })}
-            placeholder="sh -c 'echo hello'"
-            className={inputCls}
-          />
+        <Field label="Script">
+          <div className="rounded-md overflow-hidden border border-border/60">
+            <CodeMirror
+              value={jf.command}
+              height="160px"
+              theme="dark"
+              extensions={[StreamLanguage.define(shell)]}
+              onChange={(val) => patch({ command: val })}
+              placeholder={"#!/bin/sh\nset -e\n\necho 'Running job…'"}
+              style={{ fontSize: 13 }}
+              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+            />
+          </div>
         </Field>
       </Section>
 
