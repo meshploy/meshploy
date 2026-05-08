@@ -1,45 +1,48 @@
-import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
-import { useState } from "react"
+import { createFileRoute, Link, useParams } from "@tanstack/react-router"
+import { useState, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeft,
   Check,
-  ChevronDown,
   ChevronRight,
   Clock,
   Loader2,
-  Pencil,
   Play,
   ServerCrash,
   Trash2,
-  X,
   Zap,
 } from "lucide-react"
-import { jobs as jobsApi, type ApiJob, type ApiJobRun, type CreateJobBody } from "@/lib/api"
+import {
+  jobs as jobsApi,
+  type ApiJob,
+  type ApiJobRun,
+  type CreateJobBody,
+} from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
+import { useNavigate } from "@tanstack/react-router"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/$jobId")({
   component: JobDetailPage,
 })
 
-// ─── Status helpers ───────────────────────────────────────────────────────────
+// ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
   const cls = cn("inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border", {
-    "border-border/40 text-muted-foreground":              status === "idle",
-    "border-yellow-500/30 text-yellow-400 bg-yellow-400/10": status === "pending" || status === "running",
-    "border-emerald-500/30 text-emerald-400 bg-emerald-400/10": status === "success",
-    "border-destructive/30 text-destructive bg-destructive/10": status === "failed",
+    "border-border/40 text-muted-foreground":                       status === "idle",
+    "border-yellow-500/30 text-yellow-400 bg-yellow-400/10":        status === "pending" || status === "running",
+    "border-emerald-500/30 text-emerald-400 bg-emerald-400/10":     status === "success",
+    "border-destructive/30 text-destructive bg-destructive/10":     status === "failed",
   })
   const dot = cn("h-1.5 w-1.5 rounded-full", {
-    "bg-muted-foreground/50":   status === "idle",
-    "bg-yellow-400 animate-pulse": status === "pending" || status === "running",
-    "bg-emerald-400":            status === "success",
-    "bg-destructive":            status === "failed",
+    "bg-muted-foreground/50":         status === "idle",
+    "bg-yellow-400 animate-pulse":    status === "pending" || status === "running",
+    "bg-emerald-400":                 status === "success",
+    "bg-destructive":                 status === "failed",
   })
   return (
     <span className={cls}>
@@ -57,6 +60,7 @@ function JobDetailPage() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [activeTab, setActiveTab] = useState<"runs" | "config">("runs")
 
   const { data: job, isLoading, isError } = useQuery({
     queryKey: ["job", orgId, projectId, jobId],
@@ -67,7 +71,7 @@ function JobDetailPage() {
   const { data: runs = [], isFetching: runsFetching } = useQuery({
     queryKey: ["job-runs", orgId, projectId, jobId],
     queryFn: () => jobsApi.listRuns(orgId, projectId, jobId, token),
-    enabled: !!orgId,
+    enabled: !!orgId && activeTab === "runs",
     refetchInterval: job?.status === "running" || job?.status === "pending" ? 3000 : false,
   })
 
@@ -77,6 +81,7 @@ function JobDetailPage() {
       qc.invalidateQueries({ queryKey: ["job", orgId, projectId, jobId] })
       qc.invalidateQueries({ queryKey: ["job-runs", orgId, projectId, jobId] })
       qc.invalidateQueries({ queryKey: ["jobs", orgId, projectId] })
+      setActiveTab("runs")
     },
   })
 
@@ -84,7 +89,6 @@ function JobDetailPage() {
     mutationFn: () => jobsApi.delete(orgId, projectId, jobId, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["jobs", orgId, projectId] })
-      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/jobs", params: { id: projectId } })
     },
   })
@@ -108,7 +112,7 @@ function JobDetailPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl">
+    <div className="p-6 space-y-5 max-w-3xl">
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
@@ -163,112 +167,102 @@ function JobDetailPage() {
         </div>
       </div>
 
-      {/* ── Config card ── */}
-      <ConfigCard job={job} orgId={orgId} projectId={projectId} token={token} />
-
-      {/* ── Run history ── */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium">Run history</h2>
-          {runsFetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          {!runsFetching && <span className="text-xs text-muted-foreground">{runs.length}</span>}
-        </div>
-
-        {runs.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border/60 py-10 flex flex-col items-center gap-2">
-            <p className="text-sm text-muted-foreground">No runs yet</p>
-            <p className="text-xs text-muted-foreground/50">Click "Run now" to trigger the first run.</p>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border/60 overflow-hidden">
-            {runs.map((run, i) => (
-              <RunRow key={run.id} run={run} last={i === runs.length - 1} />
-            ))}
-          </div>
-        )}
+      {/* ── Tabs ── */}
+      <div className="flex items-center gap-0 border-b border-border/40 -mb-2">
+        {(["runs", "config"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              "px-4 py-2.5 text-sm border-b-2 -mb-px transition-colors",
+              activeTab === tab
+                ? "border-foreground text-foreground font-medium"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab === "runs" ? "Runs" : "Configuration"}
+            {tab === "runs" && runs.length > 0 && (
+              <span className="ml-1.5 text-xs text-muted-foreground/50">{runs.length}</span>
+            )}
+          </button>
+        ))}
       </div>
+
+      {/* ── Tab content ── */}
+      {activeTab === "runs" ? (
+        <RunsTab runs={runs} isFetching={runsFetching} />
+      ) : (
+        <ConfigTab
+          key={job.updated_at}
+          job={job}
+          orgId={orgId}
+          projectId={projectId}
+          token={token}
+        />
+      )}
     </div>
   )
 }
 
-// ─── Concurrency select row ───────────────────────────────────────────────────
+// ─── Runs tab ─────────────────────────────────────────────────────────────────
+
+function RunsTab({ runs, isFetching }: { runs: ApiJobRun[]; isFetching: boolean }) {
+  return (
+    <div className="space-y-3">
+      {isFetching && runs.length === 0 && (
+        <div className="flex items-center justify-center h-24 gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </div>
+      )}
+      {!isFetching && runs.length === 0 && (
+        <div className="rounded-lg border border-dashed border-border/60 py-12 flex flex-col items-center gap-2">
+          <p className="text-sm text-muted-foreground">No runs yet</p>
+          <p className="text-xs text-muted-foreground/50">Click "Run now" to trigger the first run.</p>
+        </div>
+      )}
+      {runs.length > 0 && (
+        <div className="rounded-lg border border-border/60 overflow-hidden">
+          {runs.map((run, i) => (
+            <RunRow key={run.id} run={run} last={i === runs.length - 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Config tab ───────────────────────────────────────────────────────────────
+
+const CRON_PRESETS = [
+  { label: "Every 5 min", value: "*/5 * * * *" },
+  { label: "Hourly",      value: "0 * * * *" },
+  { label: "Daily",       value: "0 0 * * *" },
+  { label: "Weekly",      value: "0 0 * * 0" },
+  { label: "Monthly",     value: "0 0 1 * *" },
+]
 
 const CONCURRENCY_OPTIONS = [
   { value: "allow",   label: "Allow" },
   { value: "forbid",  label: "Forbid" },
   { value: "replace", label: "Replace" },
-] as const
+]
 
-function ConcurrencyRow({
-  value, onSave, saving,
-}: { value: string; onSave: (v: string) => void; saving: boolean }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-
-  function commit() {
-    onSave(draft)
-    setEditing(false)
-  }
-
-  if (editing) {
-    return (
-      <div className="flex items-center justify-between py-2.5 border-b border-border/30 gap-4">
-        <span className="text-xs text-muted-foreground/60 w-32 shrink-0">Concurrency</span>
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          <select
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            className={cn(inputCls, "h-7 text-xs flex-1")}
-          >
-            {CONCURRENCY_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <button
-            onClick={commit}
-            disabled={saving}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-          >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-          </button>
-          <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center justify-between py-2.5 border-b border-border/30 gap-4">
-      <span className="text-xs text-muted-foreground/60 w-32 shrink-0">Concurrency</span>
-      <div className="flex items-center gap-2 flex-1 min-w-0 justify-between">
-        <span className="text-xs text-foreground/80 capitalize">{value || "allow"}</span>
-        <button
-          onClick={() => { setDraft(value); setEditing(true) }}
-          className="p-1 text-muted-foreground/30 hover:text-muted-foreground transition-colors shrink-0"
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Config card ─────────────────────────────────────────────────────────────
-
-function ConfigCard({
+function ConfigTab({
   job, orgId, projectId, token,
-}: {
-  job: ApiJob
-  orgId: string
-  projectId: string
-  token: string
-}) {
+}: { job: ApiJob; orgId: string; projectId: string; token: string }) {
   const qc = useQueryClient()
-  const [editing, setEditing] = useState<string | null>(null) // field name being edited
-  const [draft, setDraft] = useState("")
+
+  const [image, setImage]               = useState(job.image)
+  const [command, setCommand]           = useState(job.command)
+  const [cpuRequest, setCpuRequest]     = useState(job.cpu_request)
+  const [cpuLimit, setCpuLimit]         = useState(job.cpu_limit)
+  const [memRequest, setMemRequest]     = useState(job.memory_request)
+  const [memLimit, setMemLimit]         = useState(job.memory_limit)
+  const [envVars, setEnvVars]           = useState<string>((job as ApiJob & { env_vars?: string }).env_vars ?? "")
+  const [schedule, setSchedule]         = useState(job.schedule ?? "")
+  const [concurrency, setConcurrency]   = useState(job.concurrency_policy ?? "allow")
+  const [historyLimit, setHistoryLimit] = useState(String(job.history_limit ?? 5))
+  const [saved, setSaved]               = useState(false)
 
   const updateMut = useMutation({
     mutationFn: (body: Partial<CreateJobBody>) =>
@@ -276,98 +270,180 @@ function ConfigCard({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["job", orgId, projectId, job.id] })
       qc.invalidateQueries({ queryKey: ["jobs", orgId, projectId] })
-      setEditing(null)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
     },
   })
 
-  function startEdit(field: string, current: string) {
-    setEditing(field)
-    setDraft(current)
-  }
-
-  function commitEdit(field: string) {
-    if (!draft.trim()) return
-    if (field === "history_limit") {
-      updateMut.mutate({ history_limit: parseInt(draft, 10) || 5 })
-    } else {
-      updateMut.mutate({ [field as keyof CreateJobBody]: draft.trim() } as Partial<CreateJobBody>)
+  function handleSave() {
+    const body: Partial<CreateJobBody> = {
+      image,
+      command,
+      cpu_request: cpuRequest,
+      cpu_limit: cpuLimit,
+      memory_request: memRequest,
+      memory_limit: memLimit,
     }
+    if (envVars) body.env_vars = envVars
+    if (job.is_cron) {
+      body.schedule           = schedule
+      body.concurrency_policy = concurrency
+      body.history_limit      = parseInt(historyLimit, 10) || 5
+    }
+    updateMut.mutate(body)
   }
 
-  function EditableRow({ label, field, value, mono = false }: {
-    label: string; field: string; value: string; mono?: boolean
-  }) {
-    const isMe = editing === field
-    return (
-      <div className="flex items-center justify-between py-2.5 border-b border-border/30 last:border-0 gap-4">
-        <span className="text-xs text-muted-foreground/60 w-32 shrink-0">{label}</span>
-        {isMe ? (
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <input
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitEdit(field)
-                if (e.key === "Escape") setEditing(null)
-              }}
-              className={cn(inputCls, "h-7 text-xs flex-1", mono && "font-mono")}
-            />
-            <button
-              onClick={() => commitEdit(field)}
-              disabled={!draft.trim() || updateMut.isPending}
-              className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-            >
-              {updateMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-            </button>
-            <button onClick={() => setEditing(null)} className="text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 flex-1 min-w-0 justify-between">
-            <span className={cn("text-xs truncate", mono ? "font-mono text-foreground" : "text-foreground/80")}>
-              {value || <span className="text-muted-foreground/40 italic">not set</span>}
-            </span>
-            <button
-              onClick={() => startEdit(field, value)}
-              className="p-1 text-muted-foreground/30 hover:text-muted-foreground transition-colors shrink-0"
-            >
-              <Pencil className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-      </div>
-    )
-  }
+  const labelCls = "text-xs text-muted-foreground/70 mb-1.5 block"
+  const sectionCls = "space-y-4"
 
   return (
-    <div className="rounded-lg border border-border/60 overflow-hidden">
-      <div className="px-4 py-2.5 bg-muted/20 border-b border-border/40">
-        <span className="text-xs font-medium text-muted-foreground">Configuration</span>
-      </div>
-      <div className="px-4">
-        <EditableRow label="Image" field="image" value={job.image} mono />
-        <EditableRow label="Command" field="command" value={job.command} mono />
-        {job.is_cron && (
-          <>
-            <EditableRow label="Schedule" field="schedule" value={job.schedule} mono />
-            <ConcurrencyRow
-              value={job.concurrency_policy ?? "allow"}
-              onSave={(v) => updateMut.mutate({ concurrency_policy: v })}
-              saving={updateMut.isPending}
+    <div className="space-y-6">
+      {/* Container */}
+      <section className={sectionCls}>
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Container</h3>
+        <div>
+          <label className={labelCls}>Image</label>
+          <input
+            value={image}
+            onChange={(e) => setImage(e.target.value)}
+            placeholder="alpine:latest"
+            className={cn(inputCls, "text-xs font-mono")}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Script</label>
+          <textarea
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            rows={8}
+            placeholder={"#!/bin/sh\n\n# Your script here\necho 'Hello World'"}
+            spellCheck={false}
+            className={cn(
+              inputCls,
+              "text-xs font-mono resize-y min-h-[120px] leading-relaxed whitespace-pre"
+            )}
+          />
+          <p className="text-xs text-muted-foreground/40 mt-1">
+            Executed via <code className="font-mono">sh -c</code>. Use a shebang for other runtimes.
+          </p>
+        </div>
+      </section>
+
+      {/* Scheduling (cron only) */}
+      {job.is_cron && (
+        <section className={sectionCls}>
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Scheduling</h3>
+          <div>
+            <label className={labelCls}>Cron expression</label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {CRON_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setSchedule(p.value)}
+                  className={cn(
+                    "px-2.5 py-1 text-xs rounded border transition-colors",
+                    schedule === p.value
+                      ? "border-foreground/40 bg-foreground/10 text-foreground"
+                      : "border-border/40 text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <input
+              value={schedule}
+              onChange={(e) => setSchedule(e.target.value)}
+              placeholder="*/5 * * * *"
+              className={cn(inputCls, "text-xs font-mono")}
             />
-            <EditableRow label="History limit" field="history_limit" value={String(job.history_limit ?? 5)} />
-          </>
+            <p className="text-xs text-muted-foreground/40 mt-1">
+              Standard 5-field cron expression (minute hour day month weekday).
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Concurrency policy</label>
+              <select
+                value={concurrency}
+                onChange={(e) => setConcurrency(e.target.value)}
+                className={cn(inputCls, "text-xs")}
+              >
+                {CONCURRENCY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>History limit</label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={historyLimit}
+                onChange={(e) => setHistoryLimit(e.target.value)}
+                className={cn(inputCls, "text-xs")}
+              />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Resources */}
+      <section className={sectionCls}>
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Resources</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>CPU request</label>
+            <input value={cpuRequest} onChange={(e) => setCpuRequest(e.target.value)} placeholder="100m" className={cn(inputCls, "text-xs font-mono")} />
+          </div>
+          <div>
+            <label className={labelCls}>CPU limit</label>
+            <input value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} placeholder="500m" className={cn(inputCls, "text-xs font-mono")} />
+          </div>
+          <div>
+            <label className={labelCls}>Memory request</label>
+            <input value={memRequest} onChange={(e) => setMemRequest(e.target.value)} placeholder="128Mi" className={cn(inputCls, "text-xs font-mono")} />
+          </div>
+          <div>
+            <label className={labelCls}>Memory limit</label>
+            <input value={memLimit} onChange={(e) => setMemLimit(e.target.value)} placeholder="512Mi" className={cn(inputCls, "text-xs font-mono")} />
+          </div>
+        </div>
+      </section>
+
+      {/* Environment */}
+      <section className={sectionCls}>
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Environment</h3>
+        <div>
+          <label className={labelCls}>Variables</label>
+          <textarea
+            value={envVars}
+            onChange={(e) => setEnvVars(e.target.value)}
+            rows={5}
+            placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"}
+            spellCheck={false}
+            className={cn(inputCls, "text-xs font-mono resize-y min-h-[80px] leading-relaxed")}
+          />
+          <p className="text-xs text-muted-foreground/40 mt-1">One <code className="font-mono">KEY=VALUE</code> per line.</p>
+        </div>
+      </section>
+
+      {/* Save */}
+      <div className="flex items-center gap-3 pt-1">
+        <Button onClick={handleSave} disabled={updateMut.isPending} size="sm" className="gap-1.5">
+          {updateMut.isPending
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : saved
+              ? <Check className="h-3.5 w-3.5" />
+              : null
+          }
+          {saved ? "Saved" : "Save changes"}
+        </Button>
+        {updateMut.isError && (
+          <p className="text-xs text-destructive">Failed to save. Please try again.</p>
         )}
-        <div className="flex items-center justify-between py-2.5 border-b border-border/30 gap-4">
-          <span className="text-xs text-muted-foreground/60 w-32 shrink-0">CPU</span>
-          <span className="text-xs font-mono text-foreground/80">{job.cpu_request} / {job.cpu_limit}</span>
-        </div>
-        <div className="flex items-center justify-between py-2.5 gap-4">
-          <span className="text-xs text-muted-foreground/60 w-32 shrink-0">Memory</span>
-          <span className="text-xs font-mono text-foreground/80">{job.memory_request} / {job.memory_limit}</span>
-        </div>
       </div>
     </div>
   )
@@ -383,10 +459,10 @@ function RunRow({ run, last }: { run: ApiJobRun; last: boolean }) {
     : null
 
   const dot = cn("h-2 w-2 rounded-full shrink-0", {
-    "bg-muted-foreground/30": run.status === "idle",
+    "bg-muted-foreground/30":      run.status === "idle",
     "bg-yellow-400 animate-pulse": run.status === "pending" || run.status === "running",
-    "bg-emerald-400": run.status === "success",
-    "bg-destructive": run.status === "failed",
+    "bg-emerald-400":              run.status === "success",
+    "bg-destructive":              run.status === "failed",
   })
 
   return (
