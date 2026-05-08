@@ -42,7 +42,7 @@ export function Field({
   children: React.ReactNode
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
