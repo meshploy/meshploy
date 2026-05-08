@@ -1764,15 +1764,19 @@ function JobForm({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      <Section title="Environment" subtitle="Variables injected at runtime">
+      <Section title="Environment" subtitle="Variables injected at runtime. One KEY=VALUE per line.">
         <Field label="Env vars">
-          <textarea
-            value={jf.envVars}
-            onChange={(e) => patch({ envVars: e.target.value })}
-            placeholder={"DATABASE_URL=postgres://...\nDEBUG=true"}
-            rows={4}
-            className={cn(inputCls, "resize-y font-mono text-xs")}
-          />
+          <div className="rounded-md overflow-hidden border border-border/60">
+            <CodeMirror
+              value={jf.envVars}
+              height="120px"
+              theme="dark"
+              onChange={(val) => patch({ envVars: val })}
+              placeholder={"DATABASE_URL=postgres://...\nDEBUG=true"}
+              style={{ fontSize: 13 }}
+              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+            />
+          </div>
         </Field>
       </Section>
 
