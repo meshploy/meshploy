@@ -404,6 +404,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				"cpu_limit":                cpuLimit,
 				"memory_request":           memRequest,
 				"memory_limit":             memLimit,
+				"env_vars":                 envVarsStr,
 				"healthcheck_cmd":          hcCmd,
 				"healthcheck_interval_secs":    hcInterval,
 				"healthcheck_timeout_secs":     hcTimeout,

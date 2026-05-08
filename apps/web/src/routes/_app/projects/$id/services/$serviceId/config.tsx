@@ -2,7 +2,7 @@ import { createFileRoute, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Info, KeyRound, Loader2, Plus, Save, Server, Trash2, X } from "lucide-react"
+import { AlertTriangle, HardDrive, Info, KeyRound, Loader2, Plus, Save, Server, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
+import CodeMirror from "@uiw/react-codemirror"
 import {
   services as servicesApi,
   buildConfigs as buildConfigsApi,
@@ -19,9 +19,11 @@ import {
   nodes as nodesApi,
   registries as registryApi,
   secrets as secretsApi,
+  volumes as volumesApi,
   toNode,
   type ApiNode,
   type ApiSecretAttachment,
+  type ApiVolumeMount,
   type UpdateServiceBody,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -71,12 +73,17 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
           <span className="text-xs">Loading…</span>
         </div>
       ) : (
-        <Textarea
-          value={envVars}
-          onChange={(e) => setEnvVars(e.target.value)}
-          placeholder={"DATABASE_URL=postgres://...\nSECRET_KEY=..."}
-          className="font-mono text-xs min-h-[160px] resize-y bg-muted/20 border-border/60"
-        />
+        <div className="rounded-md overflow-hidden border border-border/60">
+          <CodeMirror
+            value={envVars}
+            height="160px"
+            theme="dark"
+            onChange={(val) => setEnvVars(val)}
+            placeholder={"DATABASE_URL=postgres://...\nSECRET_KEY=..."}
+            style={{ fontSize: 12 }}
+            basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+          />
+        </div>
       )}
       {mutation.isError && (
         <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
@@ -253,6 +260,164 @@ function AttachmentRow({
   )
 }
 
+// ─── Volumes section ──────────────────────────────────────────────────────────
+
+function VolumesSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc = useQueryClient()
+
+  const [showAdd, setShowAdd] = useState(false)
+  const [selectedVolumeId, setSelectedVolumeId] = useState("")
+  const [mountPath, setMountPath] = useState("")
+
+  const { data: mounts = [], isLoading } = useQuery({
+    queryKey: ["service-volume-mounts", orgId, projectId, serviceId],
+    queryFn: () => volumesApi.listServiceMounts(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: projectVolumes = [] } = useQuery({
+    queryKey: ["volumes", orgId, projectId],
+    queryFn: () => volumesApi.list(orgId, projectId, token),
+    enabled: !!orgId && showAdd,
+  })
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["service-volume-mounts", orgId, projectId, serviceId] })
+    qc.invalidateQueries({ queryKey: ["volumes", orgId, projectId] })
+  }
+
+  const attachMut = useMutation({
+    mutationFn: () => volumesApi.attach(orgId, projectId, selectedVolumeId, { service_id: serviceId, mount_path: mountPath.trim() }, token),
+    onSuccess: () => { setShowAdd(false); setSelectedVolumeId(""); setMountPath(""); invalidate() },
+  })
+
+  const detachMut = useMutation({
+    mutationFn: ({ volumeId, mountId }: { volumeId: string; mountId: string }) =>
+      volumesApi.detach(orgId, projectId, volumeId, mountId, token),
+    onSuccess: invalidate,
+  })
+
+  const availableVolumes = projectVolumes.filter((v) => v.status === "ready" && (!v.mounts || v.mounts.length === 0))
+
+  return (
+    <Section title="Volumes" subtitle="Mount a persistent volume into this service. Attaching locks replicas to 1.">
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span className="text-xs">Loading…</span>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {mounts.length > 0 && (
+            <div className="rounded-lg border border-border/60 overflow-hidden">
+              {mounts.map((m, i) => (
+                <VolumeMountRow
+                  key={m.id}
+                  mount={m}
+                  last={i === mounts.length - 1}
+                  onDetach={() => detachMut.mutate({ volumeId: m.volume_id, mountId: m.id })}
+                  isDetaching={detachMut.isPending && detachMut.variables?.mountId === m.id}
+                />
+              ))}
+            </div>
+          )}
+
+          {mounts.length === 0 && showAdd ? (
+            <div className="rounded-lg border border-border/60 bg-card p-3 space-y-3">
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-300/80">
+                  Attaching a volume scales this service to 1 replica. Detach the volume to scale out again.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Volume</label>
+                  <Select value={selectedVolumeId} onValueChange={(v) => setSelectedVolumeId(v ?? "")}>
+                    <SelectTrigger className="w-full! h-8 text-xs bg-muted/20 border-border/60">
+                      <SelectValue placeholder={availableVolumes.length === 0 ? "No volumes available" : "Select a volume…"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableVolumes.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.name} ({v.storage_gb} GB)</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Mount path</label>
+                  <input
+                    className={inputCls}
+                    placeholder="/data"
+                    value={mountPath}
+                    onChange={(e) => setMountPath(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => attachMut.mutate()}
+                  disabled={!selectedVolumeId || !mountPath.trim() || attachMut.isPending || availableVolumes.length === 0}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-40 transition-opacity"
+                >
+                  {attachMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                  Attach
+                </button>
+                <button
+                  onClick={() => { setShowAdd(false); setSelectedVolumeId(""); setMountPath("") }}
+                  className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-3 w-3" /> Cancel
+                </button>
+              </div>
+              {attachMut.isError && (
+                <p className="text-xs text-destructive">{(attachMut.error as Error).message}</p>
+              )}
+            </div>
+          ) : mounts.length === 0 ? (
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" /> Attach volume
+            </button>
+          ) : null}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+function VolumeMountRow({
+  mount, last, onDetach, isDetaching,
+}: {
+  mount: ApiVolumeMount
+  last: boolean
+  onDetach: () => void
+  isDetaching: boolean
+}) {
+  return (
+    <div className={cn("flex items-center gap-3 px-3 py-2.5", !last && "border-b border-border/40")}>
+      <HardDrive className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <span className="text-xs text-muted-foreground truncate">{mount.volume?.name ?? mount.volume_id}</span>
+        <span className="text-muted-foreground/30 text-xs">→</span>
+        <code className="text-xs font-mono text-foreground truncate">{mount.mount_path}</code>
+      </div>
+      <button
+        onClick={onDetach}
+        disabled={isDetaching}
+        className="text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-40 shrink-0"
+        title="Detach"
+      >
+        {isDetaching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+      </button>
+    </div>
+  )
+}
+
 // ─── Source + Deploy section ──────────────────────────────────────────────────
 
 function SourceDeploySection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
@@ -348,6 +513,19 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [service, bc])
+
+  const { data: volumeMounts = [] } = useQuery({
+    queryKey: ["service-volume-mounts", orgId, projectId, serviceId],
+    queryFn: () => volumesApi.listServiceMounts(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+  const hasVolume = volumeMounts.length > 0
+
+  // Clamp replicas to 1 whenever a volume is attached
+  useEffect(() => {
+    if (hasVolume && form.replicas > 1) patch({ replicas: 1 })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasVolume])
 
   const { data: repoList = [], isFetching: reposFetching } = useQuery({
     queryKey: ["git-repos", orgId, form.gitIntegrationId],
@@ -579,8 +757,19 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
               onChange={(e) => patch({ port: parseInt(e.target.value) || 3000 })} />
           </Field>
           <Field label="Replicas">
-            <Input type="number" min={1} max={20} value={form.replicas}
-              onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })} />
+            <Input
+              type="number"
+              min={1}
+              max={hasVolume ? 1 : 20}
+              value={hasVolume ? 1 : form.replicas}
+              disabled={hasVolume}
+              onChange={(e) => !hasVolume && patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
+            />
+            {hasVolume && (
+              <p className="text-[11px] text-amber-400 flex items-center gap-1 mt-1">
+                <AlertTriangle className="h-3 w-3 shrink-0" /> Locked to 1 — volume attached
+              </p>
+            )}
           </Field>
         </div>
       </Section>
@@ -661,12 +850,17 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
           <span className="text-xs">Loading…</span>
         </div>
       ) : (
-        <Textarea
-          value={envVars}
-          onChange={(e) => setEnvVars(e.target.value)}
-          placeholder={"NIXPACKS_INSTALL_CMD=npm install\nNODE_ENV=production"}
-          className="font-mono text-xs min-h-[120px] resize-y bg-muted/20 border-border/60"
-        />
+        <div className="rounded-md overflow-hidden border border-border/60">
+          <CodeMirror
+            value={envVars}
+            height="120px"
+            theme="dark"
+            onChange={(val) => setEnvVars(val)}
+            placeholder={"NIXPACKS_INSTALL_CMD=npm install\nNODE_ENV=production"}
+            style={{ fontSize: 12 }}
+            basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+          />
+        </div>
       )}
       {mutation.isError && (
         <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
@@ -792,6 +986,7 @@ function ConfigTab() {
     <div className="p-6 max-w-2xl space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SecretsSection projectId={projectId} serviceId={serviceId} />
+      <VolumesSection projectId={projectId} serviceId={serviceId} />
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SourceDeploySection projectId={projectId} serviceId={serviceId} />
       <RollbackSection projectId={projectId} serviceId={serviceId} />

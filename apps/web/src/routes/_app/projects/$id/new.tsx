@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  AlertTriangle,
   Box,
   ChevronLeft,
   ChevronDown,
@@ -47,6 +48,8 @@ import {
   type ApiNode,
   type ApiService,
   type ApiDomain,
+  type ApiSecret,
+  type ApiVolume,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -88,6 +91,8 @@ interface FormState {
   memoryRequest: string
   memoryLimit: string
   showResources: boolean
+  secretAttachments: { secretId: string; envKey: string; secretName: string }[]
+  volumeAttachment: { volumeId: string; mountPath: string } | null
 }
 
 const INITIAL: FormState = {
@@ -110,6 +115,8 @@ const INITIAL: FormState = {
   memoryRequest: "128Mi",
   memoryLimit: "512Mi",
   showResources: false,
+  secretAttachments: [],
+  volumeAttachment: null,
 }
 
 // ─── Sidebar resource types ───────────────────────────────────────────────────
@@ -152,7 +159,7 @@ function NewResourcePage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const body: CreateServiceBody = {
         name: form.name,
         port: form.port,
@@ -175,7 +182,14 @@ function NewResourcePage() {
         body.builder_cpu_request      = form.builderCPURequest || undefined
         body.builder_memory_request   = form.builderMemoryRequest || undefined
       }
-      return servicesApi.create(orgId!, projectId, body, token)
+      const service = await servicesApi.create(orgId!, projectId, body, token)
+      for (const sa of form.secretAttachments) {
+        await secretsApi.attach(orgId!, projectId, service.id, { secret_id: sa.secretId, env_key: sa.envKey }, token)
+      }
+      if (form.volumeAttachment) {
+        await volumesApi.attach(orgId!, projectId, form.volumeAttachment.volumeId, { service_id: service.id, mount_path: form.volumeAttachment.mountPath }, token)
+      }
+      return service
     },
     onSuccess: (service) => {
       navigate({
@@ -256,6 +270,7 @@ function NewResourcePage() {
               isPending={createMutation.isPending}
               error={createMutation.error as Error | null}
               onCreate={() => createMutation.mutate()}
+              projectId={projectId}
             />
           ) : resourceType === "stack" ? (
             <StackForm projectId={projectId} />
@@ -287,6 +302,7 @@ function ServiceForm({
   isPending,
   error,
   onCreate,
+  projectId,
 }: {
   form: FormState
   patch: (p: Partial<FormState>) => void
@@ -294,9 +310,17 @@ function ServiceForm({
   isPending: boolean
   error: Error | null
   onCreate: () => void
+  projectId: string
 }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
+
+  // Local state for the add-secret row
+  const [pendingSecretId, setPendingSecretId] = useState("")
+  const [pendingEnvKey, setPendingEnvKey] = useState("")
+  // Local state for the add-volume picker
+  const [pendingVolumeId, setPendingVolumeId] = useState("")
+  const [pendingMountPath, setPendingMountPath] = useState("")
 
   const { data: gitList = [] } = useQuery({
     queryKey: ["git-integrations", orgId],
@@ -339,6 +363,40 @@ function ServiceForm({
   const builderNodes = rawNodes.filter(
     (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
   )
+
+  const { data: projectSecrets = [] } = useQuery<ApiSecret[]>({
+    queryKey: ["secrets", orgId, projectId],
+    queryFn: () => secretsApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: projectVolumes = [] } = useQuery<ApiVolume[]>({
+    queryKey: ["volumes", orgId, projectId],
+    queryFn: () => volumesApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+
+  const attachedSecretIds = new Set(form.secretAttachments.map((a) => a.secretId))
+  const availableSecrets = projectSecrets.filter((s) => !attachedSecretIds.has(s.id))
+
+  const readyVolumes = projectVolumes.filter((v) => v.mounts?.length === 0)
+
+  function addSecret() {
+    const secret = projectSecrets.find((s) => s.id === pendingSecretId)
+    if (!secret || !pendingEnvKey.trim()) return
+    patch({ secretAttachments: [...form.secretAttachments, { secretId: secret.id, envKey: pendingEnvKey.trim(), secretName: secret.name }] })
+    setPendingSecretId("")
+    setPendingEnvKey("")
+  }
+
+  function removeSecret(secretId: string) {
+    patch({ secretAttachments: form.secretAttachments.filter((a) => a.secretId !== secretId) })
+  }
+
+  function attachVolume() {
+    if (!pendingVolumeId || !pendingMountPath.trim()) return
+    patch({ volumeAttachment: { volumeId: pendingVolumeId, mountPath: pendingMountPath.trim() } })
+  }
 
   return (
     <div className="space-y-8">
@@ -612,6 +670,138 @@ function ServiceForm({
             />
           </Field>
         </div>
+      </Section>
+
+      {/* ── Section: Secrets ─────────────────────────────────── */}
+      <Section title="Secrets" subtitle="Inject project secrets as environment variables at deploy time.">
+        {form.secretAttachments.length > 0 && (
+          <div className="rounded-lg border border-border/60 overflow-hidden mb-3">
+            {form.secretAttachments.map((a, i) => (
+              <div
+                key={a.secretId}
+                className={cn(
+                  "flex items-center justify-between px-3 py-2 text-xs",
+                  i < form.secretAttachments.length - 1 && "border-b border-border/40"
+                )}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <code className="font-mono text-foreground truncate">{a.envKey}</code>
+                  <span className="text-muted-foreground/50">←</span>
+                  <span className="text-muted-foreground truncate">{a.secretName}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeSecret(a.secretId)}
+                  className="ml-3 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {projectSecrets.length === 0 ? (
+          <p className="text-xs text-muted-foreground/60">No secrets in this project yet.</p>
+        ) : availableSecrets.length === 0 && form.secretAttachments.length > 0 ? (
+          <p className="text-xs text-muted-foreground/60">All secrets attached.</p>
+        ) : (
+          <div className="flex gap-2">
+            <Select value={pendingSecretId} onValueChange={(v) => {
+              setPendingSecretId(v ?? "")
+              const s = projectSecrets.find((ps) => ps.id === v)
+              if (s && !pendingEnvKey) setPendingEnvKey(s.name.toUpperCase().replace(/-/g, "_"))
+            }}>
+              <SelectTrigger className={cn(inputCls, "flex-1")}>
+                <SelectValue placeholder="Select a secret…" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableSecrets.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input
+              className={cn(inputCls, "flex-1 font-mono")}
+              placeholder="ENV_KEY"
+              value={pendingEnvKey}
+              onChange={(e) => setPendingEnvKey(e.target.value)}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!pendingSecretId || !pendingEnvKey.trim()}
+              onClick={addSecret}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Section: Volume ───────────────────────────────────── */}
+      <Section title="Volume" subtitle="Mount a persistent volume into this service.">
+        {form.volumeAttachment ? (
+          <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
+            <div className="flex items-center gap-2 text-xs min-w-0">
+              <HardDrive className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground truncate">
+                {projectVolumes.find((v) => v.id === form.volumeAttachment!.volumeId)?.name ?? form.volumeAttachment.volumeId}
+              </span>
+              <span className="text-muted-foreground/50">→</span>
+              <code className="font-mono text-foreground truncate">{form.volumeAttachment.mountPath}</code>
+            </div>
+            <button
+              type="button"
+              onClick={() => patch({ volumeAttachment: null })}
+              className="ml-3 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : readyVolumes.length === 0 ? (
+          <p className="text-xs text-muted-foreground/60">
+            {projectVolumes.length === 0
+              ? "No volumes in this project yet. Create one from the Volumes tab."
+              : "All volumes are already attached to other services."}
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-300/80">
+                Attaching a volume scales this service down to 1 replica. To scale out, detach the volume first.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Select value={pendingVolumeId} onValueChange={(v) => setPendingVolumeId(v ?? "")}>
+                <SelectTrigger className={cn(inputCls, "flex-1")}>
+                  <SelectValue placeholder="Select a volume…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {readyVolumes.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>{v.name} ({v.storage_gb} GB)</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <input
+                className={cn(inputCls, "flex-1 font-mono")}
+                placeholder="/data"
+                value={pendingMountPath}
+                onChange={(e) => setPendingMountPath(e.target.value)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!pendingVolumeId || !pendingMountPath.trim()}
+                onClick={attachVolume}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Section>
 
       {/* ── Section: Resources (advanced, collapsible) ───────── */}
