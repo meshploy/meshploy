@@ -49,10 +49,10 @@ function StackLayout() {
             <Link
               to="/projects/$id/stacks"
               params={{ id: projectId }}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Stacks
+              Back to stacks
             </Link>
             <span className="text-border/60 text-xs">·</span>
             <div className="flex items-center gap-2.5">
