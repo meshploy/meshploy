@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Play, ServerCrash, Square } from "lucide-react"
+import { ArrowLeft, Loader2, Play, ServerCrash, Square } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -81,6 +81,14 @@ function ServiceLayout() {
       {/* Service sub-header */}
       <div className="border-b border-border/40 bg-muted/10">
         <div className="px-6 pt-3.5 pb-0">
+          <Link
+            to="/projects/$id/services"
+            params={{ id: projectId }}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to services
+          </Link>
           <div className="flex items-center justify-between mb-2.5">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{service.name}</span>

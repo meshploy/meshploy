@@ -1,10 +1,10 @@
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock,
   Loader2,
@@ -112,12 +112,14 @@ function JobDetailPage() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <button
-            onClick={() => navigate({ to: "/projects/$id/jobs", params: { id: projectId } })}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+          <Link
+            to="/projects/$id/jobs"
+            params={{ id: projectId }}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
           >
-            <ChevronLeft className="h-3.5 w-3.5" /> Jobs
-          </button>
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to jobs
+          </Link>
           <div className="flex items-center gap-2.5">
             {job.is_cron
               ? <Clock className="h-4 w-4 text-muted-foreground/50" />

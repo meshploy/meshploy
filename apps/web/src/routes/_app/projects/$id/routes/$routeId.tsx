@@ -1,6 +1,6 @@
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
+import { ArrowLeft, ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -105,6 +105,15 @@ function RouteDetailPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-2xl">
+      <Link
+        to="/projects/$id/routes"
+        params={{ id: projectId }}
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Back to routes
+      </Link>
+
       {/* Header */}
       <div className="flex items-start gap-3">
         <div className="h-9 w-9 rounded-md bg-muted/40 border border-border/40 flex items-center justify-center shrink-0">

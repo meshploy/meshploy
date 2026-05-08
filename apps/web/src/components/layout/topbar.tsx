@@ -2,7 +2,7 @@ import { useRouterState, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Home } from "lucide-react"
 import { UserMenu } from "./user-menu"
-import { projects as projectsApi, services as servicesApi, nodes as nodesApi } from "@/lib/api"
+import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, jobs as jobsApi, stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -26,7 +26,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type ResourceType = "project" | "service" | "deployment" | "node" | "static" | "uuid"
+type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "static" | "uuid"
 
 interface BreadcrumbEntry {
   segment: string
@@ -61,6 +61,14 @@ function parsePath(segments: string[]): BreadcrumbEntry[] {
       entries.push({ segment, href, type: "deployment", projectId, serviceId })
     } else if (prev === "nodes") {
       entries.push({ segment, href, type: "node" })
+    } else if (prev === "volumes") {
+      entries.push({ segment, href, type: "volume", projectId })
+    } else if (prev === "routes") {
+      entries.push({ segment, href, type: "route", projectId })
+    } else if (prev === "jobs") {
+      entries.push({ segment, href, type: "job", projectId })
+    } else if (prev === "stacks") {
+      entries.push({ segment, href, type: "stack", projectId })
     } else {
       entries.push({ segment, href, type: "uuid" })
     }
@@ -96,11 +104,43 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
     staleTime: 5 * 60 * 1000,
   })
 
+  const volumeQuery = useQuery({
+    queryKey: ["volume", orgId, entry.projectId, entry.segment],
+    queryFn: () => volumesApi.get(orgId!, entry.projectId!, entry.segment, token!),
+    enabled: !!orgId && !!token && entry.type === "volume" && !!entry.projectId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const routeQuery = useQuery({
+    queryKey: ["route", orgId, entry.projectId, entry.segment],
+    queryFn: () => routesApi.get(orgId!, entry.projectId!, entry.segment, token!),
+    enabled: !!orgId && !!token && entry.type === "route" && !!entry.projectId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const jobQuery = useQuery({
+    queryKey: ["job", orgId, entry.projectId, entry.segment],
+    queryFn: () => jobsApi.get(orgId!, entry.projectId!, entry.segment, token!),
+    enabled: !!orgId && !!token && entry.type === "job" && !!entry.projectId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const stackQuery = useQuery({
+    queryKey: ["stack", orgId, entry.projectId, entry.segment],
+    queryFn: () => stacksApi.get(orgId!, entry.projectId!, entry.segment, token!),
+    enabled: !!orgId && !!token && entry.type === "stack" && !!entry.projectId,
+    staleTime: 5 * 60 * 1000,
+  })
+
   if (entry.type === "static") return <>{SEGMENT_LABELS[entry.segment] ?? entry.segment}</>
   if (entry.type === "deployment") return <>{entry.segment.slice(0, 8)}</>
   if (entry.type === "project") return <>{projectQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "service") return <>{serviceQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "node") return <>{nodeQuery.data?.name ?? entry.segment.slice(0, 8)}</>
+  if (entry.type === "volume") return <>{volumeQuery.data?.name ?? entry.segment.slice(0, 8)}</>
+  if (entry.type === "route") return <>{routeQuery.data?.hostname ?? entry.segment.slice(0, 8)}</>
+  if (entry.type === "job") return <>{jobQuery.data?.name ?? entry.segment.slice(0, 8)}</>
+  if (entry.type === "stack") return <>{stackQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   return <>{entry.segment.slice(0, 8)}</>
 }
 

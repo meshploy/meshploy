@@ -117,19 +117,19 @@ type CreateJobInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		Name              string               `json:"name"    minLength:"1" maxLength:"100"`
+		Name              string               `json:"name"               minLength:"1" maxLength:"100"`
 		IsCron            bool                 `json:"is_cron"`
-		Image             string               `json:"image"   minLength:"1"`
-		Command           string               `json:"command"`
-		Schedule          string               `json:"schedule"`
-		ConcurrencyPolicy db.ConcurrencyPolicy `json:"concurrency_policy"`
-		HistoryLimit      int                  `json:"history_limit"`
-		CPURequest        string               `json:"cpu_request"`
-		CPULimit          string               `json:"cpu_limit"`
-		MemoryRequest     string               `json:"memory_request"`
-		MemoryLimit       string               `json:"memory_limit"`
-		EnvVars           string               `json:"env_vars"`
-		NodeID            *string              `json:"node_id"`
+		Image             string               `json:"image"              minLength:"1"`
+		Command           string               `json:"command,omitempty"`
+		Schedule          string               `json:"schedule,omitempty"`
+		ConcurrencyPolicy db.ConcurrencyPolicy `json:"concurrency_policy,omitempty"`
+		HistoryLimit      int                  `json:"history_limit,omitempty"`
+		CPURequest        string               `json:"cpu_request,omitempty"`
+		CPULimit          string               `json:"cpu_limit,omitempty"`
+		MemoryRequest     string               `json:"memory_request,omitempty"`
+		MemoryLimit       string               `json:"memory_limit,omitempty"`
+		EnvVars           string               `json:"env_vars,omitempty"`
+		NodeID            *string              `json:"node_id,omitempty"`
 	}
 }
 
