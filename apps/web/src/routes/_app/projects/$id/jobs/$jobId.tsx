@@ -1,7 +1,7 @@
-import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Clock, Loader2, Play, RotateCcw, ServerCrash, Trash2, Zap } from "lucide-react"
+import { Check, ChevronDown, ChevronRight, Clock, Loader2, Play, RotateCcw, ServerCrash, Trash2, Zap } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
@@ -11,6 +11,8 @@ import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
+import { CronScheduleBlock, CONCURRENCY_OPTIONS } from "@/components/jobs/cron-schedule-block"
+import { DetailPageHeader, tabItemCls } from "@/components/layout/detail-page-header"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/$jobId")({
@@ -96,90 +98,45 @@ function JobDetailPage() {
 
   return (
     <div className="flex flex-col min-h-full">
-      {/* ── Sub-header ── */}
-      <div className="border-b border-border/40 bg-muted/10">
-        <div className="px-6 pt-4 pb-0">
-          <Link
-            to="/projects/$id/jobs"
-            params={{ id: projectId }}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to jobs
-          </Link>
-
-          <div className="flex items-start justify-between gap-4 mb-3">
-            <div className="flex items-start gap-2.5">
-              {job.is_cron
-                ? <Clock className="h-4 w-4 text-muted-foreground/60 mt-0.5 shrink-0" />
-                : <Zap className="h-4 w-4 text-muted-foreground/60 mt-0.5 shrink-0" />
-              }
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{job.name}</span>
-                  <span className="text-xs text-muted-foreground/50 border border-border/40 px-1.5 py-px rounded font-mono">
-                    {job.is_cron ? "cron" : "job"}
-                  </span>
-                  <Badge className={cn("text-[10px] px-1.5 py-0 h-5 border gap-1", STATUS_STYLES[job.status] ?? STATUS_STYLES.idle)}>
-                    <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[job.status] ?? STATUS_DOT.idle)} />
-                    {job.status}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground/50 font-mono mt-0.5">{job.k8s_name}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <Button
-                size="sm"
-                onClick={() => triggerMut.mutate()}
-                disabled={triggerMut.isPending}
-                className="gap-1.5 h-7 text-xs"
-              >
-                {triggerMut.isPending
-                  ? <Loader2 className="h-3 w-3 animate-spin" />
-                  : <Play className="h-3 w-3" />
-                }
-                Run now
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => deleteMut.mutate()}
-                disabled={deleteMut.isPending}
-                className="text-muted-foreground hover:text-destructive gap-1.5 h-7 text-xs"
-              >
-                {deleteMut.isPending
-                  ? <Loader2 className="h-3 w-3 animate-spin" />
-                  : <Trash2 className="h-3 w-3" />
-                }
-                Delete
-              </Button>
-            </div>
-          </div>
-
-          {/* ── Tabs ── */}
-          <nav className="flex items-center -mb-px">
-            {(["runs", "config"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap",
-                  activeTab === tab
-                    ? "text-foreground border-foreground/25"
-                    : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60"
-                )}
-              >
-                {tab === "runs" ? "Runs" : "Configuration"}
-                {tab === "runs" && runs.length > 0 && (
-                  <span className="ml-1.5 text-muted-foreground/50">{runs.length}</span>
-                )}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
+      <DetailPageHeader
+        backTo="/projects/$id/jobs"
+        backLabel="Back to jobs"
+        backParams={{ id: projectId }}
+        icon={job.is_cron
+          ? <Clock className="h-4 w-4 text-muted-foreground" />
+          : <Zap className="h-4 w-4 text-muted-foreground" />
+        }
+        name={job.name}
+        badge={
+          <Badge className={cn("text-[10px] px-1.5 py-0 h-4 border gap-1", STATUS_STYLES[job.status] ?? STATUS_STYLES.idle)}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[job.status] ?? STATUS_DOT.idle)} />
+            {job.status}
+          </Badge>
+        }
+        subtitle={job.k8s_name}
+        actions={
+          <>
+            <Button size="sm" onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending} className="gap-1.5 h-7 text-xs">
+              {triggerMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              Run now
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}
+              className="text-muted-foreground hover:text-destructive gap-1.5 h-7 text-xs">
+              {deleteMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              Delete
+            </Button>
+          </>
+        }
+      >
+        {(["runs", "config"] as const).map((tab) => (
+          <button key={tab} onClick={() => setActiveTab(tab)} className={tabItemCls(activeTab === tab)}>
+            {tab === "runs" ? "Runs" : "Configuration"}
+            {tab === "runs" && runs.length > 0 && (
+              <span className="ml-1.5 text-muted-foreground/50">{runs.length}</span>
+            )}
+          </button>
+        ))}
+      </DetailPageHeader>
 
       {/* ── Tab content ── */}
       {activeTab === "runs" ? (
@@ -252,19 +209,6 @@ function RunsTab({
 
 // ─── Config tab ───────────────────────────────────────────────────────────────
 
-const CRON_PRESETS = [
-  { label: "Every 5 min", value: "*/5 * * * *" },
-  { label: "Hourly",      value: "0 * * * *"   },
-  { label: "Daily",       value: "0 0 * * *"   },
-  { label: "Weekly",      value: "0 0 * * 0"   },
-  { label: "Monthly",     value: "0 0 1 * *"   },
-]
-
-const CONCURRENCY_OPTIONS = [
-  { value: "allow",   label: "Allow — multiple runs can overlap" },
-  { value: "forbid",  label: "Forbid — skip if already running"  },
-  { value: "replace", label: "Replace — cancel running, start new" },
-]
 
 const shellExtension = StreamLanguage.define(shell)
 
@@ -348,76 +292,16 @@ function ConfigTab({
       </Section>
 
       {/* Scheduling */}
-      <div className="rounded-lg border border-border/40 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setIsCron((v) => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors"
-        >
-          <div className="text-left">
-            <p className="text-sm font-medium text-foreground">Run on a schedule</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Repeat this job on a cron expression</p>
-          </div>
-          <div className={cn("w-9 h-5 rounded-full transition-colors relative shrink-0", isCron ? "bg-primary" : "bg-muted")}>
-            <div className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform", isCron ? "translate-x-4" : "translate-x-0.5")} />
-          </div>
-        </button>
-
-        {isCron && (
-          <div className="border-t border-border/40 px-4 pb-4 pt-4 space-y-4">
-            <Field label="Cron expression" required>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {CRON_PRESETS.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => setSchedule(p.value)}
-                    className={cn(
-                      "px-2.5 py-1 text-xs rounded-md border transition-colors",
-                      schedule === p.value
-                        ? "border-foreground/40 bg-foreground/10 text-foreground"
-                        : "border-border/40 text-muted-foreground hover:text-foreground hover:border-foreground/30"
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              <input
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                placeholder="*/5 * * * *"
-                className={cn(inputCls, "font-mono text-xs")}
-              />
-              <p className="text-xs text-muted-foreground/40">5-field cron: minute hour day month weekday</p>
-            </Field>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Concurrency policy">
-                <select
-                  value={concurrency}
-                  onChange={(e) => setConcurrency(e.target.value)}
-                  className={cn(inputCls, "text-xs")}
-                >
-                  {CONCURRENCY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="History limit">
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={historyLimit}
-                  onChange={(e) => setHistoryLimit(e.target.value)}
-                  className={cn(inputCls, "text-xs")}
-                />
-              </Field>
-            </div>
-          </div>
-        )}
-      </div>
+      <CronScheduleBlock
+        enabled={isCron}
+        onToggle={() => setIsCron((v) => !v)}
+        schedule={schedule}
+        onScheduleChange={setSchedule}
+        concurrency={concurrency}
+        onConcurrencyChange={setConcurrency}
+        historyLimit={historyLimit}
+        onHistoryLimitChange={setHistoryLimit}
+      />
 
       {/* Resources */}
       <Section title="Resources" subtitle="CPU and memory requests and limits">

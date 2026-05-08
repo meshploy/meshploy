@@ -1,12 +1,13 @@
 import { createFileRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Loader2, Play, ServerCrash, Square } from "lucide-react"
+import { Box, Database, Loader2, Play, ServerCrash, Square } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { services as servicesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
   component: ServiceLayout,
@@ -78,79 +79,51 @@ function ServiceLayout() {
 
   return (
     <div className="flex flex-col min-h-full">
-      {/* Service sub-header */}
-      <div className="border-b border-border/40 bg-muted/10">
-        <div className="px-6 pt-3.5 pb-0">
+      <DetailPageHeader
+        backTo="/projects/$id/services"
+        backLabel="Back to services"
+        backParams={{ id: projectId }}
+        icon={service.type === "database"
+          ? <Database className="h-4 w-4 text-muted-foreground" />
+          : <Box className="h-4 w-4 text-muted-foreground" />
+        }
+        name={service.name}
+        badge={
+          <Badge className={`text-[10px] px-1.5 py-0 h-4 border ${STATUS_STYLES[service.status] ?? STATUS_STYLES.stopped}`}>
+            {service.status}
+          </Badge>
+        }
+        actions={
+          <>
+            {(service.status === "stopped" || service.status === "failed") && !!service.image && (
+              <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs"
+                onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
+                {startMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                Start
+              </Button>
+            )}
+            {(service.status === "running" || service.status === "deploying") && (
+              <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs"
+                onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
+                {stopMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
+                Stop
+              </Button>
+            )}
+          </>
+        }
+      >
+        {(service.type === "database" ? DB_TABS : APP_TABS).map(({ label, to }) => (
           <Link
-            to="/projects/$id/services"
-            params={{ id: projectId }}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+            key={to}
+            to={to}
+            params={{ id: projectId, serviceId }}
+            className={tabLinkCls}
+            activeOptions={{ exact: false }}
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to services
+            {label}
           </Link>
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{service.name}</span>
-              <Badge
-                className={`text-[10px] px-1.5 py-0 h-4 border ${STATUS_STYLES[service.status] ?? STATUS_STYLES.stopped}`}
-              >
-                {service.status}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {(service.status === "stopped" || service.status === "failed") && !!service.image && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 h-7 text-xs"
-                  onClick={() => startMutation.mutate()}
-                  disabled={startMutation.isPending}
-                >
-                  {startMutation.isPending
-                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                    : <Play className="h-3 w-3" />
-                  }
-                  Start
-                </Button>
-              )}
-              {(service.status === "running" || service.status === "deploying") && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 h-7 text-xs"
-                  onClick={() => stopMutation.mutate()}
-                  disabled={stopMutation.isPending}
-                >
-                  {stopMutation.isPending
-                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                    : <Square className="h-3 w-3" />
-                  }
-                  Stop
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <nav className="flex items-center -mb-px">
-            {(service.type === "database" ? DB_TABS : APP_TABS).map(({ label, to }) => (
-              <Link
-                key={to}
-                to={to}
-                params={{ id: projectId, serviceId }}
-                className={cn(
-                  "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap",
-                  "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60",
-                  "data-[status=active]:text-foreground data-[status=active]:border-foreground/25"
-                )}
-                activeOptions={{ exact: false }}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </div>
+        ))}
+      </DetailPageHeader>
 
       <div className="flex-1">
         <Outlet />
