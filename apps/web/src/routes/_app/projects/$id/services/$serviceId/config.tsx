@@ -2,7 +2,7 @@ import { createFileRoute, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, HardDrive, Info, KeyRound, Loader2, Plus, Save, Server, Trash2, X } from "lucide-react"
+import { AlertTriangle, ChevronDown, HardDrive, Info, KeyRound, Loader2, Plus, Save, Server, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -782,7 +782,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <span className="font-medium">Resource limits</span>
-          <span className={cn("text-xs transition-transform inline-block", form.showResources ? "rotate-180" : "")}>▼</span>
+          <ChevronDown className={cn("h-4 w-4 transition-transform", form.showResources ? "rotate-180" : "")} />
         </button>
         {form.showResources && (
           <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
