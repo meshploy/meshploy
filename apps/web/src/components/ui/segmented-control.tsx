@@ -36,7 +36,7 @@ export function SegmentedControl<T extends string>({
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 transition-colors whitespace-nowrap",
             value === opt.value
-              ? "bg-primary/10 text-primary font-medium"
+              ? "bg-primary/10 text-primary"
               : "text-muted-foreground hover:text-foreground hover:bg-muted/30",
             i > 0 && "border-l border-border/60"
           )}

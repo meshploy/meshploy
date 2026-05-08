@@ -30,6 +30,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
 import { Input } from "@/components/ui/input"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/config"
@@ -593,23 +594,15 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     <div className="space-y-8">
       {/* ── Source ────────────────────────────────────────────── */}
       <Section title="Source" subtitle="Where should Meshploy pull the code or image from?">
-        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-          {(["git", "image"] as const).map((src) => (
-            <button
-              key={src}
-              type="button"
-              onClick={() => patch({ source: src })}
-              className={cn(
-                "px-4 py-2 text-sm transition-colors",
-                form.source === src
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-              )}
-            >
-              {src === "git" ? "Git repository" : "Docker image"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={form.source}
+          onValueChange={(v) => patch({ source: v as "git" | "image" })}
+          options={[
+            { value: "git",   label: "Git repository" },
+            { value: "image", label: "Docker image" },
+          ]}
+          className="text-sm"
+        />
 
         {form.source === "image" ? (
           <Field label="Image">
