@@ -58,6 +58,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
 import { Input } from "@/components/ui/input"
+import { CronScheduleBlock } from "@/components/jobs/cron-schedule-block"
 
 // ─── Route ───────────────────────────────────────────────────────────────────
 
@@ -1580,7 +1581,7 @@ interface JobFormState {
   command: string
   isScheduled: boolean
   schedule: string
-  concurrencyPolicy: "Allow" | "Forbid" | "Replace"
+  concurrencyPolicy: string
   historyLimit: number
   envVars: string
   nodeId: string | null
@@ -1591,13 +1592,22 @@ interface JobFormState {
   memoryLimit: string
 }
 
+const CRON_PRESETS = [
+  { label: "Every 5 min", value: "*/5 * * * *" },
+  { label: "Hourly",      value: "0 * * * *"   },
+  { label: "Daily",       value: "0 0 * * *"   },
+  { label: "Weekly",      value: "0 0 * * 0"   },
+  { label: "Monthly",     value: "0 0 1 * *"   },
+]
+
+
 const JOB_INITIAL: JobFormState = {
   name: "",
   image: "",
   command: "",
   isScheduled: false,
   schedule: "",
-  concurrencyPolicy: "Allow",
+  concurrencyPolicy: "allow",
   historyLimit: 5,
   envVars: "",
   nodeId: null,
@@ -1694,75 +1704,16 @@ function JobForm({ projectId }: { projectId: string }) {
         </Field>
       </Section>
 
-      <div className="rounded-lg border border-border/40 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => patch({ isScheduled: !jf.isScheduled })}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-muted/20 transition-colors"
-        >
-          <div>
-            <p className="font-medium text-foreground text-left">Run on a schedule</p>
-            <p className="text-xs text-muted-foreground text-left mt-0.5">Repeat this job on a cron expression</p>
-          </div>
-          <div className={cn(
-            "w-9 h-5 rounded-full transition-colors relative shrink-0",
-            jf.isScheduled ? "bg-primary" : "bg-muted"
-          )}>
-            <div className={cn(
-              "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform",
-              jf.isScheduled ? "translate-x-4" : "translate-x-0.5"
-            )} />
-          </div>
-        </button>
-        {jf.isScheduled && (
-          <div className="border-t border-border/40 px-4 pb-4 pt-4 space-y-4">
-            <Field label="Cron expression" required>
-              <input
-                value={jf.schedule}
-                onChange={(e) => patch({ schedule: e.target.value })}
-                placeholder="0 2 * * *"
-                className={cn(inputCls, "font-mono")}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Concurrency policy">
-                <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-                  {(["Allow", "Forbid", "Replace"] as const).map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => patch({ concurrencyPolicy: p })}
-                      className={cn(
-                        "px-3 py-2 text-sm transition-colors",
-                        jf.concurrencyPolicy === p
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                      )}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {jf.concurrencyPolicy === "Allow" && "Multiple runs can overlap."}
-                  {jf.concurrencyPolicy === "Forbid" && "Skip new run if previous is still running."}
-                  {jf.concurrencyPolicy === "Replace" && "Cancel the running job and start a new one."}
-                </p>
-              </Field>
-              <Field label="History limit">
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={jf.historyLimit}
-                  onChange={(e) => patch({ historyLimit: parseInt(e.target.value) || 5 })}
-                  className={inputCls}
-                />
-                <p className="text-xs text-muted-foreground mt-1">Completed runs to keep.</p>
-              </Field>
-            </div>
-          </div>
-        )}
-      </div>
+      <CronScheduleBlock
+        enabled={jf.isScheduled}
+        onToggle={() => patch({ isScheduled: !jf.isScheduled })}
+        schedule={jf.schedule}
+        onScheduleChange={(v) => patch({ schedule: v })}
+        concurrency={jf.concurrencyPolicy}
+        onConcurrencyChange={(v) => patch({ concurrencyPolicy: v })}
+        historyLimit={String(jf.historyLimit)}
+        onHistoryLimitChange={(v) => patch({ historyLimit: parseInt(v) || 5 })}
+      />
 
       <Section title="Environment" subtitle="Variables injected at runtime. One KEY=VALUE per line.">
         <Field label="Env vars">

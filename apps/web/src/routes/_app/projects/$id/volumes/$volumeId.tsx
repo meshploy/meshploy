@@ -1,8 +1,8 @@
-import { createFileRoute, useNavigate, useParams, Link } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  ArrowLeft, HardDrive, Loader2, Unplug, Link2, Trash2,
+  HardDrive, Loader2, Unplug, Link2, Trash2,
   AlertTriangle, AlertCircle, Check, Pencil, X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +23,7 @@ import {
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
+import { DetailPageHeader } from "@/components/layout/detail-page-header"
 import { cn, formatRelativeTime } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/volumes/$volumeId")({
@@ -514,32 +515,21 @@ function VolumeDetailPage() {
   const hasMounts = (volume.mounts?.length ?? 0) > 0
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
-      {/* Back link */}
-      <Link
-        to="/projects/$id/volumes"
-        params={{ id: projectId }}
-        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back to volumes
-      </Link>
-
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted border border-border/60 shrink-0">
-            <HardDrive className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <div>
-            <h1 className="text-base font-semibold text-foreground">{volume.name}</h1>
-            <p className="text-xs text-muted-foreground font-mono">{volume.slug}</p>
-          </div>
-        </div>
-        <Badge className={cn("text-[10px] px-1.5 py-0 h-5 border shrink-0 mt-0.5", STATUS_STYLES[volume.status])}>
-          {volume.status}
-        </Badge>
-      </div>
+    <div className="flex flex-col min-h-full">
+      <DetailPageHeader
+        backTo="/projects/$id/volumes"
+        backLabel="Back to volumes"
+        backParams={{ id: projectId }}
+        icon={<HardDrive className="h-4 w-4 text-muted-foreground" />}
+        name={volume.name}
+        badge={
+          <Badge className={cn("text-[10px] px-1.5 py-0 h-4 border shrink-0", STATUS_STYLES[volume.status])}>
+            {volume.status}
+          </Badge>
+        }
+        subtitle={volume.slug}
+      />
+      <div className="p-6 max-w-2xl space-y-6">
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 rounded-lg border border-border/60 bg-card px-4 py-3.5">
@@ -604,6 +594,7 @@ function VolumeDetailPage() {
           <p className="text-xs text-destructive">{(deleteMut.error as Error).message}</p>
         )}
       </Section>
+      </div>
     </div>
   )
 }

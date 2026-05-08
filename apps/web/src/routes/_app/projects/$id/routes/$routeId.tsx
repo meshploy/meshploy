@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
+import { ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { Section, Field } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DetailPageHeader } from "@/components/layout/detail-page-header"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/$routeId")({
   component: RouteDetailPage,
@@ -105,27 +106,17 @@ function RouteDetailPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
-      <Link
-        to="/projects/$id/routes"
-        params={{ id: projectId }}
-        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back to routes
-      </Link>
-
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        <div className="h-9 w-9 rounded-md bg-muted/40 border border-border/40 flex items-center justify-center shrink-0">
-          <Globe className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium font-mono">{route.hostname}</p>
-            <Badge
-              className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${ZONE_STYLES[route.zone] ?? ""}`}
-            >
+    <div className="flex flex-col min-h-full">
+      <DetailPageHeader
+        backTo="/projects/$id/routes"
+        backLabel="Back to routes"
+        backParams={{ id: projectId }}
+        icon={<Globe className="h-4 w-4 text-muted-foreground" />}
+        name={route.hostname}
+        nameClassName="font-mono"
+        badge={
+          <>
+            <Badge className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${ZONE_STYLES[route.zone] ?? ""}`}>
               {route.zone}
             </Badge>
             <a
@@ -136,27 +127,19 @@ function RouteDetailPage() {
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-            → {route.target_ip}:{route.target_port}
-          </p>
-        </div>
-        {route.service_id && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 h-7 text-xs shrink-0"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            title="Re-resolve target IP from current service node"
-          >
-            {syncMutation.isPending
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <RefreshCw className="h-3 w-3" />}
+          </>
+        }
+        subtitle={`→ ${route.target_ip}:${route.target_port}`}
+        actions={route.service_id ? (
+          <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs"
+            onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}
+            title="Re-resolve target IP from current service node">
+            {syncMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
             Sync IP
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
+      <div className="p-6 space-y-6 max-w-2xl">
 
       {/* Details */}
       <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
@@ -269,6 +252,7 @@ function RouteDetailPage() {
           )}
         </div>
       </Section>
+    </div>
     </div>
   )
 }
