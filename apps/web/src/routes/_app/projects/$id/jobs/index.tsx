@@ -185,28 +185,26 @@ function JobRow({
         </td>
         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-0.5">
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={onTrigger}
               disabled={isTriggering}
-              className="p-1.5 text-muted-foreground/40 hover:text-primary transition-colors disabled:opacity-40"
               title="Run now"
+              className="text-muted-foreground/40 hover:text-primary"
             >
-              {isTriggering
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Play className="h-3 w-3" />
-              }
-            </button>
-            <button
+              {isTriggering ? <Loader2 className="animate-spin" /> : <Play />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={onDelete}
               disabled={isDeleting}
-              className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-40"
               title="Delete"
+              className="text-muted-foreground/40 hover:text-destructive"
             >
-              {isDeleting
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Trash2 className="h-3 w-3" />
-              }
-            </button>
+              {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+            </Button>
           </div>
         </td>
       </tr>

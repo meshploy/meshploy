@@ -146,20 +146,33 @@ function SecretRow({
                   if (e.key === "Escape") setEditing(false)
                 }}
               />
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setShowEdit((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
+                className="absolute right-0.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
               >
                 {showEdit ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-              </button>
+              </Button>
             </div>
-            <button onClick={() => updateMut.mutate()} disabled={!editValue || updateMut.isPending} className="text-muted-foreground hover:text-foreground disabled:opacity-40 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => updateMut.mutate()}
+              disabled={!editValue || updateMut.isPending}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
               {updateMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-            </button>
-            <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground shrink-0">
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setEditing(false)}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
               <X className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </div>
         ) : (
           <span className="text-xs font-mono text-muted-foreground/40 tracking-widest">••••••••</span>
@@ -171,22 +184,26 @@ function SecretRow({
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-0.5">
           {!editing && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => { setEditing(true); setEditValue("") }}
-              className="p-1.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
               title="Edit value"
+              className="text-muted-foreground/40 hover:text-muted-foreground"
             >
               <Pencil className="h-3 w-3" />
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onDelete}
             disabled={isDeleting}
-            className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-40"
             title="Delete"
+            className="text-muted-foreground/40 hover:text-destructive"
           >
             {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-          </button>
+          </Button>
         </div>
       </td>
     </tr>

@@ -37,13 +37,15 @@ function CopyRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 gap-3">
       <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider shrink-0">{label}</span>
       <code className="text-[11px] font-mono text-foreground truncate flex-1 text-right">{value}</code>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-sm"
         onClick={() => { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0"
         title="Copy"
+        className="text-muted-foreground/40 hover:text-muted-foreground shrink-0"
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      </button>
+      </Button>
     </div>
   )
 }

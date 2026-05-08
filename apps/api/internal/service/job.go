@@ -46,6 +46,7 @@ type CreateJobInput struct {
 }
 
 type UpdateJobInput struct {
+	IsCron            *bool
 	Name              *string
 	Image             *string
 	Command           *string
@@ -88,6 +89,17 @@ func (s *JobService) ListRuns(ctx context.Context, jobID uuid.UUID) ([]db.JobRun
 		Limit(50).
 		Find(&rows).Error
 	return rows, err
+}
+
+func (s *JobService) DeleteRun(ctx context.Context, runID uuid.UUID) error {
+	res := s.db.WithContext(ctx).Delete(&db.JobRun{}, "id = ?", runID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("run not found")
+	}
+	return nil
 }
 
 // ─── Write ────────────────────────────────────────────────────────────────────
@@ -144,6 +156,9 @@ func (s *JobService) Update(ctx context.Context, jobID uuid.UUID, in UpdateJobIn
 	}
 
 	updates := map[string]any{}
+	if in.IsCron != nil {
+		updates["is_cron"] = *in.IsCron
+	}
 	if in.Name != nil {
 		updates["name"] = *in.Name
 	}
@@ -185,11 +200,18 @@ func (s *JobService) Update(ctx context.Context, jobID uuid.UUID, in UpdateJobIn
 		return nil, err
 	}
 
-	// Re-apply K8s CronJob if any cron-relevant field changed.
-	if row.IsCron && s.k8s != nil {
-		s.db.WithContext(ctx).First(&row, "id = ?", jobID)
-		if row.Schedule != "" {
+	// Re-fetch to get the final state after updates.
+	s.db.WithContext(ctx).First(&row, "id = ?", jobID)
+
+	if s.k8s != nil {
+		if row.IsCron && row.Schedule != "" {
 			s.applyCronJob(ctx, &row)
+		} else if in.IsCron != nil && !*in.IsCron {
+			// Disabled scheduling — remove the CronJob if it exists.
+			var project db.Project
+			if s.db.WithContext(ctx).First(&project, "id = ?", row.ProjectID).Error == nil {
+				_ = appk8s.DeleteCronJob(ctx, s.k8s, project.Slug, row.K8sName)
+			}
 		}
 	}
 

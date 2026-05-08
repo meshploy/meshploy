@@ -11,6 +11,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { inputCls, Field, NodeCard } from "@/components/services/form-primitives"
+import { SegmentedControl } from "@/components/ui/segmented-control"
+import { Button } from "@/components/ui/button"
 import { gitIntegrations as gitApi, nodes as nodesApi, toNode, type ApiNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -382,29 +384,17 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
             <span className="text-[11px] text-emerald-400/80 font-mono">converted</span>
           )}
         </div>
-        <div className="flex items-center rounded-md border border-border/60 overflow-hidden text-xs">
-          <button
-            onClick={() => { if (mode === "visual") switchToYaml() }}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 transition-colors",
-              mode === "yaml" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Code2 className="h-3 w-3" />
-            YAML
-          </button>
-          <div className="w-px h-4 bg-border/60" />
-          <button
-            onClick={() => { if (mode === "yaml") switchToVisual() }}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 transition-colors",
-              mode === "visual" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <LayoutGrid className="h-3 w-3" />
-            Visual
-          </button>
-        </div>
+        <SegmentedControl
+          value={mode}
+          onValueChange={(v) => {
+            if (v === "yaml" && mode === "visual") switchToYaml()
+            else if (v === "visual" && mode === "yaml") switchToVisual()
+          }}
+          options={[
+            { value: "yaml", label: "YAML", icon: <Code2 className="h-3 w-3" /> },
+            { value: "visual", label: "Visual", icon: <LayoutGrid className="h-3 w-3" /> },
+          ]}
+        />
       </div>
 
       {mode === "yaml" ? (
@@ -503,30 +493,23 @@ function ServiceCard({
           className="flex-1 bg-transparent text-sm font-medium text-foreground placeholder:text-muted-foreground/40 focus:outline-none min-w-0"
         />
         {/* App / Database toggle */}
-        <div className="flex items-center rounded-md border border-border/60 overflow-hidden text-[11px] shrink-0">
-          <button
-            onClick={() => onChange({ serviceType: "app" })}
-            className={cn(
-              "px-2.5 py-1 transition-colors",
-              svc.serviceType === "app" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            App
-          </button>
-          <div className="w-px h-3.5 bg-border/60" />
-          <button
-            onClick={() => onChange({ serviceType: "database" })}
-            className={cn(
-              "px-2.5 py-1 transition-colors",
-              svc.serviceType === "database" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Database
-          </button>
-        </div>
-        <button onClick={onRemove} className="text-muted-foreground hover:text-destructive transition-colors shrink-0">
+        <SegmentedControl
+          value={svc.serviceType}
+          onValueChange={(v) => onChange({ serviceType: v as "app" | "database" })}
+          options={[
+            { value: "app", label: "App" },
+            { value: "database", label: "Database" },
+          ]}
+          className="text-[11px] shrink-0"
+        />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onRemove}
+          className="text-muted-foreground hover:text-destructive shrink-0"
+        >
           <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
 
       <div className="p-4 space-y-5">
@@ -585,22 +568,15 @@ function AppFields({
       <SectionHeader title="Source" />
       <div className="space-y-4">
         <Field label="Source">
-          <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-            {(["git", "image"] as const).map((src) => (
-              <button
-                key={src}
-                onClick={() => onChange({ source: src })}
-                className={cn(
-                  "px-4 py-1.5 text-sm transition-colors",
-                  svc.source === src
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                )}
-              >
-                {src === "git" ? "Git repository" : "Docker image"}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            value={svc.source ?? "git"}
+            onValueChange={(v) => onChange({ source: v as "git" | "image" })}
+            options={[
+              { value: "git", label: "Git repository" },
+              { value: "image", label: "Docker image" },
+            ]}
+            className="text-sm"
+          />
         </Field>
 
         {svc.source === "image" ? (

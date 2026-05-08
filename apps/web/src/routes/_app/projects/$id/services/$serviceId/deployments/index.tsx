@@ -35,6 +35,15 @@ const STATUS_DOT: Record<ApiDeployment["status"], string> = {
   failed:    "bg-destructive",
 }
 
+const STATUS_TEXT: Record<ApiDeployment["status"], string> = {
+  pending:   "text-muted-foreground",
+  building:  "text-amber-400",
+  deploying: "text-blue-400",
+  running:   "text-emerald-400",
+  success:   "text-emerald-400",
+  failed:    "text-destructive",
+}
+
 function DeploymentsTab() {
   const { id: projectId, serviceId } = useParams({
     from: "/_app/projects/$id/services/$serviceId/deployments/",
@@ -195,66 +204,72 @@ function DeploymentRow({
       {/* Status dot */}
       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOT[deployment.status]}`} />
 
-      {/* ID + badge */}
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        <code className="text-xs font-mono text-foreground/80">
-          {deployment.id.slice(0, 8)}
-        </code>
-        <Badge
-          className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[deployment.status]}`}
-        >
+      {/* Status text + time + image */}
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <span className={`text-xs font-medium capitalize shrink-0 ${STATUS_TEXT[deployment.status]}`}>
           {deployment.status}
-        </Badge>
+        </span>
+        <span className="text-xs text-muted-foreground shrink-0">
+          {formatRelativeTime(new Date(deployment.created_at))}
+        </span>
         {deployment.image && (
-          <code className="text-[11px] font-mono text-muted-foreground/60 truncate hidden sm:block">
+          <code className="text-[11px] font-mono text-muted-foreground/50 truncate hidden sm:block">
             {deployment.image}
           </code>
         )}
       </div>
 
-      {/* Time + actions */}
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {formatRelativeTime(new Date(deployment.created_at))}
-        </span>
-        <Link
-          to="/projects/$id/services/$serviceId/deployments/$deploymentId"
-          params={{ id: projectId, serviceId, deploymentId: deployment.id }}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      {/* Actions */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          render={
+            <Link
+              to="/projects/$id/services/$serviceId/deployments/$deploymentId"
+              params={{ id: projectId, serviceId, deploymentId: deployment.id }}
+            />
+          }
+          className="text-muted-foreground/70 hover:text-foreground gap-1.5"
         >
-          <ScrollText className="h-3 w-3" />
+          <ScrollText />
           Logs
-        </Link>
+        </Button>
         {isActive ? (
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => cancelMutation.mutate()}
             disabled={cancelMutation.isPending}
             title="Cancel deployment"
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+            className="text-muted-foreground/50 hover:text-destructive"
           >
-            {cancelMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
-          </button>
+            {cancelMutation.isPending ? <Loader2 className="animate-spin" /> : <X />}
+          </Button>
         ) : (
           <>
             {rollbackEnabled && deployment.status === "success" && (
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => rollbackMutation.mutate()}
                 disabled={rollbackMutation.isPending}
                 title="Roll back to this deployment"
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                className="text-muted-foreground/50 hover:text-foreground"
               >
-                {rollbackMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-              </button>
+                {rollbackMutation.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+              </Button>
             )}
-
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => deleteMutation.mutate()}
               disabled={deleteMutation.isPending}
               title="Delete record"
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+              className="text-muted-foreground/50 hover:text-destructive"
             >
-              {deleteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-            </button>
+              {deleteMutation.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
+            </Button>
           </>
         )}
       </div>

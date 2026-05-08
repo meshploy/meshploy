@@ -213,18 +213,38 @@ function BackupRow({ config, storageList, last, orgId, projectId, serviceId, tok
             )}
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
-            <button onClick={() => setEditing(true)} className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors" title="Edit">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setEditing(true)}
+              title="Edit"
+              className="text-muted-foreground/40 hover:text-foreground"
+            >
               <Pencil className="h-3 w-3" />
-            </button>
-            <button onClick={() => onToggle(!config.enabled)} disabled={isToggling} className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors disabled:opacity-30" title={config.enabled ? "Pause" : "Resume"}>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onToggle(!config.enabled)}
+              disabled={isToggling}
+              title={config.enabled ? "Pause" : "Resume"}
+              className="text-muted-foreground/40 hover:text-foreground"
+            >
               {isToggling ? <Loader2 className="h-3 w-3 animate-spin" /> : config.enabled
                 ? <X className="h-3 w-3" />
                 : <Check className="h-3 w-3" />
               }
-            </button>
-            <button onClick={onDelete} disabled={isDeleting} className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30" title="Delete">
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onDelete}
+              disabled={isDeleting}
+              title="Delete"
+              className="text-muted-foreground/40 hover:text-destructive"
+            >
               {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-            </button>
+            </Button>
           </div>
         </div>
       )}

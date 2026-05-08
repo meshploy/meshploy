@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Check, ChevronRight, Clock, Loader2, Play, ServerCrash, Trash2, Zap } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Clock, Loader2, Play, RotateCcw, ServerCrash, Trash2, Zap } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
@@ -182,10 +182,12 @@ function JobDetailPage() {
       </div>
 
       {/* ── Tab content ── */}
-      <div className="p-6 max-w-2xl space-y-6">
-        {activeTab === "runs" ? (
-          <RunsTab runs={runs} isFetching={runsFetching} />
-        ) : (
+      {activeTab === "runs" ? (
+        <div className="p-6">
+          <RunsTab runs={runs} isFetching={runsFetching} orgId={orgId} projectId={projectId} jobId={jobId} token={token} />
+        </div>
+      ) : (
+        <div className="p-6 max-w-2xl space-y-8">
           <ConfigTab
             key={job.updated_at}
             job={job}
@@ -193,36 +195,56 @@ function JobDetailPage() {
             projectId={projectId}
             token={token}
           />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Runs tab ─────────────────────────────────────────────────────────────────
 
-function RunsTab({ runs, isFetching }: { runs: ApiJobRun[]; isFetching: boolean }) {
+const RUN_STATUS_TEXT: Record<string, string> = {
+  idle:    "text-muted-foreground",
+  pending: "text-amber-400",
+  running: "text-amber-400",
+  success: "text-emerald-400",
+  failed:  "text-destructive",
+}
+
+function RunsTab({
+  runs, isFetching, orgId, projectId, jobId, token,
+}: {
+  runs: ApiJobRun[]
+  isFetching: boolean
+  orgId: string
+  projectId: string
+  jobId: string
+  token: string
+}) {
   if (isFetching && runs.length === 0) {
     return (
-      <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
+      <div className="flex items-center justify-center h-40">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
   if (runs.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border/60 py-12 flex flex-col items-center gap-2">
-        <p className="text-sm text-muted-foreground">No runs yet</p>
-        <p className="text-xs text-muted-foreground/50">Click "Run now" to trigger the first run.</p>
+      <div className="rounded-lg border border-dashed border-border/60 py-14 flex flex-col items-center gap-3">
+        <Zap className="h-7 w-7 text-muted-foreground/30" />
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground">No runs yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-0.5">Click "Run now" to trigger the first run.</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-border/60 overflow-hidden">
-      {runs.map((run, i) => (
-        <RunRow key={run.id} run={run} last={i === runs.length - 1} />
+    <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+      {runs.map((run) => (
+        <RunRow key={run.id} run={run} orgId={orgId} projectId={projectId} jobId={jobId} token={token} />
       ))}
     </div>
   )
@@ -257,10 +279,11 @@ function ConfigTab({
   const [cpuLimit, setCpuLimit]       = useState(job.cpu_limit)
   const [memRequest, setMemRequest]   = useState(job.memory_request)
   const [memLimit, setMemLimit]       = useState(job.memory_limit)
+  const [isCron, setIsCron]           = useState(job.is_cron)
   const [schedule, setSchedule]       = useState(job.schedule ?? "")
   const [concurrency, setConcurrency] = useState(job.concurrency_policy ?? "allow")
   const [historyLimit, setHistoryLimit] = useState(String(job.history_limit ?? 5))
-  const [envVars, setEnvVars]         = useState(job.env_vars ?? "")
+  const [envVars, setEnvVars]         = useState(job.env_vars)
   const [saved, setSaved]             = useState(false)
 
   const updateMut = useMutation({
@@ -276,6 +299,7 @@ function ConfigTab({
 
   function handleSave() {
     const body: Partial<CreateJobBody> = {
+      is_cron:        isCron,
       image,
       command,
       cpu_request:    cpuRequest,
@@ -284,7 +308,7 @@ function ConfigTab({
       memory_limit:   memLimit,
       env_vars:       envVars || undefined,
     }
-    if (job.is_cron) {
+    if (isCron) {
       body.schedule           = schedule
       body.concurrency_policy = concurrency
       body.history_limit      = parseInt(historyLimit, 10) || 5
@@ -323,63 +347,77 @@ function ConfigTab({
         </Field>
       </Section>
 
-      {/* Scheduling (cron only) */}
-      {job.is_cron && (
-        <Section title="Scheduling" subtitle="Cron expression and concurrency settings">
-          <Field label="Cron expression" required>
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {CRON_PRESETS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => setSchedule(p.value)}
-                  className={cn(
-                    "px-2.5 py-1 text-xs rounded-md border transition-colors",
-                    schedule === p.value
-                      ? "border-foreground/40 bg-foreground/10 text-foreground"
-                      : "border-border/40 text-muted-foreground hover:text-foreground hover:border-foreground/30"
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <input
-              value={schedule}
-              onChange={(e) => setSchedule(e.target.value)}
-              placeholder="*/5 * * * *"
-              className={cn(inputCls, "font-mono text-xs")}
-            />
-            <p className="text-xs text-muted-foreground/40">
-              5-field cron: minute hour day month weekday
-            </p>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Concurrency policy">
-              <select
-                value={concurrency}
-                onChange={(e) => setConcurrency(e.target.value)}
-                className={cn(inputCls, "text-xs")}
-              >
-                {CONCURRENCY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="History limit">
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={historyLimit}
-                onChange={(e) => setHistoryLimit(e.target.value)}
-                className={cn(inputCls, "text-xs")}
-              />
-            </Field>
+      {/* Scheduling */}
+      <div className="rounded-lg border border-border/40 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setIsCron((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors"
+        >
+          <div className="text-left">
+            <p className="text-sm font-medium text-foreground">Run on a schedule</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Repeat this job on a cron expression</p>
           </div>
-        </Section>
-      )}
+          <div className={cn("w-9 h-5 rounded-full transition-colors relative shrink-0", isCron ? "bg-primary" : "bg-muted")}>
+            <div className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform", isCron ? "translate-x-4" : "translate-x-0.5")} />
+          </div>
+        </button>
+
+        {isCron && (
+          <div className="border-t border-border/40 px-4 pb-4 pt-4 space-y-4">
+            <Field label="Cron expression" required>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {CRON_PRESETS.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setSchedule(p.value)}
+                    className={cn(
+                      "px-2.5 py-1 text-xs rounded-md border transition-colors",
+                      schedule === p.value
+                        ? "border-foreground/40 bg-foreground/10 text-foreground"
+                        : "border-border/40 text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={schedule}
+                onChange={(e) => setSchedule(e.target.value)}
+                placeholder="*/5 * * * *"
+                className={cn(inputCls, "font-mono text-xs")}
+              />
+              <p className="text-xs text-muted-foreground/40">5-field cron: minute hour day month weekday</p>
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Concurrency policy">
+                <select
+                  value={concurrency}
+                  onChange={(e) => setConcurrency(e.target.value)}
+                  className={cn(inputCls, "text-xs")}
+                >
+                  {CONCURRENCY_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="History limit">
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={historyLimit}
+                  onChange={(e) => setHistoryLimit(e.target.value)}
+                  className={cn(inputCls, "text-xs")}
+                />
+              </Field>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Resources */}
       <Section title="Resources" subtitle="CPU and memory requests and limits">
@@ -437,48 +475,105 @@ function ConfigTab({
 
 // ─── Run row ─────────────────────────────────────────────────────────────────
 
-function RunRow({ run, last }: { run: ApiJobRun; last: boolean }) {
+function RunRow({
+  run, orgId, projectId, jobId, token,
+}: {
+  run: ApiJobRun
+  orgId: string
+  projectId: string
+  jobId: string
+  token: string
+}) {
+  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
 
   const duration = run.started_at && run.finished_at
     ? Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)
     : null
 
-  const dot = cn("h-2 w-2 rounded-full shrink-0", {
-    "bg-muted-foreground/30":      run.status === "idle",
-    "bg-amber-400 animate-pulse":  run.status === "pending" || run.status === "running",
-    "bg-emerald-400":              run.status === "success",
-    "bg-destructive":              run.status === "failed",
+  const dot = cn("h-1.5 w-1.5 rounded-full shrink-0", {
+    "bg-muted-foreground/40":     run.status === "idle",
+    "bg-amber-400 animate-pulse": run.status === "pending" || run.status === "running",
+    "bg-emerald-400":             run.status === "success",
+    "bg-destructive":             run.status === "failed",
+  })
+
+  const rerunMut = useMutation({
+    mutationFn: () => jobsApi.trigger(orgId, projectId, jobId, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["job", orgId, projectId, jobId] })
+      qc.invalidateQueries({ queryKey: ["job-runs", orgId, projectId, jobId] })
+    },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => jobsApi.deleteRun(orgId, projectId, jobId, run.id, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["job-runs", orgId, projectId, jobId] }),
   })
 
   return (
-    <div className={cn(!last && "border-b border-border/30")}>
-      <button
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/10 transition-colors text-left"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <div className={dot} />
-        <span className="text-xs capitalize text-muted-foreground/70 w-16 shrink-0">{run.status}</span>
-        <span className="text-xs text-muted-foreground/50 flex-1">
-          {run.started_at
-            ? new Date(run.started_at).toLocaleString()
-            : new Date(run.created_at).toLocaleString()
-          }
-        </span>
-        {duration !== null && (
-          <span className="text-xs text-muted-foreground/40 shrink-0">{duration}s</span>
-        )}
-        <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground/30 transition-transform shrink-0", open && "rotate-90")} />
-      </button>
+    <div>
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+        <span className={dot} />
+
+        {/* Left: status + timestamp + duration */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <span className={cn("text-xs font-medium capitalize shrink-0", RUN_STATUS_TEXT[run.status] ?? "text-muted-foreground")}>
+            {run.status}
+          </span>
+          <span className="text-xs text-muted-foreground shrink-0">
+            {run.started_at
+              ? new Date(run.started_at).toLocaleString()
+              : new Date(run.created_at).toLocaleString()
+            }
+          </span>
+          {duration !== null && (
+            <span className="text-xs text-muted-foreground/50 shrink-0">{duration}s</span>
+          )}
+        </div>
+
+        {/* Right: actions + expand */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => rerunMut.mutate()}
+            disabled={rerunMut.isPending}
+            title="Re-run"
+            className="text-muted-foreground/50 hover:text-foreground"
+          >
+            {rerunMut.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => deleteMut.mutate()}
+            disabled={deleteMut.isPending}
+            title="Delete record"
+            className="text-muted-foreground/50 hover:text-destructive"
+          >
+            {deleteMut.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setOpen((v) => !v)}
+            title="View log"
+            className="text-muted-foreground/50 hover:text-foreground"
+          >
+            <ChevronDown className={cn("transition-transform", open && "rotate-180")} />
+          </Button>
+        </div>
+      </div>
 
       {open && (
-        <div className="px-4 pb-3">
+        <div className="px-4 pb-3 border-t border-border/30">
           {run.log ? (
-            <pre className="text-xs font-mono text-muted-foreground/70 bg-muted/20 rounded-md px-3 py-2.5 overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">
+            <pre className="text-xs font-mono text-muted-foreground/70 bg-muted/20 rounded-md px-3 py-2.5 mt-2 overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">
               {run.log}
             </pre>
           ) : (
-            <p className="text-xs text-muted-foreground/40 italic px-1">No log output.</p>
+            <p className="text-xs text-muted-foreground/40 italic px-1 pt-2">No log output.</p>
           )}
         </div>
       )}
