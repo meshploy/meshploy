@@ -74,28 +74,37 @@ function ProjectSettingsPage() {
                       if (e.key === "Escape") setEditingName(false)
                     }}
                   />
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => renameMut.mutate()}
                     disabled={!nameInput.trim() || renameMut.isPending}
-                    className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    className="text-muted-foreground hover:text-foreground"
                   >
                     {renameMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  </button>
-                  <button onClick={() => setEditingName(false)} className="text-muted-foreground hover:text-foreground">
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setEditingName(false)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     <X className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <p className="text-sm text-foreground">{project.name}</p>
               )}
             </div>
             {!editingName && (
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => { setNameInput(project.name); setEditingName(true) }}
-                className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                className="text-muted-foreground/40 hover:text-muted-foreground"
               >
                 <Pencil className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             )}
           </div>
 

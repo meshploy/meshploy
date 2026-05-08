@@ -26,6 +26,7 @@ type JobDTO struct {
 	CPULimit          string               `json:"cpu_limit"`
 	MemoryRequest     string               `json:"memory_request"`
 	MemoryLimit       string               `json:"memory_limit"`
+	EnvVars           string               `json:"env_vars"`
 	Status            db.JobStatus         `json:"status"`
 	LastRunAt         *string              `json:"last_run_at"`
 	K8sName           string               `json:"k8s_name"`
@@ -60,6 +61,7 @@ func toJobDTO(j db.Job) JobDTO {
 		CPULimit:          j.CPULimit,
 		MemoryRequest:     j.MemoryRequest,
 		MemoryLimit:       j.MemoryLimit,
+		EnvVars:           string(j.EnvVars),
 		Status:            j.Status,
 		K8sName:           j.K8sName,
 		CreatedAt:         j.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -142,18 +144,19 @@ type UpdateJobInput struct {
 	ProjectID string `path:"projectId"`
 	JobID     string `path:"jobId"`
 	Body      struct {
-		Name              *string               `json:"name"`
-		Image             *string               `json:"image"`
-		Command           *string               `json:"command"`
-		Schedule          *string               `json:"schedule"`
-		ConcurrencyPolicy *db.ConcurrencyPolicy `json:"concurrency_policy"`
-		HistoryLimit      *int                  `json:"history_limit"`
-		CPURequest        *string               `json:"cpu_request"`
-		CPULimit          *string               `json:"cpu_limit"`
-		MemoryRequest     *string               `json:"memory_request"`
-		MemoryLimit       *string               `json:"memory_limit"`
-		EnvVars           *string               `json:"env_vars"`
-		NodeID            *string               `json:"node_id"`
+		IsCron            *bool                 `json:"is_cron,omitempty"`
+		Name              *string               `json:"name,omitempty"`
+		Image             *string               `json:"image,omitempty"`
+		Command           *string               `json:"command,omitempty"`
+		Schedule          *string               `json:"schedule,omitempty"`
+		ConcurrencyPolicy *db.ConcurrencyPolicy `json:"concurrency_policy,omitempty"`
+		HistoryLimit      *int                  `json:"history_limit,omitempty"`
+		CPURequest        *string               `json:"cpu_request,omitempty"`
+		CPULimit          *string               `json:"cpu_limit,omitempty"`
+		MemoryRequest     *string               `json:"memory_request,omitempty"`
+		MemoryLimit       *string               `json:"memory_limit,omitempty"`
+		EnvVars           *string               `json:"env_vars,omitempty"`
+		NodeID            *string               `json:"node_id,omitempty"`
 	}
 }
 
@@ -237,6 +240,16 @@ func (h *Handler) registerJobRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: 201,
 	}, h.TriggerJob)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-job-run",
+		Method:        "DELETE",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/runs/{runId}",
+		Summary:       "Delete a job run record",
+		Tags:          []string{"Jobs"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.DeleteJobRun)
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -322,6 +335,7 @@ func (h *Handler) UpdateJob(ctx context.Context, input *UpdateJobInput) (*Update
 		return nil, err
 	}
 	in := service.UpdateJobInput{
+		IsCron:            input.Body.IsCron,
 		Name:              input.Body.Name,
 		Image:             input.Body.Image,
 		Command:           input.Body.Command,
@@ -376,6 +390,22 @@ func (h *Handler) ListJobRuns(ctx context.Context, input *JobPathInput) (*ListJo
 		dtos[i] = toJobRunDTO(r)
 	}
 	return &ListJobRunsOutput{Body: dtos}, nil
+}
+
+func (h *Handler) DeleteJobRun(ctx context.Context, input *struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	JobID     string `path:"jobId"`
+	RunID     string `path:"runId"`
+}) (*struct{}, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	runID, err := parseUUID(input.RunID)
+	if err != nil {
+		return nil, err
+	}
+	return nil, h.svc.Jobs.DeleteRun(ctx, runID)
 }
 
 func (h *Handler) TriggerJob(ctx context.Context, input *JobPathInput) (*TriggerJobOutput, error) {

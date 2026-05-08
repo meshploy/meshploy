@@ -8,6 +8,7 @@ import { routes as routesApi, services as servicesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, Field } from "@/components/services/form-primitives"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -171,28 +172,14 @@ function RouteDetailPage() {
       {/* Target */}
       <Section title="Target" subtitle="Change where this route forwards traffic.">
         <div className="space-y-4">
-          <div className="flex items-center gap-1 p-1 rounded-md bg-muted/30 border border-border/40 w-fit">
-            <button
-              onClick={() => setTargetMode("service")}
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                targetMode === "service"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Service
-            </button>
-            <button
-              onClick={() => setTargetMode("manual")}
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                targetMode === "manual"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Manual
-            </button>
-          </div>
+          <SegmentedControl
+            value={targetMode}
+            onValueChange={setTargetMode}
+            options={[
+              { value: "service", label: "Service" },
+              { value: "manual", label: "Manual" },
+            ]}
+          />
 
           {targetMode === "service" ? (() => {
             const selectedSvc = serviceList.find((x) => x.id === selectedServiceId)

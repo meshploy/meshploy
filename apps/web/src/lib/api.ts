@@ -1136,7 +1136,7 @@ export interface ApiJob {
   cpu_limit: string
   memory_request: string
   memory_limit: string
-  env_vars?: string
+  env_vars: string
   status: string
   last_run_at: string | null
   k8s_name: string
@@ -1210,6 +1210,13 @@ export const jobs = {
     apiFetch<ApiJobRun>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/jobs/${jobId}/trigger`,
       { method: "POST" },
+      token
+    ),
+
+  deleteRun: (orgId: string, projectId: string, jobId: string, runId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/jobs/${jobId}/runs/${runId}`,
+      { method: "DELETE" },
       token
     ),
 }
