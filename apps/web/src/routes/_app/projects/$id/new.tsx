@@ -670,6 +670,33 @@ function ServiceForm({
             />
           </Field>
         </div>
+
+        {/* Resource limits (collapsible) */}
+        <div className="rounded-lg border border-border/40 -mx-0">
+          <button
+            onClick={() => patch({ showResources: !form.showResources })}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span className="font-medium">Resource limits</span>
+            <ChevronDown className={cn("h-4 w-4 transition-transform", form.showResources ? "rotate-180" : "")} />
+          </button>
+          {form.showResources && (
+            <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
+              <Field label="CPU request">
+                <input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} />
+              </Field>
+              <Field label="CPU limit">
+                <input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} />
+              </Field>
+              <Field label="Memory request">
+                <input value={form.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} />
+              </Field>
+              <Field label="Memory limit">
+                <input value={form.memoryLimit} onChange={(e) => patch({ memoryLimit: e.target.value })} className={inputCls} />
+              </Field>
+            </div>
+          )}
+        </div>
       </Section>
 
       {/* ── Section: Secrets ─────────────────────────────────── */}
@@ -803,38 +830,6 @@ function ServiceForm({
           </div>
         )}
       </Section>
-
-      {/* ── Section: Resources (advanced, collapsible) ───────── */}
-      <div className="rounded-lg border border-border/40">
-        <button
-          onClick={() => patch({ showResources: !form.showResources })}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <span className="font-medium">Resource limits</span>
-          <ChevronDown
-            className={cn(
-              "h-4 w-4 transition-transform",
-              form.showResources ? "rotate-180" : ""
-            )}
-          />
-        </button>
-        {form.showResources && (
-          <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
-            <Field label="CPU request">
-              <input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} />
-            </Field>
-            <Field label="CPU limit">
-              <input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} />
-            </Field>
-            <Field label="Memory request">
-              <input value={form.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} />
-            </Field>
-            <Field label="Memory limit">
-              <input value={form.memoryLimit} onChange={(e) => patch({ memoryLimit: e.target.value })} className={inputCls} />
-            </Field>
-          </div>
-        )}
-      </div>
 
       {/* ── Error ────────────────────────────────────────────── */}
       {error && (
