@@ -170,7 +170,13 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Notifications:   &NotificationService{db: db},
 		EmailConfig:     &EmailConfigService{db: db},
 		Secrets:         &SecretService{db: db},
-		Jobs:            &JobService{db: db},
+		Jobs:            func() *JobService {
+			svc := &JobService{db: db, k8s: k8sClient}
+			if k8sClient != nil {
+				go svc.StartReconciler(context.Background())
+			}
+			return svc
+		}(),
 		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
 		Headscale:       headscaleSvc,
 		K8s:             k8sClient,

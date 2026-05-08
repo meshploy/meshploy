@@ -15,7 +15,7 @@ import {
   X,
   Zap,
 } from "lucide-react"
-import { jobs as jobsApi, type ApiJob, type ApiJobRun } from "@/lib/api"
+import { jobs as jobsApi, type ApiJob, type ApiJobRun, type CreateJobBody } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
@@ -191,6 +191,71 @@ function JobDetailPage() {
   )
 }
 
+// ─── Concurrency select row ───────────────────────────────────────────────────
+
+const CONCURRENCY_OPTIONS = [
+  { value: "allow",   label: "Allow" },
+  { value: "forbid",  label: "Forbid" },
+  { value: "replace", label: "Replace" },
+] as const
+
+function ConcurrencyRow({
+  value, onSave, saving,
+}: { value: string; onSave: (v: string) => void; saving: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  function commit() {
+    onSave(draft)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center justify-between py-2.5 border-b border-border/30 gap-4">
+        <span className="text-xs text-muted-foreground/60 w-32 shrink-0">Concurrency</span>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <select
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className={cn(inputCls, "h-7 text-xs flex-1")}
+          >
+            {CONCURRENCY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={commit}
+            disabled={saving}
+            className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          </button>
+          <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-border/30 gap-4">
+      <span className="text-xs text-muted-foreground/60 w-32 shrink-0">Concurrency</span>
+      <div className="flex items-center gap-2 flex-1 min-w-0 justify-between">
+        <span className="text-xs text-foreground/80 capitalize">{value || "allow"}</span>
+        <button
+          onClick={() => { setDraft(value); setEditing(true) }}
+          className="p-1 text-muted-foreground/30 hover:text-muted-foreground transition-colors shrink-0"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Config card ─────────────────────────────────────────────────────────────
 
 function ConfigCard({
@@ -206,7 +271,7 @@ function ConfigCard({
   const [draft, setDraft] = useState("")
 
   const updateMut = useMutation({
-    mutationFn: (body: Record<string, string>) =>
+    mutationFn: (body: Partial<CreateJobBody>) =>
       jobsApi.update(orgId, projectId, job.id, body, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["job", orgId, projectId, job.id] })
@@ -222,7 +287,11 @@ function ConfigCard({
 
   function commitEdit(field: string) {
     if (!draft.trim()) return
-    updateMut.mutate({ [field]: draft.trim() })
+    if (field === "history_limit") {
+      updateMut.mutate({ history_limit: parseInt(draft, 10) || 5 })
+    } else {
+      updateMut.mutate({ [field as keyof CreateJobBody]: draft.trim() } as Partial<CreateJobBody>)
+    }
   }
 
   function EditableRow({ label, field, value, mono = false }: {
@@ -283,10 +352,12 @@ function ConfigCard({
         {job.is_cron && (
           <>
             <EditableRow label="Schedule" field="schedule" value={job.schedule} mono />
-            <div className="flex items-center justify-between py-2.5 border-b border-border/30 gap-4">
-              <span className="text-xs text-muted-foreground/60 w-32 shrink-0">Concurrency</span>
-              <span className="text-xs text-foreground/80">{job.concurrency_policy}</span>
-            </div>
+            <ConcurrencyRow
+              value={job.concurrency_policy ?? "allow"}
+              onSave={(v) => updateMut.mutate({ concurrency_policy: v })}
+              saving={updateMut.isPending}
+            />
+            <EditableRow label="History limit" field="history_limit" value={String(job.history_limit ?? 5)} />
           </>
         )}
         <div className="flex items-center justify-between py-2.5 border-b border-border/30 gap-4">

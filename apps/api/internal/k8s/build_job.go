@@ -256,7 +256,7 @@ func WaitForJob(ctx context.Context, client kubernetes.Interface, namespace, job
 			return JobResult{Success: false, Log: "failed to get job: " + err.Error()}
 		}
 
-		log := fetchJobLog(ctx, client, namespace, jobName)
+		log := FetchContainerLog(ctx, client, namespace, jobName, "builder")
 
 		if job.Status.Succeeded > 0 {
 			return JobResult{Success: true, Log: log}
@@ -268,8 +268,9 @@ func WaitForJob(ctx context.Context, client kubernetes.Interface, namespace, job
 	}
 }
 
-// fetchJobLog returns stdout+stderr from the first pod of the job.
-func fetchJobLog(ctx context.Context, client kubernetes.Interface, namespace, jobName string) string {
+// FetchContainerLog returns stdout+stderr from the first pod of a K8s Job.
+// containerName must match the container name used in the pod spec.
+func FetchContainerLog(ctx context.Context, client kubernetes.Interface, namespace, jobName, containerName string) string {
 	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("job-name=%s", jobName),
 	})
@@ -277,7 +278,7 @@ func fetchJobLog(ctx context.Context, client kubernetes.Interface, namespace, jo
 		return ""
 	}
 	pod := pods.Items[0]
-	req := client.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: "builder"})
+	req := client.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: containerName})
 	rc, err := req.Stream(ctx)
 	if err != nil {
 		return ""

@@ -7,14 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	appk8s "github.com/meshploy/apps/api/internal/k8s"
 	"github.com/meshploy/packages/db"
+	batchv1 "k8s.io/api/batch/v1"
 	"gorm.io/gorm"
+	"k8s.io/client-go/kubernetes"
 )
 
 type JobService struct {
-	db *gorm.DB
+	db  *gorm.DB
+	k8s kubernetes.Interface
 }
 
 // ─── Input types ─────────────────────────────────────────────────────────────
@@ -124,6 +129,11 @@ func (s *JobService) Create(ctx context.Context, in CreateJobInput) (*db.Job, er
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, err
 	}
+
+	if row.IsCron && s.k8s != nil && row.Schedule != "" {
+		s.applyCronJob(ctx, &row)
+	}
+
 	return &row, nil
 }
 
@@ -174,10 +184,31 @@ func (s *JobService) Update(ctx context.Context, jobID uuid.UUID, in UpdateJobIn
 	if err := s.db.WithContext(ctx).Model(&row).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+
+	// Re-apply K8s CronJob if any cron-relevant field changed.
+	if row.IsCron && s.k8s != nil {
+		s.db.WithContext(ctx).First(&row, "id = ?", jobID)
+		if row.Schedule != "" {
+			s.applyCronJob(ctx, &row)
+		}
+	}
+
 	return &row, nil
 }
 
 func (s *JobService) Delete(ctx context.Context, jobID uuid.UUID) error {
+	var row db.Job
+	if err := s.db.WithContext(ctx).First(&row, "id = ?", jobID).Error; err != nil {
+		return fmt.Errorf("job not found")
+	}
+
+	if row.IsCron && s.k8s != nil {
+		var project db.Project
+		if s.db.WithContext(ctx).First(&project, "id = ?", row.ProjectID).Error == nil {
+			_ = appk8s.DeleteCronJob(ctx, s.k8s, project.Slug, row.K8sName)
+		}
+	}
+
 	res := s.db.WithContext(ctx).Delete(&db.Job{}, "id = ?", jobID)
 	if res.Error != nil {
 		return res.Error
@@ -188,15 +219,140 @@ func (s *JobService) Delete(ctx context.Context, jobID uuid.UUID) error {
 	return nil
 }
 
-// Trigger creates a JobRun record for a manual trigger.
-// Actual K8s Job creation will be wired in a future iteration alongside the
-// CronJob reconciler. For now it records the run as pending.
+// applyCronJob ensures the K8s CronJob matches the current job config.
+func (s *JobService) applyCronJob(ctx context.Context, job *db.Job) {
+	var project db.Project
+	if err := s.db.WithContext(ctx).First(&project, "id = ?", job.ProjectID).Error; err != nil {
+		return
+	}
+	nodeName := ""
+	if job.NodeID != nil {
+		var node db.Node
+		if s.db.WithContext(ctx).First(&node, "id = ?", job.NodeID).Error == nil {
+			nodeName = node.Name
+		}
+	}
+	_ = appk8s.EnsureNamespace(ctx, s.k8s, project.Slug)
+	_ = appk8s.ApplyCronJob(ctx, s.k8s, appk8s.CronJobParams{
+		Name:              job.K8sName,
+		Namespace:         project.Slug,
+		Schedule:          job.Schedule,
+		ConcurrencyPolicy: dbConcurrencyToK8s(job.ConcurrencyPolicy),
+		HistoryLimit:      int32(job.HistoryLimit),
+		Image:             job.Image,
+		Command:           job.Command,
+		EnvVars:           appk8s.ParseEnvBlock(string(job.EnvVars)),
+		CPURequest:        job.CPURequest,
+		CPULimit:          job.CPULimit,
+		MemRequest:        job.MemoryRequest,
+		MemLimit:          job.MemoryLimit,
+		NodeName:          nodeName,
+		JobID:             job.ID.String(),
+	})
+}
+
+func dbConcurrencyToK8s(p db.ConcurrencyPolicy) batchv1.ConcurrencyPolicy {
+	switch p {
+	case db.ConcurrencyForbid:
+		return batchv1.ForbidConcurrent
+	case db.ConcurrencyReplace:
+		return batchv1.ReplaceConcurrent
+	default:
+		return batchv1.AllowConcurrent
+	}
+}
+
+// StartReconciler runs a background loop that records JobRuns for cron-fired K8s Jobs.
+func (s *JobService) StartReconciler(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.reconcileCronRuns(context.Background())
+		}
+	}
+}
+
+func (s *JobService) reconcileCronRuns(ctx context.Context) {
+	k8sJobs, err := appk8s.ListCronRuns(ctx, s.k8s)
+	if err != nil {
+		return
+	}
+
+	for _, kj := range k8sJobs {
+		isSucceeded := kj.Status.Succeeded > 0
+		isFailed := kj.Status.Failed > 0
+
+		if !isSucceeded && !isFailed {
+			continue // still running
+		}
+
+		// Skip if we already have a record for this K8s job.
+		var existing db.JobRun
+		if s.db.WithContext(ctx).Where("k8s_job_name = ?", kj.Name).First(&existing).Error == nil {
+			continue
+		}
+
+		jobIDStr := kj.Labels["meshploy-job-id"]
+		if jobIDStr == "" {
+			continue
+		}
+		jobID, err := uuid.Parse(jobIDStr)
+		if err != nil {
+			continue
+		}
+		var job db.Job
+		if err := s.db.WithContext(ctx).First(&job, "id = ?", jobID).Error; err != nil {
+			continue
+		}
+
+		status := db.JobStatusSuccess
+		if isFailed {
+			status = db.JobStatusFailed
+		}
+
+		log := appk8s.FetchContainerLog(ctx, s.k8s, kj.Namespace, kj.Name, "job")
+
+		var startedAt, finishedAt *time.Time
+		if kj.Status.StartTime != nil {
+			t := kj.Status.StartTime.Time
+			startedAt = &t
+		}
+		if kj.Status.CompletionTime != nil {
+			t := kj.Status.CompletionTime.Time
+			finishedAt = &t
+		}
+
+		run := db.JobRun{
+			JobID:      job.ID,
+			Status:     status,
+			StartedAt:  startedAt,
+			FinishedAt: finishedAt,
+			Log:        log,
+			K8sJobName: kj.Name,
+		}
+		s.db.WithContext(ctx).Create(&run)
+
+		updates := map[string]any{"status": status}
+		if finishedAt != nil {
+			updates["last_run_at"] = finishedAt.Format(time.RFC3339)
+		}
+		s.db.WithContext(ctx).Model(&job).Updates(updates)
+	}
+}
+
+// Trigger creates a JobRun and launches the K8s Job in a background goroutine.
+// If no k8s client is configured, the run stays pending (dev mode).
 func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, error) {
 	job, err := s.Get(ctx, jobID)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build a unique K8s job name from the run ID (filled in after Create).
 	run := db.JobRun{
 		JobID:  job.ID,
 		Status: db.JobStatusPending,
@@ -205,10 +361,100 @@ func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, 
 		return nil, err
 	}
 
-	// Update parent job status.
+	// k8sJobName: "r-" + first 16 hex chars of the run UUID (no dashes, always unique)
+	k8sJobName := "r-" + strings.ReplaceAll(run.ID.String(), "-", "")[:16]
+	s.db.WithContext(ctx).Model(&run).Update("k8s_job_name", k8sJobName)
+	run.K8sJobName = k8sJobName
+
 	s.db.WithContext(ctx).Model(job).Update("status", db.JobStatusPending)
 
+	if s.k8s == nil {
+		// No k8s — leave pending (dev mode without a cluster).
+		return &run, nil
+	}
+
+	// Load project namespace and optional node name before spawning goroutine.
+	var project db.Project
+	if err := s.db.WithContext(ctx).First(&project, "id = ?", job.ProjectID).Error; err != nil {
+		return nil, fmt.Errorf("project not found: %w", err)
+	}
+	namespace := project.Slug
+
+	nodeName := ""
+	if job.NodeID != nil {
+		var node db.Node
+		if s.db.WithContext(ctx).First(&node, "id = ?", job.NodeID).Error == nil {
+			nodeName = node.Name
+		}
+	}
+
+	envVars := appk8s.ParseEnvBlock(string(job.EnvVars))
+
+	params := appk8s.RunJobParams{
+		JobName:    k8sJobName,
+		Namespace:  namespace,
+		Image:      job.Image,
+		Command:    job.Command,
+		EnvVars:    envVars,
+		CPURequest: job.CPURequest,
+		CPULimit:   job.CPULimit,
+		MemRequest: job.MemoryRequest,
+		MemLimit:   job.MemoryLimit,
+		NodeName:   nodeName,
+	}
+
+	go s.executeRun(job, &run, namespace, params)
+
 	return &run, nil
+}
+
+func (s *JobService) executeRun(job *db.Job, run *db.JobRun, namespace string, params appk8s.RunJobParams) {
+	bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	now := time.Now()
+	s.db.Model(run).Updates(map[string]any{
+		"status":     db.JobStatusRunning,
+		"started_at": &now,
+	})
+	s.db.Model(job).Update("status", db.JobStatusRunning)
+
+	if err := appk8s.EnsureNamespace(bgCtx, s.k8s, namespace); err != nil {
+		s.failRun(job, run, "failed to ensure namespace: "+err.Error())
+		return
+	}
+
+	if err := appk8s.CreateRunJob(bgCtx, s.k8s, params); err != nil {
+		s.failRun(job, run, "failed to create k8s job: "+err.Error())
+		return
+	}
+
+	result := appk8s.WaitForRunJob(bgCtx, s.k8s, namespace, params.JobName, 30*time.Minute)
+
+	status := db.JobStatusSuccess
+	if !result.Success {
+		status = db.JobStatusFailed
+	}
+	finished := time.Now()
+	s.db.Model(run).Updates(map[string]any{
+		"status":      status,
+		"log":         result.Log,
+		"finished_at": &finished,
+	})
+	s.db.Model(job).Updates(map[string]any{
+		"status":      status,
+		"last_run_at": finished.Format(time.RFC3339),
+	})
+}
+
+func (s *JobService) failRun(job *db.Job, run *db.JobRun, msg string) {
+	finished := time.Now()
+	s.db.Model(run).Updates(map[string]any{
+		"status":      db.JobStatusFailed,
+		"log":         msg,
+		"finished_at": &finished,
+	})
+	s.db.Model(job).Update("status", db.JobStatusFailed)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
