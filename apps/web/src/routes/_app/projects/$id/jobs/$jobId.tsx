@@ -113,7 +113,6 @@ function JobDetailPage() {
             {job.status}
           </Badge>
         }
-        subtitle={job.k8s_name}
         actions={
           <>
             <Button size="sm" onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending} className="gap-1.5 h-7 text-xs">

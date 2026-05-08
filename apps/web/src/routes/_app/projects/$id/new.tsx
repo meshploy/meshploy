@@ -59,6 +59,7 @@ import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
 import { Input } from "@/components/ui/input"
 import { CronScheduleBlock } from "@/components/jobs/cron-schedule-block"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 
 // ─── Route ───────────────────────────────────────────────────────────────────
 
@@ -419,23 +420,15 @@ function ServiceForm({
 
       {/* ── Section: Source ──────────────────────────────────── */}
       <Section title="Source" subtitle="Where should Meshploy pull the code or image from?">
-        {/* Source toggle */}
-        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-          {(["git", "image"] as AppSource[]).map((src) => (
-            <button
-              key={src}
-              onClick={() => patch({ source: src })}
-              className={cn(
-                "px-4 py-2 text-sm transition-colors",
-                form.source === src
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-              )}
-            >
-              {src === "git" ? "Git repository" : "Docker image"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={form.source}
+          onValueChange={(v) => patch({ source: v as AppSource })}
+          options={[
+            { value: "git",   label: "Git repository" },
+            { value: "image", label: "Docker image" },
+          ]}
+          className="text-sm"
+        />
 
         {form.source === "image" ? (
           <Field label="Image" required>
@@ -1204,22 +1197,15 @@ function RouteForm({ projectId }: { projectId: string }) {
     <div className="space-y-8">
       {/* ── Section: Zone ───────────────────────────────────── */}
       <Section title="Zone" subtitle="Where is this route exposed?">
-        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit">
-          {(["public", "internal"] as RouteZone[]).map((z) => (
-            <button
-              key={z}
-              onClick={() => patchRf({ zone: z, domainMode: "subdomain" })}
-              className={cn(
-                "px-4 py-2 text-sm capitalize transition-colors",
-                rf.zone === z
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-              )}
-            >
-              {z}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={rf.zone}
+          onValueChange={(v) => patchRf({ zone: v as RouteZone, domainMode: "subdomain" })}
+          options={[
+            { value: "public",   label: "Public" },
+            { value: "internal", label: "Internal" },
+          ]}
+          className="text-sm"
+        />
         <p className="text-xs text-muted-foreground">
           {rf.zone === "public"
             ? "Accessible from the internet via your public domain."
@@ -1237,22 +1223,15 @@ function RouteForm({ projectId }: { projectId: string }) {
         }
       >
         {rf.zone === "public" && (
-          <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit mb-4">
-            {(["subdomain", "custom"] as DomainMode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => patchRf({ domainMode: m })}
-                className={cn(
-                  "px-4 py-2 text-sm transition-colors",
-                  rf.domainMode === m
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                )}
-              >
-                {m === "subdomain" ? "Subdomain" : "Custom domain"}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            value={rf.domainMode}
+            onValueChange={(v) => patchRf({ domainMode: v as DomainMode })}
+            options={[
+              { value: "subdomain", label: "Subdomain" },
+              { value: "custom",    label: "Custom domain" },
+            ]}
+            className="text-sm mb-4"
+          />
         )}
 
         {rf.zone === "public" && rf.domainMode === "custom" ? (
@@ -1315,22 +1294,15 @@ function RouteForm({ projectId }: { projectId: string }) {
         title="Target"
         subtitle="Where should traffic be forwarded?"
       >
-        <div className="flex rounded-lg border border-border/60 overflow-hidden w-fit mb-4">
-          {(["service", "node"] as TargetMode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => patchRf({ targetMode: m, serviceId: "", nodeId: "", port: "" })}
-              className={cn(
-                "px-4 py-2 text-sm capitalize transition-colors",
-                rf.targetMode === m
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
-              )}
-            >
-              {m === "service" ? "Service" : "Node + port"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={rf.targetMode}
+          onValueChange={(v) => patchRf({ targetMode: v as TargetMode, serviceId: "", nodeId: "", port: "" })}
+          options={[
+            { value: "service", label: "Service" },
+            { value: "node",    label: "Node + port" },
+          ]}
+          className="text-sm mb-4"
+        />
 
         {rf.targetMode === "service" ? (
           <div className="space-y-3">
