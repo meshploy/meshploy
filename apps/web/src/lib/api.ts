@@ -1136,6 +1136,7 @@ export interface ApiJob {
   cpu_limit: string
   memory_request: string
   memory_limit: string
+  env_vars?: string
   status: string
   last_run_at: string | null
   k8s_name: string
