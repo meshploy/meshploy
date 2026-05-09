@@ -149,6 +149,7 @@ function NewResourcePage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   const { type: initialType } = Route.useSearch()
   const [resourceType, setResourceType] = useState<ResourceType>(initialType)
@@ -197,6 +198,8 @@ function NewResourcePage() {
       return service
     },
     onSuccess: (service) => {
+      qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({
         to: "/projects/$id/services/$serviceId/deployments",
         params: { id: projectId, serviceId: service.id },
@@ -917,6 +920,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   const [dbf, setDbf] = useState<DbFormState>(DB_INITIAL)
   const patchDbf = (p: Partial<DbFormState>) => setDbf((s) => ({ ...s, ...p }))
@@ -945,7 +949,9 @@ function DatabaseForm({ projectId }: { projectId: string }) {
         db_user: dbf.dbUser || undefined,
         db_password: dbf.dbPassword || undefined,
       }, token),
-    onSuccess: (service) => {
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/databases", params: { id: projectId } })
     },
   })
@@ -1115,6 +1121,7 @@ function RouteForm({ projectId }: { projectId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   const [rf, setRf] = useState<RouteFormState>(ROUTE_INITIAL)
   const patchRf = (p: Partial<RouteFormState>) => setRf((s) => ({ ...s, ...p }))
@@ -1189,6 +1196,8 @@ function RouteForm({ projectId }: { projectId: string }) {
       return routesApi.create(orgId, projectId, body, token)
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/routes", params: { id: projectId } })
     },
   })
@@ -1887,12 +1896,17 @@ function VolumeForm({ projectId }: { projectId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [name, setName] = useState("")
   const [storageGB, setStorageGB] = useState(5)
 
   const createMutation = useMutation({
     mutationFn: () => volumesApi.create(orgId!, projectId, { name, storage_gb: storageGB }, token),
-    onSuccess: () => navigate({ to: "/projects/$id/volumes", params: { id: projectId } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["volumes", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      navigate({ to: "/projects/$id/volumes", params: { id: projectId } })
+    },
   })
 
   return (
