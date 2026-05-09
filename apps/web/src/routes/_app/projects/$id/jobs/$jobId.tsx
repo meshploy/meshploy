@@ -51,6 +51,10 @@ function JobDetailPage() {
     queryKey: ["job", orgId, projectId, jobId],
     queryFn: () => jobsApi.get(orgId, projectId, jobId, token),
     enabled: !!orgId,
+    refetchInterval: (query) => {
+      const d = query.state.data
+      return d?.status === "running" || d?.status === "pending" ? 3000 : false
+    },
   })
 
   const { data: runs = [], isFetching: runsFetching } = useQuery({

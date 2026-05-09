@@ -48,6 +48,10 @@ function ServiceLayout() {
     queryKey,
     queryFn: () => servicesApi.get(orgId!, projectId, serviceId, token),
     enabled: !!orgId,
+    refetchInterval: (query) => {
+      const s = query.state.data?.status
+      return s === "deploying" || s === "building" || s === "pending" ? 3000 : false
+    },
   })
 
   const startMutation = useMutation({

@@ -486,6 +486,7 @@ function VolumeDetailPage() {
     queryKey: ["volume", orgId, projectId, volumeId],
     queryFn: () => volumesApi.get(orgId, projectId, volumeId, token),
     enabled: !!orgId,
+    refetchInterval: (query) => query.state.data?.status === "pending" ? 3000 : false,
   })
 
   const deleteMut = useMutation({

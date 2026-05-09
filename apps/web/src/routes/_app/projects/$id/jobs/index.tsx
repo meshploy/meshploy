@@ -30,6 +30,10 @@ function JobsPage() {
     queryKey: ["jobs", orgId, projectId],
     queryFn: () => jobsApi.list(orgId, projectId, token),
     enabled: !!orgId,
+    refetchInterval: (query) => {
+      const jobs = query.state.data ?? []
+      return jobs.some((j) => j.status === "running" || j.status === "pending") ? 3000 : false
+    },
   })
 
   const deleteMut = useMutation({
