@@ -1,0 +1,96 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ── Go vet (all modules) ──────────────────────────────────────────────────────
+  vet:
+    name: Go vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: |
+            apps/api/go.sum
+            apps/cli/go.sum
+            apps/proxy/go.sum
+            packages/db/go.sum
+
+      - name: vet api
+        run: cd apps/api && go vet ./...
+
+      - name: vet cli
+        run: cd apps/cli && go vet ./...
+
+      - name: vet proxy
+        run: cd apps/proxy && go vet ./...
+
+  # ── CLI build ─────────────────────────────────────────────────────────────────
+  build-cli:
+    name: CLI build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      - name: build
+        run: cd apps/cli && go build ./...
+
+  # ── DB migration test ─────────────────────────────────────────────────────────
+  test-db:
+    name: DB migration test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/db/go.mod
+          cache-dependency-path: packages/db/go.sum
+
+      - name: test
+        run: cd packages/db && go test ./... -v -timeout 120s
+
+  # ── API service tests ─────────────────────────────────────────────────────────
+  test-api:
+    name: API service tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - name: test
+        run: cd apps/api && go test ./internal/service/... -v -timeout 180s
+
+  # ── Web typecheck ─────────────────────────────────────────────────────────────
+  typecheck-web:
+    name: Web typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: install
+        run: cd apps/web && npm ci
+
+      - name: typecheck
+        run: cd apps/web && npx tsc -b
