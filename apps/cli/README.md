@@ -70,6 +70,119 @@ This prompts for your email and password, then saves credentials to `~/.meshploy
 
 > `node install` and `node uninstall` require root and shell out to `/opt/meshploy/install.sh` and `/opt/meshploy/uninstall.sh` respectively. They are interactive — prompts work normally.
 
+### `meshploy project`
+
+| Command | Description |
+|---|---|
+| `project list` | List projects in the org |
+| `project create <name>` | Create a new project |
+| `project delete <name\|id>` | Delete a project |
+
+### `meshploy service`
+
+| Command | Description |
+|---|---|
+| `service list -p <project>` | List services in a project |
+| `service deploy <name\|id>` | Trigger a new deployment |
+| `service start <name\|id>` | Start a stopped service |
+| `service stop <name\|id>` | Stop a running service |
+| `service logs <name\|id>` | Stream live container logs |
+| `service delete <name\|id>` | Delete a service |
+| `service create` | Interactive wizard — generates a `meshploy.toml` manifest |
+
+Use `--project <id|slug>` or `meshploy link <project>` to set the project context.
+
+### `meshploy job`
+
+| Command | Description |
+|---|---|
+| `job list -p <project>` | List jobs |
+| `job get <name\|id>` | Show job details |
+| `job create --image <img> [flags]` | Create a job (`--command`, `--schedule`, `--concurrency`, `--history-limit`) |
+| `job update <name\|id> [flags]` | Update job settings |
+| `job run <name\|id>` | Trigger a job run now |
+| `job delete <name\|id>` | Delete a job |
+| `job runs list <name\|id>` | List run history |
+| `job runs delete <job> <run-id>` | Delete a run record |
+
+### `meshploy stack`
+
+| Command | Description |
+|---|---|
+| `stack list -p <project>` | List stacks |
+| `stack get <name\|id>` | Show stack details and spec |
+| `stack services <name\|id>` | List services managed by a stack |
+| `stack apply <name\|id>` | Apply the stack spec (create/update services) |
+| `stack delete <name\|id>` | Delete a stack |
+
+### `meshploy volume`
+
+| Command | Description |
+|---|---|
+| `volume list -p <project>` | List volumes |
+| `volume get <name\|id>` | Show volume details |
+| `volume create <name> --size <gb>` | Create a persistent volume |
+| `volume attach <vol> --service <svc> --mount <path>` | Attach to a service |
+| `volume detach <vol> --mount <mount-id>` | Detach from its service |
+| `volume delete <name\|id>` | Delete a volume (must be unattached) |
+
+### `meshploy route`
+
+| Command | Description |
+|---|---|
+| `route list -p <project>` | List routes |
+| `route create --hostname <host> --service <svc>` | Map a hostname to a service |
+| `route delete <route-id>` | Remove a route |
+
+### `meshploy secret`
+
+| Command | Description |
+|---|---|
+| `secret list -p <project>` | List secrets (names only) |
+| `secret set <key> <value>` | Create or update a secret |
+| `secret delete <key>` | Delete a secret |
+
+### `meshploy mcp`
+
+Starts an MCP (Model Context Protocol) server over stdio, exposing all Meshploy operations as structured tools for Claude Code or any other MCP-compatible AI agent.
+
+```bash
+meshploy mcp
+```
+
+The server reads credentials from `~/.meshploy/config.json` — the same file written by `meshploy auth login`. No extra setup is needed once you're logged in.
+
+**Claude Code setup** — add to `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "meshploy": {
+      "command": "meshploy",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Claude Code will spawn `meshploy mcp` automatically at session start. You can then ask Claude to list projects, deploy services, apply stacks, manage volumes, and more — directly against your live platform.
+
+**Available tools:**
+
+| Tool | What it does |
+|---|---|
+| `list_resources` | List any resource type (services, jobs, volumes, stacks, routes, projects, nodes) |
+| `get_resource` | Get a single resource; volumes include attached mount IDs |
+| `deploy_service` | Trigger a deployment |
+| `start_service` / `stop_service` | Lifecycle control |
+| `delete_service` | Delete service and history |
+| `create_stack` / `update_stack` / `apply_stack` / `delete_stack` | Full stack lifecycle |
+| `trigger_job` | Run a job now |
+| `create_volume` / `attach_volume` / `detach_volume` / `delete_volume` | Volume management |
+| `create_route` / `delete_route` | Route management |
+
+Destructive tools (`delete_*`) include explicit warnings in their descriptions so the AI confirms with you before acting.
+
 ---
 
 ## Config file

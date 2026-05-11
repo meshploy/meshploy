@@ -66,6 +66,14 @@ func (c *Client) DetachVolume(orgID, projectID, volumeID, mountID string) error 
 	return c.doNoContent("DELETE", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/volumes/"+volumeID+"/mounts/"+mountID)
 }
 
+func (c *Client) ListVolumeMounts(orgID, projectID, volumeID string) ([]VolumeMount, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/volumes/"+volumeID+"/mounts", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decode[[]VolumeMount](resp)
+}
+
 func (c *Client) GetVolumeByName(orgID, projectID, ref string) (*Volume, error) {
 	volumes, err := c.ListVolumes(orgID, projectID)
 	if err != nil {
