@@ -97,6 +97,7 @@ services:
       API_PORT:                   4000
       DOMAIN:                     ${DOMAIN}
       MESH_IP:                    ${MESH_IP:-100.64.0.1}
+      HOST_GATEWAY_IP:            ${HOST_GATEWAY_IP}
       GATEWAY_HOSTNAME:           ${GATEWAY_HOSTNAME}
       BUILTIN_REGISTRY_ENDPOINT:  ${MESH_IP:-100.64.0.1}:5000
     extra_hosts:

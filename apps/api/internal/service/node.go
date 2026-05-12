@@ -22,11 +22,20 @@ func (s *NodeService) GetNodeMetrics(ctx context.Context, nodeID uuid.UUID) (*No
 	if node.TailscaleIP == "" {
 		return nil, fmt.Errorf("node has no mesh IP")
 	}
-	return scrapeNodeExporter(ctx, node.TailscaleIP)
+	// When the API runs in Docker it cannot reach the gateway's own Tailscale IP
+	// (a host-local interface) directly. Use the Docker bridge gateway IP instead,
+	// which node_exporter also listens on for gateway nodes.
+	scrapeIP := node.TailscaleIP
+	if s.hostGatewayIP != "" && s.gatewayIP != "" && node.TailscaleIP == s.gatewayIP {
+		scrapeIP = s.hostGatewayIP
+	}
+	return scrapeNodeExporter(ctx, scrapeIP)
 }
 
 type NodeService struct {
-	db *gorm.DB
+	db            *gorm.DB
+	gatewayIP     string // gateway mesh IP (MESH_IP) — used to detect self-scrape
+	hostGatewayIP string // Docker bridge host IP (HOST_GATEWAY_IP) — used instead of gatewayIP when API is in Docker
 }
 
 func (s *NodeService) List(ctx context.Context, orgID uuid.UUID) ([]db.Node, error) {
