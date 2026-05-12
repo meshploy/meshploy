@@ -308,13 +308,14 @@ function NodeDetailPage() {
         </div>
       )}
 
-      {/* Hardware spec cards */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <SpecCard icon={<Cpu className="h-4 w-4" />} label="CPU" value={node.cpuCores ? `${node.cpuCores} cores` : "—"} />
-        <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={node.memoryGB ? `${node.memoryGB} GB` : "—"} />
-        <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={node.diskGB ? `${node.diskGB} GB` : "—"} />
-        <SpecCard icon={<Server className="h-4 w-4" />} label="K3s version" value={node.k3sVersion || "—"} mono />
-      </div>
+      {/* Static spec cards — hidden when live metrics replace them */}
+      {!computed && (
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
+          <SpecCard icon={<Cpu className="h-4 w-4" />} label="CPU" value={node.cpuCores ? `${node.cpuCores} cores` : "—"} />
+          <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={node.memoryGB ? `${node.memoryGB} GB` : "—"} />
+          <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={node.diskGB ? `${node.diskGB} GB` : "—"} />
+        </div>
+      )}
 
       {/* Two-column info area */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -391,6 +392,9 @@ function NodeDetailPage() {
                 value={node.k8sReady ? "Ready" : "Not Ready"}
                 valueClass={node.k8sReady ? "text-emerald-400" : "text-amber-400"}
               />
+              {node.k3sVersion && (
+                <InfoRow icon={<Server className="h-3.5 w-3.5" />} label="K3s version" value={node.k3sVersion} mono />
+              )}
             </dl>
           ) : (
             <p className="text-sm text-muted-foreground">Not joined to the k3s cluster.</p>
