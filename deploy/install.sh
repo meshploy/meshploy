@@ -852,6 +852,50 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     info "Skipped. You can join the cluster later from the Meshploy dashboard → Cluster."
   fi
 
+  # ── Install node_exporter (metrics) ─────────────────────────────────────────
+  header "Installing node_exporter"
+  if systemctl is-active --quiet node_exporter 2>/dev/null; then
+    success "node_exporter already running — skipping"
+  else
+    _NE_VERSION="1.8.2"
+    _NE_ARCH="$(uname -m)"
+    case "$_NE_ARCH" in
+      x86_64)  _NE_ARCH="amd64" ;;
+      aarch64) _NE_ARCH="arm64" ;;
+      *) warn "Unsupported arch '$_NE_ARCH' — skipping node_exporter install"; _NE_ARCH="" ;;
+    esac
+
+    if [[ -n "$_NE_ARCH" ]]; then
+      _NE_TARBALL="node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}.tar.gz"
+      _NE_URL="https://github.com/prometheus/node_exporter/releases/download/v${_NE_VERSION}/${_NE_TARBALL}"
+      info "Downloading node_exporter ${_NE_VERSION} (${_NE_ARCH})…"
+      curl -fsSL "$_NE_URL" -o "/tmp/${_NE_TARBALL}"
+      tar xzf "/tmp/${_NE_TARBALL}" -C /tmp
+      sudo install -m 755 "/tmp/node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}/node_exporter" /usr/local/bin/node_exporter
+      rm -rf "/tmp/node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}" "/tmp/${_NE_TARBALL}"
+
+      # Bind to the Tailscale interface IP — not reachable from outside the WireGuard mesh.
+      sudo tee /etc/systemd/system/node_exporter.service > /dev/null <<NEUNIT
+[Unit]
+Description=Prometheus node_exporter
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/node_exporter --web.listen-address=${MESH_IP_ASSIGNED}:9100
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+NEUNIT
+
+      sudo systemctl daemon-reload
+      sudo systemctl enable --now node_exporter
+      success "node_exporter running on ${MESH_IP_ASSIGNED}:9100"
+    fi
+  fi
+
   echo
   hr
   echo -e "  ${BOLD}${GREEN}✔  Worker node is ready!${RESET}"

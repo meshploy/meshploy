@@ -262,12 +262,27 @@ export const orgs = {
 
 // ─── Nodes ────────────────────────────────────────────────────────────────────
 
+export interface ApiNodeMetrics {
+  cpu_total_seconds: number
+  cpu_idle_seconds: number
+  cpu_cores: number
+  memory_total_bytes: number
+  memory_available_bytes: number
+  disk_total_bytes: number
+  disk_avail_bytes: number
+  net_rx_bytes: number
+  net_tx_bytes: number
+}
+
 export const nodes = {
   list: (orgId: string, token: string) =>
     apiFetch<ApiNode[]>(`/api/v1/orgs/${orgId}/nodes`, {}, token),
 
   get: (orgId: string, nodeId: string, token: string) =>
     apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, {}, token),
+
+  getMetrics: (orgId: string, nodeId: string, token: string) =>
+    apiFetch<ApiNodeMetrics>(`/api/v1/orgs/${orgId}/nodes/${nodeId}/metrics`, {}, token),
 
   getRegistrationToken: (orgId: string, token: string) =>
     apiFetch<{ token: string }>(`/api/v1/orgs/${orgId}/node-registration-token`, {}, token),

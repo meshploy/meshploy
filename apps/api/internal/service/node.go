@@ -12,6 +12,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// GetNodeMetrics scrapes live resource metrics from node_exporter on the node.
+// Returns a non-nil error when node_exporter is unreachable (not installed).
+func (s *NodeService) GetNodeMetrics(ctx context.Context, nodeID uuid.UUID) (*NodeMetrics, error) {
+	node, err := s.Get(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if node.TailscaleIP == "" {
+		return nil, fmt.Errorf("node has no mesh IP")
+	}
+	return scrapeNodeExporter(ctx, node.TailscaleIP)
+}
+
 type NodeService struct {
 	db *gorm.DB
 }
