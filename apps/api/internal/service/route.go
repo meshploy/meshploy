@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net"
 
@@ -295,4 +297,21 @@ func (s *RouteService) IsCustomDomainVerified(ctx context.Context, hostname stri
 		Where("hostname = ? AND domain_id IS NULL AND custom_domain_verified = ?", hostname, true).
 		First(&route).Error
 	return err == nil
+}
+
+func generateVerifyToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func containsToken(records []string, token string) bool {
+	for _, r := range records {
+		if r == token {
+			return true
+		}
+	}
+	return false
 }

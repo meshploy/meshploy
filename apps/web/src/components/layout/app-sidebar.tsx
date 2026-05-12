@@ -13,7 +13,6 @@ import {
 import { useUIStore } from "@/store/ui-store"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { OrgSwitcher } from "./org-switcher"
 
 const NAV_ITEMS = [
   { href: "/", icon: Home, label: "Overview", exact: true },
@@ -91,14 +90,9 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Bottom: org switcher + collapse toggle */}
+      {/* Bottom: collapse toggle */}
       <div className="p-2 shrink-0 space-y-1">
         <Separator className="mb-2 bg-sidebar-border" />
-        {!sidebarCollapsed && (
-          <div className="px-1 pb-1">
-            <OrgSwitcher />
-          </div>
-        )}
         <Tooltip>
           <TooltipTrigger
             onClick={toggleSidebar}

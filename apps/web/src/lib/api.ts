@@ -1019,38 +1019,8 @@ export const domains = {
   list: (orgId: string, token: string) =>
     apiFetch<ApiDomain[]>(`/api/v1/orgs/${orgId}/domains`, {}, token),
 
-  create: (
-    orgId: string,
-    body: { base_domain: string; internal_subdomain?: string; preview_subdomain?: string },
-    token: string
-  ) =>
-    apiFetch<ApiDomain>(
-      `/api/v1/orgs/${orgId}/domains`,
-      { method: "POST", body: JSON.stringify(body) },
-      token
-    ),
-
   get: (orgId: string, domainId: string, token: string) =>
     apiFetch<ApiDomain>(`/api/v1/orgs/${orgId}/domains/${domainId}`, {}, token),
-
-  update: (
-    orgId: string,
-    domainId: string,
-    body: { internal_subdomain?: string; preview_subdomain?: string },
-    token: string
-  ) =>
-    apiFetch<ApiDomain>(
-      `/api/v1/orgs/${orgId}/domains/${domainId}`,
-      { method: "PATCH", body: JSON.stringify(body) },
-      token
-    ),
-
-  verify: (orgId: string, domainId: string, token: string) =>
-    apiFetch<ApiDomain>(
-      `/api/v1/orgs/${orgId}/domains/${domainId}/verify`,
-      { method: "POST" },
-      token
-    ),
 }
 
 // ─── Secrets ──────────────────────────────────────────────────────────────────

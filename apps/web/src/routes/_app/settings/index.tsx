@@ -136,14 +136,6 @@ function PrimaryDomainSection() {
     <Section
       title="Primary Domain"
       subtitle="DNS and TLS are managed automatically by Meshploy"
-      action={
-        !domain && !isLoading ? (
-          <Button size="sm" className="gap-1.5 h-7 text-xs" render={<Link to="/domains/new" />}>
-            <Plus className="h-3.5 w-3.5" />
-            Add domain
-          </Button>
-        ) : undefined
-      }
     >
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
