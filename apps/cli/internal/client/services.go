@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -52,9 +54,24 @@ func (c *Client) DeleteService(orgID, projectID, serviceID string) error {
 }
 
 // StreamLogs streams live container logs via SSE, writing each line to w.
-func (c *Client) StreamLogs(orgID, projectID, serviceID string, w io.Writer) error {
-	url := c.baseURL + "/api/v1/orgs/" + orgID + "/projects/" + projectID + "/services/" + serviceID + "/logs/stream"
-	req, err := http.NewRequest("GET", url, nil)
+// tail=0 uses the server default (200). since="" means no time filter.
+// follow=false fetches a snapshot then exits.
+func (c *Client) StreamLogs(orgID, projectID, serviceID string, tail int, since string, follow bool, w io.Writer) error {
+	params := url.Values{}
+	if tail > 0 {
+		params.Set("tail", strconv.Itoa(tail))
+	}
+	if since != "" {
+		params.Set("since", since)
+	}
+	if !follow {
+		params.Set("follow", "false")
+	}
+	endpoint := c.baseURL + "/api/v1/orgs/" + orgID + "/projects/" + projectID + "/services/" + serviceID + "/logs/stream"
+	if len(params) > 0 {
+		endpoint += "?" + params.Encode()
+	}
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return err
 	}
@@ -74,7 +91,6 @@ func (c *Client) StreamLogs(orgID, projectID, serviceID string, w io.Writer) err
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		// SSE format: "data: <content>"
 		if strings.HasPrefix(line, "data: ") {
 			fmt.Fprintln(w, strings.TrimPrefix(line, "data: "))
 		}

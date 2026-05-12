@@ -96,6 +96,12 @@ var serviceStopCmd = &cobra.Command{
 	},
 }
 
+var (
+	logsTail   int
+	logsSince  string
+	logsFollow bool
+)
+
 var serviceLogsCmd = &cobra.Command{
 	Use:   "logs <name|id>",
 	Short: "Stream live container logs",
@@ -107,8 +113,10 @@ var serviceLogsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "Streaming logs for %q — press Ctrl+C to stop\n", svc.Name)
-		return c.StreamLogs(orgID(), pid, svc.ID, os.Stdout)
+		if logsFollow {
+			fmt.Fprintf(os.Stderr, "Streaming logs for %q — press Ctrl+C to stop\n", svc.Name)
+		}
+		return c.StreamLogs(orgID(), pid, svc.ID, logsTail, logsSince, logsFollow, os.Stdout)
 	},
 }
 
@@ -145,6 +153,9 @@ func init() {
 	serviceCmd.PersistentFlags().StringVarP(&serviceProject, "project", "p", "", "Project ID or slug")
 
 	serviceDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
+	serviceLogsCmd.Flags().IntVar(&logsTail, "tail", 0, "Number of recent lines to show (0 = server default of 200)")
+	serviceLogsCmd.Flags().StringVar(&logsSince, "since", "", "Show logs since duration: 1h, 6h, 24h, 7d")
+	serviceLogsCmd.Flags().BoolVar(&logsFollow, "follow", true, "Stream new log lines (set --follow=false to fetch a snapshot)")
 
 	serviceCmd.AddCommand(serviceListCmd, serviceDeployCmd, serviceStartCmd, serviceStopCmd, serviceLogsCmd, serviceDeleteCmd)
 	rootCmd.AddCommand(serviceCmd)

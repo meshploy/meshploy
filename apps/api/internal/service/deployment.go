@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -778,11 +779,74 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	return nil
 }
 
+// LogOptions controls how runtime logs are fetched or streamed.
+type LogOptions struct {
+	TailLines int64  // 0 = default (200 for streaming, unlimited for fetch)
+	Follow    bool   // stream new lines as they arrive
+	Since     string // duration: "1h", "6h", "24h", "7d" — or empty for no filter
+}
+
+// parseSinceDuration converts a user-supplied duration string into seconds for
+// the K8s SinceSeconds field. Supports Go durations ("1h", "30m") and "Nd" for days.
+func parseSinceDuration(s string) *int64 {
+	if s == "" {
+		return nil
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		secs := int64(d.Seconds())
+		return &secs
+	}
+	if strings.HasSuffix(s, "d") {
+		if n, err := strconv.Atoi(strings.TrimSuffix(s, "d")); err == nil && n > 0 {
+			secs := int64(n) * 86400
+			return &secs
+		}
+	}
+	return nil
+}
+
+// findRuntimePod resolves the running pod name and namespace for a service.
+func (s *DeploymentService) findRuntimePod(ctx context.Context, serviceID uuid.UUID) (podName, namespace string, err error) {
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return "", "", fmt.Errorf("service not found")
+	}
+	namespace = svc.Project.Slug
+	podSlug := slugify(svc.Name)
+	if svc.Type == db.ServiceTypeDatabase {
+		var dc db.DatabaseConfig
+		if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err == nil && dc.Slug != "" {
+			podSlug = dc.Slug
+		}
+	}
+	selector := fmt.Sprintf("app=%s,managed-by=meshploy", podSlug)
+	pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil || len(pods.Items) == 0 {
+		return "", "", fmt.Errorf("no running pod found for this service")
+	}
+	return pods.Items[0].Name, namespace, nil
+}
+
+// buildPodLogOptions converts LogOptions into corev1.PodLogOptions.
+func buildPodLogOptions(opts LogOptions, defaultTail int64) *corev1.PodLogOptions {
+	o := &corev1.PodLogOptions{Follow: opts.Follow}
+	tail := opts.TailLines
+	if tail == 0 && defaultTail > 0 {
+		tail = defaultTail
+	}
+	if tail > 0 {
+		o.TailLines = &tail
+	}
+	if secs := parseSinceDuration(opts.Since); secs != nil {
+		o.SinceSeconds = secs
+	}
+	return o
+}
+
 // StreamRuntimeLogs streams live stdout/stderr from the running pod for a
-// service. Uses label selector app=<service-slug>,managed-by=meshploy.
-// Each line is written as "data: <line>\n\n"; "event: done\ndata: \n\n" when
-// the client disconnects or no running pod is found.
-func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uuid.UUID, w io.Writer, flush func()) error {
+// service. Each line is written as "data: <line>\n\n"; "event: done\ndata: \n\n"
+// signals the end of stream.
+func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uuid.UUID, opts LogOptions, w io.Writer, flush func()) error {
 	sendLine := func(line string) {
 		fmt.Fprintf(w, "data: %s\n\n", line)
 		flush()
@@ -798,46 +862,19 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 		return nil
 	}
 
-	// Load service + project for namespace and slug.
-	var svc db.Service
-	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
-		sendLine("Error: service not found")
-		sendDone()
-		return nil
-	}
-	namespace := svc.Project.Slug
-	podSlug := slugify(svc.Name)
-	// Database pods are labeled with the stable slug stored in DatabaseConfig.
-	if svc.Type == db.ServiceTypeDatabase {
-		var dc db.DatabaseConfig
-		if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err == nil && dc.Slug != "" {
-			podSlug = dc.Slug
-		}
-	}
-	selector := fmt.Sprintf("app=%s,managed-by=meshploy", podSlug)
-
-	// Find the running pod.
-	pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: selector,
-	})
-	if err != nil || len(pods.Items) == 0 {
-		sendLine("No running pod found for this service.")
+	podName, namespace, err := s.findRuntimePod(ctx, serviceID)
+	if err != nil {
+		sendLine("Error: " + err.Error())
 		sendDone()
 		return nil
 	}
 
-	podName := pods.Items[0].Name
 	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
 	flush()
 
-	tail := int64(200)
-	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-		Follow:    true,
-		TailLines: &tail,
-	})
+	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, buildPodLogOptions(opts, 200))
 	stream, err := req.Stream(ctx)
 	if err != nil {
-		// Kubelet may be unreachable due to node-ip mismatch.
 		sendLine("Cannot stream live container logs: " + err.Error())
 		sendLine("Hint: ensure workers joined k3s with --node-ip=<mesh_ip>")
 		sendDone()
@@ -857,6 +894,35 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 
 	sendDone()
 	return nil
+}
+
+// FetchRuntimeLogs fetches a snapshot of container logs as plain text (no streaming).
+// Used by the download endpoint.
+func (s *DeploymentService) FetchRuntimeLogs(ctx context.Context, serviceID uuid.UUID, opts LogOptions) (string, error) {
+	if s.k8s == nil {
+		return "Kubernetes is not configured on this instance.\n", nil
+	}
+
+	podName, namespace, err := s.findRuntimePod(ctx, serviceID)
+	if err != nil {
+		return "", err
+	}
+
+	opts.Follow = false
+	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, buildPodLogOptions(opts, 0))
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		return "", fmt.Errorf("cannot fetch container logs: %w", err)
+	}
+	defer stream.Close()
+
+	var buf strings.Builder
+	scanner := bufio.NewScanner(stream)
+	for scanner.Scan() {
+		buf.WriteString(scanner.Text())
+		buf.WriteByte('\n')
+	}
+	return buf.String(), nil
 }
 
 // waitForBuildPod polls until the pod for a K8s Job appears, up to 60 s.

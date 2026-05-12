@@ -56,6 +56,8 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 		h.StreamDeploymentLogs)
 	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream",
 		h.StreamServiceLogs)
+	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs",
+		h.GetServiceLogs)
 
 	// WebSocket: node terminal
 	r.Get("/api/v1/orgs/{orgId}/nodes/{nodeId}/terminal", h.NodeTerminal)
