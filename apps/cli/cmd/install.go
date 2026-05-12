@@ -37,10 +37,17 @@ func runInstallNodeExporter(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("must be run as root — try: sudo meshploy install node-exporter")
 	}
 
-	// Idempotent: skip if already running.
+	// Idempotent: skip only if already running AND binary exists.
+	// Re-run if the binary is missing (partial install) or if the user wants to update the config.
+	alreadyRunning := false
 	if out, err := exec.Command("systemctl", "is-active", "node_exporter").Output(); err == nil {
-		if strings.TrimSpace(string(out)) == "active" {
+		alreadyRunning = strings.TrimSpace(string(out)) == "active"
+	}
+	if alreadyRunning {
+		if _, err := os.Stat("/usr/local/bin/node_exporter"); err == nil {
 			fmt.Println("✔  node_exporter is already running")
+			fmt.Println("   To reconfigure (e.g. add Docker bridge listen), stop it first:")
+			fmt.Println("   sudo systemctl stop node_exporter && sudo meshploy install node-exporter")
 			return nil
 		}
 	}
@@ -68,7 +75,15 @@ func runInstallNodeExporter(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("could not get mesh IP (is Tailscale running?): %w", err)
 	}
-	listenAddr := meshIP + ":9100"
+
+	// On the gateway node the API runs in Docker and cannot reach the Tailscale
+	// interface directly. Add a second listen address on the Docker bridge gateway
+	// IP so the API container can scrape metrics.
+	listenArgs := "--web.listen-address=" + meshIP + ":9100"
+	if dockerBridgeIP := getDockerBridgeIP(); dockerBridgeIP != "" {
+		listenArgs += " --web.listen-address=" + dockerBridgeIP + ":9100"
+		fmt.Printf("Gateway detected — also listening on Docker bridge %s:9100\n", dockerBridgeIP)
+	}
 
 	unit := fmt.Sprintf(`[Unit]
 Description=Prometheus node_exporter
@@ -76,13 +91,13 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/node_exporter --web.listen-address=%s
+ExecStart=/usr/local/bin/node_exporter %s
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, listenAddr)
+`, listenArgs)
 
 	if err := os.WriteFile("/etc/systemd/system/node_exporter.service", []byte(unit), 0644); err != nil {
 		return fmt.Errorf("write systemd unit: %w", err)
@@ -94,8 +109,19 @@ WantedBy=multi-user.target
 		return fmt.Errorf("start node_exporter: %w", err)
 	}
 
-	fmt.Printf("✔  node_exporter installed and running on %s\n", listenAddr)
+	fmt.Printf("✔  node_exporter installed and running on %s:9100\n", meshIP)
 	return nil
+}
+
+// getDockerBridgeIP returns the Docker bridge gateway IP if Docker is present,
+// or empty string if not available.
+func getDockerBridgeIP() string {
+	out, err := exec.Command("docker", "network", "inspect", "bridge",
+		"--format", "{{range .IPAM.Config}}{{.Gateway}}{{end}}").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // getMeshIP returns the Tailscale IPv4 address assigned to this node.

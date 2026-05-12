@@ -65,7 +65,12 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		headscaleSvc = NewHeadscaleService(c.HeadscaleURL, c.HeadscaleKey)
 	}
 
-	nodes := &NodeService{db: db}
+	var gatewayIP, hostGatewayIP string
+	if c != nil {
+		gatewayIP = c.GatewayIP
+		hostGatewayIP = c.HostGatewayIP
+	}
+	nodes := &NodeService{db: db, gatewayIP: gatewayIP, hostGatewayIP: hostGatewayIP}
 	domains := &DomainService{db: db}
 	auth := &AuthService{db: db}
 	registries := &RegistryService{db: db}

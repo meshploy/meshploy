@@ -31,6 +31,7 @@ type Config struct {
 	GatewayIP       string // MESH_IP          WireGuard IP of the gateway node
 	GatewayHostname string // GATEWAY_HOSTNAME hostname of the gateway server
 	PublicIP        string // PUBLIC_IP        public internet IP of the gateway (for DNS instructions)
+	HostGatewayIP   string // HOST_GATEWAY_IP  Docker bridge gateway IP — used to reach node_exporter from within the API container
 
 	// Built-in registry — set when docker-compose includes the registry:2 service.
 	// Format: <host>:<port>, e.g. "100.64.0.1:5000" (mesh IP of gateway).
@@ -89,6 +90,7 @@ func Load() (*Config, error) {
 		GatewayIP:       os.Getenv("MESH_IP"),
 		GatewayHostname: os.Getenv("GATEWAY_HOSTNAME"),
 		PublicIP:        os.Getenv("PUBLIC_IP"),
+		HostGatewayIP:   os.Getenv("HOST_GATEWAY_IP"),
 
 		BuiltinRegistryEndpoint: os.Getenv("BUILTIN_REGISTRY_ENDPOINT"),
 	}
