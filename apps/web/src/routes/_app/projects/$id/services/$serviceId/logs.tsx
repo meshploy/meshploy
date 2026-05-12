@@ -1,13 +1,6 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
-import {
-  Download,
-  Loader2,
-  RefreshCw,
-  ScrollText,
-  Search,
-  X,
-} from "lucide-react"
+import { Download, Loader2, ScrollText, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -167,7 +160,7 @@ function LogsTab() {
     startStream()
     return () => abortRef.current?.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, projectId, serviceId, token])
+  }, [orgId, projectId, serviceId, token, tail, since, follow])
 
   // Auto-scroll only when user hasn't scrolled up
   useEffect(() => {
@@ -256,18 +249,6 @@ function LogsTab() {
             )}
           </Button>
 
-          {/* Reconnect */}
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs gap-1.5"
-            onClick={startStream}
-            disabled={streaming}
-          >
-            <RefreshCw className="h-3 w-3" />
-            Load
-          </Button>
-
           {/* Download */}
           <Button
             size="sm"
@@ -341,22 +322,53 @@ function LogsTab() {
               </p>
             </div>
           ) : (
-            <pre className="text-[12px] font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-all">
-              {filteredLines.map((line, i) => (
-                <span key={i} className="block">
-                  {search ? <Highlighted text={line} query={search} /> : line}
-                </span>
-              ))}
+            <div className="text-[12px] font-mono leading-relaxed">
+              {filteredLines.map((raw, i) => {
+                const { time, text } = parseLogLine(raw)
+                return (
+                  <div key={i} className="flex gap-3 hover:bg-white/[0.03] px-1 -mx-1 rounded">
+                    {time && (
+                      <span className="shrink-0 text-muted-foreground/40 w-40 text-[11px] pt-px select-none">
+                        {time}
+                      </span>
+                    )}
+                    <span className="flex-1 text-muted-foreground whitespace-pre-wrap break-all">
+                      {search ? <Highlighted text={text} query={search} /> : text}
+                    </span>
+                  </div>
+                )
+              })}
               {streaming && (
                 <span className="inline-block w-2 h-3.5 bg-muted-foreground/60 animate-pulse align-middle ml-0.5" />
               )}
-            </pre>
+            </div>
           )}
           <div ref={bottomRef} />
         </div>
       </div>
     </div>
   )
+}
+
+// K8s timestamp prefix: 2026-05-13T10:23:45.123456789Z
+const TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z) ([\s\S]*)$/
+
+function parseLogLine(raw: string): { time: string; text: string } {
+  const m = raw.match(TS_RE)
+  if (!m) return { time: "", text: raw }
+  const d = new Date(m[1])
+  const time = isNaN(d.getTime())
+    ? m[1]
+    : d.toLocaleString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      })
+  return { time, text: m[2] }
 }
 
 function Highlighted({ text, query }: { text: string; query: string }) {

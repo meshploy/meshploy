@@ -829,7 +829,7 @@ func (s *DeploymentService) findRuntimePod(ctx context.Context, serviceID uuid.U
 
 // buildPodLogOptions converts LogOptions into corev1.PodLogOptions.
 func buildPodLogOptions(opts LogOptions, defaultTail int64) *corev1.PodLogOptions {
-	o := &corev1.PodLogOptions{Follow: opts.Follow}
+	o := &corev1.PodLogOptions{Follow: opts.Follow, Timestamps: true}
 	tail := opts.TailLines
 	if tail == 0 && defaultTail > 0 {
 		tail = defaultTail
