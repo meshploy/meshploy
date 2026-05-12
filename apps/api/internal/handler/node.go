@@ -376,6 +376,15 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.CreateHeadscalePreAuthKey)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-node-metrics",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/nodes/{nodeId}/metrics",
+		Summary:     "Get live resource metrics for a node (requires node_exporter)",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetNodeMetrics)
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -765,6 +774,30 @@ func meshRoleLabelsMatch(labels map[string]string, role db.MeshRole) bool {
 	default: // workload
 		return !hasLabel
 	}
+}
+
+// ─── Node metrics ────────────────────────────────────────────────────────────
+
+type NodeMetricsOutput struct {
+	Body *service.NodeMetrics
+}
+
+func (h *Handler) GetNodeMetrics(ctx context.Context, input *NodePathInput) (*NodeMetricsOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	nodeID, err := parseUUID(input.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	m, err := h.svc.Nodes.GetNodeMetrics(ctx, nodeID)
+	if err != nil {
+		if notFoundErr := notFound(err); notFoundErr != err {
+			return nil, notFoundErr
+		}
+		return nil, huma.Error422UnprocessableEntity("node metrics unavailable — install node_exporter: sudo meshploy install node-exporter")
+	}
+	return &NodeMetricsOutput{Body: m}, nil
 }
 
 // ServeInstallScript serves deploy/install.sh (mounted at /opt/meshploy/install.sh) to authenticated users.
