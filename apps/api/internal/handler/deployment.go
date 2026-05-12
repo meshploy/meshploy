@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -215,6 +216,7 @@ func (h *Handler) StreamDeploymentLogs(w http.ResponseWriter, r *http.Request) {
 
 // StreamServiceLogs is a raw SSE handler for live runtime container logs.
 // GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream
+// Query params: tail=<n>  since=<duration>  follow=<true|false>
 func (h *Handler) StreamServiceLogs(w http.ResponseWriter, r *http.Request) {
 	if _, ok := middleware.UserFromContext(r.Context()); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -227,6 +229,11 @@ func (h *Handler) StreamServiceLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	q := r.URL.Query()
+	tail, _ := strconv.ParseInt(q.Get("tail"), 10, 64)
+	follow := q.Get("follow") != "false" // default true
+	opts := service.LogOptions{TailLines: tail, Follow: follow, Since: q.Get("since")}
+
 	sseHeaders(w)
 
 	flusher, canFlush := w.(http.Flusher)
@@ -237,7 +244,38 @@ func (h *Handler) StreamServiceLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	flush()
 
-	_ = h.svc.Deployments.StreamRuntimeLogs(r.Context(), serviceID, w, flush)
+	_ = h.svc.Deployments.StreamRuntimeLogs(r.Context(), serviceID, opts, w, flush)
+}
+
+// GetServiceLogs returns a plain-text snapshot of container logs (no streaming).
+// GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs
+// Query params: tail=<n>  since=<duration>
+func (h *Handler) GetServiceLogs(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.UserFromContext(r.Context()); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	serviceID, err := parseUUID(chi.URLParam(r, "serviceId"))
+	if err != nil {
+		http.Error(w, "invalid service id", http.StatusBadRequest)
+		return
+	}
+
+	q := r.URL.Query()
+	tail, _ := strconv.ParseInt(q.Get("tail"), 10, 64)
+	opts := service.LogOptions{TailLines: tail, Since: q.Get("since")}
+
+	logs, err := h.svc.Deployments.FetchRuntimeLogs(r.Context(), serviceID, opts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="service.log"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(logs))
 }
 
 func sseHeaders(w http.ResponseWriter) {
