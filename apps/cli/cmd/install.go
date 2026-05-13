@@ -71,33 +71,25 @@ func runInstallNodeExporter(_ *cobra.Command, _ []string) error {
 	_ = os.Remove(tmpTar)
 	_ = os.RemoveAll(tmpDir)
 
+	// Verify Tailscale is running (mesh IP used only for the success message).
 	meshIP, err := getMeshIP()
 	if err != nil {
 		return fmt.Errorf("could not get mesh IP (is Tailscale running?): %w", err)
 	}
 
-	// On the gateway node the API runs in Docker and cannot reach the Tailscale
-	// interface directly. Add a second listen address on the Docker bridge gateway
-	// IP so the API container can scrape metrics.
-	listenArgs := "--web.listen-address=" + meshIP + ":9100"
-	if dockerBridgeIP := getDockerBridgeIP(); dockerBridgeIP != "" {
-		listenArgs += " --web.listen-address=" + dockerBridgeIP + ":9100"
-		fmt.Printf("Gateway detected — also listening on Docker bridge %s:9100\n", dockerBridgeIP)
-	}
-
-	unit := fmt.Sprintf(`[Unit]
+	unit := `[Unit]
 Description=Prometheus node_exporter
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/node_exporter %s
+ExecStart=/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, listenArgs)
+`
 
 	if err := os.WriteFile("/etc/systemd/system/node_exporter.service", []byte(unit), 0644); err != nil {
 		return fmt.Errorf("write systemd unit: %w", err)
@@ -109,19 +101,60 @@ WantedBy=multi-user.target
 		return fmt.Errorf("start node_exporter: %w", err)
 	}
 
+	// Allow Docker/Podman compose bridge networks to reach port 9100 so the
+	// API container can scrape metrics on gateway nodes.
+	allowNodeExporterFromBridges()
+
 	fmt.Printf("✔  node_exporter installed and running on %s:9100\n", meshIP)
 	return nil
 }
 
-// getDockerBridgeIP returns the Docker bridge gateway IP if Docker is present,
-// or empty string if not available.
-func getDockerBridgeIP() string {
-	out, err := exec.Command("docker", "network", "inspect", "bridge",
-		"--format", "{{range .IPAM.Config}}{{.Gateway}}{{end}}").Output()
-	if err != nil {
-		return ""
+// allowNodeExporterFromBridges adds a firewall rule permitting container bridge
+// networks (Docker: 172.16.0.0/12, Podman: 10.88.0.0/16) to reach port 9100.
+// Uses UFW, firewalld, or raw iptables depending on what's available.
+func allowNodeExporterFromBridges() {
+	type rule struct{ cidr, comment string }
+	rules := []rule{
+		{"172.16.0.0/12", "node_exporter — Docker bridge"},
+		{"10.88.0.0/16", "node_exporter — Podman bridge"},
 	}
-	return strings.TrimSpace(string(out))
+
+	// UFW
+	if _, err := exec.LookPath("ufw"); err == nil {
+		if out, _ := exec.Command("ufw", "status").Output(); strings.Contains(string(out), "Status: active") {
+			if !strings.Contains(string(out), "9100") {
+				for _, r := range rules {
+					_ = sysCmd("ufw", "allow", "from", r.cidr, "to", "any", "port", "9100", "comment", r.comment)
+				}
+			}
+			return
+		}
+	}
+
+	// firewalld
+	if _, err := exec.LookPath("firewall-cmd"); err == nil {
+		if out, _ := exec.Command("firewall-cmd", "--state").Output(); strings.TrimSpace(string(out)) == "running" {
+			if existing, _ := exec.Command("firewall-cmd", "--list-rich-rules").Output(); !strings.Contains(string(existing), "9100") {
+				for _, r := range rules {
+					_ = sysCmd("firewall-cmd", "--permanent", "--add-rich-rule",
+						fmt.Sprintf(`rule family="ipv4" source address="%s" port port="9100" protocol="tcp" accept`, r.cidr))
+				}
+				_ = sysCmd("firewall-cmd", "--reload")
+			}
+			return
+		}
+	}
+
+	// Raw iptables fallback
+	for _, r := range rules {
+		check := exec.Command("iptables", "-C", "INPUT", "-p", "tcp", "--dport", "9100", "-s", r.cidr, "-j", "ACCEPT")
+		if check.Run() != nil {
+			_ = sysCmd("iptables", "-I", "INPUT", "-p", "tcp", "--dport", "9100", "-s", r.cidr, "-j", "ACCEPT")
+		}
+	}
+	if _, err := exec.LookPath("netfilter-persistent"); err == nil {
+		_ = sysCmd("netfilter-persistent", "save")
+	}
 }
 
 // getMeshIP returns the Tailscale IPv4 address assigned to this node.
