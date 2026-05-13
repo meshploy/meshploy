@@ -23,23 +23,9 @@ import { nodes as nodesApi, toNode, type ApiNodeMetrics } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
+import { useMetricsStore, type RawSample } from "@/store/metrics-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { useState, useEffect, useRef, useMemo } from "react"
-
-// ─── Metrics history ─────────────────────────────────────────────────────────
-
-interface RawSample {
-  ts: number
-  cpuTotal: number
-  cpuIdle: number
-  cpuCores: number
-  memTotal: number
-  memAvail: number
-  diskTotal: number
-  diskAvail: number
-  netRx: number
-  netTx: number
-}
 
 function toRawSample(ts: number, m: ApiNodeMetrics): RawSample {
   return {
@@ -160,14 +146,15 @@ function NodeDetailPage() {
     retry: false,
   })
 
-  const [history, setHistory] = useState<RawSample[]>([])
+  const history = useMetricsStore(state => state.history[id] ?? [])
+  const addSample = useMetricsStore(state => state.addSample)
   const prevUpdatedAt = useRef(0)
 
   useEffect(() => {
     if (!metricsData || dataUpdatedAt === prevUpdatedAt.current) return
     prevUpdatedAt.current = dataUpdatedAt
-    setHistory(prev => [...prev.slice(-19), toRawSample(dataUpdatedAt, metricsData)])
-  }, [metricsData, dataUpdatedAt])
+    addSample(id, toRawSample(dataUpdatedAt, metricsData))
+  }, [metricsData, dataUpdatedAt, id, addSample])
 
   const computed = useMemo(() => computeMetrics(history), [history])
 
