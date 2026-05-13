@@ -543,23 +543,35 @@ type Route struct {
 	Base
 	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"  json:"organization_id"`
 	ProjectID      uuid.UUID  `gorm:"type:uuid;not null;index"  json:"project_id"`
-	ServiceID      *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"` // nullable — loose coupling
 	// DomainID links to the managed Domain. Nullable for manually-specified hostnames.
 	DomainID  *uuid.UUID `gorm:"type:uuid;index"           json:"domain_id"`
-	Zone      RouteZone  `gorm:"type:varchar(10)"           json:"zone"`      // public|internal|preview
-	Subdomain string     `json:"subdomain"`                                   // prefix, e.g. "keeper"
-	Hostname  string     `gorm:"uniqueIndex;not null"       json:"hostname"`  // hot-path proxy lookup (denormalised)
-	TargetIP  string     `gorm:"not null"                   json:"target_ip"` // Headscale mesh IP
-	TargetPort int       `gorm:"not null"                   json:"target_port"`
+	Zone      RouteZone  `gorm:"type:varchar(10)"           json:"zone"`     // public|internal|preview
+	Subdomain string     `json:"subdomain"`                                  // prefix, e.g. "keeper"
+	Hostname  string     `gorm:"uniqueIndex;not null"       json:"hostname"` // hot-path proxy lookup (denormalised)
 	// Custom-domain verification. Only relevant when DomainID IS NULL.
-	// Caddy's domain-check endpoint returns 200 only when this is true.
-	CustomDomainVerified    bool   `gorm:"default:false"        json:"custom_domain_verified"`
-	CustomDomainVerifyToken string `gorm:"not null;default:''"  json:"custom_domain_verify_token"`
+	CustomDomainVerified    bool   `gorm:"default:false"       json:"custom_domain_verified"`
+	CustomDomainVerifyToken string `gorm:"not null;default:''" json:"custom_domain_verify_token"`
 
-	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
-	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`
-	Service      *Service     `gorm:"foreignKey:ServiceID"      json:"-"`
-	Domain       *Domain      `gorm:"foreignKey:DomainID"       json:"-"`
+	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
+	Project      Project       `gorm:"foreignKey:ProjectID"      json:"-"`
+	Domain       *Domain       `gorm:"foreignKey:DomainID"       json:"-"`
+	Targets      []RouteTarget `gorm:"foreignKey:RouteID;constraint:OnDelete:CASCADE" json:"targets"`
+}
+
+// RouteTarget maps one path prefix on a Route to a backend service or node.
+type RouteTarget struct {
+	Base
+	RouteID    uuid.UUID  `gorm:"type:uuid;not null;index"  json:"route_id"`
+	Path       string     `gorm:"not null;default:'/'"      json:"path"`       // e.g. "/" or "/api"
+	StripPath  bool       `gorm:"not null;default:false"    json:"strip_path"` // strip path prefix before forwarding
+	ServiceID  *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"`
+	NodeID     *uuid.UUID `gorm:"type:uuid;index"           json:"node_id"`
+	TargetIP   string     `gorm:"not null"                  json:"target_ip"`
+	TargetPort int        `gorm:"not null"                  json:"target_port"`
+
+	Route   *Route   `gorm:"foreignKey:RouteID"   json:"-"`
+	Service *Service `gorm:"foreignKey:ServiceID" json:"-"`
+	Node    *Node    `gorm:"foreignKey:NodeID"    json:"-"`
 }
 
 // ---------------------------------------------------------------------------

@@ -26,12 +26,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hostname = hostname[:i]
 	}
 
-	entry, ok := h.cache.Get(hostname)
+	reqPath := r.URL.Path
+	if reqPath == "" {
+		reqPath = "/"
+	}
+
+	entry, ok := h.cache.Get(hostname, reqPath)
 	if !ok {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, notFoundPage, hostname)
 		return
+	}
+
+	// Strip the matched path prefix before forwarding when requested.
+	if entry.StripPath && entry.Path != "/" {
+		stripped := strings.TrimPrefix(reqPath, entry.Path)
+		if stripped == "" {
+			stripped = "/"
+		}
+		r.URL.Path = stripped
+		if r.URL.RawPath != "" {
+			r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, entry.Path)
+		}
 	}
 
 	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", entry.TargetIP, entry.TargetPort))

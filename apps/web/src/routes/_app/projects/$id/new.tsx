@@ -1093,16 +1093,34 @@ type RouteZone = "public" | "internal"
 type DomainMode = "subdomain" | "custom"
 type TargetMode = "service" | "node"
 
+interface TargetRow {
+  id: number
+  targetMode: TargetMode
+  serviceId: string
+  nodeId: string
+  port: string
+  path: string
+  stripPath: boolean
+}
+
+let _targetRowId = 0
+const mkTargetRow = (): TargetRow => ({
+  id: ++_targetRowId,
+  targetMode: "service",
+  serviceId: "",
+  nodeId: "",
+  port: "",
+  path: "/",
+  stripPath: false,
+})
+
 interface RouteFormState {
   zone: RouteZone
   domainId: string
   domainMode: DomainMode
   subdomain: string
   customHostname: string
-  targetMode: TargetMode
-  serviceId: string
-  nodeId: string
-  port: string
+  targets: TargetRow[]
 }
 
 const ROUTE_INITIAL: RouteFormState = {
@@ -1111,10 +1129,7 @@ const ROUTE_INITIAL: RouteFormState = {
   domainMode: "subdomain",
   subdomain: "",
   customHostname: "",
-  targetMode: "service",
-  serviceId: "",
-  nodeId: "",
-  port: "",
+  targets: [mkTargetRow()],
 }
 
 function RouteForm({ projectId }: { projectId: string }) {
@@ -1168,30 +1183,39 @@ function RouteForm({ projectId }: { projectId: string }) {
     return `${rf.subdomain}.${selectedDomain.base_domain}`
   })()
 
-  const canCreate =
-    (rf.zone === "public" && rf.domainMode === "custom"
+  const patchTarget = (id: number, patch: Partial<TargetRow>) =>
+    patchRf({ targets: rf.targets.map((t) => (t.id === id ? { ...t, ...patch } : t)) })
+  const addTarget = () => patchRf({ targets: [...rf.targets, mkTargetRow()] })
+  const removeTarget = (id: number) =>
+    patchRf({ targets: rf.targets.length > 1 ? rf.targets.filter((t) => t.id !== id) : rf.targets })
+
+  const domainValid =
+    rf.zone === "public" && rf.domainMode === "custom"
       ? rf.customHostname.trim().length > 0
-      : rf.domainId.length > 0 && rf.subdomain.trim().length > 0) &&
-    (rf.targetMode === "service"
-      ? rf.serviceId.length > 0
-      : rf.nodeId.length > 0 && rf.port.trim().length > 0)
+      : rf.domainId.length > 0 && rf.subdomain.trim().length > 0
+  const targetsValid = rf.targets.every((t) =>
+    t.path.trim().startsWith("/") &&
+    (t.targetMode === "service" ? t.serviceId.length > 0 : t.nodeId.length > 0 && t.port.trim().length > 0)
+  )
+  const canCreate = domainValid && targetsValid && rf.targets.length > 0
 
   const createMutation = useMutation({
     mutationFn: () => {
       const body: Parameters<typeof routesApi.create>[2] = {
         zone: rf.zone,
+        targets: rf.targets.map((t) => ({
+          path: t.path || "/",
+          strip_path: t.stripPath,
+          ...(t.targetMode === "service"
+            ? { service_id: t.serviceId }
+            : { node_id: t.nodeId, port: parseInt(t.port, 10) }),
+        })),
       }
       if (rf.zone === "public" && rf.domainMode === "custom") {
         body.hostname = rf.customHostname
       } else {
         body.domain_id = rf.domainId
         body.subdomain = rf.subdomain
-      }
-      if (rf.targetMode === "service") {
-        body.service_id = rf.serviceId
-      } else {
-        body.node_id = rf.nodeId
-        body.port = parseInt(rf.port, 10)
       }
       return routesApi.create(orgId, projectId, body, token)
     },
@@ -1298,102 +1322,28 @@ function RouteForm({ projectId }: { projectId: string }) {
         )}
       </Section>
 
-      {/* ── Section: Target ─────────────────────────────────── */}
-      <Section
-        title="Target"
-        subtitle="Where should traffic be forwarded?"
-      >
-        <SegmentedControl
-          value={rf.targetMode}
-          onValueChange={(v) => patchRf({ targetMode: v as TargetMode, serviceId: "", nodeId: "", port: "" })}
-          options={[
-            { value: "service", label: "Service" },
-            { value: "node",    label: "Node + port" },
-          ]}
-          className="text-sm mb-4"
-        />
-
-        {rf.targetMode === "service" ? (
-          <div className="space-y-3">
-            <Field label="Service" required>
-              <Select
-                value={rf.serviceId}
-                onValueChange={(v) => patchRf({ serviceId: v ?? "" })}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue
-                    placeholder={
-                      serviceList.length === 0
-                        ? "No services in this project"
-                        : "Select a service…"
-                    }
-                  >
-                    {serviceList.find((s) => s.id === rf.serviceId)?.name}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {serviceList.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                      <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            {rf.serviceId && (() => {
-              const svc = serviceList.find((s) => s.id === rf.serviceId)
-              return svc ? (
-                <div className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">Port</span>
-                  <span className="font-mono text-xs text-foreground">{svc.port}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    Configured on the service · change in service settings
-                  </span>
-                </div>
-              ) : null
-            })()}
-          </div>
-        ) : (
-          <div className="grid grid-cols-[1fr_120px] gap-4">
-            <Field label="Node" required>
-              <Select
-                value={rf.nodeId}
-                onValueChange={(v) => patchRf({ nodeId: v ?? "" })}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue
-                    placeholder={
-                      allNodes.length === 0
-                        ? "No online nodes"
-                        : "Select a node…"
-                    }
-                  >
-                    {allNodes.find((n) => n.id === rf.nodeId)?.name}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {allNodes.map((n) => (
-                    <SelectItem key={n.id} value={n.id}>
-                      {n.name}
-                      <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Port" required>
-              <Input
-                type="number"
-                min={1}
-                max={65535}
-                value={rf.port}
-                onChange={(e) => patchRf({ port: e.target.value })}
-                placeholder="8080"
-              />
-            </Field>
-          </div>
-        )}
+      {/* ── Section: Targets ────────────────────────────────── */}
+      <Section title="Targets" subtitle="Map path prefixes to services or nodes. Longest path matches first.">
+        <div className="space-y-3">
+          {rf.targets.map((t) => (
+            <TargetRowField
+              key={t.id}
+              row={t}
+              serviceList={serviceList}
+              nodeList={allNodes}
+              onChange={(patch) => patchTarget(t.id, patch)}
+              onRemove={rf.targets.length > 1 ? () => removeTarget(t.id) : undefined}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={addTarget}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add another target
+          </button>
+        </div>
       </Section>
 
       {/* ── Error ────────────────────────────────────────────── */}
@@ -1412,6 +1362,108 @@ function RouteForm({ projectId }: { projectId: string }) {
         {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Create route
       </Button>
+    </div>
+  )
+}
+
+// ─── TargetRowField ───────────────────────────────────────────────────────────
+
+function TargetRowField({
+  row,
+  serviceList,
+  nodeList,
+  onChange,
+  onRemove,
+}: {
+  row: TargetRow
+  serviceList: ApiService[]
+  nodeList: ApiNode[]
+  onChange: (patch: Partial<TargetRow>) => void
+  onRemove?: () => void
+}) {
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-3">
+      {/* Row 1: type toggle + path + strip path + remove */}
+      <div className="flex items-center gap-2">
+        <SegmentedControl
+          value={row.targetMode}
+          onValueChange={(v) => onChange({ targetMode: v as TargetMode, serviceId: "", nodeId: "", port: "" })}
+          options={[
+            { value: "service", label: "Service" },
+            { value: "node",    label: "Node + port" },
+          ]}
+          className="text-xs shrink-0"
+        />
+        <input
+          value={row.path}
+          onChange={(e) => onChange({ path: e.target.value })}
+          placeholder="/path"
+          className={cn(inputCls, "font-mono text-xs w-28 shrink-0")}
+        />
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
+          <input
+            type="checkbox"
+            checked={row.stripPath}
+            onChange={(e) => onChange({ stripPath: e.target.checked })}
+            className="accent-primary"
+          />
+          Strip path
+        </label>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Row 2: service or node+port */}
+      {row.targetMode === "service" ? (
+        <Select value={row.serviceId} onValueChange={(v) => onChange({ serviceId: v ?? "" })}>
+          <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+            <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
+              {serviceList.find((s) => s.id === row.serviceId)?.name}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {serviceList.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name}
+                <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <div className="grid grid-cols-[1fr_100px] gap-2">
+          <Select value={row.nodeId} onValueChange={(v) => onChange({ nodeId: v ?? "" })}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+              <SelectValue placeholder={nodeList.length === 0 ? "No online nodes" : "Select a node…"}>
+                {nodeList.find((n) => n.id === row.nodeId)?.name}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {nodeList.map((n) => (
+                <SelectItem key={n.id} value={n.id}>
+                  {n.name}
+                  <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            type="number"
+            min={1}
+            max={65535}
+            value={row.port}
+            onChange={(e) => onChange({ port: e.target.value })}
+            placeholder="8080"
+          />
+        </div>
+      )}
     </div>
   )
 }
