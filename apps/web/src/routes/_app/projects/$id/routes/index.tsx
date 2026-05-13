@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ExternalLink, Globe, Loader2, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { routes as routesApi, services as servicesApi, type ApiDbRoute } from "@/lib/api"
+import { routes as routesApi, type ApiDbRoute } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -29,14 +29,6 @@ function RoutesTab() {
     queryFn: () => routesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
   })
-
-  const { data: allServices = [] } = useQuery({
-    queryKey: ["services", orgId, projectId],
-    queryFn: () => servicesApi.list(orgId!, projectId, token),
-    enabled: !!orgId,
-  })
-
-  const serviceMap = Object.fromEntries(allServices.map((s) => [s.id, s.name]))
 
   const goToNew = () =>
     navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "route" } })
@@ -76,10 +68,9 @@ function RoutesTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/40 bg-muted/20">
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[35%]">Hostname</th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[45%]">Hostname</th>
                 <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[12%]">Zone</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[15%]">Target</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Mesh IP : Port</th>
+                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Paths</th>
                 <th className="w-10" />
               </tr>
             </thead>
@@ -88,7 +79,6 @@ function RoutesTab() {
                 <RouteRow
                   key={route.id}
                   route={route}
-                  serviceName={route.service_id ? serviceMap[route.service_id] : undefined}
                   onClick={() => navigate({ to: "/projects/$id/routes/$routeId", params: { id: projectId, routeId: route.id } })}
                 />
               ))}
@@ -100,15 +90,11 @@ function RoutesTab() {
   )
 }
 
-function RouteRow({
-  route,
-  serviceName,
-  onClick,
-}: {
-  route: ApiDbRoute
-  serviceName: string | undefined
-  onClick: () => void
-}) {
+function RouteRow({ route, onClick }: { route: ApiDbRoute; onClick: () => void }) {
+  const MAX_PATHS = 3
+  const shown = route.targets.slice(0, MAX_PATHS)
+  const overflow = route.targets.length - MAX_PATHS
+
   return (
     <tr
       className="hover:bg-muted/20 transition-colors cursor-pointer"
@@ -125,13 +111,26 @@ function RouteRow({
           {route.zone}
         </Badge>
       </td>
-      <td className="px-4 py-3 text-sm text-muted-foreground">
-        {serviceName ?? <span className="text-muted-foreground/40 text-xs">manual</span>}
-      </td>
       <td className="px-4 py-3">
-        <code className="text-xs font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground">
-          {route.target_ip}:{route.target_port}
-        </code>
+        <div className="flex flex-wrap items-center gap-1">
+          {route.targets.length === 0 ? (
+            <span className="text-xs text-muted-foreground/40">—</span>
+          ) : (
+            <>
+              {shown.map((t) => (
+                <code
+                  key={t.id}
+                  className="text-[10px] font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground"
+                >
+                  {t.path}
+                </code>
+              ))}
+              {overflow > 0 && (
+                <span className="text-[10px] text-muted-foreground/50">+{overflow} more</span>
+              )}
+            </>
+          )}
+        </div>
       </td>
       <td className="px-3 py-3 text-right">
         <a

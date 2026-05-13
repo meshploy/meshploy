@@ -81,8 +81,9 @@ func Migrate(db *gorm.DB) error {
 		&Secret{},
 		&ServiceSecret{},
 
-		// Traffic (Domain must migrate before Route for FK constraint)
+		// Traffic (Domain must migrate before Route; Route before RouteTarget)
 		&Route{},
+		&RouteTarget{},
 
 		// Deployment History
 		&Deployment{},
@@ -140,6 +141,13 @@ func applyConstraints(db *gorm.DB) error {
 		// Job names must be unique within a project
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_project_name
 		 ON jobs (project_id, name)`,
+		// One path rule per route
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_route_target_path
+		 ON route_targets (route_id, path)`,
+		// Drop columns moved from routes → route_targets (idempotent cleanup)
+		`ALTER TABLE routes DROP COLUMN IF EXISTS service_id`,
+		`ALTER TABLE routes DROP COLUMN IF EXISTS target_ip`,
+		`ALTER TABLE routes DROP COLUMN IF EXISTS target_port`,
 	}
 
 	for _, stmt := range stmts {
@@ -179,9 +187,13 @@ func applyConstraints(db *gorm.DB) error {
 		{"database_configs", "service_id", "services", "CASCADE"},
 		{"deployments", "service_id", "services", "CASCADE"},
 		{"backup_configs", "service_id", "services", "CASCADE"},
+		// RouteTarget → Route CASCADE
+		{"route_targets", "route_id", "routes", "CASCADE"},
+		// RouteTarget → service/node SET NULL
+		{"route_targets", "service_id", "services", "SET NULL"},
+		{"route_targets", "node_id", "nodes", "SET NULL"},
 		// Sibling connections SET NULL
 		{"services", "node_id", "nodes", "SET NULL"},
-		{"routes", "service_id", "services", "SET NULL"},
 		{"build_configs", "git_integration_id", "git_integrations", "SET NULL"},
 		{"build_configs", "registry_integration_id", "registry_integrations", "SET NULL"},
 		{"backup_configs", "storage_integration_id", "storage_integrations", "CASCADE"},

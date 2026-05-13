@@ -1,17 +1,25 @@
-import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ExternalLink, Globe, Loader2, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { ExternalLink, Globe, Loader2, Plus, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
+import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { routes as routesApi, services as servicesApi } from "@/lib/api"
+import { Input } from "@/components/ui/input"
+import {
+  routes as routesApi,
+  services as servicesApi,
+  nodes as nodesApi,
+  type ApiDbRoute,
+  type ApiRouteTarget,
+  type TargetBody,
+} from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Section, Field } from "@/components/services/form-primitives"
+import { Section, Field, inputCls } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
-import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DetailPageHeader } from "@/components/layout/detail-page-header"
+import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/$routeId")({
   component: RouteDetailPage,
@@ -23,6 +31,28 @@ const ZONE_STYLES: Record<string, string> = {
   preview:  "bg-violet-500/10 text-violet-400 border-violet-500/20",
 }
 
+type TargetMode = "service" | "node"
+
+interface AddForm {
+  open: boolean
+  mode: TargetMode
+  serviceId: string
+  nodeId: string
+  port: string
+  path: string
+  stripPath: boolean
+}
+
+const INITIAL_ADD: AddForm = {
+  open: false,
+  mode: "service",
+  serviceId: "",
+  nodeId: "",
+  port: "",
+  path: "/",
+  stripPath: false,
+}
+
 function RouteDetailPage() {
   const { id: projectId, routeId } = useParams({ from: "/_app/projects/$id/routes/$routeId" })
   const token = useAuthStore((s) => s.token)!
@@ -31,11 +61,8 @@ function RouteDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  const [targetMode, setTargetMode] = useState<"service" | "manual">("manual")
-  const [selectedServiceId, setSelectedServiceId] = useState("")
-  const [targetIP, setTargetIP] = useState("")
-  const [targetPort, setTargetPort] = useState(80)
+  const [add, setAdd] = useState<AddForm>(INITIAL_ADD)
+  const patchAdd = (p: Partial<AddForm>) => setAdd((s) => ({ ...s, ...p }))
 
   const { data: route, isLoading, isError } = useQuery({
     queryKey: ["route", orgId, projectId, routeId],
@@ -50,32 +77,50 @@ function RouteDetailPage() {
   })
   const serviceList = allServices.filter((s) => s.type === "application")
 
-  useEffect(() => {
-    if (!route) return
-    if (route.service_id) {
-      setTargetMode("service")
-      setSelectedServiceId(route.service_id)
-    } else {
-      setTargetMode("manual")
-    }
-    setTargetIP(route.target_ip)
-    setTargetPort(route.target_port)
-  }, [route])
+  const { data: rawNodes = [] } = useQuery({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId!, token),
+    enabled: !!orgId,
+  })
+  const nodeList = rawNodes.filter((n) => n.status === "online")
 
-  const updateMutation = useMutation({
+  const serviceMap = Object.fromEntries(allServices.map((s) => [s.id, s.name]))
+  const nodeMap = Object.fromEntries(rawNodes.map((n) => [n.id, n.name]))
+
+  const invalidateRoute = () =>
+    queryClient.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] })
+
+  const addTargetMutation = useMutation({
     mutationFn: () => {
-      const body =
-        targetMode === "service"
-          ? { service_id: selectedServiceId || null, target_ip: targetIP, target_port: targetPort }
-          : { service_id: null as string | null, target_ip: targetIP, target_port: targetPort }
-      return routesApi.update(orgId!, projectId, routeId, body, token)
+      const body: TargetBody = {
+        path: add.path || "/",
+        strip_path: add.stripPath,
+        ...(add.mode === "service"
+          ? { service_id: add.serviceId }
+          : { node_id: add.nodeId, port: parseInt(add.port, 10) }),
+      }
+      return routesApi.addTarget(orgId!, projectId, routeId, body, token)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] }),
+    onSuccess: () => {
+      setAdd(INITIAL_ADD)
+      invalidateRoute()
+      queryClient.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
+    },
   })
 
-  const syncMutation = useMutation({
-    mutationFn: () => routesApi.syncIP(orgId!, projectId, routeId, token),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] }),
+  const deleteTargetMutation = useMutation({
+    mutationFn: (targetId: string) =>
+      routesApi.deleteTarget(orgId!, projectId, routeId, targetId, token),
+    onSuccess: () => {
+      invalidateRoute()
+      queryClient.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
+    },
+  })
+
+  const syncTargetMutation = useMutation({
+    mutationFn: (targetId: string) =>
+      routesApi.syncTarget(orgId!, projectId, routeId, targetId, token),
+    onSuccess: invalidateRoute,
   })
 
   const deleteMutation = useMutation({
@@ -86,7 +131,9 @@ function RouteDetailPage() {
     },
   })
 
-
+  const addValid =
+    add.path.trim().startsWith("/") &&
+    (add.mode === "service" ? add.serviceId.length > 0 : add.nodeId.length > 0 && add.port.trim().length > 0)
 
   if (isLoading) {
     return (
@@ -104,6 +151,8 @@ function RouteDetailPage() {
       </div>
     )
   }
+
+  const targetCount = route.targets.length
 
   return (
     <div className="flex flex-col min-h-full">
@@ -129,130 +178,235 @@ function RouteDetailPage() {
             </a>
           </>
         }
-        subtitle={`→ ${route.target_ip}:${route.target_port}`}
-        actions={route.service_id ? (
-          <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs"
-            onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}
-            title="Re-resolve target IP from current service node">
-            {syncMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-            Sync IP
-          </Button>
-        ) : undefined}
+        subtitle={`${targetCount} path rule${targetCount !== 1 ? "s" : ""}`}
       />
       <div className="p-6 space-y-6 max-w-2xl">
 
-      {/* Details */}
-      <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-        <DetailRow label="Hostname" value={route.hostname} mono />
-        <DetailRow label="Zone" value={route.zone} />
-        {route.subdomain && <DetailRow label="Subdomain" value={route.subdomain} mono />}
-        <DetailRow label="Target IP" value={route.target_ip} mono />
-        <DetailRow label="Target Port" value={String(route.target_port)} />
-        {route.service_id && <DetailRow label="Service ID" value={route.service_id} mono />}
-        <DetailRow label="Created" value={new Date(route.created_at).toLocaleString()} />
-      </div>
-
-      {/* Target */}
-      <Section title="Target" subtitle="Change where this route forwards traffic.">
-        <div className="space-y-4">
-          <SegmentedControl
-            value={targetMode}
-            onValueChange={setTargetMode}
-            options={[
-              { value: "service", label: "Service" },
-              { value: "manual", label: "Manual" },
-            ]}
-          />
-
-          {targetMode === "service" ? (() => {
-            const selectedSvc = serviceList.find((x) => x.id === selectedServiceId)
-            const selectedLabel = selectedSvc ? `${selectedSvc.name} :${selectedSvc.port}` : "— none —"
-            return (
-            <Field label="Service">
-              <Select value={selectedServiceId} onValueChange={(v) => setSelectedServiceId(v ?? "")}>
-                <SelectTrigger className="w-full h-9 text-sm">
-                  <SelectValue placeholder="— none —">{selectedLabel}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— none —</SelectItem>
-                  {serviceList.map((svc) => (
-                    <SelectItem key={svc.id} value={svc.id}>
-                      {svc.name} :{svc.port}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            )
-          })() : (
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Target IP">
-                <Input
-                  type="text"
-                  value={targetIP}
-                  onChange={(e) => setTargetIP(e.target.value)}
-                  placeholder="10.0.0.1"
-                  className="h-9 text-sm"
-                />
-              </Field>
-              <Field label="Target Port">
-                <Input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={targetPort}
-                  onChange={(e) => setTargetPort(parseInt(e.target.value) || 80)}
-                  className="h-9 text-sm"
-                />
-              </Field>
-            </div>
-          )}
-
-          {updateMutation.isError && (
-            <p className="text-xs text-destructive">
-              {(updateMutation.error as Error)?.message ?? "Failed to update route"}
-            </p>
-          )}
-
-          <Button
-            size="sm"
-            className="gap-1.5"
-            onClick={() => updateMutation.mutate()}
-            disabled={updateMutation.isPending}
-          >
-            {updateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Save changes
-          </Button>
+        {/* Details */}
+        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+          <DetailRow label="Hostname" value={route.hostname} mono />
+          <DetailRow label="Zone" value={route.zone} />
+          {route.subdomain && <DetailRow label="Subdomain" value={route.subdomain} mono />}
+          <DetailRow label="Created" value={new Date(route.created_at).toLocaleString()} />
         </div>
-      </Section>
 
-      {/* Danger zone */}
-      <Section title="Danger zone" subtitle="Permanent actions that cannot be undone." danger>
-        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">Delete route</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Removes this routing rule. Traffic to <span className="font-mono">{route.hostname}</span> will stop being proxied.
-            </p>
+        {/* Targets */}
+        <Section title="Targets" subtitle="Path rules for this hostname, matched longest-first.">
+          <div className="space-y-2">
+            {route.targets.length === 0 && !add.open && (
+              <p className="text-xs text-muted-foreground/60 py-2">No targets configured.</p>
+            )}
+            {route.targets.map((target) => (
+              <TargetItem
+                key={target.id}
+                target={target}
+                serviceMap={serviceMap}
+                nodeMap={nodeMap}
+                syncPending={syncTargetMutation.isPending}
+                deletePending={deleteTargetMutation.isPending}
+                onSync={() => syncTargetMutation.mutate(target.id)}
+                onDelete={() => deleteTargetMutation.mutate(target.id)}
+              />
+            ))}
+
+            {add.open && (
+              <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <SegmentedControl
+                    value={add.mode}
+                    onValueChange={(v) => patchAdd({ mode: v as TargetMode, serviceId: "", nodeId: "", port: "" })}
+                    options={[
+                      { value: "service", label: "Service" },
+                      { value: "node", label: "Node + port" },
+                    ]}
+                    className="text-xs shrink-0"
+                  />
+                  <input
+                    value={add.path}
+                    onChange={(e) => patchAdd({ path: e.target.value })}
+                    placeholder="/path"
+                    className={cn(inputCls, "font-mono text-xs w-28 shrink-0")}
+                  />
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={add.stripPath}
+                      onChange={(e) => patchAdd({ stripPath: e.target.checked })}
+                      className="accent-primary"
+                    />
+                    Strip path
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setAdd(INITIAL_ADD)}
+                    className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {add.mode === "service" ? (
+                  <Select value={add.serviceId} onValueChange={(v) => patchAdd({ serviceId: v ?? "" })}>
+                    <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+                      <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
+                        {serviceList.find((s) => s.id === add.serviceId)?.name}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {serviceList.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                          <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="grid grid-cols-[1fr_100px] gap-2">
+                    <Select value={add.nodeId} onValueChange={(v) => patchAdd({ nodeId: v ?? "" })}>
+                      <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+                        <SelectValue placeholder={nodeList.length === 0 ? "No online nodes" : "Select a node…"}>
+                          {nodeList.find((n) => n.id === add.nodeId)?.name}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {nodeList.map((n) => (
+                          <SelectItem key={n.id} value={n.id}>
+                            {n.name}
+                            <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={add.port}
+                      onChange={(e) => patchAdd({ port: e.target.value })}
+                      placeholder="8080"
+                    />
+                  </div>
+                )}
+
+                {addTargetMutation.isError && (
+                  <p className="text-xs text-destructive">
+                    {(addTargetMutation.error as Error)?.message ?? "Failed to add target"}
+                  </p>
+                )}
+
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => addTargetMutation.mutate()}
+                  disabled={!addValid || addTargetMutation.isPending}
+                >
+                  {addTargetMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Add target
+                </Button>
+              </div>
+            )}
+
+            {!add.open && (
+              <button
+                type="button"
+                onClick={() => patchAdd({ open: true })}
+                className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border/60 rounded-md hover:border-border transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Add another target
+              </button>
+            )}
           </div>
-          {!confirmDelete ? (
-            <Button variant="destructive" size="sm" className="shrink-0 gap-1.5" onClick={() => setConfirmDelete(true)}>
-              <Trash2 className="h-3.5 w-3.5" />Delete
-            </Button>
-          ) : (
-            <div className="flex items-center gap-2 shrink-0">
-              <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)} disabled={deleteMutation.isPending}>
-                Cancel
-              </Button>
-              <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
-                {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                Confirm delete
-              </Button>
+        </Section>
+
+        {/* Danger zone */}
+        <Section title="Danger zone" subtitle="Permanent actions that cannot be undone." danger>
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Delete route</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Removes this routing rule. Traffic to <span className="font-mono">{route.hostname}</span> will stop being proxied.
+              </p>
             </div>
-          )}
-        </div>
-      </Section>
+            {!confirmDelete ? (
+              <Button variant="destructive" size="sm" className="shrink-0 gap-1.5" onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="h-3.5 w-3.5" />Delete
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)} disabled={deleteMutation.isPending}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+                  {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  Confirm delete
+                </Button>
+              </div>
+            )}
+          </div>
+        </Section>
+      </div>
     </div>
+  )
+}
+
+function TargetItem({
+  target,
+  serviceMap,
+  nodeMap,
+  syncPending,
+  deletePending,
+  onSync,
+  onDelete,
+}: {
+  target: ApiRouteTarget
+  serviceMap: Record<string, string>
+  nodeMap: Record<string, string>
+  syncPending: boolean
+  deletePending: boolean
+  onSync: () => void
+  onDelete: () => void
+}) {
+  const targetLabel = target.service_id
+    ? serviceMap[target.service_id] ?? "Unknown service"
+    : target.node_id
+    ? `${nodeMap[target.node_id] ?? "Unknown node"} :${target.target_port}`
+    : `${target.target_ip}:${target.target_port}`
+
+  const canSync = !!(target.service_id || target.node_id)
+
+  return (
+    <div className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/5 px-3 py-2.5">
+      <code className="text-xs font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground shrink-0">
+        {target.path}
+      </code>
+      <span className="text-muted-foreground text-xs shrink-0">→</span>
+      <span className="text-xs text-foreground flex-1 truncate">{targetLabel}</span>
+      {target.strip_path && (
+        <Badge className="text-[9px] px-1 py-0 h-4 border bg-muted/50 text-muted-foreground border-border/40 shrink-0">
+          strip
+        </Badge>
+      )}
+      {canSync && (
+        <button
+          type="button"
+          onClick={onSync}
+          disabled={syncPending}
+          title="Re-resolve target IP"
+          className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 disabled:opacity-40"
+        >
+          {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={deletePending}
+        className="text-muted-foreground/50 hover:text-destructive transition-colors shrink-0 disabled:opacity-40"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 }

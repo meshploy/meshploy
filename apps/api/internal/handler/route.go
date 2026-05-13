@@ -9,10 +9,19 @@ import (
 	svc "github.com/meshploy/apps/api/internal/service"
 )
 
+// ── Path params ───────────────────────────────────────────────────────────────
+
 type RoutePathInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	RouteID   string `path:"routeId"`
+}
+
+type RouteTargetPathInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	RouteID   string `path:"routeId"`
+	TargetID  string `path:"targetId"`
 }
 
 type ListRoutesInput struct {
@@ -24,51 +33,66 @@ type ListOrgRoutesInput struct {
 	OrgID string `path:"orgId"`
 }
 
-type ListRoutesOutput struct {
-	Body []db.Route
-}
+// ── Output types ──────────────────────────────────────────────────────────────
 
-type GetRouteOutput struct {
-	Body *db.Route
-}
+type ListRoutesOutput struct{ Body []db.Route }
+type GetRouteOutput struct{ Body *db.Route }
+type GetRouteTargetOutput struct{ Body *db.RouteTarget }
+
+// ── Create route ──────────────────────────────────────────────────────────────
 
 type CreateRouteInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		// Domain-based (preferred): supply domain_id + zone + subdomain.
-		// Meshploy derives the full hostname and enforces reserved-subdomain rules.
-		DomainID  *string `json:"domain_id,omitempty"`  // UUID of a verified Domain
-		Zone      string  `json:"zone"`                // "public" | "internal" | "preview"
-		Subdomain string  `json:"subdomain,omitempty"` // prefix only, e.g. "keeper"
-		// Legacy / manual: supply a raw hostname when domain_id is omitted.
-		Hostname   *string `json:"hostname,omitempty"`
-		TargetIP   *string `json:"target_ip,omitempty"`
-		TargetPort *int    `json:"target_port,omitempty"`
-		ServiceID  *string `json:"service_id,omitempty"`
-		NodeID     *string `json:"node_id,omitempty"`
-		Port       *int    `json:"port,omitempty"`
+		DomainID  *string `json:"domain_id,omitempty"`
+		Zone      string  `json:"zone"`
+		Subdomain string  `json:"subdomain,omitempty"`
+		Hostname  *string `json:"hostname,omitempty"`
+		Targets   []struct {
+			Path      string  `json:"path"`
+			StripPath bool    `json:"strip_path"`
+			ServiceID *string `json:"service_id,omitempty"`
+			NodeID    *string `json:"node_id,omitempty"`
+			Port      *int    `json:"port,omitempty"`
+		} `json:"targets"`
 	}
 }
 
-type CreateRouteOutput struct {
-	Body *db.Route
-}
+type CreateRouteOutput struct{ Body *db.Route }
 
-type UpdateRouteInput struct {
+// ── Add / update / delete target ─────────────────────────────────────────────
+
+type UpsertTargetInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	RouteID   string `path:"routeId"`
 	Body      struct {
-		ServiceID  *string `json:"service_id"`  // null = unlink; omit field = no change
-		TargetIP   string  `json:"target_ip"`
-		TargetPort int     `json:"target_port" minimum:"1" maximum:"65535"`
+		Path      string  `json:"path"`
+		StripPath bool    `json:"strip_path"`
+		ServiceID *string `json:"service_id,omitempty"`
+		NodeID    *string `json:"node_id,omitempty"`
+		Port      *int    `json:"port,omitempty"`
 	}
 }
 
-type UpdateRouteOutput struct {
-	Body *db.Route
+type AddTargetInput = UpsertTargetInput
+
+type UpdateTargetInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	RouteID   string `path:"routeId"`
+	TargetID  string `path:"targetId"`
+	Body      struct {
+		Path      string  `json:"path"`
+		StripPath bool    `json:"strip_path"`
+		ServiceID *string `json:"service_id,omitempty"`
+		NodeID    *string `json:"node_id,omitempty"`
+		Port      *int    `json:"port,omitempty"`
+	}
 }
+
+// ── Registration ──────────────────────────────────────────────────────────────
 
 func (h *Handler) registerRouteRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -108,15 +132,6 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 	}, h.GetRoute)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "update-route",
-		Method:      "PATCH",
-		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}",
-		Summary:     "Update a route target",
-		Tags:        []string{"Routes"},
-		Security:    []map[string][]string{{"bearer": {}}},
-	}, h.UpdateRoute)
-
-	huma.Register(api, huma.Operation{
 		OperationID: "delete-route",
 		Method:      "DELETE",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}",
@@ -126,15 +141,6 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 	}, h.DeleteRoute)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "sync-route-ip",
-		Method:      "POST",
-		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/sync",
-		Summary:     "Re-resolve route target IP from current service node",
-		Tags:        []string{"Routes"},
-		Security:    []map[string][]string{{"bearer": {}}},
-	}, h.SyncRouteIP)
-
-	huma.Register(api, huma.Operation{
 		OperationID: "verify-custom-hostname",
 		Method:      "POST",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname",
@@ -142,7 +148,46 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 		Tags:        []string{"Routes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.VerifyCustomHostname)
+
+	// Target CRUD
+	huma.Register(api, huma.Operation{
+		OperationID: "add-route-target",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets",
+		Summary:     "Add a path target to a route",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.AddRouteTarget)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-route-target",
+		Method:      "PATCH",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}",
+		Summary:     "Update a route target",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.UpdateRouteTarget)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-route-target",
+		Method:      "DELETE",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}",
+		Summary:     "Delete a route target",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.DeleteRouteTarget)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "sync-route-target",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}/sync",
+		Summary:     "Re-resolve target IP from current service node",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SyncRouteTarget)
 }
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListOrgRoutes(ctx context.Context, input *ListOrgRoutesInput) (*ListRoutesOutput, error) {
 	if _, err := requireUser(ctx); err != nil {
@@ -186,60 +231,55 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 	if err != nil {
 		return nil, err
 	}
-	// service_id is optional
-	var parsedServiceID *uuid.UUID
-	if input.Body.ServiceID != nil {
-		id, err := parseUUID(*input.Body.ServiceID)
-		if err != nil {
-			return nil, err
-		}
-		parsedServiceID = &id
-	}
 
-	// domain_id is optional — when provided, zone + subdomain are used to derive the hostname
-	var parsedDomainID *uuid.UUID
+	var domainID *uuid.UUID
 	if input.Body.DomainID != nil {
 		id, err := parseUUID(*input.Body.DomainID)
 		if err != nil {
 			return nil, err
 		}
-		parsedDomainID = &id
+		domainID = &id
 	}
 
-	var parsedNodeID *uuid.UUID
-	if input.Body.NodeID != nil {
-		id, err := parseUUID(*input.Body.NodeID)
-		if err != nil {
-			return nil, err
+	targets := make([]svc.TargetInput, 0, len(input.Body.Targets))
+	for _, t := range input.Body.Targets {
+		ti := svc.TargetInput{
+			Path:      t.Path,
+			StripPath: t.StripPath,
 		}
-		parsedNodeID = &id
+		if t.ServiceID != nil {
+			id, err := parseUUID(*t.ServiceID)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invalid service_id")
+			}
+			ti.ServiceID = &id
+		}
+		if t.NodeID != nil {
+			id, err := parseUUID(*t.NodeID)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invalid node_id")
+			}
+			ti.NodeID = &id
+		}
+		if t.Port != nil {
+			ti.Port = *t.Port
+		}
+		targets = append(targets, ti)
 	}
 
-	derefStr := func(s *string) string {
-		if s == nil {
-			return ""
-		}
-		return *s
-	}
-	derefInt := func(n *int) int {
-		if n == nil {
-			return 0
-		}
-		return *n
+	hostname := ""
+	if input.Body.Hostname != nil {
+		hostname = *input.Body.Hostname
 	}
 
 	route, err := h.svc.Routes.Create(ctx, svc.CreateRouteInput{
-		OrgID:      orgID,
-		ProjectID:  projectID,
-		ServiceID:  parsedServiceID,
-		NodeID:     parsedNodeID,
-		Port:       derefInt(input.Body.Port),
-		DomainID:   parsedDomainID,
-		Zone:       db.RouteZone(input.Body.Zone),
-		Subdomain:  input.Body.Subdomain,
-		Hostname:   derefStr(input.Body.Hostname),
-		TargetIP:   derefStr(input.Body.TargetIP),
-		TargetPort: derefInt(input.Body.TargetPort),
+		OrgID:     orgID,
+		ProjectID: projectID,
+		DomainID:  domainID,
+		Zone:      db.RouteZone(input.Body.Zone),
+		Subdomain: input.Body.Subdomain,
+		Hostname:  hostname,
+		Targets:   targets,
 	})
 	if err != nil {
 		return nil, err
@@ -262,37 +302,6 @@ func (h *Handler) GetRoute(ctx context.Context, input *RoutePathInput) (*GetRout
 	return &GetRouteOutput{Body: route}, nil
 }
 
-func (h *Handler) UpdateRoute(ctx context.Context, input *UpdateRouteInput) (*UpdateRouteOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-
-	in := svc.UpdateRouteInput{
-		TargetIP:   input.Body.TargetIP,
-		TargetPort: input.Body.TargetPort,
-	}
-	if input.Body.ServiceID != nil {
-		in.UpdateServiceID = true
-		if *input.Body.ServiceID != "" {
-			sid, err := parseUUID(*input.Body.ServiceID)
-			if err != nil {
-				return nil, huma.Error400BadRequest("invalid service_id")
-			}
-			in.ServiceID = &sid
-		}
-	}
-
-	route, err := h.svc.Routes.Update(ctx, routeID, in)
-	if err != nil {
-		return nil, notFound(err)
-	}
-	return &UpdateRouteOutput{Body: route}, nil
-}
-
 func (h *Handler) DeleteRoute(ctx context.Context, input *RoutePathInput) (*struct{}, error) {
 	if _, err := requireUser(ctx); err != nil {
 		return nil, err
@@ -302,21 +311,6 @@ func (h *Handler) DeleteRoute(ctx context.Context, input *RoutePathInput) (*stru
 		return nil, err
 	}
 	return nil, h.svc.Routes.Delete(ctx, routeID)
-}
-
-func (h *Handler) SyncRouteIP(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-	route, err := h.svc.Routes.SyncRouteIP(ctx, routeID)
-	if err != nil {
-		return nil, err
-	}
-	return &GetRouteOutput{Body: route}, nil
 }
 
 func (h *Handler) VerifyCustomHostname(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
@@ -332,4 +326,92 @@ func (h *Handler) VerifyCustomHostname(ctx context.Context, input *RoutePathInpu
 		return nil, err
 	}
 	return &GetRouteOutput{Body: route}, nil
+}
+
+func (h *Handler) AddRouteTarget(ctx context.Context, input *AddTargetInput) (*GetRouteTargetOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	routeID, err := parseUUID(input.RouteID)
+	if err != nil {
+		return nil, err
+	}
+	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.NodeID, input.Body.Port)
+	if err != nil {
+		return nil, err
+	}
+	target, err := h.svc.Routes.AddTarget(ctx, routeID, ti)
+	if err != nil {
+		return nil, err
+	}
+	return &GetRouteTargetOutput{Body: target}, nil
+}
+
+func (h *Handler) UpdateRouteTarget(ctx context.Context, input *UpdateTargetInput) (*GetRouteTargetOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	targetID, err := parseUUID(input.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.NodeID, input.Body.Port)
+	if err != nil {
+		return nil, err
+	}
+	target, err := h.svc.Routes.UpdateTarget(ctx, targetID, ti)
+	if err != nil {
+		return nil, err
+	}
+	return &GetRouteTargetOutput{Body: target}, nil
+}
+
+func (h *Handler) DeleteRouteTarget(ctx context.Context, input *RouteTargetPathInput) (*struct{}, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	targetID, err := parseUUID(input.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	return nil, h.svc.Routes.DeleteTarget(ctx, targetID)
+}
+
+func (h *Handler) SyncRouteTarget(ctx context.Context, input *RouteTargetPathInput) (*GetRouteTargetOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	targetID, err := parseUUID(input.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	target, err := h.svc.Routes.SyncTargetIP(ctx, targetID)
+	if err != nil {
+		return nil, err
+	}
+	return &GetRouteTargetOutput{Body: target}, nil
+}
+
+// ── Shared helper ─────────────────────────────────────────────────────────────
+
+func parseTargetBody(path string, stripPath bool, serviceID, nodeID *string, port *int) (svc.TargetInput, error) {
+	ti := svc.TargetInput{Path: path, StripPath: stripPath}
+	if serviceID != nil {
+		id, err := parseUUID(*serviceID)
+		if err != nil {
+			return ti, huma.Error400BadRequest("invalid service_id")
+		}
+		ti.ServiceID = &id
+	}
+	if nodeID != nil {
+		id, err := parseUUID(*nodeID)
+		if err != nil {
+			return ti, huma.Error400BadRequest("invalid node_id")
+		}
+		ti.NodeID = &id
+	}
+	if port != nil {
+		ti.Port = *port
+	}
+	return ti, nil
 }

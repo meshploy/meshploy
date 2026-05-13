@@ -316,17 +316,29 @@ export interface ApiService {
   updated_at: string
 }
 
+export interface ApiRouteTarget {
+  id: string
+  route_id: string
+  path: string
+  strip_path: boolean
+  service_id: string | null
+  node_id: string | null
+  target_ip: string
+  target_port: number
+  created_at: string
+  updated_at: string
+}
+
 export interface ApiDbRoute {
   id: string
   organization_id: string
   project_id: string
-  service_id: string | null
   domain_id: string | null
   zone: "public" | "internal" | "preview"
   subdomain: string
   hostname: string
-  target_ip: string
-  target_port: number
+  custom_domain_verified: boolean
+  targets: ApiRouteTarget[]
   created_at: string
   updated_at: string
 }
@@ -884,6 +896,14 @@ export const deployments = {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+export type TargetBody = {
+  path: string
+  strip_path: boolean
+  service_id?: string
+  node_id?: string
+  port?: number
+}
+
 export const routes = {
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiDbRoute[]>(
@@ -900,11 +920,7 @@ export const routes = {
       zone: string
       subdomain?: string
       hostname?: string
-      service_id?: string
-      node_id?: string
-      port?: number
-      target_ip?: string
-      target_port?: number
+      targets: TargetBody[]
     },
     token: string
   ) =>
@@ -921,19 +937,6 @@ export const routes = {
       token
     ),
 
-  update: (
-    orgId: string,
-    projectId: string,
-    routeId: string,
-    body: { service_id?: string | null; target_ip: string; target_port: number },
-    token: string
-  ) =>
-    apiFetch<ApiDbRoute>(
-      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
-      { method: "PATCH", body: JSON.stringify(body) },
-      token
-    ),
-
   delete: (orgId: string, projectId: string, routeId: string, token: string) =>
     apiFetch<void>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
@@ -941,9 +944,30 @@ export const routes = {
       token
     ),
 
-  syncIP: (orgId: string, projectId: string, routeId: string, token: string) =>
-    apiFetch<ApiDbRoute>(
-      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/sync`,
+  addTarget: (orgId: string, projectId: string, routeId: string, body: TargetBody, token: string) =>
+    apiFetch<ApiRouteTarget>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/targets`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  updateTarget: (orgId: string, projectId: string, routeId: string, targetId: string, body: TargetBody, token: string) =>
+    apiFetch<ApiRouteTarget>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/targets/${targetId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+      token
+    ),
+
+  deleteTarget: (orgId: string, projectId: string, routeId: string, targetId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/targets/${targetId}`,
+      { method: "DELETE" },
+      token
+    ),
+
+  syncTarget: (orgId: string, projectId: string, routeId: string, targetId: string, token: string) =>
+    apiFetch<ApiRouteTarget>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/targets/${targetId}/sync`,
       { method: "POST" },
       token
     ),
