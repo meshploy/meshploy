@@ -103,8 +103,12 @@ export function NewRouteModal({ open, onOpenChange, orgId, projectId }: NewRoute
           domain_id: domainId || undefined,
           zone,
           subdomain: subdomain.trim(),
-          target_ip: targetIp.trim(),
-          target_port: parseInt(targetPort, 10),
+          targets: [{
+            path: "/",
+            strip_path: false,
+            target_ip: targetIp.trim(),
+            target_port: parseInt(targetPort, 10),
+          }],
         },
         token
       ),

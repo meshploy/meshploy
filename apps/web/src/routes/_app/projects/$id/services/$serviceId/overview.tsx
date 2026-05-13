@@ -107,7 +107,9 @@ function ServiceOverviewTab() {
     : rawNodes.find((n) => n.status === "online" && n.k8s_member)
       ? toNode(rawNodes.find((n) => n.status === "online" && n.k8s_member)!)
       : null
-  const attachedRoutes = projectRoutes.filter((r) => r.service_id === service.id)
+  const attachedRoutes = projectRoutes.filter((r) =>
+    r.targets.some((t) => t.service_id === service.id)
+  )
 
   // Connection strings for database services
   const internalConnStr = dc ? buildConnectionString(dc, `${dc.slug}.svc.cluster.local`) : null
@@ -267,7 +269,7 @@ function ServiceOverviewTab() {
                     <div className="min-w-0">
                       <code className="text-xs font-mono text-foreground truncate block">{r.hostname}</code>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {r.zone} · {r.target_ip}:{r.target_port}
+                        {r.zone}{r.targets[0] ? ` · ${r.targets[0].target_ip}:${r.targets[0].target_port}` : ""}
                       </p>
                     </div>
                     <a
