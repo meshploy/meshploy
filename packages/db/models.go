@@ -365,7 +365,6 @@ type Service struct {
 	Node           *Node           `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"     json:"-"`
 	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
 	DatabaseConfig *DatabaseConfig `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
-	Routes         []Route         `gorm:"foreignKey:ServiceID;constraint:OnDelete:SET NULL"  json:"-"`
 	Deployments    []Deployment    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
 }
 
