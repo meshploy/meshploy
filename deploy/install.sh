@@ -596,7 +596,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/node_exporter --web.listen-address=${MESH_IP}:9100 --web.listen-address=${HOST_GATEWAY_IP}:9100
+ExecStart=/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100
 Restart=on-failure
 RestartSec=5
 
@@ -606,7 +606,31 @@ NEUNIT
 
       sudo systemctl daemon-reload
       sudo systemctl enable --now node_exporter
-      success "node_exporter running on ${MESH_IP}:9100 and ${HOST_GATEWAY_IP}:9100"
+
+      # Allow container bridge networks to reach node_exporter (port 9100).
+      # The API container scrapes metrics over the compose bridge network.
+      if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+        if ! ufw status | grep -q "9100"; then
+          ufw allow from 172.16.0.0/12 to any port 9100 comment "node_exporter — Docker bridge" >/dev/null
+          ufw allow from 10.88.0.0/16  to any port 9100 comment "node_exporter — Podman bridge" >/dev/null
+        fi
+      elif command -v firewall-cmd &>/dev/null && firewall-cmd --state 2>/dev/null | grep -q "running"; then
+        if ! firewall-cmd --list-rich-rules | grep -q "9100"; then
+          firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.16.0.0/12" port port="9100" protocol="tcp" accept'
+          firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="10.88.0.0/16" port port="9100" protocol="tcp" accept'
+          firewall-cmd --reload >/dev/null
+        fi
+      else
+        iptables -C INPUT -p tcp --dport 9100 -s 172.16.0.0/12 -j ACCEPT 2>/dev/null || \
+          iptables -I INPUT -p tcp --dport 9100 -s 172.16.0.0/12 -j ACCEPT
+        iptables -C INPUT -p tcp --dport 9100 -s 10.88.0.0/16  -j ACCEPT 2>/dev/null || \
+          iptables -I INPUT -p tcp --dport 9100 -s 10.88.0.0/16  -j ACCEPT
+        if command -v netfilter-persistent &>/dev/null; then
+          netfilter-persistent save >/dev/null 2>&1 || true
+        fi
+      fi
+
+      success "node_exporter running on 0.0.0.0:9100"
     fi
   fi
 
