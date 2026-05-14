@@ -56,6 +56,7 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		// Identity & Access
 		&User{},
+		&TrustedDevice{},
 		&Organization{},
 		&OrganizationMember{},
 		&ResourcePermission{},

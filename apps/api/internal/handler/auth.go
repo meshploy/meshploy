@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/meshploy/packages/db"
@@ -24,7 +25,8 @@ type RegisterOutput struct {
 }
 
 type LoginInput struct {
-	Body struct {
+	Cookie string `header:"Cookie"`
+	Body   struct {
 		Email    string `json:"email" format:"email"`
 		Password string `json:"password"`
 	}
@@ -39,14 +41,17 @@ type LoginOutput struct {
 }
 
 type CompleteTOTPLoginInput struct {
-	Body struct {
-		MFAToken string `json:"mfa_token" minLength:"1"`
-		Code     string `json:"code" minLength:"6" maxLength:"6"`
+	UserAgent string `header:"User-Agent"`
+	Body      struct {
+		MFAToken    string `json:"mfa_token" minLength:"1"`
+		Code        string `json:"code" minLength:"6" maxLength:"6"`
+		TrustDevice bool   `json:"trust_device,omitempty"`
 	}
 }
 
 type CompleteTOTPLoginOutput struct {
-	Body struct {
+	SetCookie string `header:"Set-Cookie"`
+	Body      struct {
 		Token string `json:"token"`
 	}
 }
@@ -102,12 +107,16 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Summary:     "Complete login with TOTP code",
 		Tags:        []string{tag},
 	}, func(ctx context.Context, in *CompleteTOTPLoginInput) (*CompleteTOTPLoginOutput, error) {
-		token, err := h.svc.Auth.CompleteTOTPLogin(ctx, in.Body.MFAToken, in.Body.Code, h.cfg.JWTSecret)
+		deviceName := truncate(in.UserAgent, 200)
+		result, err := h.svc.Auth.CompleteTOTPLogin(ctx, in.Body.MFAToken, in.Body.Code, h.cfg.JWTSecret, in.Body.TrustDevice, deviceName)
 		if err != nil {
 			return nil, huma.Error401Unauthorized(err.Error())
 		}
 		out := &CompleteTOTPLoginOutput{}
-		out.Body.Token = token
+		out.Body.Token = result.Token
+		if result.DeviceToken != "" {
+			out.SetCookie = deviceCookie(result.DeviceToken, strings.HasPrefix(h.cfg.APIBaseURL, "https://"))
+		}
 		return out, nil
 	})
 
@@ -207,8 +216,9 @@ func (h *Handler) RegisterUser(ctx context.Context, input *RegisterInput) (*Regi
 
 func (h *Handler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
 	result, err := h.svc.Auth.Login(ctx, svc.LoginInput{
-		Email:    input.Body.Email,
-		Password: input.Body.Password,
+		Email:       input.Body.Email,
+		Password:    input.Body.Password,
+		DeviceToken: extractCookie(input.Cookie, "meshploy_device_token"),
 	}, h.cfg.JWTSecret)
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid credentials")
@@ -218,5 +228,37 @@ func (h *Handler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, e
 	out.Body.TOTPRequired = result.TOTPRequired
 	out.Body.MFAToken = result.MFAToken
 	return out, nil
+}
+
+// extractCookie parses a raw Cookie header string and returns the named cookie value.
+func extractCookie(rawCookie, name string) string {
+	h := http.Header{"Cookie": []string{rawCookie}}
+	r := &http.Request{Header: h}
+	c, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
+// deviceCookie builds the Set-Cookie header value for a trusted device token.
+func deviceCookie(token string, secure bool) string {
+	c := &http.Cookie{
+		Name:     "meshploy_device_token",
+		Value:    token,
+		Path:     "/api/v1/auth/login",
+		MaxAge:   30 * 24 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+	}
+	return c.String()
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
 }
 

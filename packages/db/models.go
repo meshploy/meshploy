@@ -204,6 +204,16 @@ type User struct {
 	TOTPEnabled bool            `gorm:"not null;default:false" json:"totp_enabled"`
 }
 
+type TrustedDevice struct {
+	Base
+	UserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	TokenHash  string    `gorm:"not null"                 json:"-"`
+	DeviceName string    `gorm:"not null;default:''"      json:"device_name"`
+	ExpiresAt  time.Time `gorm:"not null"                 json:"expires_at"`
+}
+
+func (TrustedDevice) TableName() string { return "trusted_devices" }
+
 type Organization struct {
 	Base
 	Name string `gorm:"not null"             json:"name"`

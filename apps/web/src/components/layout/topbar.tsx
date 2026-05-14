@@ -183,7 +183,7 @@ function Breadcrumb() {
 
 export function Topbar() {
   return (
-    <header className="flex items-center h-14 px-6 border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0 sticky top-0 z-10">
+    <header className="flex items-center h-14 px-6 border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0 sticky top-0 z-40">
       <div className="flex-1">
         <Breadcrumb />
       </div>

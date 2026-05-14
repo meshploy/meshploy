@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -25,14 +28,20 @@ type RegisterInput struct {
 }
 
 type LoginInput struct {
-	Email    string
-	Password string
+	Email       string
+	Password    string
+	DeviceToken string
 }
 
 type LoginResult struct {
 	Token        string
 	TOTPRequired bool
 	MFAToken     string
+}
+
+type CompleteTOTPLoginResult struct {
+	Token       string
+	DeviceToken string // non-empty only when trust_device was true
 }
 
 // Register creates a new user and provisions a default organization with the
@@ -97,6 +106,14 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput, jwtSecret string
 	}
 
 	if user.TOTPEnabled {
+		if in.DeviceToken != "" && s.validateDeviceToken(ctx, user.ID, in.DeviceToken) {
+			token, err := signFullJWT(user.ID.String(), jwtSecret)
+			if err != nil {
+				return LoginResult{}, err
+			}
+			return LoginResult{Token: token}, nil
+		}
+
 		mfaTok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"uid":         user.ID.String(),
 			"mfa_pending": true,
@@ -117,7 +134,8 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput, jwtSecret string
 }
 
 // CompleteTOTPLogin validates the MFA token + TOTP code and returns a full JWT.
-func (s *AuthService) CompleteTOTPLogin(ctx context.Context, mfaToken, code, jwtSecret string) (string, error) {
+// If trustDevice is true it also issues a 30-day device token.
+func (s *AuthService) CompleteTOTPLogin(ctx context.Context, mfaToken, code, jwtSecret string, trustDevice bool, deviceName string) (CompleteTOTPLoginResult, error) {
 	tok, err := jwt.Parse(mfaToken, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrSignatureInvalid
@@ -125,30 +143,75 @@ func (s *AuthService) CompleteTOTPLogin(ctx context.Context, mfaToken, code, jwt
 		return []byte(jwtSecret), nil
 	})
 	if err != nil || !tok.Valid {
-		return "", errors.New("invalid or expired MFA token")
+		return CompleteTOTPLoginResult{}, errors.New("invalid or expired MFA token")
 	}
 	claims, ok := tok.Claims.(jwt.MapClaims)
 	if !ok || claims["mfa_pending"] != true {
-		return "", errors.New("invalid MFA token")
+		return CompleteTOTPLoginResult{}, errors.New("invalid MFA token")
 	}
 	userIDStr, _ := claims["uid"].(string)
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		return "", errors.New("invalid MFA token")
+		return CompleteTOTPLoginResult{}, errors.New("invalid MFA token")
 	}
 
 	var user db.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
-		return "", errors.New("user not found")
+		return CompleteTOTPLoginResult{}, errors.New("user not found")
 	}
 	if !user.TOTPEnabled || string(user.TOTPSecret) == "" {
-		return "", errors.New("2FA not enabled")
+		return CompleteTOTPLoginResult{}, errors.New("2FA not enabled")
 	}
 	if !totp.Validate(code, string(user.TOTPSecret)) {
-		return "", errors.New("invalid code")
+		return CompleteTOTPLoginResult{}, errors.New("invalid code")
 	}
 
-	return signFullJWT(userIDStr, jwtSecret)
+	fullToken, err := signFullJWT(userIDStr, jwtSecret)
+	if err != nil {
+		return CompleteTOTPLoginResult{}, err
+	}
+
+	result := CompleteTOTPLoginResult{Token: fullToken}
+	if trustDevice {
+		dt, err := s.TrustDevice(ctx, userID, deviceName)
+		if err == nil {
+			result.DeviceToken = dt
+		}
+	}
+	return result, nil
+}
+
+// TrustDevice creates a new trusted device record and returns the raw token to store as a cookie.
+func (s *AuthService) TrustDevice(ctx context.Context, userID uuid.UUID, deviceName string) (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	rawToken := hex.EncodeToString(b)
+	td := db.TrustedDevice{
+		UserID:     userID,
+		TokenHash:  hashToken(rawToken),
+		DeviceName: deviceName,
+		ExpiresAt:  time.Now().Add(30 * 24 * time.Hour),
+	}
+	if err := s.db.WithContext(ctx).Create(&td).Error; err != nil {
+		return "", err
+	}
+	return rawToken, nil
+}
+
+func (s *AuthService) validateDeviceToken(ctx context.Context, userID uuid.UUID, rawToken string) bool {
+	var td db.TrustedDevice
+	err := s.db.WithContext(ctx).Where(
+		"user_id = ? AND token_hash = ? AND expires_at > NOW()",
+		userID, hashToken(rawToken),
+	).First(&td).Error
+	return err == nil
+}
+
+func hashToken(raw string) string {
+	h := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(h[:])
 }
 
 // GetMe returns the current user by ID.
