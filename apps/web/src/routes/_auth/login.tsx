@@ -23,6 +23,7 @@ function LoginPage() {
   // TOTP step state
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [totpCode, setTotpCode] = useState("")
+  const [trustDevice, setTrustDevice] = useState(true)
 
   async function finalize(token: string) {
     const payload = JSON.parse(atob(token.split(".")[1]))
@@ -47,7 +48,7 @@ function LoginPage() {
   })
 
   const totpMutation = useMutation({
-    mutationFn: () => auth.completeTOTPLogin(mfaToken!, totpCode),
+    mutationFn: () => auth.completeTOTPLogin(mfaToken!, totpCode, trustDevice),
     onSuccess: async (result) => { await finalize(result.token) },
     onError: () => setError("Invalid code — try again"),
   })
@@ -76,6 +77,16 @@ function LoginPage() {
             autoFocus
             className="w-full h-10 rounded-md border border-border/60 bg-muted/20 px-3 text-center text-lg font-mono tracking-[0.4em] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
           />
+
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={trustDevice}
+              onChange={(e) => setTrustDevice(e.target.checked)}
+              className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+            />
+            <span className="text-xs text-muted-foreground">Trust this device for 30 days</span>
+          </label>
 
           {error && (
             <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">

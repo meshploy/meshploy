@@ -4,13 +4,14 @@ export const auth = {
   login: (email: string, password: string) =>
     apiFetch<{ token?: string; totp_required?: boolean; mfa_token?: string }>(
       "/api/v1/auth/login",
-      { method: "POST", body: JSON.stringify({ email, password }) }
+      { method: "POST", credentials: "include", body: JSON.stringify({ email, password }) }
     ),
 
-  completeTOTPLogin: (mfaToken: string, code: string) =>
+  completeTOTPLogin: (mfaToken: string, code: string, trustDevice: boolean) =>
     apiFetch<{ token: string }>("/api/v1/auth/totp", {
       method: "POST",
-      body: JSON.stringify({ mfa_token: mfaToken, code }),
+      credentials: "include",
+      body: JSON.stringify({ mfa_token: mfaToken, code, trust_device: trustDevice }),
     }),
 
   register: (username: string, email: string, password: string) =>
