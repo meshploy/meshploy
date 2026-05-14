@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ExternalLink, Globe, Loader2, Plus, RefreshCw, ServerCrash, Trash2 } from "lucide-react"
+import { ExternalLink, Globe, Loader2, Plus, ServerCrash, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -117,12 +117,6 @@ function RouteDetailPage() {
     },
   })
 
-  const syncTargetMutation = useMutation({
-    mutationFn: (targetId: string) =>
-      routesApi.syncTarget(orgId!, projectId, routeId, targetId, token),
-    onSuccess: invalidateRoute,
-  })
-
   const deleteMutation = useMutation({
     mutationFn: () => routesApi.delete(orgId!, projectId, routeId, token),
     onSuccess: () => {
@@ -203,9 +197,7 @@ function RouteDetailPage() {
                 hostname={route.hostname}
                 serviceMap={serviceMap}
                 nodeMap={nodeMap}
-                syncPending={syncTargetMutation.isPending}
                 deletePending={deleteTargetMutation.isPending}
-                onSync={() => syncTargetMutation.mutate(target.id)}
                 onDelete={() => deleteTargetMutation.mutate(target.id)}
               />
             ))}
@@ -357,18 +349,14 @@ function TargetItem({
   hostname,
   serviceMap,
   nodeMap,
-  syncPending,
   deletePending,
-  onSync,
   onDelete,
 }: {
   target: ApiRouteTarget
   hostname: string
   serviceMap: Record<string, string>
   nodeMap: Record<string, string>
-  syncPending: boolean
   deletePending: boolean
-  onSync: () => void
   onDelete: () => void
 }) {
   const targetLabel = target.service_id
@@ -377,7 +365,6 @@ function TargetItem({
     ? `${nodeMap[target.node_id] ?? "Unknown node"} :${target.target_port}`
     : `${target.target_ip}:${target.target_port}`
 
-  const canSync = !!(target.service_id || target.node_id)
   const openHref = `https://${hostname}${target.path === "/" ? "" : target.path}`
 
   return (
@@ -402,17 +389,6 @@ function TargetItem({
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
-        {canSync && (
-          <button
-            type="button"
-            onClick={onSync}
-            disabled={syncPending}
-            title="Re-resolve target IP"
-            className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 disabled:opacity-40"
-          >
-            {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          </button>
-        )}
         <button
           type="button"
           onClick={onDelete}

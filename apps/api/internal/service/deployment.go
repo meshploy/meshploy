@@ -277,61 +277,29 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		s.failDeployment(a.deployment.ID, "failed to apply K8s service: "+err.Error())
 		return
 	}
+	nodePort, err := appk8s.ApplyNodePortService(ctx, s.k8s, slugify(a.svc.Name), a.namespace, port)
+	if err != nil {
+		s.failDeployment(a.deployment.ID, "failed to apply K8s NodePort service: "+err.Error())
+		return
+	}
 
-	// Update service image + status.
+	// Update service image, status, and NodePort.
 	now := time.Now()
 	s.db.Model(&db.Deployment{}).Where("id = ?", a.deployment.ID).Updates(map[string]any{
 		"status":      db.DeploymentSuccess,
 		"log":         result.Log + "\nDeployment applied successfully.",
 		"deployed_at": &now,
 	})
-	serviceUpdates := map[string]any{
-		"image":  a.imageName,
-		"status": db.ServiceRunning,
-	}
-	// For auto-scheduled services, resolve which node K8s actually placed the pod on
-	// and persist it so routes resolve to the correct mesh IP.
-	if a.svc.NodeID == nil && s.k8s != nil {
-		if nodeID := s.resolveScheduledNode(ctx, slugify(a.svc.Name), a.namespace); nodeID != nil {
-			serviceUpdates["node_id"] = nodeID
-		}
-	}
-	s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(serviceUpdates)
+	s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(map[string]any{
+		"image":     a.imageName,
+		"status":    db.ServiceRunning,
+		"node_port": nodePort,
+	})
 
 	// Prune old images from the registry (best-effort, non-blocking).
 	go s.pruneOldImages(context.Background(), a.svc.ID, a.bc)
 }
 
-// resolveScheduledNode queries K8s for the node the pod landed on and returns
-// the corresponding db.Node UUID. Returns nil if the pod isn't found yet.
-func (s *DeploymentService) resolveScheduledNode(ctx context.Context, podSlug, namespace string) *uuid.UUID {
-	selector := fmt.Sprintf("app=%s,managed-by=meshploy", podSlug)
-	pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
-	if err != nil || len(pods.Items) == 0 {
-		return nil
-	}
-	k8sNodeName := pods.Items[0].Spec.NodeName
-	if k8sNodeName == "" {
-		return nil
-	}
-	k8sNode, err := s.k8s.CoreV1().Nodes().Get(ctx, k8sNodeName, metav1.GetOptions{})
-	if err != nil {
-		return nil
-	}
-	// Match by internal IP first, then fall back to node name.
-	var node db.Node
-	for _, addr := range k8sNode.Status.Addresses {
-		if addr.Type == corev1.NodeInternalIP {
-			if s.db.WithContext(ctx).Where("tailscale_ip = ?", addr.Address).First(&node).Error == nil {
-				return &node.ID
-			}
-		}
-	}
-	if s.db.WithContext(ctx).Where("name = ?", k8sNodeName).First(&node).Error == nil {
-		return &node.ID
-	}
-	return nil
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -560,6 +528,11 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			s.failDeployment(dep.ID, "rollback failed to apply K8s service: "+err.Error())
 			return
 		}
+		nodePort, err := appk8s.ApplyNodePortService(context.Background(), s.k8s, slugify(svc.Name), namespace, port)
+		if err != nil {
+			s.failDeployment(dep.ID, "rollback failed to apply K8s NodePort service: "+err.Error())
+			return
+		}
 		finishedAt := time.Now()
 		s.db.Model(&db.Deployment{}).Where("id = ?", dep.ID).Updates(map[string]any{
 			"status":      db.DeploymentSuccess,
@@ -567,8 +540,9 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			"deployed_at": &finishedAt,
 		})
 		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
-			"image":  target.Image,
-			"status": db.ServiceRunning,
+			"image":     target.Image,
+			"status":    db.ServiceRunning,
+			"node_port": nodePort,
 		})
 	}()
 

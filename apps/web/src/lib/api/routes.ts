@@ -98,10 +98,4 @@ export const routes = {
       token
     ),
 
-  syncTarget: (orgId: string, projectId: string, routeId: string, targetId: string, token: string) =>
-    apiFetch<ApiRouteTarget>(
-      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/targets/${targetId}/sync`,
-      { method: "POST" },
-      token
-    ),
 }

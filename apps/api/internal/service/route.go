@@ -12,14 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 type RouteService struct {
-	db  *gorm.DB
-	k8s kubernetes.Interface
+	db *gorm.DB
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
@@ -195,26 +191,6 @@ func (s *RouteService) DeleteTarget(ctx context.Context, targetID uuid.UUID) err
 	return s.db.WithContext(ctx).Delete(&db.RouteTarget{}, "id = ?", targetID).Error
 }
 
-func (s *RouteService) SyncTargetIP(ctx context.Context, targetID uuid.UUID) (*db.RouteTarget, error) {
-	var target db.RouteTarget
-	if err := s.db.WithContext(ctx).First(&target, "id = ?", targetID).Error; err != nil {
-		return nil, huma.Error404NotFound("target not found")
-	}
-	if target.ServiceID == nil {
-		return nil, huma.Error400BadRequest("target is not linked to a service")
-	}
-	in := TargetInput{ServiceID: target.ServiceID}
-	resolved, err := s.resolveTarget(ctx, &in)
-	if err != nil {
-		return nil, err
-	}
-	err = s.db.WithContext(ctx).Model(&target).Updates(map[string]any{
-		"target_ip":   resolved.TargetIP,
-		"target_port": resolved.TargetPort,
-	}).Error
-	return &target, err
-}
-
 // ── Route delete ──────────────────────────────────────────────────────────────
 
 func (s *RouteService) Delete(ctx context.Context, routeID uuid.UUID) error {
@@ -266,48 +242,22 @@ func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.
 
 	if in.ServiceID != nil {
 		var svc db.Service
-		if err := s.db.WithContext(ctx).Preload("Node").Preload("Project").First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
+		if err := s.db.WithContext(ctx).First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
 			return nil, huma.Error404NotFound("service not found")
 		}
-		if svc.NodeID != nil && svc.Node != nil {
-			t.TargetIP = svc.Node.TailscaleIP
-		} else if s.k8s != nil {
-			podSlug := slugify(svc.Name)
-			namespace := svc.Project.Slug
-			pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("app=%s,managed-by=meshploy", podSlug),
-			})
-			if err != nil || len(pods.Items) == 0 {
-				return nil, huma.Error422UnprocessableEntity("service has no running pods — deploy it first")
-			}
-			k8sNode, err := s.k8s.CoreV1().Nodes().Get(ctx, pods.Items[0].Spec.NodeName, metav1.GetOptions{})
-			if err != nil {
-				return nil, huma.Error422UnprocessableEntity("could not resolve mesh node for service")
-			}
-			var node db.Node
-			found := false
-			for _, addr := range k8sNode.Status.Addresses {
-				if addr.Type == corev1.NodeInternalIP {
-					if err := s.db.WithContext(ctx).Where("tailscale_ip = ?", addr.Address).First(&node).Error; err == nil {
-						found = true
-						break
-					}
-				}
-			}
-			if !found {
-				if err := s.db.WithContext(ctx).Where("name = ?", pods.Items[0].Spec.NodeName).First(&node).Error; err != nil {
-					return nil, huma.Error422UnprocessableEntity("could not resolve mesh node for service — ensure the worker is registered")
-				}
-			}
-			t.TargetIP = node.TailscaleIP
-		} else {
-			return nil, huma.Error422UnprocessableEntity("service must be pinned to a specific node to create a route (K8s not configured)")
+		if svc.NodePort == 0 {
+			return nil, huma.Error422UnprocessableEntity("service has not been deployed yet — deploy it first to create a route")
 		}
-		port := svc.Port
-		if port == 0 {
-			port = 3000
+		// Route through the K8s NodePort on the gateway node. kube-proxy distributes
+		// traffic across all replicas regardless of which nodes they land on.
+		var gateway db.Node
+		if err := s.db.WithContext(ctx).
+			Where("k3s_role = ? AND status = ?", db.K3sRoleServer, "online").
+			First(&gateway).Error; err != nil {
+			return nil, huma.Error422UnprocessableEntity("gateway node is not online — cannot resolve route target")
 		}
-		t.TargetPort = port
+		t.TargetIP = gateway.TailscaleIP
+		t.TargetPort = svc.NodePort
 	} else if in.NodeID != nil {
 		var node db.Node
 		if err := s.db.WithContext(ctx).First(&node, "id = ?", *in.NodeID).Error; err != nil {

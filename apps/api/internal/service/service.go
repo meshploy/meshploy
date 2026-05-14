@@ -166,7 +166,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Stacks:          &StackService{db: db, workload: workloads},
 		Volumes:         &VolumeService{db: db, k8s: k8sClient, deployment: deployments},
 		Domains:         domains,
-		Routes:          &RouteService{db: db, k8s: k8sClient},
+		Routes:          &RouteService{db: db},
 		Deployments:     deployments,
 		GitIntegrations: gitSvc,
 		Registries:      registries,
