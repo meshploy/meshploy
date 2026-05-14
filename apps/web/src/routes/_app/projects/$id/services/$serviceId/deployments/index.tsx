@@ -101,7 +101,7 @@ function DeploymentsTab() {
           )}
         </div>
 
-        {!isProvisioned && (
+        {(isDatabase || !isProvisioned) && (
           <Button
             size="sm"
             className="gap-1.5"
@@ -113,7 +113,7 @@ function DeploymentsTab() {
             ) : (
               <Rocket className="h-3.5 w-3.5" />
             )}
-            {isDatabase ? "Provision" : "Deploy"}
+            {isDatabase ? (isProvisioned ? "Re-provision" : "Provision") : "Deploy"}
           </Button>
         )}
       </div>
