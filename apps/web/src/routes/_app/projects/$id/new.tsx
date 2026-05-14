@@ -1147,11 +1147,12 @@ function RouteForm({ projectId }: { projectId: string }) {
     enabled: !!orgId,
   })
 
-  const { data: serviceList = [] } = useQuery<ApiService[]>({
+  const { data: allServices = [] } = useQuery<ApiService[]>({
     queryKey: ["services", orgId, projectId],
     queryFn: () => servicesApi.list(orgId, projectId, token),
     enabled: !!orgId,
   })
+  const serviceList = allServices.filter((s) => s.type === "application")
 
   const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],

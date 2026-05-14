@@ -177,14 +177,6 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DeleteRouteTarget)
 
-	huma.Register(api, huma.Operation{
-		OperationID: "sync-route-target",
-		Method:      "POST",
-		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}/sync",
-		Summary:     "Re-resolve target IP from current service node",
-		Tags:        []string{"Routes"},
-		Security:    []map[string][]string{{"bearer": {}}},
-	}, h.SyncRouteTarget)
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -375,21 +367,6 @@ func (h *Handler) DeleteRouteTarget(ctx context.Context, input *RouteTargetPathI
 		return nil, err
 	}
 	return nil, h.svc.Routes.DeleteTarget(ctx, targetID)
-}
-
-func (h *Handler) SyncRouteTarget(ctx context.Context, input *RouteTargetPathInput) (*GetRouteTargetOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	targetID, err := parseUUID(input.TargetID)
-	if err != nil {
-		return nil, err
-	}
-	target, err := h.svc.Routes.SyncTargetIP(ctx, targetID)
-	if err != nil {
-		return nil, err
-	}
-	return &GetRouteTargetOutput{Body: target}, nil
 }
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
