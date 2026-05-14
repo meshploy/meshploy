@@ -200,6 +200,7 @@ function RouteDetailPage() {
               <TargetItem
                 key={target.id}
                 target={target}
+                hostname={route.hostname}
                 serviceMap={serviceMap}
                 nodeMap={nodeMap}
                 syncPending={syncTargetMutation.isPending}
@@ -353,6 +354,7 @@ function RouteDetailPage() {
 
 function TargetItem({
   target,
+  hostname,
   serviceMap,
   nodeMap,
   syncPending,
@@ -361,6 +363,7 @@ function TargetItem({
   onDelete,
 }: {
   target: ApiRouteTarget
+  hostname: string
   serviceMap: Record<string, string>
   nodeMap: Record<string, string>
   syncPending: boolean
@@ -375,38 +378,57 @@ function TargetItem({
     : `${target.target_ip}:${target.target_port}`
 
   const canSync = !!(target.service_id || target.node_id)
+  const openHref = `https://${hostname}${target.path === "/" ? "" : target.path}`
 
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/5 px-3 py-2.5">
-      <code className="text-xs font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground shrink-0">
-        {target.path}
-      </code>
-      <span className="text-muted-foreground text-xs shrink-0">→</span>
-      <span className="text-xs text-foreground flex-1 truncate">{targetLabel}</span>
-      {target.strip_path && (
-        <Badge className="text-[9px] px-1 py-0 h-4 border bg-muted/50 text-muted-foreground border-border/40 shrink-0">
-          strip
-        </Badge>
-      )}
-      {canSync && (
+    <div className="rounded-md border border-border/60 bg-muted/5 px-3 py-2.5 space-y-1.5">
+      <div className="flex items-center gap-3">
+        <code className="text-xs font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground shrink-0">
+          {target.path}
+        </code>
+        <span className="text-muted-foreground text-xs shrink-0">→</span>
+        <span className="text-xs text-foreground flex-1 truncate">{targetLabel}</span>
+        {target.strip_path && (
+          <Badge className="text-[9px] px-1 py-0 h-4 border bg-muted/50 text-muted-foreground border-border/40 shrink-0">
+            strip
+          </Badge>
+        )}
+        <a
+          href={openHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open in new tab"
+          className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+        {canSync && (
+          <button
+            type="button"
+            onClick={onSync}
+            disabled={syncPending}
+            title="Re-resolve target IP"
+            className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 disabled:opacity-40"
+          >
+            {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          </button>
+        )}
         <button
           type="button"
-          onClick={onSync}
-          disabled={syncPending}
-          title="Re-resolve target IP"
-          className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 disabled:opacity-40"
+          onClick={onDelete}
+          disabled={deletePending}
+          className="text-muted-foreground/50 hover:text-destructive transition-colors shrink-0 disabled:opacity-40"
         >
-          {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          <Trash2 className="h-3.5 w-3.5" />
         </button>
+      </div>
+      {target.target_ip && (
+        <div className="flex items-center gap-1.5 pl-0.5">
+          <code className="text-[10px] font-mono text-muted-foreground/50">
+            {target.target_ip}:{target.target_port}
+          </code>
+        </div>
       )}
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={deletePending}
-        className="text-muted-foreground/50 hover:text-destructive transition-colors shrink-0 disabled:opacity-40"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
     </div>
   )
 }

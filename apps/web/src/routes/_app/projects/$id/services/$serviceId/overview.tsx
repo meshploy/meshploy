@@ -1,6 +1,6 @@
-import { createFileRoute, useParams } from "@tanstack/react-router"
+import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, Server, Box, Database, ExternalLink, Copy, Check, Table2 } from "lucide-react"
+import { Globe, Server, Box, Database, ExternalLink, Copy, Check, Table2, ArrowRight } from "lucide-react"
 import {
   services as servicesApi,
   routes as routesApi,
@@ -73,6 +73,7 @@ function ServiceOverviewTab() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const openTab = useTabStore((s) => s.openTab)
+  const navigate = useNavigate()
 
   const { data: service } = useQuery({
     queryKey: ["service", orgId, projectId, serviceId],
@@ -272,15 +273,26 @@ function ServiceOverviewTab() {
                         {r.zone}{r.targets[0] ? ` · ${r.targets[0].target_ip}:${r.targets[0].target_port}` : ""}
                       </p>
                     </div>
-                    <a
-                      href={`https://${r.hostname}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => navigate({ to: "/projects/$id/routes/$routeId", params: { id: projectId, routeId: r.id } })}
+                        title="Open route details"
+                        className="text-muted-foreground/40 hover:text-muted-foreground"
+                      >
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                      <a
+                        href={`https://${r.hostname}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground transition-colors h-7 w-7"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
                   </div>
                 ))}
               </div>
