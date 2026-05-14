@@ -2,6 +2,7 @@ import { useRouterState, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Home } from "lucide-react"
 import { UserMenu } from "./user-menu"
+import { AccentPicker } from "./accent-picker"
 import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, jobs as jobsApi, stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -187,6 +188,7 @@ export function Topbar() {
         <Breadcrumb />
       </div>
       <div className="flex items-center gap-3">
+        <AccentPicker />
         <UserMenu />
       </div>
     </header>

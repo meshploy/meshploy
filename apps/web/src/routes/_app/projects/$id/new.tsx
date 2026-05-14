@@ -249,7 +249,7 @@ function NewResourcePage() {
                   className={cn(
                     "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
                     resourceType === type && !soon
-                      ? "bg-primary/10 text-primary font-medium"
+                      ? "bg-primary/10 text-primary"
                       : soon
                       ? "text-muted-foreground/40 cursor-not-allowed"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/40"

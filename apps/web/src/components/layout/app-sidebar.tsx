@@ -23,6 +23,21 @@ const NAV_ITEMS = [
   { href: "/settings", icon: Settings, label: "Settings", exact: false },
 ] as const
 
+function MeshMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="18,78 18,22 50,58 82,22 82,78" />
+      <line x1="18" y1="78" x2="50" y2="58" opacity="0.45" />
+      <line x1="82" y1="78" x2="50" y2="58" opacity="0.45" />
+      <circle cx="18" cy="78" r="5.5" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="22" r="5.5" fill="currentColor" stroke="none" />
+      <circle cx="50" cy="58" r="5.5" fill="currentColor" stroke="none" />
+      <circle cx="82" cy="22" r="5.5" fill="currentColor" stroke="none" />
+      <circle cx="82" cy="78" r="5.5" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
@@ -36,8 +51,8 @@ export function AppSidebar() {
     >
       {/* Logo */}
       <div className={cn("flex items-center h-14 px-4 border-b border-sidebar-border shrink-0", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
-        <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary shrink-0">
-          <Network className="w-4 h-4 text-primary-foreground" />
+        <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary/15 shrink-0">
+          <MeshMark className="w-4 h-4 text-primary" />
         </div>
         {!sidebarCollapsed && (
           <span className="font-semibold tracking-tight text-sidebar-foreground text-sm">meshploy</span>
@@ -45,7 +60,7 @@ export function AppSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-0.5 p-2 flex-1 overflow-y-auto">
+      <nav className="flex flex-col gap-0.5 p-2 flex-1">
         {NAV_ITEMS.map((item) => {
           const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href)
 
@@ -59,7 +74,7 @@ export function AppSidebar() {
                       className={cn(
                         "flex items-center justify-center h-9 w-9 rounded-md mx-auto transition-colors",
                         isActive
-                          ? "bg-sidebar-primary/15 text-sidebar-primary"
+                          ? "bg-sidebar-accent text-sidebar-foreground"
                           : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
                       )}
                     />
@@ -77,9 +92,9 @@ export function AppSidebar() {
               key={item.href}
               to={item.href}
               className={cn(
-                "flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-colors",
+                "relative flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-colors",
                 isActive
-                  ? "bg-sidebar-primary/10 text-sidebar-primary font-medium"
+                  ? "bg-sidebar-accent text-sidebar-foreground before:absolute before:-left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-primary before:rounded-r-sm"
                   : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               )}
             >
