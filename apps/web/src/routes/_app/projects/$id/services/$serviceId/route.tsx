@@ -81,8 +81,8 @@ function ServiceLayout() {
   return (
     <div className="flex flex-col min-h-full">
       <DetailPageHeader
-        backTo="/projects/$id/services"
-        backLabel="Back to services"
+        backTo={service.type === "database" ? "/projects/$id/databases" : "/projects/$id/services"}
+        backLabel={service.type === "database" ? "Back to databases" : "Back to services"}
         backParams={{ id: projectId }}
         icon={service.type === "database"
           ? <Database className="h-4 w-4 text-muted-foreground" />
