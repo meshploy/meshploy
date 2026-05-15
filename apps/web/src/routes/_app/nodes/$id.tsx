@@ -131,11 +131,12 @@ function NodeDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const openTab = useTabStore((s) => s.openTab)
 
-  const { data: node, isLoading, isError, error } = useQuery({
+  const { data: node, isPending, isError, error } = useQuery({
     queryKey: ["node", orgId, id],
     queryFn: () => nodesApi.get(orgId!, id, token),
     enabled: !!orgId,
     select: toNode,
+    throwOnError: false,
   })
 
   const { data: metricsData, dataUpdatedAt } = useQuery({
@@ -144,6 +145,7 @@ function NodeDetailPage() {
     enabled: !!orgId,
     refetchInterval: 5000,
     retry: false,
+    throwOnError: false,
   })
 
   const history = useMetricsStore(state => state.history[id] ?? [])
@@ -152,6 +154,7 @@ function NodeDetailPage() {
 
   useEffect(() => {
     if (!metricsData || dataUpdatedAt === prevUpdatedAt.current) return
+    if (typeof metricsData.cpu_total_seconds !== "number") return
     prevUpdatedAt.current = dataUpdatedAt
     addSample(id, toRawSample(dataUpdatedAt, metricsData))
   }, [metricsData, dataUpdatedAt, id, addSample])
@@ -166,7 +169,7 @@ function NodeDetailPage() {
     },
   })
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center h-64 gap-2 text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
