@@ -25,6 +25,8 @@ import { useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
 import type { OrgRole } from "@/types"
+import { ACCENT_GROUPS, getAccent } from "@/lib/accents"
+import { useAccentStore } from "@/store/accent-store"
 
 export const Route = createFileRoute("/_app/settings/")({
   component: SettingsPage,
@@ -59,6 +61,8 @@ function SettingsPage() {
 
       <GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} />
 
+      <AppearanceSection />
+
       <TwoFactorSection />
 
       <PrimaryDomainSection />
@@ -67,6 +71,50 @@ function SettingsPage() {
 
       <MembersSection />
     </div>
+  )
+}
+
+function AppearanceSection() {
+  const { accentId, setAccent } = useAccentStore()
+
+  return (
+    <Section title="Appearance" subtitle="Customize the accent color used across the interface">
+      <div className="space-y-4">
+        {ACCENT_GROUPS.map((group) => (
+          <div key={group.label}>
+            <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">
+              {group.label}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {group.colors.map((color) => {
+                const isSelected = color.id === accentId
+                return (
+                  <button
+                    key={color.id}
+                    type="button"
+                    onClick={() => setAccent(color.id)}
+                    title={color.label}
+                    className={cn(
+                      "flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs transition-colors border",
+                      isSelected
+                        ? "bg-muted/60 text-foreground border-border"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/30 border-transparent"
+                    )}
+                  >
+                    <span
+                      className="h-3 w-3 rounded-full shrink-0 ring-1 ring-black/20"
+                      style={{ background: color.value }}
+                    />
+                    {color.label}
+                    {isSelected && <Check className="h-3 w-3 ml-0.5 shrink-0" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Section>
   )
 }
 
