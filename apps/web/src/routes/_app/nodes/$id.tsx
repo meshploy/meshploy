@@ -118,6 +118,8 @@ function computeMetrics(history: RawSample[]): ComputedMetrics | null {
   }
 }
 
+const EMPTY_HISTORY: RawSample[] = []
+
 export const Route = createFileRoute("/_app/nodes/$id")({
   component: NodeDetailPage,
 })
@@ -148,7 +150,7 @@ function NodeDetailPage() {
     throwOnError: false,
   })
 
-  const history = useMetricsStore(state => state.history[id] ?? [])
+  const history = useMetricsStore(state => state.history[id] ?? EMPTY_HISTORY)
   const addSample = useMetricsStore(state => state.addSample)
   const prevUpdatedAt = useRef(0)
 
