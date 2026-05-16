@@ -152,7 +152,7 @@ function NodeDetailPage() {
 
   const history = useMetricsStore(state => state.history[id] ?? EMPTY_HISTORY)
   const addSample = useMetricsStore(state => state.addSample)
-  const prevUpdatedAt = useRef(0)
+  const prevUpdatedAt = useRef(history.length > 0 ? history[history.length - 1].ts : 0)
 
   useEffect(() => {
     if (!metricsData || dataUpdatedAt === prevUpdatedAt.current) return
