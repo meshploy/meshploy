@@ -13,6 +13,7 @@ import {
   type ApiRouteTarget,
   type TargetBody,
 } from "@/lib/api"
+import { CornerDownRight } from "lucide-react"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
@@ -31,7 +32,7 @@ const ZONE_STYLES: Record<string, string> = {
   preview:  "bg-violet-500/10 text-violet-400 border-violet-500/20",
 }
 
-type TargetMode = "service" | "node"
+type TargetMode = "service" | "node" | "redirect"
 
 interface AddForm {
   open: boolean
@@ -41,6 +42,8 @@ interface AddForm {
   port: string
   path: string
   stripPath: boolean
+  redirectRouteId: string
+  redirectCode: number
 }
 
 const INITIAL_ADD: AddForm = {
@@ -51,6 +54,8 @@ const INITIAL_ADD: AddForm = {
   port: "",
   path: "/",
   stripPath: false,
+  redirectRouteId: "",
+  redirectCode: 301,
 }
 
 function RouteDetailPage() {
@@ -84,21 +89,29 @@ function RouteDetailPage() {
   })
   const nodeList = rawNodes.filter((n) => n.status === "online")
 
+  const { data: allRoutes = [] } = useQuery({
+    queryKey: ["routes", orgId, projectId],
+    queryFn: () => routesApi.list(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  // Other public/preview routes in same project — valid redirect targets
+  const redirectableRoutes = allRoutes.filter(
+    (r) => r.id !== routeId && r.zone !== "internal"
+  )
+
   const serviceMap = Object.fromEntries(allServices.map((s) => [s.id, s.name]))
-  const nodeMap = Object.fromEntries(rawNodes.map((n) => [n.id, n.name]))
+  const nodeMap    = Object.fromEntries(rawNodes.map((n) => [n.id, n.name]))
+  const routeMap   = Object.fromEntries(allRoutes.map((r) => [r.id, r.hostname]))
 
   const invalidateRoute = () =>
     queryClient.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] })
 
   const addTargetMutation = useMutation({
     mutationFn: () => {
-      const body: TargetBody = {
-        path: add.path || "/",
-        strip_path: add.stripPath,
-        ...(add.mode === "service"
-          ? { service_id: add.serviceId }
-          : { node_id: add.nodeId, port: parseInt(add.port, 10) }),
-      }
+      const body: TargetBody = { path: add.path || "/", strip_path: add.stripPath }
+      if (add.mode === "service")        body.service_id = add.serviceId
+      else if (add.mode === "node")      { body.node_id = add.nodeId; body.port = parseInt(add.port, 10) }
+      else if (add.mode === "redirect")  { body.redirect_route_id = add.redirectRouteId; body.redirect_code = add.redirectCode }
       return routesApi.addTarget(orgId!, projectId, routeId, body, token)
     },
     onSuccess: () => {
@@ -126,8 +139,11 @@ function RouteDetailPage() {
   })
 
   const addValid =
-    add.path.trim().startsWith("/") &&
-    (add.mode === "service" ? add.serviceId.length > 0 : add.nodeId.length > 0 && add.port.trim().length > 0)
+    add.path.trim().startsWith("/") && (
+      add.mode === "service"  ? add.serviceId.length > 0 :
+      add.mode === "node"     ? add.nodeId.length > 0 && add.port.trim().length > 0 :
+      /* redirect */            add.redirectRouteId.length > 0
+    )
 
   if (isLoading) {
     return (
@@ -197,6 +213,7 @@ function RouteDetailPage() {
                 hostname={route.hostname}
                 serviceMap={serviceMap}
                 nodeMap={nodeMap}
+                routeMap={routeMap}
                 deletePending={deleteTargetMutation.isPending}
                 onDelete={() => deleteTargetMutation.mutate(target.id)}
               />
@@ -207,10 +224,11 @@ function RouteDetailPage() {
                 <div className="flex items-center gap-2">
                   <SegmentedControl
                     value={add.mode}
-                    onValueChange={(v) => patchAdd({ mode: v as TargetMode, serviceId: "", nodeId: "", port: "" })}
+                    onValueChange={(v) => patchAdd({ mode: v as TargetMode, serviceId: "", nodeId: "", port: "", redirectRouteId: "" })}
                     options={[
-                      { value: "service", label: "Service" },
-                      { value: "node", label: "Node + port" },
+                      { value: "service",  label: "Service" },
+                      { value: "node",     label: "Node + port" },
+                      ...(route.zone !== "internal" ? [{ value: "redirect", label: "Redirect" }] : []),
                     ]}
                     className="text-xs shrink-0"
                   />
@@ -220,19 +238,21 @@ function RouteDetailPage() {
                     placeholder="/path"
                     className={cn(inputCls, "font-mono text-xs w-28 shrink-0")}
                   />
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={add.stripPath}
-                      onChange={(e) => patchAdd({ stripPath: e.target.checked })}
-                      className="accent-primary"
-                    />
-                    Strip path
-                  </label>
+                  {add.mode !== "redirect" && (
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={add.stripPath}
+                        onChange={(e) => patchAdd({ stripPath: e.target.checked })}
+                        className="accent-primary"
+                      />
+                      Strip path
+                    </label>
+                  )}
                   <button
                     type="button"
                     onClick={() => setAdd(INITIAL_ADD)}
-                    className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                    className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-auto"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -254,7 +274,7 @@ function RouteDetailPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                ) : (
+                ) : add.mode === "node" ? (
                   <div className="grid grid-cols-[1fr_100px] gap-2">
                     <Select value={add.nodeId} onValueChange={(v) => patchAdd({ nodeId: v ?? "" })}>
                       <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
@@ -278,6 +298,33 @@ function RouteDetailPage() {
                       value={add.port}
                       onChange={(e) => patchAdd({ port: e.target.value })}
                       placeholder="8080"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Select value={add.redirectRouteId} onValueChange={(v) => patchAdd({ redirectRouteId: v ?? "" })}>
+                      <SelectTrigger className="flex-1 h-9 text-sm bg-background border-border/60">
+                        <SelectValue placeholder={redirectableRoutes.length === 0 ? "No other routes available" : "Select target route…"}>
+                          {redirectableRoutes.find((r) => r.id === add.redirectRouteId)?.hostname}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {redirectableRoutes.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            <span className="font-mono text-xs">{r.hostname}</span>
+                            <span className="ml-2 text-muted-foreground text-xs">{r.zone}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <SegmentedControl
+                      value={String(add.redirectCode)}
+                      onValueChange={(v) => patchAdd({ redirectCode: Number(v) })}
+                      options={[
+                        { value: "301", label: "301" },
+                        { value: "302", label: "302" },
+                      ]}
+                      className="text-xs shrink-0"
                     />
                   </div>
                 )}
@@ -349,6 +396,7 @@ function TargetItem({
   hostname,
   serviceMap,
   nodeMap,
+  routeMap,
   deletePending,
   onDelete,
 }: {
@@ -356,10 +404,14 @@ function TargetItem({
   hostname: string
   serviceMap: Record<string, string>
   nodeMap: Record<string, string>
+  routeMap: Record<string, string>
   deletePending: boolean
   onDelete: () => void
 }) {
-  const targetLabel = target.service_id
+  const isRedirect = !!target.redirect_route_id
+  const targetLabel = isRedirect
+    ? routeMap[target.redirect_route_id!] ?? "Unknown route"
+    : target.service_id
     ? serviceMap[target.service_id] ?? "Unknown service"
     : target.node_id
     ? `${nodeMap[target.node_id] ?? "Unknown node"} :${target.target_port}`
@@ -374,8 +426,16 @@ function TargetItem({
           {target.path}
         </code>
         <span className="text-muted-foreground text-xs shrink-0">→</span>
-        <span className="text-xs text-foreground flex-1 truncate">{targetLabel}</span>
-        {target.strip_path && (
+        {isRedirect && (
+          <CornerDownRight className="h-3 w-3 text-amber-400/70 shrink-0" />
+        )}
+        <span className="text-xs text-foreground flex-1 truncate font-mono">{targetLabel}</span>
+        {isRedirect && (
+          <Badge className="text-[9px] px-1 py-0 h-4 border bg-amber-500/10 text-amber-400 border-amber-500/20 shrink-0">
+            {target.redirect_code}
+          </Badge>
+        )}
+        {target.strip_path && !isRedirect && (
           <Badge className="text-[9px] px-1 py-0 h-4 border bg-muted/50 text-muted-foreground border-border/40 shrink-0">
             strip
           </Badge>
@@ -398,7 +458,7 @@ function TargetItem({
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
-      {target.target_ip && (
+      {!isRedirect && target.target_ip && (
         <div className="flex items-center gap-1.5 pl-0.5">
           <code className="text-[10px] font-mono text-muted-foreground/50">
             {target.target_ip}:{target.target_port}

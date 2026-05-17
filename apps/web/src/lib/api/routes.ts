@@ -9,6 +9,8 @@ export interface ApiRouteTarget {
   node_id: string | null
   target_ip: string
   target_port: number
+  redirect_route_id: string | null
+  redirect_code: number
   created_at: string
   updated_at: string
 }
@@ -33,8 +35,8 @@ export type TargetBody = {
   service_id?: string
   node_id?: string
   port?: number
-  target_ip?: string
-  target_port?: number
+  redirect_route_id?: string
+  redirect_code?: number
 }
 
 export const routes = {

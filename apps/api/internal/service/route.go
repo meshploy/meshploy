@@ -21,14 +21,17 @@ type RouteService struct {
 // ── Input types ───────────────────────────────────────────────────────────────
 
 type TargetInput struct {
-	Path      string     // e.g. "/" or "/api" — defaults to "/" if empty
+	Path      string
 	StripPath bool
 	ServiceID *uuid.UUID
 	NodeID    *uuid.UUID
-	Port      int        // used when NodeID is set
+	Port      int
 	// Pre-resolved (optional override — skips auto-resolution)
 	TargetIP   string
 	TargetPort int
+	// Redirect target — mutually exclusive with ServiceID / NodeID
+	RedirectRouteID *uuid.UUID
+	RedirectCode    int // 301 or 302; defaults to 301 if zero
 }
 
 type CreateRouteInput struct {
@@ -127,6 +130,10 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		if t.Path == "" {
 			t.Path = "/"
 		}
+		if err := s.validateRedirectTarget(ctx, route.ID, in.Zone, t); err != nil {
+			_ = s.db.WithContext(ctx).Delete(route).Error
+			return nil, err
+		}
 		target, err := s.resolveTarget(ctx, t)
 		if err != nil {
 			// Clean up the route row on target resolution failure.
@@ -155,6 +162,13 @@ func (s *RouteService) AddTarget(ctx context.Context, routeID uuid.UUID, in Targ
 	if in.Path == "" {
 		in.Path = "/"
 	}
+	var route db.Route
+	if err := s.db.WithContext(ctx).First(&route, "id = ?", routeID).Error; err != nil {
+		return nil, huma.Error404NotFound("route not found")
+	}
+	if err := s.validateRedirectTarget(ctx, routeID, route.Zone, &in); err != nil {
+		return nil, err
+	}
 	target, err := s.resolveTarget(ctx, &in)
 	if err != nil {
 		return nil, err
@@ -171,17 +185,26 @@ func (s *RouteService) UpdateTarget(ctx context.Context, targetID uuid.UUID, in 
 	if in.Path == "" {
 		in.Path = "/"
 	}
+	var route db.Route
+	if err := s.db.WithContext(ctx).First(&route, "id = ?", target.RouteID).Error; err != nil {
+		return nil, huma.Error404NotFound("route not found")
+	}
+	if err := s.validateRedirectTarget(ctx, target.RouteID, route.Zone, &in); err != nil {
+		return nil, err
+	}
 	resolved, err := s.resolveTarget(ctx, &in)
 	if err != nil {
 		return nil, err
 	}
 	updates := map[string]any{
-		"path":        in.Path,
-		"strip_path":  in.StripPath,
-		"service_id":  in.ServiceID,
-		"node_id":     in.NodeID,
-		"target_ip":   resolved.TargetIP,
-		"target_port": resolved.TargetPort,
+		"path":              in.Path,
+		"strip_path":        in.StripPath,
+		"service_id":        in.ServiceID,
+		"node_id":           in.NodeID,
+		"target_ip":         resolved.TargetIP,
+		"target_port":       resolved.TargetPort,
+		"redirect_route_id": in.RedirectRouteID,
+		"redirect_code":     resolved.RedirectCode,
 	}
 	err = s.db.WithContext(ctx).Model(&target).Updates(updates).Error
 	return &target, err
@@ -229,15 +252,52 @@ func (s *RouteService) IsCustomDomainVerified(ctx context.Context, hostname stri
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-// resolveTarget fills TargetIP and TargetPort from ServiceID or NodeID.
+// validateRedirectTarget enforces zone and chain rules when a redirect target is requested.
+func (s *RouteService) validateRedirectTarget(ctx context.Context, routeID uuid.UUID, zone db.RouteZone, in *TargetInput) error {
+	if in.RedirectRouteID == nil {
+		return nil
+	}
+	if zone == db.RouteZoneInternal {
+		return huma.Error422UnprocessableEntity("redirect targets are not supported on internal routes")
+	}
+	if *in.RedirectRouteID == routeID {
+		return huma.Error422UnprocessableEntity("a route cannot redirect to itself")
+	}
+	// Ensure the target route has no redirects of its own (no multi-hop).
+	var count int64
+	s.db.WithContext(ctx).Model(&db.RouteTarget{}).
+		Where("route_id = ? AND redirect_route_id IS NOT NULL", *in.RedirectRouteID).
+		Count(&count)
+	if count > 0 {
+		return huma.Error422UnprocessableEntity("redirect target cannot itself contain redirects — multi-hop chains are not allowed")
+	}
+	return nil
+}
+
+// resolveTarget fills TargetIP/TargetPort from ServiceID or NodeID, or sets redirect fields.
 func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.RouteTarget, error) {
+	code := in.RedirectCode
+	if code == 0 {
+		code = 301
+	}
 	t := &db.RouteTarget{
-		Path:       in.Path,
-		StripPath:  in.StripPath,
-		ServiceID:  in.ServiceID,
-		NodeID:     in.NodeID,
-		TargetIP:   in.TargetIP,
-		TargetPort: in.TargetPort,
+		Path:            in.Path,
+		StripPath:       in.StripPath,
+		ServiceID:       in.ServiceID,
+		NodeID:          in.NodeID,
+		TargetIP:        in.TargetIP,
+		TargetPort:      in.TargetPort,
+		RedirectRouteID: in.RedirectRouteID,
+		RedirectCode:    code,
+	}
+
+	if in.RedirectRouteID != nil {
+		// Verify the target route exists.
+		var target db.Route
+		if err := s.db.WithContext(ctx).First(&target, "id = ?", *in.RedirectRouteID).Error; err != nil {
+			return nil, huma.Error404NotFound("redirect target route not found")
+		}
+		return t, nil
 	}
 
 	if in.ServiceID != nil {
