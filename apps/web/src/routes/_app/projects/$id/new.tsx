@@ -237,7 +237,7 @@ function NewResourcePage() {
 
       <div className="flex flex-1">
         {/* ─── Sidebar ─────────────────────────────────────────────── */}
-        <aside className="w-52 shrink-0 border-r border-border/40 py-6 px-3">
+        <aside className="w-52 shrink-0 border-r border-border/40 py-6 px-3 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
           <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider px-2 mb-2">
             Resource type
           </p>
