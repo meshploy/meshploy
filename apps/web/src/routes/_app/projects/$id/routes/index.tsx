@@ -118,12 +118,16 @@ function RouteRow({ route, onClick }: { route: ApiDbRoute; onClick: () => void }
           ) : (
             <>
               {shown.map((t) => (
-                <code
-                  key={t.id}
-                  className="text-[10px] font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground"
-                >
-                  {t.path}
-                </code>
+                <span key={t.id} className="flex items-center gap-0.5">
+                  <code className="text-[10px] font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground">
+                    {t.path}
+                  </code>
+                  {t.redirect_route_id && (
+                    <span className="text-[9px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded">
+                      ↪ {t.redirect_code || 301}
+                    </span>
+                  )}
+                </span>
               ))}
               {overflow > 0 && (
                 <span className="text-[10px] text-muted-foreground/50">+{overflow} more</span>
