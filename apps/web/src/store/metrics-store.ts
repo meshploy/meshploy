@@ -24,7 +24,7 @@ export const useMetricsStore = create<MetricsStore>((set) => ({
     set((state) => ({
       history: {
         ...state.history,
-        [nodeId]: [...(state.history[nodeId] ?? []).slice(-19), sample],
+        [nodeId]: [...(state.history[nodeId] ?? []).slice(-199), sample],
       },
     })),
 }))
