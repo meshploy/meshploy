@@ -214,6 +214,22 @@ func hashToken(raw string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// ChangePassword verifies the current password and updates it to the new one.
+func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
+	var user db.User
+	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword)); err != nil {
+		return errors.New("current password is incorrect")
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Model(&user).Update("password", string(hashed)).Error
+}
+
 // GetMe returns the current user by ID.
 func (s *AuthService) GetMe(ctx context.Context, userID uuid.UUID) (*db.User, error) {
 	var user db.User
