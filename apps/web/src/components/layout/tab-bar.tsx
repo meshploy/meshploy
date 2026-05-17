@@ -1,12 +1,13 @@
 "use client"
 
-import { Home, Database, Terminal, X } from "lucide-react"
+import { Home, Database, Terminal, Activity, X } from "lucide-react"
 import { useTabStore, type SessionTab } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
 
 const TAB_ICONS: Record<string, React.ElementType> = {
   explorer: Database,
   terminal: Terminal,
+  metrics:  Activity,
 }
 
 export function TabBar() {

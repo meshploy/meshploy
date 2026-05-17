@@ -27,7 +27,7 @@ import { useTabStore } from "@/store/tab-store"
 import { useMetricsStore, type RawSample } from "@/store/metrics-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { useState, useEffect, useRef, useMemo, useId } from "react"
-import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts"
+import { AreaChart, Area, YAxis, ResponsiveContainer, Tooltip } from "recharts"
 
 function toRawSample(ts: number, m: ApiNodeMetrics): RawSample {
   return {
@@ -441,10 +441,12 @@ function SparkAreaChart({
   data,
   color = "oklch(0.65 0.18 200)",
   unit = "%",
+  domain,
 }: {
   data: number[]
   color?: string
   unit?: string
+  domain?: [number, number]
 }) {
   const uid = useId().replace(/:/g, "")
   if (data.length < 2) return <div className="h-10" />
@@ -459,6 +461,7 @@ function SparkAreaChart({
               <stop offset="95%" stopColor={color} stopOpacity={0} />
             </linearGradient>
           </defs>
+          {domain && <YAxis domain={domain} hide />}
           <Tooltip
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null
@@ -510,7 +513,7 @@ function MetricCard({
       <p className="text-2xl font-semibold tabular-nums leading-none">
         {percent !== null ? `${Math.round(percent)}%` : "—"}
       </p>
-      <SparkAreaChart data={sparkData} color={color} />
+      <SparkAreaChart data={sparkData} color={color} domain={[0, 100]} />
       <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
     </div>
   )

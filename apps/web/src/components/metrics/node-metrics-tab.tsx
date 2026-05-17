@@ -1,4 +1,5 @@
 import { useMemo, useState, useId } from "react"
+import { Loader2 } from "lucide-react"
 import { Cpu, HardDrive, MemoryStick, Network } from "lucide-react"
 import {
   AreaChart,
@@ -90,6 +91,7 @@ function FullChart({
   currentLabel,
   yFormatter,
   tooltipFormatter,
+  yDomain,
 }: {
   title: string
   icon: React.ReactNode
@@ -99,6 +101,7 @@ function FullChart({
   currentLabel: string
   yFormatter: (v: number) => string
   tooltipFormatter: (v: number) => string
+  yDomain?: [number, number]
 }) {
   const uid = useId().replace(/:/g, "")
   const gradientId = `mg-${uid}`
@@ -137,6 +140,7 @@ function FullChart({
             axisLine={false}
             tickFormatter={yFormatter}
             width={38}
+            domain={yDomain ?? ["auto", "auto"]}
           />
           <ChartTooltip
             content={(props) => (
@@ -200,8 +204,12 @@ export function NodeMetricsTab({ payload }: { payload: MetricsPayload }) {
       </div>
 
       {chartData.length < 2 ? (
-        <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
-          Collecting data…
+        <div className="flex flex-col items-center justify-center h-64 gap-3">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/60" />
+          <div className="text-center space-y-1">
+            <p className="text-sm text-foreground/80">Collecting metrics</p>
+            <p className="text-xs text-muted-foreground/60">Waiting for the first two samples to compute deltas</p>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
@@ -214,6 +222,7 @@ export function NodeMetricsTab({ payload }: { payload: MetricsPayload }) {
             currentLabel={latest?.cpu != null ? `${latest.cpu.toFixed(1)}%` : "—"}
             yFormatter={(v) => `${v.toFixed(0)}%`}
             tooltipFormatter={(v) => `${v.toFixed(1)}%`}
+            yDomain={[0, 100]}
           />
           <FullChart
             title="Memory"
@@ -224,6 +233,7 @@ export function NodeMetricsTab({ payload }: { payload: MetricsPayload }) {
             currentLabel={latest?.mem != null ? `${latest.mem.toFixed(1)}%` : "—"}
             yFormatter={(v) => `${v.toFixed(0)}%`}
             tooltipFormatter={(v) => `${v.toFixed(1)}%`}
+            yDomain={[0, 100]}
           />
           <FullChart
             title="Disk"
@@ -234,6 +244,7 @@ export function NodeMetricsTab({ payload }: { payload: MetricsPayload }) {
             currentLabel={latest?.disk != null ? `${latest.disk.toFixed(1)}%` : "—"}
             yFormatter={(v) => `${v.toFixed(0)}%`}
             tooltipFormatter={(v) => `${v.toFixed(1)}%`}
+            yDomain={[0, 100]}
           />
           <FullChart
             title="Network"
