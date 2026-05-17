@@ -39,6 +39,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Redirect target — respond immediately without proxying.
+	if entry.RedirectHostname != "" {
+		code := entry.RedirectCode
+		if code == 0 {
+			code = http.StatusMovedPermanently
+		}
+		location := "https://" + entry.RedirectHostname + r.URL.RequestURI()
+		http.Redirect(w, r, location, code)
+		return
+	}
+
 	// Strip the matched path prefix before forwarding when requested.
 	if entry.StripPath && entry.Path != "/" {
 		stripped := strings.TrimPrefix(reqPath, entry.Path)

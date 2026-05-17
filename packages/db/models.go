@@ -571,17 +571,20 @@ type Route struct {
 // RouteTarget maps one path prefix on a Route to a backend service or node.
 type RouteTarget struct {
 	Base
-	RouteID    uuid.UUID  `gorm:"type:uuid;not null;index"  json:"route_id"`
-	Path       string     `gorm:"not null;default:'/'"      json:"path"`       // e.g. "/" or "/api"
-	StripPath  bool       `gorm:"not null;default:false"    json:"strip_path"` // strip path prefix before forwarding
-	ServiceID  *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"`
-	NodeID     *uuid.UUID `gorm:"type:uuid;index"           json:"node_id"`
-	TargetIP   string     `gorm:"not null"                  json:"target_ip"`
-	TargetPort int        `gorm:"not null"                  json:"target_port"`
+	RouteID         uuid.UUID  `gorm:"type:uuid;not null;index"  json:"route_id"`
+	Path            string     `gorm:"not null;default:'/'"      json:"path"`
+	StripPath       bool       `gorm:"not null;default:false"    json:"strip_path"`
+	ServiceID       *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"`
+	NodeID          *uuid.UUID `gorm:"type:uuid;index"           json:"node_id"`
+	TargetIP        string     `gorm:"not null;default:''"       json:"target_ip"`
+	TargetPort      int        `gorm:"not null;default:0"        json:"target_port"`
+	RedirectRouteID *uuid.UUID `gorm:"type:uuid;index"           json:"redirect_route_id"`
+	RedirectCode    int        `gorm:"not null;default:301"      json:"redirect_code"`
 
-	Route   *Route   `gorm:"foreignKey:RouteID"   json:"-"`
-	Service *Service `gorm:"foreignKey:ServiceID" json:"-"`
-	Node    *Node    `gorm:"foreignKey:NodeID"    json:"-"`
+	Route         *Route   `gorm:"foreignKey:RouteID"         json:"-"`
+	Service       *Service `gorm:"foreignKey:ServiceID"       json:"-"`
+	Node          *Node    `gorm:"foreignKey:NodeID"          json:"-"`
+	RedirectRoute *Route   `gorm:"foreignKey:RedirectRouteID" json:"-"`
 }
 
 // ---------------------------------------------------------------------------

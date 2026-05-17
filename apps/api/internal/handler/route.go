@@ -50,11 +50,13 @@ type CreateRouteInput struct {
 		Subdomain string  `json:"subdomain,omitempty"`
 		Hostname  *string `json:"hostname,omitempty"`
 		Targets   []struct {
-			Path      string  `json:"path"`
-			StripPath bool    `json:"strip_path"`
-			ServiceID *string `json:"service_id,omitempty"`
-			NodeID    *string `json:"node_id,omitempty"`
-			Port      *int    `json:"port,omitempty"`
+			Path            string  `json:"path"`
+			StripPath       bool    `json:"strip_path"`
+			ServiceID       *string `json:"service_id,omitempty"`
+			NodeID          *string `json:"node_id,omitempty"`
+			Port            *int    `json:"port,omitempty"`
+			RedirectRouteID *string `json:"redirect_route_id,omitempty"`
+			RedirectCode    *int    `json:"redirect_code,omitempty"`
 		} `json:"targets"`
 	}
 }
@@ -68,11 +70,13 @@ type UpsertTargetInput struct {
 	ProjectID string `path:"projectId"`
 	RouteID   string `path:"routeId"`
 	Body      struct {
-		Path      string  `json:"path"`
-		StripPath bool    `json:"strip_path"`
-		ServiceID *string `json:"service_id,omitempty"`
-		NodeID    *string `json:"node_id,omitempty"`
-		Port      *int    `json:"port,omitempty"`
+		Path            string  `json:"path"`
+		StripPath       bool    `json:"strip_path"`
+		ServiceID       *string `json:"service_id,omitempty"`
+		NodeID          *string `json:"node_id,omitempty"`
+		Port            *int    `json:"port,omitempty"`
+		RedirectRouteID *string `json:"redirect_route_id,omitempty"`
+		RedirectCode    *int    `json:"redirect_code,omitempty"`
 	}
 }
 
@@ -84,11 +88,13 @@ type UpdateTargetInput struct {
 	RouteID   string `path:"routeId"`
 	TargetID  string `path:"targetId"`
 	Body      struct {
-		Path      string  `json:"path"`
-		StripPath bool    `json:"strip_path"`
-		ServiceID *string `json:"service_id,omitempty"`
-		NodeID    *string `json:"node_id,omitempty"`
-		Port      *int    `json:"port,omitempty"`
+		Path            string  `json:"path"`
+		StripPath       bool    `json:"strip_path"`
+		ServiceID       *string `json:"service_id,omitempty"`
+		NodeID          *string `json:"node_id,omitempty"`
+		Port            *int    `json:"port,omitempty"`
+		RedirectRouteID *string `json:"redirect_route_id,omitempty"`
+		RedirectCode    *int    `json:"redirect_code,omitempty"`
 	}
 }
 
@@ -235,26 +241,9 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 
 	targets := make([]svc.TargetInput, 0, len(input.Body.Targets))
 	for _, t := range input.Body.Targets {
-		ti := svc.TargetInput{
-			Path:      t.Path,
-			StripPath: t.StripPath,
-		}
-		if t.ServiceID != nil {
-			id, err := parseUUID(*t.ServiceID)
-			if err != nil {
-				return nil, huma.Error400BadRequest("invalid service_id")
-			}
-			ti.ServiceID = &id
-		}
-		if t.NodeID != nil {
-			id, err := parseUUID(*t.NodeID)
-			if err != nil {
-				return nil, huma.Error400BadRequest("invalid node_id")
-			}
-			ti.NodeID = &id
-		}
-		if t.Port != nil {
-			ti.Port = *t.Port
+		ti, err := parseTargetBody(t.Path, t.StripPath, t.ServiceID, t.NodeID, t.RedirectRouteID, t.Port, t.RedirectCode)
+		if err != nil {
+			return nil, err
 		}
 		targets = append(targets, ti)
 	}
@@ -328,7 +317,7 @@ func (h *Handler) AddRouteTarget(ctx context.Context, input *AddTargetInput) (*G
 	if err != nil {
 		return nil, err
 	}
-	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.NodeID, input.Body.Port)
+	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.NodeID, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +336,7 @@ func (h *Handler) UpdateRouteTarget(ctx context.Context, input *UpdateTargetInpu
 	if err != nil {
 		return nil, err
 	}
-	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.NodeID, input.Body.Port)
+	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.NodeID, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +360,7 @@ func (h *Handler) DeleteRouteTarget(ctx context.Context, input *RouteTargetPathI
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
 
-func parseTargetBody(path string, stripPath bool, serviceID, nodeID *string, port *int) (svc.TargetInput, error) {
+func parseTargetBody(path string, stripPath bool, serviceID, nodeID, redirectRouteID *string, port, redirectCode *int) (svc.TargetInput, error) {
 	ti := svc.TargetInput{Path: path, StripPath: stripPath}
 	if serviceID != nil {
 		id, err := parseUUID(*serviceID)
@@ -387,8 +376,18 @@ func parseTargetBody(path string, stripPath bool, serviceID, nodeID *string, por
 		}
 		ti.NodeID = &id
 	}
+	if redirectRouteID != nil {
+		id, err := parseUUID(*redirectRouteID)
+		if err != nil {
+			return ti, huma.Error400BadRequest("invalid redirect_route_id")
+		}
+		ti.RedirectRouteID = &id
+	}
 	if port != nil {
 		ti.Port = *port
+	}
+	if redirectCode != nil {
+		ti.RedirectCode = *redirectCode
 	}
 	return ti, nil
 }

@@ -12,10 +12,12 @@ import (
 
 // TargetEntry is one path rule for a hostname.
 type TargetEntry struct {
-	Path       string
-	StripPath  bool
-	TargetIP   string
-	TargetPort int
+	Path             string
+	StripPath        bool
+	TargetIP         string
+	TargetPort       int
+	RedirectHostname string // non-empty when this target is a redirect
+	RedirectCode     int    // 301 or 302
 }
 
 // Cache holds an in-memory snapshot of routes + targets, refreshed in the background.
@@ -73,20 +75,25 @@ func (c *Cache) Get(hostname, path string) (TargetEntry, bool) {
 
 func (c *Cache) load() error {
 	var targets []db.RouteTarget
-	if err := c.db.Preload("Route").Find(&targets).Error; err != nil {
+	if err := c.db.Preload("Route").Preload("RedirectRoute").Find(&targets).Error; err != nil {
 		return err
 	}
 	m := make(map[string][]TargetEntry, len(targets))
 	for _, t := range targets {
-		if t.Route.Hostname == "" {
+		if t.Route == nil || t.Route.Hostname == "" {
 			continue
 		}
-		m[t.Route.Hostname] = append(m[t.Route.Hostname], TargetEntry{
+		entry := TargetEntry{
 			Path:       t.Path,
 			StripPath:  t.StripPath,
 			TargetIP:   t.TargetIP,
 			TargetPort: t.TargetPort,
-		})
+		}
+		if t.RedirectRouteID != nil && t.RedirectRoute != nil {
+			entry.RedirectHostname = t.RedirectRoute.Hostname
+			entry.RedirectCode = t.RedirectCode
+		}
+		m[t.Route.Hostname] = append(m[t.Route.Hostname], entry)
 	}
 	for k := range m {
 		sortEntries(m[k])
@@ -104,17 +111,22 @@ func (c *Cache) loadHostname(hostname string) []TargetEntry {
 		return nil
 	}
 	var targets []db.RouteTarget
-	if err := c.db.Where("route_id = ?", route.ID).Find(&targets).Error; err != nil {
+	if err := c.db.Preload("RedirectRoute").Where("route_id = ?", route.ID).Find(&targets).Error; err != nil {
 		return nil
 	}
 	entries := make([]TargetEntry, 0, len(targets))
 	for _, t := range targets {
-		entries = append(entries, TargetEntry{
+		entry := TargetEntry{
 			Path:       t.Path,
 			StripPath:  t.StripPath,
 			TargetIP:   t.TargetIP,
 			TargetPort: t.TargetPort,
-		})
+		}
+		if t.RedirectRouteID != nil && t.RedirectRoute != nil {
+			entry.RedirectHostname = t.RedirectRoute.Hostname
+			entry.RedirectCode = t.RedirectCode
+		}
+		entries = append(entries, entry)
 	}
 	sortEntries(entries)
 	return entries
