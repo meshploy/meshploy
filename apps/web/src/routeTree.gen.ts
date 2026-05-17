@@ -19,6 +19,7 @@ import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/ind
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
 import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrations/index'
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
+import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
 import { Route as AppIntegrationsNewRouteImport } from './routes/_app/integrations/new'
@@ -98,6 +99,11 @@ const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
 const AppClusterIndexRoute = AppClusterIndexRouteImport.update({
   id: '/cluster/',
   path: '/cluster/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
+  id: '/account/',
+  path: '/account/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProjectsNewRoute = AppProjectsNewRouteImport.update({
@@ -289,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
+  '/account/': typeof AppAccountIndexRoute
   '/cluster/': typeof AppClusterIndexRoute
   '/integrations/': typeof AppIntegrationsIndexRoute
   '/nodes/': typeof AppNodesIndexRoute
@@ -330,6 +337,7 @@ export interface FileRoutesByTo {
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
+  '/account': typeof AppAccountIndexRoute
   '/cluster': typeof AppClusterIndexRoute
   '/integrations': typeof AppIntegrationsIndexRoute
   '/nodes': typeof AppNodesIndexRoute
@@ -372,6 +380,7 @@ export interface FileRoutesById {
   '/_app/integrations/new': typeof AppIntegrationsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
   '/_app/projects/new': typeof AppProjectsNewRoute
+  '/_app/account/': typeof AppAccountIndexRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
   '/_app/integrations/': typeof AppIntegrationsIndexRoute
   '/_app/nodes/': typeof AppNodesIndexRoute
@@ -416,6 +425,7 @@ export interface FileRouteTypes {
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
+    | '/account/'
     | '/cluster/'
     | '/integrations/'
     | '/nodes/'
@@ -457,6 +467,7 @@ export interface FileRouteTypes {
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
+    | '/account'
     | '/cluster'
     | '/integrations'
     | '/nodes'
@@ -498,6 +509,7 @@ export interface FileRouteTypes {
     | '/_app/integrations/new'
     | '/_app/nodes/$id'
     | '/_app/projects/new'
+    | '/_app/account/'
     | '/_app/cluster/'
     | '/_app/integrations/'
     | '/_app/nodes/'
@@ -608,6 +620,13 @@ declare module '@tanstack/react-router' {
       path: '/cluster'
       fullPath: '/cluster/'
       preLoaderRoute: typeof AppClusterIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/account/': {
+      id: '/_app/account/'
+      path: '/account'
+      fullPath: '/account/'
+      preLoaderRoute: typeof AppAccountIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/projects/new': {
@@ -953,6 +972,7 @@ interface AppRouteChildren {
   AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
   AppProjectsNewRoute: typeof AppProjectsNewRoute
+  AppAccountIndexRoute: typeof AppAccountIndexRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
   AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute
   AppNodesIndexRoute: typeof AppNodesIndexRoute
@@ -966,6 +986,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIntegrationsNewRoute: AppIntegrationsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
   AppProjectsNewRoute: AppProjectsNewRoute,
+  AppAccountIndexRoute: AppAccountIndexRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,
   AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
   AppNodesIndexRoute: AppNodesIndexRoute,
