@@ -7,6 +7,7 @@ import {
   Box,
   ChevronLeft,
   ChevronDown,
+  CornerDownRight,
   Database,
   Eye,
   EyeOff,
@@ -53,6 +54,7 @@ import {
   type ApiDomain,
   type ApiSecret,
   type ApiVolume,
+  type ApiDbRoute,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -1091,7 +1093,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
 
 type RouteZone = "public" | "internal"
 type DomainMode = "subdomain" | "custom"
-type TargetMode = "service" | "node"
+type TargetMode = "service" | "node" | "redirect"
 
 interface TargetRow {
   id: number
@@ -1101,6 +1103,8 @@ interface TargetRow {
   port: string
   path: string
   stripPath: boolean
+  redirectRouteId: string
+  redirectCode: "301" | "302"
 }
 
 let _targetRowId = 0
@@ -1112,6 +1116,8 @@ const mkTargetRow = (): TargetRow => ({
   port: "",
   path: "/",
   stripPath: false,
+  redirectRouteId: "",
+  redirectCode: "301",
 })
 
 interface RouteFormState {
@@ -1153,6 +1159,12 @@ function RouteForm({ projectId }: { projectId: string }) {
     enabled: !!orgId,
   })
   const serviceList = allServices.filter((s) => s.type === "application")
+
+  const { data: existingRoutes = [] } = useQuery<ApiDbRoute[]>({
+    queryKey: ["routes", orgId, projectId],
+    queryFn: () => routesApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
 
   const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],
@@ -1196,7 +1208,11 @@ function RouteForm({ projectId }: { projectId: string }) {
       : rf.domainId.length > 0 && rf.subdomain.trim().length > 0
   const targetsValid = rf.targets.every((t) =>
     t.path.trim().startsWith("/") &&
-    (t.targetMode === "service" ? t.serviceId.length > 0 : t.nodeId.length > 0 && t.port.trim().length > 0)
+    (t.targetMode === "service"
+      ? t.serviceId.length > 0
+      : t.targetMode === "redirect"
+      ? t.redirectRouteId.length > 0
+      : t.nodeId.length > 0 && t.port.trim().length > 0)
   )
   const canCreate = domainValid && targetsValid && rf.targets.length > 0
 
@@ -1209,6 +1225,8 @@ function RouteForm({ projectId }: { projectId: string }) {
           strip_path: t.stripPath,
           ...(t.targetMode === "service"
             ? { service_id: t.serviceId }
+            : t.targetMode === "redirect"
+            ? { redirect_route_id: t.redirectRouteId, redirect_code: parseInt(t.redirectCode, 10) }
             : { node_id: t.nodeId, port: parseInt(t.port, 10) }),
         })),
       }
@@ -1233,7 +1251,16 @@ function RouteForm({ projectId }: { projectId: string }) {
       <Section title="Zone" subtitle="Where is this route exposed?">
         <SegmentedControl
           value={rf.zone}
-          onValueChange={(v) => patchRf({ zone: v as RouteZone, domainMode: "subdomain" })}
+          onValueChange={(v) => {
+            const newZone = v as RouteZone
+            patchRf({
+              zone: newZone,
+              domainMode: "subdomain",
+              targets: newZone === "internal"
+                ? rf.targets.map((t) => t.targetMode === "redirect" ? { ...t, targetMode: "service" as TargetMode, redirectRouteId: "", redirectCode: "301" as const } : t)
+                : rf.targets,
+            })
+          }}
           options={[
             { value: "public",   label: "Public" },
             { value: "internal", label: "Internal" },
@@ -1330,8 +1357,10 @@ function RouteForm({ projectId }: { projectId: string }) {
             <TargetRowField
               key={t.id}
               row={t}
+              zone={rf.zone}
               serviceList={serviceList}
               nodeList={allNodes}
+              routeList={existingRoutes}
               onChange={(patch) => patchTarget(t.id, patch)}
               onRemove={rf.targets.length > 1 ? () => removeTarget(t.id) : undefined}
             />
@@ -1371,28 +1400,35 @@ function RouteForm({ projectId }: { projectId: string }) {
 
 function TargetRowField({
   row,
+  zone,
   serviceList,
   nodeList,
+  routeList,
   onChange,
   onRemove,
 }: {
   row: TargetRow
+  zone: RouteZone
   serviceList: ApiService[]
   nodeList: ApiNode[]
+  routeList: ApiDbRoute[]
   onChange: (patch: Partial<TargetRow>) => void
   onRemove?: () => void
 }) {
+  const modeOptions = [
+    { value: "service",  label: "Service" },
+    { value: "node",     label: "Node + port" },
+    ...(zone !== "internal" ? [{ value: "redirect", label: "Redirect" }] : []),
+  ]
+
   return (
     <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-3">
       {/* Row 1: type toggle + path + strip path + remove */}
       <div className="flex items-center gap-2">
         <SegmentedControl
           value={row.targetMode}
-          onValueChange={(v) => onChange({ targetMode: v as TargetMode, serviceId: "", nodeId: "", port: "" })}
-          options={[
-            { value: "service", label: "Service" },
-            { value: "node",    label: "Node + port" },
-          ]}
+          onValueChange={(v) => onChange({ targetMode: v as TargetMode, serviceId: "", nodeId: "", port: "", redirectRouteId: "", redirectCode: "301" })}
+          options={modeOptions}
           className="text-xs shrink-0"
         />
         <input
@@ -1401,15 +1437,18 @@ function TargetRowField({
           placeholder="/path"
           className={cn(inputCls, "font-mono text-xs w-28 shrink-0")}
         />
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
-          <input
-            type="checkbox"
-            checked={row.stripPath}
-            onChange={(e) => onChange({ stripPath: e.target.checked })}
-            className="accent-primary"
-          />
-          Strip path
-        </label>
+        {row.targetMode !== "redirect" && (
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
+            <input
+              type="checkbox"
+              checked={row.stripPath}
+              onChange={(e) => onChange({ stripPath: e.target.checked })}
+              className="accent-primary"
+            />
+            Strip path
+          </label>
+        )}
+        {row.targetMode === "redirect" && <div className="ml-auto" />}
         {onRemove && (
           <button
             type="button"
@@ -1421,7 +1460,7 @@ function TargetRowField({
         )}
       </div>
 
-      {/* Row 2: service or node+port */}
+      {/* Row 2: service, node+port, or redirect */}
       {row.targetMode === "service" ? (
         <Select value={row.serviceId} onValueChange={(v) => onChange({ serviceId: v ?? "" })}>
           <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
@@ -1438,6 +1477,34 @@ function TargetRowField({
             ))}
           </SelectContent>
         </Select>
+      ) : row.targetMode === "redirect" ? (
+        <div className="flex items-center gap-2">
+          <CornerDownRight className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+          <Select value={row.redirectRouteId} onValueChange={(v) => onChange({ redirectRouteId: v ?? "" })}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+              <SelectValue placeholder={routeList.length === 0 ? "No routes in this project yet" : "Select a route to redirect to…"}>
+                {routeList.find((r) => r.id === row.redirectRouteId)?.hostname}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {routeList.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.hostname}
+                  <span className="ml-2 text-muted-foreground text-xs">{r.zone}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <SegmentedControl
+            value={row.redirectCode}
+            onValueChange={(v) => onChange({ redirectCode: v as "301" | "302" })}
+            options={[
+              { value: "301", label: "301" },
+              { value: "302", label: "302" },
+            ]}
+            className="text-xs shrink-0"
+          />
+        </div>
       ) : (
         <div className="grid grid-cols-[1fr_100px] gap-2">
           <Select value={row.nodeId} onValueChange={(v) => onChange({ nodeId: v ?? "" })}>
