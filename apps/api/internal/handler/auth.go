@@ -60,6 +60,13 @@ type GetMeOutput struct {
 	Body *db.User
 }
 
+type ChangePasswordInput struct {
+	Body struct {
+		CurrentPassword string `json:"current_password" minLength:"1"`
+		NewPassword     string `json:"new_password" minLength:"8"`
+	}
+}
+
 type SetupTOTPOutput struct {
 	Body struct {
 		OTPURL string `json:"otp_url"`
@@ -137,6 +144,24 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 			return nil, huma.Error404NotFound("user not found")
 		}
 		return &GetMeOutput{Body: me}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "change-password",
+		Method:      http.MethodPatch,
+		Path:        "/api/v1/me/password",
+		Summary:     "Change current user password",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *ChangePasswordInput) (*struct{}, error) {
+		userID, err := requireUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := h.svc.Auth.ChangePassword(ctx, userID, in.Body.CurrentPassword, in.Body.NewPassword); err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+		return nil, nil
 	})
 
 	huma.Register(api, huma.Operation{

@@ -25,6 +25,12 @@ export const auth = {
       "/api/v1/me", {}, token
     ),
 
+  changePassword: (currentPassword: string, newPassword: string, token: string) =>
+    apiFetch<void>("/api/v1/me/password", {
+      method: "PATCH",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }, token),
+
   setupTOTP: (token: string) =>
     apiFetch<{ otp_url: string; secret: string }>(
       "/api/v1/me/totp/setup", { method: "POST" }, token
