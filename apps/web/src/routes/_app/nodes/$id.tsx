@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
+  Activity,
   Cpu,
   HardDrive,
   MemoryStick,
@@ -25,7 +26,8 @@ import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { useMetricsStore, type RawSample } from "@/store/metrics-store"
 import { formatRelativeTime } from "@/lib/utils"
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useId } from "react"
+import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts"
 
 function toRawSample(ts: number, m: ApiNodeMetrics): RawSample {
   return {
@@ -217,50 +219,69 @@ function NodeDetailPage() {
           </div>
         </div>
 
-        {/* Actions — terminal + delete, worker nodes only */}
-        {node.k3sRole !== "server" && !confirmDelete ? (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              disabled={node.status !== "online"}
-              onClick={() => openTab({
-                id: node.id,
-                type: "terminal",
-                label: node.name,
-                payload: { nodeId: node.id, nodeLabel: node.name, nodeMeshIP: node.tailscaleIP },
-              })}
-            >
-              <SquareTerminal className="h-3.5 w-3.5" />
-              Terminal
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Remove
-            </Button>
-          </div>
-        ) : node.k3sRole !== "server" && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Remove this node?</span>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate()}
-            >
-              {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
-              Cancel
-            </Button>
-          </div>
-        )}
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => openTab({
+              id: `metrics-${node.id}`,
+              type: "metrics",
+              label: `${node.name} · Metrics`,
+              payload: { nodeId: node.id, nodeLabel: node.name },
+            })}
+          >
+            <Activity className="h-3.5 w-3.5" />
+            Metrics
+          </Button>
+
+          {node.k3sRole !== "server" && !confirmDelete && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={node.status !== "online"}
+                onClick={() => openTab({
+                  id: node.id,
+                  type: "terminal",
+                  label: node.name,
+                  payload: { nodeId: node.id, nodeLabel: node.name, nodeMeshIP: node.tailscaleIP },
+                })}
+              >
+                <SquareTerminal className="h-3.5 w-3.5" />
+                Terminal
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+            </>
+          )}
+
+          {node.k3sRole !== "server" && confirmDelete && (
+            <>
+              <span className="text-xs text-muted-foreground">Remove this node?</span>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate()}
+              >
+                {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Live metrics cards — only rendered when node_exporter is reachable */}
@@ -416,22 +437,52 @@ function NodeDetailPage() {
 
 // ─── Live metric components ───────────────────────────────────────────────────
 
-function Sparkline({ data, color = "oklch(0.65 0.18 200)" }: { data: number[]; color?: string }) {
-  if (data.length < 2) return <div className="h-8" />
-  const W = 100
-  const H = 32
-  const max = Math.max(...data, 1)
-  const pts = data.map((v, i) => [
-    (i / (data.length - 1)) * W,
-    H - (v / max) * H * 0.85,
-  ] as [number, number])
-  const line = pts.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(" ")
-  const area = `${line} L${W},${H} L0,${H} Z`
+function SparkAreaChart({
+  data,
+  color = "oklch(0.65 0.18 200)",
+  unit = "%",
+}: {
+  data: number[]
+  color?: string
+  unit?: string
+}) {
+  const uid = useId().replace(/:/g, "")
+  if (data.length < 2) return <div className="h-10" />
+  const chartData = data.map((value) => ({ value }))
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-8" preserveAspectRatio="none">
-      <path d={area} fill={color} fillOpacity={0.12} />
-      <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className="h-10 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={chartData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id={`sg-${uid}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
+              <stop offset="95%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Tooltip
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null
+              const v = payload[0]?.value
+              if (v == null) return null
+              return (
+                <div className="rounded border border-border/50 bg-background px-2 py-1 text-xs shadow-lg">
+                  <span className="font-mono font-medium">{Number(v).toFixed(1)}{unit}</span>
+                </div>
+              )
+            }}
+          />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={color}
+            strokeWidth={1.5}
+            fill={`url(#sg-${uid})`}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -459,7 +510,7 @@ function MetricCard({
       <p className="text-2xl font-semibold tabular-nums leading-none">
         {percent !== null ? `${Math.round(percent)}%` : "—"}
       </p>
-      <Sparkline data={sparkData} color={color} />
+      <SparkAreaChart data={sparkData} color={color} />
       <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
     </div>
   )
@@ -488,7 +539,7 @@ function NetworkCard({
           {txMbps !== null ? `↑ ${txMbps.toFixed(0)} Mbps` : "↑ —"}
         </p>
       </div>
-      <Sparkline data={sparkData} color="oklch(0.65 0.18 200)" />
+      <SparkAreaChart data={sparkData} color="oklch(0.65 0.18 200)" unit=" Mbps" />
     </div>
   )
 }

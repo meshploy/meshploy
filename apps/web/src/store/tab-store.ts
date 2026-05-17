@@ -4,7 +4,7 @@ import { create } from "zustand"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type TabType = "explorer" | "terminal"
+export type TabType = "explorer" | "terminal" | "metrics"
 
 export interface ExplorerPayload {
   serviceId: string
@@ -18,7 +18,12 @@ export interface TerminalPayload {
   nodeMeshIP: string
 }
 
-export type TabPayload = ExplorerPayload | TerminalPayload
+export interface MetricsPayload {
+  nodeId: string
+  nodeLabel: string
+}
+
+export type TabPayload = ExplorerPayload | TerminalPayload | MetricsPayload
 
 export interface SessionTab {
   id: string          // unique — serviceId or nodeId works
