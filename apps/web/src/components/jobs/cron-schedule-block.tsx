@@ -89,6 +89,7 @@ export function CronScheduleBlock({
                 value={concurrency}
                 onValueChange={onConcurrencyChange}
                 options={CONCURRENCY_OPTIONS}
+                className="w-fit"
               />
               <p className="text-xs text-muted-foreground/50 mt-1.5">
                 {CONCURRENCY_OPTIONS.find((o) => o.value === concurrency)?.hint}

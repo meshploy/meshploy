@@ -78,15 +78,15 @@ export function DetailPageHeader({
 /** Class string for a router Link tab (uses data-[status=active] from TanStack Router). */
 export const tabLinkCls =
   "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap " +
-  "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60 " +
-  "data-[status=active]:text-foreground data-[status=active]:border-foreground/25"
+  "text-muted-foreground hover:text-foreground border-b-transparent hover:border-b-border/60 " +
+  "data-[status=active]:text-foreground data-[status=active]:border-b-foreground/25"
 
 /** Class string for a button/manual-active tab. */
 export function tabItemCls(isActive: boolean) {
   return cn(
     "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap",
     isActive
-      ? "text-foreground border-foreground/25"
-      : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/60"
+      ? "text-foreground border-b-foreground/25"
+      : "text-muted-foreground hover:text-foreground border-b-transparent hover:border-b-border/60"
   )
 }

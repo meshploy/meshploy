@@ -480,7 +480,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     gitIntegrationId: "",
     gitRepo: "",
     gitBranch: "main",
-    builder: "nixpacks" as "nixpacks" | "railpack" | "dockerfile",
+    builder: "railpack" as "railpack" | "dockerfile",
     dockerfilePath: "Dockerfile",
     registryIntegrationId: "",
     builderNodeName: "" as string,
@@ -506,7 +506,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       gitIntegrationId: bc?.git_integration_id ?? "",
       gitRepo: bc?.git_repo ?? "",
       gitBranch: bc?.branch ?? "main",
-      builder: (bc?.builder as typeof form.builder) ?? "nixpacks",
+      builder: (bc?.builder as typeof form.builder) ?? "railpack",
       dockerfilePath: bc?.dockerfile_path ?? "Dockerfile",
       registryIntegrationId: bc?.registry_integration_id ?? "",
       builderNodeName: bc?.builder_node ?? "",
@@ -675,12 +675,12 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
 
             <div className="grid grid-cols-2 gap-4">
               <Field label="Builder">
-                <Select value={form.builder} onValueChange={(v) => patch({ builder: (v ?? "nixpacks") as typeof form.builder })}>
+                <Select value={form.builder} onValueChange={(v) => patch({ builder: (v ?? "railpack") as typeof form.builder })}>
                   <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
+
                     <SelectItem value="railpack">Railpack</SelectItem>
                     <SelectItem value="dockerfile">Dockerfile</SelectItem>
                   </SelectContent>
@@ -843,7 +843,7 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
   return (
     <Section
       title="Build environment variables"
-      subtitle="Injected at build time only — not available at runtime. One KEY=VALUE per line. For nixpacks: passed as --env flags (e.g. NIXPACKS_INSTALL_CMD=npm install). For dockerfile: passed as --build-arg."
+      subtitle="Injected at build time only — not available at runtime. One KEY=VALUE per line. For dockerfile: passed as --build-arg."
     >
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground py-4">

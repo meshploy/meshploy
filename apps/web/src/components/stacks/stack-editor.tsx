@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export type VisualBuilder = "nixpacks" | "railpack" | "dockerfile"
+export type VisualBuilder = "railpack" | "dockerfile"
 
 const DB_ENGINES = [
   { value: "postgres",   label: "PostgreSQL",  versions: ["17", "16", "15", "14", "13"], port: 5432,  icon: SiPostgresql },
@@ -74,7 +74,7 @@ function newService(): VisualService {
     integrationId: "",
     gitRepo: "",
     gitBranch: "main",
-    builder: "nixpacks",
+    builder: "railpack",
     builderNodeName: "",
     builderCPURequest: "1000m",
     builderMemoryRequest: "1Gi",
@@ -244,7 +244,7 @@ export function yamlToVisual(spec: string): VisualService[] {
         integrationId,
         gitRepo,
         gitBranch: src.branch ?? "main",
-        builder: build.builder ?? "nixpacks",
+        builder: build.builder ?? "railpack",
         builderNodeName: build.builder_node ?? "",
         builderCPURequest: build.builder_cpu_request ?? "1000m",
         builderMemoryRequest: build.builder_memory_request ?? "1Gi",
@@ -660,13 +660,12 @@ function AppFields({
               <Field label="Builder">
                 <Select
                   value={svc.builder}
-                  onValueChange={(v) => onChange({ builder: (v ?? "nixpacks") as VisualBuilder })}
+                  onValueChange={(v) => onChange({ builder: (v ?? "railpack") as VisualBuilder })}
                 >
                   <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
                     <SelectItem value="railpack">Railpack</SelectItem>
                     <SelectItem value="dockerfile">Dockerfile</SelectItem>
                   </SelectContent>

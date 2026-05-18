@@ -78,7 +78,7 @@ export interface ApiQueryResult {
 export interface ApiBuildConfig {
   id: string
   service_id: string
-  builder: "nixpacks" | "railpack" | "dockerfile" | "image"
+  builder: "railpack" | "dockerfile" | "image"
   git_repo: string
   branch: string
   dockerfile_path: string
@@ -110,7 +110,7 @@ export interface CreateServiceBody {
   git_integration_id?: string
   git_repo?: string
   branch?: string
-  builder?: "nixpacks" | "railpack" | "dockerfile"
+  builder?: "railpack" | "dockerfile"
   dockerfile_path?: string
   registry_integration_id?: string
   builder_node?: string          // "" = auto-schedule
@@ -142,7 +142,7 @@ export interface UpdateServiceBody {
 export interface UpdateBuildConfigBody {
   git_repo?: string
   branch?: string
-  builder?: "nixpacks" | "railpack" | "dockerfile"
+  builder?: "railpack" | "dockerfile"
   dockerfile_path?: string
   registry_integration_id?: string  // "" = clear
   build_env_vars?: string           // nil = no change; "" = clear
