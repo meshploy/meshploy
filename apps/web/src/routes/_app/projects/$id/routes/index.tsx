@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ExternalLink, Globe, Loader2, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { routes as routesApi, type ApiDbRoute } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -65,16 +66,16 @@ function RoutesTab() {
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/40 bg-muted/20">
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[45%]">Hostname</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[12%]">Zone</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Paths</th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/30">
+          <Table>
+            <TableHeader className="bg-muted/20">
+              <TableRow className="border-b border-border/40 hover:bg-transparent">
+                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[45%]">Hostname</TableHead>
+                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[12%]">Zone</TableHead>
+                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Paths</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {routeList.map((route) => (
                 <RouteRow
                   key={route.id}
@@ -82,8 +83,8 @@ function RoutesTab() {
                   onClick={() => navigate({ to: "/projects/$id/routes/$routeId", params: { id: projectId, routeId: route.id } })}
                 />
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
@@ -96,22 +97,19 @@ function RouteRow({ route, onClick }: { route: ApiDbRoute; onClick: () => void }
   const overflow = route.targets.length - MAX_PATHS
 
   return (
-    <tr
-      className="hover:bg-muted/20 transition-colors cursor-pointer"
-      onClick={onClick}
-    >
-      <td className="px-4 py-3">
+    <TableRow className="border-b border-border/30 hover:bg-muted/20 cursor-pointer" onClick={onClick}>
+      <TableCell className="px-4 py-3">
         <div className="flex items-center gap-2">
           <Globe className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
           <span className="font-medium text-foreground font-mono text-sm">{route.hostname}</span>
         </div>
-      </td>
-      <td className="px-4 py-3">
+      </TableCell>
+      <TableCell className="px-4 py-3">
         <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border ${ZONE_STYLES[route.zone] ?? "bg-muted text-muted-foreground border-border"}`}>
           {route.zone}
         </Badge>
-      </td>
-      <td className="px-4 py-3">
+      </TableCell>
+      <TableCell className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-1">
           {route.targets.length === 0 ? (
             <span className="text-xs text-muted-foreground/40">—</span>
@@ -135,8 +133,8 @@ function RouteRow({ route, onClick }: { route: ApiDbRoute; onClick: () => void }
             </>
           )}
         </div>
-      </td>
-      <td className="px-3 py-3 text-right">
+      </TableCell>
+      <TableCell className="px-3 py-3 text-right">
         <a
           href={`https://${route.hostname}`}
           target="_blank"
@@ -146,7 +144,7 @@ function RouteRow({ route, onClick }: { route: ApiDbRoute; onClick: () => void }
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   )
 }

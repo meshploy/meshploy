@@ -194,32 +194,34 @@ function SecretsSection({ projectId, serviceId }: { projectId: string; serviceId
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
+                <Button
                   onClick={() => attachMut.mutate()}
                   disabled={!selectedSecretId || !envKey.trim() || attachMut.isPending}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-40 transition-opacity"
                 >
                   {attachMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                   Attach
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={() => { setShowAdd(false); setSelectedSecretId(""); setEnvKey("") }}
                   className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <X className="h-3 w-3" /> Cancel
-                </button>
+                </Button>
               </div>
               {attachMut.isError && (
                 <p className="text-xs text-destructive">{(attachMut.error as Error).message}</p>
               )}
             </div>
           ) : (
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setShowAdd(true)}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <Plus className="h-3.5 w-3.5" /> Attach secret
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -249,14 +251,16 @@ function AttachmentRow({
         <span className="text-muted-foreground/30 text-xs">→</span>
         <code className="text-xs font-mono text-foreground truncate">{attachment.env_key}</code>
       </div>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-sm"
         onClick={onDetach}
         disabled={isDetaching}
         className="text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-40 shrink-0"
         title="Detach"
       >
         {isDetaching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -358,32 +362,34 @@ function VolumesSection({ projectId, serviceId }: { projectId: string; serviceId
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
+                <Button
                   onClick={() => attachMut.mutate()}
                   disabled={!selectedVolumeId || !mountPath.trim() || attachMut.isPending || availableVolumes.length === 0}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-40 transition-opacity"
                 >
                   {attachMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                   Attach
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={() => { setShowAdd(false); setSelectedVolumeId(""); setMountPath("") }}
                   className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <X className="h-3 w-3" /> Cancel
-                </button>
+                </Button>
               </div>
               {attachMut.isError && (
                 <p className="text-xs text-destructive">{(attachMut.error as Error).message}</p>
               )}
             </div>
           ) : mounts.length === 0 ? (
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setShowAdd(true)}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <Plus className="h-3.5 w-3.5" /> Attach volume
-            </button>
+            </Button>
           ) : null}
         </div>
       )}
@@ -407,14 +413,16 @@ function VolumeMountRow({
         <span className="text-muted-foreground/30 text-xs">→</span>
         <code className="text-xs font-mono text-foreground truncate">{mount.mount_path}</code>
       </div>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-sm"
         onClick={onDetach}
         disabled={isDetaching}
         className="text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-40 shrink-0"
         title="Detach"
       >
         {isDetaching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -769,14 +777,14 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
 
       {/* ── Resource limits (collapsible) ─────────────────────── */}
       <div className="rounded-lg border border-border/40">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={() => patch({ showResources: !form.showResources })}
           className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <span className="font-medium">Resource limits</span>
           <ChevronDown className={cn("h-4 w-4 transition-transform", form.showResources ? "rotate-180" : "")} />
-        </button>
+        </Button>
         {form.showResources && (
           <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
             <Field label="CPU request"><input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} /></Field>
@@ -921,8 +929,8 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
       <div className="space-y-4">
         <Field label="Enable rollback">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               role="switch"
               aria-checked={enabled}
               onClick={() => setEnabled((v) => !v)}
@@ -937,7 +945,7 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
                   enabled ? "translate-x-4" : "translate-x-0"
                 )}
               />
-            </button>
+            </Button>
             <span className="text-xs text-muted-foreground">
               {enabled ? "Enabled" : "Disabled"}
             </span>

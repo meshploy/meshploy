@@ -3,6 +3,7 @@
 import { Home, Database, Terminal, Activity, X } from "lucide-react"
 import { useTabStore, type SessionTab } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 const TAB_ICONS: Record<string, React.ElementType> = {
   explorer:          Database,
@@ -62,8 +63,8 @@ function Tab({
   closeable: boolean
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
       onClick={onClick}
       className={cn(
         "group relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors shrink-0 border-b-2 border-r border-r-border/30 -mb-px",
@@ -89,6 +90,6 @@ function Tab({
           <X className="h-2.5 w-2.5" />
         </span>
       )}
-    </button>
+    </Button>
   )
 }

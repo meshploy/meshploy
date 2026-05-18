@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils"
 import { Field, inputCls } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
+import { Button } from "@/components/ui/button"
 
 export const CRON_PRESETS = [
   { label: "Every 5 min", value: "*/5 * * * *" },
@@ -39,8 +40,8 @@ export function CronScheduleBlock({
 }: CronScheduleBlockProps) {
   return (
     <div className="rounded-lg border border-border/40 overflow-hidden">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors"
       >
@@ -51,16 +52,16 @@ export function CronScheduleBlock({
         <div className={cn("w-9 h-5 rounded-full transition-colors relative shrink-0", enabled ? "bg-primary" : "bg-muted")}>
           <div className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform", enabled ? "translate-x-4" : "translate-x-0.5")} />
         </div>
-      </button>
+      </Button>
 
       {enabled && (
         <div className="border-t border-border/40 px-4 pb-4 pt-4 space-y-4">
           <Field label="Cron expression" required>
             <div className="flex flex-wrap gap-1.5 mb-2">
               {CRON_PRESETS.map((p) => (
-                <button
+                <Button
                   key={p.value}
-                  type="button"
+                  variant="ghost"
                   onClick={() => onScheduleChange(p.value)}
                   className={cn(
                     "px-2.5 py-1 text-xs rounded-md border transition-colors",
@@ -70,7 +71,7 @@ export function CronScheduleBlock({
                   )}
                 >
                   {p.label}
-                </button>
+                </Button>
               ))}
             </div>
             <input

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 export const inputCls =
   "w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
@@ -66,7 +67,8 @@ export function NodeCard({
   online?: boolean
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
       onClick={onClick}
       className={cn(
         "flex flex-col gap-0.5 rounded-lg border-2 px-3 py-2.5 text-left transition-all min-w-[120px]",
@@ -82,6 +84,6 @@ export function NodeCard({
         <span className="text-xs font-medium text-foreground truncate">{label}</span>
       </div>
       <span className="text-[11px] text-muted-foreground font-mono truncate">{sub}</span>
-    </button>
+    </Button>
   )
 }

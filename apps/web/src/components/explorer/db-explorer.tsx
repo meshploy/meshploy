@@ -5,6 +5,8 @@ import { services as servicesApi, type ApiSchemaTable, type ApiQueryResult } fro
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 
 // ─── Schema tree ──────────────────────────────────────────────────────────────
 
@@ -17,7 +19,8 @@ export function SchemaTree({ tables }: { tables: ApiSchemaTable[] }) {
     <div className="text-xs">
       {tables.map((t) => (
         <div key={t.name}>
-          <button
+          <Button
+            variant="ghost"
             onClick={() => setOpen((s) => ({ ...s, [t.name]: !s[t.name] }))}
             className="w-full flex items-center gap-1.5 px-3 py-1.5 hover:bg-muted/30 transition-colors text-left"
           >
@@ -27,7 +30,7 @@ export function SchemaTree({ tables }: { tables: ApiSchemaTable[] }) {
             }
             <span className="font-mono text-foreground/80 truncate">{t.name}</span>
             <span className="ml-auto text-muted-foreground/40 shrink-0">{t.columns.length}</span>
-          </button>
+          </Button>
           {open[t.name] && (
             <div className="pl-7 pb-1">
               {t.columns.map((c) => (
@@ -52,24 +55,24 @@ export function ResultsTable({ result }: { result: ApiQueryResult }) {
   )
   return (
     <div className="overflow-auto">
-      <table className="w-full text-xs border-collapse">
-        <thead>
-          <tr className="border-b border-border/40 bg-muted/20">
+      <Table className="text-xs">
+        <TableHeader className="bg-muted/20">
+          <TableRow className="border-b border-border/40 hover:bg-transparent">
             {result.columns.map((col) => (
-              <th key={col} className="px-3 py-2 text-left font-medium text-muted-foreground/70 whitespace-nowrap">{col}</th>
+              <TableHead key={col} className="px-3 py-2 font-medium text-muted-foreground/70 whitespace-nowrap">{col}</TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {(result.rows ?? []).map((row, i) => (
-            <tr key={i} className="border-b border-border/20 hover:bg-muted/10">
+            <TableRow key={i} className="border-b border-border/20 hover:bg-muted/10">
               {row.map((cell, j) => (
-                <td key={j} className="px-3 py-1.5 font-mono text-foreground/80 whitespace-nowrap max-w-[300px] truncate">{String(cell)}</td>
+                <TableCell key={j} className="px-3 py-1.5 font-mono text-foreground/80 whitespace-nowrap max-w-[300px] truncate">{String(cell)}</TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
       {result.count >= 200 && (
         <p className="text-[10px] text-muted-foreground/40 px-3 py-2">Showing first 200 rows.</p>
       )}
@@ -122,13 +125,13 @@ export function DBExplorer({ projectId, serviceId }: { projectId: string; servic
       <div className="flex-1 flex flex-col min-w-0">
         {/* Query editor */}
         <div className="border-b border-border/40">
-          <textarea
+          <Textarea
             ref={textareaRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             spellCheck={false}
-            className="w-full bg-transparent font-mono text-xs text-foreground resize-none outline-none p-3 min-h-[120px]"
+            className="rounded-none border-0 bg-transparent font-mono text-xs text-foreground resize-none outline-none focus-visible:ring-0 focus-visible:border-0 p-3 min-h-[120px]"
             placeholder="SELECT * FROM ..."
           />
           <div className="flex items-center gap-3 px-3 py-2 border-t border-border/30 bg-muted/10">

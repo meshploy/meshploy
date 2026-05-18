@@ -1,6 +1,7 @@
 import { useMemo, useState, useId } from "react"
 import { Loader2 } from "lucide-react"
 import { Cpu, HardDrive, MemoryStick, Network } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import {
   AreaChart,
   Area,
@@ -187,8 +188,9 @@ export function NodeMetricsTab({ payload }: { payload: MetricsPayload }) {
         </div>
         <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5">
           {RANGES.map((r, i) => (
-            <button
+            <Button
               key={r.label}
+              variant="ghost"
               onClick={() => setRangeIdx(i)}
               className={cn(
                 "px-2.5 py-1 text-xs rounded font-medium transition-colors",
@@ -198,7 +200,7 @@ export function NodeMetricsTab({ payload }: { payload: MetricsPayload }) {
               )}
             >
               {r.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

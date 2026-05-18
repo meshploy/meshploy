@@ -132,12 +132,12 @@ function JobDetailPage() {
         }
       >
         {(["runs", "config"] as const).map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={tabItemCls(activeTab === tab)}>
+          <Button key={tab} variant="ghost" onClick={() => setActiveTab(tab)} className={tabItemCls(activeTab === tab)}>
             {tab === "runs" ? "Runs" : "Configuration"}
             {tab === "runs" && runs.length > 0 && (
               <span className="ml-1.5 text-muted-foreground/50">{runs.length}</span>
             )}
-          </button>
+          </Button>
         ))}
       </DetailPageHeader>
 

@@ -65,13 +65,14 @@ function NewIntegrationPage() {
       {/* Top bar */}
       <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="h-14 flex items-center gap-3 px-6">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => navigate({ to: "/integrations" })}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
             Integrations
-          </button>
+          </Button>
           <span className="text-muted-foreground/40">/</span>
           <span className="text-sm font-medium">Add integration</span>
         </div>
@@ -85,8 +86,9 @@ function NewIntegrationPage() {
           </p>
           <nav className="space-y-0.5">
             {CATEGORIES.map(({ id, icon: Icon, label, soon }) => (
-              <button
+              <Button
                 key={id}
+                variant="ghost"
                 onClick={() => !soon && setCategory(id)}
                 disabled={soon}
                 className={cn(
@@ -105,7 +107,7 @@ function NewIntegrationPage() {
                     soon
                   </span>
                 )}
-              </button>
+              </Button>
             ))}
           </nav>
         </aside>
@@ -257,9 +259,9 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
         <p className="text-xs font-medium text-muted-foreground">Provider</p>
         <div className="grid grid-cols-3 gap-2">
           {GIT_PROVIDERS.map(({ value, label, icon: Icon }) => (
-            <button
+            <Button
               key={value}
-              type="button"
+              variant="ghost"
               onClick={() => { setProvider(value); setAuthMethod("pat"); setError(null) }}
               className={cn(
                 "flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors",
@@ -270,7 +272,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
             >
               <Icon size={15} />
               {label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -305,9 +307,9 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
             <p className="text-xs font-medium text-muted-foreground">Auth method</p>
             <div className="grid grid-cols-2 gap-2">
               {(["pat", "oauth"] as AuthMethod[]).map((m) => (
-                <button key={m} type="button" onClick={() => { setAuthMethod(m); setError(null) }}
+                <Button key={m} variant="ghost" onClick={() => { setAuthMethod(m); setError(null) }}
                   className={cn(
-                    "rounded-lg border p-3 text-left transition-colors",
+                    "rounded-lg border p-3 text-left transition-colors h-auto",
                     authMethod === m ? "border-primary/50 bg-primary/10" : "border-border/60 hover:border-border"
                   )}
                 >
@@ -317,7 +319,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                   <p className="text-[11px] text-muted-foreground/70 mt-0.5 leading-relaxed">
                     {m === "pat" ? "Simple — paste a token from your account settings" : "Standard — stable, refreshable OAuth2 connection"}
                   </p>
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -373,10 +375,10 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                     <code className="flex-1 text-[11px] font-mono text-foreground break-all">
                       {provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI}
                     </code>
-                    <button type="button"
+                    <Button variant="ghost" size="icon-sm"
                       onClick={() => navigator.clipboard.writeText(provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI)}
                       className="shrink-0 text-muted-foreground hover:text-foreground transition-colors text-[11px]"
-                    >Copy</button>
+                    >Copy</Button>
                   </div>
                 </div>
               </>
@@ -408,10 +410,10 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                   placeholder={provider === "gitlab" ? "glpat-…" : ""}
                   className={`flex-1 ${monoCls}`}
                 />
-                <button type="button" onClick={() => setShowPAT((v) => !v)}
+                <Button variant="ghost" size="icon-sm" onClick={() => setShowPAT((v) => !v)}
                   className="p-2 text-muted-foreground hover:text-foreground transition-colors">
                   {showPAT ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+                </Button>
               </div>
               <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
             </Field>
@@ -428,10 +430,10 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                     value={clientSecret} onChange={(e) => setClientSecret(e.target.value)}
                     autoComplete="new-password" className={`flex-1 ${monoCls}`}
                   />
-                  <button type="button" onClick={() => setShowSecret((v) => !v)}
+                  <Button variant="ghost" size="icon-sm" onClick={() => setShowSecret((v) => !v)}
                     className="p-2 text-muted-foreground hover:text-foreground transition-colors">
                     {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                  </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
               </Field>
@@ -582,10 +584,10 @@ function StorageForm({ onSuccess }: { onSuccess: () => void }) {
               autoComplete="new-password"
               className={`flex-1 ${monoCls}`}
             />
-            <button type="button" onClick={() => setShowSecret((v) => !v)}
+            <Button variant="ghost" size="icon-sm" onClick={() => setShowSecret((v) => !v)}
               className="p-2 text-muted-foreground hover:text-foreground transition-colors">
               {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+            </Button>
           </div>
           <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
         </Field>
@@ -712,10 +714,10 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
               autoComplete="new-password"
               className={`flex-1 ${monoCls}`}
             />
-            <button type="button" onClick={() => setShowPass((v) => !v)}
+            <Button variant="ghost" size="icon-sm" onClick={() => setShowPass((v) => !v)}
               className="p-2 text-muted-foreground hover:text-foreground transition-colors">
               {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+            </Button>
           </div>
           <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
         </Field>
@@ -829,13 +831,14 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
                   placeholder="optional signing secret"
                   className={cn(inputCls, "pr-9")}
                 />
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setShowSecret((s) => !s)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
                 >
                   {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </button>
+                </Button>
               </div>
             </Field>
           </>
@@ -992,10 +995,10 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
               placeholder={prefilled ? "unchanged" : ""}
               className={`flex-1 ${monoCls}`}
             />
-            <button type="button" onClick={() => setShowPass((v) => !v)}
+            <Button variant="ghost" size="icon-sm" onClick={() => setShowPass((v) => !v)}
               className="p-2 text-muted-foreground hover:text-foreground transition-colors">
               {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+            </Button>
           </div>
           <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
         </Field>

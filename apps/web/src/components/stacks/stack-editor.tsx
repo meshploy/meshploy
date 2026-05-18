@@ -372,13 +372,14 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
             {mode === "yaml" ? "YAML" : "Visual"}
           </span>
           {canConvert && (
-            <button
+            <Button
+              variant="ghost"
               onClick={handleConvert}
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
             >
               <Wand2 className="h-3 w-3" />
               {justConverted ? "Done!" : "Add Meshploy config"}
-            </button>
+            </Button>
           )}
           {justConverted && !canConvert && (
             <span className="text-[11px] text-emerald-400/80 font-mono">converted</span>
@@ -420,13 +421,14 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
               onRemove={() => removeService(svc._key)}
             />
           ))}
-          <button
+          <Button
+            variant="ghost"
             onClick={addService}
             className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
             Add service
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -778,13 +780,14 @@ function AppFields({
 
         {/* Resource limits — collapsible */}
         <div className="rounded-lg border border-border/40">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => setShowResources((v) => !v)}
             className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <span className="font-medium text-xs">Resource limits</span>
             <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showResources && "rotate-180")} />
-          </button>
+          </Button>
           {showResources && (
             <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
               <Field label="CPU request">
@@ -827,8 +830,9 @@ function DatabaseFields({
           {DB_ENGINES.map((eng) => {
             const Icon = eng.icon
             return (
-              <button
+              <Button
                 key={eng.value}
+                variant="ghost"
                 onClick={() => onChange({ dbEngine: eng.value, dbVersion: eng.versions[0], port: eng.port })}
                 className={cn(
                   "flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-colors",
@@ -843,7 +847,7 @@ function DatabaseFields({
                   <span className="h-3.5 w-3.5 flex items-center justify-center text-[9px] font-bold shrink-0">DF</span>
                 )}
                 <span className="text-xs truncate">{eng.label}</span>
-              </button>
+              </Button>
             )
           })}
         </div>
