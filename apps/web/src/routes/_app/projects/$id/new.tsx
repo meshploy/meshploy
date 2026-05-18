@@ -76,7 +76,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 type ResourceType = "service" | "route" | "job" | "database" | "secret" | "stack" | "volume"
 type AppSource = "git" | "image"
-type Builder = "nixpacks" | "railpack" | "dockerfile"
+type Builder = "railpack" | "dockerfile"
 
 interface FormState {
   source: AppSource
@@ -109,7 +109,7 @@ const INITIAL: FormState = {
   gitIntegrationId: "",
   gitRepo: "",
   gitBranch: "",
-  builder: "nixpacks",
+  builder: "railpack",
   registryIntegrationId: "",
   nodeId: null,
   builderNodeName: null,
@@ -535,13 +535,12 @@ function ServiceForm({
               <Field label="Builder">
                 <Select
                   value={form.builder}
-                  onValueChange={(v) => patch({ builder: (v ?? "nixpacks") as Builder })}
+                  onValueChange={(v) => patch({ builder: (v ?? "railpack") as Builder })}
                 >
                   <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
                     <SelectItem value="railpack">Railpack</SelectItem>
                     <SelectItem value="dockerfile">Dockerfile</SelectItem>
                   </SelectContent>
@@ -1919,7 +1918,7 @@ const DEFAULT_STACK_SPEC = `services:
         git: ""
         branch: main
       build:
-        builder: nixpacks
+        builder: railpack
       deploy:
         replicas: 1
         port: 3000

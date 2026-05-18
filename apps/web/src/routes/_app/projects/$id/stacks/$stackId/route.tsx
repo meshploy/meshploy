@@ -1,12 +1,11 @@
-import { createFileRoute, Link, Outlet, useParams, useRouterState } from "@tanstack/react-router"
+import { createFileRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Loader2, Layers } from "lucide-react"
+import { Layers } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
 import { stacks as stacksApi, type ApiStack } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { DetailPageHeader, tabItemCls } from "@/components/layout/detail-page-header"
+import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId")({
   component: StackLayout,
@@ -35,11 +34,9 @@ function StackLayout() {
   })
 
   const tabs = [
-    { label: "Services", seg: "services", to: "/projects/$id/stacks/$stackId/services" as const },
-    { label: "Editor",   seg: "editor",   to: "/projects/$id/stacks/$stackId/editor"   as const },
+    { label: "Services", to: "/projects/$id/stacks/$stackId/services" as const },
+    { label: "Editor",   to: "/projects/$id/stacks/$stackId/editor"   as const },
   ]
-
-  const activeSegment = pathname.split(`/stacks/${stackId}/`)[1]?.split("/")[0] ?? ""
 
   return (
     <div className="flex flex-col min-h-full">
@@ -55,19 +52,16 @@ function StackLayout() {
           </Badge>
         )}
       >
-        {tabs.map(({ label, seg, to }) => {
-          const isActive = activeSegment === seg || (activeSegment === "" && seg === "services")
-          return (
-            <Link
-              key={label}
-              to={to}
-              params={{ id: projectId, stackId }}
-              className={tabItemCls(isActive)}
-            >
-              {label}
-            </Link>
-          )
-        })}
+        {tabs.map(({ label, to }) => (
+          <Link
+            key={label}
+            to={to}
+            params={{ id: projectId, stackId }}
+            className={tabLinkCls}
+          >
+            {label}
+          </Link>
+        ))}
       </DetailPageHeader>
 
       <div className="flex-1">
