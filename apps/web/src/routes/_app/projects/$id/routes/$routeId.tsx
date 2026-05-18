@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ExternalLink, Globe, Loader2, Plus, ServerCrash, Trash2 } from "lucide-react"
+import { CornerDownRight, ExternalLink, Globe, Loader2, Pencil, Plus, ServerCrash, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,14 +9,12 @@ import {
   routes as routesApi,
   services as servicesApi,
   nodes as nodesApi,
-  type ApiDbRoute,
   type ApiRouteTarget,
   type TargetBody,
 } from "@/lib/api"
-import { CornerDownRight } from "lucide-react"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Section, Field, inputCls } from "@/components/services/form-primitives"
+import { Section, inputCls } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DetailPageHeader } from "@/components/layout/detail-page-header"
@@ -34,8 +32,7 @@ const ZONE_STYLES: Record<string, string> = {
 
 type TargetMode = "service" | "node" | "redirect"
 
-interface AddForm {
-  open: boolean
+interface TargetFormState {
   mode: TargetMode
   serviceId: string
   nodeId: string
@@ -46,8 +43,7 @@ interface AddForm {
   redirectCode: number
 }
 
-const INITIAL_ADD: AddForm = {
-  open: false,
+const BLANK_FORM: TargetFormState = {
   mode: "service",
   serviceId: "",
   nodeId: "",
@@ -57,6 +53,12 @@ const INITIAL_ADD: AddForm = {
   redirectRouteId: "",
   redirectCode: 301,
 }
+
+interface AddForm extends TargetFormState {
+  open: boolean
+}
+
+const INITIAL_ADD: AddForm = { open: false, ...BLANK_FORM }
 
 function RouteDetailPage() {
   const { id: projectId, routeId } = useParams({ from: "/_app/projects/$id/routes/$routeId" })
@@ -211,141 +213,38 @@ function RouteDetailPage() {
                 key={target.id}
                 target={target}
                 hostname={route.hostname}
+                zone={route.zone}
                 serviceMap={serviceMap}
                 nodeMap={nodeMap}
                 routeMap={routeMap}
+                serviceList={serviceList}
+                nodeList={nodeList}
+                redirectableRoutes={redirectableRoutes}
+                orgId={orgId!}
+                projectId={projectId}
+                routeId={routeId}
+                token={token}
                 deletePending={deleteTargetMutation.isPending}
                 onDelete={() => deleteTargetMutation.mutate(target.id)}
+                onUpdated={invalidateRoute}
               />
             ))}
 
             {add.open && (
-              <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-3">
-                <div className="flex items-center gap-2">
-                  <SegmentedControl
-                    value={add.mode}
-                    onValueChange={(v) => patchAdd({ mode: v as TargetMode, serviceId: "", nodeId: "", port: "", redirectRouteId: "" })}
-                    options={[
-                      { value: "service",  label: "Service" },
-                      { value: "node",     label: "Node + port" },
-                      ...(route.zone !== "internal" ? [{ value: "redirect", label: "Redirect" }] : []),
-                    ]}
-                    className="text-xs shrink-0"
-                  />
-                  <input
-                    value={add.path}
-                    onChange={(e) => patchAdd({ path: e.target.value })}
-                    placeholder="/path"
-                    className={cn(inputCls, "font-mono text-xs w-28 shrink-0")}
-                  />
-                  {add.mode !== "redirect" && (
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={add.stripPath}
-                        onChange={(e) => patchAdd({ stripPath: e.target.checked })}
-                        className="accent-primary"
-                      />
-                      Strip path
-                    </label>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setAdd(INITIAL_ADD)}
-                    className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-auto"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-
-                {add.mode === "service" ? (
-                  <Select value={add.serviceId} onValueChange={(v) => patchAdd({ serviceId: v ?? "" })}>
-                    <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
-                      <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
-                        {serviceList.find((s) => s.id === add.serviceId)?.name}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {serviceList.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                          <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : add.mode === "node" ? (
-                  <div className="grid grid-cols-[1fr_100px] gap-2">
-                    <Select value={add.nodeId} onValueChange={(v) => patchAdd({ nodeId: v ?? "" })}>
-                      <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
-                        <SelectValue placeholder={nodeList.length === 0 ? "No online nodes" : "Select a node…"}>
-                          {nodeList.find((n) => n.id === add.nodeId)?.name}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {nodeList.map((n) => (
-                          <SelectItem key={n.id} value={n.id}>
-                            {n.name}
-                            <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={add.port}
-                      onChange={(e) => patchAdd({ port: e.target.value })}
-                      placeholder="8080"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Select value={add.redirectRouteId} onValueChange={(v) => patchAdd({ redirectRouteId: v ?? "" })}>
-                      <SelectTrigger className="flex-1 h-9 text-sm bg-background border-border/60">
-                        <SelectValue placeholder={redirectableRoutes.length === 0 ? "No other routes available" : "Select target route…"}>
-                          {redirectableRoutes.find((r) => r.id === add.redirectRouteId)?.hostname}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {redirectableRoutes.map((r) => (
-                          <SelectItem key={r.id} value={r.id}>
-                            <span className="font-mono text-xs">{r.hostname}</span>
-                            <span className="ml-2 text-muted-foreground text-xs">{r.zone}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <SegmentedControl
-                      value={String(add.redirectCode)}
-                      onValueChange={(v) => patchAdd({ redirectCode: Number(v) })}
-                      options={[
-                        { value: "301", label: "301" },
-                        { value: "302", label: "302" },
-                      ]}
-                      className="text-xs shrink-0"
-                    />
-                  </div>
-                )}
-
-                {addTargetMutation.isError && (
-                  <p className="text-xs text-destructive">
-                    {(addTargetMutation.error as Error)?.message ?? "Failed to add target"}
-                  </p>
-                )}
-
-                <Button
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => addTargetMutation.mutate()}
-                  disabled={!addValid || addTargetMutation.isPending}
-                >
-                  {addTargetMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Add target
-                </Button>
-              </div>
+              <TargetForm
+                form={add}
+                zone={route.zone}
+                serviceList={serviceList}
+                nodeList={nodeList}
+                redirectableRoutes={redirectableRoutes}
+                onChange={patchAdd}
+                submitLabel="Add target"
+                isPending={addTargetMutation.isPending}
+                error={(addTargetMutation.error as Error | null)?.message}
+                onSubmit={() => addTargetMutation.mutate()}
+                onCancel={() => setAdd(INITIAL_ADD)}
+                cancelIcon="trash"
+              />
             )}
 
             {!add.open && (
@@ -392,23 +291,234 @@ function RouteDetailPage() {
   )
 }
 
+// ─── Shared target form ───────────────────────────────────────────────────────
+
+function TargetForm({
+  form,
+  zone,
+  serviceList,
+  nodeList,
+  redirectableRoutes,
+  onChange,
+  submitLabel,
+  isPending,
+  error,
+  onSubmit,
+  onCancel,
+  cancelIcon = "x",
+}: {
+  form: TargetFormState
+  zone: string
+  serviceList: { id: string; name: string; port?: number }[]
+  nodeList: { id: string; name: string; tailscale_ip?: string }[]
+  redirectableRoutes: { id: string; hostname: string; zone: string }[]
+  onChange: (patch: Partial<TargetFormState>) => void
+  submitLabel: string
+  isPending: boolean
+  error?: string
+  onSubmit: () => void
+  onCancel: () => void
+  cancelIcon?: "trash" | "x"
+}) {
+  const valid =
+    form.path.trim().startsWith("/") && (
+      form.mode === "service"  ? form.serviceId.length > 0 :
+      form.mode === "node"     ? form.nodeId.length > 0 && form.port.trim().length > 0 :
+      /* redirect */             form.redirectRouteId.length > 0
+    )
+
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <SegmentedControl
+          value={form.mode}
+          onValueChange={(v) => onChange({ mode: v as TargetMode, serviceId: "", nodeId: "", port: "", redirectRouteId: "" })}
+          options={[
+            { value: "service",  label: "Service" },
+            { value: "node",     label: "Node + port" },
+            ...(zone !== "internal" ? [{ value: "redirect", label: "Redirect" }] : []),
+          ]}
+          className="text-xs shrink-0"
+        />
+        <input
+          value={form.path}
+          onChange={(e) => onChange({ path: e.target.value })}
+          placeholder="/path"
+          className={cn(inputCls, "font-mono text-xs w-28 shrink-0")}
+        />
+        {form.mode !== "redirect" && (
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer ml-auto shrink-0">
+            <input
+              type="checkbox"
+              checked={form.stripPath}
+              onChange={(e) => onChange({ stripPath: e.target.checked })}
+              className="accent-primary"
+            />
+            Strip path
+          </label>
+        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onCancel}
+          className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-auto"
+        >
+          {cancelIcon === "trash" ? <Trash2 className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+
+      {form.mode === "service" ? (
+        <Select value={form.serviceId} onValueChange={(v) => onChange({ serviceId: v ?? "" })}>
+          <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+            <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
+              {serviceList.find((s) => s.id === form.serviceId)?.name}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {serviceList.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name}
+                {s.port && <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : form.mode === "node" ? (
+        <div className="grid grid-cols-[1fr_100px] gap-2">
+          <Select value={form.nodeId} onValueChange={(v) => onChange({ nodeId: v ?? "" })}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+              <SelectValue placeholder={nodeList.length === 0 ? "No online nodes" : "Select a node…"}>
+                {nodeList.find((n) => n.id === form.nodeId)?.name}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {nodeList.map((n) => (
+                <SelectItem key={n.id} value={n.id}>
+                  {n.name}
+                  {n.tailscale_ip && <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            type="number"
+            min={1}
+            max={65535}
+            value={form.port}
+            onChange={(e) => onChange({ port: e.target.value })}
+            placeholder="8080"
+          />
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Select value={form.redirectRouteId} onValueChange={(v) => onChange({ redirectRouteId: v ?? "" })}>
+            <SelectTrigger className="flex-1 h-9 text-sm bg-background border-border/60">
+              <SelectValue placeholder={redirectableRoutes.length === 0 ? "No other routes available" : "Select target route…"}>
+                {redirectableRoutes.find((r) => r.id === form.redirectRouteId)?.hostname}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {redirectableRoutes.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  <span className="font-mono text-xs">{r.hostname}</span>
+                  <span className="ml-2 text-muted-foreground text-xs">{r.zone}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <SegmentedControl
+            value={String(form.redirectCode)}
+            onValueChange={(v) => onChange({ redirectCode: Number(v) })}
+            options={[
+              { value: "301", label: "301" },
+              { value: "302", label: "302" },
+            ]}
+            className="text-xs shrink-0"
+          />
+        </div>
+      )}
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <Button
+        size="sm"
+        className="gap-1.5"
+        onClick={onSubmit}
+        disabled={!valid || isPending}
+      >
+        {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {submitLabel}
+      </Button>
+    </div>
+  )
+}
+
+// ─── Target item (view + inline edit) ────────────────────────────────────────
+
+function targetToForm(target: ApiRouteTarget): TargetFormState {
+  const mode: TargetMode = target.redirect_route_id ? "redirect" : target.node_id ? "node" : "service"
+  return {
+    mode,
+    serviceId: target.service_id ?? "",
+    nodeId: target.node_id ?? "",
+    port: target.target_port ? String(target.target_port) : "",
+    path: target.path,
+    stripPath: target.strip_path ?? false,
+    redirectRouteId: target.redirect_route_id ?? "",
+    redirectCode: target.redirect_code ?? 301,
+  }
+}
+
 function TargetItem({
   target,
   hostname,
+  zone,
   serviceMap,
   nodeMap,
   routeMap,
+  serviceList,
+  nodeList,
+  redirectableRoutes,
+  orgId,
+  projectId,
+  routeId,
+  token,
   deletePending,
   onDelete,
+  onUpdated,
 }: {
   target: ApiRouteTarget
   hostname: string
+  zone: string
   serviceMap: Record<string, string>
   nodeMap: Record<string, string>
   routeMap: Record<string, string>
+  serviceList: { id: string; name: string; port?: number }[]
+  nodeList: { id: string; name: string; tailscale_ip?: string }[]
+  redirectableRoutes: { id: string; hostname: string; zone: string }[]
+  orgId: string
+  projectId: string
+  routeId: string
+  token: string
   deletePending: boolean
   onDelete: () => void
+  onUpdated: () => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState<TargetFormState>(() => targetToForm(target))
+  const patchEdit = (p: Partial<TargetFormState>) => setEditForm((s) => ({ ...s, ...p }))
+
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      const body: TargetBody = { path: editForm.path || "/", strip_path: editForm.stripPath }
+      if (editForm.mode === "service")       body.service_id = editForm.serviceId
+      else if (editForm.mode === "node")     { body.node_id = editForm.nodeId; body.port = parseInt(editForm.port, 10) }
+      else if (editForm.mode === "redirect") { body.redirect_route_id = editForm.redirectRouteId; body.redirect_code = editForm.redirectCode }
+      return routesApi.updateTarget(orgId, projectId, routeId, target.id, body, token)
+    },
+    onSuccess: () => { setEditing(false); onUpdated() },
+  })
+
   const isRedirect = !!target.redirect_route_id
   const targetLabel = isRedirect
     ? routeMap[target.redirect_route_id!] ?? "Unknown route"
@@ -419,6 +529,24 @@ function TargetItem({
     : `${target.target_ip}:${target.target_port}`
 
   const openHref = `https://${hostname}${target.path === "/" ? "" : target.path}`
+
+  if (editing) {
+    return (
+      <TargetForm
+        form={editForm}
+        zone={zone}
+        serviceList={serviceList}
+        nodeList={nodeList}
+        redirectableRoutes={redirectableRoutes}
+        onChange={patchEdit}
+        submitLabel="Save"
+        isPending={updateMutation.isPending}
+        error={(updateMutation.error as Error | null)?.message}
+        onSubmit={() => updateMutation.mutate()}
+        onCancel={() => { setEditing(false); setEditForm(targetToForm(target)) }}
+      />
+    )
+  }
 
   return (
     <div className="rounded-md border border-border/60 bg-muted/5 px-3 py-2.5 space-y-1.5">
@@ -450,6 +578,15 @@ function TargetItem({
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setEditing(true)}
+          title="Edit target"
+          className="text-muted-foreground/50 hover:text-foreground transition-colors shrink-0"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
