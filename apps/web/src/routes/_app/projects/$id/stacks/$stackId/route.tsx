@@ -21,8 +21,6 @@ function StackLayout() {
   const { id: projectId, stackId } = useParams({ from: "/_app/projects/$id/stacks/$stackId" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
-
   const { data: stack, isLoading } = useQuery({
     queryKey: ["stack", orgId, projectId, stackId],
     queryFn: () => stacksApi.get(orgId!, projectId, stackId, token),
