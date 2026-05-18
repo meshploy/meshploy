@@ -5,6 +5,7 @@ import {
   services as servicesApi,
   routes as routesApi,
   nodes as nodesApi,
+  projects as projectsApi,
   toNode,
   type ApiNode,
   type ApiDatabaseConfig,
@@ -94,6 +95,12 @@ function ServiceOverviewTab() {
     enabled: !!orgId && service?.type !== "database",
   })
 
+  const { data: project } = useQuery({
+    queryKey: ["project", orgId, projectId],
+    queryFn: () => projectsApi.get(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+
   const { data: dc } = useQuery<ApiDatabaseConfig>({
     queryKey: ["database-config", orgId, projectId, serviceId],
     queryFn: () => servicesApi.getDatabaseConfig(orgId!, projectId, serviceId, token),
@@ -113,7 +120,9 @@ function ServiceOverviewTab() {
   )
 
   // Connection strings for database services
-  const internalConnStr = dc ? buildConnectionString(dc, `${dc.slug}.svc.cluster.local`) : null
+  const internalConnStr = dc && project
+    ? buildConnectionString(dc, `${dc.slug}.${project.slug}.svc.cluster.local`)
+    : null
   const meshConnStr = dc?.node_port && node?.tailscaleIP
     ? buildConnectionString(dc, node.tailscaleIP, dc.node_port)
     : null

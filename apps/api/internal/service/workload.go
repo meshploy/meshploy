@@ -295,6 +295,26 @@ func (s *WorkloadService) GetDatabaseConfig(ctx context.Context, serviceID uuid.
 	return &dc, err
 }
 
+// GetK8sInfo returns the K8s namespace (= project slug) and deployment name
+// (= app label) for a service, needed for pod listing and exec.
+func (s *WorkloadService) GetK8sInfo(ctx context.Context, serviceID uuid.UUID) (namespace, k8sName string, err error) {
+	var svc db.Service
+	if err = s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return
+	}
+	namespace = svc.Project.Slug
+	if svc.Type == db.ServiceTypeDatabase {
+		var dc db.DatabaseConfig
+		if err = s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err != nil {
+			return
+		}
+		k8sName = dc.Slug
+	} else {
+		k8sName = slugify(svc.Name)
+	}
+	return
+}
+
 func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error {
 	return s.db.WithContext(ctx).Delete(&db.Service{}, "id = ?", serviceID).Error
 }

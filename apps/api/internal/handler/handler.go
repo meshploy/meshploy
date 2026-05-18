@@ -61,4 +61,8 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 
 	// WebSocket: node terminal
 	r.Get("/api/v1/orgs/{orgId}/nodes/{nodeId}/terminal", h.NodeTerminal)
+
+	// WebSocket: service pod terminal
+	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/{podName}/terminal",
+		h.ServiceTerminal)
 }

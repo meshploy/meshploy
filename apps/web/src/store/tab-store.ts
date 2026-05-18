@@ -4,7 +4,7 @@ import { create } from "zustand"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type TabType = "explorer" | "terminal" | "metrics"
+export type TabType = "explorer" | "terminal" | "metrics" | "service-terminal"
 
 export interface ExplorerPayload {
   serviceId: string
@@ -23,7 +23,15 @@ export interface MetricsPayload {
   nodeLabel: string
 }
 
-export type TabPayload = ExplorerPayload | TerminalPayload | MetricsPayload
+export interface ServiceTerminalPayload {
+  orgId: string
+  projectId: string
+  serviceId: string
+  podName: string
+  podLabel: string
+}
+
+export type TabPayload = ExplorerPayload | TerminalPayload | MetricsPayload | ServiceTerminalPayload
 
 export interface SessionTab {
   id: string          // unique — serviceId or nodeId works

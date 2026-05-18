@@ -30,6 +30,15 @@ export interface ApiDeployment {
   updated_at: string
 }
 
+export interface ApiPodInfo {
+  name: string
+  phase: string
+  ready: boolean
+  restarts: number
+  node_name: string
+  started_at: string
+}
+
 export interface ApiDatabaseConfig {
   id: string
   service_id: string
@@ -221,6 +230,13 @@ export const services = {
     apiFetch<ApiQueryResult>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/db/query`,
       { method: "POST", body: JSON.stringify({ query, read_only: readOnly }) },
+      token
+    ),
+
+  listPods: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiPodInfo[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/pods`,
+      {},
       token
     ),
 }
