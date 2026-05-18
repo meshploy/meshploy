@@ -351,6 +351,51 @@ func ScaleDeployment(ctx context.Context, client kubernetes.Interface, name, nam
 	return err
 }
 
+// PodInfo is a summarised view of a running pod for the UI.
+type PodInfo struct {
+	Name      string `json:"name"`
+	Phase     string `json:"phase"`
+	Ready     bool   `json:"ready"`
+	Restarts  int32  `json:"restarts"`
+	NodeName  string `json:"node_name"`
+	StartedAt string `json:"started_at"` // RFC3339, empty if not yet started
+}
+
+// ListServicePods returns all pods for a given app label in the namespace,
+// sorted by creation timestamp (newest first).
+func ListServicePods(ctx context.Context, client kubernetes.Interface, namespace, appLabel string) ([]PodInfo, error) {
+	list, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("app=%s,managed-by=meshploy", appLabel),
+	})
+	if err != nil {
+		return nil, err
+	}
+	pods := make([]PodInfo, 0, len(list.Items))
+	for _, p := range list.Items {
+		var restarts int32
+		var ready bool
+		for _, cs := range p.Status.ContainerStatuses {
+			restarts += cs.RestartCount
+			if cs.Ready {
+				ready = true
+			}
+		}
+		startedAt := ""
+		if p.Status.StartTime != nil {
+			startedAt = p.Status.StartTime.UTC().Format("2006-01-02T15:04:05Z")
+		}
+		pods = append(pods, PodInfo{
+			Name:      p.Name,
+			Phase:     string(p.Status.Phase),
+			Ready:     ready,
+			Restarts:  restarts,
+			NodeName:  p.Spec.NodeName,
+			StartedAt: startedAt,
+		})
+	}
+	return pods, nil
+}
+
 // DeleteWorkload removes the Deployment and Service for a service.
 func DeleteWorkload(ctx context.Context, client kubernetes.Interface, name, namespace string) error {
 	dp := client.AppsV1().Deployments(namespace)

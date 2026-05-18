@@ -4,9 +4,10 @@ import { Topbar } from "@/components/layout/topbar"
 import { TabBar } from "@/components/layout/tab-bar"
 import { DBExplorer } from "@/components/explorer/db-explorer"
 import { NodeTerminal } from "@/components/terminal/node-terminal"
+import { ServiceTerminal } from "@/components/terminal/service-terminal"
 import { NodeMetricsTab } from "@/components/metrics/node-metrics-tab"
 import { useAuthStore } from "@/store/auth-store"
-import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload, type MetricsPayload } from "@/store/tab-store"
+import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload, type MetricsPayload, type ServiceTerminalPayload } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app")({
@@ -53,6 +54,10 @@ function SessionContent({ tab }: { tab: SessionTab }) {
   if (tab.type === "metrics") {
     const payload = tab.payload as MetricsPayload
     return <NodeMetricsTab payload={payload} />
+  }
+  if (tab.type === "service-terminal") {
+    const payload = tab.payload as ServiceTerminalPayload
+    return <ServiceTerminal payload={payload} />
   }
   return null
 }

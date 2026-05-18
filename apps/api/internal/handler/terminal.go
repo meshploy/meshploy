@@ -16,8 +16,8 @@ import (
 	"github.com/gorilla/websocket"
 	appk8s "github.com/meshploy/apps/api/internal/k8s"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 var wsUpgrader = websocket.Upgrader{
@@ -228,5 +228,153 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("terminal: stream ended: %v", err)
+	}
+}
+
+// ServiceTerminal upgrades the HTTP connection to WebSocket and streams an
+// interactive shell inside an existing service pod via K8s exec.
+// The JWT must be passed as the `token` query parameter.
+//
+// Protocol is identical to NodeTerminal (resize JSON + binary stdin/stdout).
+func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tokenStr := r.URL.Query().Get("token")
+	if tokenStr == "" {
+		http.Error(w, "missing token", http.StatusUnauthorized)
+		return
+	}
+	tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return []byte(h.cfg.JWTSecret), nil
+	})
+	if err != nil || !tok.Valid {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	orgIDStr := chi.URLParam(r, "orgId")
+	serviceIDStr := chi.URLParam(r, "serviceId")
+	podName := chi.URLParam(r, "podName")
+
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		http.Error(w, "invalid orgId", http.StatusBadRequest)
+		return
+	}
+	serviceID, err := uuid.Parse(serviceIDStr)
+	if err != nil {
+		http.Error(w, "invalid serviceId", http.StatusBadRequest)
+		return
+	}
+	_ = orgID // future: verify org membership
+
+	if h.svc.K8s == nil {
+		http.Error(w, "kubernetes not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	namespace, containerName, err := h.svc.Workloads.GetK8sInfo(ctx, serviceID)
+	if err != nil {
+		http.Error(w, "service not found", http.StatusNotFound)
+		return
+	}
+
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("service-terminal: ws upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	sizeQ := &resizeQueue{ch: make(chan remotecommand.TerminalSize, 4)}
+	defer close(sizeQ.ch)
+
+	req := h.svc.K8s.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: containerName,
+			Command:   []string{"sh", "-c", "bash 2>/dev/null || sh"},
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       true,
+		}, scheme.ParameterCodec)
+
+	restCfg := h.svc.K8sRestConfig
+	executor, err := remotecommand.NewSPDYExecutor(restCfg, "POST", req.URL())
+	if err != nil {
+		conn.WriteMessage(websocket.TextMessage, []byte("error: "+err.Error()))
+		return
+	}
+
+	execCtx, execCancel := context.WithCancel(ctx)
+	defer execCancel()
+
+	stdinR, stdinW := io.Pipe()
+	defer stdinW.Close()
+
+	var wsMu sync.Mutex
+	writeWS := func(data []byte) {
+		wsMu.Lock()
+		defer wsMu.Unlock()
+		conn.WriteMessage(websocket.BinaryMessage, data)
+	}
+
+	go func() {
+		defer stdinW.Close()
+		defer execCancel()
+		for {
+			msgType, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if msgType == websocket.TextMessage {
+				var ev struct {
+					Type string `json:"type"`
+					Cols uint16 `json:"cols"`
+					Rows uint16 `json:"rows"`
+				}
+				if json.Unmarshal(msg, &ev) == nil && ev.Type == "resize" {
+					select {
+					case sizeQ.ch <- remotecommand.TerminalSize{Width: ev.Cols, Height: ev.Rows}:
+					default:
+					}
+				}
+			} else {
+				stdinW.Write(msg)
+			}
+		}
+	}()
+
+	stdoutR, stdoutW := io.Pipe()
+	go func() {
+		defer stdoutR.Close()
+		buf := make([]byte, 4096)
+		for {
+			n, err := stdoutR.Read(buf)
+			if n > 0 {
+				writeWS(buf[:n])
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	err = executor.StreamWithContext(execCtx, remotecommand.StreamOptions{
+		Stdin:             stdinR,
+		Stdout:            stdoutW,
+		Stderr:            stdoutW,
+		Tty:               true,
+		TerminalSizeQueue: sizeQ,
+	})
+	if err != nil {
+		log.Printf("service-terminal: stream ended: %v", err)
 	}
 }

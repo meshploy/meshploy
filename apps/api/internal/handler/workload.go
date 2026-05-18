@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	appk8s "github.com/meshploy/apps/api/internal/k8s"
 	svc "github.com/meshploy/apps/api/internal/service"
 	db "github.com/meshploy/packages/db"
 )
@@ -213,6 +214,15 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DBQuery)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-service-pods",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods",
+		Summary:     "List running pods for a service",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListServicePods)
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
@@ -664,4 +674,33 @@ func (h *Handler) DBQuery(ctx context.Context, input *DBQueryInput) (*DBQueryOut
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &DBQueryOutput{Body: result}, nil
+}
+
+type ListServicePodsOutput struct {
+	Body []appk8s.PodInfo
+}
+
+func (h *Handler) ListServicePods(ctx context.Context, input *WorkloadPathInput) (*ListServicePodsOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	if h.svc.K8s == nil {
+		return nil, huma.Error503ServiceUnavailable("kubernetes not available")
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	namespace, k8sName, err := h.svc.Workloads.GetK8sInfo(ctx, serviceID)
+	if err != nil {
+		return nil, huma.Error404NotFound("service not found")
+	}
+	pods, err := appk8s.ListServicePods(ctx, h.svc.K8s, namespace, k8sName)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list pods: " + err.Error())
+	}
+	if pods == nil {
+		pods = []appk8s.PodInfo{}
+	}
+	return &ListServicePodsOutput{Body: pods}, nil
 }

@@ -17,6 +17,7 @@ const APP_TABS = [
   { label: "Overview",    to: "/projects/$id/services/$serviceId/overview"    },
   { label: "Deployments", to: "/projects/$id/services/$serviceId/deployments" },
   { label: "Config",      to: "/projects/$id/services/$serviceId/config"      },
+  { label: "Pods",        to: "/projects/$id/services/$serviceId/pods"        },
   { label: "Logs",        to: "/projects/$id/services/$serviceId/logs"        },
   { label: "Settings",    to: "/projects/$id/services/$serviceId/settings"    },
 ]
@@ -24,6 +25,7 @@ const APP_TABS = [
 const DB_TABS = [
   { label: "Overview",    to: "/projects/$id/services/$serviceId/overview"    },
   { label: "Deployments", to: "/projects/$id/services/$serviceId/deployments" },
+  { label: "Pods",        to: "/projects/$id/services/$serviceId/pods"        },
   { label: "Backups",     to: "/projects/$id/services/$serviceId/backups"     },
   { label: "Logs",        to: "/projects/$id/services/$serviceId/logs"        },
   { label: "Settings",    to: "/projects/$id/services/$serviceId/settings"    },

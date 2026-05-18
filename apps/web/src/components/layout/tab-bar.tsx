@@ -5,9 +5,10 @@ import { useTabStore, type SessionTab } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
 
 const TAB_ICONS: Record<string, React.ElementType> = {
-  explorer: Database,
-  terminal: Terminal,
-  metrics:  Activity,
+  explorer:          Database,
+  terminal:          Terminal,
+  metrics:           Activity,
+  "service-terminal": Terminal,
 }
 
 export function TabBar() {
