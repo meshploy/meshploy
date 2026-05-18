@@ -39,6 +39,12 @@ export interface ApiPodInfo {
   started_at: string
 }
 
+export interface ApiPodMetrics {
+  pod_name: string
+  cpu_millis: number
+  memory_mib: number
+}
+
 export interface ApiDatabaseConfig {
   id: string
   service_id: string
@@ -236,6 +242,13 @@ export const services = {
   listPods: (orgId: string, projectId: string, serviceId: string, token: string) =>
     apiFetch<ApiPodInfo[]>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/pods`,
+      {},
+      token
+    ),
+
+  getPodMetrics: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiPodMetrics[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/pods/metrics`,
       {},
       token
     ),
