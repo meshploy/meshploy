@@ -223,13 +223,14 @@ function NewResourcePage() {
       {/* Top bar */}
       <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="h-14 flex items-center gap-3 px-6">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => navigate({ to: "/projects/$id/services", params: { id: projectId } })}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
             {project?.name ?? "Project"}
-          </button>
+          </Button>
           <span className="text-muted-foreground/40">/</span>
           <span className="text-sm font-medium">Create new</span>
         </div>
@@ -245,7 +246,8 @@ function NewResourcePage() {
             {RESOURCE_TYPES.map(({ type, icon: Icon, label, soon, divider }) => (
               <div key={type}>
                 {divider && <div className="my-1.5 border-t border-border/30" />}
-                <button
+                <Button
+                  variant="ghost"
                   onClick={() => !soon && setResourceType(type)}
                   disabled={soon}
                   className={cn(
@@ -264,7 +266,7 @@ function NewResourcePage() {
                       soon
                     </span>
                   )}
-                </button>
+                </Button>
               </div>
             ))}
           </nav>
@@ -675,13 +677,14 @@ function ServiceForm({
 
         {/* Resource limits (collapsible) */}
         <div className="rounded-lg border border-border/40 -mx-0">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => patch({ showResources: !form.showResources })}
             className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <span className="font-medium">Resource limits</span>
             <ChevronDown className={cn("h-4 w-4 transition-transform", form.showResources ? "rotate-180" : "")} />
-          </button>
+          </Button>
           {form.showResources && (
             <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
               <Field label="CPU request">
@@ -718,13 +721,14 @@ function ServiceForm({
                   <span className="text-muted-foreground/50">←</span>
                   <span className="text-muted-foreground truncate">{a.secretName}</span>
                 </div>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => removeSecret(a.secretId)}
                   className="ml-3 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -780,13 +784,14 @@ function ServiceForm({
               <span className="text-muted-foreground/50">→</span>
               <code className="font-mono text-foreground truncate">{form.volumeAttachment.mountPath}</code>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => patch({ volumeAttachment: null })}
               className="ml-3 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
             >
               <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </div>
         ) : readyVolumes.length === 0 ? (
           <p className="text-xs text-muted-foreground/60">
@@ -977,8 +982,9 @@ function DatabaseForm({ projectId }: { projectId: string }) {
       <Section title="Engine" subtitle="Choose the database engine and version">
         <div className="grid grid-cols-3 gap-3 mb-4">
           {ENGINE_OPTIONS.map((eng) => (
-            <button
+            <Button
               key={eng.value}
+              variant="ghost"
               onClick={() => patchDbf({ engine: eng.value, version: eng.versions[0] })}
               className={cn(
                 "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
@@ -989,7 +995,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
             >
               <DbEngineLogo engine={eng.value} className="h-4 w-4 shrink-0" />
               <span className="text-sm font-medium">{eng.label}</span>
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -1365,14 +1371,14 @@ function RouteForm({ projectId }: { projectId: string }) {
               onRemove={rf.targets.length > 1 ? () => removeTarget(t.id) : undefined}
             />
           ))}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={addTarget}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
             Add another target
-          </button>
+          </Button>
         </div>
       </Section>
 
@@ -1450,13 +1456,14 @@ function TargetRowField({
         )}
         {row.targetMode === "redirect" && <div className="ml-auto" />}
         {onRemove && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onRemove}
             className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
           >
             <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -1630,30 +1637,34 @@ function SecretForm({ projectId }: { projectId: string }) {
                 value={row.value}
                 onChange={(e) => patchRow(row.id, { value: e.target.value })}
               />
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => patchRow(row.id, { showValue: !row.showValue })}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
               >
                 {row.showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
+              </Button>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => removeRow(row.id)}
               disabled={rows.length === 1}
               className="flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-20"
             >
               <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </div>
         ))}
 
-        <button
+        <Button
+          variant="ghost"
           onClick={addRow}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
         >
           <Plus className="h-3.5 w-3.5" /> Add another
-        </button>
+        </Button>
       </div>
 
       {errors.length > 0 && (
@@ -1854,13 +1865,14 @@ function JobForm({ projectId }: { projectId: string }) {
       </Section>
 
       <div className="rounded-lg border border-border/40">
-        <button
+        <Button
+          variant="ghost"
           onClick={() => patch({ showResources: !jf.showResources })}
           className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <span className="font-medium">Resource limits</span>
           <ChevronDown className={cn("h-4 w-4 transition-transform", jf.showResources ? "rotate-180" : "")} />
-        </button>
+        </Button>
         {jf.showResources && (
           <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
             <Field label="CPU request">

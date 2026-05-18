@@ -64,13 +64,14 @@ function NewProjectPage() {
       {/* Top bar */}
       <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="h-14 flex items-center gap-3 px-6">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => navigate({ to: "/projects" })}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
             Projects
-          </button>
+          </Button>
           <span className="text-muted-foreground/40">/</span>
           <span className="text-sm font-medium">New project</span>
         </div>

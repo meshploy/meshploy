@@ -3,6 +3,7 @@ import { Check } from "lucide-react"
 import { ACCENT_GROUPS, getAccent } from "@/lib/accents"
 import { useAccentStore } from "@/store/accent-store"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 export function AccentPicker() {
   const { accentId, setAccent } = useAccentStore()
@@ -29,8 +30,8 @@ export function AccentPicker() {
   return (
     <div ref={containerRef} className="relative">
       {/* Trigger: small color swatch + chevron */}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 h-8 px-2 rounded-md border border-border/60 bg-muted/20 hover:bg-muted/40 transition-colors"
         title="Accent theme"
@@ -42,7 +43,7 @@ export function AccentPicker() {
         <svg className="h-3 w-3 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <path d="m7 10 5 5 5-5" />
         </svg>
-      </button>
+      </Button>
 
       {/* Dropdown panel */}
       {open && (
@@ -69,9 +70,9 @@ export function AccentPicker() {
                   {group.colors.map((color) => {
                     const isSelected = color.id === accentId
                     return (
-                      <button
+                      <Button
                         key={color.id}
-                        type="button"
+                        variant="ghost"
                         onClick={() => handleSelect(color.id)}
                         className={cn(
                           "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm transition-colors text-left",
@@ -86,7 +87,7 @@ export function AccentPicker() {
                         />
                         {color.label}
                         {isSelected && <Check className="h-3 w-3 ml-auto shrink-0 text-foreground" />}
-                      </button>
+                      </Button>
                     )
                   })}
                 </div>

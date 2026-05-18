@@ -6,6 +6,7 @@ import { secrets as secretsApi, type ApiSecret } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
 
@@ -66,21 +67,20 @@ function SecretsPage() {
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/40 bg-muted/20">
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[220px]">Value</th>
-                <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[160px]">Updated</th>
-                <th className="px-4 py-2.5 w-[72px]" />
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((s, i) => (
+          <Table>
+            <TableHeader className="bg-muted/20">
+              <TableRow className="border-b border-border/40 hover:bg-transparent">
+                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</TableHead>
+                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[220px]">Value</TableHead>
+                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[160px]">Updated</TableHead>
+                <TableHead className="px-4 py-2.5 w-[72px]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.map((s) => (
                 <SecretRow
                   key={s.id}
                   secret={s}
-                  last={i === list.length - 1}
                   orgId={orgId}
                   projectId={projectId}
                   token={token}
@@ -89,8 +89,8 @@ function SecretsPage() {
                   onUpdated={invalidate}
                 />
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
@@ -98,10 +98,9 @@ function SecretsPage() {
 }
 
 function SecretRow({
-  secret, last, orgId, projectId, token, onDelete, isDeleting, onUpdated,
+  secret, orgId, projectId, token, onDelete, isDeleting, onUpdated,
 }: {
   secret: ApiSecret
-  last: boolean
   orgId: string
   projectId: string
   token: string
@@ -123,14 +122,14 @@ function SecretRow({
   })
 
   return (
-    <tr className={cn("hover:bg-muted/10 transition-colors", !last && "border-b border-border/30")}>
-      <td className="px-4 py-3">
+    <TableRow className="border-b border-border/30 hover:bg-muted/10">
+      <TableCell className="px-4 py-3">
         <div className="flex items-center gap-2">
           <KeyRound className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
           <code className="text-xs font-mono text-foreground">{secret.name}</code>
         </div>
-      </td>
-      <td className="px-4 py-3">
+      </TableCell>
+      <TableCell className="px-4 py-3">
         {editing ? (
           <div className="flex items-center gap-1.5">
             <div className="relative flex-1 min-w-0">
@@ -177,11 +176,11 @@ function SecretRow({
         ) : (
           <span className="text-xs font-mono text-muted-foreground/40 tracking-widest">••••••••</span>
         )}
-      </td>
-      <td className="px-4 py-3">
+      </TableCell>
+      <TableCell className="px-4 py-3">
         <span className="text-xs text-muted-foreground/60">{relTime}</span>
-      </td>
-      <td className="px-4 py-3">
+      </TableCell>
+      <TableCell className="px-4 py-3">
         <div className="flex items-center justify-end gap-0.5">
           {!editing && (
             <Button
@@ -205,7 +204,7 @@ function SecretRow({
             {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
           </Button>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   )
 }

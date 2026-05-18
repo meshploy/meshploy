@@ -85,9 +85,9 @@ function AppearanceSection() {
               {group.colors.map((color) => {
                 const isSelected = color.id === accentId
                 return (
-                  <button
+                  <Button
                     key={color.id}
-                    type="button"
+                    variant="ghost"
                     onClick={() => setAccent(color.id)}
                     title={color.label}
                     className={cn(
@@ -103,7 +103,7 @@ function AppearanceSection() {
                     />
                     {color.label}
                     {isSelected && <Check className="h-3 w-3 ml-0.5 shrink-0" />}
-                  </button>
+                  </Button>
                 )
               })}
             </div>
@@ -339,22 +339,26 @@ function SystemBackupSection() {
               <span className="text-sm font-medium">{cfg.enabled ? "Active" : "Paused"}</span>
             </div>
             <div className="flex items-center gap-1">
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => toggleMut.mutate(!cfg.enabled)}
                 disabled={toggleMut.isPending}
                 className="p-1.5 text-xs text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
                 title={cfg.enabled ? "Pause" : "Resume"}
               >
                 {toggleMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : cfg.enabled ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => deleteMut.mutate()}
                 disabled={deleteMut.isPending}
                 className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
                 title="Remove backup config"
               >
                 {deleteMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </button>
+              </Button>
             </div>
           </div>
           <div className="text-xs text-muted-foreground/70 space-y-0.5">

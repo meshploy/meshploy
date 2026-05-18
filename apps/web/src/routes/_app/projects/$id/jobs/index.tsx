@@ -5,6 +5,7 @@ import { jobs as jobsApi, type ApiJob } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/")({
@@ -112,31 +113,31 @@ function JobSection({
 }) {
   return (
     <div className="rounded-lg border border-border/60 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border/40 bg-muted/20">
-              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image</th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[140px]">Schedule</th>
-              <th className="text-left px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[100px]">Status</th>
-              <th className="px-4 py-2.5 w-[80px]" />
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((job, i) => (
-              <JobRow
-                key={job.id}
-                job={job}
-                last={i === jobs.length - 1}
-                projectId={projectId}
-                onDelete={() => onDelete(job.id)}
-                onTrigger={() => onTrigger(job.id)}
-                isDeleting={deletingId === job.id}
-                isTriggering={triggeringId === job.id}
-              />
-            ))}
-          </tbody>
-        </table>
+      <Table>
+        <TableHeader className="bg-muted/20">
+          <TableRow className="border-b border-border/40 hover:bg-transparent">
+            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</TableHead>
+            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image</TableHead>
+            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[140px]">Schedule</TableHead>
+            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[100px]">Status</TableHead>
+            <TableHead className="px-4 py-2.5 w-[80px]" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {jobs.map((job, i) => (
+            <JobRow
+              key={job.id}
+              job={job}
+              last={i === jobs.length - 1}
+              projectId={projectId}
+              onDelete={() => onDelete(job.id)}
+              onTrigger={() => onTrigger(job.id)}
+              isDeleting={deletingId === job.id}
+              isTriggering={triggeringId === job.id}
+            />
+          ))}
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -155,63 +156,58 @@ function JobRow({
   const navigate = useNavigate()
 
   return (
-    <>
-      <tr
-        className={cn(
-          "hover:bg-muted/10 transition-colors cursor-pointer",
-          !last && "border-b border-border/30"
-        )}
-        onClick={() => navigate({ to: "/projects/$id/jobs/$jobId", params: { id: projectId, jobId: job.id } })}
-      >
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            {job.is_cron
-              ? <Clock className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-              : <Zap className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-            }
-            <span className="text-xs font-medium">{job.name}</span>
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <code className="text-xs text-muted-foreground/70 font-mono">{job.image}</code>
-        </td>
-        <td className="px-4 py-3">
+    <TableRow
+      className={cn("hover:bg-muted/10 cursor-pointer", !last && "border-b border-border/30")}
+      onClick={() => navigate({ to: "/projects/$id/jobs/$jobId", params: { id: projectId, jobId: job.id } })}
+    >
+      <TableCell className="px-4 py-3">
+        <div className="flex items-center gap-2">
           {job.is_cron
-            ? <code className="text-xs font-mono text-muted-foreground/70">{job.schedule || "—"}</code>
-            : <span className="text-xs text-muted-foreground/40">one-shot</span>
+            ? <Clock className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+            : <Zap className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
           }
-        </td>
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-1.5">
-            <div className={statusDot(job.status)} />
-            <span className="text-xs text-muted-foreground/70 capitalize">{job.status}</span>
-          </div>
-        </td>
-        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-end gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={onTrigger}
-              disabled={isTriggering}
-              title="Run now"
-              className="text-muted-foreground/40 hover:text-primary"
-            >
-              {isTriggering ? <Loader2 className="animate-spin" /> : <Play />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={onDelete}
-              disabled={isDeleting}
-              title="Delete"
-              className="text-muted-foreground/40 hover:text-destructive"
-            >
-              {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
-            </Button>
-          </div>
-        </td>
-      </tr>
-    </>
+          <span className="text-xs font-medium">{job.name}</span>
+        </div>
+      </TableCell>
+      <TableCell className="px-4 py-3">
+        <code className="text-xs text-muted-foreground/70 font-mono">{job.image}</code>
+      </TableCell>
+      <TableCell className="px-4 py-3">
+        {job.is_cron
+          ? <code className="text-xs font-mono text-muted-foreground/70">{job.schedule || "—"}</code>
+          : <span className="text-xs text-muted-foreground/40">one-shot</span>
+        }
+      </TableCell>
+      <TableCell className="px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          <div className={statusDot(job.status)} />
+          <span className="text-xs text-muted-foreground/70 capitalize">{job.status}</span>
+        </div>
+      </TableCell>
+      <TableCell className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onTrigger}
+            disabled={isTriggering}
+            title="Run now"
+            className="text-muted-foreground/40 hover:text-primary"
+          >
+            {isTriggering ? <Loader2 className="animate-spin" /> : <Play />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onDelete}
+            disabled={isDeleting}
+            title="Delete"
+            className="text-muted-foreground/40 hover:text-destructive"
+          >
+            {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   )
 }

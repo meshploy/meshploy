@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query"
 import { auth, orgs, ApiError } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/_auth/register")({
   component: RegisterPage,
@@ -87,13 +88,14 @@ function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 pr-9 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
             />
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setShowPassword((v) => !v)}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
             >
               {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            </button>
+            </Button>
           </div>
         </Field>
 
@@ -103,14 +105,14 @@ function RegisterPage() {
           </p>
         )}
 
-        <button
+        <Button
           type="submit"
           disabled={registerMutation.isPending}
           className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
         >
           {registerMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Create account
-        </button>
+        </Button>
       </form>
 
       <p className="text-center text-xs text-muted-foreground">

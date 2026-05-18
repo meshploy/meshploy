@@ -54,14 +54,16 @@ function StackCard({ stack, projectId }: { stack: ApiStack; projectId: string })
           <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border shrink-0 ${STATUS_STYLES[stack.status]}`}>
             {stack.status}
           </Badge>
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={(e) => { e.stopPropagation(); deleteMutation.mutate() }}
             disabled={deleteMutation.isPending}
             title="Delete stack"
             className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
           >
             {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          </button>
+          </Button>
         </div>
       </div>
 

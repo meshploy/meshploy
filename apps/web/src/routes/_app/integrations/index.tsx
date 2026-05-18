@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Bell, Box, GitBranch, HardDrive, Loader2, Mail, Pencil, Plus, Trash2, Download, RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   gitIntegrations as gitApi,
   registries as registriesApi,
@@ -285,15 +286,16 @@ function StorageCard({ integration, onDelete, isDeleting }: {
         <p className="text-xs text-muted-foreground mt-0.5">{PROVIDER_LABELS[integration.provider] ?? integration.provider}</p>
         {meta && <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>}
       </div>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon-sm"
         onClick={onDelete}
         disabled={isDeleting}
         className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
         title="Remove"
       >
         {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -328,15 +330,16 @@ function RegistryCard({ registry, onDelete, isDeleting }: {
         {meta && <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>}
       </div>
       {registry.provider !== "builtin" && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={onDelete}
           disabled={isDeleting}
           className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
           title="Remove"
         >
           {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -436,36 +439,39 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
       {/* Actions */}
       <div className="flex items-center gap-0.5 shrink-0">
         {isPending && isGHApp && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={handleInstall}
             disabled={installing || !integration.gh_app_slug}
             className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
             title={integration.gh_app_slug ? "Install GitHub App" : "Setup not yet complete"}
           >
             {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          </button>
+          </Button>
         )}
         {(isPending && isOAuth || needsReconnect) && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={handleReconnect}
             disabled={reconnecting}
             className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
             title={needsReconnect ? "Token expired — re-authorize" : "Re-authorize"}
           >
             {reconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={onDelete}
           disabled={isDeleting}
           className="p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
           title="Disconnect"
         >
           {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -523,12 +529,13 @@ function NotificationsSection({ orgId, token }: { orgId: string; token: string }
         {isLoading
           ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
           : (
-            <button
+            <Button
+              variant="ghost"
               onClick={() => navigate({ to: "/integrations/new", search: { category: "notifications" } })}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/60 hover:border-border px-2.5 py-1.5 rounded-md transition-colors"
             >
               <Plus className="h-3 w-3" />Add channel
-            </button>
+            </Button>
           )
         }
       </div>
@@ -588,7 +595,9 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
           <p className="text-xs text-muted-foreground truncate">{PROVIDER_LABELS[channel.type]}{destination ? ` · ${destination}` : ""}</p>
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => onToggle(!channel.enabled)}
             disabled={isToggling}
             title={channel.enabled ? "Pause" : "Resume"}
@@ -600,15 +609,17 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
                 ? <span className="text-[10px] font-mono">II</span>
                 : <span className="text-[10px] font-mono">▶</span>
             }
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onDelete}
             disabled={isDeleting}
             title="Delete"
             className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
           >
             {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          </button>
+          </Button>
         </div>
       </div>
       {channel.events.length > 0 && (
@@ -648,12 +659,13 @@ function EmailProviderSection({ orgId, token }: { orgId: string; token: string }
           description="Outbound SMTP for email notification channels"
         />
         {!isLoading && !cfg && (
-          <button
+          <Button
+            variant="ghost"
             onClick={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
             className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
           >
             <Plus className="h-3 w-3" />Configure
-          </button>
+          </Button>
         )}
       </div>
 
@@ -665,12 +677,13 @@ function EmailProviderSection({ orgId, token }: { orgId: string; token: string }
           title="No email provider configured"
           description="Set up SMTP so email notification channels can send alerts"
         >
-          <button
+          <Button
+            variant="ghost"
             onClick={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
             className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
           >
             <Plus className="h-3 w-3" />Configure
-          </button>
+          </Button>
         </EmptyState>
       ) : (
         <EmailProviderCard
@@ -710,23 +723,25 @@ function EmailProviderCard({ cfg, onEdit, onDelete, isDeleting }: {
         </p>
       </div>
       <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={onEdit}
           className="p-1 text-muted-foreground/40 hover:text-foreground transition-colors"
           title="Edit"
         >
           <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={onDelete}
           disabled={isDeleting}
           className="p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
           title="Remove"
         >
           {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-        </button>
+        </Button>
       </div>
     </div>
   )

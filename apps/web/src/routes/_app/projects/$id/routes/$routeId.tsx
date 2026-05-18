@@ -249,13 +249,14 @@ function RouteDetailPage() {
                       Strip path
                     </label>
                   )}
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => setAdd(INITIAL_ADD)}
                     className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-auto"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
 
                 {add.mode === "service" ? (
@@ -348,14 +349,14 @@ function RouteDetailPage() {
             )}
 
             {!add.open && (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 onClick={() => patchAdd({ open: true })}
                 className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border/60 rounded-md hover:border-border transition-colors"
               >
                 <Plus className="h-3 w-3" />
                 Add another target
-              </button>
+              </Button>
             )}
           </div>
         </Section>
@@ -449,14 +450,15 @@ function TargetItem({
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={onDelete}
           disabled={deletePending}
           className="text-muted-foreground/50 hover:text-destructive transition-colors shrink-0 disabled:opacity-40"
         >
           <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
       {!isRedirect && target.target_ip && (
         <div className="flex items-center gap-1.5 pl-0.5">
