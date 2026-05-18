@@ -223,6 +223,15 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.ListServicePods)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-pod-metrics",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/metrics",
+		Summary:     "Live CPU and memory usage per pod (requires metrics-server)",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetPodMetrics)
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
@@ -703,4 +712,34 @@ func (h *Handler) ListServicePods(ctx context.Context, input *WorkloadPathInput)
 		pods = []appk8s.PodInfo{}
 	}
 	return &ListServicePodsOutput{Body: pods}, nil
+}
+
+type GetPodMetricsOutput struct {
+	Body []appk8s.PodMetrics
+}
+
+func (h *Handler) GetPodMetrics(ctx context.Context, input *WorkloadPathInput) (*GetPodMetricsOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	if h.svc.K8s == nil || h.svc.K8sRestConfig == nil {
+		return nil, huma.Error503ServiceUnavailable("kubernetes not available")
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	namespace, k8sName, err := h.svc.Workloads.GetK8sInfo(ctx, serviceID)
+	if err != nil {
+		return nil, huma.Error404NotFound("service not found")
+	}
+	labelSelector := "app=" + k8sName + ",managed-by=meshploy"
+	metrics, err := appk8s.GetPodMetrics(ctx, h.svc.K8sRestConfig, namespace, labelSelector)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("metrics: " + err.Error())
+	}
+	if metrics == nil {
+		metrics = []appk8s.PodMetrics{}
+	}
+	return &GetPodMetricsOutput{Body: metrics}, nil
 }
