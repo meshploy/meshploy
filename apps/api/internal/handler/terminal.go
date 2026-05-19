@@ -299,7 +299,7 @@ func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
 			Container: containerName,
-			Command:   []string{"sh", "-c", "exec bash -i 2>/dev/null || exec sh -i"},
+			Command:   []string{"env", "TERM=xterm-256color", "sh", "-c", "exec bash 2>/dev/null || exec sh"},
 			Stdin:     true,
 			Stdout:    true,
 			Stderr:    true,
