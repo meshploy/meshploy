@@ -28,6 +28,12 @@ export interface ApiSystemBackupConfig {
   updated_at: string
 }
 
+export interface BackupObject {
+  key: string
+  size: number
+  last_modified: string
+}
+
 export interface CreateBackupBody {
   storage_integration_id: string
   schedule: string
@@ -103,6 +109,34 @@ export const backups = {
     apiFetch<ApiSystemBackupConfig>(
       `/api/v1/orgs/${orgId}/system-backup/trigger`,
       { method: "POST" },
+      token
+    ),
+
+  listObjects: (orgId: string, projectId: string, serviceId: string, id: string, token: string) =>
+    apiFetch<BackupObject[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/backups/${id}/objects`,
+      {},
+      token
+    ),
+
+  restore: (orgId: string, projectId: string, serviceId: string, id: string, key: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/backups/${id}/restore`,
+      { method: "POST", body: JSON.stringify({ key }) },
+      token
+    ),
+
+  listSystemObjects: (orgId: string, token: string) =>
+    apiFetch<BackupObject[]>(
+      `/api/v1/orgs/${orgId}/system-backup/objects`,
+      {},
+      token
+    ),
+
+  restoreSystem: (orgId: string, key: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/system-backup/restore`,
+      { method: "POST", body: JSON.stringify({ key }) },
       token
     ),
 }

@@ -32,6 +32,13 @@ type BackupService struct {
 	sem chan struct{}
 }
 
+// BackupObject is a single restore point returned by ListObjects.
+type BackupObject struct {
+	Key          string    `json:"key"`
+	Size         int64     `json:"size"`
+	LastModified time.Time `json:"last_modified"`
+}
+
 // ─── Per-service backup configs ───────────────────────────────────────────────
 
 type CreateBackupInput struct {
@@ -369,6 +376,78 @@ func (s *BackupService) reapAll(ctx context.Context) {
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+}
+
+// ─── Restore ─────────────────────────────────────────────────────────────────
+
+// ListObjects returns all available restore points for a backup config, newest first.
+func (s *BackupService) ListObjects(ctx context.Context, id, serviceID uuid.UUID) ([]BackupObject, error) {
+	var cfg db.BackupConfig
+	if err := s.db.WithContext(ctx).
+		Preload("StorageIntegration").
+		Where("id = ? AND service_id = ?", id, serviceID).First(&cfg).Error; err != nil {
+		return nil, err
+	}
+	var dc db.DatabaseConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", cfg.ServiceID).First(&dc).Error; err != nil {
+		return nil, err
+	}
+	s3c, err := newS3Client(cfg.StorageIntegration)
+	if err != nil {
+		return nil, err
+	}
+	return listBackupObjects(ctx, s3c, cfg.StorageIntegration.Bucket,
+		backupListPrefix(cfg.PathPrefix, dc.Slug))
+}
+
+// Restore asynchronously restores the database from the given S3 key.
+// Returns immediately with 202; the restore runs in the background.
+func (s *BackupService) Restore(ctx context.Context, id, serviceID uuid.UUID, key string) error {
+	// Validate the config exists before accepting.
+	var cfg db.BackupConfig
+	if err := s.db.WithContext(ctx).Where("id = ? AND service_id = ?", id, serviceID).First(&cfg).Error; err != nil {
+		return err
+	}
+	go func() {
+		if err := s.execRestore(context.Background(), id, key); err != nil {
+			log.Printf("restore %s key=%s: %v", id, key, err)
+		} else {
+			log.Printf("restore %s key=%s: success", id, key)
+		}
+	}()
+	return nil
+}
+
+// ListSystemObjects returns all available restore points for the system backup, newest first.
+func (s *BackupService) ListSystemObjects(ctx context.Context, orgID uuid.UUID) ([]BackupObject, error) {
+	var cfg db.SystemBackupConfig
+	if err := s.db.WithContext(ctx).
+		Preload("StorageIntegration").
+		Where("organization_id = ?", orgID).First(&cfg).Error; err != nil {
+		return nil, err
+	}
+	s3c, err := newS3Client(cfg.StorageIntegration)
+	if err != nil {
+		return nil, err
+	}
+	return listBackupObjects(ctx, s3c, cfg.StorageIntegration.Bucket,
+		backupListPrefix(cfg.PathPrefix, "system"))
+}
+
+// RestoreSystem asynchronously restores the system database from the given S3 key.
+func (s *BackupService) RestoreSystem(ctx context.Context, orgID uuid.UUID, key string) error {
+	var cfg db.SystemBackupConfig
+	if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).First(&cfg).Error; err != nil {
+		return err
+	}
+	go func() {
+		if err := s.execSystemRestore(context.Background(), cfg.ID, key); err != nil {
+			log.Printf("system-restore org=%s key=%s: %v", orgID, key, err)
+		} else {
+			log.Printf("system-restore org=%s key=%s: success", orgID, key)
+		}
+	}()
+	return nil
 }
 
 // isDue returns true if the cron schedule is overdue relative to the last run

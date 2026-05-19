@@ -22,6 +22,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
 import { BackupCard } from "@/components/backups/backup-card"
+import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
 import type { OrgRole } from "@/types"
 import { ACCENT_GROUPS, getAccent } from "@/lib/accents"
@@ -258,6 +259,21 @@ function SystemBackupSection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["system-backup", orgId] }),
   })
 
+  const [accordionOpen, setAccordionOpen] = useState(false)
+  const [restoringKey, setRestoringKey] = useState<string | null>(null)
+
+  const { data: objects, isLoading: objectsLoading } = useQuery({
+    queryKey: ["system-backup-objects", orgId],
+    queryFn: () => backupsApi.listSystemObjects(orgId, token),
+    enabled: accordionOpen && !!cfg,
+  })
+
+  const restoreMut = useMutation({
+    mutationFn: (key: string) => backupsApi.restoreSystem(orgId, key, token),
+    onMutate: (key) => setRestoringKey(key),
+    onSettled: () => setRestoringKey(null),
+  })
+
   function startEdit(existing?: ApiSystemBackupConfig) {
     setStorageId(existing?.storage_integration_id ?? storageList[0]?.id ?? "")
     setSchedule(existing?.schedule ?? "0 2 * * *")
@@ -341,6 +357,16 @@ function SystemBackupSection() {
           isTogglePending={toggleMut.isPending}
           onDelete={() => deleteMut.mutate()}
           isDeletePending={deleteMut.isPending}
+          footer={
+            <RestoreAccordion
+              objects={objects}
+              isLoading={objectsLoading}
+              onRestore={(key) => restoreMut.mutate(key)}
+              isRestorePending={restoreMut.isPending}
+              restoringKey={restoringKey}
+              onOpenChange={setAccordionOpen}
+            />
+          }
         />
       ) : (
         <div className="flex items-center gap-3">

@@ -303,6 +303,115 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 	})
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-backup-objects",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/objects",
+		Summary:     "List restore points for a backup config",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *BackupPathInput) (*struct {
+		Body []service.BackupObject
+	}, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid ID")
+		}
+		serviceID, err := uuid.Parse(in.ServiceID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid service ID")
+		}
+		items, err := h.svc.Backups.ListObjects(ctx, id, serviceID)
+		if err != nil {
+			return nil, err
+		}
+		return &struct{ Body []service.BackupObject }{Body: items}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "restore-backup",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/restore",
+		Summary:       "Restore a database from a backup object",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *struct {
+		OrgID     string `path:"orgId"`
+		ProjectID string `path:"projectId"`
+		ServiceID string `path:"serviceId"`
+		ID        string `path:"id"`
+		Body      struct {
+			Key string `json:"key" minLength:"1"`
+		}
+	}) (*struct{}, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid ID")
+		}
+		serviceID, err := uuid.Parse(in.ServiceID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid service ID")
+		}
+		return nil, h.svc.Backups.Restore(ctx, id, serviceID, in.Body.Key)
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-system-backup-objects",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/orgs/{orgId}/system-backup/objects",
+		Summary:     "List restore points for the system backup",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *struct {
+		OrgID string `path:"orgId"`
+	}) (*struct {
+		Body []service.BackupObject
+	}, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		orgID, err := uuid.Parse(in.OrgID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		items, err := h.svc.Backups.ListSystemObjects(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		return &struct{ Body []service.BackupObject }{Body: items}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "restore-system-backup",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/system-backup/restore",
+		Summary:       "Restore system database from a backup object",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *struct {
+		OrgID string `path:"orgId"`
+		Body  struct {
+			Key string `json:"key" minLength:"1"`
+		}
+	}) (*struct{}, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		orgID, err := uuid.Parse(in.OrgID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		return nil, h.svc.Backups.RestoreSystem(ctx, orgID, in.Body.Key)
+	})
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "delete-system-backup",
 		Method:        http.MethodDelete,
 		Path:          "/api/v1/orgs/{orgId}/system-backup",
