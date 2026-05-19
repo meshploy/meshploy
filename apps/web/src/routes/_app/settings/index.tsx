@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertCircle, Crown, Globe, HardDrive, Loader2, Plus, Shield, Trash2, User, Check, Pencil, X } from "lucide-react"
+import { AlertCircle, Crown, Globe, HardDrive, Loader2, Plus, Shield, User, Check, Pencil, X } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ import {
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
+import { BackupCard } from "@/components/backups/backup-card"
 import { cn } from "@/lib/utils"
 import type { OrgRole } from "@/types"
 import { ACCENT_GROUPS, getAccent } from "@/lib/accents"
@@ -252,6 +253,11 @@ function SystemBackupSection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["system-backup", orgId] }),
   })
 
+  const triggerMut = useMutation({
+    mutationFn: () => backupsApi.triggerSystem(orgId, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["system-backup", orgId] }),
+  })
+
   function startEdit(existing?: ApiSystemBackupConfig) {
     setStorageId(existing?.storage_integration_id ?? storageList[0]?.id ?? "")
     setSchedule(existing?.schedule ?? "0 2 * * *")
@@ -267,13 +273,6 @@ function SystemBackupSection() {
     <Section
       title="System Backup"
       subtitle="Automated backup of Meshploy's own database to object storage"
-      action={
-        !isLoading && !editing && cfg && (
-          <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => startEdit(cfg)}>
-            <Pencil className="h-3 w-3" /> Edit
-          </Button>
-        )
-      }
     >
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
@@ -332,57 +331,17 @@ function SystemBackupSection() {
           </div>
         </div>
       ) : cfg ? (
-        <div className="rounded-lg border border-border/60 px-4 py-3.5 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className={cn("h-2 w-2 rounded-full shrink-0", cfg.enabled ? "bg-emerald-400" : "bg-muted-foreground/30")} />
-              <span className="text-sm font-medium">{cfg.enabled ? "Active" : "Paused"}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => toggleMut.mutate(!cfg.enabled)}
-                disabled={toggleMut.isPending}
-                className="p-1.5 text-xs text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
-                title={cfg.enabled ? "Pause" : "Resume"}
-              >
-                {toggleMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : cfg.enabled ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => deleteMut.mutate()}
-                disabled={deleteMut.isPending}
-                className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-                title="Remove backup config"
-              >
-                {deleteMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-          </div>
-          <div className="text-xs text-muted-foreground/70 space-y-0.5">
-            <div className="flex items-center gap-3">
-              <span><span className="text-muted-foreground/40">schedule</span> <code className="font-mono text-foreground/80">{cfg.schedule}</code></span>
-              <span><span className="text-muted-foreground/40">retention</span> {cfg.retention_days}d</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span><span className="text-muted-foreground/40">storage</span> {storageList.find((s: ApiStorageIntegration) => s.id === cfg.storage_integration_id)?.name ?? cfg.storage_integration_id}</span>
-              {cfg.path_prefix && <span><span className="text-muted-foreground/40">prefix</span> <code className="font-mono">{cfg.path_prefix}</code></span>}
-            </div>
-            {cfg.last_backup_status && (
-              <div className="flex items-center gap-1.5 pt-1">
-                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", {
-                  "bg-yellow-400 animate-pulse": cfg.last_backup_status === "running" || cfg.last_backup_status === "pending",
-                  "bg-emerald-400": cfg.last_backup_status === "success",
-                  "bg-destructive": cfg.last_backup_status === "failed",
-                })} />
-                <span className="capitalize">{cfg.last_backup_status}</span>
-                {cfg.last_backup_at && <span className="text-muted-foreground/40">· {new Date(cfg.last_backup_at).toLocaleString()}</span>}
-              </div>
-            )}
-          </div>
-        </div>
+        <BackupCard
+          config={cfg}
+          storageName={storageList.find((s: ApiStorageIntegration) => s.id === cfg.storage_integration_id)?.name ?? cfg.storage_integration_id}
+          onTrigger={() => triggerMut.mutate()}
+          isTriggerPending={triggerMut.isPending}
+          onEdit={() => startEdit(cfg)}
+          onToggle={(enabled) => toggleMut.mutate(enabled)}
+          isTogglePending={toggleMut.isPending}
+          onDelete={() => deleteMut.mutate()}
+          isDeletePending={deleteMut.isPending}
+        />
       ) : (
         <div className="flex items-center gap-3">
           <p className="text-sm text-muted-foreground flex-1">No backup configured for the system database.</p>

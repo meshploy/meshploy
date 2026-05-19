@@ -192,6 +192,33 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		return nil, h.svc.Backups.Delete(ctx, id, serviceID)
 	})
 
+	huma.Register(api, huma.Operation{
+		OperationID:   "trigger-backup-config",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/trigger",
+		Summary:       "Manually trigger a backup",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *BackupPathInput) (*CreateBackupOutput, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid ID")
+		}
+		serviceID, err := uuid.Parse(in.ServiceID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid service ID")
+		}
+		item, err := h.svc.Backups.Trigger(ctx, id, serviceID)
+		if err != nil {
+			return nil, err
+		}
+		return &CreateBackupOutput{Body: item}, nil
+	})
+
 	// ── System backup ──────────────────────────────────────────────────────
 
 	huma.Register(api, huma.Operation{
@@ -244,6 +271,31 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 			PathPrefix:           in.Body.PathPrefix,
 			Enabled:              in.Body.Enabled,
 		})
+		if err != nil {
+			return nil, err
+		}
+		return &SystemBackupOutput{Body: item}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "trigger-system-backup",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/system-backup/trigger",
+		Summary:       "Manually trigger the system backup",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusAccepted,
+	}, func(ctx context.Context, in *struct {
+		OrgID string `path:"orgId"`
+	}) (*SystemBackupOutput, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		orgID, err := uuid.Parse(in.OrgID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		item, err := h.svc.Backups.TriggerSystem(ctx, orgID)
 		if err != nil {
 			return nil, err
 		}
