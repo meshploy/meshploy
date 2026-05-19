@@ -157,7 +157,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	workloads := &WorkloadService{db: db, k8s: k8sClient}
 	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}}
 
-	return &Services{
+	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups)}
+
+	svc := &Services{
 		Auth:            auth,
 		Orgs:            &OrgService{db: db},
 		Projects:        &ProjectService{db: db},
@@ -171,20 +173,25 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		GitIntegrations: gitSvc,
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
-		Backups:         &BackupService{db: db},
+		Backups:         backups,
 		Notifications:   &NotificationService{db: db},
 		EmailConfig:     &EmailConfigService{db: db},
 		Secrets:         &SecretService{db: db},
 		Jobs:            func() *JobService {
-			svc := &JobService{db: db, k8s: k8sClient}
+			j := &JobService{db: db, k8s: k8sClient}
 			if k8sClient != nil {
-				go svc.StartReconciler(context.Background())
+				go j.StartReconciler(context.Background())
 			}
-			return svc
+			return j
 		}(),
-		DBExplorer:      &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
-		Headscale:       headscaleSvc,
-		K8s:             k8sClient,
-		K8sRestConfig:   k8sRestCfg,
+		DBExplorer:    &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
+		Headscale:     headscaleSvc,
+		K8s:           k8sClient,
+		K8sRestConfig: k8sRestCfg,
 	}
+
+	go backups.StartScheduler(context.Background())
+	go backups.StartRetentionReaper(context.Background())
+
+	return svc
 }
