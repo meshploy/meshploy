@@ -988,7 +988,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
               className={cn(
                 "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
                 dbf.engine === eng.value
-                  ? "border-primary/50 bg-primary/10 text-foreground"
+                  ? "border-primary/50 bg-primary/10 text-foreground hover:bg-primary/10 hover:text-foreground"
                   : "border-border/60 bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/30"
               )}
             >
