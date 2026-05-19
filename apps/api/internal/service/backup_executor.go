@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -254,6 +255,130 @@ func (s *BackupService) execBackup(ctx context.Context, cfgID uuid.UUID) {
 	// 8. Enforce retention: delete objects older than retention_days.
 	purgeOldBackups(ctx, s3c, cfg.StorageIntegration.Bucket,
 		backupListPrefix(cfg.PathPrefix, dc.Slug), cfg.RetentionDays)
+}
+
+// ─── Restore helpers ─────────────────────────────────────────────────────────
+
+// restoreCmd returns the shell command to restore a gzipped dump read from stdin.
+func restoreCmd(engine db.DatabaseEngine, dbUser, dbName, dbPass string) ([]string, error) {
+	u, n, p := shellEsc(dbUser), shellEsc(dbName), shellEsc(dbPass)
+	switch engine {
+	case db.DatabasePostgres:
+		return []string{"sh", "-c", fmt.Sprintf(
+			"gunzip | PGPASSWORD='%s' psql -U '%s' -d '%s'", p, u, n,
+		)}, nil
+	case db.DatabaseMySQL:
+		return []string{"sh", "-c", fmt.Sprintf(
+			"gunzip | mysql -u '%s' -p'%s' '%s'", u, p, n,
+		)}, nil
+	case db.DatabaseMongoDB:
+		// mongorestore --archive --gzip reads a gzipped archive from stdin.
+		return []string{"sh", "-c", fmt.Sprintf(
+			"mongorestore --authenticationDatabase admin -u '%s' -p '%s' -d '%s' --archive --gzip", u, p, n,
+		)}, nil
+	default:
+		return nil, fmt.Errorf("restore not supported for engine: %s", engine)
+	}
+}
+
+// listBackupObjects lists all objects under listPrefix, sorted newest first.
+func listBackupObjects(ctx context.Context, client *minio.Client, bucket, listPrefix string) ([]BackupObject, error) {
+	var objs []BackupObject
+	for obj := range client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Prefix:    listPrefix,
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			return nil, obj.Err
+		}
+		objs = append(objs, BackupObject{
+			Key:          obj.Key,
+			Size:         obj.Size,
+			LastModified: obj.LastModified,
+		})
+	}
+	sort.Slice(objs, func(i, j int) bool {
+		return objs[i].LastModified.After(objs[j].LastModified)
+	})
+	return objs, nil
+}
+
+func (s *BackupService) execRestore(ctx context.Context, cfgID uuid.UUID, key string) error {
+	var cfg db.BackupConfig
+	if err := s.db.WithContext(ctx).
+		Preload("Service.Project").
+		Preload("StorageIntegration").
+		First(&cfg, "id = ?", cfgID).Error; err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	var dc db.DatabaseConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", cfg.ServiceID).First(&dc).Error; err != nil {
+		return fmt.Errorf("load database config: %w", err)
+	}
+
+	cmd, err := restoreCmd(dc.Engine, dc.DBUser, dc.DBName, string(dc.DBPassword))
+	if err != nil {
+		return err
+	}
+
+	s3c, err := newS3Client(cfg.StorageIntegration)
+	if err != nil {
+		return fmt.Errorf("s3 client: %w", err)
+	}
+
+	obj, err := s3c.GetObject(ctx, cfg.StorageIntegration.Bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("get object: %w", err)
+	}
+	defer obj.Close()
+
+	if s.k8s == nil {
+		return fmt.Errorf("kubernetes not available")
+	}
+
+	podName, err := appk8s.FindRunningPod(ctx, s.k8s, cfg.Service.Project.Slug, dc.Slug)
+	if err != nil {
+		return fmt.Errorf("find pod: %w", err)
+	}
+
+	return appk8s.ExecRestoreCommand(ctx, s.k8s, s.restCfg,
+		cfg.Service.Project.Slug, podName, dc.Slug, cmd, obj)
+}
+
+func (s *BackupService) execSystemRestore(ctx context.Context, cfgID uuid.UUID, key string) error {
+	var cfg db.SystemBackupConfig
+	if err := s.db.WithContext(ctx).
+		Preload("StorageIntegration").
+		First(&cfg, "id = ?", cfgID).Error; err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	if s.cfg == nil || s.cfg.DatabaseURL == "" {
+		return fmt.Errorf("DATABASE_URL not set")
+	}
+
+	s3c, err := newS3Client(cfg.StorageIntegration)
+	if err != nil {
+		return fmt.Errorf("s3 client: %w", err)
+	}
+
+	obj, err := s3c.GetObject(ctx, cfg.StorageIntegration.Bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("get object: %w", err)
+	}
+	defer obj.Close()
+
+	safeURL := shellEsc(s.cfg.DatabaseURL)
+	shellCmd := exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("gunzip | psql '%s'", safeURL))
+	shellCmd.Stdin = obj
+	var stderrBuf bytes.Buffer
+	shellCmd.Stderr = &stderrBuf
+
+	if err := shellCmd.Run(); err != nil {
+		return fmt.Errorf("%w; stderr=%s", err, stderrBuf.String())
+	}
+	return nil
 }
 
 // ─── System backup ────────────────────────────────────────────────────────────

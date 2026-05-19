@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Loader2, Pencil, Play, Trash2, X, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -21,6 +22,7 @@ interface BackupCardProps {
   isTogglePending?: boolean
   onDelete?: () => void
   isDeletePending?: boolean
+  footer?: ReactNode
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -40,6 +42,7 @@ export function BackupCard({
   isTogglePending,
   onDelete,
   isDeletePending,
+  footer,
 }: BackupCardProps) {
   return (
     <div className="rounded-lg border border-border/60 px-4 py-3.5 space-y-2">
@@ -123,6 +126,7 @@ export function BackupCard({
           </div>
         )}
       </div>
+      {footer}
     </div>
   )
 }

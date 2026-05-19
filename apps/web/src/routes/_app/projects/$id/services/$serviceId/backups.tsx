@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select"
 import { inputCls } from "@/components/services/form-primitives"
 import { BackupCard } from "@/components/backups/backup-card"
+import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId/backups")({
@@ -122,6 +123,8 @@ function BackupItem({ config, storageList, orgId, projectId, serviceId, token }:
   const [editing, setEditing] = useState(false)
   const [schedule, setSchedule] = useState(config.schedule)
   const [retention, setRetention] = useState(String(config.retention_days))
+  const [accordionOpen, setAccordionOpen] = useState(false)
+  const [restoringKey, setRestoringKey] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["backups", orgId, projectId, serviceId] })
 
@@ -139,6 +142,18 @@ function BackupItem({ config, storageList, orgId, projectId, serviceId, token }:
   const triggerMut = useMutation({
     mutationFn: () => backupsApi.trigger(orgId, projectId, serviceId, config.id, token),
     onSuccess: invalidate,
+  })
+
+  const { data: objects, isLoading: objectsLoading } = useQuery({
+    queryKey: ["backup-objects", orgId, projectId, serviceId, config.id],
+    queryFn: () => backupsApi.listObjects(orgId, projectId, serviceId, config.id, token),
+    enabled: accordionOpen,
+  })
+
+  const restoreMut = useMutation({
+    mutationFn: (key: string) => backupsApi.restore(orgId, projectId, serviceId, config.id, key, token),
+    onMutate: (key) => setRestoringKey(key),
+    onSettled: () => setRestoringKey(null),
   })
 
   const storageName = storageList.find((s) => s.id === config.storage_integration_id)?.name ?? "Unknown storage"
@@ -181,6 +196,16 @@ function BackupItem({ config, storageList, orgId, projectId, serviceId, token }:
       isTogglePending={updateMut.isPending}
       onDelete={() => deleteMut.mutate()}
       isDeletePending={deleteMut.isPending}
+      footer={
+        <RestoreAccordion
+          objects={objects}
+          isLoading={objectsLoading}
+          onRestore={(key) => restoreMut.mutate(key)}
+          isRestorePending={restoreMut.isPending}
+          restoringKey={restoringKey}
+          onOpenChange={setAccordionOpen}
+        />
+      }
     />
   )
 }

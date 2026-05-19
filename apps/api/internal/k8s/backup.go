@@ -80,6 +80,48 @@ func ExecDumpCommand(
 	return pr, nil
 }
 
+// ExecRestoreCommand runs cmd inside the specified pod container, feeding stdin
+// from reader (the gzipped S3 object). Blocks until the command completes or
+// the context is cancelled.
+func ExecRestoreCommand(
+	ctx context.Context,
+	client kubernetes.Interface,
+	restCfg *rest.Config,
+	namespace, podName, containerName string,
+	cmd []string,
+	stdin io.Reader,
+) error {
+	req := client.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: containerName,
+			Command:   cmd,
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       false,
+		}, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(restCfg, "POST", req.URL())
+	if err != nil {
+		return fmt.Errorf("create executor: %w", err)
+	}
+
+	var stderr bytes.Buffer
+	if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:  stdin,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Tty:    false,
+	}); err != nil {
+		return fmt.Errorf("%w; stderr=%s", err, stderr.String())
+	}
+	return nil
+}
+
 // CreateEphemeralPod starts a long-running sleep pod in kube-system, used for
 // exec-based one-off operations (e.g. system backup via pg_dump).
 func CreateEphemeralPod(ctx context.Context, client kubernetes.Interface, name, image string, env []corev1.EnvVar) error {
