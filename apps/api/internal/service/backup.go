@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
@@ -89,6 +90,37 @@ func (s *BackupService) Delete(ctx context.Context, id, serviceID uuid.UUID) err
 	return s.db.WithContext(ctx).
 		Where("id = ? AND service_id = ?", id, serviceID).
 		Delete(&db.BackupConfig{}).Error
+}
+
+func (s *BackupService) Trigger(ctx context.Context, id, serviceID uuid.UUID) (*db.BackupConfig, error) {
+	var item db.BackupConfig
+	if err := s.db.WithContext(ctx).Where("id = ? AND service_id = ?", id, serviceID).First(&item).Error; err != nil {
+		return nil, err
+	}
+	pending := "pending"
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&item).Updates(map[string]any{
+		"last_backup_status": pending,
+		"last_backup_at":     now,
+	}).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (s *BackupService) TriggerSystem(ctx context.Context, orgID uuid.UUID) (*db.SystemBackupConfig, error) {
+	var item db.SystemBackupConfig
+	if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).First(&item).Error; err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&item).Updates(map[string]any{
+		"last_backup_status": "pending",
+		"last_backup_at":     now,
+	}).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
 }
 
 // ─── System backup config ─────────────────────────────────────────────────────

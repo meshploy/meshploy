@@ -71,6 +71,13 @@ export const backups = {
       token
     ),
 
+  trigger: (orgId: string, projectId: string, serviceId: string, id: string, token: string) =>
+    apiFetch<ApiBackupConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/backups/${id}/trigger`,
+      { method: "POST" },
+      token
+    ),
+
   getSystem: (orgId: string, token: string) =>
     apiFetch<ApiSystemBackupConfig | null>(
       `/api/v1/orgs/${orgId}/system-backup`,
@@ -89,6 +96,13 @@ export const backups = {
     apiFetch<void>(
       `/api/v1/orgs/${orgId}/system-backup`,
       { method: "DELETE" },
+      token
+    ),
+
+  triggerSystem: (orgId: string, token: string) =>
+    apiFetch<ApiSystemBackupConfig>(
+      `/api/v1/orgs/${orgId}/system-backup/trigger`,
+      { method: "POST" },
       token
     ),
 }
