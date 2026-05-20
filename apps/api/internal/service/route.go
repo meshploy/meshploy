@@ -6,13 +6,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 )
+
+var wildcardSubdomainRe = regexp.MustCompile(`^\*\.[a-z0-9-]+$`)
 
 type RouteService struct {
 	db *gorm.DB
@@ -77,6 +81,17 @@ func (s *RouteService) Get(ctx context.Context, routeID uuid.UUID) (*db.Route, e
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
+// platformReservedSubdomains are gateway-level names that cannot be used as route subdomains.
+var platformReservedSubdomains = map[string]bool{
+	"mesh":      true,
+	"app":       true,
+	"api":       true,
+	"headscale": true,
+	"preview":   true,
+	"internal":  true,
+	"*":         true,
+}
+
 func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Route, error) {
 	hostname := in.Hostname
 
@@ -88,10 +103,22 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		if !domain.Verified {
 			return nil, huma.Error422UnprocessableEntity("domain ownership not yet verified")
 		}
-		if in.Zone == db.RouteZonePublic {
-			if in.Subdomain == domain.InternalSubdomain || in.Subdomain == domain.PreviewSubdomain {
-				return nil, huma.Error422UnprocessableEntity(
-					fmt.Sprintf("subdomain %q is reserved for %s routing", in.Subdomain, in.Subdomain))
+		if platformReservedSubdomains[in.Subdomain] {
+			return nil, huma.Error422UnprocessableEntity(
+				fmt.Sprintf("subdomain %q is reserved and cannot be used", in.Subdomain))
+		}
+		// Also block the domain's configured zone subdomains from being used as route subdomains.
+		if in.Subdomain == domain.InternalSubdomain || in.Subdomain == domain.PreviewSubdomain {
+			return nil, huma.Error422UnprocessableEntity(
+				fmt.Sprintf("subdomain %q is reserved for zone routing", in.Subdomain))
+		}
+		// Wildcard subdomains (*.label) are only valid on the public zone.
+		if strings.Contains(in.Subdomain, "*") {
+			if in.Zone != db.RouteZonePublic {
+				return nil, huma.Error422UnprocessableEntity("wildcard subdomains are only supported on the public zone")
+			}
+			if !wildcardSubdomainRe.MatchString(in.Subdomain) {
+				return nil, huma.Error422UnprocessableEntity("wildcard subdomain must be in the format *.label (e.g. *.my-app)")
 			}
 		}
 		switch in.Zone {
@@ -206,8 +233,13 @@ func (s *RouteService) UpdateTarget(ctx context.Context, targetID uuid.UUID, in 
 		"redirect_route_id": in.RedirectRouteID,
 		"redirect_code":     resolved.RedirectCode,
 	}
-	err = s.db.WithContext(ctx).Model(&target).Updates(updates).Error
-	return &target, err
+	if err = s.db.WithContext(ctx).Model(&target).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err = s.db.WithContext(ctx).First(&target, "id = ?", target.ID).Error; err != nil {
+		return nil, err
+	}
+	return &target, nil
 }
 
 func (s *RouteService) DeleteTarget(ctx context.Context, targetID uuid.UUID) error {

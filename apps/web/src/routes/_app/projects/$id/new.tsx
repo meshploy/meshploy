@@ -1096,6 +1096,8 @@ function DatabaseForm({ projectId }: { projectId: string }) {
 
 // ─── Route form ───────────────────────────────────────────────────────────────
 
+const RESERVED_SUBDOMAINS = new Set(["mesh", "app", "api", "headscale", "preview", "internal", "*"])
+
 type RouteZone = "public" | "internal"
 type DomainMode = "subdomain" | "custom"
 type TargetMode = "service" | "node" | "redirect"
@@ -1207,10 +1209,28 @@ function RouteForm({ projectId }: { projectId: string }) {
   const removeTarget = (id: number) =>
     patchRf({ targets: rf.targets.length > 1 ? rf.targets.filter((t) => t.id !== id) : rf.targets })
 
+  const subdomainReserved =
+    rf.domainMode !== "custom" &&
+    rf.subdomain.trim().length > 0 &&
+    (RESERVED_SUBDOMAINS.has(rf.subdomain) ||
+      (selectedDomain != null &&
+        (rf.subdomain === selectedDomain.internal_subdomain ||
+          rf.subdomain === selectedDomain.preview_subdomain)))
+
+  const subdomainFormatError =
+    rf.domainMode !== "custom" &&
+    rf.subdomain.includes("*") &&
+    !/^\*\.[a-z0-9-]+$/.test(rf.subdomain)
+      ? "Wildcard must be in the format *.label (e.g. *.my-app)"
+      : null
+
   const domainValid =
     rf.zone === "public" && rf.domainMode === "custom"
       ? rf.customHostname.trim().length > 0
-      : rf.domainId.length > 0 && rf.subdomain.trim().length > 0
+      : rf.domainId.length > 0 &&
+        rf.subdomain.trim().length > 0 &&
+        !subdomainReserved &&
+        !subdomainFormatError
   const targetsValid = rf.targets.every((t) =>
     t.path.trim().startsWith("/") &&
     (t.targetMode === "service"
@@ -1330,8 +1350,8 @@ function RouteForm({ projectId }: { projectId: string }) {
               <div className="flex items-center gap-0">
                 <input
                   value={rf.subdomain}
-                  onChange={(e) => patchRf({ subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
-                  placeholder="api"
+                  onChange={(e) => patchRf({ subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9\-.*]/g, "") })}
+                  placeholder="api or *.my-app"
                   className={cn(inputCls, "rounded-r-none")}
                   disabled={!rf.domainId}
                 />
@@ -1345,7 +1365,15 @@ function RouteForm({ projectId }: { projectId: string }) {
               </div>
             </Field>
 
-            {hostnamePreview && rf.subdomain && (
+            {subdomainReserved && (
+              <p className="text-xs text-destructive">
+                Subdomain <span className="font-mono">{rf.subdomain}</span> is reserved and cannot be used.
+              </p>
+            )}
+            {subdomainFormatError && (
+              <p className="text-xs text-destructive">{subdomainFormatError}</p>
+            )}
+            {hostnamePreview && rf.subdomain && !subdomainReserved && !subdomainFormatError && (
               <p className="text-xs text-muted-foreground">
                 Route will be created for{" "}
                 <span className="font-mono text-foreground">{hostnamePreview}</span>

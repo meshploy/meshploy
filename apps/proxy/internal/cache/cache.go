@@ -3,6 +3,7 @@ package cache
 import (
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,14 +54,27 @@ func (c *Cache) Start() {
 }
 
 // Get returns the best-matching TargetEntry for the given hostname and request path.
-// It tries the in-memory cache first, then falls back to a live DB query on miss.
+// Lookup order: exact match → wildcard match (*.parent) → DB fallback.
+// On a wildcard hit the full hostname is also stored so subsequent requests are exact O(1).
 func (c *Cache) Get(hostname, path string) (TargetEntry, bool) {
 	c.mu.RLock()
 	entries, ok := c.routes[hostname]
+	wildcardHit := false
+	if !ok {
+		if wc := wildcardKey(hostname); wc != "" {
+			entries, ok = c.routes[wc]
+			wildcardHit = ok
+		}
+	}
 	c.mu.RUnlock()
 
-	if !ok {
-		// Cache miss — query DB and warm the entry.
+	if wildcardHit {
+		// Warm the exact hostname so subsequent requests skip the wildcard scan.
+		c.mu.Lock()
+		c.routes[hostname] = entries
+		c.mu.Unlock()
+	} else if !ok {
+		// Full cache miss — query DB (also tries wildcard pattern in DB).
 		entries = c.loadHostname(hostname)
 		if len(entries) == 0 {
 			return TargetEntry{}, false
@@ -107,8 +121,16 @@ func (c *Cache) load() error {
 
 func (c *Cache) loadHostname(hostname string) []TargetEntry {
 	var route db.Route
-	if err := c.db.Where("hostname = ?", hostname).First(&route).Error; err != nil {
-		return nil
+	err := c.db.Where("hostname = ?", hostname).First(&route).Error
+	if err != nil {
+		// Try wildcard pattern (*.parent.domain).
+		wc := wildcardKey(hostname)
+		if wc == "" {
+			return nil
+		}
+		if err2 := c.db.Where("hostname = ?", wc).First(&route).Error; err2 != nil {
+			return nil
+		}
 	}
 	var targets []db.RouteTarget
 	if err := c.db.Preload("RedirectRoute").Where("route_id = ?", route.ID).Find(&targets).Error; err != nil {
@@ -147,4 +169,15 @@ func sortEntries(entries []TargetEntry) {
 	sort.Slice(entries, func(i, j int) bool {
 		return len(entries[i].Path) > len(entries[j].Path)
 	})
+}
+
+// wildcardKey returns the wildcard hostname for a given hostname by replacing
+// the leftmost label with "*". Returns "" when there is no parent domain
+// (i.e. hostname has no dot, so a wildcard makes no sense).
+// Example: "tenant1.some-app.example.com" → "*.some-app.example.com"
+func wildcardKey(hostname string) string {
+	if i := strings.IndexByte(hostname, '.'); i != -1 {
+		return "*." + hostname[i+1:]
+	}
+	return ""
 }
