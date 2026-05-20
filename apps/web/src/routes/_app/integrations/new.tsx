@@ -88,7 +88,7 @@ function NewIntegrationPage() {
               <Button
                 key={id}
                 variant="ghost"
-                onClick={() => !soon && navigate({ search: () => ({ category: id }), replace: true })}
+                onClick={() => !soon && navigate({ to: "/integrations/new", search: { category: id }, replace: true })}
                 disabled={soon}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
