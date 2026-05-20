@@ -2,19 +2,8 @@
 
 ## Critical
 
-- [ ] **Enforce org membership on every protected route**
-  Currently `requireUser()` only checks "are you logged in?" — it does not verify the caller is a member of the org in the URL path. A user from Org A can read and write Org B's projects, services, routes, secrets, and deployments. Every handler that takes an `orgId` path param must call `h.svc.Orgs.MemberRole(ctx, orgID, userID)` and reject non-members.
-  - `handler/org.go` — GetOrg, UpdateOrg (missing membership check)
-  - `handler/project.go` — all handlers
-  - `handler/workload.go` — all handlers
-  - `handler/route.go` — all handlers
-  - `handler/deployment.go` — all handlers
-  - `handler/secret.go` — all handlers
-  - `handler/node.go` — all handlers (terminal handler has `// future: verify org membership`)
-  - `handler/backup.go` — all handlers
-  - `handler/domain.go` — all handlers
-  - `handler/git_integration.go` — all handlers
-  - `handler/registry.go`, `handler/storage.go`, `handler/notification.go` — all handlers
+- [x] **Enforce org membership on every protected route**
+  Implemented as a Chi middleware in `internal/middleware/orgmember.go`. Extracts the org UUID from `/api/v1/orgs/{orgId}/...` paths, checks membership via `svc.Orgs.MemberRole`, caches results for 30s per user+org pair, fails closed (403) on any error.
 
 ## High
 
@@ -24,8 +13,8 @@
 - [ ] **Per-node registration secrets**
   A single `mreg-<hex>` token registers all nodes for an org. If it leaks, any machine can join the mesh. Rotate to per-node one-time-use provisioning tokens that are invalidated immediately after the node's first successful registration.
 
-- [ ] **Rate limiting on auth endpoints**
-  `POST /auth/login` and `POST /auth/register` have no rate limiting. Add a per-IP rate limiter (e.g. `golang.org/x/time/rate`) on these two endpoints to prevent brute-force and credential-stuffing attacks.
+- [x] **Rate limiting on auth endpoints**
+  Implemented in `internal/middleware/ratelimit.go` + `internal/server/server.go`: login 5 req burst / 1 per 12s, register 3 per hour.
 
 - [ ] **JWT key rotation**
   All tokens are signed with a single static `JWT_SECRET`. Add support for key rotation: sign with the new key, accept both old and new keys during a transition window, then retire the old key.
