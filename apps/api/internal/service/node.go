@@ -100,6 +100,10 @@ func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, in UpdateNod
 		if err := s.db.WithContext(ctx).Model(&node).Updates(updates).Error; err != nil {
 			return nil, err
 		}
+		// Re-fetch so the returned struct reflects the persisted values.
+		if err := s.db.WithContext(ctx).First(&node, "id = ?", nodeID).Error; err != nil {
+			return nil, err
+		}
 	}
 	return &node, nil
 }
