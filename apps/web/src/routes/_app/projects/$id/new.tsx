@@ -153,8 +153,7 @@ function NewResourcePage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const { type: initialType } = Route.useSearch()
-  const [resourceType, setResourceType] = useState<ResourceType>(initialType)
+  const { type: resourceType } = Route.useSearch()
   const [form, setForm] = useState<FormState>(INITIAL)
 
   const patch = (partial: Partial<FormState>) =>
@@ -248,12 +247,12 @@ function NewResourcePage() {
                 {divider && <div className="my-1.5 border-t border-border/30" />}
                 <Button
                   variant="ghost"
-                  onClick={() => !soon && setResourceType(type)}
+                  onClick={() => !soon && navigate({ search: { type }, replace: true })}
                   disabled={soon}
                   className={cn(
                     "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
                     resourceType === type && !soon
-                      ? "bg-primary/10 text-primary"
+                      ? "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/10"
                       : soon
                       ? "text-muted-foreground/40 cursor-not-allowed"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
@@ -988,7 +987,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
               className={cn(
                 "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
                 dbf.engine === eng.value
-                  ? "border-primary/50 bg-primary/10 text-foreground hover:bg-primary/10 hover:text-foreground"
+                  ? "border-primary/50 bg-primary/10 text-foreground hover:bg-primary/10 hover:text-foreground dark:hover:bg-primary/10"
                   : "border-border/60 bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/30"
               )}
             >
