@@ -104,7 +104,7 @@ export const nodes = {
     ),
 
   update: (orgId: string, nodeId: string, body: { mesh_role?: MeshRole; name?: string }, token: string) =>
-    apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "PUT", body: JSON.stringify(body) }, token),
+    apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "PATCH", body: JSON.stringify(body) }, token),
 
   delete: (orgId: string, nodeId: string, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "DELETE" }, token),
