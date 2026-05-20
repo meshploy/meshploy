@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
@@ -198,4 +199,98 @@ func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailsc
 	}
 	node.MeshRole = role
 	return node, nil
+}
+
+// ─── Provisioning tokens ──────────────────────────────────────────────────────
+
+// CreateProvisioningToken generates a single-use provisioning token for the org.
+// Format: mprov-<32 random hex bytes>. The plaintext is returned once — only
+// its SHA-256 hash is persisted.
+func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UUID, label string, expiresAt *time.Time) (string, *db.NodeProvisioningToken, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", nil, fmt.Errorf("generate provisioning token: %w", err)
+	}
+	plaintext := "mprov-" + hex.EncodeToString(raw)
+
+	row := db.NodeProvisioningToken{
+		OrganizationID: orgID,
+		TokenHash:      hashToken(plaintext),
+		Label:          label,
+		ExpiresAt:      expiresAt,
+	}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return "", nil, err
+	}
+	return plaintext, &row, nil
+}
+
+// RegisterWithProvisioningToken validates a single-use provisioning token and
+// creates the node. On success it:
+//   - stamps UsedAt on the token (preventing re-use)
+//   - generates a per-node secret (mnode-<hex>) and stores its hash on the node
+//   - returns the new node and the plaintext node secret (shown once)
+func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, name, tailscaleIP string, meshRole db.MeshRole) (*db.Node, string, error) {
+	hash := hashToken(token)
+
+	var row db.NodeProvisioningToken
+	if err := s.db.WithContext(ctx).Where("token_hash = ?", hash).First(&row).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, "", fmt.Errorf("invalid provisioning token")
+		}
+		return nil, "", err
+	}
+	if row.UsedAt != nil {
+		return nil, "", fmt.Errorf("provisioning token already used")
+	}
+	if row.ExpiresAt != nil && time.Now().After(*row.ExpiresAt) {
+		return nil, "", fmt.Errorf("provisioning token expired")
+	}
+
+	node, err := s.Register(ctx, row.OrganizationID, name, tailscaleIP)
+	if err != nil {
+		return nil, "", err
+	}
+
+	role := db.MeshRoleWorkloadBuilder
+	if meshRole != "" {
+		role = meshRole
+	}
+
+	// Generate per-node secret
+	secretRaw := make([]byte, 32)
+	if _, err := rand.Read(secretRaw); err != nil {
+		return nil, "", fmt.Errorf("generate node secret: %w", err)
+	}
+	nodeSecret := "mnode-" + hex.EncodeToString(secretRaw)
+
+	// Persist role + secret hash on node, stamp token as used
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(node).Updates(map[string]any{
+		"mesh_role":        role,
+		"node_secret_hash": hashToken(nodeSecret),
+	}).Error; err != nil {
+		return nil, "", err
+	}
+	if err := s.db.WithContext(ctx).Model(&row).Update("used_at", &now).Error; err != nil {
+		return nil, "", err
+	}
+
+	node.MeshRole = role
+	return node, nodeSecret, nil
+}
+
+// ValidateNodeSecret checks that the given secret matches the hash stored on
+// the node. Returns nil on success, an error if the secret is wrong or the node
+// has no secret (registered via legacy mreg token).
+func (s *NodeService) ValidateNodeSecret(ctx context.Context, nodeID uuid.UUID, secret string) error {
+	hash := hashToken(secret)
+	var node db.Node
+	err := s.db.WithContext(ctx).
+		Where("id = ? AND node_secret_hash = ?", nodeID, hash).
+		First(&node).Error
+	if err == gorm.ErrRecordNotFound {
+		return fmt.Errorf("invalid node secret")
+	}
+	return err
 }

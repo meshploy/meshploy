@@ -61,3 +61,54 @@ func UserFromContext(ctx context.Context) (uuid.UUID, bool) {
 	id, ok := ctx.Value(userIDKey).(uuid.UUID)
 	return id, ok
 }
+
+// publicPaths are routes that do not require a JWT. Checked by RequireAuth.
+// Terminal paths handle their own JWT validation from the ?token= query param.
+var publicPaths = []string{
+	"POST /api/v1/auth/login",
+	"POST /api/v1/auth/register",
+	// Node self-registration uses mreg- tokens, not JWTs.
+	"/self-register",
+	"/self-deregister",
+	// WebSocket terminals validate JWT from ?token= internally.
+	"/terminal",
+	// OpenAPI schema served by Huma.
+	"GET /api/",
+}
+
+// RequireAuth is a fail-closed middleware that returns 401 for any request
+// without an authenticated user in context, except for explicitly public paths.
+// It must run after Auth() so the user has already been extracted from the token.
+func RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPublic(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, ok := UserFromContext(r.Context()); !ok {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"title":"Unauthorized","status":401,"detail":"valid Bearer token required"}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isPublic(r *http.Request) bool {
+	methodPath := r.Method + " " + r.URL.Path
+	for _, p := range publicPaths {
+		if strings.HasPrefix(p, r.Method+" ") {
+			// Method-prefixed rule — exact match on method+path prefix.
+			if strings.HasPrefix(methodPath, p) {
+				return true
+			}
+		} else {
+			// Path-only rule — match anywhere in the path.
+			if strings.Contains(r.URL.Path, p) {
+				return true
+			}
+		}
+	}
+	return false
+}

@@ -7,11 +7,11 @@
 
 ## High
 
-- [ ] **Harden auth middleware — fail closed by default**
-  `Auth()` is soft — it never blocks, requiring every handler to manually call `requireUser()`. A missed call leaves an endpoint open. Consider a separate strict middleware that blocks unauthenticated requests on all routes except the explicitly public ones (`/auth/register`, `/auth/login`, node self-register/deregister).
+- [x] **Harden auth middleware — fail closed by default**
+  `RequireAuth` middleware added in `internal/middleware/auth.go`. Blocks unauthenticated requests globally with 401; allowlist covers login, register, self-register/deregister, terminal WebSocket paths, and OpenAPI schema.
 
-- [ ] **Per-node registration secrets**
-  A single `mreg-<hex>` token registers all nodes for an org. If it leaks, any machine can join the mesh. Rotate to per-node one-time-use provisioning tokens that are invalidated immediately after the node's first successful registration.
+- [x] **Per-node registration secrets**
+  Added `NodeProvisioningToken` model (`mprov-<hex>`, single-use, hashed, optional TTL). `RegisterWithProvisioningToken` stamps `used_at` on first use and issues a per-node `mnode-<hex>` secret (hash stored on `Node.NodeSecretHash`). `SelfDeregisterNode` accepts `node_secret` (new) or legacy `mreg-` token. Admin CRUD at `GET/POST /orgs/{id}/node-provisioning-tokens` and `DELETE /orgs/{id}/node-provisioning-tokens/{id}`.
 
 - [x] **Rate limiting on auth endpoints**
   Implemented in `internal/middleware/ratelimit.go` + `internal/server/server.go`: login 5 req burst / 1 per 12s, register 3 per hour.

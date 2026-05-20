@@ -12,12 +12,13 @@ import {
   Terminal,
   Check,
   Loader2,
+  Plus,
+  ShieldAlert,
 } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { NodeStatusDot } from "@/components/nodes/node-status-dot"
-import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
+import { nodes as nodesApi, cluster as clusterApi, toNode } from "@/lib/api"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -127,7 +128,7 @@ function ClusterPage() {
 
       {/* Tokens row */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <NodeRegistrationTokenPanel />
+        <ProvisioningTokensPanel />
         <HeadscalePreAuthKeyPanel />
         <K3sJoinTokenPanel />
       </div>
@@ -135,27 +136,21 @@ function ClusterPage() {
   )
 }
 
-// ─── Registration token panel ─────────────────────────────────────────────────
+// ─── Provisioning tokens panel ────────────────────────────────────────────────
 
-function NodeRegistrationTokenPanel() {
+const MESH_API_URL = "http://100.64.0.1:4000"
+
+function ProvisioningTokensPanel() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const queryClient = useQueryClient()
+  const [provToken, setProvToken] = useState("")
   const [visible, setVisible] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["node-registration-token", orgId],
-    queryFn: () => nodesApi.getRegistrationToken(orgId!, token),
-    enabled: !!orgId,
-  })
-
-  const regToken = data?.token ?? ""
-
   const { mutate: generate, isPending: generating } = useMutation({
-    mutationFn: () => nodesApi.generateRegistrationToken(orgId!, token),
+    mutationFn: () => nodesApi.createProvisioningToken(orgId!, "worker", null, token),
     onSuccess: (res) => {
-      queryClient.setQueryData(["node-registration-token", orgId], res)
+      setProvToken(res.token)
       setVisible(true)
     },
   })
@@ -166,17 +161,14 @@ function NodeRegistrationTokenPanel() {
     setTimeout(() => setCopiedField(null), 2000)
   }
 
-  const meshApiUrl = "http://100.64.0.1:4000"
-  const curlCommand = regToken
-    ? `curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh | \\\n  MESHPLOY_API_URL="${meshApiUrl}" MESHPLOY_TOKEN="${regToken}" bash`
+  const curlCommand = provToken
+    ? `curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh | \\\n  MESHPLOY_API_URL="${MESH_API_URL}" MESHPLOY_TOKEN="${provToken}" bash`
     : ""
 
   return (
     <div className="rounded-lg border border-border/60 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Add a worker node</p>
-        </div>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Add a worker node</p>
         <Button
           size="sm"
           variant="outline"
@@ -184,48 +176,37 @@ function NodeRegistrationTokenPanel() {
           onClick={() => generate()}
           disabled={generating}
         >
-          {generating ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3 w-3" />
-          )}
-          {regToken ? "Rotate token" : "Generate token"}
+          {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          {provToken ? "New token" : "Generate token"}
         </Button>
       </div>
 
       <div className="p-4 space-y-4">
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>Loading…</span>
-          </div>
-        ) : !regToken ? (
+        {!provToken ? (
           <p className="text-sm text-muted-foreground">
-            Generate a token to get the worker install command.
+            Generate a single-use token to get the worker install command.
           </p>
         ) : (
           <>
+            {/* One-time warning */}
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+              <ShieldAlert className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-300/90">
+                Shown once — copy before leaving. Auto-invalidates after the node registers.
+              </p>
+            </div>
+
             {/* Token display */}
             <div className="space-y-1.5">
-              <p className="text-xs text-muted-foreground font-medium">Registration token</p>
+              <p className="text-xs text-muted-foreground font-medium">Provisioning token</p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
-                  {visible ? regToken : "mreg-" + "•".repeat(64)}
+                  {visible ? provToken : "mprov-" + "•".repeat(64)}
                 </code>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => setVisible((v) => !v)}
-                >
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
                   {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => copy(regToken, "token")}
-                >
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(provToken, "token")}>
                   {copiedField === "token" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>
               </div>
@@ -251,7 +232,7 @@ function NodeRegistrationTokenPanel() {
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground/60">
-                The worker connects to the API over the WireGuard mesh ({meshApiUrl}) — no public internet needed after joining Headscale.
+                Connects over the WireGuard mesh ({MESH_API_URL}) — no public internet needed after joining Headscale.
               </p>
             </div>
           </>

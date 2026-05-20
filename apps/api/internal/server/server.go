@@ -36,6 +36,7 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 	svc := service.New(db, cfg)
 
 	r.Use(middleware.Auth(cfg.JWTSecret))
+	r.Use(middleware.RequireAuth)
 	r.Use(middleware.PathRateLimiter(map[string]*middleware.IPRateLimiter{
 		// 5 attempts per minute per IP — brute-force protection
 		"POST /api/v1/auth/login": middleware.NewIPRateLimiter(rate.Every(12), 5),

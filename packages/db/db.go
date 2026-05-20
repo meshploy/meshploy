@@ -65,6 +65,7 @@ func Migrate(db *gorm.DB) error {
 		&Project{},
 		&Node{},
 		&NodeRegistrationToken{},
+		&NodeProvisioningToken{},
 
 		// Domains
 		&Domain{},
