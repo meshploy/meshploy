@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/google/uuid"
 	"github.com/meshploy/apps/api/internal/config"
 	"github.com/meshploy/apps/api/internal/handler"
 	"github.com/meshploy/apps/api/internal/middleware"
@@ -30,12 +32,19 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RequestID)
+	// Build services first so the org-member middleware can reference them.
+	svc := service.New(db, cfg)
+
 	r.Use(middleware.Auth(cfg.JWTSecret))
 	r.Use(middleware.PathRateLimiter(map[string]*middleware.IPRateLimiter{
 		// 5 attempts per minute per IP — brute-force protection
 		"POST /api/v1/auth/login": middleware.NewIPRateLimiter(rate.Every(12), 5),
 		// 3 registrations per hour per IP — spam protection
 		"POST /api/v1/auth/register": middleware.NewIPRateLimiter(rate.Limit(3.0/3600.0), 3),
+	}))
+	r.Use(middleware.OrgMember(func(ctx context.Context, orgID, userID uuid.UUID) error {
+		_, err := svc.Orgs.MemberRole(ctx, orgID, userID)
+		return err
 	}))
 
 	apiCfg := huma.DefaultConfig("Meshploy API", "1.0.0")
@@ -50,7 +59,6 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 
 	api := humachi.New(r, apiCfg)
 
-	svc := service.New(db, cfg)
 	h := handler.New(cfg, svc)
 	h.Register(api)
 	h.RegisterRaw(r)

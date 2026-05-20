@@ -265,7 +265,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
               className={cn(
                 "flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors",
                 provider === value
-                  ? "border-primary/50 bg-primary/10 text-foreground hover:bg-primary/10 hover:text-foreground"
+                  ? "border-primary/50 bg-primary/10 text-foreground hover:bg-primary/10 hover:text-foreground dark:hover:bg-primary/10"
                   : "border-border/60 bg-muted/10 text-muted-foreground hover:text-foreground hover:bg-muted/30"
               )}
             >
