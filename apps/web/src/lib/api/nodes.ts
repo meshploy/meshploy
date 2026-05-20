@@ -1,4 +1,4 @@
-import type { Node } from "@/types"
+import type { Node, MeshRole } from "@/types"
 import { apiFetch } from "./core"
 
 export interface ApiNode {
@@ -7,6 +7,7 @@ export interface ApiNode {
   tailscale_ip: string
   status: "online" | "offline"
   k3s_role: "server" | "agent"
+  mesh_role: MeshRole
   k3s_version: string
   k3s_labels: Record<string, string>
   cpu_cores: number
@@ -60,6 +61,7 @@ export function toNode(n: ApiNode): Node {
     tailscaleIP: n.tailscale_ip,
     status: n.status,
     k3sRole: n.k3s_role,
+    meshRole: n.mesh_role ?? "workload_builder",
     k3sVersion: n.k3s_version,
     os: "",
     cpuCores: n.cpu_cores,
@@ -100,6 +102,9 @@ export const nodes = {
       { method: "POST" },
       token
     ),
+
+  update: (orgId: string, nodeId: string, body: { mesh_role?: MeshRole; name?: string }, token: string) =>
+    apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "PUT", body: JSON.stringify(body) }, token),
 
   delete: (orgId: string, nodeId: string, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "DELETE" }, token),

@@ -1495,21 +1495,23 @@ function TargetRowField({
 
       {/* Row 2: service, node+port, or redirect */}
       {row.targetMode === "service" ? (
-        <Select value={row.serviceId} onValueChange={(v) => onChange({ serviceId: v ?? "" })}>
-          <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
-            <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
-              {serviceList.find((s) => s.id === row.serviceId)?.name}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {serviceList.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name}
-                <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div>
+          <Select value={row.serviceId} onValueChange={(v) => onChange({ serviceId: v ?? "" })}>
+            <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+              <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
+                {serviceList.find((s) => s.id === row.serviceId)?.name}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {serviceList.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                  <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       ) : row.targetMode === "redirect" ? (
         <div className="flex items-center gap-2">
           <CornerDownRight className="h-3.5 w-3.5 text-amber-400 shrink-0" />
