@@ -57,8 +57,7 @@ const CATEGORIES: { id: Category; icon: typeof GitBranch; label: string; descrip
 
 function NewIntegrationPage() {
   const navigate = useNavigate()
-  const { category: initialCategory } = Route.useSearch()
-  const [category, setCategory] = useState<Category>(initialCategory)
+  const { category } = Route.useSearch()
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -89,12 +88,12 @@ function NewIntegrationPage() {
               <Button
                 key={id}
                 variant="ghost"
-                onClick={() => !soon && setCategory(id)}
+                onClick={() => !soon && navigate({ search: { category: id }, replace: true })}
                 disabled={soon}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
                   category === id && !soon
-                    ? "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary"
+                    ? "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/10"
                     : soon
                     ? "text-muted-foreground/40 cursor-not-allowed"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
