@@ -247,7 +247,7 @@ function NewResourcePage() {
                 {divider && <div className="my-1.5 border-t border-border/30" />}
                 <Button
                   variant="ghost"
-                  onClick={() => !soon && navigate({ search: () => ({ type }), replace: true })}
+                  onClick={() => !soon && navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type }, replace: true })}
                   disabled={soon}
                   className={cn(
                     "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
