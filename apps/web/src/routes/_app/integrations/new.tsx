@@ -308,8 +308,10 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
               {(["pat", "oauth"] as AuthMethod[]).map((m) => (
                 <Button key={m} variant="ghost" onClick={() => { setAuthMethod(m); setError(null) }}
                   className={cn(
-                    "rounded-lg border p-3 text-left transition-colors h-auto",
-                    authMethod === m ? "border-primary/50 bg-primary/10" : "border-border/60 hover:border-border"
+                    "flex-col items-start whitespace-normal rounded-lg border p-3 text-left transition-colors h-auto",
+                    authMethod === m
+                      ? "border-primary/50 bg-primary/10 hover:bg-primary/10 dark:hover:bg-primary/10"
+                      : "border-border/60 hover:border-border hover:bg-muted/20"
                   )}
                 >
                   <p className={cn("text-xs font-semibold", authMethod === m ? "text-foreground" : "text-muted-foreground")}>

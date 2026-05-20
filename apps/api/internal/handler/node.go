@@ -311,6 +311,16 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DeleteNode)
 
+	// Provisioning tokens — per-node single-use tokens (authenticated management)
+	huma.Register(api, huma.Operation{
+		OperationID: "create-provisioning-token",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/node-provisioning-tokens",
+		Summary:     "Create a single-use node provisioning token",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.CreateProvisioningToken)
+
 	// Node registration token — authenticated management endpoints
 	huma.Register(api, huma.Operation{
 		OperationID: "get-node-registration-token",
@@ -578,6 +588,7 @@ func (h *Handler) GetClusterJoinToken(ctx context.Context, _ *struct{}) (*Cluste
 
 // SelfRegisterNode is unauthenticated — called by the worker install script
 // over the WireGuard mesh after joining Headscale.
+// Accepts both mprov- (provisioning token, one-time) and mreg- (legacy org token).
 type SelfRegisterNodeInput struct {
 	Body struct {
 		Token       string      `json:"token"        minLength:"1"`
@@ -587,11 +598,31 @@ type SelfRegisterNodeInput struct {
 	}
 }
 
-func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeInput) (*RegisterNodeOutput, error) {
-	node, err := h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole)
+// SelfRegisterNodeOutput extends the node response with a one-time node secret.
+// node_secret is non-empty only when a provisioning token (mprov-) was used.
+// The caller must persist this secret; it is never retrievable again.
+type SelfRegisterNodeOutput struct {
+	Body struct {
+		NodeResponse
+		NodeSecret string `json:"node_secret,omitempty"`
+	}
+}
+
+func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeInput) (*SelfRegisterNodeOutput, error) {
+	var node *db.Node
+	var nodeSecret string
+	var err error
+
+	if strings.HasPrefix(input.Body.Token, "mprov-") {
+		node, nodeSecret, err = h.svc.Nodes.RegisterWithProvisioningToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole)
+	} else {
+		// Legacy org-wide mreg- token — no node secret issued
+		node, err = h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole)
+	}
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid or unknown registration token")
 	}
+
 	// Eagerly store the Headscale peer ID at registration time. The worker just
 	// called tailscale up so the peer already exists in Headscale.
 	if h.svc.Headscale != nil {
@@ -611,17 +642,22 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 			}
 		}(node.ID, node.TailscaleIP)
 	}
+
 	r := h.enrichNode(ctx, node)
-	return &RegisterNodeOutput{Body: &r}, nil
+	out := &SelfRegisterNodeOutput{}
+	out.Body.NodeResponse = r
+	out.Body.NodeSecret = nodeSecret
+	return out, nil
 }
 
-// SelfDeregisterNode is unauthenticated — called by the worker uninstall script
-// over the WireGuard mesh. Validates the registration token belongs to the same
-// org as the node, then deletes the node from DB + Headscale + k3s.
+// SelfDeregisterNode is unauthenticated — called by the worker uninstall script.
+// Accepts either a per-node secret (node_secret, mprov flow) or the legacy
+// org registration token (token, mreg flow). At least one must be provided.
 type SelfDeregisterNodeInput struct {
 	Body struct {
-		Token  string `json:"token"   minLength:"1"` // mreg-... registration token
-		NodeID string `json:"node_id" minLength:"1"` // UUID of the node to remove
+		NodeSecret string `json:"node_secret,omitempty"` // preferred: mnode-... per-node secret
+		Token      string `json:"token,omitempty"`       // legacy: mreg-... org token
+		NodeID     string `json:"node_id" minLength:"1"`
 	}
 }
 
@@ -630,16 +666,31 @@ func (h *Handler) SelfDeregisterNode(ctx context.Context, input *SelfDeregisterN
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid node_id")
 	}
-	// Validate token → resolves to an org
-	orgID, err := h.svc.Nodes.OrgIDFromToken(ctx, input.Body.Token)
-	if err != nil {
-		return nil, huma.Error401Unauthorized("invalid or unknown registration token")
-	}
-	// Verify the node belongs to that org
+
 	node, err := h.svc.Nodes.Get(ctx, nodeID)
-	if err != nil || node.OrganizationID != orgID {
-		return nil, huma.Error401Unauthorized("node does not belong to this token's organisation")
+	if err != nil {
+		return nil, huma.Error401Unauthorized("node not found")
 	}
+
+	switch {
+	case input.Body.NodeSecret != "":
+		// Per-node secret flow (mprov-registered nodes)
+		if err := h.svc.Nodes.ValidateNodeSecret(ctx, nodeID, input.Body.NodeSecret); err != nil {
+			return nil, huma.Error401Unauthorized("invalid node secret")
+		}
+	case input.Body.Token != "":
+		// Legacy mreg token flow — verify token belongs to the same org
+		orgID, err := h.svc.Nodes.OrgIDFromToken(ctx, input.Body.Token)
+		if err != nil {
+			return nil, huma.Error401Unauthorized("invalid or unknown registration token")
+		}
+		if node.OrganizationID != orgID {
+			return nil, huma.Error401Unauthorized("node does not belong to this token's organisation")
+		}
+	default:
+		return nil, huma.Error400BadRequest("node_secret or token is required")
+	}
+
 	if node.K3sRole == db.K3sRoleServer {
 		return nil, huma.Error400BadRequest("the gateway node cannot be deregistered")
 	}
@@ -656,6 +707,42 @@ func (h *Handler) SelfDeregisterNode(ctx context.Context, input *SelfDeregisterN
 	}
 	return nil, h.svc.Nodes.Delete(ctx, nodeID)
 }
+
+// ─── Provisioning token CRUD ──────────────────────────────────────────────────
+
+type CreateProvisioningTokenInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		Label     string     `json:"label"      minLength:"1" maxLength:"100"`
+		ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	}
+}
+
+type CreateProvisioningTokenOutput struct {
+	Body struct {
+		db.NodeProvisioningToken
+		Token string `json:"token"` // plaintext — shown once
+	}
+}
+
+func (h *Handler) CreateProvisioningToken(ctx context.Context, input *CreateProvisioningTokenInput) (*CreateProvisioningTokenOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid orgId")
+	}
+	plaintext, row, err := h.svc.Nodes.CreateProvisioningToken(ctx, orgID, input.Body.Label, input.Body.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	out := &CreateProvisioningTokenOutput{}
+	out.Body.NodeProvisioningToken = *row
+	out.Body.Token = plaintext
+	return out, nil
+}
+
 
 // ─── Headscale preauth key ───────────────────────────────────────────────────
 

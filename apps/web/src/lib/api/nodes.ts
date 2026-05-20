@@ -103,4 +103,22 @@ export const nodes = {
 
   delete: (orgId: string, nodeId: string, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "DELETE" }, token),
+
+  createProvisioningToken: (orgId: string, label: string, expiresAt: string | null, token: string) =>
+    apiFetch<ProvisioningTokenCreated>(
+      `/api/v1/orgs/${orgId}/node-provisioning-tokens`,
+      { method: "POST", body: JSON.stringify({ label, ...(expiresAt ? { expires_at: expiresAt } : {}) }) },
+      token
+    ),
+}
+
+export interface ProvisioningTokenCreated {
+  id: string
+  organization_id: string
+  label: string
+  used_at: string | null
+  expires_at: string | null
+  created_at: string
+  updated_at: string
+  token: string // plaintext — shown once
 }
