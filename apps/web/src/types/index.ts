@@ -20,12 +20,15 @@ export interface OrgMember {
   joinedAt: Date
 }
 
+export type MeshRole = "workload_builder" | "workload" | "builder"
+
 export interface Node {
   id: string
   name: string
   tailscaleIP: string
   status: NodeStatus
   k3sRole: K3sRole
+  meshRole: MeshRole
   k3sVersion: string
   os: string
   cpuCores: number

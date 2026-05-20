@@ -19,8 +19,11 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { nodes as nodesApi, toNode, type ApiNodeMetrics } from "@/lib/api"
+import type { MeshRole } from "@/types"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
@@ -415,6 +418,12 @@ function NodeDetailPage() {
         </InfoCard>
       </div>
 
+      {/* Role controls */}
+      {node.k3sRole === "server"
+        ? <ServerBuildToggle node={node} orgId={orgId!} token={token} />
+        : <NodeRolePicker node={node} orgId={orgId!} token={token} />
+      }
+
       {/* Active Projects */}
       {node.activeProjects.length > 0 && (
         <section className="space-y-3">
@@ -432,6 +441,98 @@ function NodeDetailPage() {
         </section>
       )}
     </div>
+  )
+}
+
+// ─── Server build toggle ──────────────────────────────────────────────────────
+
+function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toNode>; orgId: string; token: string }) {
+  const queryClient = useQueryClient()
+  const isBuilder = node.meshRole === "workload_builder" || node.meshRole === "builder"
+
+  const { mutate: toggle, isPending } = useMutation({
+    mutationFn: (enable: boolean) =>
+      nodesApi.update(orgId, node.id, { mesh_role: enable ? "workload_builder" : "workload" }, token),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["node", orgId, node.id], updated)
+      queryClient.invalidateQueries({ queryKey: ["nodes", orgId] })
+    },
+  })
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-medium text-foreground">Build node</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Allow build jobs to schedule on this gateway node.</p>
+      </div>
+      <Card>
+        <CardContent className="flex items-center justify-between py-3">
+          <div className="space-y-0.5">
+            <p className="text-xs font-medium text-foreground">Act as build node</p>
+            <p className="text-[11px] text-muted-foreground">
+              Adds <code className="font-mono">meshploy.com/role=builder</code> label — build jobs can land here.
+              No <code className="font-mono">NoSchedule</code> taint on the gateway.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant={isBuilder ? "default" : "outline"}
+            className="ml-4 shrink-0 h-7 text-xs gap-1.5"
+            disabled={isPending}
+            onClick={() => toggle(!isBuilder)}
+          >
+            {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+            {isBuilder ? "Enabled" : "Disabled"}
+          </Button>
+        </CardContent>
+      </Card>
+    </section>
+  )
+}
+
+// ─── Node role picker ─────────────────────────────────────────────────────────
+
+const MESH_ROLES: { value: MeshRole; label: string; description: string }[] = [
+  { value: "workload_builder", label: "Worker + Builder", description: "Runs deployed services and builds images." },
+  { value: "workload",         label: "Worker",           description: "Runs deployed services only. Build jobs won't schedule here." },
+  { value: "builder",          label: "Builder",          description: "Dedicated to building images. A NoSchedule taint keeps services off this node." },
+]
+
+function NodeRolePicker({ node, orgId, token }: { node: ReturnType<typeof toNode>; orgId: string; token: string }) {
+  const queryClient = useQueryClient()
+  const [pending, setPending] = useState<MeshRole | null>(null)
+
+  const { mutate: updateRole } = useMutation({
+    mutationFn: (role: MeshRole) => nodesApi.update(orgId, node.id, { mesh_role: role }, token),
+    onMutate: (role) => setPending(role),
+    onSettled: () => setPending(null),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["node", orgId, node.id], updated)
+      queryClient.invalidateQueries({ queryKey: ["nodes", orgId] })
+    },
+  })
+
+  const current = node.meshRole
+  const selectedRole = MESH_ROLES.find((r) => r.value === current)
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-medium text-foreground">Node role</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Controls which workloads this node accepts.</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <SegmentedControl
+          value={current}
+          onValueChange={(role) => !pending && updateRole(role)}
+          options={MESH_ROLES.map(({ value, label }) => ({ value, label }))}
+        />
+        {pending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+      </div>
+      {selectedRole && (
+        <p className="text-xs text-muted-foreground">{selectedRole.description}</p>
+      )}
+    </section>
   )
 }
 
