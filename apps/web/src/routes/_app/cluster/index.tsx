@@ -74,8 +74,8 @@ function ClusterPage() {
           accent={clusterNodes.length > 0 && online.length < clusterNodes.length ? "warn" : undefined}
         />
         <StatCard icon={<Cpu className="h-4 w-4" />} label="CPU cores" value={String(onlineCPU || "—")} sub={totalCPU ? `${totalCPU} total` : "no nodes"} />
-        <StatCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={onlineMemGB ? `${onlineMemGB} GB` : "—"} sub={totalMemGB ? `${totalMemGB} GB total` : "no nodes"} />
-        <StatCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={totalDiskGB ? `${totalDiskGB} GB` : "—"} sub={clusterNodes.length ? `${clusterNodes.length} nodes` : "no nodes"} />
+        <StatCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={onlineMemGB ? `${onlineMemGB.toFixed(1)} GB` : "—"} sub={totalMemGB ? `${totalMemGB.toFixed(1)} GB total` : "no nodes"} />
+        <StatCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={totalDiskGB ? `${totalDiskGB.toFixed(0)} GB` : "—"} sub={clusterNodes.length ? `${clusterNodes.length} nodes` : "no nodes"} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

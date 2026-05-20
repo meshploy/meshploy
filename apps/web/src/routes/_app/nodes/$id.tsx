@@ -328,8 +328,8 @@ function NodeDetailPage() {
       {!computed && (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
           <SpecCard icon={<Cpu className="h-4 w-4" />} label="CPU" value={node.cpuCores ? `${node.cpuCores} cores` : "—"} />
-          <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={node.memoryGB ? `${node.memoryGB} GB` : "—"} />
-          <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={node.diskGB ? `${node.diskGB} GB` : "—"} />
+          <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={node.memoryGB ? `${node.memoryGB.toFixed(1)} GB` : "—"} />
+          <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={node.diskGB ? `${node.diskGB.toFixed(0)} GB` : "—"} />
         </div>
       )}
 
