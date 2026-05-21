@@ -32,6 +32,7 @@ type Services struct {
 	Notifications   *NotificationService
 	EmailConfig     *EmailConfigService
 	Secrets         *SecretService
+	VariableGroups  *VariableGroupService
 	Jobs            *JobService
 	DBExplorer      *DBExplorerService
 	Headscale       *HeadscaleService    // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
@@ -154,8 +155,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		}()
 	}
 
-	workloads := &WorkloadService{db: db, k8s: k8sClient}
-	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}}
+	varGroups := &VariableGroupService{db: db}
+	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups}
+	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}, varGroups: varGroups}
 
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups)}
 
@@ -177,6 +179,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Notifications:   &NotificationService{db: db},
 		EmailConfig:     &EmailConfigService{db: db},
 		Secrets:         &SecretService{db: db},
+		VariableGroups:  varGroups,
 		Jobs:            func() *JobService {
 			j := &JobService{db: db, k8s: k8sClient}
 			if k8sClient != nil {

@@ -31,12 +31,14 @@ import { Route as AppProjectsIdPipelinesRouteImport } from './routes/_app/projec
 import { Route as AppProjectsIdNewRouteImport } from './routes/_app/projects/$id/new'
 import { Route as AppProjectsIdDatabasesRouteImport } from './routes/_app/projects/$id/databases'
 import { Route as AppProjectsIdVolumesIndexRouteImport } from './routes/_app/projects/$id/volumes/index'
+import { Route as AppProjectsIdVariablesIndexRouteImport } from './routes/_app/projects/$id/variables/index'
 import { Route as AppProjectsIdStacksIndexRouteImport } from './routes/_app/projects/$id/stacks/index'
 import { Route as AppProjectsIdServicesIndexRouteImport } from './routes/_app/projects/$id/services/index'
 import { Route as AppProjectsIdSecretsIndexRouteImport } from './routes/_app/projects/$id/secrets/index'
 import { Route as AppProjectsIdRoutesIndexRouteImport } from './routes/_app/projects/$id/routes/index'
 import { Route as AppProjectsIdJobsIndexRouteImport } from './routes/_app/projects/$id/jobs/index'
 import { Route as AppProjectsIdVolumesVolumeIdRouteImport } from './routes/_app/projects/$id/volumes/$volumeId'
+import { Route as AppProjectsIdVariablesGroupIdRouteImport } from './routes/_app/projects/$id/variables/$groupId'
 import { Route as AppProjectsIdRoutesRouteIdRouteImport } from './routes/_app/projects/$id/routes/$routeId'
 import { Route as AppProjectsIdStacksStackIdRouteRouteImport } from './routes/_app/projects/$id/stacks/$stackId/route'
 import { Route as AppProjectsIdServicesServiceIdRouteRouteImport } from './routes/_app/projects/$id/services/$serviceId/route'
@@ -166,6 +168,12 @@ const AppProjectsIdVolumesIndexRoute =
     path: '/volumes/',
     getParentRoute: () => AppProjectsIdRouteRoute,
   } as any)
+const AppProjectsIdVariablesIndexRoute =
+  AppProjectsIdVariablesIndexRouteImport.update({
+    id: '/variables/',
+    path: '/variables/',
+    getParentRoute: () => AppProjectsIdRouteRoute,
+  } as any)
 const AppProjectsIdStacksIndexRoute =
   AppProjectsIdStacksIndexRouteImport.update({
     id: '/stacks/',
@@ -199,6 +207,12 @@ const AppProjectsIdVolumesVolumeIdRoute =
   AppProjectsIdVolumesVolumeIdRouteImport.update({
     id: '/volumes/$volumeId',
     path: '/volumes/$volumeId',
+    getParentRoute: () => AppProjectsIdRouteRoute,
+  } as any)
+const AppProjectsIdVariablesGroupIdRoute =
+  AppProjectsIdVariablesGroupIdRouteImport.update({
+    id: '/variables/$groupId',
+    path: '/variables/$groupId',
     getParentRoute: () => AppProjectsIdRouteRoute,
   } as any)
 const AppProjectsIdRoutesRouteIdRoute =
@@ -340,12 +354,14 @@ export interface FileRoutesByFullPath {
   '/projects/$id/services/$serviceId': typeof AppProjectsIdServicesServiceIdRouteRouteWithChildren
   '/projects/$id/stacks/$stackId': typeof AppProjectsIdStacksStackIdRouteRouteWithChildren
   '/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
+  '/projects/$id/variables/$groupId': typeof AppProjectsIdVariablesGroupIdRoute
   '/projects/$id/volumes/$volumeId': typeof AppProjectsIdVolumesVolumeIdRoute
   '/projects/$id/jobs/': typeof AppProjectsIdJobsIndexRoute
   '/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
   '/projects/$id/secrets/': typeof AppProjectsIdSecretsIndexRoute
   '/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
   '/projects/$id/stacks/': typeof AppProjectsIdStacksIndexRoute
+  '/projects/$id/variables/': typeof AppProjectsIdVariablesIndexRoute
   '/projects/$id/volumes/': typeof AppProjectsIdVolumesIndexRoute
   '/projects/$id/jobs/$jobId/config': typeof AppProjectsIdJobsJobIdConfigRoute
   '/projects/$id/jobs/$jobId/runs': typeof AppProjectsIdJobsJobIdRunsRoute
@@ -382,12 +398,14 @@ export interface FileRoutesByTo {
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/projects/$id': typeof AppProjectsIdIndexRoute
   '/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
+  '/projects/$id/variables/$groupId': typeof AppProjectsIdVariablesGroupIdRoute
   '/projects/$id/volumes/$volumeId': typeof AppProjectsIdVolumesVolumeIdRoute
   '/projects/$id/jobs': typeof AppProjectsIdJobsIndexRoute
   '/projects/$id/routes': typeof AppProjectsIdRoutesIndexRoute
   '/projects/$id/secrets': typeof AppProjectsIdSecretsIndexRoute
   '/projects/$id/services': typeof AppProjectsIdServicesIndexRoute
   '/projects/$id/stacks': typeof AppProjectsIdStacksIndexRoute
+  '/projects/$id/variables': typeof AppProjectsIdVariablesIndexRoute
   '/projects/$id/volumes': typeof AppProjectsIdVolumesIndexRoute
   '/projects/$id/jobs/$jobId/config': typeof AppProjectsIdJobsJobIdConfigRoute
   '/projects/$id/jobs/$jobId/runs': typeof AppProjectsIdJobsJobIdRunsRoute
@@ -432,12 +450,14 @@ export interface FileRoutesById {
   '/_app/projects/$id/services/$serviceId': typeof AppProjectsIdServicesServiceIdRouteRouteWithChildren
   '/_app/projects/$id/stacks/$stackId': typeof AppProjectsIdStacksStackIdRouteRouteWithChildren
   '/_app/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
+  '/_app/projects/$id/variables/$groupId': typeof AppProjectsIdVariablesGroupIdRoute
   '/_app/projects/$id/volumes/$volumeId': typeof AppProjectsIdVolumesVolumeIdRoute
   '/_app/projects/$id/jobs/': typeof AppProjectsIdJobsIndexRoute
   '/_app/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
   '/_app/projects/$id/secrets/': typeof AppProjectsIdSecretsIndexRoute
   '/_app/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
   '/_app/projects/$id/stacks/': typeof AppProjectsIdStacksIndexRoute
+  '/_app/projects/$id/variables/': typeof AppProjectsIdVariablesIndexRoute
   '/_app/projects/$id/volumes/': typeof AppProjectsIdVolumesIndexRoute
   '/_app/projects/$id/jobs/$jobId/config': typeof AppProjectsIdJobsJobIdConfigRoute
   '/_app/projects/$id/jobs/$jobId/runs': typeof AppProjectsIdJobsJobIdRunsRoute
@@ -481,12 +501,14 @@ export interface FileRouteTypes {
     | '/projects/$id/services/$serviceId'
     | '/projects/$id/stacks/$stackId'
     | '/projects/$id/routes/$routeId'
+    | '/projects/$id/variables/$groupId'
     | '/projects/$id/volumes/$volumeId'
     | '/projects/$id/jobs/'
     | '/projects/$id/routes/'
     | '/projects/$id/secrets/'
     | '/projects/$id/services/'
     | '/projects/$id/stacks/'
+    | '/projects/$id/variables/'
     | '/projects/$id/volumes/'
     | '/projects/$id/jobs/$jobId/config'
     | '/projects/$id/jobs/$jobId/runs'
@@ -523,12 +545,14 @@ export interface FileRouteTypes {
     | '/projects/$id/settings'
     | '/projects/$id'
     | '/projects/$id/routes/$routeId'
+    | '/projects/$id/variables/$groupId'
     | '/projects/$id/volumes/$volumeId'
     | '/projects/$id/jobs'
     | '/projects/$id/routes'
     | '/projects/$id/secrets'
     | '/projects/$id/services'
     | '/projects/$id/stacks'
+    | '/projects/$id/variables'
     | '/projects/$id/volumes'
     | '/projects/$id/jobs/$jobId/config'
     | '/projects/$id/jobs/$jobId/runs'
@@ -572,12 +596,14 @@ export interface FileRouteTypes {
     | '/_app/projects/$id/services/$serviceId'
     | '/_app/projects/$id/stacks/$stackId'
     | '/_app/projects/$id/routes/$routeId'
+    | '/_app/projects/$id/variables/$groupId'
     | '/_app/projects/$id/volumes/$volumeId'
     | '/_app/projects/$id/jobs/'
     | '/_app/projects/$id/routes/'
     | '/_app/projects/$id/secrets/'
     | '/_app/projects/$id/services/'
     | '/_app/projects/$id/stacks/'
+    | '/_app/projects/$id/variables/'
     | '/_app/projects/$id/volumes/'
     | '/_app/projects/$id/jobs/$jobId/config'
     | '/_app/projects/$id/jobs/$jobId/runs'
@@ -757,6 +783,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdVolumesIndexRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
     }
+    '/_app/projects/$id/variables/': {
+      id: '/_app/projects/$id/variables/'
+      path: '/variables'
+      fullPath: '/projects/$id/variables/'
+      preLoaderRoute: typeof AppProjectsIdVariablesIndexRouteImport
+      parentRoute: typeof AppProjectsIdRouteRoute
+    }
     '/_app/projects/$id/stacks/': {
       id: '/_app/projects/$id/stacks/'
       path: '/stacks'
@@ -797,6 +830,13 @@ declare module '@tanstack/react-router' {
       path: '/volumes/$volumeId'
       fullPath: '/projects/$id/volumes/$volumeId'
       preLoaderRoute: typeof AppProjectsIdVolumesVolumeIdRouteImport
+      parentRoute: typeof AppProjectsIdRouteRoute
+    }
+    '/_app/projects/$id/variables/$groupId': {
+      id: '/_app/projects/$id/variables/$groupId'
+      path: '/variables/$groupId'
+      fullPath: '/projects/$id/variables/$groupId'
+      preLoaderRoute: typeof AppProjectsIdVariablesGroupIdRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
     }
     '/_app/projects/$id/routes/$routeId': {
@@ -1035,11 +1075,13 @@ interface AppProjectsIdRouteRouteChildren {
   AppProjectsIdJobsJobIdRouteRoute: typeof AppProjectsIdJobsJobIdRouteRouteWithChildren
   AppProjectsIdServicesServiceIdRouteRoute: typeof AppProjectsIdServicesServiceIdRouteRouteWithChildren
   AppProjectsIdStacksStackIdRouteRoute: typeof AppProjectsIdStacksStackIdRouteRouteWithChildren
+  AppProjectsIdVariablesGroupIdRoute: typeof AppProjectsIdVariablesGroupIdRoute
   AppProjectsIdVolumesVolumeIdRoute: typeof AppProjectsIdVolumesVolumeIdRoute
   AppProjectsIdJobsIndexRoute: typeof AppProjectsIdJobsIndexRoute
   AppProjectsIdSecretsIndexRoute: typeof AppProjectsIdSecretsIndexRoute
   AppProjectsIdServicesIndexRoute: typeof AppProjectsIdServicesIndexRoute
   AppProjectsIdStacksIndexRoute: typeof AppProjectsIdStacksIndexRoute
+  AppProjectsIdVariablesIndexRoute: typeof AppProjectsIdVariablesIndexRoute
   AppProjectsIdVolumesIndexRoute: typeof AppProjectsIdVolumesIndexRoute
 }
 
@@ -1056,11 +1098,13 @@ const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
     AppProjectsIdServicesServiceIdRouteRouteWithChildren,
   AppProjectsIdStacksStackIdRouteRoute:
     AppProjectsIdStacksStackIdRouteRouteWithChildren,
+  AppProjectsIdVariablesGroupIdRoute: AppProjectsIdVariablesGroupIdRoute,
   AppProjectsIdVolumesVolumeIdRoute: AppProjectsIdVolumesVolumeIdRoute,
   AppProjectsIdJobsIndexRoute: AppProjectsIdJobsIndexRoute,
   AppProjectsIdSecretsIndexRoute: AppProjectsIdSecretsIndexRoute,
   AppProjectsIdServicesIndexRoute: AppProjectsIdServicesIndexRoute,
   AppProjectsIdStacksIndexRoute: AppProjectsIdStacksIndexRoute,
+  AppProjectsIdVariablesIndexRoute: AppProjectsIdVariablesIndexRoute,
   AppProjectsIdVolumesIndexRoute: AppProjectsIdVolumesIndexRoute,
 }
 

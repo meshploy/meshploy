@@ -22,11 +22,12 @@ import (
 )
 
 type DeploymentService struct {
-	db      *gorm.DB
-	cfg     *config.Config
-	k8s     kubernetes.Interface // nil when K8s is not configured
-	git     *GitIntegrationService
-	secrets *SecretService
+	db        *gorm.DB
+	cfg       *config.Config
+	k8s       kubernetes.Interface // nil when K8s is not configured
+	git       *GitIntegrationService
+	secrets   *SecretService
+	varGroups *VariableGroupService
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -247,9 +248,10 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 
-	// Merge secrets into env vars (service-level env vars win over secrets on key collision).
+	// Merge secrets + variable group items into env vars (explicit env wins on conflict).
 	secretEnvs, _ := s.secrets.ResolveForService(ctx, a.svc.ID)
-	envVars := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), secretEnvs)
+	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, a.svc.ID)
+	envVars := mergeSecretEnvs(mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), secretEnvs), groupEnvs)
 
 	// Apply K8s Deployment + Service.
 	probe := buildProbeFromService(&a.svc)
@@ -303,6 +305,14 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		"status": db.ServiceRunning,
 	})
 
+	// Refresh system-managed variable group with updated NodePorts.
+	if s.varGroups != nil {
+		var freshSvc db.Service
+		if err := s.db.WithContext(ctx).Preload("Ports").First(&freshSvc, "id = ?", a.svc.ID).Error; err == nil {
+			_ = s.varGroups.UpsertSystemGroup(ctx, &freshSvc, a.namespace)
+		}
+	}
+
 	// Prune old images from the registry (best-effort, non-blocking).
 	go s.pruneOldImages(context.Background(), a.svc.ID, a.bc)
 }
@@ -353,7 +363,8 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 		}
 	}
 	secretEnvs, _ := s.secrets.ResolveForService(ctx, svc.ID)
-	envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs)
+	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, svc.ID)
+	envVars := mergeSecretEnvs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs), groupEnvs)
 	volMounts := resolveServiceVolumeMounts(ctx, s.db, serviceID)
 	probe := buildProbeFromService(&svc)
 	return appk8s.ApplyDeployment(ctx, s.k8s, appk8s.WorkloadParams{
@@ -509,7 +520,8 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			}
 		}
 		secretEnvs, _ := s.secrets.ResolveForService(context.Background(), svc.ID)
-		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs)
+		groupEnvs, _ := s.varGroups.CollectEnvVars(context.Background(), svc.ID)
+		envVars := mergeSecretEnvs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs), groupEnvs)
 		wp := appk8s.WorkloadParams{
 			Name:          slugify(svc.Name),
 			Namespace:     namespace,
