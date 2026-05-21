@@ -356,8 +356,6 @@ type Service struct {
 
 	Status   ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
 	Replicas int           `gorm:"not null;default:1"                          json:"replicas"`
-	Port     int           `gorm:"not null;default:3000"                       json:"port"`     // container listen port
-	NodePort int           `gorm:"default:0"                                   json:"node_port"` // K8s NodePort assigned after first deploy; 0 = not yet provisioned
 
 	// K8s resource spec (standard K8s quantity strings)
 	CPURequest    string `gorm:"not null;default:'100m'"  json:"cpu_request"`
@@ -381,7 +379,24 @@ type Service struct {
 	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
 	DatabaseConfig *DatabaseConfig `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
 	Deployments    []Deployment    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
+	Ports          []ServicePort   `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"ports,omitempty"`
 }
+
+// ServicePort represents one exposed port on a service.
+// Every port gets a ClusterIP entry (all pods can reach it);
+// only is_public ports get a K8s NodePort (for proxy/external access).
+type ServicePort struct {
+	Base
+	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
+	Name      string    `gorm:"not null"                 json:"name"`       // e.g. "http", "grpc", "metrics"
+	Port      int       `gorm:"not null"                 json:"port"`       // container port
+	IsHTTP    bool      `gorm:"not null;default:true"    json:"is_http"`    // speaks HTTP/1.1 — routable via proxy
+	IsPrimary bool      `gorm:"not null;default:false"   json:"is_primary"` // health check target; exactly one per service
+	IsPublic  bool      `gorm:"not null;default:true"    json:"is_public"`  // gets a K8s NodePort
+	NodePort  int       `gorm:"default:0"                json:"node_port"`  // assigned NodePort; 0 = not yet deployed
+}
+
+func (ServicePort) TableName() string { return "service_ports" }
 
 // BuildConfig holds app-specific build settings. 1:1 with Service (type=application).
 type BuildConfig struct {

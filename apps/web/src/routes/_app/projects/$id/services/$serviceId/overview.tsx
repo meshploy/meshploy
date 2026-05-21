@@ -174,7 +174,7 @@ function ServiceOverviewTab() {
           <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
             <Server className="h-3 w-3" /> Port
           </p>
-          <p className="text-2xl font-semibold tabular-nums">:{service.port || "—"}</p>
+          <p className="text-2xl font-semibold tabular-nums">:{(service.ports?.find((p) => p.is_primary) ?? service.ports?.[0])?.port || "—"}</p>
           <p className="text-xs text-muted-foreground">
             {service.node_id ? "node pinned" : "auto-scheduled"}
           </p>
@@ -203,7 +203,7 @@ function ServiceOverviewTab() {
             {!isDatabase && (
               <InfoRow label="Mesh IP">
                 {node?.tailscaleIP
-                  ? <code className="text-[11px] font-mono">{node.tailscaleIP}:{service.port}</code>
+                  ? <code className="text-[11px] font-mono">{node.tailscaleIP}:{(service.ports?.find((p) => p.is_primary) ?? service.ports?.[0])?.port ?? "?"}</code>
                   : <span className="text-muted-foreground/50">—</span>
                 }
               </InfoRow>

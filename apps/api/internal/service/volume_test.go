@@ -35,7 +35,7 @@ func setupVolumeTest(t *testing.T) (*service.Services, *gorm.DB, string, string,
 	svc, err := svcs.Workloads.Create(ctx, proj.ID, service.CreateWorkloadInput{
 		Name:     "app-svc",
 		Image:    "nginx:latest",
-		Port:     80,
+		Ports:    []service.PortInput{{Name: "http", Port: 80, IsHTTP: true, IsPrimary: true, IsPublic: true}},
 		Replicas: 1,
 	})
 	require.NoError(t, err)

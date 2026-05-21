@@ -25,11 +25,12 @@ type RouteService struct {
 // ── Input types ───────────────────────────────────────────────────────────────
 
 type TargetInput struct {
-	Path      string
-	StripPath bool
-	ServiceID *uuid.UUID
-	NodeID    *uuid.UUID
-	Port      int
+	Path          string
+	StripPath     bool
+	ServiceID     *uuid.UUID
+	ServicePortID *uuid.UUID // which port to route to; nil = primary port
+	NodeID        *uuid.UUID
+	Port          int
 	// Pre-resolved (optional override — skips auto-resolution)
 	TargetIP   string
 	TargetPort int
@@ -333,11 +334,28 @@ func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.
 	}
 
 	if in.ServiceID != nil {
-		var svc db.Service
-		if err := s.db.WithContext(ctx).First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
-			return nil, huma.Error404NotFound("service not found")
+		// Resolve to the correct ServicePort (primary if unspecified).
+		var sp db.ServicePort
+		var err error
+		if in.ServicePortID != nil {
+			err = s.db.WithContext(ctx).
+				Where("id = ? AND service_id = ? AND is_public = true AND is_http = true", *in.ServicePortID, *in.ServiceID).
+				First(&sp).Error
+		} else {
+			err = s.db.WithContext(ctx).
+				Where("service_id = ? AND is_primary = true AND is_public = true AND is_http = true", *in.ServiceID).
+				First(&sp).Error
+			if err != nil {
+				// Fall back to any public HTTP port.
+				err = s.db.WithContext(ctx).
+					Where("service_id = ? AND is_public = true AND is_http = true", *in.ServiceID).
+					Order("created_at ASC").First(&sp).Error
+			}
 		}
-		if svc.NodePort == 0 {
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("no routable port found — deploy the service and ensure it has a public HTTP port")
+		}
+		if sp.NodePort == 0 {
 			return nil, huma.Error422UnprocessableEntity("service has not been deployed yet — deploy it first to create a route")
 		}
 		// Route through the K8s NodePort on the gateway node. kube-proxy distributes
@@ -349,7 +367,7 @@ func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.
 			return nil, huma.Error422UnprocessableEntity("gateway node is not online — cannot resolve route target")
 		}
 		t.TargetIP = gateway.TailscaleIP
-		t.TargetPort = svc.NodePort
+		t.TargetPort = sp.NodePort
 	} else if in.NodeID != nil {
 		var node db.Node
 		if err := s.db.WithContext(ctx).First(&node, "id = ?", *in.NodeID).Error; err != nil {

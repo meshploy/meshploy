@@ -13,12 +13,20 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// PortSpec describes one port to expose on a K8s Service.
+type PortSpec struct {
+	Name     string // K8s port name (e.g. "http", "grpc")
+	Port     int32  // container port
+	IsPublic bool   // include in the NodePort service
+	NodePort int32  // existing NodePort to preserve on update; 0 = let K8s assign
+}
+
 // WorkloadParams describes a service to deploy.
 type WorkloadParams struct {
 	Name      string // K8s resource name (slug)
 	Namespace string // project slug
 	Image     string
-	Port      int32
+	Ports     []PortSpec
 	Replicas  int32
 	Env       []corev1.EnvVar
 
@@ -76,13 +84,19 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 		}
 	}
 
+	cPorts := make([]corev1.ContainerPort, len(p.Ports))
+	for i, sp := range p.Ports {
+		cPorts[i] = corev1.ContainerPort{
+			Name:          sp.Name,
+			ContainerPort: sp.Port,
+			Protocol:      corev1.ProtocolTCP,
+		}
+	}
 	container := corev1.Container{
 		Name:            p.Name,
 		Image:           p.Image,
 		ImagePullPolicy: corev1.PullAlways,
-		Ports: []corev1.ContainerPort{
-			{ContainerPort: p.Port, HostPort: p.Port, Protocol: corev1.ProtocolTCP},
-		},
+		Ports:           cPorts,
 		Env:            p.Env,
 		Resources:      resources,
 		LivenessProbe:  p.LivenessProbe,
@@ -139,8 +153,19 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 }
 
 // ApplyService creates or updates a ClusterIP Service for the workload.
-func ApplyService(ctx context.Context, client kubernetes.Interface, name, namespace string, port int32) error {
+// All ports are included so any pod in the cluster can reach them via DNS.
+func ApplyService(ctx context.Context, client kubernetes.Interface, name, namespace string, ports []PortSpec) error {
 	labels := map[string]string{"app": name, "managed-by": "meshploy"}
+
+	svcPorts := make([]corev1.ServicePort, len(ports))
+	for i, p := range ports {
+		svcPorts[i] = corev1.ServicePort{
+			Name:       p.Name,
+			Port:       p.Port,
+			TargetPort: intstr.FromInt32(p.Port),
+			Protocol:   corev1.ProtocolTCP,
+		}
+	}
 
 	desired := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -150,14 +175,8 @@ func ApplyService(ctx context.Context, client kubernetes.Interface, name, namesp
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": name},
-			Ports: []corev1.ServicePort{
-				{
-					Port:       port,
-					TargetPort: intstr.FromInt32(port),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-			Type: corev1.ServiceTypeClusterIP,
+			Ports:    svcPorts,
+			Type:     corev1.ServiceTypeClusterIP,
 		},
 	}
 
@@ -283,11 +302,38 @@ func DeleteDatabasePVC(ctx context.Context, client kubernetes.Interface, name, n
 	return nil
 }
 
-// ApplyNodePortService creates-or-updates a NodePort Service for mesh-external access.
-// Returns the assigned NodePort so the caller can store it.
-func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name, namespace string, port int32) (int32, error) {
+// ApplyNodePortService creates-or-updates a NodePort Service for public ports only.
+// Returns a map of port name → assigned NodePort so callers can persist them.
+func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name, namespace string, ports []PortSpec) (map[string]int32, error) {
 	npName := name + "-nodeport"
 	labels := map[string]string{"app": name, "managed-by": "meshploy"}
+
+	var publicPorts []PortSpec
+	for _, p := range ports {
+		if p.IsPublic {
+			publicPorts = append(publicPorts, p)
+		}
+	}
+
+	// No public ports — delete the NodePort service if it exists.
+	if len(publicPorts) == 0 {
+		err := client.CoreV1().Services(namespace).Delete(ctx, npName, metav1.DeleteOptions{})
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return nil, fmt.Errorf("delete nodeport service: %w", err)
+		}
+		return map[string]int32{}, nil
+	}
+
+	svcPorts := make([]corev1.ServicePort, len(publicPorts))
+	for i, p := range publicPorts {
+		svcPorts[i] = corev1.ServicePort{
+			Name:       p.Name,
+			Port:       p.Port,
+			TargetPort: intstr.FromInt32(p.Port),
+			Protocol:   corev1.ProtocolTCP,
+			NodePort:   p.NodePort, // 0 = let K8s assign; non-zero = preserve
+		}
+	}
 
 	desired := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -297,14 +343,8 @@ func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": name},
-			Ports: []corev1.ServicePort{
-				{
-					Port:       port,
-					TargetPort: intstr.FromInt32(port),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-			Type: corev1.ServiceTypeNodePort,
+			Ports:    svcPorts,
+			Type:     corev1.ServiceTypeNodePort,
 		},
 	}
 
@@ -312,28 +352,35 @@ func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name
 	if k8serrors.IsNotFound(err) {
 		created, err := client.CoreV1().Services(namespace).Create(ctx, desired, metav1.CreateOptions{})
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		if len(created.Spec.Ports) > 0 {
-			return created.Spec.Ports[0].NodePort, nil
-		}
-		return 0, nil
+		return extractNodePorts(created.Spec.Ports), nil
 	}
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	// Preserve the existing NodePort on update so it doesn't change.
-	if len(existing.Spec.Ports) > 0 {
-		desired.Spec.Ports[0].NodePort = existing.Spec.Ports[0].NodePort
+
+	// Preserve existing NodePorts by name so they don't change on update.
+	existingNPs := extractNodePorts(existing.Spec.Ports)
+	for i, sp := range desired.Spec.Ports {
+		if np, ok := existingNPs[sp.Name]; ok {
+			desired.Spec.Ports[i].NodePort = np
+		}
 	}
+
 	updated, err := client.CoreV1().Services(namespace).Update(ctx, desired, metav1.UpdateOptions{})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	if len(updated.Spec.Ports) > 0 {
-		return updated.Spec.Ports[0].NodePort, nil
+	return extractNodePorts(updated.Spec.Ports), nil
+}
+
+func extractNodePorts(ports []corev1.ServicePort) map[string]int32 {
+	m := make(map[string]int32, len(ports))
+	for _, p := range ports {
+		m[p.Name] = p.NodePort
 	}
-	return 0, nil
+	return m
 }
 
 // ScaleDeployment sets the replica count on an existing Deployment.

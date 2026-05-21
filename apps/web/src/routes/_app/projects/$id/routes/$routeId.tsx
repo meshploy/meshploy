@@ -309,7 +309,7 @@ function TargetForm({
 }: {
   form: TargetFormState
   zone: string
-  serviceList: { id: string; name: string; port?: number }[]
+  serviceList: { id: string; name: string; ports?: { is_primary: boolean; port: number }[] }[]
   nodeList: { id: string; name: string; tailscale_ip?: string }[]
   redirectableRoutes: { id: string; hostname: string; zone: string }[]
   onChange: (patch: Partial<TargetFormState>) => void
@@ -378,7 +378,9 @@ function TargetForm({
             {serviceList.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
-                {s.port && <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>}
+                {(s.ports?.find((p) => p.is_primary) ?? s.ports?.[0])?.port && (
+                  <span className="ml-2 text-muted-foreground text-xs">:{(s.ports?.find((p) => p.is_primary) ?? s.ports?.[0])?.port}</span>
+                )}
               </SelectItem>
             ))}
           </SelectContent>
@@ -493,7 +495,7 @@ function TargetItem({
   serviceMap: Record<string, string>
   nodeMap: Record<string, string>
   routeMap: Record<string, string>
-  serviceList: { id: string; name: string; port?: number }[]
+  serviceList: { id: string; name: string; ports?: { is_primary: boolean; port: number }[] }[]
   nodeList: { id: string; name: string; tailscale_ip?: string }[]
   redirectableRoutes: { id: string; hostname: string; zone: string }[]
   orgId: string

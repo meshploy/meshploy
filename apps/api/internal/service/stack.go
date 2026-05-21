@@ -342,7 +342,6 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					StackID:   &stackID,
 					Name:      svcName,
 					Type:      meshdb.ServiceTypeDatabase,
-					Port:      port,
 					Replicas:  replicas,
 					Engine:    meshdb.DatabaseEngine(ext.Database.Engine),
 					Version:   ext.Database.Version,
@@ -361,12 +360,19 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				}
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
 			} else {
+				stackPorts := []PortInput{{
+					Name:      "http",
+					Port:      port,
+					IsHTTP:    true,
+					IsPrimary: true,
+					IsPublic:  true,
+				}}
 				input := CreateWorkloadInput{
 					StackID:                    &stackID,
 					Name:                       svcName,
 					Type:                       meshdb.ServiceTypeApplication,
 					Image:                      svcDef.Image,
-					Port:                       port,
+					Ports:                      stackPorts,
 					Replicas:                   replicas,
 					CPURequest:                 cpuRequest,
 					CPULimit:                   cpuLimit,
@@ -397,18 +403,17 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		} else {
 			// Update existing service.
 			updates := map[string]any{
-				"image":                    svcDef.Image,
-				"port":                     port,
-				"replicas":                 replicas,
-				"cpu_request":              cpuRequest,
-				"cpu_limit":                cpuLimit,
-				"memory_request":           memRequest,
-				"memory_limit":             memLimit,
-				"env_vars":                 envVarsStr,
-				"healthcheck_cmd":          hcCmd,
-				"healthcheck_interval_secs":    hcInterval,
-				"healthcheck_timeout_secs":     hcTimeout,
-				"healthcheck_retries":          hcRetries,
+				"image":                         svcDef.Image,
+				"replicas":                      replicas,
+				"cpu_request":                   cpuRequest,
+				"cpu_limit":                     cpuLimit,
+				"memory_request":                memRequest,
+				"memory_limit":                  memLimit,
+				"env_vars":                      envVarsStr,
+				"healthcheck_cmd":               hcCmd,
+				"healthcheck_interval_secs":     hcInterval,
+				"healthcheck_timeout_secs":      hcTimeout,
+				"healthcheck_retries":           hcRetries,
 				"healthcheck_start_period_secs": hcStartPeriod,
 			}
 			if err := s.db.WithContext(ctx).Model(&existingSvc).Updates(updates).Error; err != nil {
