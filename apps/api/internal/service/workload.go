@@ -74,13 +74,13 @@ type CreateWorkloadInput struct {
 
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
 	services := make([]db.Service, 0)
-	err := s.db.WithContext(ctx).Where("project_id = ?", projectID).Find(&services).Error
+	err := s.db.WithContext(ctx).Preload("Ports").Where("project_id = ?", projectID).Find(&services).Error
 	return services, err
 }
 
 func (s *WorkloadService) Get(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
 	var service db.Service
-	err := s.db.WithContext(ctx).First(&service, "id = ?", serviceID).Error
+	err := s.db.WithContext(ctx).Preload("Ports").First(&service, "id = ?", serviceID).Error
 	return &service, err
 }
 
@@ -377,7 +377,8 @@ type UpdateWorkloadInput struct {
 	CPULimit      *string
 	MemoryRequest *string
 	MemoryLimit   *string
-	EnvVars       *string // nil = no change
+	EnvVars       *string      // nil = no change
+	Ports         *[]PortInput // nil = no change; replaces all ports when set
 }
 
 func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in UpdateWorkloadInput) (*db.Service, error) {
@@ -409,11 +410,47 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	if in.EnvVars != nil {
 		updates["env_vars"] = db.EncryptedString(*in.EnvVars)
 	}
-	if len(updates) == 0 {
-		return s.Get(ctx, serviceID)
+
+	if in.Ports != nil {
+		// Replace all ports in a transaction
+		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("service_id = ?", serviceID).Delete(&db.ServicePort{}).Error; err != nil {
+				return err
+			}
+			hasPrimary := false
+			for _, p := range *in.Ports {
+				if p.IsPrimary {
+					hasPrimary = true
+				}
+			}
+			for i, p := range *in.Ports {
+				primary := p.IsPrimary
+				if !hasPrimary && i == 0 {
+					primary = true
+				}
+				sp := db.ServicePort{
+					ServiceID: serviceID,
+					Name:      p.Name,
+					Port:      p.Port,
+					IsHTTP:    p.IsHTTP,
+					IsPrimary: primary,
+					IsPublic:  p.IsPublic,
+				}
+				if err := tx.Create(&sp).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	if err := s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Updates(updates).Error; err != nil {
-		return nil, err
+
+	if len(updates) > 0 {
+		if err := s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Updates(updates).Error; err != nil {
+			return nil, err
+		}
 	}
 	return s.Get(ctx, serviceID)
 }

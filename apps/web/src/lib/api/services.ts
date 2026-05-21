@@ -155,6 +155,7 @@ export interface UpdateServiceBody {
   memory_request?: string
   memory_limit?: string
   env_vars?: string
+  ports?: PortBody[]   // replaces all ports when set
 }
 
 export interface UpdateBuildConfigBody {

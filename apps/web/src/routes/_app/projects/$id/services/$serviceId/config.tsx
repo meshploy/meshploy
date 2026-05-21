@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, ChevronDown, HardDrive, Info, KeyRound, Loader2, Plus, Save, Server, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ import {
   volumes as volumesApi,
   toNode,
   type ApiNode,
+  type ApiServicePort,
   type ApiSecretAttachment,
   type ApiVolumeMount,
   type UpdateServiceBody,
@@ -920,23 +922,7 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
       <div className="space-y-4">
         <Field label="Enable rollback">
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              role="switch"
-              aria-checked={enabled}
-              onClick={() => setEnabled((v) => !v)}
-              className={cn(
-                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none",
-                enabled ? "bg-primary" : "bg-input"
-              )}
-            >
-              <span
-                className={cn(
-                  "pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-lg transition-transform",
-                  enabled ? "translate-x-4" : "translate-x-0"
-                )}
-              />
-            </Button>
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
             <span className="text-xs text-muted-foreground">
               {enabled ? "Enabled" : "Disabled"}
             </span>
@@ -967,6 +953,171 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
   )
 }
 
+// ─── Ports section ────────────────────────────────────────────────────────────
+
+interface PortRow {
+  key: number
+  name: string
+  port: string
+  isHTTP: boolean
+  isPrimary: boolean
+  isPublic: boolean
+}
+
+let _portKey = 0
+const mkPortRow = (p?: ApiServicePort): PortRow => ({
+  key: ++_portKey,
+  name: p?.name ?? "",
+  port: p ? String(p.port) : "",
+  isHTTP: p?.is_http ?? true,
+  isPrimary: p?.is_primary ?? false,
+  isPublic: p?.is_public ?? true,
+})
+
+function PortsSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc = useQueryClient()
+
+  const { data: service } = useQuery({
+    queryKey: ["service", orgId, projectId, serviceId],
+    queryFn: () => servicesApi.get(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+
+  const [rows, setRows] = useState<PortRow[]>([])
+
+  useEffect(() => {
+    if (service?.ports?.length) {
+      setRows(service.ports.map(mkPortRow))
+    }
+  }, [service])
+
+  const patchRow = (key: number, patch: Partial<PortRow>) =>
+    setRows((rs) => rs.map((r) => r.key === key ? { ...r, ...patch } : r))
+
+  const setPrimary = (key: number) =>
+    setRows((rs) => rs.map((r) => ({ ...r, isPrimary: r.key === key })))
+
+  const addRow = () => setRows((rs) => [...rs, mkPortRow()])
+
+  const removeRow = (key: number) =>
+    setRows((rs) => {
+      const next = rs.filter((r) => r.key !== key)
+      if (next.length > 0 && !next.some((r) => r.isPrimary)) {
+        next[0].isPrimary = true
+      }
+      return next
+    })
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const ports = rows.map((r) => ({
+        name: r.name,
+        port: parseInt(r.port) || 3000,
+        is_http: r.isHTTP,
+        is_primary: r.isPrimary,
+        is_public: r.isPublic,
+      }))
+      return servicesApi.update(orgId, projectId, serviceId, { ports }, token)
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData(["service", orgId, projectId, serviceId], updated)
+      qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
+    },
+  })
+
+  if (service?.type !== "application") return null
+
+  return (
+    <Section title="Ports" subtitle="Expose ports from this service. The primary port is used as the default route target.">
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.key} className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-2">
+            <div className="grid grid-cols-[1fr_100px] gap-2">
+              <Field label="Name">
+                <input
+                  value={row.name}
+                  onChange={(e) => patchRow(row.key, { name: e.target.value })}
+                  placeholder="http"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Port">
+                <input
+                  type="number"
+                  value={row.port}
+                  onChange={(e) => patchRow(row.key, { port: e.target.value })}
+                  placeholder="3000"
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={row.isHTTP}
+                  onChange={(e) => patchRow(row.key, { isHTTP: e.target.checked })}
+                  className="accent-primary"
+                />
+                HTTP
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={row.isPublic}
+                  onChange={(e) => patchRow(row.key, { isPublic: e.target.checked })}
+                  className="accent-primary"
+                />
+                Public (NodePort)
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer">
+                <input
+                  type="radio"
+                  checked={row.isPrimary}
+                  onChange={() => setPrimary(row.key)}
+                  className="accent-primary"
+                />
+                Primary
+              </label>
+              <div className="ml-auto">
+                {rows.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => removeRow(row.key)}
+                    className="text-muted-foreground/40 hover:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        <Button
+          variant="ghost"
+          onClick={addRow}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add port
+        </Button>
+      </div>
+      {mutation.isError && (
+        <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
+      )}
+      {mutation.isSuccess && <p className="text-xs text-emerald-400">Saved.</p>}
+      <div className="flex justify-end">
+        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Save ports
+        </Button>
+      </div>
+    </Section>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ConfigTab() {
@@ -978,6 +1129,7 @@ function ConfigTab() {
     <div className="p-6 max-w-2xl space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SecretsSection projectId={projectId} serviceId={serviceId} />
+      <PortsSection projectId={projectId} serviceId={serviceId} />
       <VolumesSection projectId={projectId} serviceId={serviceId} />
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SourceDeploySection projectId={projectId} serviceId={serviceId} />

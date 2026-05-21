@@ -399,16 +399,17 @@ type PatchWorkloadInput struct {
 	ProjectID string `path:"projectId"`
 	ServiceID string `path:"serviceId"`
 	Body      struct {
-		Name          *string `json:"name,omitempty"`
-		Image         *string `json:"image,omitempty"`
+		Name          *string    `json:"name,omitempty"`
+		Image         *string    `json:"image,omitempty"`
 		// node_id: omit = no change, "" = auto-schedule, UUID = pin to node
-		NodeID        *string `json:"node_id,omitempty"`
-		Replicas      *int    `json:"replicas,omitempty"`
-		CPURequest    *string `json:"cpu_request,omitempty"`
-		CPULimit      *string `json:"cpu_limit,omitempty"`
-		MemoryRequest *string `json:"memory_request,omitempty"`
-		MemoryLimit   *string `json:"memory_limit,omitempty"`
-		EnvVars       *string `json:"env_vars,omitempty"`
+		NodeID        *string    `json:"node_id,omitempty"`
+		Replicas      *int       `json:"replicas,omitempty"`
+		CPURequest    *string    `json:"cpu_request,omitempty"`
+		CPULimit      *string    `json:"cpu_limit,omitempty"`
+		MemoryRequest *string    `json:"memory_request,omitempty"`
+		MemoryLimit   *string    `json:"memory_limit,omitempty"`
+		EnvVars       *string    `json:"env_vars,omitempty"`
+		Ports         *[]PortBody `json:"ports,omitempty"` // nil = no change; replaces all ports when set
 	}
 }
 
@@ -441,6 +442,19 @@ func (h *Handler) PatchWorkload(ctx context.Context, input *PatchWorkloadInput) 
 			in.NodeID = &id
 		}
 		// empty string → NodeID stays nil → auto-schedule
+	}
+	if input.Body.Ports != nil {
+		ports := make([]svc.PortInput, len(*input.Body.Ports))
+		for i, p := range *input.Body.Ports {
+			ports[i] = svc.PortInput{
+				Name:      p.Name,
+				Port:      p.Port,
+				IsHTTP:    p.IsHTTP,
+				IsPrimary: p.IsPrimary,
+				IsPublic:  p.IsPublic,
+			}
+		}
+		in.Ports = &ports
 	}
 
 	service, err := h.svc.Workloads.Update(ctx, serviceID, in)
