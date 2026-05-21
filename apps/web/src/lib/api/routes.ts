@@ -33,6 +33,7 @@ export type TargetBody = {
   path: string
   strip_path: boolean
   service_id?: string
+  service_port_id?: string
   node_id?: string
   port?: number
   redirect_route_id?: string

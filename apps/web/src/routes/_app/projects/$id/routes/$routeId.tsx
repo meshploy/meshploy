@@ -35,6 +35,7 @@ type TargetMode = "service" | "node" | "redirect"
 interface TargetFormState {
   mode: TargetMode
   serviceId: string
+  servicePortId: string  // "" = primary port (auto)
   nodeId: string
   port: string
   path: string
@@ -46,6 +47,7 @@ interface TargetFormState {
 const BLANK_FORM: TargetFormState = {
   mode: "service",
   serviceId: "",
+  servicePortId: "",
   nodeId: "",
   port: "",
   path: "/",
@@ -111,9 +113,14 @@ function RouteDetailPage() {
   const addTargetMutation = useMutation({
     mutationFn: () => {
       const body: TargetBody = { path: add.path || "/", strip_path: add.stripPath }
-      if (add.mode === "service")        body.service_id = add.serviceId
-      else if (add.mode === "node")      { body.node_id = add.nodeId; body.port = parseInt(add.port, 10) }
-      else if (add.mode === "redirect")  { body.redirect_route_id = add.redirectRouteId; body.redirect_code = add.redirectCode }
+      if (add.mode === "service") {
+        body.service_id = add.serviceId
+        if (add.servicePortId) body.service_port_id = add.servicePortId
+      } else if (add.mode === "node") {
+        body.node_id = add.nodeId; body.port = parseInt(add.port, 10)
+      } else if (add.mode === "redirect") {
+        body.redirect_route_id = add.redirectRouteId; body.redirect_code = add.redirectCode
+      }
       return routesApi.addTarget(orgId!, projectId, routeId, body, token)
     },
     onSuccess: () => {
@@ -309,7 +316,7 @@ function TargetForm({
 }: {
   form: TargetFormState
   zone: string
-  serviceList: { id: string; name: string; ports?: { is_primary: boolean; port: number }[] }[]
+  serviceList: { id: string; name: string; ports?: { id: string; name: string; port: number; is_http: boolean; is_primary: boolean; is_public: boolean }[] }[]
   nodeList: { id: string; name: string; tailscale_ip?: string }[]
   redirectableRoutes: { id: string; hostname: string; zone: string }[]
   onChange: (patch: Partial<TargetFormState>) => void
@@ -368,23 +375,60 @@ function TargetForm({
       </div>
 
       {form.mode === "service" ? (
-        <Select value={form.serviceId} onValueChange={(v) => onChange({ serviceId: v ?? "" })}>
-          <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
-            <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
-              {serviceList.find((s) => s.id === form.serviceId)?.name}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {serviceList.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name}
-                {(s.ports?.find((p) => p.is_primary) ?? s.ports?.[0])?.port && (
-                  <span className="ml-2 text-muted-foreground text-xs">:{(s.ports?.find((p) => p.is_primary) ?? s.ports?.[0])?.port}</span>
-                )}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="space-y-2">
+          <Select
+            value={form.serviceId}
+            onValueChange={(v) => onChange({ serviceId: v ?? "", servicePortId: "" })}
+          >
+            <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+              <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
+                {serviceList.find((s) => s.id === form.serviceId)?.name}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {serviceList.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                  {(s.ports?.find((p) => p.is_primary) ?? s.ports?.[0])?.port && (
+                    <span className="ml-2 text-muted-foreground text-xs">:{(s.ports?.find((p) => p.is_primary) ?? s.ports?.[0])?.port}</span>
+                  )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Port selector — only shown when the selected service has multiple public HTTP ports */}
+          {(() => {
+            const selected = serviceList.find((s) => s.id === form.serviceId)
+            const publicHTTP = selected?.ports?.filter((p) => p.is_public && p.is_http) ?? []
+            if (publicHTTP.length <= 1) return null
+            return (
+              <Select
+                value={form.servicePortId || "__primary__"}
+                onValueChange={(v) => onChange({ servicePortId: !v || v === "__primary__" ? "" : v })}
+              >
+                <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+                  <SelectValue placeholder="Port (primary)">
+                    {form.servicePortId
+                      ? (() => { const p = publicHTTP.find((p) => p.id === form.servicePortId); return p ? `${p.name} :${p.port}` : "Port (primary)" })()
+                      : "Port (primary)"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__primary__">
+                    <span className="text-muted-foreground">Primary port</span>
+                  </SelectItem>
+                  {publicHTTP.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                      <span className="ml-2 text-muted-foreground text-xs">:{p.port}</span>
+                      {p.is_primary && <span className="ml-1 text-[10px] text-primary">primary</span>}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
+          })()}
+        </div>
       ) : form.mode === "node" ? (
         <div className="grid grid-cols-[1fr_100px] gap-2">
           <Select value={form.nodeId} onValueChange={(v) => onChange({ nodeId: v ?? "" })}>
@@ -462,6 +506,7 @@ function targetToForm(target: ApiRouteTarget): TargetFormState {
   return {
     mode,
     serviceId: target.service_id ?? "",
+    servicePortId: "",  // not stored on the target; user can re-select on edit
     nodeId: target.node_id ?? "",
     port: target.target_port ? String(target.target_port) : "",
     path: target.path,
@@ -495,7 +540,7 @@ function TargetItem({
   serviceMap: Record<string, string>
   nodeMap: Record<string, string>
   routeMap: Record<string, string>
-  serviceList: { id: string; name: string; ports?: { is_primary: boolean; port: number }[] }[]
+  serviceList: { id: string; name: string; ports?: { id: string; name: string; port: number; is_http: boolean; is_primary: boolean; is_public: boolean }[] }[]
   nodeList: { id: string; name: string; tailscale_ip?: string }[]
   redirectableRoutes: { id: string; hostname: string; zone: string }[]
   orgId: string
@@ -513,9 +558,14 @@ function TargetItem({
   const updateMutation = useMutation({
     mutationFn: () => {
       const body: TargetBody = { path: editForm.path || "/", strip_path: editForm.stripPath }
-      if (editForm.mode === "service")       body.service_id = editForm.serviceId
-      else if (editForm.mode === "node")     { body.node_id = editForm.nodeId; body.port = parseInt(editForm.port, 10) }
-      else if (editForm.mode === "redirect") { body.redirect_route_id = editForm.redirectRouteId; body.redirect_code = editForm.redirectCode }
+      if (editForm.mode === "service") {
+        body.service_id = editForm.serviceId
+        if (editForm.servicePortId) body.service_port_id = editForm.servicePortId
+      } else if (editForm.mode === "node") {
+        body.node_id = editForm.nodeId; body.port = parseInt(editForm.port, 10)
+      } else if (editForm.mode === "redirect") {
+        body.redirect_route_id = editForm.redirectRouteId; body.redirect_code = editForm.redirectCode
+      }
       return routesApi.updateTarget(orgId, projectId, routeId, target.id, body, token)
     },
     onSuccess: () => { setEditing(false); onUpdated() },

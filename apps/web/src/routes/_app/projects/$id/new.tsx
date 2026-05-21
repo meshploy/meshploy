@@ -1198,6 +1198,7 @@ interface TargetRow {
   id: number
   targetMode: TargetMode
   serviceId: string
+  servicePortId: string
   nodeId: string
   port: string
   path: string
@@ -1211,6 +1212,7 @@ const mkTargetRow = (): TargetRow => ({
   id: ++_targetRowId,
   targetMode: "service",
   serviceId: "",
+  servicePortId: "",
   nodeId: "",
   port: "",
   path: "/",
@@ -1341,7 +1343,7 @@ function RouteForm({ projectId }: { projectId: string }) {
           path: t.path || "/",
           strip_path: t.stripPath,
           ...(t.targetMode === "service"
-            ? { service_id: t.serviceId }
+            ? { service_id: t.serviceId, ...(t.servicePortId ? { service_port_id: t.servicePortId } : {}) }
             : t.targetMode === "redirect"
             ? { redirect_route_id: t.redirectRouteId, redirect_code: parseInt(t.redirectCode, 10) }
             : { node_id: t.nodeId, port: parseInt(t.port, 10) }),
@@ -1552,7 +1554,7 @@ function TargetRowField({
       <div className="flex items-center gap-2">
         <SegmentedControl
           value={row.targetMode}
-          onValueChange={(v) => onChange({ targetMode: v as TargetMode, serviceId: "", nodeId: "", port: "", redirectRouteId: "", redirectCode: "301" })}
+          onValueChange={(v) => onChange({ targetMode: v as TargetMode, serviceId: "", servicePortId: "", nodeId: "", port: "", redirectRouteId: "", redirectCode: "301" })}
           options={modeOptions}
           className="text-xs shrink-0"
         />
@@ -1588,8 +1590,11 @@ function TargetRowField({
 
       {/* Row 2: service, node+port, or redirect */}
       {row.targetMode === "service" ? (
-        <div>
-          <Select value={row.serviceId} onValueChange={(v) => onChange({ serviceId: v ?? "" })}>
+        <div className="space-y-2">
+          <Select
+            value={row.serviceId}
+            onValueChange={(v) => onChange({ serviceId: v ?? "", servicePortId: "" })}
+          >
             <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
               <SelectValue placeholder={serviceList.length === 0 ? "No services in this project" : "Select a service…"}>
                 {serviceList.find((s) => s.id === row.serviceId)?.name}
@@ -1604,6 +1609,34 @@ function TargetRowField({
               ))}
             </SelectContent>
           </Select>
+          {(() => {
+            const svc = serviceList.find((s) => s.id === row.serviceId)
+            const publicHTTP = svc?.ports?.filter((p) => p.is_public && p.is_http) ?? []
+            if (publicHTTP.length < 2) return null
+            return (
+              <Select
+                value={row.servicePortId || "__primary__"}
+                onValueChange={(v) => onChange({ servicePortId: !v || v === "__primary__" ? "" : v })}
+              >
+                <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+                  <SelectValue placeholder="Port (primary)">
+                    {row.servicePortId
+                      ? publicHTTP.find((p) => p.id === row.servicePortId)?.name ?? "Port"
+                      : "Primary port"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__primary__">Primary port</SelectItem>
+                  {publicHTTP.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                      <span className="ml-2 text-muted-foreground text-xs">:{p.port}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
+          })()}
         </div>
       ) : row.targetMode === "redirect" ? (
         <div className="flex items-center gap-2">
