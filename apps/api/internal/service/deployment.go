@@ -69,6 +69,7 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 	var svc db.Service
 	if err := s.db.WithContext(ctx).
 		Preload("Project").
+		Preload("Ports").
 		First(&svc, "id = ?", in.ServiceID).Error; err != nil {
 		return nil, fmt.Errorf("service not found: %w", err)
 	}
@@ -231,11 +232,11 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 
 	s.setStatus(a.deployment.ID, db.DeploymentDeploying, result.Log)
 
-	// Use the service's configured port, fall back to 3000.
-	port := int32(a.svc.Port)
-	if port == 0 {
-		port = 3000
-	}
+	// Load ports fresh (may differ from snapshot in runPipelineArgs).
+	var svcPorts []db.ServicePort
+	s.db.WithContext(ctx).Where("service_id = ?", a.svc.ID).Find(&svcPorts)
+	portSpecs := toPortSpecs(svcPorts)
+	port := primaryPort(svcPorts)
 
 	// Resolve node name if a specific node is pinned.
 	nodeName := ""
@@ -257,7 +258,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		Name:           slugify(a.svc.Name),
 		Namespace:      a.namespace,
 		Image:          a.imageName,
-		Port:           port,
+		Ports:          portSpecs,
 		Replicas:       int32(a.svc.Replicas),
 		Env:            envVars,
 		CPURequest:     a.svc.CPURequest,
@@ -273,17 +274,24 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
 		return
 	}
-	if err := appk8s.ApplyService(ctx, s.k8s, slugify(a.svc.Name), a.namespace, port); err != nil {
+	if err := appk8s.ApplyService(ctx, s.k8s, slugify(a.svc.Name), a.namespace, portSpecs); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s service: "+err.Error())
 		return
 	}
-	nodePort, err := appk8s.ApplyNodePortService(ctx, s.k8s, slugify(a.svc.Name), a.namespace, port)
+	assignedNPs, err := appk8s.ApplyNodePortService(ctx, s.k8s, slugify(a.svc.Name), a.namespace, portSpecs)
 	if err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s NodePort service: "+err.Error())
 		return
 	}
 
-	// Update service image, status, and NodePort.
+	// Persist assigned NodePorts back to service_ports rows.
+	for _, sp := range svcPorts {
+		if np, ok := assignedNPs[sp.Name]; ok && np != 0 {
+			s.db.Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
+		}
+	}
+
+	// Update service image and status.
 	now := time.Now()
 	s.db.Model(&db.Deployment{}).Where("id = ?", a.deployment.ID).Updates(map[string]any{
 		"status":      db.DeploymentSuccess,
@@ -291,9 +299,8 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		"deployed_at": &now,
 	})
 	s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(map[string]any{
-		"image":     a.imageName,
-		"status":    db.ServiceRunning,
-		"node_port": nodePort,
+		"image":  a.imageName,
+		"status": db.ServiceRunning,
 	})
 
 	// Prune old images from the registry (best-effort, non-blocking).
@@ -330,16 +337,14 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 		return nil
 	}
 	var svc db.Service
-	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").First(&svc, "id = ?", serviceID).Error; err != nil {
 		return err
 	}
 	if svc.Status != db.ServiceRunning || svc.Image == "" {
 		return nil
 	}
-	port := int32(svc.Port)
-	if port == 0 {
-		port = 3000
-	}
+	portSpecs := toPortSpecs(svc.Ports)
+	port := primaryPort(svc.Ports)
 	nodeName := ""
 	if svc.NodeID != nil {
 		var node db.Node
@@ -355,7 +360,7 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 		Name:           slugify(svc.Name),
 		Namespace:      svc.Project.Slug,
 		Image:          svc.Image,
-		Port:           port,
+		Ports:          portSpecs,
 		Replicas:       int32(svc.Replicas),
 		Env:            envVars,
 		CPURequest:     svc.CPURequest,
@@ -468,7 +473,7 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 		return nil, fmt.Errorf("kubernetes is not configured on this instance")
 	}
 	var target db.Deployment
-	if err := s.db.WithContext(ctx).Preload("Service.Project").First(&target, "id = ?", deploymentID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Service.Project").Preload("Service.Ports").First(&target, "id = ?", deploymentID).Error; err != nil {
 		return nil, fmt.Errorf("deployment not found")
 	}
 	if target.Status != db.DeploymentSuccess {
@@ -494,10 +499,8 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 	namespace := svc.Project.Slug
 
 	go func() {
-		port := int32(svc.Port)
-		if port == 0 {
-			port = 3000
-		}
+		portSpecs := toPortSpecs(svc.Ports)
+		port := primaryPort(svc.Ports)
 		nodeName := ""
 		if svc.NodeID != nil {
 			var node db.Node
@@ -511,7 +514,7 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			Name:          slugify(svc.Name),
 			Namespace:     namespace,
 			Image:         target.Image,
-			Port:          port,
+			Ports:         portSpecs,
 			Replicas:      int32(svc.Replicas),
 			Env:           envVars,
 			CPURequest:    svc.CPURequest,
@@ -524,14 +527,19 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			s.failDeployment(dep.ID, "rollback failed: "+err.Error())
 			return
 		}
-		if err := appk8s.ApplyService(context.Background(), s.k8s, slugify(svc.Name), namespace, port); err != nil {
+		if err := appk8s.ApplyService(context.Background(), s.k8s, slugify(svc.Name), namespace, portSpecs); err != nil {
 			s.failDeployment(dep.ID, "rollback failed to apply K8s service: "+err.Error())
 			return
 		}
-		nodePort, err := appk8s.ApplyNodePortService(context.Background(), s.k8s, slugify(svc.Name), namespace, port)
+		assignedNPs, err := appk8s.ApplyNodePortService(context.Background(), s.k8s, slugify(svc.Name), namespace, portSpecs)
 		if err != nil {
 			s.failDeployment(dep.ID, "rollback failed to apply K8s NodePort service: "+err.Error())
 			return
+		}
+		for _, sp := range svc.Ports {
+			if np, ok := assignedNPs[sp.Name]; ok && np != 0 {
+				s.db.Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
+			}
 		}
 		finishedAt := time.Now()
 		s.db.Model(&db.Deployment{}).Where("id = ?", dep.ID).Updates(map[string]any{
@@ -540,9 +548,8 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			"deployed_at": &finishedAt,
 		})
 		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
-			"image":     target.Image,
-			"status":    db.ServiceRunning,
-			"node_port": nodePort,
+			"image":  target.Image,
+			"status": db.ServiceRunning,
 		})
 	}()
 
@@ -1089,13 +1096,18 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 			slug = slugify(svc.Name)
 		}
 
+		// Load the service's single "db" port.
+		var dbPorts []db.ServicePort
+		s.db.Where("service_id = ?", svc.ID).Find(&dbPorts)
+		dbPort := primaryPort(dbPorts)
+
 		appendLog("Applying database workload…")
 		dbProbe := buildProbeFromService(svc)
 		wp := appk8s.DatabaseWorkloadParams{
 			Name:           slug,
 			Namespace:      namespace,
 			Image:          svc.Image,
-			Port:           int32(svc.Port),
+			Port:           dbPort,
 			Env:            dbEnvVars(dc),
 			StorageGB:      dc.StorageGB,
 			DataPath:       dbDataPath(dc.Engine),
@@ -1107,19 +1119,11 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 			s.failDeployment(deploymentID, "failed to apply K8s workload: "+err.Error())
 			return
 		}
-		// ClusterIP service for intra-cluster access.
-		if err := appk8s.ApplyService(bgCtx, s.k8s, slug, namespace, int32(svc.Port)); err != nil {
+		// ClusterIP service for intra-cluster access (database ports are never public-routed).
+		dbPortSpecs := toPortSpecs(dbPorts)
+		if err := appk8s.ApplyService(bgCtx, s.k8s, slug, namespace, dbPortSpecs); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
 			return
-		}
-		// NodePort service for direct mesh access.
-		appendLog("Creating NodePort service for mesh access…")
-		nodePort, err := appk8s.ApplyNodePortService(bgCtx, s.k8s, slug, namespace, int32(svc.Port))
-		if err != nil {
-			appendLog("warning: NodePort service failed: " + err.Error())
-		} else {
-			s.db.Model(&db.DatabaseConfig{}).Where("service_id = ?", svc.ID).
-				Update("node_port", nodePort)
 		}
 
 		now := time.Now()

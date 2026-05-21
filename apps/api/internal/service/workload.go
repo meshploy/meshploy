@@ -19,13 +19,22 @@ type WorkloadService struct {
 	k8s kubernetes.Interface // nil when K8s is not configured
 }
 
+// PortInput describes one port the caller wants to expose.
+type PortInput struct {
+	Name      string // e.g. "http", "grpc" — must be unique per service
+	Port      int    // container port
+	IsHTTP    bool   // speaks HTTP/1.1 (proxy-routable)
+	IsPrimary bool   // exactly one per service should be true
+	IsPublic  bool   // gets a K8s NodePort
+}
+
 type CreateWorkloadInput struct {
 	Name    string
 	Image   string
-	NodeID  *uuid.UUID // nil = let K3s schedule
-	StackID *uuid.UUID // nil = not part of a stack
-	EnvVars string     // raw .env block, stored as EncryptedString
-	Port    int        // container listen port; 0 = default (3000)
+	NodeID  *uuid.UUID  // nil = let K3s schedule
+	StackID *uuid.UUID  // nil = not part of a stack
+	EnvVars string      // raw .env block, stored as EncryptedString
+	Ports   []PortInput // at least one required; first is used as primary if none flagged
 
 	// K8s resource spec — optional, defaults applied by the model
 	CPURequest    string
@@ -120,10 +129,24 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	if replicas == 0 {
 		replicas = 1
 	}
-	port := in.Port
-	if port == 0 {
-		port = 3000
+
+	// Default to a single HTTP port 3000 when the caller provides none.
+	ports := in.Ports
+	if len(ports) == 0 {
+		ports = []PortInput{{Name: "http", Port: 3000, IsHTTP: true, IsPrimary: true, IsPublic: true}}
 	}
+	// Ensure exactly one primary is marked.
+	hasPrimary := false
+	for _, p := range ports {
+		if p.IsPrimary {
+			hasPrimary = true
+			break
+		}
+	}
+	if !hasPrimary {
+		ports[0].IsPrimary = true
+	}
+
 	service := &db.Service{
 		ProjectID:                  projectID,
 		NodeID:                     in.NodeID,
@@ -133,7 +156,6 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		Image:                      in.Image,
 		Status:                     db.ServiceStopped,
 		Replicas:                   replicas,
-		Port:                       port,
 		EnvVars:                    db.EncryptedString(in.EnvVars),
 		HealthcheckCmd:             in.HealthcheckCmd,
 		HealthcheckIntervalSecs:    in.HealthcheckIntervalSecs,
@@ -145,6 +167,19 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	return service, s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(service).Error; err != nil {
 			return err
+		}
+		for _, pi := range ports {
+			sp := &db.ServicePort{
+				ServiceID: service.ID,
+				Name:      pi.Name,
+				Port:      pi.Port,
+				IsHTTP:    pi.IsHTTP,
+				IsPrimary: pi.IsPrimary,
+				IsPublic:  pi.IsPublic,
+			}
+			if err := tx.Create(sp).Error; err != nil {
+				return err
+			}
 		}
 		if in.GitRepo == "" {
 			return nil
@@ -230,10 +265,21 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 		Image:     image,
 		Status:    db.ServiceStopped,
 		Replicas:  1,
-		Port:      port,
 	}
 	return service, s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(service).Error; err != nil {
+			return err
+		}
+		// Database gets a single internal-only port (no NodePort, no HTTP routing).
+		sp := &db.ServicePort{
+			ServiceID: service.ID,
+			Name:      "db",
+			Port:      port,
+			IsHTTP:    false,
+			IsPrimary: true,
+			IsPublic:  false,
+		}
+		if err := tx.Create(sp).Error; err != nil {
 			return err
 		}
 		dc := &db.DatabaseConfig{
@@ -327,7 +373,6 @@ type UpdateWorkloadInput struct {
 	UpdateNode    bool       // when true, NodeID is applied (nil = auto-schedule)
 	NodeID        *uuid.UUID
 	Replicas      *int
-	Port          *int
 	CPURequest    *string
 	CPULimit      *string
 	MemoryRequest *string
@@ -348,9 +393,6 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	}
 	if in.Replicas != nil {
 		updates["replicas"] = *in.Replicas
-	}
-	if in.Port != nil {
-		updates["port"] = *in.Port
 	}
 	if in.CPURequest != nil {
 		updates["cpu_request"] = *in.CPURequest
@@ -478,4 +520,32 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 		err = s.db.WithContext(ctx).Save(&bc).Error
 	}
 	return &bc, err
+}
+
+// toPortSpecs converts loaded ServicePort rows into k8s PortSpec values,
+// preserving any already-assigned NodePorts so they survive re-deployments.
+func toPortSpecs(ports []db.ServicePort) []appk8s.PortSpec {
+	specs := make([]appk8s.PortSpec, len(ports))
+	for i, p := range ports {
+		specs[i] = appk8s.PortSpec{
+			Name:     p.Name,
+			Port:     int32(p.Port),
+			IsPublic: p.IsPublic,
+			NodePort: int32(p.NodePort),
+		}
+	}
+	return specs
+}
+
+// primaryPort returns the container port of the primary ServicePort, or 3000.
+func primaryPort(ports []db.ServicePort) int32 {
+	for _, p := range ports {
+		if p.IsPrimary {
+			return int32(p.Port)
+		}
+	}
+	if len(ports) > 0 {
+		return int32(ports[0].Port)
+	}
+	return 3000
 }

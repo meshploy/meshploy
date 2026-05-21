@@ -78,6 +78,14 @@ type ResourceType = "service" | "route" | "job" | "database" | "secret" | "stack
 type AppSource = "git" | "image"
 type Builder = "railpack" | "dockerfile"
 
+interface PortRow {
+  name: string      // e.g. "http", "grpc"
+  port: number
+  isHTTP: boolean
+  isPrimary: boolean
+  isPublic: boolean
+}
+
 interface FormState {
   source: AppSource
   name: string
@@ -91,7 +99,7 @@ interface FormState {
   builderNodeName: string | null  // k8s_node_name; null = auto-schedule
   builderCPURequest: string
   builderMemoryRequest: string
-  port: number
+  ports: PortRow[]
   replicas: number
   cpuRequest: string
   cpuLimit: string
@@ -115,7 +123,7 @@ const INITIAL: FormState = {
   builderNodeName: null,
   builderCPURequest: "1000m",
   builderMemoryRequest: "1Gi",
-  port: 3000,
+  ports: [{ name: "http", port: 3000, isHTTP: true, isPrimary: true, isPublic: true }],
   replicas: 1,
   cpuRequest: "100m",
   cpuLimit: "500m",
@@ -169,7 +177,13 @@ function NewResourcePage() {
     mutationFn: async () => {
       const body: CreateServiceBody = {
         name: form.name,
-        port: form.port,
+        ports: form.ports.map((p) => ({
+          name: p.name,
+          port: p.port,
+          is_http: p.isHTTP,
+          is_primary: p.isPrimary,
+          is_public: p.isPublic,
+        })),
         replicas: form.replicas,
         cpu_request: form.cpuRequest || undefined,
         cpu_limit: form.cpuLimit || undefined,
@@ -650,28 +664,107 @@ function ServiceForm({
           </div>
         </div>
 
-        {/* Port + Replicas */}
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Port" required>
-            <Input
-              type="number"
-              min={1}
-              max={65535}
-              value={form.port}
-              onChange={(e) => patch({ port: parseInt(e.target.value) || 3000 })}
-              placeholder="3000"
-            />
-          </Field>
-          <Field label="Replicas">
-            <Input
-              type="number"
-              min={1}
-              max={20}
-              value={form.replicas}
-              onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
-            />
-          </Field>
-        </div>
+        {/* Ports */}
+        <Field label="Ports" required>
+          <div className="space-y-2">
+            {form.ports.map((p, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Input
+                  placeholder="name"
+                  className="w-24 text-xs"
+                  value={p.name}
+                  onChange={(e) => {
+                    const next = [...form.ports]
+                    next[i] = { ...next[i], name: e.target.value }
+                    patch({ ports: next })
+                  }}
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  placeholder="port"
+                  className="w-24 text-xs"
+                  value={p.port}
+                  onChange={(e) => {
+                    const next = [...form.ports]
+                    next[i] = { ...next[i], port: parseInt(e.target.value) || 3000 }
+                    patch({ ports: next })
+                  }}
+                />
+                <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={p.isHTTP}
+                    onChange={(e) => {
+                      const next = [...form.ports]
+                      next[i] = { ...next[i], isHTTP: e.target.checked }
+                      patch({ ports: next })
+                    }}
+                    className="rounded"
+                  />
+                  HTTP
+                </label>
+                <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={p.isPublic}
+                    onChange={(e) => {
+                      const next = [...form.ports]
+                      next[i] = { ...next[i], isPublic: e.target.checked }
+                      patch({ ports: next })
+                    }}
+                    className="rounded"
+                  />
+                  Public
+                </label>
+                <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="primary-port"
+                    checked={p.isPrimary}
+                    onChange={() => {
+                      const next = form.ports.map((r, j) => ({ ...r, isPrimary: j === i }))
+                      patch({ ports: next })
+                    }}
+                    className="rounded"
+                  />
+                  Primary
+                </label>
+                {form.ports.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                    onClick={() => patch({ ports: form.ports.filter((_, j) => j !== i) })}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground gap-1.5 px-2"
+              onClick={() => patch({ ports: [...form.ports, { name: "", port: 8080, isHTTP: false, isPrimary: false, isPublic: false }] })}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add port
+            </Button>
+          </div>
+        </Field>
+
+        {/* Replicas */}
+        <Field label="Replicas">
+          <Input
+            type="number"
+            min={1}
+            max={20}
+            value={form.replicas}
+            onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
+          />
+        </Field>
 
         {/* Resource limits (collapsible) */}
         <div className="rounded-lg border border-border/40 -mx-0">
@@ -1506,7 +1599,7 @@ function TargetRowField({
               {serviceList.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
-                  <span className="ml-2 text-muted-foreground text-xs">:{s.port}</span>
+                  <span className="ml-2 text-muted-foreground text-xs">:{(s.ports?.find((p) => p.is_primary) ?? s.ports?.[0])?.port ?? "?"}</span>
                 </SelectItem>
               ))}
             </SelectContent>

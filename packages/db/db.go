@@ -73,6 +73,7 @@ func Migrate(db *gorm.DB) error {
 		// Workloads
 		&Stack{},
 		&Service{},
+		&ServicePort{},
 		&BuildConfig{},
 		&DatabaseConfig{},
 		&Volume{},
@@ -150,10 +151,34 @@ func applyConstraints(db *gorm.DB) error {
 		`ALTER TABLE routes DROP COLUMN IF EXISTS service_id`,
 		`ALTER TABLE routes DROP COLUMN IF EXISTS target_ip`,
 		`ALTER TABLE routes DROP COLUMN IF EXISTS target_port`,
+
+		// Drop old single-port columns from services (idempotent — no-op when already absent)
+		`ALTER TABLE services DROP COLUMN IF EXISTS port`,
+		`ALTER TABLE services DROP COLUMN IF EXISTS node_port`,
 	}
 
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {
+			return err
+		}
+	}
+
+	// Data migration: backfill service_ports from the old single-port columns.
+	// Wrapped in a column-existence check so it is a pure no-op on fresh installs.
+	var portColExists bool
+	db.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'services' AND column_name = 'port'
+	)`).Scan(&portColExists)
+	if portColExists {
+		if err := db.Exec(`
+			INSERT INTO service_ports (id, created_at, updated_at, service_id, name, port, is_http, is_primary, is_public, node_port)
+			SELECT gen_random_uuid(), NOW(), NOW(), id, 'http',
+			       COALESCE(NULLIF(port, 0), 3000), true, true, true,
+			       COALESCE(NULLIF(node_port, 0), 0)
+			FROM services
+			WHERE id NOT IN (SELECT service_id FROM service_ports)
+		`).Error; err != nil {
 			return err
 		}
 	}
@@ -183,6 +208,7 @@ func applyConstraints(db *gorm.DB) error {
 		// Job → node SET NULL
 		{"jobs", "node_id", "nodes", "SET NULL"},
 		// Service → children CASCADE
+		{"service_ports", "service_id", "services", "CASCADE"},
 		{"service_secrets", "service_id", "services", "CASCADE"},
 		{"service_secrets", "secret_id", "secrets", "CASCADE"},
 		{"build_configs", "service_id", "services", "CASCADE"},

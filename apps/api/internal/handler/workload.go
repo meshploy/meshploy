@@ -29,20 +29,29 @@ type GetWorkloadOutput struct {
 	Body *db.Service
 }
 
+// PortBody is the wire format for a single port in the create-service request.
+type PortBody struct {
+	Name      string `json:"name" minLength:"1" maxLength:"64"` // e.g. "http", "grpc"
+	Port      int    `json:"port"`                               // container port
+	IsHTTP    bool   `json:"is_http"`                            // HTTP/1.1 — routable via proxy
+	IsPrimary bool   `json:"is_primary"`                         // health check target
+	IsPublic  bool   `json:"is_public"`                          // gets a K8s NodePort
+}
+
 type CreateWorkloadInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		Name          string  `json:"name" minLength:"1" maxLength:"100"`
-		Image         string  `json:"image,omitempty"`
-		NodeID        *string `json:"node_id,omitempty"`        // nil = auto-schedule
-		EnvVars       string  `json:"env_vars,omitempty"`       // raw .env block, encrypted at rest
-		Port          int     `json:"port,omitempty"`           // container listen port; 0 = default (3000)
-		Replicas      int     `json:"replicas,omitempty"`       // 0 = use service layer default (1)
-		CPURequest    string  `json:"cpu_request,omitempty"`
-		CPULimit      string  `json:"cpu_limit,omitempty"`
-		MemoryRequest string  `json:"memory_request,omitempty"`
-		MemoryLimit   string  `json:"memory_limit,omitempty"`
+		Name          string     `json:"name" minLength:"1" maxLength:"100"`
+		Image         string     `json:"image,omitempty"`
+		NodeID        *string    `json:"node_id,omitempty"`   // nil = auto-schedule
+		EnvVars       string     `json:"env_vars,omitempty"`  // raw .env block, encrypted at rest
+		Ports         []PortBody `json:"ports,omitempty"`     // empty = default single HTTP port 3000
+		Replicas      int        `json:"replicas,omitempty"`  // 0 = use service layer default (1)
+		CPURequest    string     `json:"cpu_request,omitempty"`
+		CPULimit      string     `json:"cpu_limit,omitempty"`
+		MemoryRequest string     `json:"memory_request,omitempty"`
+		MemoryLimit   string     `json:"memory_limit,omitempty"`
 		// Optional build config — a BuildConfig row is created alongside the
 		// Service when git_repo is provided.
 		GitIntegrationID      *string `json:"git_integration_id,omitempty"`
@@ -282,12 +291,23 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		gitIntegrationID = &id
 	}
 
+	ports := make([]svc.PortInput, len(input.Body.Ports))
+	for i, p := range input.Body.Ports {
+		ports[i] = svc.PortInput{
+			Name:      p.Name,
+			Port:      p.Port,
+			IsHTTP:    p.IsHTTP,
+			IsPrimary: p.IsPrimary,
+			IsPublic:  p.IsPublic,
+		}
+	}
+
 	service, err := h.svc.Workloads.Create(ctx, projectID, svc.CreateWorkloadInput{
 		Name:                  input.Body.Name,
 		Image:                 input.Body.Image,
 		NodeID:                nodeID,
 		EnvVars:               input.Body.EnvVars,
-		Port:                  input.Body.Port,
+		Ports:                 ports,
 		Replicas:              input.Body.Replicas,
 		CPURequest:            input.Body.CPURequest,
 		CPULimit:              input.Body.CPULimit,
@@ -384,7 +404,6 @@ type PatchWorkloadInput struct {
 		// node_id: omit = no change, "" = auto-schedule, UUID = pin to node
 		NodeID        *string `json:"node_id,omitempty"`
 		Replicas      *int    `json:"replicas,omitempty"`
-		Port          *int    `json:"port,omitempty"`
 		CPURequest    *string `json:"cpu_request,omitempty"`
 		CPULimit      *string `json:"cpu_limit,omitempty"`
 		MemoryRequest *string `json:"memory_request,omitempty"`
@@ -406,7 +425,6 @@ func (h *Handler) PatchWorkload(ctx context.Context, input *PatchWorkloadInput) 
 		Name:          input.Body.Name,
 		Image:         input.Body.Image,
 		Replicas:      input.Body.Replicas,
-		Port:          input.Body.Port,
 		CPURequest:    input.Body.CPURequest,
 		CPULimit:      input.Body.CPULimit,
 		MemoryRequest: input.Body.MemoryRequest,

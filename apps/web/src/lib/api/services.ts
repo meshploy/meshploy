@@ -1,5 +1,16 @@
 import { apiFetch } from "./core"
 
+export interface ApiServicePort {
+  id: string
+  service_id: string
+  name: string
+  port: number
+  is_http: boolean
+  is_primary: boolean
+  is_public: boolean
+  node_port: number
+}
+
 export interface ApiService {
   id: string
   name: string
@@ -8,7 +19,7 @@ export interface ApiService {
   type: "application" | "database"
   status: "running" | "stopped" | "deploying" | "failed"
   image: string
-  port: number
+  ports: ApiServicePort[]
   replicas: number
   cpu_request: string
   cpu_limit: string
@@ -95,8 +106,16 @@ export interface ApiBuildConfig {
   updated_at: string
 }
 
+export interface PortBody {
+  name: string
+  port: number
+  is_http: boolean
+  is_primary: boolean
+  is_public: boolean
+}
+
 export interface CreateServiceBody {
-  port?: number
+  ports?: PortBody[]
   name: string
   image?: string
   node_id?: string
@@ -131,7 +150,6 @@ export interface UpdateServiceBody {
   image?: string
   node_id?: string     // "" = auto-schedule, UUID = pin to node
   replicas?: number
-  port?: number
   cpu_request?: string
   cpu_limit?: string
   memory_request?: string

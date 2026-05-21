@@ -23,7 +23,7 @@ function ServiceCard({ svc, onClick }: { svc: ApiService; onClick: () => void })
           </div>
           <div>
             <p className="text-sm font-semibold text-foreground leading-tight">{svc.name}</p>
-            <p className="text-[11px] text-muted-foreground">port :{svc.port} · ×{svc.replicas}</p>
+            <p className="text-[11px] text-muted-foreground">port :{(svc.ports?.find((p) => p.is_primary) ?? svc.ports?.[0])?.port ?? "—"} · ×{svc.replicas}</p>
           </div>
         </div>
         <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border shrink-0 ${statusStyle}`}>

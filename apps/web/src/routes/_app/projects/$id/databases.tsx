@@ -60,7 +60,7 @@ function DatabaseCard({
           </div>
           <div>
             <p className="text-sm font-semibold text-foreground leading-tight">{svc.name}</p>
-            <p className="text-[11px] text-muted-foreground">port :{svc.port}</p>
+            <p className="text-[11px] text-muted-foreground">port :{(svc.ports?.find((p) => p.is_primary) ?? svc.ports?.[0])?.port ?? "—"}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">

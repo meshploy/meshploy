@@ -487,7 +487,6 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     builderCPURequest: "1000m",
     builderMemoryRequest: "1Gi",
     nodeId: "",
-    port: 3000,
     replicas: 1,
     cpuRequest: "100m",
     cpuLimit: "500m",
@@ -513,7 +512,6 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       builderCPURequest: bc?.builder_cpu_request || "1000m",
       builderMemoryRequest: bc?.builder_memory_request || "1Gi",
       nodeId: service.node_id ?? "",
-      port: service.port ?? 3000,
       replicas: service.replicas,
       cpuRequest: service.cpu_request,
       cpuLimit: service.cpu_limit,
@@ -556,7 +554,6 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       // Always update service fields
       const svcBody: UpdateServiceBody = {
         node_id: form.nodeId,
-        port: form.port,
         replicas: form.replicas,
         cpu_request: form.cpuRequest,
         cpu_limit: form.cpuLimit,
@@ -752,27 +749,21 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Port">
-            <Input type="number" min={1} max={65535} value={form.port}
-              onChange={(e) => patch({ port: parseInt(e.target.value) || 3000 })} />
-          </Field>
-          <Field label="Replicas">
-            <Input
-              type="number"
-              min={1}
-              max={hasVolume ? 1 : 20}
-              value={hasVolume ? 1 : form.replicas}
-              disabled={hasVolume}
-              onChange={(e) => !hasVolume && patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
-            />
-            {hasVolume && (
-              <p className="text-[11px] text-amber-400 flex items-center gap-1 mt-1">
-                <AlertTriangle className="h-3 w-3 shrink-0" /> Locked to 1 — volume attached
-              </p>
-            )}
-          </Field>
-        </div>
+        <Field label="Replicas">
+          <Input
+            type="number"
+            min={1}
+            max={hasVolume ? 1 : 20}
+            value={hasVolume ? 1 : form.replicas}
+            disabled={hasVolume}
+            onChange={(e) => !hasVolume && patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
+          />
+          {hasVolume && (
+            <p className="text-[11px] text-amber-400 flex items-center gap-1 mt-1">
+              <AlertTriangle className="h-3 w-3 shrink-0" /> Locked to 1 — volume attached
+            </p>
+          )}
+        </Field>
       </Section>
 
       {/* ── Resource limits (collapsible) ─────────────────────── */}
