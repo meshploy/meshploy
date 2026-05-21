@@ -170,11 +170,25 @@ function ServiceOverviewTab() {
             </div>
           </>
         )}
-        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
+        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1.5">
           <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <Server className="h-3 w-3" /> Port
+            <Server className="h-3 w-3" /> {isDatabase ? "Port" : service.ports?.length === 1 ? "Port" : "Ports"}
           </p>
-          <p className="text-2xl font-semibold tabular-nums">:{(service.ports?.find((p) => p.is_primary) ?? service.ports?.[0])?.port || "—"}</p>
+          {isDatabase ? (
+            <p className="text-2xl font-semibold tabular-nums">:{(service.ports?.find((p) => p.is_primary) ?? service.ports?.[0])?.port || "—"}</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {(service.ports ?? []).length === 0
+                ? <span className="text-2xl font-semibold tabular-nums text-muted-foreground/40">—</span>
+                : (service.ports ?? []).map((p) => (
+                    <span key={p.id} className="flex items-center gap-1">
+                      {p.is_primary && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                      <code className="text-sm font-mono font-semibold tabular-nums">:{p.port}</code>
+                    </span>
+                  ))
+              }
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             {service.node_id ? "node pinned" : "auto-scheduled"}
           </p>
@@ -200,14 +214,26 @@ function ServiceOverviewTab() {
                 : <span className="text-muted-foreground/50">auto-scheduled</span>
               }
             </InfoRow>
-            {!isDatabase && (
-              <InfoRow label="Mesh IP">
-                {node?.tailscaleIP
-                  ? <code className="text-[11px] font-mono">{node.tailscaleIP}:{(service.ports?.find((p) => p.is_primary) ?? service.ports?.[0])?.port ?? "?"}</code>
-                  : <span className="text-muted-foreground/50">—</span>
-                }
-              </InfoRow>
-            )}
+            {!isDatabase && (service.ports ?? []).map((p) => (
+              <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <code className="text-[11px] font-mono text-muted-foreground/70">:{p.port}</code>
+                  {p.node_port > 0 && (
+                    <>
+                      <span className="text-muted-foreground/30 text-[10px]">→</span>
+                      <code className="text-[11px] font-mono text-foreground">
+                        {node?.tailscaleIP ? `${node.tailscaleIP}:${p.node_port}` : `:${p.node_port}`}
+                      </code>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {p.is_primary && <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary">primary</span>}
+                  {p.is_http    && <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400">http</span>}
+                  {p.is_public  && <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400">public</span>}
+                </div>
+              </div>
+            ))}
             {!isDatabase && (
               <InfoRow label="Replicas">
                 <span>{service.replicas} / {service.replicas}</span>
