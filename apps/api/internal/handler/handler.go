@@ -33,6 +33,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerNotificationRoutes(api)
 	h.registerEmailConfigRoutes(api)
 	h.registerSecretRoutes(api)
+	h.registerVariableGroupRoutes(api)
 	h.registerJobRoutes(api)
 	h.registerStackRoutes(api)
 	h.registerVolumeRoutes(api)

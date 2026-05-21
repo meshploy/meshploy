@@ -15,8 +15,9 @@ import (
 )
 
 type WorkloadService struct {
-	db  *gorm.DB
-	k8s kubernetes.Interface // nil when K8s is not configured
+	db        *gorm.DB
+	k8s       kubernetes.Interface // nil when K8s is not configured
+	varGroups *VariableGroupService
 }
 
 // PortInput describes one port the caller wants to expose.
@@ -164,7 +165,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		HealthcheckStartPeriodSecs: in.HealthcheckStartPeriodSecs,
 	}
 
-	return service, s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(service).Error; err != nil {
 			return err
 		}
@@ -180,6 +181,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			if err := tx.Create(sp).Error; err != nil {
 				return err
 			}
+			service.Ports = append(service.Ports, *sp)
 		}
 		if in.GitRepo == "" {
 			return nil
@@ -209,7 +211,17 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			BuilderMemoryRequest:  in.BuilderMemoryRequest,
 		}
 		return tx.Create(bc).Error
-	})
+	}); err != nil {
+		return nil, err
+	}
+	// Create system-managed variable group (best-effort; don't fail the service creation)
+	if s.varGroups != nil {
+		var proj db.Project
+		if err := s.db.WithContext(ctx).Select("slug").First(&proj, "id = ?", projectID).Error; err == nil {
+			_ = s.varGroups.UpsertSystemGroup(ctx, service, proj.Slug)
+		}
+	}
+	return service, nil
 }
 
 // dbSlug generates a stable K8s resource name: {slugify(name)}-{6 random hex chars}.
@@ -266,7 +278,7 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 		Status:    db.ServiceStopped,
 		Replicas:  1,
 	}
-	return service, s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(service).Error; err != nil {
 			return err
 		}
@@ -282,6 +294,7 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 		if err := tx.Create(sp).Error; err != nil {
 			return err
 		}
+		service.Ports = []db.ServicePort{*sp}
 		dc := &db.DatabaseConfig{
 			ServiceID:  service.ID,
 			Engine:     in.Engine,
@@ -293,7 +306,16 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 			DBPassword: db.EncryptedString(dbPassword),
 		}
 		return tx.Create(dc).Error
-	})
+	}); err != nil {
+		return nil, err
+	}
+	if s.varGroups != nil {
+		var proj db.Project
+		if err := s.db.WithContext(ctx).Select("slug").First(&proj, "id = ?", projectID).Error; err == nil {
+			_ = s.varGroups.UpsertSystemGroup(ctx, service, proj.Slug)
+		}
+	}
+	return service, nil
 }
 
 func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {

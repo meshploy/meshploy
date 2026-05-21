@@ -304,6 +304,55 @@ type ServiceSecret struct {
 
 func (ServiceSecret) TableName() string { return "service_secrets" }
 
+// ---------------------------------------------------------------------------
+// Variable Groups
+// ---------------------------------------------------------------------------
+
+// VariableGroup is a named collection of variables/secrets scoped to a project.
+// system_managed groups are auto-created per service and updated on each deploy.
+type VariableGroup struct {
+	Base
+	ProjectID     uuid.UUID  `gorm:"type:uuid;not null;index" json:"project_id"`
+	ServiceID     *uuid.UUID `gorm:"type:uuid;index"          json:"service_id,omitempty"` // non-nil = system-managed
+	Name          string     `gorm:"not null"                 json:"name"`
+	Description   string     `gorm:"default:''"               json:"description"`
+	SystemManaged bool       `gorm:"not null;default:false"   json:"system_managed"`
+
+	Project  Project                `gorm:"foreignKey:ProjectID"                               json:"-"`
+	Items    []VariableGroupItem    `gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"     json:"items,omitempty"`
+	Services []ServiceVariableGroup `gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"     json:"-"`
+}
+
+func (VariableGroup) TableName() string { return "variable_groups" }
+
+// VariableGroupItem is a single key-value entry within a group.
+// All values are AES-256-GCM encrypted at rest.
+// is_secret only controls UI display (masked vs. plain).
+type VariableGroupItem struct {
+	Base
+	GroupID  uuid.UUID       `gorm:"type:uuid;not null;index" json:"group_id"`
+	Key      string          `gorm:"not null"                 json:"key"`
+	Value    EncryptedString `gorm:"type:text;not null"       json:"-"`
+	IsSecret bool            `gorm:"not null;default:false"   json:"is_secret"`
+
+	Group VariableGroup `gorm:"foreignKey:GroupID" json:"-"`
+}
+
+func (VariableGroupItem) TableName() string { return "variable_group_items" }
+
+// ServiceVariableGroup is the join between a service and a variable group.
+// All items in the group are injected as env vars on the next deploy.
+type ServiceVariableGroup struct {
+	Base
+	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
+	GroupID   uuid.UUID `gorm:"type:uuid;not null;index" json:"group_id"`
+
+	Service Service       `gorm:"foreignKey:ServiceID" json:"-"`
+	Group   VariableGroup `gorm:"foreignKey:GroupID"   json:"-"`
+}
+
+func (ServiceVariableGroup) TableName() string { return "service_variable_groups" }
+
 type Node struct {
 	Base
 	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                    json:"organization_id"`

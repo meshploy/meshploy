@@ -80,9 +80,14 @@ func Migrate(db *gorm.DB) error {
 		&VolumeMount{},
 		&VolumeBackupConfig{},
 
-		// Secrets
+		// Secrets (legacy — superseded by variable groups; kept for backward compat)
 		&Secret{},
 		&ServiceSecret{},
+
+		// Variable Groups
+		&VariableGroup{},
+		&VariableGroupItem{},
+		&ServiceVariableGroup{},
 
 		// Traffic (Domain must migrate before Route; Route before RouteTarget)
 		&Route{},
@@ -141,6 +146,16 @@ func applyConstraints(db *gorm.DB) error {
 		// No duplicate env keys per service
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_secrets_env_key
 		 ON service_secrets (service_id, env_key)`,
+		// Variable group item keys must be unique within a group
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_variable_group_item_key
+		 ON variable_group_items (group_id, key)`,
+		// A service can only attach a given group once
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_variable_group
+		 ON service_variable_groups (service_id, group_id)`,
+		// Only one system-managed group per service
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_variable_group_service
+		 ON variable_groups (service_id)
+		 WHERE service_id IS NOT NULL`,
 		// Job names must be unique within a project
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_project_name
 		 ON jobs (project_id, name)`,
