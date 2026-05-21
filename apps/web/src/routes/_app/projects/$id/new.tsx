@@ -1753,77 +1753,72 @@ function SecretForm({ projectId }: { projectId: string }) {
   const filledCount = rows.filter((r) => r.name.trim() && r.value).length
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">Add secrets</h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          Encrypted at rest with AES-256. Attach secrets to services to inject them as environment variables at deploy time.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <Section title="Secrets" subtitle="Encrypted at rest with AES-256. Attach secrets to services to inject them as environment variables at deploy time.">
+        {existing.length > 0 && (
+          <div className="flex items-start gap-2 text-xs text-muted-foreground/70 bg-muted/20 rounded-md px-3 py-2.5">
+            <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>
+              This project already has{" "}
+              <strong className="text-foreground">{existing.length} secret{existing.length !== 1 ? "s" : ""}</strong>.{" "}
+              New secrets will be added alongside them — existing secrets are never overwritten.
+            </span>
+          </div>
+        )}
 
-      {existing.length > 0 && (
-        <div className="flex items-start gap-2 text-xs text-muted-foreground/70 bg-muted/20 rounded-md px-3 py-2.5">
-          <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>
-            This project already has{" "}
-            <strong className="text-foreground">{existing.length} secret{existing.length !== 1 ? "s" : ""}</strong>.{" "}
-            New secrets will be added alongside them — existing secrets are never overwritten.
-          </span>
-        </div>
-      )}
+        <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_1fr_32px] gap-2 px-1">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</span>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Value</span>
+            <span />
+          </div>
 
-      <div className="space-y-2">
-        <div className="grid grid-cols-[1fr_1fr_32px] gap-2 px-1">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</span>
-          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Value</span>
-          <span />
-        </div>
-
-        {rows.map((row) => (
-          <div key={row.id} className="grid grid-cols-[1fr_1fr_32px] gap-2 items-center">
-            <input
-              className={inputCls}
-              placeholder="e.g. DATABASE_URL"
-              value={row.name}
-              onChange={(e) => patchRow(row.id, { name: e.target.value })}
-            />
-            <div className="relative">
+          {rows.map((row) => (
+            <div key={row.id} className="grid grid-cols-[1fr_1fr_32px] gap-2 items-center">
               <input
-                className={cn(inputCls, "pr-8")}
-                type={row.showValue ? "text" : "password"}
-                placeholder="Secret value"
-                value={row.value}
-                onChange={(e) => patchRow(row.id, { value: e.target.value })}
+                className={inputCls}
+                placeholder="e.g. DATABASE_URL"
+                value={row.name}
+                onChange={(e) => patchRow(row.id, { name: e.target.value })}
               />
+              <div className="relative">
+                <input
+                  className={cn(inputCls, "pr-8")}
+                  type={row.showValue ? "text" : "password"}
+                  placeholder="Secret value"
+                  value={row.value}
+                  onChange={(e) => patchRow(row.id, { value: e.target.value })}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => patchRow(row.id, { showValue: !row.showValue })}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
+                >
+                  {row.showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => patchRow(row.id, { showValue: !row.showValue })}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
+                onClick={() => removeRow(row.id)}
+                disabled={rows.length === 1}
+                className="flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-20"
               >
-                {row.showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => removeRow(row.id)}
-              disabled={rows.length === 1}
-              className="flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-20"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ))}
+          ))}
 
-        <Button
-          variant="ghost"
-          onClick={addRow}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add another
-        </Button>
-      </div>
+          <Button
+            variant="ghost"
+            onClick={addRow}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add another
+          </Button>
+        </div>
+      </Section>
 
       {errors.length > 0 && (
         <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 space-y-1">
@@ -2126,15 +2121,8 @@ function StackForm({ projectId }: { projectId: string }) {
   const error = (createMutation.error || createAndApplyMutation.error) as Error | null
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">New Stack</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Deploy a group of services together using a Docker Compose spec.
-        </p>
-      </div>
-
-      <Section title="Name">
+    <div className="space-y-8">
+      <Section title="Name" subtitle="Deploy a group of services together using a Docker Compose spec.">
         <Field label="Stack name">
           <input
             value={name}
@@ -2200,27 +2188,8 @@ function VolumeForm({ projectId }: { projectId: string }) {
   })
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">New Volume</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          A persistent volume backed by a Kubernetes PVC. Attach it to an application service after creation.
-        </p>
-      </div>
-
-      {/* Replica tradeoff callout */}
-      <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-3">
-        <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-300/80 space-y-1">
-          <p className="font-medium text-amber-300">Replicas vs persistence</p>
-          <p>
-            Volumes use ReadWriteOnce access — they can only be mounted to pods on a single node at a time.
-            Attaching a volume to a service automatically scales it to 1 replica. To scale out, detach the volume first.
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-4">
+    <div className="space-y-8">
+      <Section title="Volume" subtitle="A persistent volume backed by a Kubernetes PVC. Attach it to an application service after creation.">
         <Field label="Name" required>
           <input
             className={inputCls}
@@ -2241,6 +2210,18 @@ function VolumeForm({ projectId }: { projectId: string }) {
           />
           <p className="text-[11px] text-muted-foreground mt-1">Default: 5 GB. Can be increased but not decreased after creation.</p>
         </Field>
+      </Section>
+
+      {/* Replica tradeoff callout */}
+      <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-3">
+        <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-300/80 space-y-1">
+          <p className="font-medium text-amber-300">Replicas vs persistence</p>
+          <p>
+            Volumes use ReadWriteOnce access — they can only be mounted to pods on a single node at a time.
+            Attaching a volume to a service automatically scales it to 1 replica. To scale out, detach the volume first.
+          </p>
+        </div>
       </div>
 
       {createMutation.error && (
@@ -2276,15 +2257,8 @@ function VariableGroupForm({ projectId }: { projectId: string }) {
   })
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">New variable group</h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          Group related variables and secrets, then attach them to services to inject as environment variables at deploy time.
-        </p>
-      </div>
-
-      <Section title="Details">
+    <div className="space-y-8">
+      <Section title="Details" subtitle="Group related variables and secrets, then attach them to services to inject as environment variables at deploy time.">
         <Field label="Name">
           <input
             autoFocus

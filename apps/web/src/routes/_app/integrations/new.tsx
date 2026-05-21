@@ -27,7 +27,7 @@ import {
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { inputCls, Field } from "@/components/services/form-primitives"
+import { inputCls, Field, Section } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -247,12 +247,8 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
   const monoCls = inputCls + " font-mono"
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">Git Source</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Connect a git provider to deploy from repositories</p>
-      </div>
-
+    <div className="space-y-8">
+      <Section title="Git Source" subtitle="Connect a git provider to deploy from repositories">
       {/* Provider selector */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Provider</p>
@@ -464,6 +460,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
           )}
         </div>
       )}
+      </Section>
     </div>
   )
 }
@@ -519,13 +516,8 @@ function StorageForm({ onSuccess }: { onSuccess: () => void }) {
   const monoCls = inputCls + " font-mono"
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">Object Storage</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Connect an S3-compatible bucket for database backups</p>
-      </div>
-
-      <div className="space-y-4">
+    <div className="space-y-8">
+      <Section title="Object Storage" subtitle="Connect an S3-compatible bucket for database backups">
         <Field label="Provider">
           <Select value={provider} onValueChange={(v) => { setProvider(v as StorageProvider); setEndpoint(""); setError(null) }}>
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
@@ -603,7 +595,7 @@ function StorageForm({ onSuccess }: { onSuccess: () => void }) {
           {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Add storage
         </Button>
-      </div>
+      </Section>
     </div>
   )
 }
@@ -658,13 +650,8 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
   const monoCls = inputCls + " font-mono"
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">Container Registry</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Pull and push images from private and public registries</p>
-      </div>
-
-      <div className="space-y-4">
+    <div className="space-y-8">
+      <Section title="Container Registry" subtitle="Pull and push images from private and public registries">
         <Field label="Provider">
           <Select value={provider} onValueChange={(v) => setProvider(v as RegistryProvider)}>
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
@@ -733,7 +720,7 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
           {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Add registry
         </Button>
-      </div>
+      </Section>
     </div>
   )
 }
@@ -782,13 +769,8 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
     events.length > 0
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-sm font-semibold">Add notification channel</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Get alerted when events happen in your org</p>
-      </div>
-
-      <div className="space-y-4">
+    <div className="space-y-8">
+      <Section title="Notification Channel" subtitle="Get alerted when events happen in your org">
         {/* Channel type */}
         <Field label="Channel type">
           <Select value={type} onValueChange={(v) => v && setType(v as NotificationChannelType)}>
@@ -874,7 +856,7 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
             ))}
           </div>
         </Field>
-      </div>
+      </Section>
 
       {error && <ErrorBanner message={error} />}
 
@@ -951,15 +933,9 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
   const isValid = host.trim() && fromAddress.trim() && (!prefilled ? password : true)
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold">Email Provider</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Configure outbound SMTP for email notifications. One provider per organization.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <Section title="Email Provider" subtitle="Configure outbound SMTP for email notifications. One provider per organization.">
 
-      <div className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
             <Field label="SMTP host" required>
@@ -1035,7 +1011,7 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
           {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {prefilled ? "Update provider" : "Save provider"}
         </Button>
-      </div>
+      </Section>
     </div>
   )
 }
