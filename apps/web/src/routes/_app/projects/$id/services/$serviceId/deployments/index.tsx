@@ -58,7 +58,6 @@ function DeploymentsTab() {
     staleTime: 30_000,
   })
   const isDatabase = service?.type === "database"
-  const isProvisioned = isDatabase && (service?.status === "running" || service?.status === "stopped")
 
   const { data: bc } = useQuery({
     queryKey: ["build-config", orgId, projectId, serviceId],
@@ -80,6 +79,7 @@ function DeploymentsTab() {
       return data?.some((d) => ACTIVE_STATUSES.has(d.status)) ? 3000 : false
     },
   })
+  const isProvisioned = isDatabase && deploymentList.length > 0
 
   const triggerMutation = useMutation({
     mutationFn: () => deploymentsApi.trigger(orgId!, projectId, serviceId, token),

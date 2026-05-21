@@ -140,6 +140,14 @@ func (s *VariableGroupService) Attach(ctx context.Context, serviceID, groupID uu
 }
 
 func (s *VariableGroupService) Detach(ctx context.Context, serviceID, groupID uuid.UUID) error {
+	// Block detaching a system-managed group from the service that owns it.
+	var g db.VariableGroup
+	if err := s.db.WithContext(ctx).Select("system_managed, service_id").First(&g, "id = ?", groupID).Error; err != nil {
+		return err
+	}
+	if g.SystemManaged && g.ServiceID != nil && *g.ServiceID == serviceID {
+		return fmt.Errorf("cannot detach a service's own system-managed variable group")
+	}
 	return s.db.WithContext(ctx).
 		Where("service_id = ? AND group_id = ?", serviceID, groupID).
 		Delete(&db.ServiceVariableGroup{}).Error
@@ -180,7 +188,7 @@ func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Se
 	// Build all items for this service's ports
 	items := buildServiceItems(prefix, host, svc.Ports)
 
-	// Replace all items atomically
+	// Replace all items atomically and ensure the group is attached to its own service.
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("group_id = ?", group.ID).Delete(&db.VariableGroupItem{}).Error; err != nil {
 			return err
@@ -191,7 +199,9 @@ func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Se
 				return err
 			}
 		}
-		return nil
+		// Auto-attach the system group to its own service so vars are injected at deploy time.
+		svg := db.ServiceVariableGroup{ServiceID: svc.ID, GroupID: group.ID}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&svg).Error
 	})
 }
 

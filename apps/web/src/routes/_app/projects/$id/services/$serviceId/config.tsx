@@ -351,7 +351,7 @@ function VariableGroupsSection({ projectId, serviceId }: { projectId: string; se
   })
 
   const attachedIds = new Set(attached.map((g) => g.id))
-  const availableGroups = allGroups.filter((g) => !g.system_managed && !attachedIds.has(g.id))
+  const availableGroups = allGroups.filter((g) => !attachedIds.has(g.id) && !(g.system_managed && g.service_id === serviceId))
 
   return (
     <Section

@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Switch } from "@/components/ui/switch"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { nodes as nodesApi, toNode, type ApiNodeMetrics } from "@/lib/api"
@@ -468,22 +469,25 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
       <Card>
         <CardContent className="flex items-center justify-between py-3">
           <div className="space-y-0.5">
-            <p className="text-xs font-medium text-foreground">Act as build node</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium text-foreground">Act as build node</p>
+              {isBuilder && (
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                  Active
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-muted-foreground">
               Adds <code className="font-mono">meshploy.com/role=builder</code> label — build jobs can land here.
               No <code className="font-mono">NoSchedule</code> taint on the gateway.
             </p>
           </div>
-          <Button
-            size="sm"
-            variant={isBuilder ? "default" : "outline"}
-            className="ml-4 shrink-0 h-7 text-xs gap-1.5"
-            disabled={isPending}
-            onClick={() => toggle(!isBuilder)}
-          >
-            {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-            {isBuilder ? "Enabled" : "Disabled"}
-          </Button>
+          <div className="ml-4 shrink-0">
+            {isPending
+              ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              : <Switch checked={isBuilder} onCheckedChange={(val) => toggle(val)} />
+            }
+          </div>
         </CardContent>
       </Card>
     </section>
