@@ -1,13 +1,10 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { KeyRound, Layers, Loader2, Lock, Plus, Server, Trash2 } from "lucide-react"
-import { useState } from "react"
 import { variableGroups as groupsApi, type ApiVariableGroup } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
-import { inputCls } from "@/components/services/form-primitives"
-import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/variables/")({
   component: VariablesPage,
@@ -68,10 +65,7 @@ function VariablesPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const qc = useQueryClient()
-
-  const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName] = useState("")
-  const [newDesc, setNewDesc] = useState("")
+  const navigate = useNavigate()
 
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ["variable-groups", orgId, projectId],
@@ -79,23 +73,12 @@ function VariablesPage() {
     enabled: !!orgId,
   })
 
-  const navigate = useNavigate()
-
-  const createMut = useMutation({
-    mutationFn: () => groupsApi.create(orgId, projectId, { name: newName.trim(), description: newDesc.trim() }, token),
-    onSuccess: (g) => {
-      qc.invalidateQueries({ queryKey: ["variable-groups", orgId, projectId] })
-      setShowCreate(false)
-      setNewName("")
-      setNewDesc("")
-      navigate({ to: "/projects/$id/variables/$groupId", params: { id: projectId, groupId: g.id } })
-    },
-  })
-
   const deleteMut = useMutation({
     mutationFn: (groupId: string) => groupsApi.delete(orgId, projectId, groupId, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["variable-groups", orgId, projectId] }),
   })
+
+  const goNew = () => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "variable-group" } })
 
   const userGroups = groups.filter((g) => !g.system_managed)
   const systemGroups = groups.filter((g) => g.system_managed)
@@ -109,52 +92,23 @@ function VariablesPage() {
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{userGroups.length}</span>}
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
+        <Button size="sm" className="gap-1.5" onClick={goNew}>
           <Plus className="h-3.5 w-3.5" /> New group
         </Button>
       </div>
-
-      {/* Create form */}
-      {showCreate && (
-        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
-          <p className="text-xs font-medium">New variable group</p>
-          <input
-            autoFocus
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Group name (e.g. Database, Stripe)"
-            className={inputCls}
-          />
-          <input
-            value={newDesc}
-            onChange={(e) => setNewDesc(e.target.value)}
-            placeholder="Description (optional)"
-            className={cn(inputCls, "text-xs")}
-          />
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => createMut.mutate()} disabled={!newName.trim() || createMut.isPending}>
-              {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              Create
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setShowCreate(false); setNewName(""); setNewDesc("") }}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         </div>
-      ) : userGroups.length === 0 && !showCreate ? (
+      ) : userGroups.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/60 py-14 flex flex-col items-center gap-3">
           <KeyRound className="h-7 w-7 text-muted-foreground/40" />
           <div className="text-center">
             <p className="text-sm text-muted-foreground">No variable groups yet</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">Group related variables and secrets, then attach them to services</p>
           </div>
-          <Button size="sm" className="gap-1.5 mt-1" onClick={() => setShowCreate(true)}>
+          <Button size="sm" className="gap-1.5 mt-1" onClick={goNew}>
             <Plus className="h-3.5 w-3.5" /> New group
           </Button>
         </div>

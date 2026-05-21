@@ -47,6 +47,7 @@ import {
   jobs as jobsApi,
   stacks as stacksApi,
   volumes as volumesApi,
+  variableGroups as groupsApi,
   toNode,
   type CreateServiceBody,
   type ApiNode,
@@ -74,7 +75,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ResourceType = "service" | "route" | "job" | "database" | "secret" | "stack" | "volume"
+type ResourceType = "service" | "route" | "job" | "database" | "secret" | "stack" | "volume" | "variable-group"
 type AppSource = "git" | "image"
 type Builder = "railpack" | "dockerfile"
 
@@ -148,8 +149,9 @@ const RESOURCE_TYPES: {
   { type: "route",    icon: Globe,     label: "Route"    },
   { type: "stack",    icon: Layers,    label: "Stack"    },
   { type: "volume",   icon: HardDrive, label: "Volume"   },
-  { type: "secret",   icon: KeyRound,  label: "Secret",  divider: true },
-  { type: "job",      icon: Zap,       label: "Job"      },
+  { type: "secret",         icon: KeyRound,  label: "Secret",         divider: true },
+  { type: "variable-group", icon: Layers,    label: "Variable Group"  },
+  { type: "job",            icon: Zap,       label: "Job"             },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -309,6 +311,8 @@ function NewResourcePage() {
             <JobForm projectId={projectId} />
           ) : resourceType === "volume" ? (
             <VolumeForm projectId={projectId} />
+          ) : resourceType === "variable-group" ? (
+            <VariableGroupForm projectId={projectId} />
           ) : (
             <ComingSoonForm type={resourceType} />
           )}
@@ -2249,6 +2253,67 @@ function VolumeForm({ projectId }: { projectId: string }) {
       >
         {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
         Create volume
+      </Button>
+    </div>
+  )
+}
+
+function VariableGroupForm({ projectId }: { projectId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
+
+  const createMut = useMutation({
+    mutationFn: () => groupsApi.create(orgId, projectId, { name: name.trim(), description: description.trim() }, token),
+    onSuccess: (g) => {
+      qc.invalidateQueries({ queryKey: ["variable-groups", orgId, projectId] })
+      navigate({ to: "/projects/$id/variables/$groupId", params: { id: projectId, groupId: g.id } })
+    },
+  })
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold">New variable group</h2>
+        <p className="text-xs text-muted-foreground mt-1">
+          Group related variables and secrets, then attach them to services to inject as environment variables at deploy time.
+        </p>
+      </div>
+
+      <Section title="Details">
+        <Field label="Name">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Stripe, Database, Redis"
+            className={inputCls}
+          />
+        </Field>
+        <Field label="Description">
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional description"
+            className={inputCls}
+          />
+        </Field>
+      </Section>
+
+      {createMut.error && (
+        <p className="text-xs text-destructive">{(createMut.error as Error).message}</p>
+      )}
+
+      <Button
+        disabled={!name.trim() || createMut.isPending}
+        onClick={() => createMut.mutate()}
+      >
+        {createMut.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+        Create group
       </Button>
     </div>
   )
