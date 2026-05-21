@@ -92,7 +92,7 @@ function VariablesPage() {
   const systemGroups = groups.filter((g) => g.system_managed)
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
