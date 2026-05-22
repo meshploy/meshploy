@@ -27,6 +27,7 @@ type DeploymentService struct {
 	k8s       kubernetes.Interface // nil when K8s is not configured
 	git       *GitIntegrationService
 	varGroups *VariableGroupService
+	notif     *NotificationService
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -311,6 +312,16 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 
+	if s.notif != nil {
+		var proj db.Project
+		if s.db.WithContext(ctx).First(&proj, "id = ?", a.svc.ProjectID).Error == nil {
+			s.notif.Dispatch(ctx, proj.OrganizationID, "deploy.success", NotificationData{
+				ServiceName: a.svc.Name,
+				ProjectName: proj.Name,
+			})
+		}
+	}
+
 	// Prune old images from the registry (best-effort, non-blocking).
 	go s.pruneOldImages(context.Background(), a.svc.ID, a.bc)
 }
@@ -335,6 +346,15 @@ func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
 		Joins("JOIN deployments ON deployments.service_id = services.id").
 		Where("deployments.id = ?", id).
 		Update("status", db.ServiceStopped)
+	if s.notif != nil {
+		var dep db.Deployment
+		if s.db.Preload("Service.Project").First(&dep, "id = ?", id).Error == nil {
+			s.notif.Dispatch(context.Background(), dep.Service.Project.OrganizationID, "deploy.failed", NotificationData{
+				ServiceName: dep.Service.Name,
+				ProjectName: dep.Service.Project.Name,
+			})
+		}
+	}
 }
 
 // ReapplyService re-applies the K8s Deployment for a running service using its

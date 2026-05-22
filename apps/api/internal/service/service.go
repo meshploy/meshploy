@@ -154,11 +154,12 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		}()
 	}
 
+	notif := &NotificationService{db: db}
 	varGroups := &VariableGroupService{db: db}
 	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups}
-	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups}
+	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups, notif: notif}
 
-	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups)}
+	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
 	svc := &Services{
 		Auth:            auth,
