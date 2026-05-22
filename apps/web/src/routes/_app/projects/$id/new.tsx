@@ -88,6 +88,9 @@ interface FormState {
   source: AppSource
   name: string
   image: string
+  imageVisibility: "public" | "private"
+  pullRegistryIntegrationId: string
+  gitVisibility: "public" | "private"
   gitIntegrationId: string
   gitRepo: string
   gitBranch: string
@@ -111,6 +114,9 @@ const INITIAL: FormState = {
   source: "git",
   name: "",
   image: "",
+  imageVisibility: "public",
+  pullRegistryIntegrationId: "",
+  gitVisibility: "private",
   gitIntegrationId: "",
   gitRepo: "",
   gitBranch: "",
@@ -189,8 +195,13 @@ function NewResourcePage() {
       }
       if (form.source === "image") {
         body.image = form.image
+        if (form.imageVisibility === "private" && form.pullRegistryIntegrationId) {
+          body.pull_registry_integration_id = form.pullRegistryIntegrationId
+        }
       } else {
-        body.git_integration_id       = form.gitIntegrationId || undefined
+        if (form.gitVisibility === "private") {
+          body.git_integration_id = form.gitIntegrationId || undefined
+        }
         body.git_repo                 = form.gitRepo
         body.branch                   = form.gitBranch
         body.builder                  = form.builder
@@ -218,11 +229,12 @@ function NewResourcePage() {
   const canCreate =
     form.name.trim().length > 0 &&
     (form.source === "image"
-      ? form.image.trim().length > 0
-      : form.gitIntegrationId.length > 0 &&
-        form.gitRepo.length > 0 &&
+      ? form.image.trim().length > 0 &&
+        (form.imageVisibility === "public" || form.pullRegistryIntegrationId.length > 0)
+      : form.gitRepo.length > 0 &&
         form.gitBranch.length > 0 &&
-        form.registryIntegrationId.length > 0)
+        form.registryIntegrationId.length > 0 &&
+        (form.gitVisibility === "public" || form.gitIntegrationId.length > 0))
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -420,117 +432,204 @@ function ServiceForm({
         />
 
         {form.source === "image" ? (
-          <Field label="Image" required>
-            <input
-              value={form.image}
-              onChange={(e) => patch({ image: e.target.value })}
-              placeholder="nginx:alpine"
-              className={inputCls}
-            />
-          </Field>
-        ) : (
           <div className="space-y-4">
-            <Field label="Git integration" required>
-              <Select
-                value={form.gitIntegrationId}
-                onValueChange={(v) => patch({ gitIntegrationId: v ?? "", gitRepo: "", gitBranch: "" })}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue
-                    placeholder={
-                      connectedGit.length === 0
-                        ? "No connected integrations — add one in Integrations"
-                        : "Select a git integration…"
-                    }
-                  >
-                    {connectedGit.find((g) => g.id === form.gitIntegrationId)?.name}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {connectedGit.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Field label="Image" required>
+              <input
+                value={form.image}
+                onChange={(e) => patch({ image: e.target.value })}
+                placeholder="nginx:alpine"
+                className={inputCls}
+              />
             </Field>
-
-            <Field label={reposFetching ? "Repository (loading…)" : "Repository"} required>
-              <Select
-                value={form.gitRepo}
-                onValueChange={(v) => {
-                  const repo = repoList.find((r) => r.full_name === v)
-                  patch({ gitRepo: v ?? "", gitBranch: repo?.default_branch ?? "" })
-                }}
-                disabled={!form.gitIntegrationId || reposFetching}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue
-                    placeholder={
-                      !form.gitIntegrationId
-                        ? "Select an integration first"
-                        : reposFetching
-                        ? "Loading repositories…"
-                        : repoList.length === 0
-                        ? "No accessible repositories"
-                        : "Select a repository…"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {repoList.map((r) => (
-                    <SelectItem key={r.full_name} value={r.full_name}>
-                      {r.full_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label={branchesFetching ? "Branch (loading…)" : "Branch"} required>
+            <SegmentedControl
+              value={form.imageVisibility}
+              onValueChange={(v) => patch({ imageVisibility: v as "public" | "private", pullRegistryIntegrationId: "" })}
+              options={[
+                { value: "public",  label: "Public" },
+                { value: "private", label: "Private" },
+              ]}
+              className="text-sm"
+            />
+            {form.imageVisibility === "private" && (
+              <Field label="Pull registry" required>
                 <Select
-                  value={form.gitBranch}
-                  onValueChange={(v) => patch({ gitBranch: v ?? "" })}
-                  disabled={!form.gitRepo || branchesFetching}
+                  value={form.pullRegistryIntegrationId}
+                  onValueChange={(v) => patch({ pullRegistryIntegrationId: v ?? "" })}
                 >
                   <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
                     <SelectValue
                       placeholder={
-                        !form.gitRepo
-                          ? "Select a repo first"
-                          : branchesFetching
-                          ? "Loading branches…"
-                          : "Select a branch…"
+                        registryList.length === 0
+                          ? "No registries — add one in Integrations"
+                          : "Select a registry to pull the image…"
                       }
-                    />
+                    >
+                      {registryList.find((r) => r.id === form.pullRegistryIntegrationId)?.name}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {branchList.map((b) => (
-                      <SelectItem key={b} value={b}>{b}</SelectItem>
+                    {registryList.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </Field>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <SegmentedControl
+              value={form.gitVisibility}
+              onValueChange={(v) => patch({ gitVisibility: v as "public" | "private", gitIntegrationId: "", gitRepo: "", gitBranch: "" })}
+              options={[
+                { value: "public",  label: "Public" },
+                { value: "private", label: "Private" },
+              ]}
+              className="text-sm"
+            />
 
-              <Field label="Builder">
-                <Select
-                  value={form.builder}
-                  onValueChange={(v) => patch({ builder: (v ?? "railpack") as Builder })}
-                >
-                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="railpack">Railpack</SelectItem>
-                    <SelectItem value="dockerfile">Dockerfile</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
+            {form.gitVisibility === "public" ? (
+              <div className="space-y-4">
+                <Field label="Repository URL" required>
+                  <input
+                    value={form.gitRepo}
+                    onChange={(e) => patch({ gitRepo: e.target.value })}
+                    placeholder="https://github.com/user/repo"
+                    className={inputCls}
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Branch" required>
+                    <input
+                      value={form.gitBranch}
+                      onChange={(e) => patch({ gitBranch: e.target.value })}
+                      placeholder="main"
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Builder">
+                    <Select
+                      value={form.builder}
+                      onValueChange={(v) => patch({ builder: (v ?? "railpack") as Builder })}
+                    >
+                      <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="railpack">Railpack</SelectItem>
+                        <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Field label="Git integration" required>
+                  <Select
+                    value={form.gitIntegrationId}
+                    onValueChange={(v) => patch({ gitIntegrationId: v ?? "", gitRepo: "", gitBranch: "" })}
+                  >
+                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                      <SelectValue
+                        placeholder={
+                          connectedGit.length === 0
+                            ? "No connected integrations — add one in Integrations"
+                            : "Select a git integration…"
+                        }
+                      >
+                        {connectedGit.find((g) => g.id === form.gitIntegrationId)?.name}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {connectedGit.map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
 
-            <Field label="Registry" required>
+                <Field label={reposFetching ? "Repository (loading…)" : "Repository"} required>
+                  <Select
+                    value={form.gitRepo}
+                    onValueChange={(v) => {
+                      const repo = repoList.find((r) => r.full_name === v)
+                      patch({ gitRepo: v ?? "", gitBranch: repo?.default_branch ?? "" })
+                    }}
+                    disabled={!form.gitIntegrationId || reposFetching}
+                  >
+                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                      <SelectValue
+                        placeholder={
+                          !form.gitIntegrationId
+                            ? "Select an integration first"
+                            : reposFetching
+                            ? "Loading repositories…"
+                            : repoList.length === 0
+                            ? "No accessible repositories"
+                            : "Select a repository…"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {repoList.map((r) => (
+                        <SelectItem key={r.full_name} value={r.full_name}>
+                          {r.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label={branchesFetching ? "Branch (loading…)" : "Branch"} required>
+                    <Select
+                      value={form.gitBranch}
+                      onValueChange={(v) => patch({ gitBranch: v ?? "" })}
+                      disabled={!form.gitRepo || branchesFetching}
+                    >
+                      <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                        <SelectValue
+                          placeholder={
+                            !form.gitRepo
+                              ? "Select a repo first"
+                              : branchesFetching
+                              ? "Loading branches…"
+                              : "Select a branch…"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branchList.map((b) => (
+                          <SelectItem key={b} value={b}>{b}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  <Field label="Builder">
+                    <Select
+                      value={form.builder}
+                      onValueChange={(v) => patch({ builder: (v ?? "railpack") as Builder })}
+                    >
+                      <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="railpack">Railpack</SelectItem>
+                        <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              </div>
+            )}
+
+            <Field label="Registry (push destination)" required>
               <Select
                 value={form.registryIntegrationId}
                 onValueChange={(v) => patch({ registryIntegrationId: v ?? "" })}

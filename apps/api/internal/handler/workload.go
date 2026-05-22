@@ -72,6 +72,9 @@ type CreateWorkloadInput struct {
 		DBName     string `json:"db_name,omitempty"`     // defaults to service name
 		DBUser     string `json:"db_user,omitempty"`     // defaults to service name
 		DBPassword string `json:"db_password,omitempty"` // auto-generated if empty
+		// PullRegistryIntegrationID — credentials for pulling a private runtime image.
+		// Set for image-source services; "" = clear (public image), nil = not set.
+		PullRegistryIntegrationID *string `json:"pull_registry_integration_id,omitempty"`
 	}
 }
 
@@ -290,6 +293,14 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		}
 		gitIntegrationID = &id
 	}
+	var pullRegistryID *uuid.UUID
+	if input.Body.PullRegistryIntegrationID != nil && *input.Body.PullRegistryIntegrationID != "" {
+		id, err := parseUUID(*input.Body.PullRegistryIntegrationID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid pull_registry_integration_id")
+		}
+		pullRegistryID = &id
+	}
 
 	ports := make([]svc.PortInput, len(input.Body.Ports))
 	for i, p := range input.Body.Ports {
@@ -303,32 +314,33 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 	}
 
 	service, err := h.svc.Workloads.Create(ctx, projectID, svc.CreateWorkloadInput{
-		Name:                  input.Body.Name,
-		Image:                 input.Body.Image,
-		NodeID:                nodeID,
-		EnvVars:               input.Body.EnvVars,
-		Ports:                 ports,
-		Replicas:              input.Body.Replicas,
-		CPURequest:            input.Body.CPURequest,
-		CPULimit:              input.Body.CPULimit,
-		MemoryRequest:         input.Body.MemoryRequest,
-		MemoryLimit:           input.Body.MemoryLimit,
-		GitIntegrationID:      gitIntegrationID,
-		GitRepo:               input.Body.GitRepo,
-		Branch:                input.Body.Branch,
-		Builder:               db.BuilderType(input.Body.Builder),
-		DockerfilePath:        input.Body.DockerfilePath,
-		RegistryIntegrationID: registryID,
-		BuilderNode:           input.Body.BuilderNode,
-		BuilderCPURequest:     input.Body.BuilderCPURequest,
-		BuilderMemoryRequest:  input.Body.BuilderMemoryRequest,
-		Type:                  db.ServiceType(input.Body.Type),
-		Engine:                db.DatabaseEngine(input.Body.Engine),
-		Version:               input.Body.Version,
-		StorageGB:             input.Body.StorageGB,
-		DBName:                input.Body.DBName,
-		DBUser:                input.Body.DBUser,
-		DBPassword:            input.Body.DBPassword,
+		Name:                      input.Body.Name,
+		Image:                     input.Body.Image,
+		PullRegistryIntegrationID: pullRegistryID,
+		NodeID:                    nodeID,
+		EnvVars:                   input.Body.EnvVars,
+		Ports:                     ports,
+		Replicas:                  input.Body.Replicas,
+		CPURequest:                input.Body.CPURequest,
+		CPULimit:                  input.Body.CPULimit,
+		MemoryRequest:             input.Body.MemoryRequest,
+		MemoryLimit:               input.Body.MemoryLimit,
+		GitIntegrationID:          gitIntegrationID,
+		GitRepo:                   input.Body.GitRepo,
+		Branch:                    input.Body.Branch,
+		Builder:                   db.BuilderType(input.Body.Builder),
+		DockerfilePath:            input.Body.DockerfilePath,
+		RegistryIntegrationID:     registryID,
+		BuilderNode:               input.Body.BuilderNode,
+		BuilderCPURequest:         input.Body.BuilderCPURequest,
+		BuilderMemoryRequest:      input.Body.BuilderMemoryRequest,
+		Type:                      db.ServiceType(input.Body.Type),
+		Engine:                    db.DatabaseEngine(input.Body.Engine),
+		Version:                   input.Body.Version,
+		StorageGB:                 input.Body.StorageGB,
+		DBName:                    input.Body.DBName,
+		DBUser:                    input.Body.DBUser,
+		DBPassword:                input.Body.DBPassword,
 	})
 	if err != nil {
 		return nil, err

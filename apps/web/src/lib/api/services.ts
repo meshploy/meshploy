@@ -145,6 +145,7 @@ export interface CreateServiceBody {
   db_name?: string
   db_user?: string
   db_password?: string
+  pull_registry_integration_id?: string
 }
 
 export interface UpdateServiceBody {
