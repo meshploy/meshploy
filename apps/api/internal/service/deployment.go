@@ -26,7 +26,6 @@ type DeploymentService struct {
 	cfg       *config.Config
 	k8s       kubernetes.Interface // nil when K8s is not configured
 	git       *GitIntegrationService
-	secrets   *SecretService
 	varGroups *VariableGroupService
 }
 
@@ -248,10 +247,9 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 
-	// Merge secrets + variable group items into env vars (explicit env wins on conflict).
-	secretEnvs, _ := s.secrets.ResolveForService(ctx, a.svc.ID)
+	// Merge variable group items into env vars (explicit env wins on conflict).
 	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, a.svc.ID)
-	envVars := mergeSecretEnvs(mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), secretEnvs), groupEnvs)
+	envVars := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), groupEnvs)
 
 	// Apply K8s Deployment + Service.
 	probe := buildProbeFromService(&a.svc)
@@ -362,9 +360,8 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 			nodeName = node.Name
 		}
 	}
-	secretEnvs, _ := s.secrets.ResolveForService(ctx, svc.ID)
 	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, svc.ID)
-	envVars := mergeSecretEnvs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs), groupEnvs)
+	envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
 	volMounts := resolveServiceVolumeMounts(ctx, s.db, serviceID)
 	probe := buildProbeFromService(&svc)
 	return appk8s.ApplyDeployment(ctx, s.k8s, appk8s.WorkloadParams{
@@ -519,9 +516,8 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 				nodeName = node.Name
 			}
 		}
-		secretEnvs, _ := s.secrets.ResolveForService(context.Background(), svc.ID)
 		groupEnvs, _ := s.varGroups.CollectEnvVars(context.Background(), svc.ID)
-		envVars := mergeSecretEnvs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), secretEnvs), groupEnvs)
+		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
 		wp := appk8s.WorkloadParams{
 			Name:          slugify(svc.Name),
 			Namespace:     namespace,
