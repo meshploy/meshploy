@@ -64,7 +64,6 @@ function ProjectLayout() {
     { label: "Stacks",    count: project.stacksCount,    to: "/projects/$id/stacks"    as const },
     { label: "Volumes",   count: project.volumesCount,   to: "/projects/$id/volumes"   as const },
     { label: "Variables", count: project.secretsCount,   to: "/projects/$id/variables" as const },
-    { label: "Secrets",   count: project.secretsCount,   to: "/projects/$id/secrets"   as const },
     { label: "Jobs",      count: project.jobsCount,      to: "/projects/$id/jobs"      as const },
     { label: "Settings",  count: null,                   to: "/projects/$id/settings"  as const },
   ]

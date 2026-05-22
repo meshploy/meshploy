@@ -273,36 +273,8 @@ type Project struct {
 	Organization Organization `gorm:"foreignKey:OrganizationID"                         json:"-"`
 	Services     []Service    `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 	Routes       []Route      `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
-	Secrets      []Secret     `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 	Jobs         []Job        `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 }
-
-// Secret is a project-scoped, AES-256-GCM encrypted key-value pair.
-// Secrets are attached to services via ServiceSecret which specifies the env key name.
-type Secret struct {
-	Base
-	ProjectID uuid.UUID       `gorm:"type:uuid;not null;index"      json:"project_id"`
-	Name      string          `gorm:"not null"                      json:"name"`
-	Value     EncryptedString `gorm:"type:text;not null"            json:"-"`
-
-	Project Project      `gorm:"foreignKey:ProjectID"           json:"-"`
-	Services []ServiceSecret `gorm:"foreignKey:SecretID;constraint:OnDelete:CASCADE" json:"-"`
-}
-
-func (Secret) TableName() string { return "secrets" }
-
-// ServiceSecret binds a Secret to a Service, injecting it as an env var named EnvKey.
-type ServiceSecret struct {
-	Base
-	ServiceID uuid.UUID `gorm:"type:uuid;not null;index"           json:"service_id"`
-	SecretID  uuid.UUID `gorm:"type:uuid;not null;index"           json:"secret_id"`
-	EnvKey    string    `gorm:"not null"                           json:"env_key"`
-
-	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
-	Secret  Secret  `gorm:"foreignKey:SecretID"  json:"-"`
-}
-
-func (ServiceSecret) TableName() string { return "service_secrets" }
 
 // ---------------------------------------------------------------------------
 // Variable Groups

@@ -31,7 +31,6 @@ type Services struct {
 	Backups         *BackupService
 	Notifications   *NotificationService
 	EmailConfig     *EmailConfigService
-	Secrets         *SecretService
 	VariableGroups  *VariableGroupService
 	Jobs            *JobService
 	DBExplorer      *DBExplorerService
@@ -157,7 +156,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	varGroups := &VariableGroupService{db: db}
 	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups}
-	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, secrets: &SecretService{db: db}, varGroups: varGroups}
+	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups}
 
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups)}
 
@@ -178,7 +177,6 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Backups:         backups,
 		Notifications:   &NotificationService{db: db},
 		EmailConfig:     &EmailConfigService{db: db},
-		Secrets:         &SecretService{db: db},
 		VariableGroups:  varGroups,
 		Jobs:            func() *JobService {
 			j := &JobService{db: db, k8s: k8sClient}

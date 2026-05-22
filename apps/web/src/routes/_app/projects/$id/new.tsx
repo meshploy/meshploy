@@ -14,7 +14,6 @@ import {
   Globe,
   HardDrive,
   Info,
-  KeyRound,
   Layers,
   Loader2,
   Plus,
@@ -43,7 +42,6 @@ import {
   registries as registryApi,
   routes as routesApi,
   domains as domainsApi,
-  secrets as secretsApi,
   jobs as jobsApi,
   stacks as stacksApi,
   volumes as volumesApi,
@@ -53,7 +51,6 @@ import {
   type ApiNode,
   type ApiService,
   type ApiDomain,
-  type ApiSecret,
   type ApiVolume,
   type ApiDbRoute,
 } from "@/lib/api"
@@ -75,7 +72,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ResourceType = "service" | "route" | "job" | "database" | "secret" | "stack" | "volume" | "variable-group"
+type ResourceType = "service" | "route" | "job" | "database" | "stack" | "volume" | "variable-group"
 type AppSource = "git" | "image"
 type Builder = "railpack" | "dockerfile"
 
@@ -107,7 +104,6 @@ interface FormState {
   memoryRequest: string
   memoryLimit: string
   showResources: boolean
-  secretAttachments: { secretId: string; envKey: string; secretName: string }[]
   volumeAttachment: { volumeId: string; mountPath: string } | null
 }
 
@@ -131,7 +127,6 @@ const INITIAL: FormState = {
   memoryRequest: "128Mi",
   memoryLimit: "512Mi",
   showResources: false,
-  secretAttachments: [],
   volumeAttachment: null,
 }
 
@@ -149,8 +144,7 @@ const RESOURCE_TYPES: {
   { type: "route",    icon: Globe,     label: "Route"    },
   { type: "stack",    icon: Layers,    label: "Stack"    },
   { type: "volume",   icon: HardDrive, label: "Volume"   },
-  { type: "secret",         icon: KeyRound,  label: "Secret",         divider: true },
-  { type: "variable-group", icon: Layers,    label: "Variable Group"  },
+  { type: "variable-group", icon: Layers,    label: "Variable Group", divider: true },
   { type: "job",            icon: Zap,       label: "Job"             },
 ]
 
@@ -206,9 +200,6 @@ function NewResourcePage() {
         body.builder_memory_request   = form.builderMemoryRequest || undefined
       }
       const service = await servicesApi.create(orgId!, projectId, body, token)
-      for (const sa of form.secretAttachments) {
-        await secretsApi.attach(orgId!, projectId, service.id, { secret_id: sa.secretId, env_key: sa.envKey }, token)
-      }
       if (form.volumeAttachment) {
         await volumesApi.attach(orgId!, projectId, form.volumeAttachment.volumeId, { service_id: service.id, mount_path: form.volumeAttachment.mountPath }, token)
       }
@@ -305,8 +296,6 @@ function NewResourcePage() {
             <DatabaseForm projectId={projectId} />
           ) : resourceType === "route" ? (
             <RouteForm projectId={projectId} />
-          ) : resourceType === "secret" ? (
-            <SecretForm projectId={projectId} />
           ) : resourceType === "job" ? (
             <JobForm projectId={projectId} />
           ) : resourceType === "volume" ? (
@@ -344,9 +333,6 @@ function ServiceForm({
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
 
-  // Local state for the add-secret row
-  const [pendingSecretId, setPendingSecretId] = useState("")
-  const [pendingEnvKey, setPendingEnvKey] = useState("")
   // Local state for the add-volume picker
   const [pendingVolumeId, setPendingVolumeId] = useState("")
   const [pendingMountPath, setPendingMountPath] = useState("")
@@ -393,34 +379,13 @@ function ServiceForm({
     (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
   )
 
-  const { data: projectSecrets = [] } = useQuery<ApiSecret[]>({
-    queryKey: ["secrets", orgId, projectId],
-    queryFn: () => secretsApi.list(orgId, projectId, token),
-    enabled: !!orgId,
-  })
-
   const { data: projectVolumes = [] } = useQuery<ApiVolume[]>({
     queryKey: ["volumes", orgId, projectId],
     queryFn: () => volumesApi.list(orgId, projectId, token),
     enabled: !!orgId,
   })
 
-  const attachedSecretIds = new Set(form.secretAttachments.map((a) => a.secretId))
-  const availableSecrets = projectSecrets.filter((s) => !attachedSecretIds.has(s.id))
-
   const readyVolumes = projectVolumes.filter((v) => v.mounts?.length === 0)
-
-  function addSecret() {
-    const secret = projectSecrets.find((s) => s.id === pendingSecretId)
-    if (!secret || !pendingEnvKey.trim()) return
-    patch({ secretAttachments: [...form.secretAttachments, { secretId: secret.id, envKey: pendingEnvKey.trim(), secretName: secret.name }] })
-    setPendingSecretId("")
-    setPendingEnvKey("")
-  }
-
-  function removeSecret(secretId: string) {
-    patch({ secretAttachments: form.secretAttachments.filter((a) => a.secretId !== secretId) })
-  }
 
   function attachVolume() {
     if (!pendingVolumeId || !pendingMountPath.trim()) return
@@ -799,73 +764,6 @@ function ServiceForm({
         </div>
       </Section>
 
-      {/* ── Section: Secrets ─────────────────────────────────── */}
-      <Section title="Secrets" subtitle="Inject project secrets as environment variables at deploy time.">
-        {form.secretAttachments.length > 0 && (
-          <div className="rounded-lg border border-border/60 overflow-hidden mb-3">
-            {form.secretAttachments.map((a, i) => (
-              <div
-                key={a.secretId}
-                className={cn(
-                  "flex items-center justify-between px-3 py-2 text-xs",
-                  i < form.secretAttachments.length - 1 && "border-b border-border/40"
-                )}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <code className="font-mono text-foreground truncate">{a.envKey}</code>
-                  <span className="text-muted-foreground/50">←</span>
-                  <span className="text-muted-foreground truncate">{a.secretName}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => removeSecret(a.secretId)}
-                  className="ml-3 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-        {projectSecrets.length === 0 ? (
-          <p className="text-xs text-muted-foreground/60">No secrets in this project yet.</p>
-        ) : availableSecrets.length === 0 && form.secretAttachments.length > 0 ? (
-          <p className="text-xs text-muted-foreground/60">All secrets attached.</p>
-        ) : (
-          <div className="flex gap-2">
-            <Select value={pendingSecretId} onValueChange={(v) => {
-              setPendingSecretId(v ?? "")
-              const s = projectSecrets.find((ps) => ps.id === v)
-              if (s && !pendingEnvKey) setPendingEnvKey(s.name.toUpperCase().replace(/-/g, "_"))
-            }}>
-              <SelectTrigger className={cn(inputCls, "flex-1")}>
-                <SelectValue placeholder="Select a secret…" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableSecrets.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <input
-              className={cn(inputCls, "flex-1 font-mono")}
-              placeholder="ENV_KEY"
-              value={pendingEnvKey}
-              onChange={(e) => setPendingEnvKey(e.target.value)}
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!pendingSecretId || !pendingEnvKey.trim()}
-              onClick={addSecret}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
-      </Section>
 
       {/* ── Section: Volume ───────────────────────────────────── */}
       <Section title="Volume" subtitle="Mount a persistent volume into this service.">
@@ -1697,143 +1595,6 @@ function TargetRowField({
           />
         </div>
       )}
-    </div>
-  )
-}
-
-// ─── Secret form ─────────────────────────────────────────────────────────────
-
-type SecretRow = { id: number; name: string; value: string; showValue: boolean }
-let _secretRowId = 0
-const mkSecretRow = (): SecretRow => ({ id: ++_secretRowId, name: "", value: "", showValue: false })
-
-function SecretForm({ projectId }: { projectId: string }) {
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-
-  const [rows, setRows] = useState<SecretRow[]>([mkSecretRow()])
-  const [errors, setErrors] = useState<string[]>([])
-
-  const { data: existing = [] } = useQuery({
-    queryKey: ["secrets", orgId, projectId],
-    queryFn: () => secretsApi.list(orgId, projectId, token),
-    enabled: !!orgId,
-  })
-
-  const patchRow = (id: number, field: Partial<SecretRow>) =>
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...field } : r)))
-  const addRow = () => setRows((prev) => [...prev, mkSecretRow()])
-  const removeRow = (id: number) =>
-    setRows((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev))
-
-  const saveMut = useMutation({
-    mutationFn: async () => {
-      const valid = rows.filter((r) => r.name.trim() && r.value)
-      if (valid.length === 0) throw new Error("Add at least one secret with a name and value.")
-      const errs: string[] = []
-      await Promise.all(
-        valid.map((r) =>
-          secretsApi
-            .create(orgId, projectId, { name: r.name.trim(), value: r.value }, token)
-            .catch((e: Error) => { errs.push(`${r.name}: ${e.message}`) })
-        )
-      )
-      if (errs.length) throw new Error(errs.join("\n"))
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["secrets", orgId, projectId] })
-      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
-      navigate({ to: "/projects/$id/secrets", params: { id: projectId } })
-    },
-    onError: (e: Error) => setErrors(e.message.split("\n")),
-  })
-
-  const filledCount = rows.filter((r) => r.name.trim() && r.value).length
-
-  return (
-    <div className="space-y-8">
-      <Section title="Secrets" subtitle="Encrypted at rest with AES-256. Attach secrets to services to inject them as environment variables at deploy time.">
-        {existing.length > 0 && (
-          <div className="flex items-start gap-2 text-xs text-muted-foreground/70 bg-muted/20 rounded-md px-3 py-2.5">
-            <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-            <span>
-              This project already has{" "}
-              <strong className="text-foreground">{existing.length} secret{existing.length !== 1 ? "s" : ""}</strong>.{" "}
-              New secrets will be added alongside them — existing secrets are never overwritten.
-            </span>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_1fr_32px] gap-2 px-1">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</span>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Value</span>
-            <span />
-          </div>
-
-          {rows.map((row) => (
-            <div key={row.id} className="grid grid-cols-[1fr_1fr_32px] gap-2 items-center">
-              <input
-                className={inputCls}
-                placeholder="e.g. DATABASE_URL"
-                value={row.name}
-                onChange={(e) => patchRow(row.id, { name: e.target.value })}
-              />
-              <div className="relative">
-                <input
-                  className={cn(inputCls, "pr-8")}
-                  type={row.showValue ? "text" : "password"}
-                  placeholder="Secret value"
-                  value={row.value}
-                  onChange={(e) => patchRow(row.id, { value: e.target.value })}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => patchRow(row.id, { showValue: !row.showValue })}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
-                >
-                  {row.showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => removeRow(row.id)}
-                disabled={rows.length === 1}
-                className="flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-20"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ))}
-
-          <Button
-            variant="ghost"
-            onClick={addRow}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add another
-          </Button>
-        </div>
-      </Section>
-
-      {errors.length > 0 && (
-        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 space-y-1">
-          {errors.map((e, i) => <p key={i} className="text-xs text-destructive">{e}</p>)}
-        </div>
-      )}
-
-      <Button
-        onClick={() => saveMut.mutate()}
-        disabled={saveMut.isPending || filledCount === 0}
-        className="gap-1.5"
-      >
-        {saveMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        Save {filledCount > 0 ? `${filledCount} secret${filledCount !== 1 ? "s" : ""}` : "secrets"}
-      </Button>
     </div>
   )
 }

@@ -80,10 +80,6 @@ func Migrate(db *gorm.DB) error {
 		&VolumeMount{},
 		&VolumeBackupConfig{},
 
-		// Secrets (legacy — superseded by variable groups; kept for backward compat)
-		&Secret{},
-		&ServiceSecret{},
-
 		// Variable Groups
 		&VariableGroup{},
 		&VariableGroupItem{},
@@ -140,12 +136,6 @@ func applyConstraints(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
 		 ON organization_members (organization_id)
 		 WHERE role = 'owner'`,
-		// Secret names must be unique within a project
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_secrets_project_name
-		 ON secrets (project_id, name)`,
-		// No duplicate env keys per service
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_secrets_env_key
-		 ON service_secrets (service_id, env_key)`,
 		// Variable group item keys must be unique within a group
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_variable_group_item_key
 		 ON variable_group_items (group_id, key)`,
@@ -216,7 +206,6 @@ func applyConstraints(db *gorm.DB) error {
 		// Project → children CASCADE
 		{"services", "project_id", "projects", "CASCADE"},
 		{"routes", "project_id", "projects", "CASCADE"},
-		{"secrets", "project_id", "projects", "CASCADE"},
 		{"jobs", "project_id", "projects", "CASCADE"},
 		// Job → children CASCADE
 		{"job_runs", "job_id", "jobs", "CASCADE"},
@@ -224,8 +213,6 @@ func applyConstraints(db *gorm.DB) error {
 		{"jobs", "node_id", "nodes", "SET NULL"},
 		// Service → children CASCADE
 		{"service_ports", "service_id", "services", "CASCADE"},
-		{"service_secrets", "service_id", "services", "CASCADE"},
-		{"service_secrets", "secret_id", "secrets", "CASCADE"},
 		{"build_configs", "service_id", "services", "CASCADE"},
 		{"database_configs", "service_id", "services", "CASCADE"},
 		{"deployments", "service_id", "services", "CASCADE"},
