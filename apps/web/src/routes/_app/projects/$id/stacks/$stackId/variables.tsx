@@ -1,19 +1,34 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect } from "react"
-import { Loader2, Plus, Trash2, Save } from "lucide-react"
+import { Loader2, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Section, inputCls } from "@/components/services/form-primitives"
-import { cn } from "@/lib/utils"
+import { Section } from "@/components/services/form-primitives"
+import CodeMirror from "@uiw/react-codemirror"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId/variables")({
   component: StackVariablesTab,
 })
 
-type VarRow = { key: string; value: string }
+function varsToText(variables: Record<string, string>): string {
+  return Object.entries(variables).map(([k, v]) => `${k}=${v}`).join("\n")
+}
+
+function textToVars(text: string): Record<string, string> {
+  const vars: Record<string, string> = {}
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith("#")) continue
+    const eq = trimmed.indexOf("=")
+    if (eq === -1) continue
+    const key = trimmed.slice(0, eq).trim()
+    if (key) vars[key] = trimmed.slice(eq + 1)
+  }
+  return vars
+}
 
 function StackVariablesTab() {
   const { id: projectId, stackId } = useParams({ from: "/_app/projects/$id/stacks/$stackId/variables" })
@@ -28,44 +43,23 @@ function StackVariablesTab() {
     enabled: !!orgId,
   })
 
-  const [rows, setRows] = useState<VarRow[]>([])
+  const [text, setText] = useState("")
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     if (stack && !dirty) {
-      const entries = Object.entries(stack.variables ?? {})
-      setRows(entries.length > 0 ? entries.map(([key, value]) => ({ key, value })) : [])
+      setText(varsToText(stack.variables ?? {}))
     }
   }, [stack, dirty])
 
   const saveMutation = useMutation({
-    mutationFn: () => {
-      const variables: Record<string, string> = {}
-      for (const { key, value } of rows) {
-        if (key.trim()) variables[key.trim()] = value
-      }
-      return stacksApi.update(orgId!, projectId, stackId, { variables }, token)
-    },
+    mutationFn: () =>
+      stacksApi.update(orgId!, projectId, stackId, { variables: textToVars(text) }, token),
     onSuccess: (updated) => {
       qc.setQueryData(queryKey, updated)
       setDirty(false)
     },
   })
-
-  const addRow = () => {
-    setRows((r) => [...r, { key: "", value: "" }])
-    setDirty(true)
-  }
-
-  const removeRow = (i: number) => {
-    setRows((r) => r.filter((_, idx) => idx !== i))
-    setDirty(true)
-  }
-
-  const updateRow = (i: number, field: "key" | "value", val: string) => {
-    setRows((r) => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
-    setDirty(true)
-  }
 
   if (isLoading) {
     return (
@@ -79,68 +73,42 @@ function StackVariablesTab() {
     <div className="p-6 max-w-2xl space-y-6">
       <Section
         title="Stack Variables"
-        subtitle='Define values substituted into ${KEY} placeholders in your spec.'
+        subtitle="One KEY=VALUE pair per line. Substituted into ${KEY} placeholders in your spec."
       >
-        <div className="space-y-2">
-            {rows.length > 0 && (
-              <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-[11px] text-muted-foreground px-0.5 mb-1">
-                <span>Key</span>
-                <span>Value</span>
-                <span />
-              </div>
-            )}
-            {rows.map((row, i) => (
-              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
-                <input
-                  value={row.key}
-                  onChange={(e) => updateRow(i, "key", e.target.value)}
-                  placeholder="VARIABLE_NAME"
-                  className={cn(inputCls, "font-mono text-xs")}
-                />
-                <input
-                  value={row.value}
-                  onChange={(e) => updateRow(i, "value", e.target.value)}
-                  placeholder="value"
-                  className={cn(inputCls, "font-mono text-xs")}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => removeRow(i)}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
+        <div className="rounded-md overflow-hidden border border-border/60">
+          <CodeMirror
+            value={text}
+            height="260px"
+            theme="dark"
+            onChange={(val) => { setText(val); setDirty(val !== varsToText(stack?.variables ?? {})) }}
+            placeholder={"JWT_SECRET=your-secret\nPOSTGRES_PASSWORD=admin123\nAPI_KEY=..."}
+            style={{ fontSize: 12 }}
+            basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+          />
+        </div>
 
-            <Button variant="outline" size="sm" className="gap-1.5 mt-1" onClick={addRow}>
-              <Plus className="h-3.5 w-3.5" /> Add variable
-            </Button>
-          </div>
+        {saveMutation.isError && (
+          <p className="text-xs text-destructive">
+            {(saveMutation.error as Error)?.message ?? "Failed to save"}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !dirty}
+          >
+            {saveMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Save className="h-3.5 w-3.5" />
+            }
+            Save
+          </Button>
+          {dirty && <span className="text-[11px] text-amber-400/80 font-mono">unsaved changes</span>}
+        </div>
       </Section>
-
-      {saveMutation.isError && (
-        <p className="text-xs text-destructive">
-          {(saveMutation.error as Error)?.message ?? "Failed to save"}
-        </p>
-      )}
-
-      <div className="flex items-center gap-3">
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending || !dirty}
-        >
-          {saveMutation.isPending
-            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : <Save className="h-3.5 w-3.5" />
-          }
-          Save variables
-        </Button>
-        {dirty && <span className="text-[11px] text-amber-400/80 font-mono">unsaved changes</span>}
-      </div>
     </div>
   )
 }

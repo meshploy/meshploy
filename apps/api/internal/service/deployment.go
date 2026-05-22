@@ -82,25 +82,19 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		return nil, fmt.Errorf("only application services can be deployed via build pipeline")
 	}
 
+	// Try to load the build config. Services with a pre-built image have no build config.
 	var bc db.BuildConfig
-	if err := s.db.WithContext(ctx).
+	hasBc := s.db.WithContext(ctx).
 		Where("service_id = ?", in.ServiceID).
 		Preload("RegistryIntegration").
-		First(&bc).Error; err != nil {
-		return nil, fmt.Errorf("build config not found: configure a git source first")
-	}
+		First(&bc).Error == nil
 
-	if bc.GitRepo == "" {
-		return nil, fmt.Errorf("build config has no git repository configured")
-	}
-
-	// Load the git integration stored on the build config.
-	if bc.GitIntegrationID == nil {
-		return nil, fmt.Errorf("build config has no git integration set — edit the service build source to select one")
-	}
-	var gitIntegration db.GitIntegration
-	if err := s.db.WithContext(ctx).First(&gitIntegration, "id = ?", bc.GitIntegrationID).Error; err != nil {
-		return nil, fmt.Errorf("git integration not found — it may have been deleted")
+	if !hasBc || bc.GitRepo == "" {
+		// No git source — deploy the pre-configured image directly (no build step).
+		if svc.Image == "" {
+			return nil, fmt.Errorf("no image configured and no git source — set an image or configure a git source")
+		}
+		return s.triggerDirectDeploy(ctx, &svc, in.TriggeredBy)
 	}
 
 	// Resolve registry credentials.
@@ -135,15 +129,24 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		return nil, fmt.Errorf("create deployment record: %w", err)
 	}
 
-	// Get a short-lived GitHub installation token using per-integration credentials.
-	if gitIntegration.GHAppID == "" || string(gitIntegration.InstallationID) == "" {
-		s.failDeployment(deployment.ID, "GitHub App not fully configured — complete setup and installation in Integrations")
-		return &deployment, nil
-	}
-	gitToken, err := getInstallationToken(gitIntegration.GHAppID, string(gitIntegration.GHPrivateKey), string(gitIntegration.InstallationID))
-	if err != nil {
-		s.failDeployment(deployment.ID, "failed to get GitHub token: "+err.Error())
-		return &deployment, nil
+	// Resolve git token. Public repos (no GitIntegrationID) use an empty token.
+	gitToken := ""
+	if bc.GitIntegrationID != nil {
+		var gitIntegration db.GitIntegration
+		if err := s.db.WithContext(ctx).First(&gitIntegration, "id = ?", bc.GitIntegrationID).Error; err != nil {
+			s.failDeployment(deployment.ID, "git integration not found — it may have been deleted")
+			return &deployment, nil
+		}
+		if gitIntegration.GHAppID == "" || string(gitIntegration.InstallationID) == "" {
+			s.failDeployment(deployment.ID, "GitHub App not fully configured — complete setup and installation in Integrations")
+			return &deployment, nil
+		}
+		tok, err := getInstallationToken(gitIntegration.GHAppID, string(gitIntegration.GHPrivateKey), string(gitIntegration.InstallationID))
+		if err != nil {
+			s.failDeployment(deployment.ID, "failed to get GitHub token: "+err.Error())
+			return &deployment, nil
+		}
+		gitToken = tok
 	}
 
 	// Launch the pipeline in the background.
@@ -159,6 +162,124 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		registryUser:  registryUser,
 		registryPass:  registryPass,
 	})
+
+	return &deployment, nil
+}
+
+// triggerDirectDeploy deploys a service that already has a pre-configured image
+// (no build step). Handles both public images and private images with a
+// PullRegistryIntegrationID set.
+func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Service, triggeredBy uuid.UUID) (*db.Deployment, error) {
+	if s.k8s == nil {
+		return nil, fmt.Errorf("kubernetes is not configured on this instance (set KUBECONFIG)")
+	}
+	deploymentID := uuid.New()
+	deployment := db.Deployment{
+		Base:      db.Base{ID: deploymentID},
+		ServiceID: svc.ID,
+		Status:    db.DeploymentDeploying,
+		Image:     svc.Image,
+		Log:       fmt.Sprintf("Direct image deploy triggered by user %s\n", triggeredBy),
+	}
+	if err := s.db.WithContext(ctx).Create(&deployment).Error; err != nil {
+		return nil, fmt.Errorf("create deployment record: %w", err)
+	}
+
+	go func() {
+		bgCtx := context.Background()
+		namespace := svc.Project.Slug
+
+		if err := appk8s.EnsureNamespace(bgCtx, s.k8s, namespace); err != nil {
+			s.failDeployment(deploymentID, "failed to ensure namespace: "+err.Error())
+			return
+		}
+
+		// Resolve imagePullSecret for private images.
+		pullSecretName := ""
+		if svc.PullRegistryIntegrationID != nil {
+			var reg db.RegistryIntegration
+			if err := s.db.WithContext(bgCtx).First(&reg, svc.PullRegistryIntegrationID).Error; err != nil {
+				s.failDeployment(deploymentID, "pull registry integration not found")
+				return
+			}
+			pullSecretName = "meshploy-pull-" + svc.PullRegistryIntegrationID.String()[:8]
+			if err := appk8s.EnsureRegistryPullSecret(bgCtx, s.k8s, namespace, pullSecretName, reg.Endpoint, string(reg.Username), string(reg.Password)); err != nil {
+				s.failDeployment(deploymentID, "failed to create pull secret: "+err.Error())
+				return
+			}
+		}
+
+		var svcPorts []db.ServicePort
+		s.db.WithContext(bgCtx).Where("service_id = ?", svc.ID).Find(&svcPorts)
+		portSpecs := toPortSpecs(svcPorts)
+		port := primaryPort(svcPorts)
+
+		nodeName := ""
+		if svc.NodeID != nil {
+			var node db.Node
+			if s.db.WithContext(bgCtx).First(&node, svc.NodeID).Error == nil {
+				nodeName = node.Name
+			}
+		}
+
+		groupEnvs, _ := s.varGroups.CollectEnvVars(bgCtx, svc.ID)
+		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
+		volMounts := resolveServiceVolumeMounts(bgCtx, s.db, svc.ID)
+		probe := buildProbeFromService(svc)
+
+		wp := appk8s.WorkloadParams{
+			Name:                slugify(svc.Name),
+			Namespace:           namespace,
+			Image:               svc.Image,
+			Ports:               portSpecs,
+			Replicas:            int32(svc.Replicas),
+			Env:                 envVars,
+			CPURequest:          svc.CPURequest,
+			CPULimit:            svc.CPULimit,
+			MemoryRequest:       svc.MemoryRequest,
+			MemoryLimit:         svc.MemoryLimit,
+			NodeName:            nodeName,
+			VolumeMounts:        volMounts,
+			LivenessProbe:       probe,
+			ReadinessProbe:      probe,
+			ImagePullSecretName: pullSecretName,
+		}
+		if err := appk8s.ApplyDeployment(bgCtx, s.k8s, wp); err != nil {
+			s.failDeployment(deploymentID, "failed to apply K8s deployment: "+err.Error())
+			return
+		}
+		if err := appk8s.ApplyService(bgCtx, s.k8s, slugify(svc.Name), namespace, portSpecs); err != nil {
+			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
+			return
+		}
+		assignedNPs, err := appk8s.ApplyNodePortService(bgCtx, s.k8s, slugify(svc.Name), namespace, portSpecs)
+		if err != nil {
+			s.failDeployment(deploymentID, "failed to apply K8s NodePort service: "+err.Error())
+			return
+		}
+		for _, sp := range svcPorts {
+			if np, ok := assignedNPs[sp.Name]; ok && np != 0 {
+				s.db.Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
+			}
+		}
+
+		now := time.Now()
+		s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
+			"status":      db.DeploymentSuccess,
+			"log":         deployment.Log + "Deployment applied successfully.",
+			"deployed_at": &now,
+		})
+		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
+			"status": db.ServiceRunning,
+		})
+
+		if s.varGroups != nil {
+			var freshSvc db.Service
+			if err := s.db.WithContext(bgCtx).Preload("Ports").First(&freshSvc, "id = ?", svc.ID).Error; err == nil {
+				_ = s.varGroups.UpsertSystemGroup(bgCtx, &freshSvc, namespace)
+			}
+		}
+	}()
 
 	return &deployment, nil
 }
@@ -252,24 +373,35 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, a.svc.ID)
 	envVars := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), groupEnvs)
 
+	// Ensure imagePullSecret when the built image is in a private registry.
+	pullSecretName := ""
+	if a.registryHost != "" && a.registryUser != "" {
+		pullSecretName = "meshploy-reg-" + slugify(a.svc.Name)
+		if err := appk8s.EnsureRegistryPullSecret(ctx, s.k8s, a.namespace, pullSecretName, a.registryHost, a.registryUser, a.registryPass); err != nil {
+			s.failDeployment(a.deployment.ID, "failed to create pull secret: "+err.Error())
+			return
+		}
+	}
+
 	// Apply K8s Deployment + Service.
 	probe := buildProbeFromService(&a.svc)
 	volMounts := resolveServiceVolumeMounts(ctx, s.db, a.svc.ID)
 	wp := appk8s.WorkloadParams{
-		Name:           slugify(a.svc.Name),
-		Namespace:      a.namespace,
-		Image:          a.imageName,
-		Ports:          portSpecs,
-		Replicas:       int32(a.svc.Replicas),
-		Env:            envVars,
-		CPURequest:     a.svc.CPURequest,
-		CPULimit:       a.svc.CPULimit,
-		MemoryRequest:  a.svc.MemoryRequest,
-		MemoryLimit:    a.svc.MemoryLimit,
-		NodeName:       nodeName,
-		VolumeMounts:   volMounts,
-		LivenessProbe:  probe,
-		ReadinessProbe: probe,
+		Name:                slugify(a.svc.Name),
+		Namespace:           a.namespace,
+		Image:               a.imageName,
+		Ports:               portSpecs,
+		Replicas:            int32(a.svc.Replicas),
+		Env:                 envVars,
+		CPURequest:          a.svc.CPURequest,
+		CPULimit:            a.svc.CPULimit,
+		MemoryRequest:       a.svc.MemoryRequest,
+		MemoryLimit:         a.svc.MemoryLimit,
+		NodeName:            nodeName,
+		VolumeMounts:        volMounts,
+		LivenessProbe:       probe,
+		ReadinessProbe:      probe,
+		ImagePullSecretName: pullSecretName,
 	}
 	if err := appk8s.ApplyDeployment(ctx, s.k8s, wp); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
@@ -384,21 +516,32 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
 	volMounts := resolveServiceVolumeMounts(ctx, s.db, serviceID)
 	probe := buildProbeFromService(&svc)
+
+	pullSecretName := ""
+	if svc.PullRegistryIntegrationID != nil {
+		var reg db.RegistryIntegration
+		if s.db.WithContext(ctx).First(&reg, svc.PullRegistryIntegrationID).Error == nil {
+			pullSecretName = "meshploy-pull-" + svc.PullRegistryIntegrationID.String()[:8]
+			_ = appk8s.EnsureRegistryPullSecret(ctx, s.k8s, svc.Project.Slug, pullSecretName, reg.Endpoint, string(reg.Username), string(reg.Password))
+		}
+	}
+
 	return appk8s.ApplyDeployment(ctx, s.k8s, appk8s.WorkloadParams{
-		Name:           slugify(svc.Name),
-		Namespace:      svc.Project.Slug,
-		Image:          svc.Image,
-		Ports:          portSpecs,
-		Replicas:       int32(svc.Replicas),
-		Env:            envVars,
-		CPURequest:     svc.CPURequest,
-		CPULimit:       svc.CPULimit,
-		MemoryRequest:  svc.MemoryRequest,
-		MemoryLimit:    svc.MemoryLimit,
-		NodeName:       nodeName,
-		VolumeMounts:   volMounts,
-		LivenessProbe:  probe,
-		ReadinessProbe: probe,
+		Name:                slugify(svc.Name),
+		Namespace:           svc.Project.Slug,
+		Image:               svc.Image,
+		Ports:               portSpecs,
+		Replicas:            int32(svc.Replicas),
+		Env:                 envVars,
+		CPURequest:          svc.CPURequest,
+		CPULimit:            svc.CPULimit,
+		MemoryRequest:       svc.MemoryRequest,
+		MemoryLimit:         svc.MemoryLimit,
+		NodeName:            nodeName,
+		VolumeMounts:        volMounts,
+		LivenessProbe:       probe,
+		ReadinessProbe:      probe,
+		ImagePullSecretName: pullSecretName,
 	})
 }
 
