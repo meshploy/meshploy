@@ -37,6 +37,10 @@ type CreateWorkloadInput struct {
 	EnvVars string      // raw .env block, stored as EncryptedString
 	Ports   []PortInput // at least one required; first is used as primary if none flagged
 
+	// PullRegistryIntegrationID — credentials for pulling a private runtime image.
+	// Set at create time for image-source services; nil = public image.
+	PullRegistryIntegrationID *uuid.UUID
+
 	// K8s resource spec — optional, defaults applied by the model
 	CPURequest    string
 	CPULimit      string
@@ -155,6 +159,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		Name:                       in.Name,
 		Type:                       db.ServiceTypeApplication,
 		Image:                      in.Image,
+		PullRegistryIntegrationID:  in.PullRegistryIntegrationID,
 		Status:                     db.ServiceStopped,
 		Replicas:                   replicas,
 		EnvVars:                    db.EncryptedString(in.EnvVars),
