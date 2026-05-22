@@ -161,14 +161,16 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
+	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
+
 	svc := &Services{
 		Auth:            auth,
 		Orgs:            &OrgService{db: db},
 		Projects:        &ProjectService{db: db},
 		Nodes:           nodes,
 		Workloads:       workloads,
-		Stacks:          &StackService{db: db, workload: workloads},
-		Volumes:         &VolumeService{db: db, k8s: k8sClient, deployment: deployments},
+		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes},
+		Volumes:         volumes,
 		Domains:         domains,
 		Routes:          &RouteService{db: db},
 		Deployments:     deployments,

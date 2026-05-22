@@ -32,8 +32,9 @@ function StackLayout() {
   })
 
   const tabs = [
-    { label: "Services", to: "/projects/$id/stacks/$stackId/services" as const },
-    { label: "Editor",   to: "/projects/$id/stacks/$stackId/editor"   as const },
+    { label: "Services",  to: "/projects/$id/stacks/$stackId/services"   as const },
+    { label: "Variables", to: "/projects/$id/stacks/$stackId/variables"  as const },
+    { label: "Editor",    to: "/projects/$id/stacks/$stackId/editor"     as const },
   ]
 
   return (

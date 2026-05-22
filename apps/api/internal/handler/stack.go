@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/meshploy/apps/api/internal/service"
 	"github.com/meshploy/packages/db"
 )
 
@@ -27,8 +28,9 @@ type GetStackOutput struct {
 }
 
 type CreateStackBody struct {
-	Name string `json:"name"`
-	Spec string `json:"spec"`
+	Name      string            `json:"name"`
+	Spec      string            `json:"spec"`
+	Variables map[string]string `json:"variables,omitempty"`
 }
 
 type CreateStackInput struct {
@@ -38,8 +40,9 @@ type CreateStackInput struct {
 }
 
 type UpdateStackBody struct {
-	Name string `json:"name,omitempty"`
-	Spec string `json:"spec"`
+	Name      string            `json:"name,omitempty"`
+	Spec      string            `json:"spec"`
+	Variables map[string]string `json:"variables,omitempty"`
 }
 
 type UpdateStackInput struct {
@@ -51,6 +54,17 @@ type UpdateStackInput struct {
 
 type ListStackServicesOutput struct {
 	Body []db.Service
+}
+
+type ApplyStackBody struct {
+	EnvOverrides map[string]string `json:"env_overrides,omitempty"`
+}
+
+type ApplyStackInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	StackID   string `path:"stackId"`
+	Body      ApplyStackBody
 }
 
 type ApplyResultOutput struct {
@@ -98,7 +112,7 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 		OperationID: "update-stack",
 		Method:      "PUT",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/stacks/{stackId}",
-		Summary:     "Update a stack's spec",
+		Summary:     "Update a stack's spec and variables",
 		Tags:        []string{"Stacks"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.UpdateStack)
@@ -156,7 +170,11 @@ func (h *Handler) CreateStack(ctx context.Context, input *CreateStackInput) (*Ge
 	if err != nil {
 		return nil, err
 	}
-	stack, err := h.svc.Stacks.Create(ctx, projectID, input.Body.Name, input.Body.Spec)
+	stack, err := h.svc.Stacks.Create(ctx, projectID, service.CreateStackInput{
+		Name:      input.Body.Name,
+		Spec:      input.Body.Spec,
+		Variables: input.Body.Variables,
+	})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -186,7 +204,11 @@ func (h *Handler) UpdateStack(ctx context.Context, input *UpdateStackInput) (*Ge
 	if err != nil {
 		return nil, err
 	}
-	stack, err := h.svc.Stacks.Update(ctx, stackID, input.Body.Name, input.Body.Spec)
+	stack, err := h.svc.Stacks.Update(ctx, stackID, service.UpdateStackInput{
+		Name:      input.Body.Name,
+		Spec:      input.Body.Spec,
+		Variables: input.Body.Variables,
+	})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -222,7 +244,7 @@ func (h *Handler) ListStackServices(ctx context.Context, input *StackPathInput) 
 	return &ListStackServicesOutput{Body: services}, nil
 }
 
-func (h *Handler) ApplyStack(ctx context.Context, input *StackPathInput) (*ApplyResultOutput, error) {
+func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*ApplyResultOutput, error) {
 	userID, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -231,7 +253,7 @@ func (h *Handler) ApplyStack(ctx context.Context, input *StackPathInput) (*Apply
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.svc.Stacks.Apply(ctx, stackID, userID)
+	result, err := h.svc.Stacks.Apply(ctx, stackID, userID, input.Body.EnvOverrides)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

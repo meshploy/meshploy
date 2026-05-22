@@ -494,7 +494,8 @@ type Stack struct {
 	Base
 	ProjectID     uuid.UUID   `gorm:"type:uuid;not null;index"                      json:"project_id"`
 	Name          string      `gorm:"not null"                                      json:"name"`
-	Spec          string      `gorm:"type:text;not null;default:''"                 json:"spec"` // raw YAML (Meshploy Compose Spec)
+	Spec          string      `gorm:"type:text;not null;default:''"                 json:"spec"`
+	Variables     JSONObject  `gorm:"type:jsonb;not null;default:'{}'"              json:"variables"`
 	Status        StackStatus `gorm:"type:varchar(10);not null;default:'idle'"      json:"status"`
 	LastAppliedAt *time.Time  `json:"last_applied_at"`
 

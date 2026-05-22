@@ -49,7 +49,7 @@ func TestStackCreate(t *testing.T) {
 	pid := parseUUID(t, projID)
 
 	t.Run("creates stack with spec", func(t *testing.T) {
-		stack, err := svcs.Stacks.Create(ctx, pid, "my-stack", validStackSpec)
+		stack, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "my-stack", Spec: validStackSpec})
 		require.NoError(t, err)
 		assert.NotEmpty(t, stack.ID)
 		assert.Equal(t, "my-stack", stack.Name)
@@ -58,7 +58,7 @@ func TestStackCreate(t *testing.T) {
 	})
 
 	t.Run("empty name returns error", func(t *testing.T) {
-		_, err := svcs.Stacks.Create(ctx, pid, "", validStackSpec)
+		_, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "", Spec: validStackSpec})
 		require.Error(t, err)
 	})
 }
@@ -68,7 +68,7 @@ func TestStackGet(t *testing.T) {
 	svcs, _, projID, _ := setupStackTest(t)
 	pid := parseUUID(t, projID)
 
-	created, err := svcs.Stacks.Create(ctx, pid, "fetch-stack", validStackSpec)
+	created, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "fetch-stack", Spec: validStackSpec})
 	require.NoError(t, err)
 
 	got, err := svcs.Stacks.Get(ctx, created.ID)
@@ -84,10 +84,10 @@ func TestStackApply(t *testing.T) {
 	uid := parseUUID(t, userID)
 
 	t.Run("apply creates services from spec", func(t *testing.T) {
-		stack, err := svcs.Stacks.Create(ctx, pid, "apply-stack", validStackSpec)
+		stack, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "apply-stack", Spec: validStackSpec})
 		require.NoError(t, err)
 
-		result, err := svcs.Stacks.Apply(ctx, stack.ID, uid)
+		result, err := svcs.Stacks.Apply(ctx, stack.ID, uid, nil)
 		require.NoError(t, err)
 		assert.NotNil(t, result.Stack)
 		// Two services defined in the spec — both should be created.
@@ -96,13 +96,13 @@ func TestStackApply(t *testing.T) {
 	})
 
 	t.Run("apply is idempotent — second apply updates not recreates", func(t *testing.T) {
-		stack, err := svcs.Stacks.Create(ctx, pid, "idempotent-stack", validStackSpec)
+		stack, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "idempotent-stack", Spec: validStackSpec})
 		require.NoError(t, err)
 
-		_, err = svcs.Stacks.Apply(ctx, stack.ID, uid)
+		_, err = svcs.Stacks.Apply(ctx, stack.ID, uid, nil)
 		require.NoError(t, err)
 
-		result2, err := svcs.Stacks.Apply(ctx, stack.ID, uid)
+		result2, err := svcs.Stacks.Apply(ctx, stack.ID, uid, nil)
 		require.NoError(t, err)
 		// On second apply nothing is newly created.
 		assert.Empty(t, result2.Created)
@@ -115,7 +115,7 @@ func TestStackDelete(t *testing.T) {
 	svcs, _, projID, _ := setupStackTest(t)
 	pid := parseUUID(t, projID)
 
-	stack, err := svcs.Stacks.Create(ctx, pid, "del-stack", validStackSpec)
+	stack, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "del-stack", Spec: validStackSpec})
 	require.NoError(t, err)
 
 	require.NoError(t, svcs.Stacks.Delete(ctx, stack.ID))
@@ -130,7 +130,7 @@ func TestStackList(t *testing.T) {
 	pid := parseUUID(t, projID)
 
 	for i := range 3 {
-		_, err := svcs.Stacks.Create(ctx, pid, "stack-"+string(rune('a'+i)), "")
+		_, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "stack-" + string(rune('a'+i))})
 		require.NoError(t, err)
 	}
 
