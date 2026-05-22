@@ -753,7 +753,9 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
     setEvents((prev) => prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev])
 
   const config: Record<string, string> =
-    type === "email" ? { address } : secret ? { url, secret } : { url }
+    type === "email" ? { address }
+    : type === "slack" || type === "discord" ? { webhook_url: url }
+    : secret ? { url, secret } : { url }
 
   const mutation = useMutation({
     mutationFn: () => notificationsApi.create(orgId, { name: name.trim(), type, config, events }, token),
@@ -775,10 +777,12 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
         <Field label="Channel type">
           <Select value={type} onValueChange={(v) => v && setType(v as NotificationChannelType)}>
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-              <SelectValue>{type === "email" ? "Email" : "Webhook"}</SelectValue>
+              <SelectValue>{{ webhook: "Webhook", email: "Email", slack: "Slack", discord: "Discord" }[type]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="webhook">Webhook</SelectItem>
+              <SelectItem value="slack">Slack</SelectItem>
+              <SelectItem value="discord">Discord</SelectItem>
               <SelectItem value="email">Email</SelectItem>
             </SelectContent>
           </Select>
@@ -795,37 +799,7 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
         </Field>
 
         {/* Type-specific config */}
-        {type === "webhook" ? (
-          <>
-            <Field label="URL">
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/hooks/meshploy"
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Secret (optional)">
-              <div className="relative">
-                <input
-                  type={showSecret ? "text" : "password"}
-                  value={secret}
-                  onChange={(e) => setSecret(e.target.value)}
-                  placeholder="optional signing secret"
-                  className={cn(inputCls, "pr-9")}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setShowSecret((s) => !s)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
-                >
-                  {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-            </Field>
-          </>
-        ) : (
+        {type === "email" ? (
           <Field label="Email address">
             <input
               type="email"
@@ -835,6 +809,42 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
               className={inputCls}
             />
           </Field>
+        ) : (
+          <>
+            <Field label={type === "webhook" ? "URL" : "Webhook URL"}>
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={
+                  type === "slack" ? "https://hooks.slack.com/services/…"
+                  : type === "discord" ? "https://discord.com/api/webhooks/…"
+                  : "https://example.com/hooks/meshploy"
+                }
+                className={inputCls}
+              />
+            </Field>
+            {type === "webhook" && (
+              <Field label="Secret (optional)">
+                <div className="relative">
+                  <input
+                    type={showSecret ? "text" : "password"}
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
+                    placeholder="optional signing secret"
+                    className={cn(inputCls, "pr-9")}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setShowSecret((s) => !s)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
+                  >
+                    {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </Field>
+            )}
+          </>
         )}
 
         {/* Events */}

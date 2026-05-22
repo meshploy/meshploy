@@ -1,6 +1,6 @@
 import { apiFetch } from "./core"
 
-export type NotificationChannelType = "email" | "webhook"
+export type NotificationChannelType = "email" | "webhook" | "slack" | "discord"
 
 export interface ApiNotificationChannel {
   id: string

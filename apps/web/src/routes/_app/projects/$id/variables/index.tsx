@@ -123,7 +123,7 @@ function VariablesPage() {
       {/* System-managed groups */}
       {systemGroups.length > 0 && (
         <div className="space-y-3">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Service discovery</p>
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Service generated groups</p>
           <div className="grid gap-3 md:grid-cols-2">
             {systemGroups.map((g) => (
               <GroupCard key={g.id} group={g} projectId={projectId} onDelete={() => {}} />

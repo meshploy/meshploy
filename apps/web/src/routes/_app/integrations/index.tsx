@@ -30,6 +30,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   r2: "Cloudflare R2",
   minio: "MinIO",
   slack: "Slack",
+  discord: "Discord",
   webhook: "Webhook",
   email: "Email",
   github: "GitHub",
@@ -570,8 +571,9 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
   onToggle: (enabled: boolean) => void
   isToggling: boolean
 }) {
-  const destination = channel.type === "email"
-    ? channel.config.address
+  const destination =
+    channel.type === "email" ? channel.config.address
+    : channel.type === "slack" || channel.type === "discord" ? channel.config.webhook_url
     : channel.config.url
 
   return (

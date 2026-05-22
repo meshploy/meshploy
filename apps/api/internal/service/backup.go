@@ -24,6 +24,7 @@ type BackupService struct {
 	k8s     kubernetes.Interface
 	restCfg *rest.Config
 	cfg     *config.Config
+	notif   *NotificationService
 	// inFlight prevents duplicate concurrent runs for the same backup config.
 	// Key type: uuid.UUID for service backups, string "sys:<uuid>" for system backups.
 	inFlight sync.Map

@@ -106,6 +106,19 @@ func (s *BackupService) markStart(ctx context.Context, id uuid.UUID) {
 func (s *BackupService) markEnd(ctx context.Context, id uuid.UUID, status db.BackupStatus) {
 	s.db.WithContext(ctx).Model(&db.BackupConfig{}).Where("id = ?", id).
 		Update("last_backup_status", status)
+	if s.notif != nil && (status == db.BackupSuccess || status == db.BackupFailed) {
+		var cfg db.BackupConfig
+		if s.db.WithContext(ctx).Preload("Service.Project").First(&cfg, "id = ?", id).Error == nil {
+			event := "backup.failed"
+			if status == db.BackupSuccess {
+				event = "backup.success"
+			}
+			s.notif.Dispatch(ctx, cfg.Service.Project.OrganizationID, event, NotificationData{
+				ServiceName: cfg.Service.Name,
+				ProjectName: cfg.Service.Project.Name,
+			})
+		}
+	}
 }
 
 func (s *BackupService) markSysStart(ctx context.Context, id uuid.UUID) {
@@ -119,6 +132,16 @@ func (s *BackupService) markSysStart(ctx context.Context, id uuid.UUID) {
 func (s *BackupService) markSysEnd(ctx context.Context, id uuid.UUID, status db.BackupStatus) {
 	s.db.WithContext(ctx).Model(&db.SystemBackupConfig{}).Where("id = ?", id).
 		Update("last_backup_status", status)
+	if s.notif != nil && (status == db.BackupSuccess || status == db.BackupFailed) {
+		var cfg db.SystemBackupConfig
+		if s.db.WithContext(ctx).First(&cfg, "id = ?", id).Error == nil {
+			event := "backup.failed"
+			if status == db.BackupSuccess {
+				event = "backup.success"
+			}
+			s.notif.Dispatch(ctx, cfg.OrganizationID, event, NotificationData{})
+		}
+	}
 }
 
 // ─── Dump command builder ─────────────────────────────────────────────────────
