@@ -375,6 +375,12 @@ type Service struct {
 	// - database: set at creation (e.g. "postgres:15").
 	Image string `json:"image"`
 
+	// PullRegistryIntegrationID is set when the service's runtime image lives in a
+	// private registry and no build is involved (pre-built / external image).
+	// At deploy time this registry integration is used to create a K8s imagePullSecret.
+	// nil = public image (no pull credentials needed).
+	PullRegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"pull_registry_integration_id,omitempty"`
+
 	Status   ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
 	Replicas int           `gorm:"not null;default:1"                          json:"replicas"`
 
@@ -395,12 +401,13 @@ type Service struct {
 	HealthcheckRetries         int32  `gorm:"default:0"             json:"healthcheck_retries,omitempty"`
 	HealthcheckStartPeriodSecs int32  `gorm:"default:0"             json:"healthcheck_start_period_secs,omitempty"`
 
-	Project        Project         `gorm:"foreignKey:ProjectID"                              json:"-"`
-	Node           *Node           `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"     json:"-"`
-	BuildConfig    *BuildConfig    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
-	DatabaseConfig *DatabaseConfig `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
-	Deployments    []Deployment    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"-"`
-	Ports          []ServicePort   `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"   json:"ports,omitempty"`
+	Project                Project              `gorm:"foreignKey:ProjectID"                                         json:"-"`
+	Node                   *Node                `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"               json:"-"`
+	PullRegistryIntegration *RegistryIntegration `gorm:"foreignKey:PullRegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
+	BuildConfig            *BuildConfig         `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
+	DatabaseConfig         *DatabaseConfig      `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
+	Deployments            []Deployment         `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
+	Ports                  []ServicePort        `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"ports,omitempty"`
 }
 
 // ServicePort represents one exposed port on a service.

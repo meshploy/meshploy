@@ -16,9 +16,11 @@ export interface ApiService {
   name: string
   project_id: string
   node_id: string | null
+  stack_id: string | null
   type: "application" | "database"
   status: "running" | "stopped" | "deploying" | "failed"
   image: string
+  pull_registry_integration_id: string | null
   ports: ApiServicePort[]
   replicas: number
   cpu_request: string
@@ -156,6 +158,7 @@ export interface UpdateServiceBody {
   memory_limit?: string
   env_vars?: string
   ports?: PortBody[]   // replaces all ports when set
+  pull_registry_integration_id?: string  // "" = clear (public image), UUID = set
 }
 
 export interface UpdateBuildConfigBody {

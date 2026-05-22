@@ -410,6 +410,8 @@ type PatchWorkloadInput struct {
 		MemoryLimit   *string    `json:"memory_limit,omitempty"`
 		EnvVars       *string    `json:"env_vars,omitempty"`
 		Ports         *[]PortBody `json:"ports,omitempty"` // nil = no change; replaces all ports when set
+		// pull_registry_integration_id: omit = no change, "" = clear (public image), UUID = set
+		PullRegistryIntegrationID *string `json:"pull_registry_integration_id,omitempty"`
 	}
 }
 
@@ -431,6 +433,17 @@ func (h *Handler) PatchWorkload(ctx context.Context, input *PatchWorkloadInput) 
 		MemoryRequest: input.Body.MemoryRequest,
 		MemoryLimit:   input.Body.MemoryLimit,
 		EnvVars:       input.Body.EnvVars,
+	}
+	if input.Body.PullRegistryIntegrationID != nil {
+		in.UpdatePullRegistry = true
+		if *input.Body.PullRegistryIntegrationID != "" {
+			id, err := parseUUID(*input.Body.PullRegistryIntegrationID)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invalid pull_registry_integration_id")
+			}
+			in.PullRegistryIntegrationID = &id
+		}
+		// empty string → PullRegistryIntegrationID stays nil → clears to public image
 	}
 	if input.Body.NodeID != nil {
 		in.UpdateNode = true

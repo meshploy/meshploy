@@ -401,6 +401,11 @@ type UpdateWorkloadInput struct {
 	MemoryLimit   *string
 	EnvVars       *string      // nil = no change
 	Ports         *[]PortInput // nil = no change; replaces all ports when set
+
+	// UpdatePullRegistry controls whether PullRegistryIntegrationID is written.
+	// When true, PullRegistryIntegrationID is applied (nil = clear / public image).
+	UpdatePullRegistry          bool
+	PullRegistryIntegrationID   *uuid.UUID
 }
 
 func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in UpdateWorkloadInput) (*db.Service, error) {
@@ -431,6 +436,9 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	}
 	if in.EnvVars != nil {
 		updates["env_vars"] = db.EncryptedString(*in.EnvVars)
+	}
+	if in.UpdatePullRegistry {
+		updates["pull_registry_integration_id"] = in.PullRegistryIntegrationID // nil → NULL, uuid → set
 	}
 
 	if in.Ports != nil {

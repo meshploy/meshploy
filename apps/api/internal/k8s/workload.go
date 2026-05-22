@@ -44,6 +44,10 @@ type WorkloadParams struct {
 
 	// User-managed volume mounts (backed by standalone PVCs).
 	VolumeMounts []VolumeAttachment
+
+	// ImagePullSecretName is the name of a docker-registry Secret in the same
+	// namespace to use as an imagePullSecret. Empty = public image (no auth needed).
+	ImagePullSecretName string
 }
 
 // VolumeAttachment wires a standalone PVC into a container at a given path.
@@ -122,6 +126,9 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 	}
 	if p.NodeName != "" {
 		podSpec.NodeName = p.NodeName
+	}
+	if p.ImagePullSecretName != "" {
+		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: p.ImagePullSecretName}}
 	}
 
 	desired := &appsv1.Deployment{
@@ -441,6 +448,35 @@ func ListServicePods(ctx context.Context, client kubernetes.Interface, namespace
 		})
 	}
 	return pods, nil
+}
+
+// EnsureRegistryPullSecret creates or updates a docker-registry Secret in the
+// given namespace. The secret is named `name` and holds credentials for `server`.
+// Call this before ApplyDeployment when the image is in a private registry.
+func EnsureRegistryPullSecret(ctx context.Context, client kubernetes.Interface, namespace, name, server, username, password string) error {
+	auth := username + ":" + password
+	dockerConfig := fmt.Sprintf(`{"auths":{%q:{"auth":%q}}}`, server, auth)
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{"managed-by": "meshploy"},
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(dockerConfig),
+		},
+	}
+	_, err := client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	_, err = client.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
+	return err
 }
 
 // DeleteWorkload removes the Deployment and Service for a service.
