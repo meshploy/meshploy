@@ -4,19 +4,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
-	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
 type StackService struct {
 	db       *gorm.DB
 	workload *WorkloadService
+	volumes  *VolumeService
+}
+
+// ---------------------------------------------------------------------------
+// Input types
+// ---------------------------------------------------------------------------
+
+type CreateStackInput struct {
+	Name      string
+	Spec      string
+	Variables map[string]string
+}
+
+type UpdateStackInput struct {
+	Name      string
+	Spec      string
+	Variables map[string]string
 }
 
 // ---------------------------------------------------------------------------
@@ -38,40 +56,44 @@ func (s *StackService) Get(ctx context.Context, stackID uuid.UUID) (*meshdb.Stac
 	return &stack, err
 }
 
-func (s *StackService) Create(ctx context.Context, projectID uuid.UUID, name, spec string) (*meshdb.Stack, error) {
-	if name == "" {
+func (s *StackService) Create(ctx context.Context, projectID uuid.UUID, in CreateStackInput) (*meshdb.Stack, error) {
+	if in.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	vars := strMapToJSONObj(in.Variables)
 	stack := &meshdb.Stack{
 		ProjectID: projectID,
-		Name:      name,
-		Spec:      spec,
+		Name:      in.Name,
+		Spec:      in.Spec,
+		Variables: vars,
 		Status:    meshdb.StackIdle,
 	}
 	err := s.db.WithContext(ctx).Create(stack).Error
 	return stack, err
 }
 
-func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, name, spec string) (*meshdb.Stack, error) {
+func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateStackInput) (*meshdb.Stack, error) {
 	var stack meshdb.Stack
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
 	}
-	updates := map[string]any{}
-	if name != "" {
-		updates["name"] = name
+	updates := map[string]any{"spec": in.Spec}
+	if in.Name != "" {
+		updates["name"] = in.Name
 	}
-	updates["spec"] = spec
-	err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error
-	return &stack, err
+	if in.Variables != nil {
+		updates["variables"] = strMapToJSONObj(in.Variables)
+	}
+	if err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, stackID)
 }
 
 func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
-	// Unlink services (SET NULL on StackID) — handled by the FK constraint.
 	return s.db.WithContext(ctx).Delete(&meshdb.Stack{}, "id = ?", stackID).Error
 }
 
-// ListServices returns all services that belong to a stack.
 func (s *StackService) ListServices(ctx context.Context, stackID uuid.UUID) ([]meshdb.Service, error) {
 	var services []meshdb.Service
 	err := s.db.WithContext(ctx).
@@ -82,192 +104,102 @@ func (s *StackService) ListServices(ctx context.Context, stackID uuid.UUID) ([]m
 }
 
 // ---------------------------------------------------------------------------
-// Apply — reconcile DB records from spec
+// x-meshploy extension types (decoded from compose Extensions map)
 // ---------------------------------------------------------------------------
 
-// composeSpec mirrors the Docker Compose YAML format with x-meshploy extensions.
-type composeSpec struct {
-	Services map[string]composeService `yaml:"services"`
-}
-
-type composeService struct {
-	Image       string              `yaml:"image"`
-	Command     []string            `yaml:"command"`
-	Environment composeEnv          `yaml:"environment"`
-	Ports       []string            `yaml:"ports"`
-	Healthcheck *composeHealthcheck `yaml:"healthcheck"`
-	MeshployExt *meshployExt        `yaml:"x-meshploy"`
-}
-
-type composeHealthcheck struct {
-	Test        []string `yaml:"test"`
-	Interval    string   `yaml:"interval"`
-	Timeout     string   `yaml:"timeout"`
-	Retries     int32    `yaml:"retries"`
-	StartPeriod string   `yaml:"start_period"`
-	Disable     bool     `yaml:"disable"`
-}
-
-// composeEnv handles both Docker Compose environment formats:
-//   map format:  KEY: VALUE
-//   list format: - KEY=VALUE  (or - KEY for passthrough, which is skipped)
-type composeEnv map[string]string
-
-func (e *composeEnv) UnmarshalYAML(value *yaml.Node) error {
-	*e = make(composeEnv)
-	switch value.Kind {
-	case yaml.MappingNode:
-		return value.Decode((*map[string]string)(e))
-	case yaml.SequenceNode:
-		var list []string
-		if err := value.Decode(&list); err != nil {
-			return err
-		}
-		for _, item := range list {
-			parts := strings.SplitN(item, "=", 2)
-			if len(parts) == 2 {
-				(*e)[parts[0]] = parts[1]
-			}
-			// items without "=" are passthrough references — skip
-		}
-		return nil
-	}
-	return nil
-}
-
-// containerPortFromPorts extracts the container (right-hand) port from a
-// Docker Compose ports entry. Handles:
-//   "3000"               → 3000
-//   "4180:3000"          → 3000  (host:container)
-//   "127.0.0.1:4180:3000" → 3000  (ip:host:container)
-func containerPortFromPorts(ports []string) int {
-	if len(ports) == 0 {
-		return 0
-	}
-	parts := strings.Split(strings.TrimSpace(ports[0]), ":")
-	p, err := strconv.Atoi(strings.TrimSpace(parts[len(parts)-1]))
-	if err != nil || p <= 0 {
-		return 0
-	}
-	return p
-}
-
-// parseDurationSeconds converts a Docker Compose duration string (e.g. "30s", "1m")
-// to an integer number of seconds. Returns 0 on parse failure.
-func parseDurationSeconds(s string) int32 {
-	d, err := time.ParseDuration(s)
-	if err != nil || d <= 0 {
-		return 0
-	}
-	return int32(d.Seconds())
-}
-
-// parseHealthcheck converts a composeHealthcheck to a JSON-encoded command string
-// and probe timing fields ready to store on the Service row.
-func parseHealthcheck(hc *composeHealthcheck) (cmd string, interval, timeout, retries, startPeriod int32) {
-	if hc == nil || hc.Disable || len(hc.Test) == 0 {
-		return
-	}
-	var execCmd []string
-	switch hc.Test[0] {
-	case "CMD":
-		execCmd = hc.Test[1:]
-	case "CMD-SHELL":
-		if len(hc.Test) >= 2 {
-			execCmd = []string{"/bin/sh", "-c", strings.Join(hc.Test[1:], " ")}
-		}
-	default:
-		execCmd = hc.Test
-	}
-	if len(execCmd) > 0 {
-		if b, err := json.Marshal(execCmd); err == nil {
-			cmd = string(b)
-		}
-	}
-	interval = parseDurationSeconds(hc.Interval)
-	timeout = parseDurationSeconds(hc.Timeout)
-	retries = hc.Retries
-	startPeriod = parseDurationSeconds(hc.StartPeriod)
-	return
-}
-
 type meshployExt struct {
-	Type     string             `yaml:"type"`
-	Source   *meshploySource    `yaml:"source"`
-	Build    *meshployBuild     `yaml:"build"`
-	Deploy   *meshployDeploy    `yaml:"deploy"`
-	Rollback *meshployRollback  `yaml:"rollback"`
-	Database *meshployDatabase  `yaml:"database"`
+	Type     string            `json:"type"`
+	Source   *meshploySource   `json:"source"`
+	Build    *meshployBuild    `json:"build"`
+	Deploy   *meshployDeploy   `json:"deploy"`
+	Rollback *meshployRollback `json:"rollback"`
+	Database *meshployDatabase `json:"database"`
 }
 
 type meshployDatabase struct {
-	Engine    string `yaml:"engine"`
-	Version   string `yaml:"version"`
-	StorageGB int    `yaml:"storage_gb"`
-	DBName    string `yaml:"db_name"`
-	DBUser    string `yaml:"db_user"`
-	DBPassword string `yaml:"db_password"`
+	Engine     string `json:"engine"`
+	Version    string `json:"version"`
+	StorageGB  int    `json:"storage_gb"`
+	DBName     string `json:"db_name"`
+	DBUser     string `json:"db_user"`
+	DBPassword string `json:"db_password"`
 }
 
 type meshploySource struct {
-	Git       string `yaml:"git"`
-	Branch    string `yaml:"branch"`
-	RootDir   string `yaml:"root_dir"`
-	IntegrationID string `yaml:"integration_id"`
+	Git           string `json:"git"`
+	Branch        string `json:"branch"`
+	RootDir       string `json:"root_dir"`
+	IntegrationID string `json:"integration_id"`
 }
 
 type meshployBuild struct {
-	Builder             string `yaml:"builder"`
-	DockerfilePath      string `yaml:"dockerfile_path"`
-	BuilderNode         string `yaml:"builder_node"`
-	BuilderCPURequest   string `yaml:"builder_cpu_request"`
-	BuilderMemoryRequest string `yaml:"builder_memory_request"`
+	Builder              string `json:"builder"`
+	DockerfilePath       string `json:"dockerfile_path"`
+	BuilderNode          string `json:"builder_node"`
+	BuilderCPURequest    string `json:"builder_cpu_request"`
+	BuilderMemoryRequest string `json:"builder_memory_request"`
 }
 
 type meshployDeploy struct {
-	Replicas      int    `yaml:"replicas"`
-	Port          int    `yaml:"port"`
-	Node          string `yaml:"node"`
-	CPURequest    string `yaml:"cpu_request"`
-	CPULimit      string `yaml:"cpu_limit"`
-	MemoryRequest string `yaml:"memory_request"`
-	MemoryLimit   string `yaml:"memory_limit"`
+	Replicas      int    `json:"replicas"`
+	Port          int    `json:"port"`
+	Node          string `json:"node"`
+	CPURequest    string `json:"cpu_request"`
+	CPULimit      string `json:"cpu_limit"`
+	MemoryRequest string `json:"memory_request"`
+	MemoryLimit   string `json:"memory_limit"`
 }
 
 type meshployRollback struct {
-	Enabled   bool `yaml:"enabled"`
-	Retention int  `yaml:"retention"`
+	Enabled   bool `json:"enabled"`
+	Retention int  `json:"retention"`
 }
+
+// ---------------------------------------------------------------------------
+// Apply result
+// ---------------------------------------------------------------------------
 
 type ApplyResult struct {
-	Stack    *meshdb.Stack
-	Created  []string
-	Updated  []string
-	Deleted  []string
-	Errors   []string
+	Stack   *meshdb.Stack
+	Created []string
+	Updated []string
+	Deleted []string
+	Errors  []string
 }
 
-// Apply parses the stack's spec and reconciles Service + BuildConfig rows.
-// Services no longer present in the spec are unlinked from the stack (not deleted).
-func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID) (*ApplyResult, error) {
+// ---------------------------------------------------------------------------
+// Apply — reconcile DB records from compose-go parsed spec
+// ---------------------------------------------------------------------------
+
+func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string) (*ApplyResult, error) {
 	var stack meshdb.Stack
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
 	}
-
-	if err := s.db.WithContext(ctx).Model(&stack).Updates(map[string]any{
-		"status": meshdb.StackApplying,
-	}).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&stack).Updates(map[string]any{"status": meshdb.StackApplying}).Error; err != nil {
 		return nil, err
 	}
 
 	result := &ApplyResult{Stack: &stack}
 
-	var spec composeSpec
-	if err := yaml.Unmarshal([]byte(stack.Spec), &spec); err != nil {
-		_ = s.db.WithContext(ctx).Model(&stack).Updates(map[string]any{"status": meshdb.StackFailed}).Error
-		return nil, fmt.Errorf("invalid spec YAML: %w", err)
+	// Build environment map: stored variables + one-shot overrides.
+	envMap := jsonObjToStrMap(stack.Variables)
+	for k, v := range envOverrides {
+		envMap[k] = v
 	}
+
+	project, err := loader.LoadWithContext(ctx, composetypes.ConfigDetails{
+		WorkingDir:  "/",
+		ConfigFiles: []composetypes.ConfigFile{{Filename: "docker-compose.yml", Content: []byte(stack.Spec)}},
+		Environment: envMap,
+	}, loader.WithSkipValidation)
+	if err != nil {
+		_ = s.db.WithContext(ctx).Model(&stack).Updates(map[string]any{"status": meshdb.StackFailed}).Error
+		return nil, fmt.Errorf("invalid spec: %w", err)
+	}
+
+	// Resolve top-level named volumes → PVC records.
+	volumesByName := s.resolveNamedVolumes(ctx, stack.ProjectID, stack.Name, project.Volumes, result)
 
 	// Current services in this stack.
 	var existing []meshdb.Service
@@ -277,37 +209,36 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		existingByName[svc.Name] = svc
 	}
 
-	specNames := make(map[string]struct{}, len(spec.Services))
+	specNames := make(map[string]struct{}, len(project.Services))
 
-	for svcName, svcDef := range spec.Services {
+	for _, svcName := range topoSortServices(project.Services) {
+		svcDef := project.Services[svcName]
 		specNames[svcName] = struct{}{}
-		ext := svcDef.MeshployExt
 
-		// Build env vars string (KEY=VALUE lines).
-		var envParts []string
-		for k, v := range svcDef.Environment {
-			envParts = append(envParts, k+"="+v)
-		}
-		envVarsStr := strings.Join(envParts, "\n")
+		ext := decodeExt(svcDef.Extensions)
+		isDatabase := ext != nil && ext.Type == "database"
+		envVarsStr := envFromMapping(svcDef.Environment)
+		hcCmd, hcInterval, hcTimeout, hcRetries, hcStartPeriod := healthcheckFromCompose(svcDef.HealthCheck)
 
 		port := 0
 		if ext != nil && ext.Deploy != nil && ext.Deploy.Port > 0 {
 			port = ext.Deploy.Port
 		}
-		if port == 0 {
-			port = containerPortFromPorts(svcDef.Ports)
+		if port == 0 && len(svcDef.Ports) > 0 {
+			port = int(svcDef.Ports[0].Target)
 		}
 		if port == 0 {
 			port = 3000
 		}
+
 		replicas := 1
-		if ext != nil && ext.Deploy != nil && ext.Deploy.Replicas > 0 {
-			replicas = ext.Deploy.Replicas
-		}
 		cpuRequest, cpuLimit := "100m", "500m"
 		memRequest, memLimit := "128Mi", "512Mi"
 		var nodeID *uuid.UUID
 		if ext != nil && ext.Deploy != nil {
+			if ext.Deploy.Replicas > 0 {
+				replicas = ext.Deploy.Replicas
+			}
 			if ext.Deploy.CPURequest != "" {
 				cpuRequest = ext.Deploy.CPURequest
 			}
@@ -327,11 +258,6 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			}
 		}
 
-		isDatabase := ext != nil && ext.Type == "database"
-
-		// Parse healthcheck probe fields.
-		hcCmd, hcInterval, hcTimeout, hcRetries, hcStartPeriod := parseHealthcheck(svcDef.Healthcheck)
-
 		existingSvc, exists := existingByName[svcName]
 		if !exists {
 			var svc *meshdb.Service
@@ -339,15 +265,15 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 
 			if isDatabase && ext.Database != nil {
 				dbInput := CreateWorkloadInput{
-					StackID:   &stackID,
-					Name:      svcName,
-					Type:      meshdb.ServiceTypeDatabase,
-					Replicas:  replicas,
-					Engine:    meshdb.DatabaseEngine(ext.Database.Engine),
-					Version:   ext.Database.Version,
-					StorageGB: ext.Database.StorageGB,
-					DBName:    ext.Database.DBName,
-					DBUser:    ext.Database.DBUser,
+					StackID:                    &stackID,
+					Name:                       svcName,
+					Type:                       meshdb.ServiceTypeDatabase,
+					Replicas:                   replicas,
+					Engine:                     meshdb.DatabaseEngine(ext.Database.Engine),
+					Version:                    ext.Database.Version,
+					StorageGB:                  ext.Database.StorageGB,
+					DBName:                     ext.Database.DBName,
+					DBUser:                     ext.Database.DBUser,
 					DBPassword:                 ext.Database.DBPassword,
 					HealthcheckCmd:             hcCmd,
 					HealthcheckIntervalSecs:    hcInterval,
@@ -360,19 +286,18 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				}
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
 			} else {
-				stackPorts := []PortInput{{
-					Name:      "http",
-					Port:      port,
-					IsHTTP:    true,
-					IsPrimary: true,
-					IsPublic:  true,
-				}}
 				input := CreateWorkloadInput{
-					StackID:                    &stackID,
-					Name:                       svcName,
-					Type:                       meshdb.ServiceTypeApplication,
-					Image:                      svcDef.Image,
-					Ports:                      stackPorts,
+					StackID:   &stackID,
+					Name:      svcName,
+					Type:      meshdb.ServiceTypeApplication,
+					Image:     svcDef.Image,
+					Ports: []PortInput{{
+						Name:      "http",
+						Port:      port,
+						IsHTTP:    true,
+						IsPrimary: true,
+						IsPublic:  true,
+					}},
 					Replicas:                   replicas,
 					CPURequest:                 cpuRequest,
 					CPULimit:                   cpuLimit,
@@ -393,15 +318,15 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				continue
 			}
 
-			// Create build config if source or builder is specified (app only).
 			if !isDatabase && ext != nil && (ext.Source != nil || ext.Build != nil) {
-				if err := s.applyBuildConfig(ctx, svc.ID, svcDef); err != nil {
+				if err := s.applyBuildConfig(ctx, svc.ID, svcDef, ext); err != nil {
 					result.Errors = append(result.Errors, fmt.Sprintf("%s: build config failed: %v", svcName, err))
 				}
 			}
+
+			s.attachVolumeMounts(ctx, svc.ID, svcDef.Volumes, volumesByName)
 			result.Created = append(result.Created, svcName)
 		} else {
-			// Update existing service.
 			updates := map[string]any{
 				"image":                         svcDef.Image,
 				"replicas":                      replicas,
@@ -420,11 +345,12 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: update failed: %v", svcName, err))
 				continue
 			}
+			s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName)
 			result.Updated = append(result.Updated, svcName)
 		}
 	}
 
-	// Unlink services that are no longer in spec.
+	// Unlink services no longer in spec.
 	for name, svc := range existingByName {
 		if _, ok := specNames[name]; !ok {
 			s.db.WithContext(ctx).Model(&svc).Update("stack_id", nil)
@@ -448,12 +374,75 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	return result, nil
 }
 
-func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID, svcDef composeService) error {
-	ext := svcDef.MeshployExt
+// ---------------------------------------------------------------------------
+// Volume helpers
+// ---------------------------------------------------------------------------
+
+func (s *StackService) resolveNamedVolumes(
+	ctx context.Context,
+	projectID uuid.UUID,
+	stackName string,
+	composeVolumes composetypes.Volumes,
+	result *ApplyResult,
+) map[string]*meshdb.Volume {
+	out := make(map[string]*meshdb.Volume, len(composeVolumes))
+	if s.volumes == nil {
+		return out
+	}
+	for volName := range composeVolumes {
+		storedName := stackName + "-" + volName
+		var existing meshdb.Volume
+		if err := s.db.WithContext(ctx).
+			Where("project_id = ? AND name = ?", projectID, storedName).
+			First(&existing).Error; err == nil {
+			out[volName] = &existing
+			continue
+		}
+		created, err := s.volumes.Create(ctx, projectID, storedName, 5)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("volume %s: %v", volName, err))
+			continue
+		}
+		out[volName] = created
+	}
+	return out
+}
+
+func (s *StackService) attachVolumeMounts(
+	ctx context.Context,
+	serviceID uuid.UUID,
+	mounts []composetypes.ServiceVolumeConfig,
+	volumesByName map[string]*meshdb.Volume,
+) {
+	if s.volumes == nil {
+		return
+	}
+	for _, m := range mounts {
+		if m.Type != "volume" || m.Source == "" {
+			continue
+		}
+		vol, ok := volumesByName[m.Source]
+		if !ok {
+			continue
+		}
+		var existing meshdb.VolumeMount
+		if s.db.WithContext(ctx).
+			Where("volume_id = ? AND service_id = ?", vol.ID, serviceID).
+			First(&existing).Error == nil {
+			continue // already attached
+		}
+		s.volumes.Attach(ctx, vol.ID, serviceID, m.Target) //nolint:errcheck
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Build config
+// ---------------------------------------------------------------------------
+
+func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID, svcDef composetypes.ServiceConfig, ext *meshployExt) error {
 	if ext == nil {
 		return nil
 	}
-
 	builder := meshdb.BuilderNixpacks
 	if ext.Build != nil && ext.Build.Builder != "" {
 		switch ext.Build.Builder {
@@ -469,9 +458,7 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 		builder = meshdb.BuilderImage
 	}
 
-	input := UpdateBuildConfigInput{
-		Builder: &builder,
-	}
+	input := UpdateBuildConfigInput{Builder: &builder}
 	if ext.Source != nil {
 		gitRepo := ext.Source.Git
 		input.GitRepo = &gitRepo
@@ -480,8 +467,7 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 			input.Branch = &branch
 		}
 		if ext.Source.IntegrationID != "" {
-			id, err := uuid.Parse(ext.Source.IntegrationID)
-			if err == nil {
+			if id, err := uuid.Parse(ext.Source.IntegrationID); err == nil {
 				input.GitIntegrationID = &id
 			}
 		}
@@ -509,4 +495,144 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 
 	_, err := s.workload.UpsertBuildConfig(ctx, serviceID, input)
 	return err
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// topoSortServices returns service names in dependency order (dependencies first).
+func topoSortServices(services composetypes.Services) []string {
+	inDegree := make(map[string]int, len(services))
+	successors := make(map[string][]string, len(services))
+
+	for name := range services {
+		if _, ok := inDegree[name]; !ok {
+			inDegree[name] = 0
+		}
+	}
+	for name, svc := range services {
+		for dep := range svc.DependsOn {
+			successors[dep] = append(successors[dep], name)
+			inDegree[name]++
+		}
+	}
+
+	var queue []string
+	for name, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, name)
+		}
+	}
+	sort.Strings(queue)
+
+	var result []string
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		result = append(result, node)
+		next := successors[node]
+		sort.Strings(next)
+		for _, dep := range next {
+			inDegree[dep]--
+			if inDegree[dep] == 0 {
+				queue = append(queue, dep)
+				sort.Strings(queue)
+			}
+		}
+	}
+
+	// Cycle fallback: append any unvisited nodes.
+	visited := make(map[string]struct{}, len(result))
+	for _, n := range result {
+		visited[n] = struct{}{}
+	}
+	var remaining []string
+	for name := range services {
+		if _, ok := visited[name]; !ok {
+			remaining = append(remaining, name)
+		}
+	}
+	sort.Strings(remaining)
+	return append(result, remaining...)
+}
+
+func healthcheckFromCompose(hc *composetypes.HealthCheckConfig) (cmd string, interval, timeout, retries, startPeriod int32) {
+	if hc == nil || hc.Disable || len(hc.Test) == 0 {
+		return
+	}
+	var execCmd []string
+	switch hc.Test[0] {
+	case "CMD":
+		execCmd = hc.Test[1:]
+	case "CMD-SHELL":
+		if len(hc.Test) >= 2 {
+			execCmd = []string{"/bin/sh", "-c", strings.Join(hc.Test[1:], " ")}
+		}
+	default:
+		execCmd = hc.Test
+	}
+	if len(execCmd) > 0 {
+		if b, err := json.Marshal(execCmd); err == nil {
+			cmd = string(b)
+		}
+	}
+	if hc.Interval != nil {
+		interval = int32(time.Duration(*hc.Interval).Seconds())
+	}
+	if hc.Timeout != nil {
+		timeout = int32(time.Duration(*hc.Timeout).Seconds())
+	}
+	if hc.Retries != nil {
+		retries = int32(*hc.Retries)
+	}
+	if hc.StartPeriod != nil {
+		startPeriod = int32(time.Duration(*hc.StartPeriod).Seconds())
+	}
+	return
+}
+
+func envFromMapping(m composetypes.MappingWithEquals) string {
+	parts := make([]string, 0, len(m))
+	for k, v := range m {
+		if v != nil {
+			parts = append(parts, k+"="+*v)
+		}
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\n")
+}
+
+func decodeExt(exts composetypes.Extensions) *meshployExt {
+	raw, ok := exts["x-meshploy"]
+	if !ok {
+		return nil
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var ext meshployExt
+	if err := json.Unmarshal(b, &ext); err != nil {
+		return nil
+	}
+	return &ext
+}
+
+func strMapToJSONObj(m map[string]string) meshdb.JSONObject {
+	obj := make(meshdb.JSONObject, len(m))
+	for k, v := range m {
+		obj[k] = v
+	}
+	return obj
+}
+
+func jsonObjToStrMap(obj meshdb.JSONObject) map[string]string {
+	m := make(map[string]string, len(obj))
+	for k, v := range obj {
+		if sv, ok := v.(string); ok {
+			m[k] = sv
+		}
+	}
+	return m
 }
