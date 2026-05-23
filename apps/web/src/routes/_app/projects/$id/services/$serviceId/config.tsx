@@ -16,9 +16,7 @@ import CodeMirror from "@uiw/react-codemirror"
 import {
   services as servicesApi,
   buildConfigs as buildConfigsApi,
-  gitIntegrations as gitApi,
   nodes as nodesApi,
-  registries as registryApi,
   volumes as volumesApi,
   variableGroups as groupsApi,
   toNode,
@@ -32,7 +30,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
 import { Input } from "@/components/ui/input"
-import { SegmentedControl } from "@/components/ui/segmented-control"
+import { SourceFields, type SourceState } from "@/components/services/source-fields"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/config"
@@ -454,19 +452,6 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
   )
 
-  const { data: gitList = [] } = useQuery({
-    queryKey: ["git-integrations", orgId],
-    queryFn: () => gitApi.list(orgId, token),
-    enabled: !!orgId,
-  })
-  const connectedGit = gitList.filter((g) => g.connected)
-
-  const { data: registryList = [] } = useQuery({
-    queryKey: ["registry-integrations", orgId],
-    queryFn: () => registryApi.list(orgId, token),
-    enabled: !!orgId,
-  })
-
   // ── Form state ────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
     source: "git" as "git" | "image",
@@ -536,20 +521,6 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasVolume])
 
-  const { data: repoList = [], isFetching: reposFetching } = useQuery({
-    queryKey: ["git-repos", orgId, form.gitIntegrationId],
-    queryFn: () => gitApi.repos(orgId, form.gitIntegrationId, token),
-    enabled: !!form.gitIntegrationId,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const { data: branchList = [], isFetching: branchesFetching } = useQuery({
-    queryKey: ["git-branches", orgId, form.gitIntegrationId, form.gitRepo],
-    queryFn: () => gitApi.branches(orgId, form.gitIntegrationId, form.gitRepo, token),
-    enabled: !!form.gitIntegrationId && !!form.gitRepo,
-    staleTime: 2 * 60 * 1000,
-  })
-
   // ── Save ──────────────────────────────────────────────────────────────────
   const mutation = useMutation({
     mutationFn: async () => {
@@ -602,172 +573,10 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     <div className="space-y-8">
       {/* ── Source ────────────────────────────────────────────── */}
       <Section title="Source" subtitle="Where should Meshploy pull the code or image from?">
-        <SegmentedControl
-          value={form.source}
-          onValueChange={(v) => patch({ source: v as "git" | "image" })}
-          options={[
-            { value: "git",   label: "Git repository" },
-            { value: "image", label: "Docker image" },
-          ]}
-          className="text-sm"
+        <SourceFields
+          value={form as SourceState}
+          onChange={patch}
         />
-
-        {form.source === "image" ? (
-          <div className="space-y-4">
-            <Field label="Image">
-              <input value={form.image} onChange={(e) => patch({ image: e.target.value })}
-                placeholder="nginx:alpine" className={inputCls} />
-            </Field>
-            <div className="space-y-3">
-              <SegmentedControl
-                value={form.imageVisibility}
-                onValueChange={(v) => patch({ imageVisibility: v as "public" | "private" })}
-                options={[
-                  { value: "public",  label: "Public image" },
-                  { value: "private", label: "Private registry" },
-                ]}
-                className="text-sm"
-              />
-              {form.imageVisibility === "private" && (
-                <Field label="Pull registry">
-                  <Select value={form.pullRegistryIntegrationId} onValueChange={(v) => patch({ pullRegistryIntegrationId: v ?? "" })}>
-                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                      <SelectValue placeholder={registryList.length === 0 ? "No registries — add one in Integrations" : "Select a registry…"}>
-                        {registryList.find((r) => r.id === form.pullRegistryIntegrationId)?.name}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {registryList.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="space-y-3">
-              <SegmentedControl
-                value={form.gitVisibility}
-                onValueChange={(v) => patch({ gitVisibility: v as "public" | "private", gitIntegrationId: "", gitRepo: "", gitBranch: "main" })}
-                options={[
-                  { value: "public",  label: "Public repo" },
-                  { value: "private", label: "Private repo" },
-                ]}
-                className="text-sm"
-              />
-              {form.gitVisibility === "private" && (
-                <Field label="Git integration">
-                  <Select value={form.gitIntegrationId} onValueChange={(v) => patch({ gitIntegrationId: v ?? "", gitRepo: "", gitBranch: "" })}>
-                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                      <SelectValue placeholder={connectedGit.length === 0 ? "No connected integrations" : "Select a git integration…"}>
-                        {connectedGit.find((g) => g.id === form.gitIntegrationId)?.name}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {connectedGit.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              {form.gitVisibility === "private" ? (
-                <Field label={reposFetching ? "Repository (loading…)" : "Repository"}>
-                  <Select
-                    value={form.gitRepo}
-                    onValueChange={(v) => {
-                      const repo = repoList.find((r) => r.full_name === v)
-                      patch({ gitRepo: v ?? "", gitBranch: repo?.default_branch ?? form.gitBranch })
-                    }}
-                    disabled={!form.gitIntegrationId || reposFetching}
-                  >
-                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                      <SelectValue placeholder={!form.gitIntegrationId ? "Select an integration first" : reposFetching ? "Loading…" : "Select a repository…"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {form.gitRepo && !repoList.find((r) => r.full_name === form.gitRepo) && (
-                        <SelectItem value={form.gitRepo}>{form.gitRepo}</SelectItem>
-                      )}
-                      {repoList.map((r) => <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              ) : (
-                <Field label="Repository URL">
-                  <input
-                    value={form.gitRepo}
-                    onChange={(e) => patch({ gitRepo: e.target.value })}
-                    placeholder="https://github.com/owner/repo"
-                    className={inputCls}
-                  />
-                </Field>
-              )}
-
-              {form.gitVisibility === "private" ? (
-                <Field label={branchesFetching ? "Branch (loading…)" : "Branch"}>
-                  <Select
-                    value={form.gitBranch}
-                    onValueChange={(v) => patch({ gitBranch: v ?? "main" })}
-                    disabled={!form.gitIntegrationId || !form.gitRepo || branchesFetching}
-                  >
-                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                      <SelectValue placeholder={!form.gitRepo ? "Select a repo first" : branchesFetching ? "Loading…" : "Select a branch…"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {form.gitBranch && !branchList.find((b) => b === form.gitBranch) && (
-                        <SelectItem value={form.gitBranch}>{form.gitBranch}</SelectItem>
-                      )}
-                      {branchList.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              ) : (
-                <Field label="Branch">
-                  <input
-                    value={form.gitBranch}
-                    onChange={(e) => patch({ gitBranch: e.target.value })}
-                    placeholder="main"
-                    className={inputCls}
-                  />
-                </Field>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Builder">
-                <Select value={form.builder} onValueChange={(v) => patch({ builder: (v ?? "railpack") as typeof form.builder })}>
-                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="railpack">Railpack</SelectItem>
-                    <SelectItem value="dockerfile">Dockerfile</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              {form.builder === "dockerfile" && (
-                <Field label="Dockerfile path">
-                  <input value={form.dockerfilePath} onChange={(e) => patch({ dockerfilePath: e.target.value })} className={inputCls} />
-                </Field>
-              )}
-            </div>
-
-            <Field label="Registry (push destination)">
-              <Select value={form.registryIntegrationId} onValueChange={(v) => patch({ registryIntegrationId: v ?? "" })}>
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue placeholder={registryList.length === 0 ? "No registries — add one in Integrations" : "Select a registry…"}>
-                    {registryList.find((r) => r.id === form.registryIntegrationId)?.name}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {registryList.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        )}
       </Section>
 
       {/* ── Build ─────────────────────────────────────────────── */}
