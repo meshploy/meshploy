@@ -105,7 +105,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ steps.meta.outputs.version }}
+          build-args: VERSION=${{ startsWith(github.ref, 'refs/tags/') && steps.meta.outputs.version || 'dev' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
