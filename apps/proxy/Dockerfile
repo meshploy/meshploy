@@ -32,3 +32,4 @@ WORKDIR /app
 COPY --from=builder /out/proxy ./proxy
 EXPOSE 8081
 ENTRYPOINT ["./proxy"]
+# channel: main/latest

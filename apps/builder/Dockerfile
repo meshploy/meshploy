@@ -71,3 +71,4 @@ RUN chmod +x /usr/local/bin/meshploy-build
 WORKDIR /root
 
 ENTRYPOINT ["/usr/local/bin/meshploy-build"]
+# channel: main/latest
