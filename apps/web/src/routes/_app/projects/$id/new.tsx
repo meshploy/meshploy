@@ -1946,7 +1946,7 @@ function StackForm({ projectId }: { projectId: string }) {
                   { value: "file", label: "Compose file only" },
                   { value: "repo", label: "Whole repo" },
                 ]}
-                className="text-sm"
+                className="text-sm w-fit"
               />
               <p className="text-xs text-muted-foreground mt-1">
                 {fetchMode === "file"
