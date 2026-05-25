@@ -44,6 +44,7 @@ import {
   stacks as stacksApi,
   volumes as volumesApi,
   variableGroups as groupsApi,
+  gitIntegrations as gitApi,
   toNode,
   type CreateServiceBody,
   type ApiNode,
@@ -1681,6 +1682,10 @@ const DEFAULT_STACK_SPEC = `services:
         port: 3000
 `
 
+type StackSourceMode = "raw" | "git"
+type StackGitVisibility = "public" | "private"
+type StackFetchMode = "file" | "repo"
+
 function StackForm({ projectId }: { projectId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
@@ -1690,9 +1695,60 @@ function StackForm({ projectId }: { projectId: string }) {
   const [name, setName] = useState("")
   const [spec, setSpec] = useState(DEFAULT_STACK_SPEC)
 
+  // Git source state
+  const [sourceMode, setSourceMode] = useState<StackSourceMode>("raw")
+  const [gitVisibility, setGitVisibility] = useState<StackGitVisibility>("public")
+  const [gitIntegrationId, setGitIntegrationId] = useState("")
+  const [gitRepo, setGitRepo] = useState("")
+  const [gitBranch, setGitBranch] = useState("main")
+  const [gitPath, setGitPath] = useState("docker-compose.yml")
+  const [fetchMode, setFetchMode] = useState<StackFetchMode>("file")
+
+  const { data: gitList = [] } = useQuery({
+    queryKey: ["git-integrations", orgId],
+    queryFn: () => gitApi.list(orgId!, token),
+    enabled: !!orgId && sourceMode === "git" && gitVisibility === "private",
+  })
+  const connectedGit = gitList.filter((g) => g.connected)
+
+  const { data: repoList = [], isFetching: reposFetching } = useQuery({
+    queryKey: ["git-repos", orgId, gitIntegrationId],
+    queryFn: () => gitApi.repos(orgId!, gitIntegrationId, token),
+    enabled: !!gitIntegrationId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: branchList = [], isFetching: branchesFetching } = useQuery({
+    queryKey: ["git-branches", orgId, gitIntegrationId, gitRepo],
+    queryFn: () => gitApi.branches(orgId!, gitIntegrationId, gitRepo, token),
+    enabled: !!gitIntegrationId && !!gitRepo,
+    staleTime: 2 * 60 * 1000,
+  })
+
+  function buildCreateBody() {
+    if (sourceMode === "git") {
+      return {
+        name: name.trim(),
+        git_mode: fetchMode,
+        git_repo: gitRepo.trim(),
+        git_branch: gitBranch.trim() || "main",
+        git_path: gitPath.trim() || "docker-compose.yml",
+        git_integration_id: gitVisibility === "private" ? gitIntegrationId || null : null,
+      }
+    }
+    return { name: name.trim(), spec }
+  }
+
+  const canCreate =
+    name.trim().length > 0 &&
+    (sourceMode === "raw"
+      ? true
+      : gitRepo.trim().length > 0 &&
+        gitBranch.trim().length > 0 &&
+        (gitVisibility === "public" || gitIntegrationId.length > 0))
+
   const createMutation = useMutation({
-    mutationFn: () =>
-      stacksApi.create(orgId!, projectId, { name: name.trim(), spec }, token),
+    mutationFn: () => stacksApi.create(orgId!, projectId, buildCreateBody(), token),
     onSuccess: (stack) => {
       queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
       queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
@@ -1705,8 +1761,12 @@ function StackForm({ projectId }: { projectId: string }) {
 
   const createAndApplyMutation = useMutation({
     mutationFn: async () => {
-      const stack = await stacksApi.create(orgId!, projectId, { name: name.trim(), spec }, token)
-      await stacksApi.apply(orgId!, projectId, stack.id, token)
+      const stack = await stacksApi.create(orgId!, projectId, buildCreateBody(), token)
+      if (sourceMode === "git") {
+        await stacksApi.sync(orgId!, projectId, stack.id, token)
+      } else {
+        await stacksApi.apply(orgId!, projectId, stack.id, token)
+      }
       return stack
     },
     onSuccess: (stack) => {
@@ -1719,7 +1779,6 @@ function StackForm({ projectId }: { projectId: string }) {
     },
   })
 
-  const canCreate = name.trim().length > 0
   const isPending = createMutation.isPending || createAndApplyMutation.isPending
   const error = (createMutation.error || createAndApplyMutation.error) as Error | null
 
@@ -1736,8 +1795,171 @@ function StackForm({ projectId }: { projectId: string }) {
         </Field>
       </Section>
 
-      <Section title="Compose Spec" subtitle="Docker Compose YAML with optional x-meshploy extensions">
-        <StackEditor value={spec} onChange={setSpec} minHeight="360px" />
+      <Section title="Source" subtitle="Provide a Compose spec inline or pull it from a git repository.">
+        <SegmentedControl
+          value={sourceMode}
+          onValueChange={(v) => setSourceMode(v as StackSourceMode)}
+          options={[
+            { value: "raw", label: "Inline" },
+            { value: "git", label: "Git" },
+          ]}
+          className="text-sm"
+        />
+
+        {sourceMode === "git" ? (
+          <div className="space-y-4 mt-4">
+            <SegmentedControl
+              value={gitVisibility}
+              onValueChange={(v) => {
+                setGitVisibility(v as StackGitVisibility)
+                setGitIntegrationId("")
+                setGitRepo("")
+                setGitBranch("main")
+              }}
+              options={[
+                { value: "public",  label: "Public" },
+                { value: "private", label: "Private" },
+              ]}
+              className="text-sm"
+            />
+
+            {gitVisibility === "private" && (
+              <Field label="Git integration" required>
+                <Select
+                  value={gitIntegrationId}
+                  onValueChange={(v) => {
+                    setGitIntegrationId(v ?? "")
+                    setGitRepo("")
+                    setGitBranch("main")
+                  }}
+                >
+                  <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                    <SelectValue
+                      placeholder={
+                        connectedGit.length === 0
+                          ? "No connected integrations — add one in Integrations"
+                          : "Select a git integration…"
+                      }
+                    >
+                      {connectedGit.find((g) => g.id === gitIntegrationId)?.name}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {connectedGit.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              {gitVisibility === "private" ? (
+                <Field label={reposFetching ? "Repository (loading…)" : "Repository"} required>
+                  <Select
+                    value={gitRepo}
+                    onValueChange={(v) => {
+                      const repo = repoList.find((r) => r.full_name === v)
+                      setGitRepo(v ?? "")
+                      setGitBranch(repo?.default_branch ?? "main")
+                    }}
+                    disabled={!gitIntegrationId || reposFetching}
+                  >
+                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                      <SelectValue
+                        placeholder={
+                          !gitIntegrationId
+                            ? "Select an integration first"
+                            : reposFetching
+                            ? "Loading repositories…"
+                            : repoList.length === 0
+                            ? "No repositories found"
+                            : "Select a repository…"
+                        }
+                      >
+                        {gitRepo}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {repoList.map((r) => (
+                        <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : (
+                <Field label="Repository URL" required>
+                  <input
+                    value={gitRepo}
+                    onChange={(e) => setGitRepo(e.target.value)}
+                    placeholder="https://github.com/org/repo"
+                    className={inputCls}
+                  />
+                </Field>
+              )}
+
+              {gitVisibility === "private" ? (
+                <Field label={branchesFetching ? "Branch (loading…)" : "Branch"} required>
+                  <Select
+                    value={gitBranch}
+                    onValueChange={(v) => setGitBranch(v ?? "main")}
+                    disabled={!gitRepo || branchesFetching}
+                  >
+                    <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                      <SelectValue placeholder={!gitRepo ? "Select a repo first" : "Select a branch…"}>
+                        {gitBranch}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branchList.map((b) => (
+                        <SelectItem key={b} value={b}>{b}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : (
+                <Field label="Branch" required>
+                  <input
+                    value={gitBranch}
+                    onChange={(e) => setGitBranch(e.target.value)}
+                    placeholder="main"
+                    className={inputCls}
+                  />
+                </Field>
+              )}
+            </div>
+
+            <Field label="Compose file path">
+              <input
+                value={gitPath}
+                onChange={(e) => setGitPath(e.target.value)}
+                placeholder="docker-compose.yml"
+                className={inputCls}
+              />
+            </Field>
+
+            <Field label="Fetch mode">
+              <SegmentedControl
+                value={fetchMode}
+                onValueChange={(v) => setFetchMode(v as StackFetchMode)}
+                options={[
+                  { value: "file", label: "Compose file only" },
+                  { value: "repo", label: "Whole repo" },
+                ]}
+                className="text-sm"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {fetchMode === "file"
+                  ? "Only the Compose file is fetched. Use this when all images are pre-built."
+                  : "The full repo is cloned so build contexts (e.g. ./frontend) can be resolved."}
+              </p>
+            </Field>
+          </div>
+        ) : (
+          <div className="mt-4">
+            <StackEditor value={spec} onChange={setSpec} minHeight="360px" />
+          </div>
+        )}
       </Section>
 
       {error && (
@@ -1762,7 +1984,7 @@ function StackForm({ projectId }: { projectId: string }) {
           onClick={() => createAndApplyMutation.mutate()}
         >
           {createAndApplyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Create & Apply
+          {sourceMode === "git" ? "Create & Sync" : "Create & Apply"}
         </Button>
       </div>
     </div>

@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -29,12 +34,34 @@ type CreateStackInput struct {
 	Name      string
 	Spec      string
 	Variables map[string]string
+
+	// Git source — set when git_mode != ""
+	GitMode          meshdb.StackGitMode
+	GitRepo          string
+	GitBranch        string
+	GitPath          string
+	GitIntegrationID *uuid.UUID
 }
 
 type UpdateStackInput struct {
 	Name      string
 	Spec      string
 	Variables map[string]string
+
+	// Git source
+	GitMode          meshdb.StackGitMode
+	GitRepo          string
+	GitBranch        string
+	GitPath          string
+	UpdateGitIntegration  bool       // true = apply GitIntegrationID (even if nil, to clear it)
+	GitIntegrationID *uuid.UUID
+}
+
+// SyncResult is returned by Sync after fetching and applying the spec from git.
+type SyncResult struct {
+	*ApplyResult
+	SuggestedMode meshdb.StackGitMode // non-empty when current mode seems wrong
+	Warning       string              // human-readable explanation for SuggestedMode
 }
 
 // ---------------------------------------------------------------------------
@@ -60,13 +87,26 @@ func (s *StackService) Create(ctx context.Context, projectID uuid.UUID, in Creat
 	if in.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	gitPath := in.GitPath
+	if gitPath == "" {
+		gitPath = "docker-compose.yml"
+	}
+	gitBranch := in.GitBranch
+	if gitBranch == "" {
+		gitBranch = "main"
+	}
 	vars := strMapToJSONObj(in.Variables)
 	stack := &meshdb.Stack{
-		ProjectID: projectID,
-		Name:      in.Name,
-		Spec:      in.Spec,
-		Variables: vars,
-		Status:    meshdb.StackIdle,
+		ProjectID:        projectID,
+		Name:             in.Name,
+		Spec:             in.Spec,
+		Variables:        vars,
+		Status:           meshdb.StackIdle,
+		GitMode:          in.GitMode,
+		GitRepo:          in.GitRepo,
+		GitBranch:        gitBranch,
+		GitPath:          gitPath,
+		GitIntegrationID: in.GitIntegrationID,
 	}
 	err := s.db.WithContext(ctx).Create(stack).Error
 	return stack, err
@@ -77,12 +117,21 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
 	}
-	updates := map[string]any{"spec": in.Spec}
+	updates := map[string]any{
+		"spec":       in.Spec,
+		"git_mode":   in.GitMode,
+		"git_repo":   in.GitRepo,
+		"git_branch": in.GitBranch,
+		"git_path":   in.GitPath,
+	}
 	if in.Name != "" {
 		updates["name"] = in.Name
 	}
 	if in.Variables != nil {
 		updates["variables"] = strMapToJSONObj(in.Variables)
+	}
+	if in.UpdateGitIntegration {
+		updates["git_integration_id"] = in.GitIntegrationID
 	}
 	if err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error; err != nil {
 		return nil, err
@@ -92,6 +141,150 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 
 func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
 	return s.db.WithContext(ctx).Delete(&meshdb.Stack{}, "id = ?", stackID).Error
+}
+
+// Sync fetches the compose spec from the stack's git source, updates Spec,
+// detects mode mismatches, then calls Apply.
+func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy uuid.UUID) (*SyncResult, error) {
+	var stack meshdb.Stack
+	if err := s.db.WithContext(ctx).Preload("GitIntegration").First(&stack, "id = ?", stackID).Error; err != nil {
+		return nil, err
+	}
+	if stack.GitMode == meshdb.StackGitModeRaw || stack.GitRepo == "" {
+		return nil, fmt.Errorf("stack has no git source configured")
+	}
+
+	spec, sha, err := s.fetchSpec(ctx, &stack)
+	if err != nil {
+		return nil, fmt.Errorf("fetch spec: %w", err)
+	}
+
+	suggestedMode, warning := detectModeMismatch(stack.GitMode, spec)
+
+	if err := s.db.WithContext(ctx).Model(&stack).Updates(map[string]any{
+		"spec":               spec,
+		"git_last_synced_at": time.Now(),
+		"git_last_sync_sha":  sha,
+	}).Error; err != nil {
+		return nil, err
+	}
+	stack.Spec = spec
+
+	applyResult, err := s.Apply(ctx, stackID, triggeredBy, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &SyncResult{
+		ApplyResult:   applyResult,
+		SuggestedMode: suggestedMode,
+		Warning:       warning,
+	}, nil
+}
+
+// fetchSpec retrieves the compose file content from the stack's git source.
+// Returns the spec content and the commit SHA (best-effort; empty string if unavailable).
+func (s *StackService) fetchSpec(ctx context.Context, stack *meshdb.Stack) (spec, sha string, err error) {
+	token := ""
+	if stack.GitIntegration != nil {
+		gi := stack.GitIntegration
+		if gi.GHAppID != "" && string(gi.InstallationID) != "" {
+			token, err = getInstallationToken(gi.GHAppID, string(gi.GHPrivateKey), string(gi.InstallationID))
+			if err != nil {
+				return "", "", fmt.Errorf("get github token: %w", err)
+			}
+		} else {
+			// PAT or OAuth access token stored in InstallationID field
+			token = string(gi.InstallationID)
+		}
+	}
+
+	switch stack.GitMode {
+	case meshdb.StackGitModeFile:
+		spec, sha, err = fetchRawFile(ctx, stack.GitRepo, stack.GitBranch, stack.GitPath, token)
+	case meshdb.StackGitModeRepo:
+		spec, sha, err = cloneAndReadFile(ctx, stack.GitRepo, stack.GitBranch, stack.GitPath, token)
+	default:
+		err = fmt.Errorf("unsupported git mode: %q", stack.GitMode)
+	}
+	return
+}
+
+// fetchRawFile fetches a single file from a git repo via the GitHub/GitLab raw-content API.
+func fetchRawFile(ctx context.Context, repoURL, branch, filePath, token string) (content, sha string, err error) {
+	rawURL, err := toRawURL(repoURL, branch, filePath)
+	if err != nil {
+		return "", "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", "", err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("fetch %s: HTTP %d", rawURL, resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", err
+	}
+	// SHA not available from raw file fetch; caller accepts empty string.
+	return string(body), "", nil
+}
+
+// cloneAndReadFile does a shallow clone and reads the target file from the working tree.
+func cloneAndReadFile(ctx context.Context, repoURL, branch, filePath, token string) (content, sha string, err error) {
+	dir, err := cloneRepo(ctx, repoURL, branch, token)
+	if err != nil {
+		return "", "", err
+	}
+	data, err := readFileFromClone(dir, filePath)
+	if err != nil {
+		return "", "", fmt.Errorf("read %s from clone: %w", filePath, err)
+	}
+	sha, _ = headSHA(dir)
+	return string(data), sha, nil
+}
+
+// detectModeMismatch parses the spec and advises whether the current git mode is appropriate.
+func detectModeMismatch(mode meshdb.StackGitMode, spec string) (suggestedMode meshdb.StackGitMode, warning string) {
+	hasLocalContext := specHasLocalBuildContext(spec)
+	switch {
+	case mode == meshdb.StackGitModeFile && hasLocalContext:
+		return meshdb.StackGitModeRepo,
+			"This compose file uses local build contexts (build.context with relative paths). Switch to 'Whole repo' mode so build jobs can access the source directories."
+	case mode == meshdb.StackGitModeRepo && !hasLocalContext:
+		return meshdb.StackGitModeFile,
+			"This compose file has no local build contexts. 'Compose file only' mode is sufficient and avoids cloning the full repository."
+	}
+	return "", ""
+}
+
+// specHasLocalBuildContext returns true when any service in the spec
+// uses a relative build.context path (indicating the full repo is needed).
+func specHasLocalBuildContext(spec string) bool {
+	project, err := loader.LoadWithContext(context.Background(), composetypes.ConfigDetails{
+		WorkingDir:  "/",
+		ConfigFiles: []composetypes.ConfigFile{{Filename: "docker-compose.yml", Content: []byte(spec)}},
+	}, loader.WithSkipValidation)
+	if err != nil {
+		return false
+	}
+	for _, svc := range project.Services {
+		if svc.Build != nil {
+			ctx := svc.Build.Context
+			if ctx != "" && !strings.HasPrefix(ctx, "http://") && !strings.HasPrefix(ctx, "https://") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *StackService) ListServices(ctx context.Context, stackID uuid.UUID) ([]meshdb.Service, error) {
@@ -617,6 +810,62 @@ func decodeExt(exts composetypes.Extensions) *meshployExt {
 		return nil
 	}
 	return &ext
+}
+
+// ---------------------------------------------------------------------------
+// Git helpers
+// ---------------------------------------------------------------------------
+
+// toRawURL converts a repo URL + branch + file path to a raw-content URL
+// for GitHub (github.com → raw.githubusercontent.com) and GitLab (raw API).
+func toRawURL(repoURL, branch, filePath string) (string, error) {
+	filePath = strings.TrimPrefix(filePath, "/")
+	switch {
+	case strings.Contains(repoURL, "github.com"):
+		// https://github.com/owner/repo  →  https://raw.githubusercontent.com/owner/repo/branch/path
+		repo := strings.TrimSuffix(strings.TrimPrefix(repoURL, "https://github.com/"), ".git")
+		return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repo, branch, filePath), nil
+	case strings.Contains(repoURL, "gitlab.com") || strings.Contains(repoURL, "gitlab"):
+		// https://gitlab.com/owner/repo  →  https://gitlab.com/owner/repo/-/raw/branch/path
+		base := strings.TrimSuffix(repoURL, ".git")
+		return fmt.Sprintf("%s/-/raw/%s/%s", base, branch, filePath), nil
+	default:
+		return "", fmt.Errorf("unsupported git host for file-only fetch: %s", repoURL)
+	}
+}
+
+// cloneRepo does a shallow clone into a temp directory and returns the path.
+func cloneRepo(ctx context.Context, repoURL, branch, token string) (string, error) {
+	dir, err := os.MkdirTemp("", "meshploy-stack-*")
+	if err != nil {
+		return "", err
+	}
+	cloneURL := repoURL
+	if token != "" {
+		// Embed token in URL for HTTPS auth.
+		cloneURL = strings.Replace(repoURL, "https://", "https://x-access-token:"+token+"@", 1)
+	}
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", branch, cloneURL, dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", fmt.Errorf("git clone: %w — %s", err, strings.TrimSpace(string(out)))
+	}
+	return dir, nil
+}
+
+// readFileFromClone reads a file from a cloned repo directory.
+func readFileFromClone(dir, filePath string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(dir, filepath.Clean(filePath)))
+}
+
+// headSHA returns the HEAD commit SHA from a cloned repo directory.
+func headSHA(dir string) (string, error) {
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func strMapToJSONObj(m map[string]string) meshdb.JSONObject {

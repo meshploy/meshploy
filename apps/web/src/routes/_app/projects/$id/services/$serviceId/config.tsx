@@ -1,8 +1,8 @@
-import { createFileRoute, useParams } from "@tanstack/react-router"
+import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ChevronDown, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X } from "lucide-react"
+import { AlertTriangle, ChevronDown, ExternalLink, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -573,10 +573,27 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     <div className="space-y-8">
       {/* ── Source ────────────────────────────────────────────── */}
       <Section title="Source" subtitle="Where should Meshploy pull the code or image from?">
-        <SourceFields
-          value={form as SourceState}
-          onChange={patch}
-        />
+        {service?.stack_id ? (
+          <div className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2.5">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Layers className="h-3.5 w-3.5 shrink-0" />
+              <span>Source is managed by a stack</span>
+            </div>
+            <Link
+              to="/projects/$id/stacks/$stackId/editor"
+              params={{ id: projectId, stackId: service.stack_id }}
+              className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors"
+            >
+              Edit in Stack Editor
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </div>
+        ) : (
+          <SourceFields
+            value={form as SourceState}
+            onChange={patch}
+          />
+        )}
       </Section>
 
       {/* ── Build ─────────────────────────────────────────────── */}
