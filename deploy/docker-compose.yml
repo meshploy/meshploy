@@ -45,7 +45,7 @@ services:
   # network_mode: host so it binds 80/443 on the public IP directly.
   # Auto-provisions TLS for named subdomains via HTTP-01 ACME.
   caddy:
-    image: ghcr.io/meshploy/caddy:latest
+    image: ghcr.io/meshploy/caddy:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
     network_mode: host
     environment:
@@ -79,7 +79,7 @@ services:
   # WireGuard mesh (100.64.0.1:4000). External traffic goes through Caddy on 443;
   # the API is JWT-authenticated so direct access on 4000 is safe.
   api:
-    image: ghcr.io/meshploy/api:latest
+    image: ghcr.io/meshploy/api:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
     ports:
       - "4000:4000"
@@ -117,7 +117,7 @@ services:
 
   # ── Meshploy Web UI ────────────────────────────────────────────────────────
   web:
-    image: ghcr.io/meshploy/web:latest
+    image: ghcr.io/meshploy/web:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
     ports:
       - "127.0.0.1:5173:80"
@@ -128,7 +128,7 @@ services:
   # Resolves *.{DOMAIN} and *.internal.{DOMAIN} routes via DB → mesh IP + port.
   # Receives wildcard traffic from Caddy.
   proxy:
-    image: ghcr.io/meshploy/proxy:latest
+    image: ghcr.io/meshploy/proxy:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8081:8081"
