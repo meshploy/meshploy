@@ -66,6 +66,15 @@ git clone --depth=1 --branch "${GIT_BRANCH}" \
 cd "${WORKDIR}"
 log "Cloned successfully ($(git rev-parse --short HEAD))"
 
+# ── Subdirectory ──────────────────────────────────────────────────────────────
+# ROOT_DIR is set when the service's build.context points to a subdirectory.
+# The whole repo was cloned once; we just cd into the right subdir to build.
+if [[ -n "${ROOT_DIR:-}" ]]; then
+    [[ -d "${WORKDIR}/${ROOT_DIR}" ]] || die "ROOT_DIR '${ROOT_DIR}' not found in repo"
+    log "Building from subdirectory: ${ROOT_DIR}"
+    cd "${WORKDIR}/${ROOT_DIR}"
+fi
+
 # ── Mark registry as insecure if it is HTTP ──────────────────────────────────
 # buildah defaults to HTTPS. Internal mesh registries (e.g. 100.64.x.x:5000)
 # are plain HTTP — add them to registries.conf so buildah doesn't upgrade to TLS.
