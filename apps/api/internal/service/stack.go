@@ -511,8 +511,9 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				continue
 			}
 
-			if !isDatabase && ext != nil && (ext.Source != nil || ext.Build != nil) {
-				if err := s.applyBuildConfig(ctx, svc.ID, svcDef, ext); err != nil {
+			hasBuildContext := svcDef.Build != nil && svcDef.Build.Context != ""
+			if !isDatabase && (ext != nil && (ext.Source != nil || ext.Build != nil) || hasBuildContext) {
+				if err := s.applyBuildConfig(ctx, svc.ID, svcDef, ext, &stack); err != nil {
 					result.Errors = append(result.Errors, fmt.Sprintf("%s: build config failed: %v", svcName, err))
 				}
 			}
@@ -632,12 +633,9 @@ func (s *StackService) attachVolumeMounts(
 // Build config
 // ---------------------------------------------------------------------------
 
-func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID, svcDef composetypes.ServiceConfig, ext *meshployExt) error {
-	if ext == nil {
-		return nil
-	}
+func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID, svcDef composetypes.ServiceConfig, ext *meshployExt, stack *meshdb.Stack) error {
 	builder := meshdb.BuilderNixpacks
-	if ext.Build != nil && ext.Build.Builder != "" {
+	if ext != nil && ext.Build != nil && ext.Build.Builder != "" {
 		switch ext.Build.Builder {
 		case "railpack":
 			builder = meshdb.BuilderRailpack
@@ -647,12 +645,14 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 			builder = meshdb.BuilderImage
 		}
 	}
-	if svcDef.Image != "" && (ext.Source == nil || ext.Source.Git == "") {
+	if svcDef.Image != "" && (ext == nil || ext.Source == nil || ext.Source.Git == "") {
 		builder = meshdb.BuilderImage
 	}
 
 	input := UpdateBuildConfigInput{Builder: &builder}
-	if ext.Source != nil {
+
+	if ext != nil && ext.Source != nil && ext.Source.Git != "" {
+		// Service has its own explicit git source via x-meshploy.
 		gitRepo := ext.Source.Git
 		input.GitRepo = &gitRepo
 		if ext.Source.Branch != "" {
@@ -664,8 +664,28 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 				input.GitIntegrationID = &id
 			}
 		}
+	} else if stack != nil && stack.GitRepo != "" && svcDef.Build != nil {
+		// Service has a native build.context — inherit the stack's git source.
+		gitRepo := stack.GitRepo
+		branch := stack.GitBranch
+		input.GitRepo = &gitRepo
+		input.Branch = &branch
+		if stack.GitIntegrationID != nil {
+			input.GitIntegrationID = stack.GitIntegrationID
+		}
 	}
-	if ext.Build != nil {
+
+	// Set RootDir from the native build.context (strip leading ./ or /).
+	if svcDef.Build != nil && svcDef.Build.Context != "" {
+		rootDir := strings.TrimPrefix(svcDef.Build.Context, "./")
+		rootDir = strings.TrimPrefix(rootDir, "/")
+		if rootDir == "." {
+			rootDir = ""
+		}
+		input.RootDir = &rootDir
+	}
+
+	if ext != nil && ext.Build != nil {
 		if ext.Build.DockerfilePath != "" {
 			input.DockerfilePath = &ext.Build.DockerfilePath
 		}
@@ -679,7 +699,7 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 			input.BuilderMemoryRequest = &ext.Build.BuilderMemoryRequest
 		}
 	}
-	if ext.Rollback != nil {
+	if ext != nil && ext.Rollback != nil {
 		input.RollbackEnabled = &ext.Rollback.Enabled
 		if ext.Rollback.Retention > 0 {
 			input.ImageRetention = &ext.Rollback.Retention

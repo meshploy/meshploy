@@ -521,6 +521,7 @@ type UpdateBuildConfigInput struct {
 	GitIntegrationID      *uuid.UUID
 	GitRepo               *string
 	Branch                *string
+	RootDir               *string // subdirectory within the repo to build from (e.g. "frontend")
 	Builder               *db.BuilderType
 	DockerfilePath        *string
 	RegistryIntegrationID *uuid.UUID
@@ -556,6 +557,9 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.Branch != nil {
 		bc.Branch = *in.Branch
+	}
+	if in.RootDir != nil {
+		bc.RootDir = *in.RootDir
 	}
 	if in.Builder != nil {
 		bc.Builder = *in.Builder

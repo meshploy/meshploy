@@ -49,6 +49,8 @@ type BuildJobParams struct {
 	RegistryHost string
 	RegistryUser string
 	RegistryPass string
+	// Subdirectory within the cloned repo to build from. Empty = repo root.
+	RootDir string
 	// Build-time env vars — KEY=VALUE, one per line.
 	// Forwarded to nixpacks (--env), railpack (export), dockerfile (--build-arg).
 	BuildEnvVars string
@@ -191,6 +193,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "GIT_REPO", Value: p.GitRepo},
 								{Name: "GIT_BRANCH", Value: p.GitBranch},
 								{Name: "GIT_TOKEN", Value: p.GitToken},
+								{Name: "ROOT_DIR", Value: p.RootDir},
 								{Name: "BUILDER", Value: p.Builder},
 								{Name: "IMAGE_DEST", Value: p.ImageDest},
 								{Name: "REGISTRY_HOST", Value: p.RegistryHost},

@@ -325,6 +325,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		GitRepo:      a.bc.GitRepo,
 		GitBranch:    a.bc.Branch,
 		GitToken:     a.gitToken,
+		RootDir:      a.bc.RootDir,
 		Builder:      string(a.bc.Builder),
 		ImageDest:    a.imageName,
 		RegistryHost: a.registryHost,
