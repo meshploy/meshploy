@@ -46,3 +46,4 @@ COPY --from=builder /out/api ./api
 EXPOSE 4000
 
 ENTRYPOINT ["./api"]
+# channel: main/latest
