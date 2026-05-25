@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.2](https://github.com/meshploy/meshploy/compare/v0.1.1...v0.1.2) (2026-05-25)
+
+
+### Features
+
+* add git source for stacks - file/repo fetch modes, auto-detect build context, sync endpoint, read-only editor, managed-by-stack banner in service config ([e5c74d5](https://github.com/meshploy/meshploy/commit/e5c74d5e2535a7f516552cd732f3043e89aaa7db))
+
+
+### Bug Fixes
+
+* pass correct VERSION build arg only on tag pushes ([3d76b9b](https://github.com/meshploy/meshploy/commit/3d76b9b472d107712787371fd6b167d08f5b2ab4))
+* separate rolling/stable image channels and update fetch-mode segmented control width ([1bf6244](https://github.com/meshploy/meshploy/commit/1bf6244d8696f70c7747685279316ea975d00e4a))
+
 ## [0.1.1](https://github.com/meshploy/meshploy/compare/v0.1.0...v0.1.1) (2026-05-25)
 
 
