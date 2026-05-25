@@ -497,17 +497,35 @@ type DatabaseConfig struct {
 
 // Stack is a Docker Compose-style group of services defined by a single YAML spec.
 // Services that belong to a stack have their StackID set to this row's ID.
+type StackGitMode string
+
+const (
+	StackGitModeRaw  StackGitMode = ""     // inline spec, no git
+	StackGitModeFile StackGitMode = "file" // fetch compose file only
+	StackGitModeRepo StackGitMode = "repo" // clone whole repo
+)
+
 type Stack struct {
 	Base
-	ProjectID     uuid.UUID   `gorm:"type:uuid;not null;index"                      json:"project_id"`
-	Name          string      `gorm:"not null"                                      json:"name"`
-	Spec          string      `gorm:"type:text;not null;default:''"                 json:"spec"`
-	Variables     JSONObject  `gorm:"type:jsonb;not null;default:'{}'"              json:"variables"`
-	Status        StackStatus `gorm:"type:varchar(10);not null;default:'idle'"      json:"status"`
-	LastAppliedAt *time.Time  `json:"last_applied_at"`
+	ProjectID     uuid.UUID    `gorm:"type:uuid;not null;index"                      json:"project_id"`
+	Name          string       `gorm:"not null"                                      json:"name"`
+	Spec          string       `gorm:"type:text;not null;default:''"                 json:"spec"`
+	Variables     JSONObject   `gorm:"type:jsonb;not null;default:'{}'"              json:"variables"`
+	Status        StackStatus  `gorm:"type:varchar(10);not null;default:'idle'"      json:"status"`
+	LastAppliedAt *time.Time   `json:"last_applied_at"`
 
-	Project  Project   `gorm:"foreignKey:ProjectID"                            json:"-"`
-	Services []Service `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
+	// Git source fields — non-empty GitMode means the spec is managed from git.
+	GitMode         StackGitMode `gorm:"type:varchar(10);not null;default:''" json:"git_mode"`
+	GitRepo         string       `gorm:"not null;default:''"                  json:"git_repo"`
+	GitBranch       string       `gorm:"not null;default:'main'"              json:"git_branch"`
+	GitPath         string       `gorm:"not null;default:'docker-compose.yml'" json:"git_path"`
+	GitIntegrationID *uuid.UUID  `gorm:"type:uuid"                            json:"git_integration_id"`
+	GitLastSyncedAt  *time.Time  `json:"git_last_synced_at"`
+	GitLastSyncSHA   string      `gorm:"not null;default:''"                  json:"git_last_sync_sha"`
+
+	Project          Project          `gorm:"foreignKey:ProjectID"                            json:"-"`
+	Services         []Service        `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
+	GitIntegration   *GitIntegration  `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
 func (Stack) TableName() string { return "stacks" }

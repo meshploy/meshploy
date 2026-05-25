@@ -330,11 +330,12 @@ export function visualToYaml(services: VisualService[]): string {
 
 interface StackEditorProps {
   value: string
-  onChange: (value: string) => void
+  onChange?: (value: string) => void
   minHeight?: string
+  readOnly?: boolean
 }
 
-export function StackEditor({ value, onChange, minHeight = "360px" }: StackEditorProps) {
+export function StackEditor({ value, onChange, minHeight = "360px", readOnly = false }: StackEditorProps) {
   const [mode, setMode] = useState<"yaml" | "visual">("yaml")
   const [visual, setVisual] = useState<VisualService[]>([])
   const [justConverted, setJustConverted] = useState(false)
@@ -345,12 +346,12 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
   }, [value])
 
   const switchToYaml = useCallback(() => {
-    onChange(visualToYaml(visual))
+    onChange?.(visualToYaml(visual))
     setMode("yaml")
   }, [visual, onChange])
 
   const handleConvert = useCallback(() => {
-    onChange(convertCompose(value))
+    onChange?.(convertCompose(value))
     setJustConverted(true)
     setTimeout(() => setJustConverted(false), 2000)
   }, [value, onChange])
@@ -361,7 +362,7 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
   const addService = () => setVisual((prev) => [...prev, newService()])
   const removeService = (key: string) => setVisual((prev) => prev.filter((s) => s._key !== key))
 
-  const canConvert = mode === "yaml" && specNeedsConversion(value)
+  const canConvert = !readOnly && mode === "yaml" && specNeedsConversion(value)
 
   return (
     <div className="flex flex-col rounded-md border border-border/60 overflow-hidden">
@@ -385,17 +386,19 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
             <span className="text-[11px] text-emerald-400/80 font-mono">converted</span>
           )}
         </div>
-        <SegmentedControl
-          value={mode}
-          onValueChange={(v) => {
-            if (v === "yaml" && mode === "visual") switchToYaml()
-            else if (v === "visual" && mode === "yaml") switchToVisual()
-          }}
-          options={[
-            { value: "yaml", label: "YAML", icon: <Code2 className="h-3 w-3" /> },
-            { value: "visual", label: "Visual", icon: <LayoutGrid className="h-3 w-3" /> },
-          ]}
-        />
+        {!readOnly && (
+          <SegmentedControl
+            value={mode}
+            onValueChange={(v) => {
+              if (v === "yaml" && mode === "visual") switchToYaml()
+              else if (v === "visual" && mode === "yaml") switchToVisual()
+            }}
+            options={[
+              { value: "yaml", label: "YAML", icon: <Code2 className="h-3 w-3" /> },
+              { value: "visual", label: "Visual", icon: <LayoutGrid className="h-3 w-3" /> },
+            ]}
+          />
+        )}
       </div>
 
       {mode === "yaml" ? (
@@ -404,7 +407,8 @@ export function StackEditor({ value, onChange, minHeight = "360px" }: StackEdito
           height={minHeight}
           theme="dark"
           extensions={[yaml()]}
-          onChange={onChange}
+          onChange={readOnly ? undefined : onChange}
+          editable={!readOnly}
           style={{ fontSize: 13 }}
           basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true, indentOnInput: true }}
         />
