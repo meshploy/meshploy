@@ -29,8 +29,9 @@ COPY packages/db ./packages/db
 
 # Build a fully static binary.
 WORKDIR /workspace/apps/api
+ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X github.com/meshploy/apps/api/internal/version.Current=${VERSION}" \
     -o /out/api \
     .
 
