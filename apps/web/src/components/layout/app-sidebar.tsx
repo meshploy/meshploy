@@ -9,10 +9,14 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from "lucide-react"
 import { useUIStore } from "@/store/ui-store"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useQuery } from "@tanstack/react-query"
+import { system } from "@/lib/api/system"
+import { useAuthStore } from "@/store/auth-store"
 
 const NAV_ITEMS = [
   { href: "/", icon: Home, label: "Overview", exact: true },
@@ -41,6 +45,14 @@ function MeshMark({ className }: { className?: string }) {
 export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const token = useAuthStore((s) => s.token)
+  const { data: ver } = useQuery({
+    queryKey: ["system-version"],
+    queryFn: () => system.versionInfo(token!),
+    enabled: !!token,
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  })
 
   return (
     <aside
@@ -105,9 +117,51 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Bottom: collapse toggle */}
+      {/* Bottom: version + collapse toggle */}
       <div className="p-2 shrink-0 space-y-1">
         <Separator className="mb-2 bg-sidebar-border" />
+
+        {/* Update available */}
+        {ver?.update_available && (
+          sidebarCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <a
+                    href={ver.release_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center h-8 w-9 mx-auto rounded-md text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors relative"
+                  />
+                }
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              </TooltipTrigger>
+              <TooltipContent side="right" className="text-xs">
+                Update available — v{ver.latest}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <a
+              href={ver.release_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 h-8 w-full px-3 rounded-md text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+            >
+              <Download className="h-3.5 w-3.5 shrink-0" />
+              <span>Update available</span>
+              <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            </a>
+          )
+        )}
+
+        {/* Current version */}
+        {!sidebarCollapsed && ver && (
+          <p className="px-3 text-[10px] text-sidebar-foreground/30">
+            v{ver.current}
+          </p>
+        )}
         <Tooltip>
           <TooltipTrigger
             onClick={toggleSidebar}

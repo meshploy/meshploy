@@ -29,6 +29,7 @@ type Services struct {
 	Registries      *RegistryService
 	Storage         *StorageService
 	Backups         *BackupService
+	System          *SystemService
 	Notifications   *NotificationService
 	EmailConfig     *EmailConfigService
 	VariableGroups  *VariableGroupService
@@ -178,6 +179,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
 		Backups:         backups,
+		System:          &SystemService{},
 		Notifications:   &NotificationService{db: db},
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,
