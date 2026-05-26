@@ -1,6 +1,9 @@
 import { apiFetch } from "./core"
 
 export const auth = {
+  status: () =>
+    apiFetch<{ registration_open: boolean }>("/api/v1/auth/status"),
+
   login: (email: string, password: string) =>
     apiFetch<{ token?: string; totp_required?: boolean; mfa_token?: string }>(
       "/api/v1/auth/login",

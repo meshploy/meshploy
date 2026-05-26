@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
-import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { Eye, EyeOff, Loader2, Lock } from "lucide-react"
 import { useMutation } from "@tanstack/react-query"
 import { auth, orgs, ApiError } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -8,13 +8,34 @@ import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/_auth/register")({
+  loader: () => auth.status(),
   component: RegisterPage,
 })
 
 function RegisterPage() {
+  const { registration_open } = Route.useLoaderData()
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
   const setOrgs = useOrgStore((s) => s.setOrgs)
+
+  if (!registration_open) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-card p-6 space-y-4 text-center">
+        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-muted/40 mx-auto">
+          <Lock className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-foreground">Registration closed</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            This instance already has an owner. Ask them to invite you as a member.
+          </p>
+        </div>
+        <Link to="/login" className="block text-xs text-primary hover:underline underline-offset-4">
+          Sign in instead
+        </Link>
+      </div>
+    )
+  }
 
   const [username, setUsername] = useState("")
   const [email, setEmail] = useState("")
