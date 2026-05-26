@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/meshploy/meshploy/compare/v0.1.2...v0.2.0) (2026-05-26)
+
+
+### Features
+
+* add 2FA recovery codes and guard SetupTOTP against re-enrollment ([7fcd754](https://github.com/meshploy/meshploy/commit/7fcd7540a40bd94f94ca5d71c51709d1650f4303))
+* auto-deploy on git push using GitHub App webhook and per-service deploy token ([f6b476c](https://github.com/meshploy/meshploy/commit/f6b476c7835be35dfd783299954c268d9270e9e2))
+* **cli:** version cmd, deployment subcommands, full command reference in README ([7eed267](https://github.com/meshploy/meshploy/commit/7eed2674b60469177370960059286a4bf070cc85))
+
+
+### Bug Fixes
+
+* **deploy:** rename subdomain app to console, expand reserved subdomain list ([ef1fdb5](https://github.com/meshploy/meshploy/commit/ef1fdb5a45dd14046b809f07a903a40031b2aede))
+* exempt TOTP, recovery, and webhook routes from Bearer JWT check ([4b15bf0](https://github.com/meshploy/meshploy/commit/4b15bf09b1983a553cfab859a3cf4583638d0cf4))
+* update build.context subdirectory through stack sync and build job ROOT_DIR ([6c3c99d](https://github.com/meshploy/meshploy/commit/6c3c99d878282954228003a28f88229dc603471e))
+
 ## [0.1.2](https://github.com/meshploy/meshploy/compare/v0.1.1...v0.1.2) (2026-05-25)
 
 
