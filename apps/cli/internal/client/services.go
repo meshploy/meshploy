@@ -20,9 +20,11 @@ type Service struct {
 }
 
 type Deployment struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID         string  `json:"id"`
+	Status     string  `json:"status"`
+	Image      string  `json:"image"`
+	DeployedAt *string `json:"deployed_at"`
+	CreatedAt  string  `json:"created_at"`
 }
 
 func (c *Client) ListServices(orgID, projectID string) ([]Service, error) {
@@ -91,11 +93,39 @@ func (c *Client) StreamLogs(orgID, projectID, serviceID string, tail int, since 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			fmt.Fprintln(w, strings.TrimPrefix(line, "data: "))
+		if data, ok := strings.CutPrefix(line, "data: "); ok {
+			fmt.Fprintln(w, data)
 		}
 	}
 	return scanner.Err()
+}
+
+func (c *Client) ListDeployments(orgID, projectID, serviceID string) ([]Deployment, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/deployments", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decode[[]Deployment](resp)
+}
+
+func (c *Client) CancelDeployment(orgID, projectID, serviceID, deploymentID string) error {
+	return c.doNoContent("DELETE", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/deployments/"+deploymentID)
+}
+
+func (c *Client) RollbackDeployment(orgID, projectID, serviceID, deploymentID string) (*Deployment, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/deployments/"+deploymentID+"/rollback", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Deployment](resp)
+}
+
+func (c *Client) RetryDeployment(orgID, projectID, serviceID, deploymentID string) (*Deployment, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/deployments/"+deploymentID+"/retry", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Deployment](resp)
 }
 
 // GetServiceByName resolves a service by ID or name within a project.
