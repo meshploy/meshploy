@@ -65,6 +65,7 @@ func UserFromContext(ctx context.Context) (uuid.UUID, bool) {
 // publicPaths are routes that do not require a JWT. Checked by RequireAuth.
 // Terminal paths handle their own JWT validation from the ?token= query param.
 var publicPaths = []string{
+	"GET /api/v1/auth/status",
 	"POST /api/v1/auth/login",
 	"POST /api/v1/auth/register",
 	// MFA second-factor steps — no Bearer token exists yet at this point.

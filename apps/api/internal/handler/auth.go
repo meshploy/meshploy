@@ -117,6 +117,26 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 	const tag = "Auth"
 
 	huma.Register(api, huma.Operation{
+		OperationID: "auth-status",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/auth/status",
+		Summary:     "Check whether registration is open (no users exist yet)",
+		Tags:        []string{tag},
+	}, func(ctx context.Context, _ *struct{}) (*struct{ Body struct {
+		RegistrationOpen bool `json:"registration_open"`
+	} }, error) {
+		open, err := h.svc.Auth.RegistrationOpen(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &struct{ Body struct {
+			RegistrationOpen bool `json:"registration_open"`
+		} }{Body: struct {
+			RegistrationOpen bool `json:"registration_open"`
+		}{RegistrationOpen: open}}, nil
+	})
+
+	huma.Register(api, huma.Operation{
 		OperationID: "register",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/auth/register",

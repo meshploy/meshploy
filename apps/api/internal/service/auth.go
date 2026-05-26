@@ -46,9 +46,27 @@ type CompleteTOTPLoginResult struct {
 	DeviceToken string // non-empty only when trust_device was true
 }
 
+// RegistrationOpen returns true when no users exist yet (first-boot).
+func (s *AuthService) RegistrationOpen(ctx context.Context) (bool, error) {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&db.User{}).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
+
 // Register creates a new user and provisions a default organization with the
 // user as owner — all within a single transaction.
+// Returns an error if any user already exists (registration is first-boot only).
 func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User, error) {
+	open, err := s.RegistrationOpen(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !open {
+		return nil, fmt.Errorf("registration is disabled — this instance already has an owner")
+	}
+
 	hashed, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
