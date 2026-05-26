@@ -933,7 +933,14 @@ function DatabaseForm({ projectId }: { projectId: string }) {
 
 // ─── Route form ───────────────────────────────────────────────────────────────
 
-const RESERVED_SUBDOMAINS = new Set(["mesh", "app", "api", "headscale", "preview", "internal", "*"])
+const RESERVED_SUBDOMAINS = new Set([
+  // Meshploy infrastructure
+  "console", "api", "mesh", "headscale", "preview", "internal",
+  // Standard DNS / internet conventions
+  "www", "mail", "smtp", "mx", "ns", "ns1", "ns2",
+  // Bare wildcard
+  "*",
+])
 
 type RouteZone = "public" | "internal"
 type DomainMode = "subdomain" | "custom"

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -84,12 +85,22 @@ func (s *RouteService) Get(ctx context.Context, routeID uuid.UUID) (*db.Route, e
 
 // platformReservedSubdomains are gateway-level names that cannot be used as route subdomains.
 var platformReservedSubdomains = map[string]bool{
-	"mesh":      true,
-	"app":       true,
+	// Meshploy infrastructure
+	"console":   true,
 	"api":       true,
+	"mesh":      true,
 	"headscale": true,
 	"preview":   true,
 	"internal":  true,
+	// Standard DNS / internet conventions
+	"www":       true,
+	"mail":      true,
+	"smtp":      true,
+	"mx":        true,
+	"ns":        true,
+	"ns1":       true,
+	"ns2":       true,
+	// Bare wildcard
 	"*":         true,
 }
 
@@ -389,10 +400,5 @@ func generateVerifyToken() (string, error) {
 }
 
 func containsToken(records []string, token string) bool {
-	for _, r := range records {
-		if r == token {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(records, token)
 }

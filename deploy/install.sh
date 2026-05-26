@@ -276,7 +276,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   echo -e "  Mesh IP        ${CYAN}${MESH_IP}${RESET}"
   echo -e "  Headscale URL  ${CYAN}https://headscale.${DOMAIN}${RESET}"
   echo -e "  API URL        ${CYAN}https://api.${DOMAIN}${RESET}"
-  echo -e "  Dashboard URL  ${CYAN}https://app.${DOMAIN}${RESET}"
+  echo -e "  Dashboard URL  ${CYAN}https://console.${DOMAIN}${RESET}"
   hr
   echo
   if ! ask_yn "Proceed with this configuration?"; then
@@ -405,7 +405,7 @@ POSTGRES_USER=meshploy
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 API_BASE_URL=https://api.${DOMAIN}
-FRONTEND_URL=https://app.${DOMAIN}
+FRONTEND_URL=https://console.${DOMAIN}
 K3S_TOKEN=${K3S_TOKEN}
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME}
 HOST_GATEWAY_IP=${HOST_GATEWAY_IP}
@@ -640,7 +640,7 @@ NEUNIT
   echo -e "  ${BOLD}${GREEN}✔  Meshploy master node is ready!${RESET}"
   hr
   echo -e "  ${BOLD}Service URLs${RESET}"
-  echo -e "    Dashboard   ${CYAN}https://app.${DOMAIN}${RESET}"
+  echo -e "    Dashboard   ${CYAN}https://console.${DOMAIN}${RESET}"
   echo -e "    API         ${CYAN}https://api.${DOMAIN}${RESET}"
   echo -e "    Headscale   ${CYAN}https://headscale.${DOMAIN}${RESET}"
   echo
@@ -648,7 +648,7 @@ NEUNIT
   echo -e "    1. Headscale pre-auth key (valid 1h, reusable):"
   echo -e "       ${BOLD}${CYAN}${PREAUTH_KEY}${RESET}"
   echo -e "    2. Node registration token (shown in dashboard → Cluster):"
-  echo -e "       Generate one at ${CYAN}https://app.${DOMAIN}${RESET} → Cluster → Add a worker node"
+  echo -e "       Generate one at ${CYAN}https://console.${DOMAIN}${RESET} → Cluster → Add a worker node"
   echo -e "    3. k3s cluster join token (also shown in dashboard → Cluster):"
   echo -e "       ${BOLD}${CYAN}${K3S_TOKEN}${RESET}"
   echo -e "    Then on the worker machine run:"
@@ -677,8 +677,8 @@ NEUNIT
   TLS_WAITED=0
   TLS_OK=0
   while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
-    if curl -sf -k --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
-      if curl -sf --max-time 5 "https://app.${DOMAIN}" -o /dev/null 2>/dev/null; then
+    if curl -sf -k --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
+      if curl -sf --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
         TLS_OK=1
         break
       fi
@@ -691,7 +691,7 @@ NEUNIT
   echo
 
   if [[ $TLS_OK -eq 1 ]]; then
-    success "TLS certificates issued — ${CYAN}https://app.${DOMAIN}${RESET} is live!"
+    success "TLS certificates issued — ${CYAN}https://console.${DOMAIN}${RESET} is live!"
   else
     warn "TLS not confirmed after ${TLS_MAX_WAIT}s — still provisioning in background."
     warn "Monitor: $COMPOSE_CMD logs -f caddy"
