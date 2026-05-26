@@ -67,11 +67,16 @@ func UserFromContext(ctx context.Context) (uuid.UUID, bool) {
 var publicPaths = []string{
 	"POST /api/v1/auth/login",
 	"POST /api/v1/auth/register",
+	// MFA second-factor steps — no Bearer token exists yet at this point.
+	"POST /api/v1/auth/totp",
+	"POST /api/v1/auth/recovery",
 	// Node self-registration uses mreg- tokens, not JWTs.
 	"/self-register",
 	"/self-deregister",
 	// WebSocket terminals validate JWT from ?token= internally.
 	"/terminal",
+	// Inbound webhooks — validated by HMAC signature or per-service deploy token.
+	"POST /api/v1/webhooks/",
 	// OpenAPI schema served by Huma.
 	"GET /api/",
 }
