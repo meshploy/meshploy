@@ -123,8 +123,8 @@ cat <<'EOF'
                                          |___/
 EOF
 echo -e "${RESET}"
-echo -e "  ${BOLD}Zero-trust Internal Developer Platform${RESET}"
-echo -e "  Installation script — version 0.1"
+echo -e "  ${BOLD}One mesh. Any server. PaaS simplicity.${RESET}"
+echo -e "  Installation script — version $(cat /opt/meshploy/VERSION 2>/dev/null || echo "0.1")"
 hr
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────

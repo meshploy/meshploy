@@ -1,6 +1,6 @@
 # Meshploy
 
-**The open-source, zero-trust Internal Developer Platform.**
+**One mesh. Any server. PaaS simplicity.**
 
 Meshploy is a self-hosted PaaS that orchestrates multi-node deployments across a WireGuard mesh network. Worker nodes are completely dark to the public internet — no open ports, no exposed services. The only public-facing component is the Meshploy Edge Gateway.
 
