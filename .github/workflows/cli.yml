@@ -39,7 +39,9 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           cd apps/cli
-          go build -ldflags="-s -w" -o "meshploy-${{ matrix.goos }}-${{ matrix.goarch }}" .
+          VERSION=$(cat ../../VERSION)
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          go build -ldflags="-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}+${SHORT_SHA}'" -o "meshploy-${{ matrix.goos }}-${{ matrix.goarch }}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
