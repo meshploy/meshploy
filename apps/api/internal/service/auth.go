@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -241,9 +243,14 @@ func (s *AuthService) GetMe(ctx context.Context, userID uuid.UUID) (*db.User, er
 
 // SetupTOTP generates a new TOTP secret, persists it (not yet enabled), and
 // returns the otpauth:// URL (for QR code) and the raw base32 secret.
+// Returns an error if 2FA is already enabled — user must disable first.
 func (s *AuthService) SetupTOTP(ctx context.Context, userID uuid.UUID) (otpURL, secret string, err error) {
 	var user db.User
 	if err = s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+		return
+	}
+	if user.TOTPEnabled {
+		err = errors.New("2FA is already enabled — disable it first before re-enrolling")
 		return
 	}
 
@@ -263,23 +270,47 @@ func (s *AuthService) SetupTOTP(ctx context.Context, userID uuid.UUID) (otpURL, 
 	return key.URL(), secret, nil
 }
 
-// VerifyAndEnableTOTP verifies the given TOTP code against the pending secret
-// and, if valid, marks 2FA as enabled for the user.
-func (s *AuthService) VerifyAndEnableTOTP(ctx context.Context, userID uuid.UUID, code string) error {
+// VerifyAndEnableTOTP verifies the given TOTP code against the pending secret,
+// enables 2FA, generates 8 one-time recovery codes, and returns the raw codes
+// (only shown once — caller must display them to the user immediately).
+func (s *AuthService) VerifyAndEnableTOTP(ctx context.Context, userID uuid.UUID, code string) ([]string, error) {
 	var user db.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
-		return err
+		return nil, err
 	}
 	if string(user.TOTPSecret) == "" {
-		return errors.New("run /me/totp/setup first")
+		return nil, errors.New("run /me/totp/setup first")
 	}
 	if !totp.Validate(code, string(user.TOTPSecret)) {
-		return errors.New("invalid code")
+		return nil, errors.New("invalid code")
 	}
-	return s.db.WithContext(ctx).Model(&user).Update("totp_enabled", true).Error
+
+	raw, hashes, err := generateRecoveryCodes(8)
+	if err != nil {
+		return nil, fmt.Errorf("generate recovery codes: %w", err)
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&user).Update("totp_enabled", true).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&db.RecoveryCode{}).Error; err != nil {
+			return err
+		}
+		for _, h := range hashes {
+			if err := tx.Create(&db.RecoveryCode{UserID: userID, CodeHash: h}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
-// DisableTOTP verifies the current TOTP code and clears all 2FA data.
+// DisableTOTP verifies the current TOTP code and clears all 2FA data including recovery codes.
 func (s *AuthService) DisableTOTP(ctx context.Context, userID uuid.UUID, code string) error {
 	var user db.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
@@ -291,10 +322,113 @@ func (s *AuthService) DisableTOTP(ctx context.Context, userID uuid.UUID, code st
 	if !totp.Validate(code, string(user.TOTPSecret)) {
 		return errors.New("invalid code")
 	}
-	return s.db.WithContext(ctx).Model(&user).Updates(map[string]any{
-		"totp_enabled": false,
-		"totp_secret":  "",
-	}).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&user).Updates(map[string]any{
+			"totp_enabled": false,
+			"totp_secret":  "",
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Where("user_id = ?", userID).Delete(&db.RecoveryCode{}).Error
+	})
+}
+
+// CompleteRecoveryLogin validates an MFA token + recovery code and returns a full JWT.
+// The recovery code is marked used and cannot be reused.
+func (s *AuthService) CompleteRecoveryLogin(ctx context.Context, mfaToken, rawCode, jwtSecret string) (CompleteTOTPLoginResult, error) {
+	tok, err := jwt.Parse(mfaToken, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return []byte(jwtSecret), nil
+	})
+	if err != nil || !tok.Valid {
+		return CompleteTOTPLoginResult{}, errors.New("invalid or expired MFA token")
+	}
+	claims, ok := tok.Claims.(jwt.MapClaims)
+	if !ok || claims["mfa_pending"] != true {
+		return CompleteTOTPLoginResult{}, errors.New("invalid MFA token")
+	}
+	userIDStr, _ := claims["uid"].(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return CompleteTOTPLoginResult{}, errors.New("invalid MFA token")
+	}
+
+	// Normalize: strip dash, lowercase — matches how they were hashed at generation.
+	normalized := strings.ReplaceAll(strings.ToLower(rawCode), "-", "")
+	h := sha256.Sum256([]byte(normalized))
+	hash := hex.EncodeToString(h[:])
+
+	var rc db.RecoveryCode
+	if err := s.db.WithContext(ctx).Where(
+		"user_id = ? AND code_hash = ? AND used_at IS NULL", userID, hash,
+	).First(&rc).Error; err != nil {
+		return CompleteTOTPLoginResult{}, errors.New("invalid or already used recovery code")
+	}
+
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&rc).Update("used_at", &now).Error; err != nil {
+		return CompleteTOTPLoginResult{}, err
+	}
+
+	fullToken, err := signFullJWT(userIDStr, jwtSecret)
+	if err != nil {
+		return CompleteTOTPLoginResult{}, err
+	}
+	return CompleteTOTPLoginResult{Token: fullToken}, nil
+}
+
+// RegenerateRecoveryCodes invalidates all existing recovery codes and issues a new set of 8.
+// Requires the current TOTP code to confirm intent.
+func (s *AuthService) RegenerateRecoveryCodes(ctx context.Context, userID uuid.UUID, totpCode string) ([]string, error) {
+	var user db.User
+	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+		return nil, err
+	}
+	if !user.TOTPEnabled {
+		return nil, errors.New("2FA is not enabled")
+	}
+	if !totp.Validate(totpCode, string(user.TOTPSecret)) {
+		return nil, errors.New("invalid code")
+	}
+
+	raw, hashes, err := generateRecoveryCodes(8)
+	if err != nil {
+		return nil, fmt.Errorf("generate recovery codes: %w", err)
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&db.RecoveryCode{}).Error; err != nil {
+			return err
+		}
+		for _, h := range hashes {
+			if err := tx.Create(&db.RecoveryCode{UserID: userID, CodeHash: h}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+// generateRecoveryCodes generates n one-time recovery codes.
+// Returns raw codes (format: xxxxx-xxxxx) and their SHA-256 hashes for storage.
+func generateRecoveryCodes(n int) (raw []string, hashes []string, err error) {
+	for range n {
+		b := make([]byte, 5)
+		if _, err = rand.Read(b); err != nil {
+			return
+		}
+		code := hex.EncodeToString(b)
+		raw = append(raw, code[:5]+"-"+code[5:])
+		h := sha256.Sum256([]byte(code))
+		hashes = append(hashes, hex.EncodeToString(h[:]))
+	}
+	return
 }
 
 func signFullJWT(userIDStr, jwtSecret string) (string, error) {

@@ -214,6 +214,15 @@ type TrustedDevice struct {
 
 func (TrustedDevice) TableName() string { return "trusted_devices" }
 
+type RecoveryCode struct {
+	Base
+	UserID   uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
+	CodeHash string     `gorm:"not null"                 json:"-"`
+	UsedAt   *time.Time `json:"used_at"`
+}
+
+func (RecoveryCode) TableName() string { return "recovery_codes" }
+
 type Organization struct {
 	Base
 	Name string `gorm:"not null"             json:"name"`

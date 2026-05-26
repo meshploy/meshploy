@@ -80,9 +80,34 @@ type EnableTOTPInput struct {
 	}
 }
 
+type EnableTOTPOutput struct {
+	Body struct {
+		RecoveryCodes []string `json:"recovery_codes"`
+	}
+}
+
 type DisableTOTPInput struct {
 	Body struct {
 		Code string `json:"code" minLength:"6" maxLength:"6"`
+	}
+}
+
+type CompleteRecoveryLoginInput struct {
+	Body struct {
+		MFAToken     string `json:"mfa_token" minLength:"1"`
+		RecoveryCode string `json:"recovery_code" minLength:"1"`
+	}
+}
+
+type RegenerateRecoveryCodesInput struct {
+	Body struct {
+		Code string `json:"code" minLength:"6" maxLength:"6"`
+	}
+}
+
+type RegenerateRecoveryCodesOutput struct {
+	Body struct {
+		RecoveryCodes []string `json:"recovery_codes"`
 	}
 }
 
@@ -124,6 +149,22 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		if result.DeviceToken != "" {
 			out.SetCookie = deviceCookie(result.DeviceToken, strings.HasPrefix(h.cfg.APIBaseURL, "https://"))
 		}
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "complete-recovery-login",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/recovery",
+		Summary:     "Complete login with a one-time recovery code",
+		Tags:        []string{tag},
+	}, func(ctx context.Context, in *CompleteRecoveryLoginInput) (*CompleteTOTPLoginOutput, error) {
+		result, err := h.svc.Auth.CompleteRecoveryLogin(ctx, in.Body.MFAToken, in.Body.RecoveryCode, h.cfg.JWTSecret)
+		if err != nil {
+			return nil, huma.Error401Unauthorized(err.Error())
+		}
+		out := &CompleteTOTPLoginOutput{}
+		out.Body.Token = result.Token
 		return out, nil
 	})
 
@@ -194,15 +235,39 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Summary:     "Verify TOTP code and enable 2FA",
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
-	}, func(ctx context.Context, in *EnableTOTPInput) (*struct{}, error) {
+	}, func(ctx context.Context, in *EnableTOTPInput) (*EnableTOTPOutput, error) {
 		userID, err := requireUser(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if err := h.svc.Auth.VerifyAndEnableTOTP(ctx, userID, in.Body.Code); err != nil {
+		codes, err := h.svc.Auth.VerifyAndEnableTOTP(ctx, userID, in.Body.Code)
+		if err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return &struct{}{}, nil
+		out := &EnableTOTPOutput{}
+		out.Body.RecoveryCodes = codes
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "regenerate-recovery-codes",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/me/recovery-codes/regenerate",
+		Summary:     "Regenerate 2FA recovery codes (requires current TOTP code)",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *RegenerateRecoveryCodesInput) (*RegenerateRecoveryCodesOutput, error) {
+		userID, err := requireUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		codes, err := h.svc.Auth.RegenerateRecoveryCodes(ctx, userID, in.Body.Code)
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		out := &RegenerateRecoveryCodesOutput{}
+		out.Body.RecoveryCodes = codes
+		return out, nil
 	})
 
 	huma.Register(api, huma.Operation{
