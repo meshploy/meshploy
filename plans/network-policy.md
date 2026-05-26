@@ -5,11 +5,11 @@ Every change described here is derived from decisions made during the design ses
 
 ---
 
-## Why we are adding this
+## Overview
 
-Currently all pods in the K3s cluster can freely reach any other pod, across all projects and organizations. A compromised pod in org A can open a TCP connection to a database pod in org B with no restriction. Meshploy's project model maps directly to K8s namespaces, so the isolation boundary already exists structurally — we just have no NetworkPolicy enforcing it.
+Meshploy's project model already maps directly to K8s namespaces, giving us a natural isolation boundary. This plan adds K8s NetworkPolicy resources to enforce pod-to-pod isolation at the namespace level — default-deny with explicit allow rules derived from the data that already exists in the database (service ports, variable group attachments).
 
-The WireGuard mesh (Headscale) encrypts traffic between nodes at the transport layer, but that does not help with pod-to-pod traffic that stays within the same node, and it provides no application-layer identity verification. NetworkPolicy fills the pod isolation gap.
+WireGuard (Headscale) encrypts inter-node traffic at the transport layer. NetworkPolicy complements this with application-layer isolation for pod-to-pod traffic within the cluster.
 
 ---
 
@@ -25,7 +25,7 @@ A `NetworkPolicy` resource selects a set of pods via `podSelector` and defines w
 
 ### The problem with Flannel
 
-K3s bundles Flannel as its default CNI. Flannel handles pod networking (IP allocation, VXLAN overlay) but does not implement the K8s NetworkPolicy spec. If you create a NetworkPolicy object on a Flannel cluster, the API server accepts it but Flannel ignores it — no traffic is ever blocked. This is a silent failure; nothing errors, the policies just have no effect.
+K3s bundles Flannel as its default CNI. Flannel handles pod networking (IP allocation, VXLAN overlay) but does not implement the K8s NetworkPolicy spec — NetworkPolicy objects are accepted by the API server but have no effect at the network layer.
 
 ### Solution — Calico (preferred) or Cilium
 
@@ -84,7 +84,7 @@ The Meshploy proxy (`apps/proxy`) runs as a process on the gateway node, not as 
 
 Only services that have at least one `is_public = true` port get this ingress rule. Database services with no public ports do not receive proxy ingress traffic and do not need this rule.
 
-*Known limitation*: The source IP a pod sees after kube-proxy DNAT/SNAT depends on the CNI and kube-proxy configuration. On most Calico + K3s setups the source IP is the gateway node's host IP, making the `ipBlock` approach reliable. If this breaks in a specific CNI configuration, the fix is to add `externalTrafficPolicy: Local` to the NodePort service or configure Calico to preserve source IPs. This is noted as a known limitation and will be revisited alongside the mTLS work.
+*Note*: The source IP a pod sees after kube-proxy DNAT/SNAT depends on the CNI and kube-proxy configuration. On most Calico + K3s setups the source IP is the gateway node's host IP, making the `ipBlock` approach reliable. If needed, `externalTrafficPolicy: Local` on the NodePort service or Calico source-IP preservation can be used. This will be revisited alongside the mTLS work.
 
 **3. Cross-service egress (derived from group attachments)**
 When service A has service B's system-generated variable group attached, A needs to talk to B. At policy reconcile time, query:

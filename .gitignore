@@ -15,10 +15,9 @@ apps/cli/meshploy-*
 .env
 .env.local
 
-# Node & Next.js
+# Node
 node_modules/
-.next/
-out/
+apps/web/dist/
 
 # Database & State (CRITICAL)
 *.db
