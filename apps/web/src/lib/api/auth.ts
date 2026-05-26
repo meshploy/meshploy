@@ -37,7 +37,7 @@ export const auth = {
     ),
 
   enableTOTP: (code: string, token: string) =>
-    apiFetch<void>("/api/v1/me/totp/enable", {
+    apiFetch<{ recovery_codes: string[] }>("/api/v1/me/totp/enable", {
       method: "POST",
       body: JSON.stringify({ code }),
     }, token),
@@ -45,6 +45,19 @@ export const auth = {
   disableTOTP: (code: string, token: string) =>
     apiFetch<void>("/api/v1/me/totp", {
       method: "DELETE",
+      body: JSON.stringify({ code }),
+    }, token),
+
+  completeRecoveryLogin: (mfaToken: string, recoveryCode: string) =>
+    apiFetch<{ token: string }>("/api/v1/auth/recovery", {
+      method: "POST",
+      credentials: "include",
+      body: JSON.stringify({ mfa_token: mfaToken, recovery_code: recoveryCode }),
+    }),
+
+  regenerateRecoveryCodes: (code: string, token: string) =>
+    apiFetch<{ recovery_codes: string[] }>("/api/v1/me/recovery-codes/regenerate", {
+      method: "POST",
       body: JSON.stringify({ code }),
     }, token),
 }

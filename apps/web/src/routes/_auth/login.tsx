@@ -25,6 +25,8 @@ function LoginPage() {
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [totpCode, setTotpCode] = useState("")
   const [trustDevice, setTrustDevice] = useState(true)
+  const [useRecovery, setUseRecovery] = useState(false)
+  const [recoveryCode, setRecoveryCode] = useState("")
 
   async function finalize(token: string) {
     const payload = JSON.parse(atob(token.split(".")[1]))
@@ -54,6 +56,12 @@ function LoginPage() {
     onError: () => setError("Invalid code — try again"),
   })
 
+  const recoveryMutation = useMutation({
+    mutationFn: () => auth.completeRecoveryLogin(mfaToken!, recoveryCode),
+    onSuccess: async (result) => { await finalize(result.token) },
+    onError: () => setError("Invalid or already used recovery code"),
+  })
+
   if (mfaToken) {
     return (
       <div className="rounded-xl border border-border/60 bg-card p-6 space-y-5">
@@ -61,33 +69,49 @@ function LoginPage() {
           <ShieldCheck className="h-5 w-5 text-primary" />
           <div>
             <h2 className="text-base font-semibold text-foreground">Two-Factor Authentication</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">Enter the code from your authenticator app</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {useRecovery ? "Enter one of your saved recovery codes" : "Enter the code from your authenticator app"}
+            </p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            placeholder="000000"
-            maxLength={6}
-            value={totpCode}
-            onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            onKeyDown={(e) => { if (e.key === "Enter" && totpCode.length === 6) totpMutation.mutate() }}
-            autoFocus
-            className="w-full h-10 rounded-md border border-border/60 bg-muted/20 px-3 text-center text-lg font-mono tracking-[0.4em] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
-          />
-
-          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          {useRecovery ? (
             <input
-              type="checkbox"
-              checked={trustDevice}
-              onChange={(e) => setTrustDevice(e.target.checked)}
-              className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+              type="text"
+              autoComplete="off"
+              placeholder="xxxxx-xxxxx"
+              value={recoveryCode}
+              onChange={(e) => setRecoveryCode(e.target.value.toLowerCase())}
+              onKeyDown={(e) => { if (e.key === "Enter" && recoveryCode.length > 0) recoveryMutation.mutate() }}
+              autoFocus
+              className="w-full h-10 rounded-md border border-border/60 bg-muted/20 px-3 text-center text-sm font-mono tracking-widest text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
             />
-            <span className="text-xs text-muted-foreground">Trust this device for 30 days</span>
-          </label>
+          ) : (
+            <>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="000000"
+                maxLength={6}
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onKeyDown={(e) => { if (e.key === "Enter" && totpCode.length === 6) totpMutation.mutate() }}
+                autoFocus
+                className="w-full h-10 rounded-md border border-border/60 bg-muted/20 px-3 text-center text-lg font-mono tracking-[0.4em] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
+              />
+              <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={trustDevice}
+                  onChange={(e) => setTrustDevice(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+                />
+                <span className="text-xs text-muted-foreground">Trust this device for 30 days</span>
+              </label>
+            </>
+          )}
 
           {error && (
             <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
@@ -96,21 +120,30 @@ function LoginPage() {
           )}
 
           <Button
-            onClick={() => totpMutation.mutate()}
-            disabled={totpCode.length !== 6 || totpMutation.isPending}
+            onClick={() => useRecovery ? recoveryMutation.mutate() : totpMutation.mutate()}
+            disabled={useRecovery ? recoveryCode.length === 0 || recoveryMutation.isPending : totpCode.length !== 6 || totpMutation.isPending}
             className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
-            {totpMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {(totpMutation.isPending || recoveryMutation.isPending) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Verify
           </Button>
 
-          <Button
-            variant="ghost"
-            onClick={() => { setMfaToken(null); setTotpCode(""); setError(null) }}
-            className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Back to login
-          </Button>
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              onClick={() => { setUseRecovery((v) => !v); setError(null); setTotpCode(""); setRecoveryCode("") }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors px-0"
+            >
+              {useRecovery ? "Use authenticator app instead" : "Use a recovery code instead"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => { setMfaToken(null); setTotpCode(""); setRecoveryCode(""); setUseRecovery(false); setError(null) }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors px-0"
+            >
+              Back to login
+            </Button>
+          </div>
         </div>
       </div>
     )
