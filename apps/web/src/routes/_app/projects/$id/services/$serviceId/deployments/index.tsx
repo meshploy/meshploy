@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
+import { useEffect, useRef } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Rocket, RotateCcw, ScrollText, Trash2, X } from "lucide-react"
 import { services as servicesApi, buildConfigs as buildConfigsApi } from "@/lib/api"
@@ -69,6 +70,8 @@ function DeploymentsTab() {
   const queryClient = useQueryClient()
 
   const queryKey = ["deployments", orgId, projectId, serviceId]
+  const servicesQueryKey = ["services", orgId, projectId]
+  const serviceQueryKey = ["service", orgId, projectId, serviceId]
 
   const { data: deploymentList = [], isLoading } = useQuery({
     queryKey,
@@ -81,9 +84,23 @@ function DeploymentsTab() {
   })
   const isProvisioned = isDatabase && deploymentList.length > 0
 
+  // When active deployments settle, refresh service status in services list + overview.
+  const wasActive = useRef(false)
+  useEffect(() => {
+    const active = deploymentList.some((d) => ACTIVE_STATUSES.has(d.status))
+    if (wasActive.current && !active) {
+      queryClient.invalidateQueries({ queryKey: servicesQueryKey })
+      queryClient.invalidateQueries({ queryKey: serviceQueryKey })
+    }
+    wasActive.current = active
+  }, [deploymentList])
+
   const triggerMutation = useMutation({
     mutationFn: () => deploymentsApi.trigger(orgId!, projectId, serviceId, token),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: servicesQueryKey })
+    },
   })
 
   return (

@@ -64,10 +64,16 @@ function ServicesTab() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
 
+  const ACTIVE_SERVICE_STATUSES = new Set(["deploying"])
+
   const { data: allServices = [], isLoading } = useQuery({
     queryKey: ["services", orgId, projectId],
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
+    refetchInterval: (query) => {
+      const data = query.state.data as typeof allServices | undefined
+      return data?.some((s) => ACTIVE_SERVICE_STATUSES.has(s.status)) ? 5000 : false
+    },
   })
 
   const serviceList = allServices.filter((s) => s.type === "application")
