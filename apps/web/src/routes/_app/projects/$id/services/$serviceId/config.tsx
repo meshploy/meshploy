@@ -2,7 +2,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ChevronDown, ExternalLink, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X } from "lucide-react"
+import { AlertTriangle, Check, ChevronDown, Copy, ExternalLink, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -21,6 +21,7 @@ import {
   variableGroups as groupsApi,
   toNode,
   type ApiNode,
+  type ApiBuildConfig,
   type ApiServicePort,
   type ApiVolumeMount,
   type ApiVariableGroup,
@@ -470,6 +471,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     builderNodeName: "" as string,
     builderCPURequest: "1000m",
     builderMemoryRequest: "1Gi",
+    autoDeploy: false,
     nodeId: "",
     replicas: 1,
     cpuRequest: "100m",
@@ -498,6 +500,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       builderNodeName: bc?.builder_node ?? "",
       builderCPURequest: bc?.builder_cpu_request || "1000m",
       builderMemoryRequest: bc?.builder_memory_request || "1Gi",
+      autoDeploy: bc?.auto_deploy ?? false,
       nodeId: service.node_id ?? "",
       replicas: service.replicas,
       cpuRequest: service.cpu_request,
@@ -552,6 +555,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           builder_node: form.builderNodeName,
           builder_cpu_request: form.builderCPURequest,
           builder_memory_request: form.builderMemoryRequest,
+          auto_deploy: form.autoDeploy,
         }, token)
       }
       return updatedSvc
@@ -621,6 +625,18 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
             </Field>
           </div>
         </Section>
+      )}
+
+      {/* ── Auto-deploy ───────────────────────────────────────── */}
+      {form.source === "git" && (
+        <AutoDeploySection
+          bc={bc}
+          autoDeploy={form.autoDeploy}
+          onToggle={(v) => patch({ autoDeploy: v })}
+          orgId={orgId}
+          projectId={projectId}
+          serviceId={serviceId}
+        />
       )}
 
       {/* ── Deployment ────────────────────────────────────────── */}
@@ -755,6 +771,105 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
           {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
           Save
         </Button>
+      </div>
+    </Section>
+  )
+}
+
+// ─── Auto-deploy section ──────────────────────────────────────────────────────
+
+function AutoDeploySection({
+  bc,
+  autoDeploy,
+  onToggle,
+  orgId,
+  projectId,
+  serviceId,
+}: {
+  bc: ApiBuildConfig | undefined
+  autoDeploy: boolean
+  onToggle: (v: boolean) => void
+  orgId: string
+  projectId: string
+  serviceId: string
+}) {
+  const token = useAuthStore((s) => s.token)!
+  const qc = useQueryClient()
+  const [copied, setCopied] = useState(false)
+
+  const regenMut = useMutation({
+    mutationFn: () => buildConfigsApi.regenerateDeployToken(orgId, projectId, serviceId, token),
+    onSuccess: (updated) => {
+      qc.setQueryData(["build-config", orgId, projectId, serviceId], updated)
+    },
+  })
+
+  if (!bc) return null
+
+  const deployToken = bc.deploy_token
+  const webhookPath = `/api/v1/webhooks/deploy/${serviceId}?token=${deployToken}`
+
+  function copyWebhook() {
+    navigator.clipboard.writeText(window.location.origin + webhookPath)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Section
+      title="Auto-deploy"
+      subtitle="Trigger a new build automatically on every push to the tracked branch."
+    >
+      <div className="space-y-4">
+        {/* GitHub App auto-deploy toggle */}
+        <Field label="Auto-deploy on push">
+          <div className="flex items-center gap-2">
+            <Switch checked={autoDeploy} onCheckedChange={onToggle} />
+            <span className="text-xs text-muted-foreground">
+              {autoDeploy
+                ? "Enabled — deploys on every push via GitHub App webhook"
+                : "Disabled"}
+            </span>
+          </div>
+          {autoDeploy && !bc.git_integration_id && (
+            <p className="text-xs text-amber-400 flex items-center gap-1 mt-1.5">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              GitHub App auto-deploy requires a connected private git integration. For public repos, use the webhook URL below instead.
+            </p>
+          )}
+        </Field>
+
+        {/* Per-service deploy token webhook URL */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Zap className="h-3 w-3" /> Deploy webhook URL
+          </label>
+          <p className="text-xs text-muted-foreground mb-2">
+            Add this as a webhook in your git provider — any POST triggers a build. Works with GitHub, GitLab, Gitea, Bitbucket, or any provider.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+              POST {webhookPath}
+            </code>
+            <Button size="icon-sm" variant="outline" onClick={copyWebhook} title="Copy full webhook URL">
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              onClick={() => regenMut.mutate()}
+              disabled={regenMut.isPending}
+              title="Regenerate token — invalidates the current URL"
+            >
+              {regenMut.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Zap className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+          {regenMut.isError && (
+            <p className="text-xs text-destructive mt-1">{(regenMut.error as Error).message}</p>
+          )}
+        </div>
       </div>
     </Section>
   )

@@ -214,6 +214,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			BuilderNode:           in.BuilderNode,
 			BuilderCPURequest:     in.BuilderCPURequest,
 			BuilderMemoryRequest:  in.BuilderMemoryRequest,
+			DeployToken:           db.EncryptedString(generateDeployToken()),
 		}
 		return tx.Create(bc).Error
 	}); err != nil {
@@ -532,6 +533,7 @@ type UpdateBuildConfigInput struct {
 	BuilderMemoryRequest  *string // nil = no change; "" = use default (1Gi)
 	RollbackEnabled       *bool
 	ImageRetention        *int
+	AutoDeploy            *bool
 }
 
 // UpsertBuildConfig creates or updates the BuildConfig for a service.
@@ -590,12 +592,42 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	if in.ImageRetention != nil {
 		bc.ImageRetention = *in.ImageRetention
 	}
+	if in.AutoDeploy != nil {
+		bc.AutoDeploy = *in.AutoDeploy
+	}
 	if isNew {
+		// Generate a per-service deploy token so the user can set up a manual webhook
+		// without needing a GitHub App integration.
+		bc.DeployToken = db.EncryptedString(generateDeployToken())
 		err = s.db.WithContext(ctx).Create(&bc).Error
 	} else {
 		err = s.db.WithContext(ctx).Save(&bc).Error
 	}
 	return &bc, err
+}
+
+// RegenerateDeployToken creates a new deploy token for the build config of the
+// given service, replacing any existing token.
+func (s *WorkloadService) RegenerateDeployToken(ctx context.Context, serviceID uuid.UUID) (string, error) {
+	var bc db.BuildConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&bc).Error; err != nil {
+		return "", err
+	}
+	token := generateDeployToken()
+	if err := s.db.WithContext(ctx).Model(&bc).Update("deploy_token", db.EncryptedString(token)).Error; err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// generateDeployToken returns a cryptographically random 32-byte hex string
+// used as a per-service webhook deploy token.
+func generateDeployToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }
 
 // toPortSpecs converts loaded ServicePort rows into k8s PortSpec values,

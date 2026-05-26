@@ -66,4 +66,8 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	// WebSocket: service pod terminal
 	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/{podName}/terminal",
 		h.ServiceTerminal)
+
+	// Inbound webhooks — no auth, validated by HMAC / deploy token
+	r.Post("/api/v1/webhooks/github/{integrationId}", h.GitHubWebhook)
+	r.Post("/api/v1/webhooks/deploy/{serviceId}", h.DeployWebhook)
 }

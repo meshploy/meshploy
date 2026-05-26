@@ -477,6 +477,11 @@ type BuildConfig struct {
 	RollbackEnabled bool `gorm:"not null;default:false" json:"rollback_enabled"`
 	ImageRetention  int  `gorm:"not null;default:5"     json:"image_retention"`
 
+	// Auto-deploy — when enabled, a push to the tracked branch triggers a new build.
+	// Works via GitHub App webhook (for private repos) or a per-service deploy token.
+	AutoDeploy  bool            `gorm:"not null;default:false" json:"auto_deploy"`
+	DeployToken EncryptedString `gorm:"type:text"              json:"deploy_token"`
+
 	Service             Service              `gorm:"foreignKey:ServiceID"                                        json:"-"`
 	GitIntegration      *GitIntegration      `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL"    json:"-"`
 	RegistryIntegration *RegistryIntegration `gorm:"foreignKey:RegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`

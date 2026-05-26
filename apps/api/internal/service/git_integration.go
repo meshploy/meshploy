@@ -63,17 +63,23 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 	state := buildState(row.ID.String(), s.cfg.JWTSecret)
 
 	base := s.cfg.FrontendURL
+	apiBase := s.cfg.APIBaseURL
 	m := map[string]any{
 		"name":         "Meshploy",
 		"url":          base,
-		"redirect_url": base + "/api/v1/github/app-callback",
-		"callback_urls": []string{base + "/api/v1/github/callback"},
-		"setup_url":    base + "/api/v1/github/callback",
+		"redirect_url": apiBase + "/api/v1/github/app-callback",
+		"callback_urls": []string{apiBase + "/api/v1/github/callback"},
+		"setup_url":    apiBase + "/api/v1/github/callback",
 		"public":       false,
 		"default_permissions": map[string]string{
 			"contents":      "read",
 			"metadata":      "read",
 			"pull_requests": "read",
+		},
+		"default_events": []string{"push"},
+		"hook_attributes": map[string]any{
+			"url":    apiBase + "/api/v1/webhooks/github/" + row.ID.String(),
+			"active": true,
 		},
 	}
 	b, err := json.Marshal(m)
@@ -215,6 +221,15 @@ func (s *GitIntegrationService) HandleGitHubCallback(ctx context.Context, instal
 }
 
 // ─── Org-level integration management ────────────────────────────────────────
+
+// GetByID returns a single git integration by its ID (no org scoping — used internally).
+func (s *GitIntegrationService) GetByID(ctx context.Context, id uuid.UUID) (*db.GitIntegration, error) {
+	var row db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
 
 // List returns all git integrations for an org with Connected computed.
 func (s *GitIntegrationService) List(ctx context.Context, orgID uuid.UUID) ([]db.GitIntegration, error) {

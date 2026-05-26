@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -190,6 +191,32 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.PutServiceBuildEnvVars)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "regenerate-deploy-token",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/deploy-token",
+		Summary:       "Regenerate the per-service webhook deploy token",
+		Tags:          []string{"Services"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusOK,
+	}, func(ctx context.Context, in *WorkloadPathInput) (*GetBuildConfigOutput, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		serviceID, err := parseUUID(in.ServiceID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := h.svc.Workloads.RegenerateDeployToken(ctx, serviceID); err != nil {
+			return nil, huma.Error404NotFound("build config not found")
+		}
+		bc, err := h.svc.Workloads.GetBuildConfig(ctx, serviceID)
+		if err != nil {
+			return nil, err
+		}
+		return &GetBuildConfigOutput{Body: bc}, nil
+	})
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-database-config",
@@ -551,6 +578,7 @@ type PatchBuildConfigInput struct {
 		BuilderMemoryRequest  *string `json:"builder_memory_request,omitempty"`
 		RollbackEnabled       *bool   `json:"rollback_enabled,omitempty"`
 		ImageRetention        *int    `json:"image_retention,omitempty"`
+		AutoDeploy            *bool   `json:"auto_deploy,omitempty"`
 	}
 }
 
@@ -578,6 +606,7 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		BuilderMemoryRequest: input.Body.BuilderMemoryRequest,
 		RollbackEnabled:      input.Body.RollbackEnabled,
 		ImageRetention:       input.Body.ImageRetention,
+		AutoDeploy:           input.Body.AutoDeploy,
 	}
 	if input.Body.GitIntegrationID != nil {
 		id, err := parseUUID(*input.Body.GitIntegrationID)
