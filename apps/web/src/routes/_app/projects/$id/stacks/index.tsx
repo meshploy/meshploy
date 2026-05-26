@@ -88,6 +88,10 @@ function StacksTab() {
     queryKey,
     queryFn: () => stacksApi.list(orgId!, projectId, token),
     enabled: !!orgId,
+    refetchInterval: (query) => {
+      const data = query.state.data as typeof stackList | undefined
+      return data?.some((s) => s.status === "applying") ? 3000 : false
+    },
   })
 
   const goToNew = () =>

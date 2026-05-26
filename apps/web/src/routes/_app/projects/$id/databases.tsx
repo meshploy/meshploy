@@ -111,10 +111,16 @@ function DatabasesTab() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
 
+  const ACTIVE_DB_STATUSES = new Set(["deploying"])
+
   const { data: allServices = [], isLoading } = useQuery({
     queryKey: ["services", orgId, projectId],
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
+    refetchInterval: (query) => {
+      const data = query.state.data as typeof allServices | undefined
+      return data?.filter((s) => s.type === "database").some((s) => ACTIVE_DB_STATUSES.has(s.status)) ? 5000 : false
+    },
   })
 
   const dbList = allServices.filter((s) => s.type === "database")
