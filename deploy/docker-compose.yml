@@ -88,7 +88,7 @@ services:
       JWT_SECRET:        ${JWT_SECRET}
       ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
       API_BASE_URL:      ${API_BASE_URL:-https://api.${DOMAIN}}
-      FRONTEND_URL:      ${FRONTEND_URL:-https://app.${DOMAIN}}
+      FRONTEND_URL:      ${FRONTEND_URL:-https://console.${DOMAIN}}
       HEADSCALE_URL:     http://headscale:8080
       HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
       KUBECONFIG:        /etc/rancher/k3s/k3s.yaml
