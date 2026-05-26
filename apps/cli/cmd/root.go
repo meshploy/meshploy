@@ -31,7 +31,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "meshploy",
-	Short: "Meshploy CLI — manage your zero-trust IDP from the terminal",
+	Short: "Meshploy CLI — manage your infrastructure from the terminal",
 	Long: `meshploy is the command-line interface for Meshploy.
 
 Authenticate once with:

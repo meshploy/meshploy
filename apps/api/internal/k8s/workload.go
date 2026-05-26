@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -454,7 +455,7 @@ func ListServicePods(ctx context.Context, client kubernetes.Interface, namespace
 // given namespace. The secret is named `name` and holds credentials for `server`.
 // Call this before ApplyDeployment when the image is in a private registry.
 func EnsureRegistryPullSecret(ctx context.Context, client kubernetes.Interface, namespace, name, server, username, password string) error {
-	auth := username + ":" + password
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	dockerConfig := fmt.Sprintf(`{"auths":{%q:{"auth":%q}}}`, server, auth)
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
