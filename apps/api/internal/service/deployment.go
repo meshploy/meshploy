@@ -589,6 +589,35 @@ func (s *DeploymentService) resolveRegistry(ctx context.Context, bc *db.BuildCon
 	return reg.Endpoint, string(reg.Username), string(reg.Password), nil
 }
 
+// FindAndTriggerForPush finds all auto-deploy services tracking the given
+// repo+branch via the specified git integration and triggers a new deployment.
+// Called by the GitHub App push webhook handler.
+func (s *DeploymentService) FindAndTriggerForPush(ctx context.Context, integrationID uuid.UUID, repo, branch string) {
+	var configs []db.BuildConfig
+	s.db.WithContext(ctx).
+		Where("git_integration_id = ? AND git_repo = ? AND branch = ? AND auto_deploy = true", integrationID, repo, branch).
+		Find(&configs)
+	for _, bc := range configs {
+		go s.Trigger(context.Background(), TriggerInput{ServiceID: bc.ServiceID})
+	}
+}
+
+// TriggerByDeployToken validates the per-service deploy token and triggers a build.
+// Used by the generic webhook endpoint (public repos / any git provider).
+func (s *DeploymentService) TriggerByDeployToken(ctx context.Context, serviceID uuid.UUID, token string) (*db.Deployment, error) {
+	if token == "" {
+		return nil, fmt.Errorf("deploy token is required")
+	}
+	var bc db.BuildConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&bc).Error; err != nil {
+		return nil, fmt.Errorf("build config not found")
+	}
+	if string(bc.DeployToken) != token {
+		return nil, fmt.Errorf("invalid deploy token")
+	}
+	return s.Trigger(ctx, TriggerInput{ServiceID: serviceID})
+}
+
 // Cancel kills an active build job and marks the deployment as failed.
 func (s *DeploymentService) Cancel(ctx context.Context, deploymentID uuid.UUID) error {
 	var d db.Deployment

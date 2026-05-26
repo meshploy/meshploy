@@ -104,6 +104,8 @@ export interface ApiBuildConfig {
   last_built_at: string | null
   rollback_enabled: boolean
   image_retention: number
+  auto_deploy: boolean
+  deploy_token: string
   created_at: string
   updated_at: string
 }
@@ -175,6 +177,7 @@ export interface UpdateBuildConfigBody {
   builder_memory_request?: string   // "" = default (1Gi)
   rollback_enabled?: boolean
   image_retention?: number
+  auto_deploy?: boolean
 }
 
 export const services = {
@@ -303,6 +306,13 @@ export const buildConfigs = {
     apiFetch<{ build_env_vars: string }>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/build-config/env-vars`,
       { method: "PUT", body: JSON.stringify({ build_env_vars: buildEnvVars }) },
+      token
+    ),
+
+  regenerateDeployToken: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiBuildConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/build-config/deploy-token`,
+      { method: "POST" },
       token
     ),
 }
