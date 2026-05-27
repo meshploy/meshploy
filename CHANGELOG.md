@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/meshploy/meshploy/compare/v0.2.0...v0.2.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* auto-refresh polling missing for databases and stacks list tabs ([59884a6](https://github.com/meshploy/meshploy/commit/59884a683761ebb6211fe71953abb075f46dfd77))
+* base64-encode auth field in imagePullSecret dockerconfigjson ([951f568](https://github.com/meshploy/meshploy/commit/951f568800267fcfbf2f943bc27fd39ea9be1b53))
+* close registration after first owner account is created ([5793eab](https://github.com/meshploy/meshploy/commit/5793eaba8288981ca7702f7a656c78315f5833ad))
+
 ## [0.2.0](https://github.com/meshploy/meshploy/compare/v0.1.2...v0.2.0) (2026-05-26)
 
 
