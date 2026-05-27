@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/meshploy/meshploy/compare/v0.2.3...v0.2.4) (2026-05-27)
+
+
+### Bug Fixes
+
+* syntax-highlighted env editor and unescape \n in env var values ([568b676](https://github.com/meshploy/meshploy/commit/568b676b4ba6c3506001d2becf1d185f64d56c45))
+
 ## [0.2.3](https://github.com/meshploy/meshploy/compare/v0.2.2...v0.2.3) (2026-05-27)
 
 
