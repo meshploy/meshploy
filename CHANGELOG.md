@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/meshploy/meshploy/compare/v0.2.1...v0.2.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* push latest image tag on release-please merge commit ([a9ad225](https://github.com/meshploy/meshploy/commit/a9ad22590f772f810841c6f6f0b25070f503c59e))
+
 ## [0.2.1](https://github.com/meshploy/meshploy/compare/v0.2.0...v0.2.1) (2026-05-26)
 
 
