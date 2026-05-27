@@ -4,10 +4,13 @@ import { EditorView } from "@codemirror/view"
 export const envLanguage = StreamLanguage.define<{ inValue: boolean }>({
   startState: () => ({ inValue: false }),
   token(stream, state) {
+    // Reset state at the start of every new line
+    if (stream.sol()) {
+      state.inValue = false
+    }
     // Comment line
     if (stream.sol() && stream.match(/\s*#/)) {
       stream.skipToEnd()
-      state.inValue = false
       return "comment"
     }
     // After = sign: consume rest of line as string/value
@@ -30,7 +33,7 @@ export const envLanguage = StreamLanguage.define<{ inValue: boolean }>({
     stream.next()
     return null
   },
-  blankLine(_state) {},
+  blankLine(state) { state.inValue = false },
   copyState: (s) => ({ ...s }),
 })
 

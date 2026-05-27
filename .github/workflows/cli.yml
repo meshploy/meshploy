@@ -98,24 +98,8 @@ jobs:
           make_latest: false
           prerelease: true
 
-      - name: Publish stable release (versioned)
+      - name: Attach CLI binaries to existing release
         if: steps.detect.outputs.is_release == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.detect.outputs.version }}
-          name: "meshploy CLI v${{ steps.detect.outputs.version }}"
-          body: |
-            Stable CLI release v${{ steps.detect.outputs.version }}.
-
-            **Install:**
-            ```bash
-            sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
-            ```
-
-            **Update existing install:**
-            ```bash
-            meshploy update
-            ```
-          files: dist/*
-          make_latest: true
-          prerelease: false
+        run: gh release upload v${{ steps.detect.outputs.version }} dist/* --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
