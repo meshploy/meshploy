@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import CodeMirror from "@uiw/react-codemirror"
+import { envLanguage, envTheme } from "@/lib/env-lang"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { StackEditor } from "@/components/stacks/stack-editor"
@@ -1598,6 +1599,7 @@ function JobForm({ projectId }: { projectId: string }) {
               value={jf.envVars}
               height="120px"
               theme="dark"
+              extensions={[envLanguage, envTheme]}
               onChange={(val) => patch({ envVars: val })}
               placeholder={"DATABASE_URL=postgres://...\nDEBUG=true"}
               style={{ fontSize: 13 }}

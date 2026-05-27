@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section } from "@/components/services/form-primitives"
 import CodeMirror from "@uiw/react-codemirror"
+import { envLanguage, envTheme } from "@/lib/env-lang"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId/variables")({
   component: StackVariablesTab,
@@ -80,6 +81,7 @@ function StackVariablesTab() {
             value={text}
             height="260px"
             theme="dark"
+            extensions={[envLanguage, envTheme]}
             onChange={(val) => { setText(val); setDirty(val !== varsToText(stack?.variables ?? {})) }}
             placeholder={"JWT_SECRET=your-secret\nPOSTGRES_PASSWORD=admin123\nAPI_KEY=..."}
             style={{ fontSize: 12 }}
