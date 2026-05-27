@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/meshploy/meshploy/compare/v0.2.2...v0.2.3) (2026-05-27)
+
+
+### Bug Fixes
+
+* resolve circular type reference in refetchInterval callbacks ([5322795](https://github.com/meshploy/meshploy/commit/5322795c971db40f3cfc4c8b6fb17c3b3e84e165))
+
 ## [0.2.2](https://github.com/meshploy/meshploy/compare/v0.2.1...v0.2.2) (2026-05-27)
 
 
