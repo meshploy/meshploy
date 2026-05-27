@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6](https://github.com/meshploy/meshploy/compare/v0.2.5...v0.2.6) (2026-05-27)
+
+
+### Bug Fixes
+
+* stable CLI update by default, edge flag for rolling builds, sync VERSION ([b0ecac0](https://github.com/meshploy/meshploy/commit/b0ecac077d48cfbb09fa30c5abb67f636ac568fb))
+
 ## [0.2.5](https://github.com/meshploy/meshploy/compare/v0.2.4...v0.2.5) (2026-05-27)
 
 
