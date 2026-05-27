@@ -118,7 +118,7 @@ function DatabasesTab() {
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
     refetchInterval: (query) => {
-      const data = query.state.data as typeof allServices | undefined
+      const data = query.state.data as ApiService[] | undefined
       return data?.filter((s) => s.type === "database").some((s) => ACTIVE_DB_STATUSES.has(s.status)) ? 5000 : false
     },
   })
