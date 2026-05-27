@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/meshploy/meshploy/compare/v0.2.6...v0.2.7) (2026-05-27)
+
+
+### Bug Fixes
+
+* update CLI release process and improve envLanguage state management ([c7dfbe5](https://github.com/meshploy/meshploy/commit/c7dfbe54973603bc07887f2de31f1493b57e6c40))
+
 ## [0.2.6](https://github.com/meshploy/meshploy/compare/v0.2.5...v0.2.6) (2026-05-27)
 
 
