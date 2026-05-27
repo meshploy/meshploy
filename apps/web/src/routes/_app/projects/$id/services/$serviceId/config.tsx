@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import CodeMirror from "@uiw/react-codemirror"
+import { envLanguage, envTheme } from "@/lib/env-lang"
 import {
   services as servicesApi,
   buildConfigs as buildConfigsApi,
@@ -80,6 +81,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
             value={envVars}
             height="160px"
             theme="dark"
+            extensions={[envLanguage, envTheme]}
             onChange={(val) => setEnvVars(val)}
             placeholder={"DATABASE_URL=postgres://...\nSECRET_KEY=..."}
             style={{ fontSize: 12 }}

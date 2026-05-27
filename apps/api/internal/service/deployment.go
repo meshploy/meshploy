@@ -1150,6 +1150,8 @@ func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
 		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
 			val = val[1 : len(val)-1]
 		}
+		// Unescape literal \n so multi-line values like PEM keys work.
+		val = strings.ReplaceAll(val, `\n`, "\n")
 		if key == "PORT" {
 			hasPort = true
 			portStr = val

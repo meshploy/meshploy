@@ -3,6 +3,7 @@ import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Check, Loader2 } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
+import { envLanguage, envTheme } from "@/lib/env-lang"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { jobs as jobsApi, type ApiJob, type CreateJobBody } from "@/lib/api"
@@ -150,6 +151,7 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
               value={envVars}
               height="140px"
               theme="dark"
+              extensions={[envLanguage, envTheme]}
               onChange={(val) => setEnvVars(val)}
               placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"}
               style={{ fontSize: 12 }}
