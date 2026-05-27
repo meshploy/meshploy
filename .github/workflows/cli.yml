@@ -7,6 +7,7 @@ on:
       - "apps/cli/**"
       - "go.work"
       - "go.work.sum"
+      - "VERSION"
   workflow_dispatch:
 
 permissions:
@@ -41,7 +42,13 @@ jobs:
           cd apps/cli
           VERSION=$(cat ../../VERSION)
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          go build -ldflags="-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}+${SHORT_SHA}'" -o "meshploy-${{ matrix.goos }}-${{ matrix.goarch }}" .
+          # Stable release: VERSION only, channel=stable. Rolling: VERSION+SHA, channel=edge.
+          if echo "${{ github.event.head_commit.message }}" | grep -q "release-please"; then
+            LDFLAGS="-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}' -X 'github.com/meshploy/apps/cli/cmd.Channel=stable'"
+          else
+            LDFLAGS="-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}+${SHORT_SHA}' -X 'github.com/meshploy/apps/cli/cmd.Channel=edge'"
+          fi
+          go build -ldflags="${LDFLAGS}" -o "meshploy-${{ matrix.goos }}-${{ matrix.goarch }}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -62,17 +69,52 @@ jobs:
           path: dist/
           merge-multiple: true
 
-      - name: Create or update latest release
+      - name: Detect if this is a version bump
+        id: detect
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          # A version bump commit comes from release-please
+          if echo "${{ github.event.head_commit.message }}" | grep -q "release-please"; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish edge release (cli-latest)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: cli-latest
-          name: "meshploy CLI (latest)"
+          name: "meshploy CLI (edge)"
           body: |
-            Latest CLI build from `main`. Updated automatically on every change to `apps/cli/`.
+            Rolling build from `main`. Updated automatically on every change.
+            Use `meshploy update --edge` to install this build.
+
+            **Install stable instead:**
+            ```bash
+            sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
+            ```
+          files: dist/*
+          make_latest: false
+          prerelease: true
+
+      - name: Publish stable release (versioned)
+        if: steps.detect.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.detect.outputs.version }}
+          name: "meshploy CLI v${{ steps.detect.outputs.version }}"
+          body: |
+            Stable CLI release v${{ steps.detect.outputs.version }}.
 
             **Install:**
             ```bash
             sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
+            ```
+
+            **Update existing install:**
+            ```bash
+            meshploy update
             ```
           files: dist/*
           make_latest: true

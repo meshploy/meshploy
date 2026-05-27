@@ -13,31 +13,36 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	githubRepo  = "meshploy/meshploy"
-	releaseTag  = "cli-latest"
-)
+const githubRepo = "meshploy/meshploy"
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Download and replace the CLI binary with the latest release",
+	Short: "Download and replace the CLI binary with the latest stable release",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pat, _ := cmd.Flags().GetString("token")
 		if pat == "" {
 			pat = os.Getenv("GITHUB_PAT")
 		}
+		edge, _ := cmd.Flags().GetBool("edge")
 
 		arch := runtime.GOARCH // amd64 or arm64
 		assetName := fmt.Sprintf("meshploy-linux-%s", arch)
 
-		// Find current binary path so we replace it in-place.
 		exePath, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("resolve binary path: %w", err)
 		}
 
-		fmt.Printf("Fetching release info for %s…\n", releaseTag)
-		assetURL, err := resolveAssetURL(pat, assetName)
+		var channel string
+		if edge {
+			channel = "cli-latest"
+			fmt.Println("Fetching edge release…")
+		} else {
+			channel = "latest"
+			fmt.Println("Fetching latest stable release…")
+		}
+
+		assetURL, err := resolveAssetURL(pat, assetName, channel)
 		if err != nil {
 			return err
 		}
@@ -52,8 +57,13 @@ var updateCmd = &cobra.Command{
 	},
 }
 
-func resolveAssetURL(pat, assetName string) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", githubRepo, releaseTag)
+func resolveAssetURL(pat, assetName, channel string) (string, error) {
+	var url string
+	if channel == "latest" {
+		url = fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", githubRepo)
+	} else {
+		url = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", githubRepo, channel)
+	}
 	req, _ := http.NewRequest("GET", url, nil)
 	if pat != "" {
 		req.Header.Set("Authorization", "token "+pat)
@@ -86,7 +96,7 @@ func resolveAssetURL(pat, assetName string) (string, error) {
 			return a.URL, nil
 		}
 	}
-	return "", fmt.Errorf("no asset %q found in release %s", assetName, releaseTag)
+	return "", fmt.Errorf("no asset %q found in release %s", assetName, channel)
 }
 
 // downloadReplace downloads the binary to a temp file in the same directory,
@@ -137,5 +147,6 @@ func downloadReplace(pat, assetURL, dest string) error {
 
 func init() {
 	updateCmd.Flags().String("token", "", "GitHub personal access token (or set GITHUB_PAT env var)")
+	updateCmd.Flags().Bool("edge", false, "Install the edge build from main instead of the latest stable release")
 	rootCmd.AddCommand(updateCmd)
 }
