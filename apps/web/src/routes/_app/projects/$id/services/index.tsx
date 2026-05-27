@@ -71,7 +71,7 @@ function ServicesTab() {
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
     refetchInterval: (query) => {
-      const data = query.state.data as typeof allServices | undefined
+      const data = query.state.data as ApiService[] | undefined
       return data?.some((s) => ACTIVE_SERVICE_STATUSES.has(s.status)) ? 5000 : false
     },
   })
