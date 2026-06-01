@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.8](https://github.com/meshploy/meshploy/compare/v0.2.7...v0.2.8) (2026-06-01)
+
+
+### Bug Fixes
+
+* rebuild all images and stamp version on tag push ([a382826](https://github.com/meshploy/meshploy/commit/a3828264ac571f5cc691040481f4cb591ad82dd3))
+
 ## [0.2.7](https://github.com/meshploy/meshploy/compare/v0.2.6...v0.2.7) (2026-05-27)
 
 
