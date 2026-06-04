@@ -49,7 +49,8 @@ After that, all commands in that directory pick up the project automatically. Us
 
 ```bash
 meshploy version
-# meshploy 0.1.0+abc1234
+# meshploy 0.2.6          ← stable build
+# meshploy 0.2.6+abc1234 (edge)  ← edge build
 ```
 
 ---
@@ -235,10 +236,31 @@ meshploy link --unlink            # remove the .meshploy file
 ### `meshploy update`
 
 ```bash
-meshploy update
+meshploy update           # latest stable binary
+meshploy update --edge    # edge build from main
 ```
 
-Downloads the latest CLI binary from GitHub and replaces the running binary in-place. Pass `--token <pat>` or set `GITHUB_PAT` if the repo is private.
+Downloads the latest CLI binary from GitHub and replaces the running binary in-place. Defaults to the latest stable release. Pass `--token <pat>` or set `GITHUB_PAT` if the repo is private.
+
+---
+
+### `meshploy server-upgrade`
+
+```bash
+sudo meshploy server-upgrade           # stable — latest release configs + images
+sudo meshploy server-upgrade --edge    # edge — main branch configs + images
+```
+
+Syncs the `deploy/` configuration directory from GitHub and pulls the latest container images, then restarts all services. Equivalent to what the CI deploy job does for your own server.
+
+Must be run as root on the **gateway server**.
+
+Protected files are never overwritten: `.env`, `coredns/Corefile`, DNS zone files, and Headscale config retain their runtime-rendered values.
+
+| Flag | Description |
+|---|---|
+| `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
+| `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`) — required if the repo is private |
 
 ---
 
