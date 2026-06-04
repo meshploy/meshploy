@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/meshploy/meshploy/compare/v0.2.8...v0.3.0) (2026-06-04)
+
+
+### Features
+
+* server-upgrade cmd to sync deploy configs and pull latest images and, fix: adjust CoreDNS configuration to enhance security ([90c79a7](https://github.com/meshploy/meshploy/commit/90c79a7e9cefae0c2217c5a82be071771fdf9134))
+
 ## [0.2.8](https://github.com/meshploy/meshploy/compare/v0.2.7...v0.2.8) (2026-06-01)
 
 
