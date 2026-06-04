@@ -277,8 +277,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      # Sync deploy/ folder to server, preserving runtime-substituted files.
-      # .rsyncignore defines what to protect (zone files, Corefile, .env, etc.)
+      # Sync deploy/ configs to server. Corefile is synced as a template;
+      # .env and zone files are protected by .rsyncignore and never overwritten.
       - name: Sync deploy configs
         run: |
           rsync -az --delete \
@@ -286,14 +286,11 @@ jobs:
             deploy/ \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_DIR }}/
 
-      # Pull new images and restart only changed services.
-      - name: Pull and restart
+      # Substitute Corefile template, pull new images, restart services.
+      - name: Deploy
         run: |
           ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "cd ${{ env.DEPLOY_DIR }} && \
-             RUNTIME=\$(grep '^CONTAINER_RUNTIME=' .env 2>/dev/null | cut -d= -f2 | grep -m1 . || echo docker) && \
-             \${RUNTIME} compose pull --quiet && \
-             \${RUNTIME} compose up -d --remove-orphans"
+            "meshploy server-upgrade --no-sync"
 
   # ── Builder ───────────────────────────────────────────────────────────────────
   builder:
