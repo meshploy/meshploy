@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,55 +23,60 @@ const (
 var serverUpgradeCmd = &cobra.Command{
 	Use:   "server-upgrade",
 	Short: "Sync deploy configs and pull latest images on this gateway server",
-	Long: `Downloads the latest deploy/ configuration from GitHub, skipping runtime-generated
-files (.env, Corefile, zone files, Headscale config), then pulls new container
-images and restarts affected services.
+	Long: `Downloads the latest deploy/ configuration from GitHub, substitutes the
+Corefile with values from .env, then pulls new container images and restarts.
 
 Must be run as root on the gateway server (sudo meshploy server-upgrade).
 
-By default pulls the latest stable release. Use --edge to follow the main branch.`,
+By default pulls the latest stable release. Use --edge to follow the main branch.
+Use --no-sync to skip the config download (e.g. when CI has already rsync'd configs).`,
 	RunE: runServerUpgrade,
 }
 
 func runServerUpgrade(cmd *cobra.Command, _ []string) error {
-	if os.Getuid() != 0 {
-		return fmt.Errorf("must be run as root — try: sudo meshploy server-upgrade")
-	}
-
 	pat, _ := cmd.Flags().GetString("token")
 	if pat == "" {
 		pat = os.Getenv("GITHUB_PAT")
 	}
 	edge, _ := cmd.Flags().GetBool("edge")
+	noSync, _ := cmd.Flags().GetBool("no-sync")
 
-	// Resolve the ref to download.
-	ref, err := resolveUpgradeRef(pat, edge)
-	if err != nil {
-		return err
-	}
-	if edge {
-		fmt.Printf("Upgrading from edge (main)…\n")
-	} else {
-		fmt.Printf("Upgrading to stable release %s…\n", ref)
+	if !noSync && os.Getuid() != 0 {
+		return fmt.Errorf("must be run as root — try: sudo meshploy server-upgrade")
 	}
 
-	// Detect container runtime from .env.
 	runtime := detectContainerRuntime()
 
-	// Download and extract deploy/ tarball, skipping protected files.
-	fmt.Println("Syncing deploy configs…")
-	if err := downloadDeployTarball(pat, ref); err != nil {
-		return err
-	}
-	fmt.Println("✔  Deploy configs synced")
+	if !noSync {
+		ref, err := resolveUpgradeRef(pat, edge)
+		if err != nil {
+			return err
+		}
+		if edge {
+			fmt.Println("Upgrading from edge (main)…")
+		} else {
+			fmt.Printf("Upgrading to stable release %s…\n", ref)
+		}
 
-	// Pull new images.
+		fmt.Println("Syncing deploy configs…")
+		if err := downloadDeployTarball(pat, ref); err != nil {
+			return err
+		}
+		fmt.Println("✔  Deploy configs synced")
+	}
+
+	// Substitute ${DOMAIN}, ${PUBLIC_IP}, ${MESH_IP} in the Corefile using .env values.
+	fmt.Println("Configuring Corefile…")
+	if err := substituteCorefile(); err != nil {
+		return fmt.Errorf("corefile substitution: %w", err)
+	}
+	fmt.Println("✔  Corefile configured")
+
 	fmt.Println("Pulling images…")
 	if err := composeRun(runtime, "pull", "--quiet"); err != nil {
 		return fmt.Errorf("compose pull: %w", err)
 	}
 
-	// Restart services.
 	fmt.Println("Restarting services…")
 	if err := composeRun(runtime, "up", "-d", "--remove-orphans"); err != nil {
 		return fmt.Errorf("compose up: %w", err)
@@ -77,6 +84,65 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 
 	fmt.Println("✔  Server upgraded successfully")
 	return nil
+}
+
+// substituteCorefile reads DOMAIN, PUBLIC_IP, MESH_IP from .env and replaces
+// the placeholder variables in the Corefile template in-place.
+func substituteCorefile() error {
+	envPath := filepath.Join(meshployInstDir, ".env")
+	corefilePath := filepath.Join(meshployInstDir, "coredns", "Corefile")
+
+	vars, err := parseEnvFile(envPath, "DOMAIN", "PUBLIC_IP", "MESH_IP")
+	if err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(corefilePath)
+	if err != nil {
+		return err
+	}
+
+	result := string(content)
+	for k, v := range vars {
+		result = strings.ReplaceAll(result, "${"+k+"}", v)
+	}
+
+	return os.WriteFile(corefilePath, []byte(result), 0644)
+}
+
+// parseEnvFile reads KEY=VALUE lines from an env file and returns the requested keys.
+func parseEnvFile(path string, keys ...string) (map[string]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	want := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		want[k] = true
+	}
+
+	result := make(map[string]string, len(keys))
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok || !want[k] {
+			continue
+		}
+		result[k] = v
+	}
+
+	for _, k := range keys {
+		if _, ok := result[k]; !ok {
+			return nil, fmt.Errorf("%s not found in %s", k, path)
+		}
+	}
+	return result, scanner.Err()
 }
 
 func resolveUpgradeRef(pat string, edge bool) (string, error) {
@@ -117,7 +183,6 @@ func downloadDeployTarball(pat, ref string) error {
 	// Files already rendered with real values on disk — never overwrite.
 	protected := []string{
 		"*/deploy/.env",
-		"*/deploy/coredns/Corefile",
 		"*/deploy/coredns/zones",
 		"*/deploy/headscale/config/config.yaml",
 		"*/deploy/headscale/data",
@@ -129,7 +194,6 @@ func downloadDeployTarball(pat, ref string) error {
 	}
 	curlArgs = append(curlArgs, tarURL)
 
-	// Pipe curl into tar: extract only the deploy/ subdirectory, strip 2 path components.
 	tarArgs := []string{"-xz", "--strip-components=2", "-C", meshployInstDir, "--wildcards", "*/deploy"}
 	for _, p := range protected {
 		tarArgs = append(tarArgs, "--exclude="+p)
@@ -191,5 +255,6 @@ func composeRun(runtime string, args ...string) error {
 func init() {
 	serverUpgradeCmd.Flags().String("token", "", "GitHub personal access token for private repo (or set GITHUB_PAT env var)")
 	serverUpgradeCmd.Flags().Bool("edge", false, "Sync from main branch and pull edge images instead of latest stable")
+	serverUpgradeCmd.Flags().Bool("no-sync", false, "Skip config download — only substitute Corefile, pull images, and restart")
 	rootCmd.AddCommand(serverUpgradeCmd)
 }
