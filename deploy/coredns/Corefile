@@ -48,9 +48,10 @@ internal.${DOMAIN}:53 {
 }
 
 # ── Upstream forwarding ───────────────────────────────────────────────────────
-# Both interfaces — so mesh clients can still resolve public domains.
+# Mesh interface only — so mesh nodes can resolve public domains.
+# NOT bound to PUBLIC_IP to prevent open resolver abuse from the internet.
 .:53 {
-    bind ${MESH_IP} ${PUBLIC_IP}
+    bind ${MESH_IP}
     local
     forward . 1.1.1.1 1.0.0.1
     cache 300
