@@ -22,6 +22,9 @@ services:
     image: headscale/headscale:0.28.0
     restart: unless-stopped
     command: serve
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     ports:
       - "127.0.0.1:8085:8080"
       - "127.0.0.1:9090:9090"   # Prometheus metrics, localhost only
@@ -66,6 +69,9 @@ services:
   registry:
     image: registry:2
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     ports:
       - "5000:5000"   # bind all interfaces so mesh nodes can reach it
     environment:
@@ -81,6 +87,9 @@ services:
   api:
     image: ghcr.io/meshploy/api:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     ports:
       - "4000:4000"
     environment:
@@ -119,6 +128,9 @@ services:
   web:
     image: ghcr.io/meshploy/web:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     ports:
       - "127.0.0.1:5173:80"
     depends_on:
@@ -130,6 +142,9 @@ services:
   proxy:
     image: ghcr.io/meshploy/proxy:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     ports:
       - "127.0.0.1:8081:8081"
     environment:
