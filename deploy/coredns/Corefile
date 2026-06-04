@@ -48,12 +48,19 @@ internal.${DOMAIN}:53 {
 }
 
 # ── Upstream forwarding ───────────────────────────────────────────────────────
-# Mesh interface only — so mesh nodes can resolve public domains.
-# NOT bound to PUBLIC_IP to prevent open resolver abuse from the internet.
-.:53 {
-    bind ${MESH_IP}
-    local
-    forward . 1.1.1.1 1.0.0.1
-    cache 300
-    errors
-}
+# Disabled — gateway containers use dns: [1.1.1.1] in docker-compose.yml and
+# mesh nodes use Headscale split DNS (global: 1.1.1.1, split internal → MESH_IP).
+# Restore this block if you need the gateway to act as a forwarder for mesh nodes.
+#
+# .:53 {
+#     bind ${MESH_IP}
+#     acl {
+#         allow net 100.64.0.0/10
+#         allow net 127.0.0.0/8
+#         block
+#     }
+#     local
+#     forward . 1.1.1.1 1.0.0.1
+#     cache 300
+#     errors
+# }
