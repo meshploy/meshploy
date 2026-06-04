@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/meshploy/meshploy/compare/v0.3.1...v0.3.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* update deployment process to sync configs and substitute Corefile values ([f07c576](https://github.com/meshploy/meshploy/commit/f07c5760e4f2016671a40c533a780c2a462638f2))
+
 ## [0.3.1](https://github.com/meshploy/meshploy/compare/v0.3.0...v0.3.1) (2026-06-04)
 
 
