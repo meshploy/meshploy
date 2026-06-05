@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertCircle, Crown, Globe, HardDrive, Loader2, Plus, Shield, User, Check, Pencil, X } from "lucide-react"
+import { AlertCircle, Check, Clock, Copy, Crown, Globe, HardDrive, Loader2, Pencil, Plus, Shield, User, X } from "lucide-react"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import {
   storage as storageApi,
   backups as backupsApi,
   type ApiDomain,
+  type ApiOrgInvitation,
   type ApiOrgMember,
   type ApiStorageIntegration,
   type ApiSystemBackupConfig,
@@ -382,11 +383,15 @@ function SystemBackupSection() {
 
 function MembersSection() {
   const token = useAuthStore((s) => s.token)!
+  const userId = useAuthStore((s) => s.userId)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const qc = useQueryClient()
 
   const [inviteEmail, setInviteEmail] = useState("")
+  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
   const [showInvite, setShowInvite] = useState(false)
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ["org-members", orgId],
@@ -394,14 +399,38 @@ function MembersSection() {
     enabled: !!orgId,
   })
 
-  const { mutate: invite, isPending: inviting, error: inviteError } = useMutation({
-    mutationFn: () => orgsApi.addMember(orgId, inviteEmail, "member", token),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["org-members", orgId] })
+  const callerRole = members.find((m) => m.user_id === userId)?.role ?? "member"
+  const canEditRoles = callerRole === "owner" || callerRole === "admin"
+
+  const { data: invitations = [] } = useQuery({
+    queryKey: ["org-invitations", orgId],
+    queryFn: () => orgsApi.listInvitations(orgId, token),
+    enabled: !!orgId,
+  })
+
+  const { mutate: createInvite, isPending: inviting, error: inviteError } = useMutation({
+    mutationFn: () => orgsApi.createInvitation(orgId, inviteEmail, inviteRole, token),
+    onSuccess: (inv) => {
+      qc.invalidateQueries({ queryKey: ["org-invitations", orgId] })
+      const link = `${window.location.origin}/register?token=${inv.token}`
+      setInviteLink(link)
       setInviteEmail("")
-      setShowInvite(false)
     },
   })
+
+  function copyLink() {
+    if (!inviteLink) return
+    navigator.clipboard.writeText(inviteLink)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function closeInviteForm() {
+    setShowInvite(false)
+    setInviteLink(null)
+    setInviteEmail("")
+    setInviteRole("member")
+  }
 
   return (
     <Section
@@ -409,7 +438,7 @@ function MembersSection() {
       action={
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{members.length} {members.length === 1 ? "member" : "members"}</span>
-          <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => setShowInvite((v) => !v)}>
+          <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => { setShowInvite((v) => !v); setInviteLink(null) }}>
             <Plus className="h-3.5 w-3.5" />
             Invite
           </Button>
@@ -417,24 +446,52 @@ function MembersSection() {
       }
     >
       {showInvite && (
-        <div className="flex items-center gap-2 mb-3">
-          <Input
-            placeholder="Email address"
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            className="h-8 text-sm"
-            onKeyDown={(e) => { if (e.key === "Enter") invite() }}
-          />
-          <Button size="sm" className="h-8 shrink-0" onClick={() => invite()} disabled={inviting || !inviteEmail}>
-            {inviting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Invite"}
-          </Button>
-          <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={() => { setShowInvite(false); setInviteEmail("") }}>
-            Cancel
-          </Button>
+        <div className="mb-3 space-y-2">
+          {inviteLink ? (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Share this link — it expires in 7 days and can only be used once.</p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-8 flex items-center px-3 rounded-md border border-border/60 bg-muted/20 font-mono text-xs text-muted-foreground overflow-hidden">
+                  <span className="truncate">{inviteLink}</span>
+                </div>
+                <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1.5" onClick={copyLink}>
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={closeInviteForm}>Done</Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Email address"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="h-8 text-sm"
+                  onKeyDown={(e) => { if (e.key === "Enter" && inviteEmail) createInvite() }}
+                  autoFocus
+                />
+                <Select value={inviteRole} onValueChange={(v) => v && setInviteRole(v as "admin" | "member")}>
+                  <SelectTrigger className="w-28! h-8 text-xs bg-muted/20 border-border/60 shrink-0">
+                    <SelectValue>{inviteRole}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">member</SelectItem>
+                    <SelectItem value="admin">admin</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" className="h-8 shrink-0" onClick={() => createInvite()} disabled={inviting || !inviteEmail}>
+                  {inviting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Generate link"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={closeInviteForm}>Cancel</Button>
+              </div>
+              {inviteError && (
+                <p className="text-xs text-destructive">{String((inviteError as Error).message)}</p>
+              )}
+            </>
+          )}
         </div>
-      )}
-      {inviteError && (
-        <p className="text-xs text-destructive mb-2">{String((inviteError as Error).message)}</p>
       )}
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
@@ -444,7 +501,10 @@ function MembersSection() {
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
           {members.map((member) => (
-            <MemberRow key={member.id} member={member} />
+            <MemberRow key={member.id} member={member} canEdit={canEditRoles && member.role !== "owner"} orgId={orgId} token={token} />
+          ))}
+          {invitations.map((inv) => (
+            <PendingInviteRow key={inv.id} invitation={inv} />
           ))}
         </div>
       )}
@@ -452,8 +512,19 @@ function MembersSection() {
   )
 }
 
-function MemberRow({ member }: { member: ApiOrgMember }) {
+function MemberRow({ member, canEdit, orgId, token }: {
+  member: ApiOrgMember
+  canEdit: boolean
+  orgId: string
+  token: string
+}) {
+  const qc = useQueryClient()
   const initials = member.user_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
+
+  const { mutate: changeRole, isPending } = useMutation({
+    mutationFn: (role: "admin" | "member") => orgsApi.updateMember(orgId, member.user_id, role, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["org-members", orgId] }),
+  })
 
   return (
     <div className="flex items-center gap-3 px-4 py-3.5">
@@ -464,7 +535,57 @@ function MemberRow({ member }: { member: ApiOrgMember }) {
         <p className="text-sm font-medium">{member.user_name}</p>
         <p className="text-xs text-muted-foreground">{member.user_email}</p>
       </div>
-      <RoleBadge role={member.role as OrgRole} />
+      {canEdit ? (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Select
+            value={member.role}
+            onValueChange={(v) => v && changeRole(v as "admin" | "member")}
+            disabled={isPending}
+          >
+            <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1">
+              {isPending
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <SelectValue>{member.role}</SelectValue>
+              }
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="admin">admin</SelectItem>
+              <SelectItem value="member">member</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <RoleBadge role={member.role as OrgRole} />
+      )}
+    </div>
+  )
+}
+
+function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
+  const [copied, setCopied] = useState(false)
+
+  function copyLink() {
+    const link = `${window.location.origin}/register?token=${invitation.token}`
+    navigator.clipboard.writeText(link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted/40 shrink-0">
+        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-muted-foreground">{invitation.email}</p>
+        <p className="text-xs text-muted-foreground/60">Invite pending</p>
+      </div>
+      <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5 shrink-0">
+        <Clock className="h-2.5 w-2.5" />{invitation.role}
+      </Badge>
+      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={copyLink} title="Copy invite link">
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+      </Button>
     </div>
   )
 }

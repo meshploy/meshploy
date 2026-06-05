@@ -214,7 +214,7 @@ function LoginPage() {
 
       <p className="text-center text-xs text-muted-foreground">
         Don&apos;t have an account?{" "}
-        <Link to="/register" className="text-primary hover:underline underline-offset-4">
+        <Link to="/register" search={{}} className="text-primary hover:underline underline-offset-4">
           Create one
         </Link>
       </p>

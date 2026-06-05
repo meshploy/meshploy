@@ -2,10 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -135,4 +140,97 @@ func (s *OrgService) MemberRole(ctx context.Context, orgID, userID uuid.UUID) (d
 		Where("organization_id = ? AND user_id = ?", orgID, userID).
 		First(&m).Error
 	return m.Role, err
+}
+
+// ---------------------------------------------------------------------------
+// Invitations
+// ---------------------------------------------------------------------------
+
+type InvitationWithOrg struct {
+	*db.OrgInvitation
+	OrgName string
+}
+
+// CreateInvitation generates a single-use invite token for an email address.
+func (s *OrgService) CreateInvitation(ctx context.Context, orgID, inviterID uuid.UUID, email string, role db.MemberRole) (*db.OrgInvitation, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, fmt.Errorf("generate token: %w", err)
+	}
+	inv := &db.OrgInvitation{
+		OrgID:     orgID,
+		Email:     email,
+		Role:      role,
+		Token:     hex.EncodeToString(b),
+		InvitedBy: inviterID,
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+	}
+	if err := s.db.WithContext(ctx).Create(inv).Error; err != nil {
+		return nil, err
+	}
+	return inv, nil
+}
+
+// GetInvitationByToken returns a valid (not expired, not accepted) invitation with its org preloaded.
+func (s *OrgService) GetInvitationByToken(ctx context.Context, token string) (*InvitationWithOrg, error) {
+	var inv db.OrgInvitation
+	err := s.db.WithContext(ctx).
+		Preload("Organization").
+		Where("token = ? AND accepted_at IS NULL AND expires_at > NOW()", token).
+		First(&inv).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("invitation not found or expired")
+		}
+		return nil, err
+	}
+	return &InvitationWithOrg{OrgInvitation: &inv, OrgName: inv.Organization.Name}, nil
+}
+
+// AcceptInvitation creates the user account and adds them to the org in a single transaction.
+func (s *OrgService) AcceptInvitation(ctx context.Context, token, username, password string) (*db.User, error) {
+	inv, err := s.GetInvitationByToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+
+	var user db.User
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user = db.User{
+			Username: username,
+			Email:    inv.Email,
+			Password: string(hashed),
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&db.OrganizationMember{
+			OrganizationID: inv.OrgID,
+			UserID:         user.ID,
+			Role:           inv.Role,
+		}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		return tx.Model(inv.OrgInvitation).Update("accepted_at", &now).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// ListInvitations returns pending (not yet accepted, not expired) invitations for an org.
+func (s *OrgService) ListInvitations(ctx context.Context, orgID uuid.UUID) ([]db.OrgInvitation, error) {
+	var invs []db.OrgInvitation
+	err := s.db.WithContext(ctx).
+		Where("org_id = ? AND accepted_at IS NULL AND expires_at > NOW()", orgID).
+		Order("created_at DESC").
+		Find(&invs).Error
+	return invs, err
 }

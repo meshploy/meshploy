@@ -85,6 +85,57 @@ type RemoveMemberInput struct {
 	UserID string `path:"userId"`
 }
 
+type CreateInvitationInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		Email string        `json:"email" format:"email"`
+		Role  db.MemberRole `json:"role" enum:"admin,member"`
+	}
+}
+
+type InvitationDTO struct {
+	ID        string        `json:"id"`
+	OrgID     string        `json:"org_id"`
+	Email     string        `json:"email"`
+	Role      db.MemberRole `json:"role"`
+	ExpiresAt string        `json:"expires_at"`
+	Token     string        `json:"token,omitempty"`
+}
+
+type CreateInvitationOutput struct {
+	Body *InvitationDTO
+}
+
+type ListInvitationsOutput struct {
+	Body []InvitationDTO
+}
+
+type InvitationTokenInput struct {
+	Token string `path:"token"`
+}
+
+type InvitationInfoOutput struct {
+	Body struct {
+		Email   string `json:"email"`
+		OrgName string `json:"org_name"`
+		Role    string `json:"role"`
+	}
+}
+
+type AcceptInvitationInput struct {
+	Token string `path:"token"`
+	Body  struct {
+		Username string `json:"username" minLength:"3" maxLength:"50"`
+		Password string `json:"password" minLength:"8"`
+	}
+}
+
+type AcceptInvitationOutput struct {
+	Body struct {
+		Message string `json:"message"`
+	}
+}
+
 // --- Route registration ---
 
 func (h *Handler) registerOrgRoutes(api huma.API) {
@@ -168,6 +219,40 @@ func (h *Handler) registerOrgRoutes(api huma.API) {
 		Tags:        []string{"Organizations"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.RemoveMember)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-invitation",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/invitations",
+		Summary:     "Create an invite link for a new member",
+		Tags:        []string{"Organizations"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.CreateInvitation)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-invitations",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/invitations",
+		Summary:     "List pending invitations",
+		Tags:        []string{"Organizations"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListInvitations)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-invitation",
+		Method:      "GET",
+		Path:        "/api/v1/invitations/{token}",
+		Summary:     "Get invitation info by token (public)",
+		Tags:        []string{"Organizations"},
+	}, h.GetInvitation)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "accept-invitation",
+		Method:      "POST",
+		Path:        "/api/v1/invitations/{token}/accept",
+		Summary:     "Accept an invitation and create an account (public)",
+		Tags:        []string{"Organizations"},
+	}, h.AcceptInvitation)
 }
 
 // --- Helpers ---
@@ -351,6 +436,82 @@ func (h *Handler) UpdateMember(ctx context.Context, input *UpdateMemberInput) (*
 		return nil, huma.Error403Forbidden("insufficient permissions")
 	}
 	return nil, h.svc.Orgs.UpdateMemberRole(ctx, orgID, targetID, input.Body.Role)
+}
+
+func toInvitationDTO(inv db.OrgInvitation) InvitationDTO {
+	return InvitationDTO{
+		ID:        inv.ID.String(),
+		OrgID:     inv.OrgID.String(),
+		Email:     inv.Email,
+		Role:      inv.Role,
+		ExpiresAt: inv.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		Token:     inv.Token,
+	}
+}
+
+func (h *Handler) CreateInvitation(ctx context.Context, input *CreateInvitationInput) (*CreateInvitationOutput, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	role, err := h.svc.Orgs.MemberRole(ctx, orgID, userID)
+	if err != nil {
+		return nil, huma.Error403Forbidden("not a member of this organization")
+	}
+	if role == db.RoleMember {
+		return nil, huma.Error403Forbidden("insufficient permissions")
+	}
+	inv, err := h.svc.Orgs.CreateInvitation(ctx, orgID, userID, input.Body.Email, input.Body.Role)
+	if err != nil {
+		return nil, err
+	}
+	dto := toInvitationDTO(*inv)
+	return &CreateInvitationOutput{Body: &dto}, nil
+}
+
+func (h *Handler) ListInvitations(ctx context.Context, input *OrgPathInput) (*ListInvitationsOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	invs, err := h.svc.Orgs.ListInvitations(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	dtos := make([]InvitationDTO, len(invs))
+	for i, inv := range invs {
+		dtos[i] = toInvitationDTO(inv)
+	}
+	return &ListInvitationsOutput{Body: dtos}, nil
+}
+
+func (h *Handler) GetInvitation(ctx context.Context, input *InvitationTokenInput) (*InvitationInfoOutput, error) {
+	inv, err := h.svc.Orgs.GetInvitationByToken(ctx, input.Token)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+	out := &InvitationInfoOutput{}
+	out.Body.Email = inv.Email
+	out.Body.OrgName = inv.OrgName
+	out.Body.Role = string(inv.Role)
+	return out, nil
+}
+
+func (h *Handler) AcceptInvitation(ctx context.Context, input *AcceptInvitationInput) (*AcceptInvitationOutput, error) {
+	_, err := h.svc.Orgs.AcceptInvitation(ctx, input.Token, input.Body.Username, input.Body.Password)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	out := &AcceptInvitationOutput{}
+	out.Body.Message = "account created successfully"
+	return out, nil
 }
 
 func (h *Handler) RemoveMember(ctx context.Context, input *RemoveMemberInput) (*struct{}, error) {

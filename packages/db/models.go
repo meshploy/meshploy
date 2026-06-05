@@ -948,6 +948,28 @@ type OrgEmailConfig struct {
 func (OrgEmailConfig) TableName() string { return "org_email_configs" }
 
 // ---------------------------------------------------------------------------
+// Invitations
+// ---------------------------------------------------------------------------
+
+// OrgInvitation is a one-time invite link sent to a new user.
+// The token is a random 64-char hex string embedded in the invite URL.
+// AcceptedAt is set when the user registers via the invite; nil = pending.
+type OrgInvitation struct {
+	Base
+	OrgID      uuid.UUID  `gorm:"type:uuid;not null;index"                   json:"org_id"`
+	Email      string     `gorm:"type:varchar(255);not null;index"           json:"email"`
+	Role       MemberRole `gorm:"type:varchar(10);not null;default:'member'" json:"role"`
+	Token      string     `gorm:"type:varchar(64);not null;uniqueIndex"      json:"-"`
+	InvitedBy  uuid.UUID  `gorm:"type:uuid;not null"                         json:"invited_by"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	AcceptedAt *time.Time `json:"accepted_at"`
+
+	Organization Organization `gorm:"foreignKey:OrgID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (OrgInvitation) TableName() string { return "org_invitations" }
+
+// ---------------------------------------------------------------------------
 // Templates
 // ---------------------------------------------------------------------------
 

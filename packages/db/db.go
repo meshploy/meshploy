@@ -108,6 +108,9 @@ func Migrate(db *gorm.DB) error {
 		&NotificationChannel{},
 		&OrgEmailConfig{},
 
+		// Invitations
+		&OrgInvitation{},
+
 		// Templates
 		&Template{},
 	); err != nil {

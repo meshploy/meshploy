@@ -76,6 +76,9 @@ var publicPaths = []string{
 	"/self-deregister",
 	// WebSocket terminals validate JWT from ?token= internally.
 	"/terminal",
+	// Invitation accept flow — public endpoints for new user sign-up via invite link.
+	"GET /api/v1/invitations/",
+	"POST /api/v1/invitations/",
 	// Inbound webhooks — validated by HMAC signature or per-service deploy token.
 	"POST /api/v1/webhooks/",
 	// OpenAPI schema served by Huma.
