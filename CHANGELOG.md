@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/meshploy/meshploy/compare/v0.3.2...v0.4.0) (2026-06-05)
+
+
+### Features
+
+* unify channel selection across get.sh, install.sh, and server-upgrade ([912f1c4](https://github.com/meshploy/meshploy/commit/912f1c4b4fa7e03560e6f6d636647b4197683be4))
+
+
+### Bug Fixes
+
+* eliminate open DNS resolver and fix Headscale DNS with split nameservers ([2d9fcaf](https://github.com/meshploy/meshploy/commit/2d9fcaf60e0aa340c977bbe4ab5244cd39de08cb))
+
 ## [0.3.2](https://github.com/meshploy/meshploy/compare/v0.3.1...v0.3.2) (2026-06-04)
 
 
