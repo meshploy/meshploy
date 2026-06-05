@@ -74,6 +74,23 @@ ask() {
   done
 }
 
+ask_optional() {
+  # ask_optional <variable_name> <prompt> [default]
+  # Like ask but allows empty input (caller handles the empty case).
+  local var="$1" prompt="$2" default="${3:-}"
+  if $AUTO_MODE; then
+    local existing="${!var:-}"
+    [[ -z "$existing" ]] && existing="$default"
+    printf -v "$var" '%s' "$existing"
+    return
+  fi
+  local display_default=""
+  [[ -n "$default" ]] && display_default=" ${BLUE}[${default}]${RESET}"
+  printf "  ${BOLD}%s${RESET}%b: " "$prompt" "$display_default"
+  read -r input
+  printf -v "$var" '%s' "${input:-$default}"
+}
+
 ask_secret() {
   local var="$1" prompt="$2"
   if $AUTO_MODE; then
@@ -256,7 +273,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   ask DOMAIN       "Base domain (e.g. meshploy.example.com)"
   ask PUBLIC_IP    "Public IP of this server" "$DETECTED_IP"
   ask MESH_IP      "WireGuard mesh IP for this node" "100.64.0.1"
-  ask POSTGRES_PASSWORD "Postgres password (or press enter to auto-generate)" ""
+  ask_optional POSTGRES_PASSWORD "Postgres password (or press enter to auto-generate)"
 
   if [[ -z "$POSTGRES_PASSWORD" ]]; then
     POSTGRES_PASSWORD="$(openssl rand -hex 16)"

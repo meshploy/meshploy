@@ -50,7 +50,11 @@ dns:
   base_domain: mesh.${DOMAIN}
   nameservers:
     global:
-      - 100.64.0.1         # CoreDNS on the gateway (WireGuard IP)
+      - 1.1.1.1
+      - 1.0.0.1
+    split:
+      "internal.${DOMAIN}":
+        - 100.64.0.1
   search_domains:
     - internal.${DOMAIN}
 
