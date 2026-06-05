@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.2](https://github.com/meshploy/meshploy/compare/v0.3.1...v0.3.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* update deployment process to sync configs and substitute Corefile values ([f07c576](https://github.com/meshploy/meshploy/commit/f07c5760e4f2016671a40c533a780c2a462638f2))
+
+## [0.3.1](https://github.com/meshploy/meshploy/compare/v0.3.0...v0.3.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* update CoreDNS configuration and add DNS settings for services in docker-compose ([7ba38ad](https://github.com/meshploy/meshploy/commit/7ba38ad705fd9cb879864dddf06738d44b58cb09))
+
 ## [0.3.0](https://github.com/meshploy/meshploy/compare/v0.2.8...v0.3.0) (2026-06-04)
 
 
