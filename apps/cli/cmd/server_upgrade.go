@@ -56,6 +56,15 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	// Detect container runtime from .env.
 	runtime := detectContainerRuntime()
 
+	// Sync MESHPLOY_CHANNEL in .env so image pulls match the chosen channel.
+	channel := "latest"
+	if edge {
+		channel = "main"
+	}
+	if err := syncEnvChannel(channel); err != nil {
+		fmt.Printf("warning: could not update MESHPLOY_CHANNEL in .env: %v\n", err)
+	}
+
 	// Download and extract deploy/ tarball, skipping protected files.
 	fmt.Println("Syncing deploy configs…")
 	if err := downloadDeployTarball(pat, ref); err != nil {
@@ -163,6 +172,31 @@ func downloadDeployTarball(pat, ref string) error {
 		return fmt.Errorf("extract tarball: %w", tarErr)
 	}
 	return nil
+}
+
+// syncEnvChannel sets MESHPLOY_CHANNEL in /opt/meshploy/.env, updating the
+// existing value if present or appending if missing.
+func syncEnvChannel(channel string) error {
+	envFile := meshployInstDir + "/.env"
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		return err
+	}
+	line := "MESHPLOY_CHANNEL=" + channel
+	content := string(data)
+	if strings.Contains(content, "MESHPLOY_CHANNEL=") {
+		// Replace existing line.
+		lines := strings.Split(content, "\n")
+		for i, l := range lines {
+			if strings.HasPrefix(l, "MESHPLOY_CHANNEL=") {
+				lines[i] = line
+			}
+		}
+		content = strings.Join(lines, "\n")
+	} else {
+		content = strings.TrimRight(content, "\n") + "\n" + line + "\n"
+	}
+	return os.WriteFile(envFile, []byte(content), 0600)
 }
 
 func detectContainerRuntime() string {
