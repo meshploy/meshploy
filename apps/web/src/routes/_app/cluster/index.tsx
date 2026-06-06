@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Cpu,
@@ -21,15 +22,21 @@ import { Button } from "@/components/ui/button"
 import { nodes as nodesApi, cluster as clusterApi, toNode } from "@/lib/api"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore } from "@/store/org-store"
+import { useOrgStore, useOrgRole } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/cluster/")({
   component: ClusterPage,
 })
 
 function ClusterPage() {
+  const role = useOrgRole()
+  const navigate = useNavigate()
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+
+  useEffect(() => {
+    if (role === "member") navigate({ to: "/" })
+  }, [role])
 
   const { data: rawNodes = [] } = useQuery({
     queryKey: ["nodes", orgId],

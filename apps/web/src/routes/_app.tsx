@@ -7,8 +7,11 @@ import { NodeTerminal } from "@/components/terminal/node-terminal"
 import { ServiceTerminal } from "@/components/terminal/service-terminal"
 import { NodeMetricsTab } from "@/components/metrics/node-metrics-tab"
 import { useAuthStore } from "@/store/auth-store"
+import { useOrgStore } from "@/store/org-store"
 import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload, type MetricsPayload, type ServiceTerminalPayload } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
+import { useQuery } from "@tanstack/react-query"
+import { orgs as orgsApi } from "@/lib/api"
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: () => {
@@ -20,6 +23,25 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   const { tabs, activeTabId } = useTabStore()
+  const token = useAuthStore((s) => s.token)!
+  const userId = useAuthStore((s) => s.userId)!
+  const { currentOrg, setCurrentRole } = useOrgStore()
+
+  // Keep currentRole in sync with the server. staleTime of 5 min — no need to
+  // re-fetch on every navigation, but refreshes after an org switch (currentRole
+  // is set to null by setCurrentOrg, which invalidates this query key).
+  useQuery({
+    queryKey: ["my-org-role", currentOrg?.id, userId],
+    queryFn: async () => {
+      const members = await orgsApi.listMembers(currentOrg!.id, token)
+      const me = members.find((m) => m.user_id === userId)
+      const role = (me?.role ?? "member") as "owner" | "admin" | "member"
+      setCurrentRole(role)
+      return role
+    },
+    enabled: !!currentOrg && !!token && !!userId,
+    staleTime: 5 * 60 * 1000,
+  })
 
   return (
     <div className="flex h-full">

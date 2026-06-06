@@ -1,18 +1,25 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Loader2, ServerCrash } from "lucide-react"
 import { NodesTable } from "@/components/nodes/nodes-table"
 import { nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore } from "@/store/org-store"
+import { useOrgStore, useOrgRole } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/nodes/")({
   component: NodesPage,
 })
 
 function NodesPage() {
+  const role = useOrgRole()
+  const navigate = useNavigate()
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+
+  useEffect(() => {
+    if (role === "member") navigate({ to: "/" })
+  }, [role])
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["nodes", orgId],

@@ -1,31 +1,57 @@
 import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
 import {
-  Home,
-  FolderKanban,
-  Server,
-  Network,
-  Plug,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Download,
+  FolderKanban,
+  Home,
+  Network,
+  Plug,
+  Server,
+  Settings,
+  Users,
 } from "lucide-react"
 import { useUIStore } from "@/store/ui-store"
+import { useIsAdmin } from "@/store/org-store"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useQuery } from "@tanstack/react-query"
 import { system } from "@/lib/api/system"
 import { useAuthStore } from "@/store/auth-store"
 
-const NAV_ITEMS = [
-  { href: "/", icon: Home, label: "Overview", exact: true },
-  { href: "/projects", icon: FolderKanban, label: "Projects", exact: false },
-  { href: "/nodes", icon: Server, label: "Nodes", exact: false },
-  { href: "/cluster", icon: Network, label: "Cluster", exact: false },
-  { href: "/integrations", icon: Plug, label: "Integrations", exact: false },
-  { href: "/settings", icon: Settings, label: "Settings", exact: false },
-] as const
+type NavItem = {
+  href: string
+  icon: React.ElementType
+  label: string
+  exact: boolean
+}
+
+type NavGroup = {
+  label?: string
+  adminOnly?: boolean
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    items: [
+      { href: "/", icon: Home, label: "Overview", exact: true },
+      { href: "/projects", icon: FolderKanban, label: "Projects", exact: false },
+      { href: "/nodes", icon: Server, label: "Nodes", exact: false },
+      { href: "/cluster", icon: Network, label: "Cluster", exact: false },
+    ],
+  },
+  {
+    label: "System",
+    adminOnly: true,
+    items: [
+      { href: "/integrations", icon: Plug, label: "Integrations", exact: false },
+      { href: "/settings", icon: Settings, label: "Settings", exact: false },
+      { href: "/users", icon: Users, label: "Users", exact: false },
+    ],
+  },
+]
 
 function MeshMark({ className }: { className?: string }) {
   return (
@@ -46,6 +72,7 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const token = useAuthStore((s) => s.token)
+  const isAdmin = useIsAdmin()
   const { data: ver } = useQuery({
     queryKey: ["system-version"],
     queryFn: () => system.versionInfo(token!),
@@ -72,56 +99,69 @@ export function AppSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-0.5 p-2 flex-1">
-        {NAV_ITEMS.map((item) => {
-          const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href)
+      <nav className="flex flex-col p-2 flex-1 gap-4">
+        {NAV_GROUPS.filter((g) => !g.adminOnly || isAdmin).map((group, gi) => (
+          <div key={gi} className="flex flex-col gap-0.5">
+            {/* Group label — only in expanded mode */}
+            {group.label && !sidebarCollapsed && (
+              <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/30">
+                {group.label}
+              </p>
+            )}
+            {/* Separator between groups in collapsed mode */}
+            {group.label && sidebarCollapsed && (
+              <Separator className="mb-1 bg-sidebar-border/60" />
+            )}
+            {group.items.map((item) => {
+              const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href)
 
-          if (sidebarCollapsed) {
-            return (
-              <Tooltip key={item.href}>
-                <TooltipTrigger
-                  render={
-                    <Link
-                      to={item.href}
-                      className={cn(
-                        "flex items-center justify-center h-9 w-9 rounded-md mx-auto transition-colors",
-                        isActive
-                          ? "bg-sidebar-accent text-sidebar-foreground"
-                          : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-                      )}
-                    />
-                  }
+              if (sidebarCollapsed) {
+                return (
+                  <Tooltip key={item.href}>
+                    <TooltipTrigger
+                      render={
+                        <Link
+                          to={item.href}
+                          className={cn(
+                            "flex items-center justify-center h-9 w-9 rounded-md mx-auto transition-colors",
+                            isActive
+                              ? "bg-sidebar-accent text-sidebar-foreground"
+                              : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                          )}
+                        />
+                      }
+                    >
+                      <item.icon className="h-4 w-4" />
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs">{item.label}</TooltipContent>
+                  </Tooltip>
+                )
+              }
+
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    "relative flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-colors",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-foreground before:absolute before:-left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-primary before:rounded-r-sm"
+                      : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                  )}
                 >
-                  <item.icon className="h-4 w-4" />
-                </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">{item.label}</TooltipContent>
-              </Tooltip>
-            )
-          }
-
-          return (
-            <Link
-              key={item.href}
-              to={item.href}
-              className={cn(
-                "relative flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-colors",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-foreground before:absolute before:-left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-primary before:rounded-r-sm"
-                  : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-              )}
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {item.label}
-            </Link>
-          )
-        })}
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Bottom: version + collapse toggle */}
       <div className="p-2 shrink-0 space-y-1">
         <Separator className="mb-2 bg-sidebar-border" />
 
-        {/* Update available */}
         {ver?.update_available && (
           sidebarCollapsed ? (
             <Tooltip>
@@ -156,7 +196,6 @@ export function AppSidebar() {
           )
         )}
 
-        {/* Current version */}
         {!sidebarCollapsed && ver && (
           <p className="px-3 text-[10px] text-sidebar-foreground/30">
             v{ver.current}

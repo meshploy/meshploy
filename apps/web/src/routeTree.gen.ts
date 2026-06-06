@@ -14,12 +14,14 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
+import { Route as AppUsersIndexRouteImport } from './routes/_app/users/index'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
 import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrations/index'
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
+import { Route as AppUsersUserIdRouteImport } from './routes/_app/users/$userId'
 import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
 import { Route as AppIntegrationsNewRouteImport } from './routes/_app/integrations/new'
@@ -82,6 +84,11 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => AuthRoute,
 } as any)
+const AppUsersIndexRoute = AppUsersIndexRouteImport.update({
+  id: '/users/',
+  path: '/users/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
@@ -110,6 +117,11 @@ const AppClusterIndexRoute = AppClusterIndexRouteImport.update({
 const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
   id: '/account/',
   path: '/account/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppUsersUserIdRoute = AppUsersUserIdRouteImport.update({
+  id: '/users/$userId',
+  path: '/users/$userId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProjectsNewRoute = AppProjectsNewRouteImport.update({
@@ -338,12 +350,14 @@ export interface FileRoutesByFullPath {
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
+  '/users/$userId': typeof AppUsersUserIdRoute
   '/account/': typeof AppAccountIndexRoute
   '/cluster/': typeof AppClusterIndexRoute
   '/integrations/': typeof AppIntegrationsIndexRoute
   '/nodes/': typeof AppNodesIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/users/': typeof AppUsersIndexRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
@@ -386,12 +400,14 @@ export interface FileRoutesByTo {
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
+  '/users/$userId': typeof AppUsersUserIdRoute
   '/account': typeof AppAccountIndexRoute
   '/cluster': typeof AppClusterIndexRoute
   '/integrations': typeof AppIntegrationsIndexRoute
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/users': typeof AppUsersIndexRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
@@ -434,12 +450,14 @@ export interface FileRoutesById {
   '/_app/integrations/new': typeof AppIntegrationsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
   '/_app/projects/new': typeof AppProjectsNewRoute
+  '/_app/users/$userId': typeof AppUsersUserIdRoute
   '/_app/account/': typeof AppAccountIndexRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
   '/_app/integrations/': typeof AppIntegrationsIndexRoute
   '/_app/nodes/': typeof AppNodesIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/users/': typeof AppUsersIndexRoute
   '/_app/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/_app/projects/$id/new': typeof AppProjectsIdNewRoute
   '/_app/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
@@ -485,12 +503,14 @@ export interface FileRouteTypes {
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
+    | '/users/$userId'
     | '/account/'
     | '/cluster/'
     | '/integrations/'
     | '/nodes/'
     | '/projects/'
     | '/settings/'
+    | '/users/'
     | '/projects/$id/databases'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
@@ -533,12 +553,14 @@ export interface FileRouteTypes {
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
+    | '/users/$userId'
     | '/account'
     | '/cluster'
     | '/integrations'
     | '/nodes'
     | '/projects'
     | '/settings'
+    | '/users'
     | '/projects/$id/databases'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
@@ -580,12 +602,14 @@ export interface FileRouteTypes {
     | '/_app/integrations/new'
     | '/_app/nodes/$id'
     | '/_app/projects/new'
+    | '/_app/users/$userId'
     | '/_app/account/'
     | '/_app/cluster/'
     | '/_app/integrations/'
     | '/_app/nodes/'
     | '/_app/projects/'
     | '/_app/settings/'
+    | '/_app/users/'
     | '/_app/projects/$id/databases'
     | '/_app/projects/$id/new'
     | '/_app/projects/$id/pipelines'
@@ -664,6 +688,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_app/users/': {
+      id: '/_app/users/'
+      path: '/users'
+      fullPath: '/users/'
+      preLoaderRoute: typeof AppUsersIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings/': {
       id: '/_app/settings/'
       path: '/settings'
@@ -704,6 +735,13 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/account/'
       preLoaderRoute: typeof AppAccountIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/users/$userId': {
+      id: '/_app/users/$userId'
+      path: '/users/$userId'
+      fullPath: '/users/$userId'
+      preLoaderRoute: typeof AppUsersUserIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/projects/new': {
@@ -1118,12 +1156,14 @@ interface AppRouteChildren {
   AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
   AppProjectsNewRoute: typeof AppProjectsNewRoute
+  AppUsersUserIdRoute: typeof AppUsersUserIdRoute
   AppAccountIndexRoute: typeof AppAccountIndexRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
   AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute
   AppNodesIndexRoute: typeof AppNodesIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
+  AppUsersIndexRoute: typeof AppUsersIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -1132,12 +1172,14 @@ const AppRouteChildren: AppRouteChildren = {
   AppIntegrationsNewRoute: AppIntegrationsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
   AppProjectsNewRoute: AppProjectsNewRoute,
+  AppUsersUserIdRoute: AppUsersUserIdRoute,
   AppAccountIndexRoute: AppAccountIndexRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,
   AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
   AppNodesIndexRoute: AppNodesIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
+  AppUsersIndexRoute: AppUsersIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
