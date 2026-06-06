@@ -191,12 +191,20 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 }
 
 func (h *Handler) ListStacks(ctx context.Context, input *StackProjectPathInput) (*ListStacksOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
 		return nil, err
 	}
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	stacks, err := h.svc.Stacks.List(ctx, projectID)
 	if err != nil {
@@ -206,12 +214,20 @@ func (h *Handler) ListStacks(ctx context.Context, input *StackProjectPathInput) 
 }
 
 func (h *Handler) CreateStack(ctx context.Context, input *CreateStackInput) (*GetStackOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
 		return nil, err
 	}
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	var gitIntegrationID *uuid.UUID
 	if input.Body.GitIntegrationID != nil && *input.Body.GitIntegrationID != "" {
@@ -238,12 +254,24 @@ func (h *Handler) CreateStack(ctx context.Context, input *CreateStackInput) (*Ge
 }
 
 func (h *Handler) GetStack(ctx context.Context, input *StackPathInput) (*GetStackOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	stackID, err := parseUUID(input.StackID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, stackID, db.ResourceStack, db.ActionView, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	stack, err := h.svc.Stacks.Get(ctx, stackID)
 	if err != nil {
@@ -253,12 +281,24 @@ func (h *Handler) GetStack(ctx context.Context, input *StackPathInput) (*GetStac
 }
 
 func (h *Handler) UpdateStack(ctx context.Context, input *UpdateStackInput) (*GetStackOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	stackID, err := parseUUID(input.StackID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, stackID, db.ResourceStack, db.ActionUpdate, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	in := service.UpdateStackInput{
 		Name:      input.Body.Name,
@@ -291,9 +331,20 @@ func (h *Handler) SyncStack(ctx context.Context, input *SyncStackInput) (*SyncRe
 	if err != nil {
 		return nil, err
 	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	stackID, err := parseUUID(input.StackID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, stackID, db.ResourceStack, db.ActionDeploy, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	result, err := h.svc.Stacks.Sync(ctx, stackID, userID)
 	if err != nil {
@@ -311,12 +362,24 @@ func (h *Handler) SyncStack(ctx context.Context, input *SyncStackInput) (*SyncRe
 }
 
 func (h *Handler) DeleteStack(ctx context.Context, input *StackPathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	stackID, err := parseUUID(input.StackID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, stackID, db.ResourceStack, db.ActionDelete, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	if err := h.svc.Stacks.Delete(ctx, stackID); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())

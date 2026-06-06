@@ -156,6 +156,9 @@ func applyConstraints(db *gorm.DB) error {
 		// One path rule per route
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_route_target_path
 		 ON route_targets (route_id, path)`,
+		// No duplicate permission grants
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_permission_grant
+		 ON resource_permissions (organization_id, user_id, resource_type, resource_id, action)`,
 		// Drop columns moved from routes → route_targets (idempotent cleanup)
 		`ALTER TABLE routes DROP COLUMN IF EXISTS service_id`,
 		`ALTER TABLE routes DROP COLUMN IF EXISTS target_ip`,

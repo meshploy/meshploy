@@ -17,6 +17,7 @@ import (
 type Services struct {
 	Auth            *AuthService
 	Orgs            *OrgService
+	Permissions     *PermissionService
 	Projects        *ProjectService
 	Nodes           *NodeService
 	Workloads       *WorkloadService
@@ -167,6 +168,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	svc := &Services{
 		Auth:            auth,
 		Orgs:            &OrgService{db: db},
+		Permissions:     &PermissionService{db: db},
 		Projects:        &ProjectService{db: db},
 		Nodes:           nodes,
 		Workloads:       workloads,

@@ -274,12 +274,20 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
 		return nil, err
 	}
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	services, err := h.svc.Workloads.List(ctx, projectID)
 	if err != nil {
@@ -289,12 +297,20 @@ func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) 
 }
 
 func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput) (*CreateWorkloadOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
 		return nil, err
 	}
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	var nodeID *uuid.UUID
 	if input.Body.NodeID != nil {
@@ -376,12 +392,24 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 }
 
 func (h *Handler) GetWorkload(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	serviceID, err := parseUUID(input.ServiceID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	service, err := h.svc.Workloads.Get(ctx, serviceID)
 	if err != nil {
@@ -391,23 +419,47 @@ func (h *Handler) GetWorkload(ctx context.Context, input *WorkloadPathInput) (*G
 }
 
 func (h *Handler) DeleteWorkload(ctx context.Context, input *WorkloadPathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	serviceID, err := uuid.Parse(input.ServiceID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid service id")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDelete, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	return nil, h.svc.Workloads.Delete(ctx, serviceID)
 }
 
 func (h *Handler) StartService(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	serviceID, err := uuid.Parse(input.ServiceID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid service id")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	svc, err := h.svc.Workloads.Start(ctx, serviceID)
 	if err != nil {
@@ -417,12 +469,24 @@ func (h *Handler) StartService(ctx context.Context, input *WorkloadPathInput) (*
 }
 
 func (h *Handler) StopService(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	serviceID, err := uuid.Parse(input.ServiceID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid service id")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	svc, err := h.svc.Workloads.Stop(ctx, serviceID)
 	if err != nil {
@@ -455,12 +519,24 @@ type PatchWorkloadInput struct {
 }
 
 func (h *Handler) PatchWorkload(ctx context.Context, input *PatchWorkloadInput) (*GetWorkloadOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	serviceID, err := parseUUID(input.ServiceID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 
 	in := svc.UpdateWorkloadInput{

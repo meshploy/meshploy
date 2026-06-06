@@ -206,22 +206,8 @@ func (h *Handler) ListOrgRoutes(ctx context.Context, input *ListOrgRoutesInput) 
 }
 
 func (h *Handler) ListRoutes(ctx context.Context, input *ListRoutesInput) (*ListRoutesOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
+	userID, err := requireUser(ctx)
 	if err != nil {
-		return nil, err
-	}
-	routes, err := h.svc.Routes.ListByProject(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	return &ListRoutesOutput{Body: routes}, nil
-}
-
-func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*CreateRouteOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
 		return nil, err
 	}
 	orgID, err := parseUUID(input.OrgID)
@@ -231,6 +217,32 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	routes, err := h.svc.Routes.ListByProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return &ListRoutesOutput{Body: routes}, nil
+}
+
+func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*CreateRouteOutput, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 
 	var domainID *uuid.UUID

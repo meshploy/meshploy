@@ -255,12 +255,20 @@ func (h *Handler) registerJobRoutes(api huma.API) {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListJobs(ctx context.Context, input *JobProjectInput) (*ListJobsOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
 		return nil, err
 	}
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	rows, err := h.svc.Jobs.List(ctx, projectID)
 	if err != nil {
@@ -274,12 +282,24 @@ func (h *Handler) ListJobs(ctx context.Context, input *JobProjectInput) (*ListJo
 }
 
 func (h *Handler) GetJob(ctx context.Context, input *JobPathInput) (*GetJobOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	jobID, err := parseUUID(input.JobID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, jobID, db.ResourceJob, db.ActionView, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	row, err := h.svc.Jobs.Get(ctx, jobID)
 	if err != nil {
@@ -289,12 +309,20 @@ func (h *Handler) GetJob(ctx context.Context, input *JobPathInput) (*GetJobOutpu
 }
 
 func (h *Handler) CreateJob(ctx context.Context, input *CreateJobInput) (*CreateJobOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
 		return nil, err
 	}
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	var nodeID *uuid.UUID
 	if input.Body.NodeID != nil && *input.Body.NodeID != "" {
@@ -327,12 +355,24 @@ func (h *Handler) CreateJob(ctx context.Context, input *CreateJobInput) (*Create
 }
 
 func (h *Handler) UpdateJob(ctx context.Context, input *UpdateJobInput) (*UpdateJobOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	jobID, err := parseUUID(input.JobID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, jobID, db.ResourceJob, db.ActionUpdate, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	in := service.UpdateJobInput{
 		IsCron:            input.Body.IsCron,
@@ -363,12 +403,24 @@ func (h *Handler) UpdateJob(ctx context.Context, input *UpdateJobInput) (*Update
 }
 
 func (h *Handler) DeleteJob(ctx context.Context, input *JobPathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	jobID, err := parseUUID(input.JobID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, jobID, db.ResourceJob, db.ActionDelete, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	return nil, h.svc.Jobs.Delete(ctx, jobID)
 }
@@ -409,12 +461,24 @@ func (h *Handler) DeleteJobRun(ctx context.Context, input *struct {
 }
 
 func (h *Handler) TriggerJob(ctx context.Context, input *JobPathInput) (*TriggerJobOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	jobID, err := parseUUID(input.JobID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, jobID, db.ResourceJob, db.ActionDeploy, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	run, err := h.svc.Jobs.Trigger(ctx, jobID)
 	if err != nil {

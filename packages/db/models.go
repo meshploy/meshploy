@@ -169,8 +169,21 @@ const (
 type ResourceType string
 
 const (
+	ResourceProject ResourceType = "project"
 	ResourceService ResourceType = "service"
+	ResourceStack   ResourceType = "stack"
+	ResourceJob     ResourceType = "job"
 	ResourceRoute   ResourceType = "route"
+)
+
+type ResourceAction string
+
+const (
+	ActionView   ResourceAction = "view"
+	ActionDeploy ResourceAction = "deploy"
+	ActionCreate ResourceAction = "create"
+	ActionUpdate ResourceAction = "update"
+	ActionDelete ResourceAction = "delete"
 )
 
 type RouteZone string
@@ -252,10 +265,11 @@ func (OrganizationMember) TableName() string { return "organization_members" }
 
 type ResourcePermission struct {
 	Base
-	OrganizationID uuid.UUID    `gorm:"type:uuid;not null;index"  json:"organization_id"`
-	UserID         uuid.UUID    `gorm:"type:uuid;not null;index"  json:"user_id"`
-	ResourceType   ResourceType `gorm:"type:varchar(10);not null" json:"resource_type"`
-	ResourceID     uuid.UUID    `gorm:"type:uuid;not null"        json:"resource_id"`
+	OrganizationID uuid.UUID      `gorm:"type:uuid;not null;index"  json:"organization_id"`
+	UserID         uuid.UUID      `gorm:"type:uuid;not null;index"  json:"user_id"`
+	ResourceType   ResourceType   `gorm:"type:varchar(10);not null" json:"resource_type"`
+	ResourceID     uuid.UUID      `gorm:"type:uuid;not null"        json:"resource_id"`
+	Action         ResourceAction `gorm:"type:varchar(10);not null" json:"action"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	User         User         `gorm:"foreignKey:UserID"         json:"-"`
