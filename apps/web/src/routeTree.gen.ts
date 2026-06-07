@@ -49,14 +49,17 @@ import { Route as AppProjectsIdServicesServiceIdIndexRouteImport } from './route
 import { Route as AppProjectsIdJobsJobIdIndexRouteImport } from './routes/_app/projects/$id/jobs/$jobId/index'
 import { Route as AppProjectsIdStacksStackIdVariablesRouteImport } from './routes/_app/projects/$id/stacks/$stackId/variables'
 import { Route as AppProjectsIdStacksStackIdServicesRouteImport } from './routes/_app/projects/$id/stacks/$stackId/services'
+import { Route as AppProjectsIdStacksStackIdPermissionsRouteImport } from './routes/_app/projects/$id/stacks/$stackId/permissions'
 import { Route as AppProjectsIdStacksStackIdEditorRouteImport } from './routes/_app/projects/$id/stacks/$stackId/editor'
 import { Route as AppProjectsIdServicesServiceIdSettingsRouteImport } from './routes/_app/projects/$id/services/$serviceId/settings'
 import { Route as AppProjectsIdServicesServiceIdPodsRouteImport } from './routes/_app/projects/$id/services/$serviceId/pods'
+import { Route as AppProjectsIdServicesServiceIdPermissionsRouteImport } from './routes/_app/projects/$id/services/$serviceId/permissions'
 import { Route as AppProjectsIdServicesServiceIdOverviewRouteImport } from './routes/_app/projects/$id/services/$serviceId/overview'
 import { Route as AppProjectsIdServicesServiceIdLogsRouteImport } from './routes/_app/projects/$id/services/$serviceId/logs'
 import { Route as AppProjectsIdServicesServiceIdConfigRouteImport } from './routes/_app/projects/$id/services/$serviceId/config'
 import { Route as AppProjectsIdServicesServiceIdBackupsRouteImport } from './routes/_app/projects/$id/services/$serviceId/backups'
 import { Route as AppProjectsIdJobsJobIdRunsRouteImport } from './routes/_app/projects/$id/jobs/$jobId/runs'
+import { Route as AppProjectsIdJobsJobIdPermissionsRouteImport } from './routes/_app/projects/$id/jobs/$jobId/permissions'
 import { Route as AppProjectsIdJobsJobIdConfigRouteImport } from './routes/_app/projects/$id/jobs/$jobId/config'
 import { Route as AppProjectsIdServicesServiceIdDeploymentsIndexRouteImport } from './routes/_app/projects/$id/services/$serviceId/deployments/index'
 import { Route as AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRouteImport } from './routes/_app/projects/$id/services/$serviceId/deployments/$deploymentId'
@@ -275,6 +278,12 @@ const AppProjectsIdStacksStackIdServicesRoute =
     path: '/services',
     getParentRoute: () => AppProjectsIdStacksStackIdRouteRoute,
   } as any)
+const AppProjectsIdStacksStackIdPermissionsRoute =
+  AppProjectsIdStacksStackIdPermissionsRouteImport.update({
+    id: '/permissions',
+    path: '/permissions',
+    getParentRoute: () => AppProjectsIdStacksStackIdRouteRoute,
+  } as any)
 const AppProjectsIdStacksStackIdEditorRoute =
   AppProjectsIdStacksStackIdEditorRouteImport.update({
     id: '/editor',
@@ -291,6 +300,12 @@ const AppProjectsIdServicesServiceIdPodsRoute =
   AppProjectsIdServicesServiceIdPodsRouteImport.update({
     id: '/pods',
     path: '/pods',
+    getParentRoute: () => AppProjectsIdServicesServiceIdRouteRoute,
+  } as any)
+const AppProjectsIdServicesServiceIdPermissionsRoute =
+  AppProjectsIdServicesServiceIdPermissionsRouteImport.update({
+    id: '/permissions',
+    path: '/permissions',
     getParentRoute: () => AppProjectsIdServicesServiceIdRouteRoute,
   } as any)
 const AppProjectsIdServicesServiceIdOverviewRoute =
@@ -321,6 +336,12 @@ const AppProjectsIdJobsJobIdRunsRoute =
   AppProjectsIdJobsJobIdRunsRouteImport.update({
     id: '/runs',
     path: '/runs',
+    getParentRoute: () => AppProjectsIdJobsJobIdRouteRoute,
+  } as any)
+const AppProjectsIdJobsJobIdPermissionsRoute =
+  AppProjectsIdJobsJobIdPermissionsRouteImport.update({
+    id: '/permissions',
+    path: '/permissions',
     getParentRoute: () => AppProjectsIdJobsJobIdRouteRoute,
   } as any)
 const AppProjectsIdJobsJobIdConfigRoute =
@@ -377,14 +398,17 @@ export interface FileRoutesByFullPath {
   '/projects/$id/variables/': typeof AppProjectsIdVariablesIndexRoute
   '/projects/$id/volumes/': typeof AppProjectsIdVolumesIndexRoute
   '/projects/$id/jobs/$jobId/config': typeof AppProjectsIdJobsJobIdConfigRoute
+  '/projects/$id/jobs/$jobId/permissions': typeof AppProjectsIdJobsJobIdPermissionsRoute
   '/projects/$id/jobs/$jobId/runs': typeof AppProjectsIdJobsJobIdRunsRoute
   '/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
   '/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
+  '/projects/$id/services/$serviceId/permissions': typeof AppProjectsIdServicesServiceIdPermissionsRoute
   '/projects/$id/services/$serviceId/pods': typeof AppProjectsIdServicesServiceIdPodsRoute
   '/projects/$id/services/$serviceId/settings': typeof AppProjectsIdServicesServiceIdSettingsRoute
   '/projects/$id/stacks/$stackId/editor': typeof AppProjectsIdStacksStackIdEditorRoute
+  '/projects/$id/stacks/$stackId/permissions': typeof AppProjectsIdStacksStackIdPermissionsRoute
   '/projects/$id/stacks/$stackId/services': typeof AppProjectsIdStacksStackIdServicesRoute
   '/projects/$id/stacks/$stackId/variables': typeof AppProjectsIdStacksStackIdVariablesRoute
   '/projects/$id/jobs/$jobId/': typeof AppProjectsIdJobsJobIdIndexRoute
@@ -423,14 +447,17 @@ export interface FileRoutesByTo {
   '/projects/$id/variables': typeof AppProjectsIdVariablesIndexRoute
   '/projects/$id/volumes': typeof AppProjectsIdVolumesIndexRoute
   '/projects/$id/jobs/$jobId/config': typeof AppProjectsIdJobsJobIdConfigRoute
+  '/projects/$id/jobs/$jobId/permissions': typeof AppProjectsIdJobsJobIdPermissionsRoute
   '/projects/$id/jobs/$jobId/runs': typeof AppProjectsIdJobsJobIdRunsRoute
   '/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
   '/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
+  '/projects/$id/services/$serviceId/permissions': typeof AppProjectsIdServicesServiceIdPermissionsRoute
   '/projects/$id/services/$serviceId/pods': typeof AppProjectsIdServicesServiceIdPodsRoute
   '/projects/$id/services/$serviceId/settings': typeof AppProjectsIdServicesServiceIdSettingsRoute
   '/projects/$id/stacks/$stackId/editor': typeof AppProjectsIdStacksStackIdEditorRoute
+  '/projects/$id/stacks/$stackId/permissions': typeof AppProjectsIdStacksStackIdPermissionsRoute
   '/projects/$id/stacks/$stackId/services': typeof AppProjectsIdStacksStackIdServicesRoute
   '/projects/$id/stacks/$stackId/variables': typeof AppProjectsIdStacksStackIdVariablesRoute
   '/projects/$id/jobs/$jobId': typeof AppProjectsIdJobsJobIdIndexRoute
@@ -477,14 +504,17 @@ export interface FileRoutesById {
   '/_app/projects/$id/variables/': typeof AppProjectsIdVariablesIndexRoute
   '/_app/projects/$id/volumes/': typeof AppProjectsIdVolumesIndexRoute
   '/_app/projects/$id/jobs/$jobId/config': typeof AppProjectsIdJobsJobIdConfigRoute
+  '/_app/projects/$id/jobs/$jobId/permissions': typeof AppProjectsIdJobsJobIdPermissionsRoute
   '/_app/projects/$id/jobs/$jobId/runs': typeof AppProjectsIdJobsJobIdRunsRoute
   '/_app/projects/$id/services/$serviceId/backups': typeof AppProjectsIdServicesServiceIdBackupsRoute
   '/_app/projects/$id/services/$serviceId/config': typeof AppProjectsIdServicesServiceIdConfigRoute
   '/_app/projects/$id/services/$serviceId/logs': typeof AppProjectsIdServicesServiceIdLogsRoute
   '/_app/projects/$id/services/$serviceId/overview': typeof AppProjectsIdServicesServiceIdOverviewRoute
+  '/_app/projects/$id/services/$serviceId/permissions': typeof AppProjectsIdServicesServiceIdPermissionsRoute
   '/_app/projects/$id/services/$serviceId/pods': typeof AppProjectsIdServicesServiceIdPodsRoute
   '/_app/projects/$id/services/$serviceId/settings': typeof AppProjectsIdServicesServiceIdSettingsRoute
   '/_app/projects/$id/stacks/$stackId/editor': typeof AppProjectsIdStacksStackIdEditorRoute
+  '/_app/projects/$id/stacks/$stackId/permissions': typeof AppProjectsIdStacksStackIdPermissionsRoute
   '/_app/projects/$id/stacks/$stackId/services': typeof AppProjectsIdStacksStackIdServicesRoute
   '/_app/projects/$id/stacks/$stackId/variables': typeof AppProjectsIdStacksStackIdVariablesRoute
   '/_app/projects/$id/jobs/$jobId/': typeof AppProjectsIdJobsJobIdIndexRoute
@@ -530,14 +560,17 @@ export interface FileRouteTypes {
     | '/projects/$id/variables/'
     | '/projects/$id/volumes/'
     | '/projects/$id/jobs/$jobId/config'
+    | '/projects/$id/jobs/$jobId/permissions'
     | '/projects/$id/jobs/$jobId/runs'
     | '/projects/$id/services/$serviceId/backups'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
     | '/projects/$id/services/$serviceId/overview'
+    | '/projects/$id/services/$serviceId/permissions'
     | '/projects/$id/services/$serviceId/pods'
     | '/projects/$id/services/$serviceId/settings'
     | '/projects/$id/stacks/$stackId/editor'
+    | '/projects/$id/stacks/$stackId/permissions'
     | '/projects/$id/stacks/$stackId/services'
     | '/projects/$id/stacks/$stackId/variables'
     | '/projects/$id/jobs/$jobId/'
@@ -576,14 +609,17 @@ export interface FileRouteTypes {
     | '/projects/$id/variables'
     | '/projects/$id/volumes'
     | '/projects/$id/jobs/$jobId/config'
+    | '/projects/$id/jobs/$jobId/permissions'
     | '/projects/$id/jobs/$jobId/runs'
     | '/projects/$id/services/$serviceId/backups'
     | '/projects/$id/services/$serviceId/config'
     | '/projects/$id/services/$serviceId/logs'
     | '/projects/$id/services/$serviceId/overview'
+    | '/projects/$id/services/$serviceId/permissions'
     | '/projects/$id/services/$serviceId/pods'
     | '/projects/$id/services/$serviceId/settings'
     | '/projects/$id/stacks/$stackId/editor'
+    | '/projects/$id/stacks/$stackId/permissions'
     | '/projects/$id/stacks/$stackId/services'
     | '/projects/$id/stacks/$stackId/variables'
     | '/projects/$id/jobs/$jobId'
@@ -629,14 +665,17 @@ export interface FileRouteTypes {
     | '/_app/projects/$id/variables/'
     | '/_app/projects/$id/volumes/'
     | '/_app/projects/$id/jobs/$jobId/config'
+    | '/_app/projects/$id/jobs/$jobId/permissions'
     | '/_app/projects/$id/jobs/$jobId/runs'
     | '/_app/projects/$id/services/$serviceId/backups'
     | '/_app/projects/$id/services/$serviceId/config'
     | '/_app/projects/$id/services/$serviceId/logs'
     | '/_app/projects/$id/services/$serviceId/overview'
+    | '/_app/projects/$id/services/$serviceId/permissions'
     | '/_app/projects/$id/services/$serviceId/pods'
     | '/_app/projects/$id/services/$serviceId/settings'
     | '/_app/projects/$id/stacks/$stackId/editor'
+    | '/_app/projects/$id/stacks/$stackId/permissions'
     | '/_app/projects/$id/stacks/$stackId/services'
     | '/_app/projects/$id/stacks/$stackId/variables'
     | '/_app/projects/$id/jobs/$jobId/'
@@ -933,6 +972,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdStacksStackIdServicesRouteImport
       parentRoute: typeof AppProjectsIdStacksStackIdRouteRoute
     }
+    '/_app/projects/$id/stacks/$stackId/permissions': {
+      id: '/_app/projects/$id/stacks/$stackId/permissions'
+      path: '/permissions'
+      fullPath: '/projects/$id/stacks/$stackId/permissions'
+      preLoaderRoute: typeof AppProjectsIdStacksStackIdPermissionsRouteImport
+      parentRoute: typeof AppProjectsIdStacksStackIdRouteRoute
+    }
     '/_app/projects/$id/stacks/$stackId/editor': {
       id: '/_app/projects/$id/stacks/$stackId/editor'
       path: '/editor'
@@ -952,6 +998,13 @@ declare module '@tanstack/react-router' {
       path: '/pods'
       fullPath: '/projects/$id/services/$serviceId/pods'
       preLoaderRoute: typeof AppProjectsIdServicesServiceIdPodsRouteImport
+      parentRoute: typeof AppProjectsIdServicesServiceIdRouteRoute
+    }
+    '/_app/projects/$id/services/$serviceId/permissions': {
+      id: '/_app/projects/$id/services/$serviceId/permissions'
+      path: '/permissions'
+      fullPath: '/projects/$id/services/$serviceId/permissions'
+      preLoaderRoute: typeof AppProjectsIdServicesServiceIdPermissionsRouteImport
       parentRoute: typeof AppProjectsIdServicesServiceIdRouteRoute
     }
     '/_app/projects/$id/services/$serviceId/overview': {
@@ -987,6 +1040,13 @@ declare module '@tanstack/react-router' {
       path: '/runs'
       fullPath: '/projects/$id/jobs/$jobId/runs'
       preLoaderRoute: typeof AppProjectsIdJobsJobIdRunsRouteImport
+      parentRoute: typeof AppProjectsIdJobsJobIdRouteRoute
+    }
+    '/_app/projects/$id/jobs/$jobId/permissions': {
+      id: '/_app/projects/$id/jobs/$jobId/permissions'
+      path: '/permissions'
+      fullPath: '/projects/$id/jobs/$jobId/permissions'
+      preLoaderRoute: typeof AppProjectsIdJobsJobIdPermissionsRouteImport
       parentRoute: typeof AppProjectsIdJobsJobIdRouteRoute
     }
     '/_app/projects/$id/jobs/$jobId/config': {
@@ -1028,6 +1088,7 @@ const AppProjectsIdRoutesRouteWithChildren =
 
 interface AppProjectsIdJobsJobIdRouteRouteChildren {
   AppProjectsIdJobsJobIdConfigRoute: typeof AppProjectsIdJobsJobIdConfigRoute
+  AppProjectsIdJobsJobIdPermissionsRoute: typeof AppProjectsIdJobsJobIdPermissionsRoute
   AppProjectsIdJobsJobIdRunsRoute: typeof AppProjectsIdJobsJobIdRunsRoute
   AppProjectsIdJobsJobIdIndexRoute: typeof AppProjectsIdJobsJobIdIndexRoute
 }
@@ -1035,6 +1096,8 @@ interface AppProjectsIdJobsJobIdRouteRouteChildren {
 const AppProjectsIdJobsJobIdRouteRouteChildren: AppProjectsIdJobsJobIdRouteRouteChildren =
   {
     AppProjectsIdJobsJobIdConfigRoute: AppProjectsIdJobsJobIdConfigRoute,
+    AppProjectsIdJobsJobIdPermissionsRoute:
+      AppProjectsIdJobsJobIdPermissionsRoute,
     AppProjectsIdJobsJobIdRunsRoute: AppProjectsIdJobsJobIdRunsRoute,
     AppProjectsIdJobsJobIdIndexRoute: AppProjectsIdJobsJobIdIndexRoute,
   }
@@ -1049,6 +1112,7 @@ interface AppProjectsIdServicesServiceIdRouteRouteChildren {
   AppProjectsIdServicesServiceIdConfigRoute: typeof AppProjectsIdServicesServiceIdConfigRoute
   AppProjectsIdServicesServiceIdLogsRoute: typeof AppProjectsIdServicesServiceIdLogsRoute
   AppProjectsIdServicesServiceIdOverviewRoute: typeof AppProjectsIdServicesServiceIdOverviewRoute
+  AppProjectsIdServicesServiceIdPermissionsRoute: typeof AppProjectsIdServicesServiceIdPermissionsRoute
   AppProjectsIdServicesServiceIdPodsRoute: typeof AppProjectsIdServicesServiceIdPodsRoute
   AppProjectsIdServicesServiceIdSettingsRoute: typeof AppProjectsIdServicesServiceIdSettingsRoute
   AppProjectsIdServicesServiceIdIndexRoute: typeof AppProjectsIdServicesServiceIdIndexRoute
@@ -1066,6 +1130,8 @@ const AppProjectsIdServicesServiceIdRouteRouteChildren: AppProjectsIdServicesSer
       AppProjectsIdServicesServiceIdLogsRoute,
     AppProjectsIdServicesServiceIdOverviewRoute:
       AppProjectsIdServicesServiceIdOverviewRoute,
+    AppProjectsIdServicesServiceIdPermissionsRoute:
+      AppProjectsIdServicesServiceIdPermissionsRoute,
     AppProjectsIdServicesServiceIdPodsRoute:
       AppProjectsIdServicesServiceIdPodsRoute,
     AppProjectsIdServicesServiceIdSettingsRoute:
@@ -1085,6 +1151,7 @@ const AppProjectsIdServicesServiceIdRouteRouteWithChildren =
 
 interface AppProjectsIdStacksStackIdRouteRouteChildren {
   AppProjectsIdStacksStackIdEditorRoute: typeof AppProjectsIdStacksStackIdEditorRoute
+  AppProjectsIdStacksStackIdPermissionsRoute: typeof AppProjectsIdStacksStackIdPermissionsRoute
   AppProjectsIdStacksStackIdServicesRoute: typeof AppProjectsIdStacksStackIdServicesRoute
   AppProjectsIdStacksStackIdVariablesRoute: typeof AppProjectsIdStacksStackIdVariablesRoute
   AppProjectsIdStacksStackIdIndexRoute: typeof AppProjectsIdStacksStackIdIndexRoute
@@ -1094,6 +1161,8 @@ const AppProjectsIdStacksStackIdRouteRouteChildren: AppProjectsIdStacksStackIdRo
   {
     AppProjectsIdStacksStackIdEditorRoute:
       AppProjectsIdStacksStackIdEditorRoute,
+    AppProjectsIdStacksStackIdPermissionsRoute:
+      AppProjectsIdStacksStackIdPermissionsRoute,
     AppProjectsIdStacksStackIdServicesRoute:
       AppProjectsIdStacksStackIdServicesRoute,
     AppProjectsIdStacksStackIdVariablesRoute:
