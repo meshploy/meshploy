@@ -31,7 +31,7 @@ export const permissions = {
   listForMember: (orgId: string, userId: string, token: string) =>
     apiFetch<ApiPermission[]>(`/api/v1/orgs/${orgId}/members/${userId}/permissions`, {}, token),
 
-  listForResource: (orgId: string, resourceType: "service" | "stack" | "job", resourceId: string, token: string) =>
+  listForResource: (orgId: string, resourceType: "project" | "service" | "stack" | "job", resourceId: string, token: string) =>
     apiFetch<PermissionsWithUserDTO[]>(`/api/v1/orgs/${orgId}/${resourceType}s/${resourceId}/permissions`, {}, token),
 
   grant: (orgId: string, userId: string, body: PermissionBody, token: string) =>

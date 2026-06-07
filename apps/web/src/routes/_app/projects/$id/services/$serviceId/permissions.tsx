@@ -26,6 +26,7 @@ function ServicePermissionsTab() {
       </div>
       <ResourcePermissionsSection
         orgId={orgId}
+        projectId={projectId}
         resourceType="service"
         resourceId={serviceId}
         token={token}

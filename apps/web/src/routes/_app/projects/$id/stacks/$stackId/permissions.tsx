@@ -26,6 +26,7 @@ function StackPermissionsTab() {
       </div>
       <ResourcePermissionsSection
         orgId={orgId}
+        projectId={projectId}
         resourceType="stack"
         resourceId={stackId}
         token={token}

@@ -26,6 +26,7 @@ function JobPermissionsTab() {
       </div>
       <ResourcePermissionsSection
         orgId={orgId}
+        projectId={projectId}
         resourceType="job"
         resourceId={jobId}
         token={token}

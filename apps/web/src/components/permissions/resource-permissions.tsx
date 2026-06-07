@@ -1,71 +1,88 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Plus, UserX } from "lucide-react"
+import { Lock, Loader2 } from "lucide-react"
 import {
-  orgs as orgsApi,
   permissions as permissionsApi,
-  type ApiOrgMember,
   type PermissionsWithUserDTO,
   RESOURCE_ACTIONS,
   type ResourceAction,
   type ResourceType,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 interface Props {
   orgId: string
+  projectId: string
   resourceType: "service" | "stack" | "job"
   resourceId: string
   token: string
 }
 
-interface UserGrant {
+interface CombinedUserGrant {
   userId: string
   userName: string
   userEmail: string
-  actions: Set<ResourceAction>
+  projectActions: Set<ResourceAction>
+  resourceActions: Set<ResourceAction>
 }
 
-function groupByUser(rows: PermissionsWithUserDTO[]): UserGrant[] {
-  const map = new Map<string, UserGrant>()
-  for (const row of rows) {
+function buildCombinedGrants(
+  projectRows: PermissionsWithUserDTO[],
+  resourceRows: PermissionsWithUserDTO[],
+): Map<string, CombinedUserGrant> {
+  const map = new Map<string, CombinedUserGrant>()
+
+  for (const row of projectRows) {
     const existing = map.get(row.user_id)
     if (existing) {
-      existing.actions.add(row.action)
+      existing.projectActions.add(row.action)
     } else {
       map.set(row.user_id, {
         userId: row.user_id,
         userName: row.user_name,
         userEmail: row.user_email,
-        actions: new Set([row.action]),
+        projectActions: new Set([row.action]),
+        resourceActions: new Set(),
       })
     }
   }
-  return Array.from(map.values())
+
+  for (const row of resourceRows) {
+    const existing = map.get(row.user_id)
+    if (existing) {
+      existing.resourceActions.add(row.action)
+    } else {
+      map.set(row.user_id, {
+        userId: row.user_id,
+        userName: row.user_name,
+        userEmail: row.user_email,
+        projectActions: new Set(),
+        resourceActions: new Set([row.action]),
+      })
+    }
+  }
+
+  return map
 }
 
-export function ResourcePermissionsSection({ orgId, resourceType, resourceId, token }: Props) {
+export function ResourcePermissionsSection({ orgId, projectId, resourceType, resourceId, token }: Props) {
   const qc = useQueryClient()
-  const queryKey = ["resource-permissions", orgId, resourceType, resourceId]
+  const resourceQueryKey = ["resource-permissions", orgId, resourceType, resourceId]
+  const projectQueryKey = ["resource-permissions", orgId, "project", projectId]
 
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey,
+  const { data: resourceRows = [], isLoading: resourceLoading } = useQuery({
+    queryKey: resourceQueryKey,
     queryFn: () => permissionsApi.listForResource(orgId, resourceType, resourceId, token),
     enabled: !!orgId && !!resourceId,
   })
 
-  const { data: members = [] } = useQuery({
-    queryKey: ["org-members", orgId],
-    queryFn: () => orgsApi.listMembers(orgId, token),
-    enabled: !!orgId,
+  const { data: projectRows = [], isLoading: projectLoading } = useQuery({
+    queryKey: projectQueryKey,
+    queryFn: () => permissionsApi.listForResource(orgId, "project", projectId, token),
+    enabled: !!orgId && !!projectId,
   })
 
   const [pending, setPending] = useState<Set<string>>(new Set())
-  const [addingUserId, setAddingUserId] = useState<string | null>(null)
 
   const { mutate } = useMutation({
     mutationFn: ({ userId, action, granted }: { userId: string; action: ResourceAction; granted: boolean }) => {
@@ -79,28 +96,11 @@ export function ResourcePermissionsSection({ orgId, resourceType, resourceId, to
     },
     onSettled: (_, __, { userId, action }) => {
       setPending((s) => { const n = new Set(s); n.delete(`${userId}-${action}`); return n })
-      qc.invalidateQueries({ queryKey })
+      qc.invalidateQueries({ queryKey: resourceQueryKey })
     },
   })
 
-  const { mutate: addMember, isPending: adding } = useMutation({
-    mutationFn: (userId: string) =>
-      permissionsApi.grant(orgId, userId, { resource_type: resourceType as ResourceType, resource_id: resourceId, action: "view" }, token),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey })
-      setAddingUserId(null)
-    },
-  })
-
-  const userGrants = groupByUser(rows)
-  const grantedUserIds = new Set(userGrants.map((u) => u.userId))
-
-  // Only member-role users not already in the list
-  const addableMembers = members.filter(
-    (m: ApiOrgMember) => m.role === "member" && !grantedUserIds.has(m.user_id)
-  )
-
-  if (isLoading) {
+  if (resourceLoading || projectLoading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground text-sm">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -109,44 +109,22 @@ export function ResourcePermissionsSection({ orgId, resourceType, resourceId, to
     )
   }
 
+  const combinedMap = buildCombinedGrants(projectRows, resourceRows)
+  const userGrants = Array.from(combinedMap.values())
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-medium">Member Permissions</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Grant specific members access to this {resourceType}
-          </p>
-        </div>
-        {addableMembers.length > 0 && (
-          <Select
-            value={addingUserId ?? ""}
-            onValueChange={(v) => { if (v) { setAddingUserId(v); addMember(v) } }}
-            disabled={adding}
-          >
-            <SelectTrigger className="w-auto h-7 text-xs gap-1.5 px-2.5 border-border/60 bg-muted/20">
-              {adding
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Plus className="h-3 w-3" />
-              }
-              <span>Add member</span>
-            </SelectTrigger>
-            <SelectContent>
-              {addableMembers.map((m: ApiOrgMember) => (
-                <SelectItem key={m.user_id} value={m.user_id}>
-                  {m.user_name}
-                  <span className="ml-1.5 text-muted-foreground/60 text-[10px]">{m.user_email}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+      <div>
+        <h2 className="text-sm font-medium">Member Access</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          <Lock className="inline h-3 w-3 mr-0.5 mb-0.5" />
+          locked = from project · toggleable = resource-level override
+        </p>
       </div>
 
       {userGrants.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/50 py-8 flex flex-col items-center gap-2 text-muted-foreground">
-          <UserX className="h-5 w-5 text-muted-foreground/30" />
-          <p className="text-xs">No member-level overrides — access is controlled by project permissions</p>
+          <p className="text-xs">No members have access to this {resourceType} yet</p>
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
@@ -155,7 +133,9 @@ export function ResourcePermissionsSection({ orgId, resourceType, resourceId, to
               key={user.userId}
               user={user}
               pending={pending}
-              onToggle={(action) => mutate({ userId: user.userId, action, granted: user.actions.has(action) })}
+              onToggle={(action) =>
+                mutate({ userId: user.userId, action, granted: user.resourceActions.has(action) })
+              }
             />
           ))}
         </div>
@@ -165,7 +145,7 @@ export function ResourcePermissionsSection({ orgId, resourceType, resourceId, to
 }
 
 function UserGrantRow({ user, pending, onToggle }: {
-  user: UserGrant
+  user: CombinedUserGrant
   pending: Set<string>
   onToggle: (action: ResourceAction) => void
 }) {
@@ -182,8 +162,25 @@ function UserGrantRow({ user, pending, onToggle }: {
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         {RESOURCE_ACTIONS.map((action) => {
-          const granted = user.actions.has(action)
+          const fromProject = user.projectActions.has(action)
+          const fromResource = user.resourceActions.has(action)
           const isLoading = pending.has(`${user.userId}-${action}`)
+
+          if (fromProject) {
+            // Locked — comes from project grant
+            return (
+              <span
+                key={action}
+                title="Granted via project"
+                className="h-6 px-2.5 text-[11px] font-medium rounded-md border border-border/30 bg-muted/30 text-muted-foreground/50 flex items-center gap-1 cursor-default select-none"
+              >
+                <Lock className="h-2.5 w-2.5" />
+                {action}
+              </span>
+            )
+          }
+
+          // Toggleable — resource-level only
           return (
             <button
               key={action}
@@ -191,7 +188,7 @@ function UserGrantRow({ user, pending, onToggle }: {
               disabled={isLoading}
               className={cn(
                 "h-6 px-2.5 text-[11px] font-medium rounded-md border transition-colors select-none",
-                granted
+                fromResource
                   ? "bg-primary/15 text-primary border-primary/30 hover:bg-primary/25"
                   : "bg-transparent text-muted-foreground/35 border-border/30 hover:text-muted-foreground/70 hover:border-border/60",
                 isLoading && "opacity-40 cursor-wait pointer-events-none"
