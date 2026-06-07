@@ -14,10 +14,21 @@ type PermissionService struct {
 }
 
 type PermissionWithUser struct {
-	UserID    uuid.UUID      `json:"user_id"`
-	UserName  string         `json:"user_name"`
-	UserEmail string         `json:"user_email"`
+	UserID    uuid.UUID         `json:"user_id"`
+	UserName  string            `json:"user_name"`
+	UserEmail string            `json:"user_email"`
 	Action    db.ResourceAction `json:"action"`
+}
+
+// PermissionWithContext enriches a grant with the resource's display name and
+// parent project ID (for service/stack/job grants resolved via JOIN).
+type PermissionWithContext struct {
+	ID              uuid.UUID         `json:"id"`
+	ResourceType    db.ResourceType   `json:"resource_type"`
+	ResourceID      uuid.UUID         `json:"resource_id"`
+	Action          db.ResourceAction `json:"action"`
+	ResourceName    string            `json:"resource_name,omitempty"`
+	ParentProjectID *uuid.UUID        `json:"parent_project_id,omitempty"`
 }
 
 // Grant creates a permission grant. Silently succeeds if the grant already exists.
@@ -42,13 +53,45 @@ func (s *PermissionService) Revoke(ctx context.Context, orgID, userID, resourceI
 		Delete(&db.ResourcePermission{}).Error
 }
 
-// ListForUser returns all permission grants for a user within an org.
-func (s *PermissionService) ListForUser(ctx context.Context, orgID, userID uuid.UUID) ([]db.ResourcePermission, error) {
-	var perms []db.ResourcePermission
-	err := s.db.WithContext(ctx).
-		Where("organization_id = ? AND user_id = ?", orgID, userID).
-		Find(&perms).Error
-	return perms, err
+// ListForUser returns all permission grants for a user, enriched with resource
+// names and parent project IDs resolved via JOIN for service/stack/job grants.
+func (s *PermissionService) ListForUser(ctx context.Context, orgID, userID uuid.UUID) ([]PermissionWithContext, error) {
+	var rows []struct {
+		ID              uuid.UUID
+		ResourceType    db.ResourceType
+		ResourceID      uuid.UUID
+		Action          db.ResourceAction
+		ResourceName    *string
+		ParentProjectID *uuid.UUID
+	}
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT rp.id, rp.resource_type, rp.resource_id, rp.action,
+		       COALESCE(s.name, st.name, j.name)                         AS resource_name,
+		       COALESCE(s.project_id, st.project_id, j.project_id)       AS parent_project_id
+		FROM resource_permissions rp
+		LEFT JOIN services s  ON rp.resource_type = 'service' AND s.id  = rp.resource_id
+		LEFT JOIN stacks   st ON rp.resource_type = 'stack'   AND st.id = rp.resource_id
+		LEFT JOIN jobs     j  ON rp.resource_type = 'job'     AND j.id  = rp.resource_id
+		WHERE rp.organization_id = ? AND rp.user_id = ?
+		ORDER BY rp.resource_type, rp.action
+	`, orgID, userID).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PermissionWithContext, len(rows))
+	for i, r := range rows {
+		out[i] = PermissionWithContext{
+			ID:              r.ID,
+			ResourceType:    r.ResourceType,
+			ResourceID:      r.ResourceID,
+			Action:          r.Action,
+			ParentProjectID: r.ParentProjectID,
+		}
+		if r.ResourceName != nil {
+			out[i].ResourceName = *r.ResourceName
+		}
+	}
+	return out, nil
 }
 
 // ListForResource returns all users with any permission grant on a specific resource.

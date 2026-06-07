@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertCircle, Check, Clock, Copy, Crown, Globe, HardDrive, Loader2, Pencil, Plus, Shield, User, X } from "lucide-react"
+import { AlertCircle, Check, Globe, HardDrive, Loader2, Pencil, Plus, X } from "lucide-react"
 import { useState } from "react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -14,8 +13,6 @@ import {
   storage as storageApi,
   backups as backupsApi,
   type ApiDomain,
-  type ApiOrgInvitation,
-  type ApiOrgMember,
   type ApiStorageIntegration,
   type ApiSystemBackupConfig,
 } from "@/lib/api"
@@ -25,7 +22,6 @@ import { Section, inputCls } from "@/components/services/form-primitives"
 import { BackupCard } from "@/components/backups/backup-card"
 import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
-import type { OrgRole } from "@/types"
 import { ACCENT_GROUPS, getAccent } from "@/lib/accents"
 import { useAccentStore } from "@/store/accent-store"
 
@@ -57,7 +53,7 @@ function SettingsPage() {
     <div className="p-6 max-w-2xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Manage your organization settings and members</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Manage your organization settings</p>
       </div>
 
       <GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} />
@@ -67,8 +63,6 @@ function SettingsPage() {
       <PrimaryDomainSection />
 
       <SystemBackupSection />
-
-      <MembersSection />
     </div>
   )
 }
@@ -381,215 +375,6 @@ function SystemBackupSection() {
   )
 }
 
-function MembersSection() {
-  const token = useAuthStore((s) => s.token)!
-  const userId = useAuthStore((s) => s.userId)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-  const qc = useQueryClient()
-
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
-  const [showInvite, setShowInvite] = useState(false)
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-
-  const { data: members = [], isLoading } = useQuery({
-    queryKey: ["org-members", orgId],
-    queryFn: () => orgsApi.listMembers(orgId, token),
-    enabled: !!orgId,
-  })
-
-  const callerRole = members.find((m) => m.user_id === userId)?.role ?? "member"
-  const canEditRoles = callerRole === "owner" || callerRole === "admin"
-
-  const { data: invitations = [] } = useQuery({
-    queryKey: ["org-invitations", orgId],
-    queryFn: () => orgsApi.listInvitations(orgId, token),
-    enabled: !!orgId,
-  })
-
-  const { mutate: createInvite, isPending: inviting, error: inviteError } = useMutation({
-    mutationFn: () => orgsApi.createInvitation(orgId, inviteEmail, inviteRole, token),
-    onSuccess: (inv) => {
-      qc.invalidateQueries({ queryKey: ["org-invitations", orgId] })
-      const link = `${window.location.origin}/register?token=${inv.token}`
-      setInviteLink(link)
-      setInviteEmail("")
-    },
-  })
-
-  function copyLink() {
-    if (!inviteLink) return
-    navigator.clipboard.writeText(inviteLink)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  function closeInviteForm() {
-    setShowInvite(false)
-    setInviteLink(null)
-    setInviteEmail("")
-    setInviteRole("member")
-  }
-
-  return (
-    <Section
-      title="Members"
-      action={
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{members.length} {members.length === 1 ? "member" : "members"}</span>
-          <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => { setShowInvite((v) => !v); setInviteLink(null) }}>
-            <Plus className="h-3.5 w-3.5" />
-            Invite
-          </Button>
-        </div>
-      }
-    >
-      {showInvite && (
-        <div className="mb-3 space-y-2">
-          {inviteLink ? (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Share this link — it expires in 7 days and can only be used once.</p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-8 flex items-center px-3 rounded-md border border-border/60 bg-muted/20 font-mono text-xs text-muted-foreground overflow-hidden">
-                  <span className="truncate">{inviteLink}</span>
-                </div>
-                <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1.5" onClick={copyLink}>
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied ? "Copied" : "Copy"}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={closeInviteForm}>Done</Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Email address"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  className="h-8 text-sm"
-                  onKeyDown={(e) => { if (e.key === "Enter" && inviteEmail) createInvite() }}
-                  autoFocus
-                />
-                <Select value={inviteRole} onValueChange={(v) => v && setInviteRole(v as "admin" | "member")}>
-                  <SelectTrigger className="w-28! h-8 text-xs bg-muted/20 border-border/60 shrink-0">
-                    <SelectValue>{inviteRole}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">member</SelectItem>
-                    <SelectItem value="admin">admin</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" className="h-8 shrink-0" onClick={() => createInvite()} disabled={inviting || !inviteEmail}>
-                  {inviting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Generate link"}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={closeInviteForm}>Cancel</Button>
-              </div>
-              {inviteError && (
-                <p className="text-xs text-destructive">{String((inviteError as Error).message)}</p>
-              )}
-            </>
-          )}
-        </div>
-      )}
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>Loading…</span>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          {members.map((member) => (
-            <MemberRow key={member.id} member={member} canEdit={canEditRoles && member.role !== "owner"} orgId={orgId} token={token} />
-          ))}
-          {invitations.map((inv) => (
-            <PendingInviteRow key={inv.id} invitation={inv} />
-          ))}
-        </div>
-      )}
-    </Section>
-  )
-}
-
-function MemberRow({ member, canEdit, orgId, token }: {
-  member: ApiOrgMember
-  canEdit: boolean
-  orgId: string
-  token: string
-}) {
-  const qc = useQueryClient()
-  const initials = member.user_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
-
-  const { mutate: changeRole, isPending } = useMutation({
-    mutationFn: (role: "admin" | "member") => orgsApi.updateMember(orgId, member.user_id, role, token),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["org-members", orgId] }),
-  })
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
-      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 shrink-0">
-        <span className="text-xs font-semibold text-primary">{initials || "?"}</span>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">{member.user_name}</p>
-        <p className="text-xs text-muted-foreground">{member.user_email}</p>
-      </div>
-      {canEdit ? (
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Select
-            value={member.role}
-            onValueChange={(v) => v && changeRole(v as "admin" | "member")}
-            disabled={isPending}
-          >
-            <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1">
-              {isPending
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <SelectValue>{member.role}</SelectValue>
-              }
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">admin</SelectItem>
-              <SelectItem value="member">member</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <RoleBadge role={member.role as OrgRole} />
-      )}
-    </div>
-  )
-}
-
-function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
-  const [copied, setCopied] = useState(false)
-
-  function copyLink() {
-    const link = `${window.location.origin}/register?token=${invitation.token}`
-    navigator.clipboard.writeText(link)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
-      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted/40 shrink-0">
-        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-muted-foreground">{invitation.email}</p>
-        <p className="text-xs text-muted-foreground/60">Invite pending</p>
-      </div>
-      <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5 shrink-0">
-        <Clock className="h-2.5 w-2.5" />{invitation.role}
-      </Badge>
-      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={copyLink} title="Copy invite link">
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
-      </Button>
-    </div>
-  )
-}
-
 function DomainCard({ domain }: { domain: ApiDomain }) {
   return (
     <div className="rounded-lg border border-border/60 px-4 py-4">
@@ -617,24 +402,5 @@ function DomainCard({ domain }: { domain: ApiDomain }) {
         </div>
       </div>
     </div>
-  )
-}
-
-
-function RoleBadge({ role }: { role: OrgRole }) {
-  if (role === "owner") return (
-    <Badge className="gap-1 text-[10px] px-1.5 py-0 h-5 bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/10">
-      <Crown className="h-2.5 w-2.5" />owner
-    </Badge>
-  )
-  if (role === "admin") return (
-    <Badge className="gap-1 text-[10px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">
-      <Shield className="h-2.5 w-2.5" />admin
-    </Badge>
-  )
-  return (
-    <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5">
-      <User className="h-2.5 w-2.5" />member
-    </Badge>
   )
 }

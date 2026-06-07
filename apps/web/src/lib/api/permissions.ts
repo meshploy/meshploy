@@ -7,11 +7,11 @@ export const RESOURCE_ACTIONS: ResourceAction[] = ["view", "create", "deploy", "
 
 export interface ApiPermission {
   id: string
-  organization_id: string
-  user_id: string
   resource_type: ResourceType
   resource_id: string
   action: ResourceAction
+  resource_name?: string
+  parent_project_id?: string
 }
 
 export interface PermissionBody {

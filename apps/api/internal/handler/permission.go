@@ -15,8 +15,17 @@ type MemberPermissionsPathInput struct {
 	UserID string `path:"userId"`
 }
 
+type PermissionContextDTO struct {
+	ID              string            `json:"id"`
+	ResourceType    db.ResourceType   `json:"resource_type"`
+	ResourceID      string            `json:"resource_id"`
+	Action          db.ResourceAction `json:"action"`
+	ResourceName    string            `json:"resource_name,omitempty"`
+	ParentProjectID string            `json:"parent_project_id,omitempty"`
+}
+
 type ListPermissionsOutput struct {
-	Body []db.ResourcePermission
+	Body []PermissionContextDTO
 }
 
 type PermissionBody struct {
@@ -153,7 +162,21 @@ func (h *Handler) ListMemberPermissions(ctx context.Context, input *MemberPermis
 	if err != nil {
 		return nil, err
 	}
-	return &ListPermissionsOutput{Body: perms}, nil
+	dtos := make([]PermissionContextDTO, len(perms))
+	for i, p := range perms {
+		dto := PermissionContextDTO{
+			ID:           p.ID.String(),
+			ResourceType: p.ResourceType,
+			ResourceID:   p.ResourceID.String(),
+			Action:       p.Action,
+			ResourceName: p.ResourceName,
+		}
+		if p.ParentProjectID != nil {
+			dto.ParentProjectID = p.ParentProjectID.String()
+		}
+		dtos[i] = dto
+	}
+	return &ListPermissionsOutput{Body: dtos}, nil
 }
 
 func (h *Handler) GrantPermission(ctx context.Context, input *GrantPermissionInput) (*struct{}, error) {

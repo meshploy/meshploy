@@ -47,8 +47,8 @@ const NAV_GROUPS: NavGroup[] = [
     adminOnly: true,
     items: [
       { href: "/integrations", icon: Plug, label: "Integrations", exact: false },
-      { href: "/settings", icon: Settings, label: "Settings", exact: false },
       { href: "/users", icon: Users, label: "Users", exact: false },
+      { href: "/settings", icon: Settings, label: "Settings", exact: false },
     ],
   },
 ]
