@@ -20,9 +20,19 @@ export interface PermissionBody {
   action: ResourceAction
 }
 
+export interface PermissionsWithUserDTO {
+  user_id: string
+  user_name: string
+  user_email: string
+  action: ResourceAction
+}
+
 export const permissions = {
   listForMember: (orgId: string, userId: string, token: string) =>
     apiFetch<ApiPermission[]>(`/api/v1/orgs/${orgId}/members/${userId}/permissions`, {}, token),
+
+  listForResource: (orgId: string, resourceType: "service" | "stack" | "job", resourceId: string, token: string) =>
+    apiFetch<PermissionsWithUserDTO[]>(`/api/v1/orgs/${orgId}/${resourceType}s/${resourceId}/permissions`, {}, token),
 
   grant: (orgId: string, userId: string, body: PermissionBody, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/members/${userId}/permissions`, {

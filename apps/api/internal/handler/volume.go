@@ -175,12 +175,20 @@ func (h *Handler) registerVolumeRoutes(api huma.API) {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListVolumes(ctx context.Context, input *VolumeProjectPathInput) (*ListVolumesOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	projectID, err := uuid.Parse(input.ProjectID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid project ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	volumes, err := h.svc.Volumes.List(ctx, projectID)
 	if err != nil {
@@ -190,12 +198,20 @@ func (h *Handler) ListVolumes(ctx context.Context, input *VolumeProjectPathInput
 }
 
 func (h *Handler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*GetVolumeOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	projectID, err := uuid.Parse(input.ProjectID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid project ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	volume, err := h.svc.Volumes.Create(ctx, projectID, input.Body.Name, input.Body.StorageGB)
 	if err != nil {
@@ -205,12 +221,24 @@ func (h *Handler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*
 }
 
 func (h *Handler) GetVolume(ctx context.Context, input *VolumePathInput) (*GetVolumeOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	volumeID, err := uuid.Parse(input.VolumeID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid volume ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, err
 	}
 	volume, err := h.svc.Volumes.Get(ctx, volumeID)
 	if err != nil {
@@ -220,12 +248,24 @@ func (h *Handler) GetVolume(ctx context.Context, input *VolumePathInput) (*GetVo
 }
 
 func (h *Handler) DeleteVolume(ctx context.Context, input *VolumePathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	volumeID, err := uuid.Parse(input.VolumeID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid volume ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionDelete, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, err
 	}
 	if err := h.svc.Volumes.Delete(ctx, volumeID); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -234,16 +274,28 @@ func (h *Handler) DeleteVolume(ctx context.Context, input *VolumePathInput) (*st
 }
 
 func (h *Handler) AttachVolume(ctx context.Context, input *AttachVolumeInput) (*GetVolumeMountOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	volumeID, err := uuid.Parse(input.VolumeID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid volume ID")
+		return nil, err
 	}
-	serviceID, err := uuid.Parse(input.Body.ServiceID)
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.Body.ServiceID)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid service_id")
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, err
 	}
 	mount, err := h.svc.Volumes.Attach(ctx, volumeID, serviceID, input.Body.MountPath)
 	if err != nil {
@@ -253,12 +305,25 @@ func (h *Handler) AttachVolume(ctx context.Context, input *AttachVolumeInput) (*
 }
 
 func (h *Handler) DetachVolume(ctx context.Context, input *VolumeMountPathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	mountID, err := uuid.Parse(input.MountID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid mount ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	// ServiceID not in path — check project-level update as the target service's parent
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	mountID, err := parseUUID(input.MountID)
+	if err != nil {
+		return nil, err
 	}
 	if err := h.svc.Volumes.Detach(ctx, mountID); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -267,12 +332,24 @@ func (h *Handler) DetachVolume(ctx context.Context, input *VolumeMountPathInput)
 }
 
 func (h *Handler) ListServiceMounts(ctx context.Context, input *ServiceMountsPathInput) (*ListVolumeMountsOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	serviceID, err := uuid.Parse(input.ServiceID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid service ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := parseUUID(input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	mounts, err := h.svc.Volumes.ListServiceMounts(ctx, serviceID)
 	if err != nil {
@@ -282,12 +359,24 @@ func (h *Handler) ListServiceMounts(ctx context.Context, input *ServiceMountsPat
 }
 
 func (h *Handler) GetVolumeBackup(ctx context.Context, input *VolumePathInput) (*VolumeBackupConfigOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	volumeID, err := uuid.Parse(input.VolumeID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid volume ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, err
 	}
 	cfg, err := h.svc.Volumes.GetBackupConfig(ctx, volumeID)
 	if err != nil {
@@ -297,12 +386,24 @@ func (h *Handler) GetVolumeBackup(ctx context.Context, input *VolumePathInput) (
 }
 
 func (h *Handler) UpsertVolumeBackup(ctx context.Context, input *UpsertVolumeBackupInput) (*VolumeBackupConfigOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	volumeID, err := uuid.Parse(input.VolumeID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid volume ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, err
 	}
 	storageID, err := uuid.Parse(input.Body.StorageIntegrationID)
 	if err != nil {
@@ -326,12 +427,24 @@ func (h *Handler) UpsertVolumeBackup(ctx context.Context, input *UpsertVolumeBac
 }
 
 func (h *Handler) DeleteVolumeBackup(ctx context.Context, input *VolumePathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	volumeID, err := uuid.Parse(input.VolumeID)
+	orgID, err := parseUUID(input.OrgID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid volume ID")
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, err
 	}
 	return nil, h.svc.Volumes.DeleteBackupConfig(ctx, volumeID)
 }

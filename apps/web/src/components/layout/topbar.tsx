@@ -2,7 +2,7 @@ import { useRouterState, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Home } from "lucide-react"
 import { UserMenu } from "./user-menu"
-import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, jobs as jobsApi, stacks as stacksApi } from "@/lib/api"
+import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -12,6 +12,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   cluster:      "Cluster",
   integrations: "Integrations",
   settings:     "Settings",
+  users:        "Users",
   services:     "Services",
   deployments:  "Deployments",
   routes:       "Routes",
@@ -30,7 +31,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "static" | "uuid"
+type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "member" | "static" | "uuid"
 
 interface BreadcrumbEntry {
   segment: string
@@ -73,6 +74,8 @@ function parsePath(segments: string[]): BreadcrumbEntry[] {
       entries.push({ segment, href, type: "job", projectId })
     } else if (prev === "stacks") {
       entries.push({ segment, href, type: "stack", projectId })
+    } else if (prev === "users") {
+      entries.push({ segment, href, type: "member" })
     } else {
       entries.push({ segment, href, type: "uuid" })
     }
@@ -136,6 +139,14 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
     staleTime: 5 * 60 * 1000,
   })
 
+  const memberQuery = useQuery({
+    queryKey: ["org-members", orgId],
+    queryFn: () => orgsApi.listMembers(orgId!, token!),
+    enabled: !!orgId && !!token && entry.type === "member",
+    staleTime: 5 * 60 * 1000,
+    select: (members) => members.find((m) => m.user_id === entry.segment),
+  })
+
   if (entry.type === "static") return <>{SEGMENT_LABELS[entry.segment] ?? entry.segment}</>
   if (entry.type === "deployment") return <>{entry.segment.slice(0, 8)}</>
   if (entry.type === "project") return <>{projectQuery.data?.name ?? entry.segment.slice(0, 8)}</>
@@ -145,6 +156,7 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
   if (entry.type === "route") return <>{routeQuery.data?.hostname ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "job") return <>{jobQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "stack") return <>{stackQuery.data?.name ?? entry.segment.slice(0, 8)}</>
+  if (entry.type === "member") return <>{memberQuery.data?.user_name ?? entry.segment.slice(0, 8)}</>
   return <>{entry.segment.slice(0, 8)}</>
 }
 

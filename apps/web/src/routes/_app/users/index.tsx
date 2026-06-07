@@ -207,22 +207,24 @@ function MemberRow({ member, canEdit, orgId, token }: {
         <p className="text-xs text-muted-foreground">{member.user_email}</p>
       </div>
       {canEdit ? (
-        <Select
-          value={member.role}
-          onValueChange={(v) => v && changeRole(v as "admin" | "member")}
-          disabled={isPending}
-        >
-          <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1 shrink-0">
-            {isPending
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <SelectValue>{member.role}</SelectValue>
-            }
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="admin">admin</SelectItem>
-            <SelectItem value="member">member</SelectItem>
-          </SelectContent>
-        </Select>
+        <div onClick={(e) => e.stopPropagation()}>
+          <Select
+            value={member.role}
+            onValueChange={(v) => v && changeRole(v as "admin" | "member")}
+            disabled={isPending}
+          >
+            <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1 shrink-0">
+              {isPending
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <SelectValue>{member.role}</SelectValue>
+              }
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="admin">admin</SelectItem>
+              <SelectItem value="member">member</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       ) : (
         <RoleBadge role={member.role as OrgRole} />
       )}

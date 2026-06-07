@@ -8,6 +8,7 @@ import { services as servicesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
+import { useIsAdmin } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
   component: ServiceLayout,
@@ -42,6 +43,7 @@ function ServiceLayout() {
   const { id: projectId, serviceId } = useParams({ from: "/_app/projects/$id/services/$serviceId" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
 
   const queryKey = ["service", orgId, projectId, serviceId]
@@ -115,7 +117,9 @@ function ServiceLayout() {
           </>
         }
       >
-        {(service.type === "database" ? DB_TABS : APP_TABS).map(({ label, to }) => (
+        {[...(service.type === "database" ? DB_TABS : APP_TABS),
+          ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/services/$serviceId/permissions" as const }] : [])
+        ].map(({ label, to }) => (
           <Link
             key={to}
             to={to}

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 import { cn } from "@/lib/utils"
+import { useIsAdmin } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/$jobId")({
   component: JobLayout,
@@ -33,6 +34,7 @@ function JobLayout() {
   const { id: projectId, jobId } = useParams({ from: "/_app/projects/$id/jobs/$jobId" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const isAdmin = useIsAdmin()
   const navigate = useNavigate()
   const qc = useQueryClient()
 
@@ -83,8 +85,9 @@ function JobLayout() {
   }
 
   const tabs = [
-    { label: "Runs",          to: "/projects/$id/jobs/$jobId/runs"   as const },
-    { label: "Configuration", to: "/projects/$id/jobs/$jobId/config" as const },
+    { label: "Runs",          to: "/projects/$id/jobs/$jobId/runs"        as const },
+    { label: "Configuration", to: "/projects/$id/jobs/$jobId/config"      as const },
+    ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/jobs/$jobId/permissions" as const }] : []),
   ]
 
   return (

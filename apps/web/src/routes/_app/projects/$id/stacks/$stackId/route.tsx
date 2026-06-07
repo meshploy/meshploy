@@ -6,6 +6,7 @@ import { stacks as stacksApi, type ApiStack } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
+import { useIsAdmin } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId")({
   component: StackLayout,
@@ -21,6 +22,7 @@ function StackLayout() {
   const { id: projectId, stackId } = useParams({ from: "/_app/projects/$id/stacks/$stackId" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const isAdmin = useIsAdmin()
   const { data: stack, isLoading } = useQuery({
     queryKey: ["stack", orgId, projectId, stackId],
     queryFn: () => stacksApi.get(orgId!, projectId, stackId, token),
@@ -32,9 +34,10 @@ function StackLayout() {
   })
 
   const tabs = [
-    { label: "Services",  to: "/projects/$id/stacks/$stackId/services"   as const },
-    { label: "Variables", to: "/projects/$id/stacks/$stackId/variables"  as const },
-    { label: "Editor",    to: "/projects/$id/stacks/$stackId/editor"     as const },
+    { label: "Services",     to: "/projects/$id/stacks/$stackId/services"     as const },
+    { label: "Variables",    to: "/projects/$id/stacks/$stackId/variables"    as const },
+    { label: "Editor",       to: "/projects/$id/stacks/$stackId/editor"       as const },
+    ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/stacks/$stackId/permissions" as const }] : []),
   ]
 
   return (
