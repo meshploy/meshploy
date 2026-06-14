@@ -18,6 +18,7 @@ func New(cfg *config.Config, svc *service.Services) *Handler {
 
 // Register wires all Huma (OpenAPI) routes onto the router.
 func (h *Handler) Register(api huma.API) {
+	h.registerHealthRoute(api)
 	h.registerAuthRoutes(api)
 	h.registerOrgRoutes(api)
 	h.registerProjectRoutes(api)

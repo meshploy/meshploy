@@ -804,12 +804,24 @@ type DBSchemaOutput struct {
 }
 
 func (h *Handler) DBSchema(ctx context.Context, input *WorkloadPathInput) (*DBSchemaOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	serviceID, err := parseUUID(input.ServiceID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	tables, err := h.svc.DBExplorer.Schema(ctx, serviceID)
 	if err != nil {
@@ -823,7 +835,7 @@ type DBQueryInput struct {
 	ProjectID string `path:"projectId"`
 	ServiceID string `path:"serviceId"`
 	Body      struct {
-		Query    string `json:"query" minLength:"1"`
+		Query    string `json:"query" minLength:"1" maxLength:"10000"`
 		ReadOnly bool   `json:"read_only"`
 	}
 }
@@ -833,12 +845,24 @@ type DBQueryOutput struct {
 }
 
 func (h *Handler) DBQuery(ctx context.Context, input *DBQueryInput) (*DBQueryOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	serviceID, err := parseUUID(input.ServiceID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	result, err := h.svc.DBExplorer.Query(ctx, serviceID, input.Body.Query, input.Body.ReadOnly)
 	if err != nil {

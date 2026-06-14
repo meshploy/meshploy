@@ -18,7 +18,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
 	}) (*struct{ Body []meshdb.NotificationChannel }, error) {
-		requireUser(ctx)
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org id", err)
@@ -45,7 +47,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 			Events []string                       `json:"events"`
 		}
 	}) (*struct{ Body *meshdb.NotificationChannel }, error) {
-		requireUser(ctx)
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org id", err)
@@ -77,7 +81,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 			Enabled *bool             `json:"enabled,omitempty"`
 		}
 	}) (*struct{ Body *meshdb.NotificationChannel }, error) {
-		requireUser(ctx)
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org id", err)
@@ -107,7 +113,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 		OrgID string `path:"orgId"`
 		ID    string `path:"id"`
 	}) (*struct{}, error) {
-		requireUser(ctx)
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org id", err)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/meshploy/apps/api/internal/version"
+	"gorm.io/gorm"
 )
 
 const (
@@ -25,9 +26,17 @@ type VersionInfo struct {
 }
 
 type SystemService struct {
-	mu         sync.Mutex
-	cached     *VersionInfo
-	cachedAt   time.Time
+	mu       sync.Mutex
+	cached   *VersionInfo
+	cachedAt time.Time
+	db       *gorm.DB
+}
+
+func (s *SystemService) Ping(ctx context.Context) error {
+	if s.db == nil {
+		return nil
+	}
+	return s.db.WithContext(ctx).Exec("SELECT 1").Error
 }
 
 func (s *SystemService) GetVersionInfo(ctx context.Context) VersionInfo {

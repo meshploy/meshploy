@@ -220,12 +220,20 @@ func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*
 }
 
 func (h *Handler) ClearBuildCache(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
 		return nil, err
 	}
 	projectID, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	project, err := h.svc.Projects.Get(ctx, projectID)
 	if err != nil {

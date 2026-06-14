@@ -388,12 +388,24 @@ func (h *Handler) DeleteStack(ctx context.Context, input *StackPathInput) (*stru
 }
 
 func (h *Handler) ListStackServices(ctx context.Context, input *StackPathInput) (*ListStackServicesOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := parseUUID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
 		return nil, err
 	}
 	stackID, err := parseUUID(input.StackID)
 	if err != nil {
 		return nil, err
+	}
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, stackID, db.ResourceStack, db.ActionView, &projectID); err != nil {
+		return nil, huma.Error403Forbidden(err.Error())
 	}
 	services, err := h.svc.Stacks.ListServices(ctx, stackID)
 	if err != nil {

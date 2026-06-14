@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -203,6 +204,10 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		if dockerfilePath == "" {
 			dockerfilePath = "Dockerfile"
 		}
+		deployToken, err := generateDeployToken()
+		if err != nil {
+			return err
+		}
 		bc := &db.BuildConfig{
 			ServiceID:             service.ID,
 			GitIntegrationID:      in.GitIntegrationID,
@@ -214,7 +219,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			BuilderNode:           in.BuilderNode,
 			BuilderCPURequest:     in.BuilderCPURequest,
 			BuilderMemoryRequest:  in.BuilderMemoryRequest,
-			DeployToken:           db.EncryptedString(generateDeployToken()),
+			DeployToken:           db.EncryptedString(deployToken),
 		}
 		return tx.Create(bc).Error
 	}); err != nil {
@@ -598,7 +603,11 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	if isNew {
 		// Generate a per-service deploy token so the user can set up a manual webhook
 		// without needing a GitHub App integration.
-		bc.DeployToken = db.EncryptedString(generateDeployToken())
+		deployToken, err := generateDeployToken()
+		if err != nil {
+			return nil, err
+		}
+		bc.DeployToken = db.EncryptedString(deployToken)
 		err = s.db.WithContext(ctx).Create(&bc).Error
 	} else {
 		err = s.db.WithContext(ctx).Save(&bc).Error
@@ -613,7 +622,10 @@ func (s *WorkloadService) RegenerateDeployToken(ctx context.Context, serviceID u
 	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&bc).Error; err != nil {
 		return "", err
 	}
-	token := generateDeployToken()
+	token, err := generateDeployToken()
+	if err != nil {
+		return "", err
+	}
 	if err := s.db.WithContext(ctx).Model(&bc).Update("deploy_token", db.EncryptedString(token)).Error; err != nil {
 		return "", err
 	}
@@ -622,12 +634,12 @@ func (s *WorkloadService) RegenerateDeployToken(ctx context.Context, serviceID u
 
 // generateDeployToken returns a cryptographically random 32-byte hex string
 // used as a per-service webhook deploy token.
-func generateDeployToken() string {
+func generateDeployToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand unavailable: " + err.Error())
+		return "", fmt.Errorf("generate deploy token: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // toPortSpecs converts loaded ServicePort rows into k8s PortSpec values,

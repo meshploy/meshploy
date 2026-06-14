@@ -24,9 +24,20 @@ var (
 	dbSeq atomic.Int64
 )
 
-// TestMain starts a single Postgres container for the entire service test suite.
+// TestMain starts a Postgres container for the test suite, or falls back to
+// DATABASE_URL when no container runtime is available (e.g. local dev with
+// Postgres already running).
 func TestMain(m *testing.M) {
 	ctx := context.Background()
+
+	meshdb.SetEncryptionKey("test-encryption-key-32-chars!!!!!")
+
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		// Use the existing local Postgres — create isolated DBs per test.
+		pgDSN = dsn
+		os.Exit(m.Run())
+		return
+	}
 
 	ctr, err := tcpostgres.Run(ctx,
 		"postgres:16-alpine",
@@ -39,7 +50,7 @@ func TestMain(m *testing.M) {
 		),
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "testcontainers: %v\n", err)
+		fmt.Fprintf(os.Stderr, "testcontainers: %v — set DATABASE_URL to use a local Postgres instead\n", err)
 		os.Exit(1)
 	}
 	defer ctr.Terminate(ctx) //nolint:errcheck
@@ -51,8 +62,6 @@ func TestMain(m *testing.M) {
 	}
 	pgDSN = dsn
 
-	meshdb.SetEncryptionKey("test-encryption-key-32-chars!!!!!")
-
 	os.Exit(m.Run())
 }
 
@@ -60,15 +69,15 @@ func TestMain(m *testing.M) {
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	n := dbSeq.Add(1)
-	dbName := fmt.Sprintf("test_%d", n)
+	dbName := fmt.Sprintf("meshploy_test_%d", n)
 
 	root, err := gorm.Open(postgres.Open(pgDSN), &gorm.Config{Logger: logger.Discard})
 	require.NoError(t, err)
+	root.Exec("DROP DATABASE IF EXISTS " + dbName)
 	require.NoError(t, root.Exec("CREATE DATABASE "+dbName).Error)
 	sqlDB, _ := root.DB()
 	sqlDB.Close()
 
-	// Build DSN pointing at the new isolated DB.
 	isolatedDSN := replaceDSNDatabase(pgDSN, dbName)
 
 	db, err := gorm.Open(postgres.Open(isolatedDSN), &gorm.Config{Logger: logger.Discard})
@@ -105,6 +114,5 @@ func replaceDSNDatabase(dsn, newDB string) string {
 		i--
 	}
 	base := dsn[:i+1]
-	// Strip any existing query params from the old dbname part.
 	return base + newDB + "?sslmode=disable"
 }

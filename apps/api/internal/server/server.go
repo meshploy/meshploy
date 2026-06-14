@@ -22,9 +22,14 @@ import (
 func New(cfg *config.Config, db *gorm.DB) *http.Server {
 	r := chi.NewRouter()
 
+	allowedOrigins := []string{cfg.FrontendURL}
+	// Always allow local dev origins so `go run` works without extra config.
+	if cfg.FrontendURL != "http://localhost:5173" {
+		allowedOrigins = append(allowedOrigins, "http://localhost:5173", "http://localhost:4173")
+	}
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:4173"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedOrigins:   allowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,

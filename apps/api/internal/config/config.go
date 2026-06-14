@@ -99,5 +99,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}
 
+	if len(cfg.EncryptionKey) != 32 {
+		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes (got %d) — use a 32-character random string", len(cfg.EncryptionKey))
+	}
+
 	return cfg, nil
 }
