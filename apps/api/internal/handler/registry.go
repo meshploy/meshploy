@@ -74,12 +74,16 @@ func (h *Handler) registerRegistryRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *CreateRegistryInput) (*CreateRegistryOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
+		callerID, err := requireUser(ctx)
+		if err != nil {
 			return nil, err
 		}
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
+			return nil, err
 		}
 		item, err := h.svc.Registries.Create(ctx, orgID, service.CreateRegistryInput{
 			Name:      in.Body.Name,
@@ -104,7 +108,8 @@ func (h *Handler) registerRegistryRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *RegistryPathInput) (*struct{}, error) {
-		if _, err := requireUser(ctx); err != nil {
+		callerID, err := requireUser(ctx)
+		if err != nil {
 			return nil, err
 		}
 		id, err := uuid.Parse(in.ID)
@@ -114,6 +119,9 @@ func (h *Handler) registerRegistryRoutes(api huma.API) {
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
+			return nil, err
 		}
 		return nil, h.svc.Registries.Delete(ctx, id, orgID)
 	})

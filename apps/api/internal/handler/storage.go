@@ -72,12 +72,16 @@ func (h *Handler) registerStorageRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *CreateStorageInput) (*CreateStorageOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
+		callerID, err := requireUser(ctx)
+		if err != nil {
 			return nil, err
 		}
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
+			return nil, err
 		}
 		item, err := h.svc.Storage.Create(ctx, orgID, service.CreateStorageInput{
 			Name:            in.Body.Name,
@@ -103,7 +107,8 @@ func (h *Handler) registerStorageRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *StoragePathInput) (*struct{}, error) {
-		if _, err := requireUser(ctx); err != nil {
+		callerID, err := requireUser(ctx)
+		if err != nil {
 			return nil, err
 		}
 		id, err := uuid.Parse(in.ID)
@@ -113,6 +118,9 @@ func (h *Handler) registerStorageRoutes(api huma.API) {
 		orgID, err := uuid.Parse(in.OrgID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid org ID")
+		}
+		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
+			return nil, err
 		}
 		return nil, h.svc.Storage.Delete(ctx, id, orgID)
 	})
