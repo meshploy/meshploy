@@ -400,10 +400,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListNodes(ctx context.Context, input *ListNodesInput) (*ListNodesOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -415,10 +412,7 @@ func (h *Handler) ListNodes(ctx context.Context, input *ListNodesInput) (*ListNo
 }
 
 func (h *Handler) RegisterNode(ctx context.Context, input *RegisterNodeInput) (*RegisterNodeOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -431,10 +425,7 @@ func (h *Handler) RegisterNode(ctx context.Context, input *RegisterNodeInput) (*
 }
 
 func (h *Handler) GetNode(ctx context.Context, input *NodePathInput) (*GetNodeOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	nodeID, err := parseUUID(input.NodeID)
+	_, _, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -447,10 +438,7 @@ func (h *Handler) GetNode(ctx context.Context, input *NodePathInput) (*GetNodeOu
 }
 
 func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*UpdateNodeOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	nodeID, err := parseUUID(input.NodeID)
+	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -484,10 +472,7 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 }
 
 func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*struct{}, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	nodeID, err := parseUUID(input.NodeID)
+	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -526,10 +511,7 @@ type RegistrationTokenOutput struct {
 }
 
 func (h *Handler) GetNodeRegistrationToken(ctx context.Context, input *ListNodesInput) (*RegistrationTokenOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -543,10 +525,7 @@ func (h *Handler) GetNodeRegistrationToken(ctx context.Context, input *ListNodes
 }
 
 func (h *Handler) GenerateNodeRegistrationToken(ctx context.Context, input *ListNodesInput) (*RegistrationTokenOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -726,12 +705,9 @@ type CreateProvisioningTokenOutput struct {
 }
 
 func (h *Handler) CreateProvisioningToken(ctx context.Context, input *CreateProvisioningTokenInput) (*CreateProvisioningTokenOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
-		return nil, huma.Error400BadRequest("invalid orgId")
+		return nil, err
 	}
 	plaintext, row, err := h.svc.Nodes.CreateProvisioningToken(ctx, orgID, input.Body.Label, input.Body.ExpiresAt)
 	if err != nil {
@@ -870,10 +846,7 @@ type NodeMetricsOutput struct {
 }
 
 func (h *Handler) GetNodeMetrics(ctx context.Context, input *NodePathInput) (*NodeMetricsOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	nodeID, err := parseUUID(input.NodeID)
+	_, _, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}

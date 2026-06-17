@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 	db "github.com/meshploy/packages/db"
 )
 
@@ -113,12 +112,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
 	}) (*ListGitIntegrationsOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
+		_, orgID, _, err := h.checkOrgMemberAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
+			return nil, err
 		}
 		rows, err := h.svc.GitIntegrations.List(ctx, orgID)
 		if err != nil {
@@ -137,12 +133,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *InitGitHubIntegrationInput) (*InitGitHubIntegrationOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
+			return nil, err
 		}
 		row, githubURL, manifest, err := h.svc.GitIntegrations.InitGitHubIntegration(ctx, orgID, in.Body.GithubOrg)
 		if err != nil {
@@ -165,12 +158,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *CreatePATIntegrationInput) (*CreatePATIntegrationOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
+			return nil, err
 		}
 		row, err := h.svc.GitIntegrations.CreatePATIntegration(ctx, orgID, in.Body.Provider, in.Body.Name, in.Body.BaseURL, in.Body.Groups, in.Body.Token)
 		if err != nil {
@@ -189,12 +179,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *InitOAuthIntegrationInput) (*InitOAuthIntegrationOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
+			return nil, err
 		}
 		_, authURL, err := h.svc.GitIntegrations.InitOAuthIntegration(
 			ctx, orgID, in.Body.Provider, in.Body.Name,
@@ -222,12 +209,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		ID        string `path:"id"`
 		GithubOrg string `query:"github_org"`
 	}) (*GitHubInstallURLOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		integrationID, err := uuid.Parse(in.ID)
+		_, _, integrationID, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid integration ID")
+			return nil, err
 		}
 		installURL, err := h.svc.GitIntegrations.GitHubInstallURL(ctx, integrationID, in.GithubOrg)
 		if err != nil {
@@ -247,12 +231,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *GitIntegrationPathInput) (*OAuthReconnectOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		id, err := uuid.Parse(in.ID)
+		_, _, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid integration ID")
+			return nil, err
 		}
 		authURL, err := h.svc.GitIntegrations.OAuthReconnect(ctx, id)
 		if err != nil {
@@ -272,12 +253,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *GitIntegrationPathInput) (*ListReposOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		id, err := uuid.Parse(in.ID)
+		_, _, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid integration ID")
+			return nil, err
 		}
 		repos, err := h.svc.GitIntegrations.ListRepos(ctx, id)
 		if err != nil {
@@ -307,12 +285,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		ID    string `path:"id"`
 		Repo  string `query:"repo"`
 	}) (*ListBranchesOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		id, err := uuid.Parse(in.ID)
+		_, _, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid integration ID")
+			return nil, err
 		}
 		if in.Repo == "" {
 			return nil, huma.Error400BadRequest("repo query param is required")
@@ -334,12 +309,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *GitIntegrationPathInput) (*struct{}, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		id, err := uuid.Parse(in.ID)
+		_, _, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid integration ID")
+			return nil, err
 		}
 		if err := h.svc.GitIntegrations.Delete(ctx, id); err != nil {
 			return nil, err

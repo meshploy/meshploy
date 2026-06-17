@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/meshploy/packages/db"
 	svc "github.com/meshploy/apps/api/internal/service"
+	"github.com/meshploy/packages/db"
 )
 
 // ── Path params ───────────────────────────────────────────────────────────────
@@ -191,10 +191,7 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListOrgRoutes(ctx context.Context, input *ListOrgRoutesInput) (*ListRoutesOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -206,20 +203,9 @@ func (h *Handler) ListOrgRoutes(ctx context.Context, input *ListOrgRoutesInput) 
 }
 
 func (h *Handler) ListRoutes(ctx context.Context, input *ListRoutesInput) (*ListRoutesOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	routes, err := h.svc.Routes.ListByProject(ctx, projectID)
 	if err != nil {
@@ -229,20 +215,9 @@ func (h *Handler) ListRoutes(ctx context.Context, input *ListRoutesInput) (*List
 }
 
 func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*CreateRouteOutput, error) {
-	userID, err := requireUser(ctx)
+	_, orgID, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionCreate, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 
 	var domainID *uuid.UUID
@@ -284,26 +259,11 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 }
 
 func (h *Handler) GetRoute(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, routeID, parentID, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, routeID, db.ResourceRoute, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
-	}
-	route, err := h.svc.Routes.Get(ctx, routeID)
+	route, err := h.svc.Routes.Get(ctx, routeID, *parentID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -311,47 +271,17 @@ func (h *Handler) GetRoute(ctx context.Context, input *RoutePathInput) (*GetRout
 }
 
 func (h *Handler) DeleteRoute(ctx context.Context, input *RoutePathInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, routeID, _, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionDelete, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, routeID, db.ResourceRoute, db.ActionDelete, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	return nil, h.svc.Routes.Delete(ctx, routeID)
 }
 
 func (h *Handler) VerifyCustomHostname(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, routeID, _, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, routeID, db.ResourceRoute, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	route, err := h.svc.Routes.VerifyCustomHostname(ctx, routeID)
 	if err != nil {
@@ -361,24 +291,9 @@ func (h *Handler) VerifyCustomHostname(ctx context.Context, input *RoutePathInpu
 }
 
 func (h *Handler) AddRouteTarget(ctx context.Context, input *AddTargetInput) (*GetRouteTargetOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, routeID, _, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, routeID, db.ResourceRoute, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.ServicePortID, input.Body.NodeID, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
 	if err != nil {
@@ -392,24 +307,9 @@ func (h *Handler) AddRouteTarget(ctx context.Context, input *AddTargetInput) (*G
 }
 
 func (h *Handler) UpdateRouteTarget(ctx context.Context, input *UpdateTargetInput) (*GetRouteTargetOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, routeID, db.ResourceRoute, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	targetID, err := parseUUID(input.TargetID)
 	if err != nil {
@@ -427,24 +327,9 @@ func (h *Handler) UpdateRouteTarget(ctx context.Context, input *UpdateTargetInpu
 }
 
 func (h *Handler) DeleteRouteTarget(ctx context.Context, input *RouteTargetPathInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	routeID, err := parseUUID(input.RouteID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, routeID, db.ResourceRoute, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	targetID, err := parseUUID(input.TargetID)
 	if err != nil {

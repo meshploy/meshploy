@@ -201,24 +201,9 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusOK,
 	}, func(ctx context.Context, in *WorkloadPathInput) (*GetBuildConfigOutput, error) {
-		userID, err := requireUser(ctx)
+		_, _, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionUpdate, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := parseUUID(in.OrgID)
-		if err != nil {
-			return nil, err
-		}
-		projectID, err := parseUUID(in.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		serviceID, err := parseUUID(in.ServiceID)
-		if err != nil {
-			return nil, err
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		if _, err := h.svc.Workloads.RegenerateDeployToken(ctx, serviceID); err != nil {
 			return nil, huma.Error404NotFound("build config not found")
@@ -286,20 +271,9 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	services, err := h.svc.Workloads.List(ctx, projectID)
 	if err != nil {
@@ -309,20 +283,9 @@ func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) 
 }
 
 func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput) (*CreateWorkloadOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionCreate, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	var nodeID *uuid.UUID
 	if input.Body.NodeID != nil {
@@ -404,26 +367,11 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 }
 
 func (h *Handler) GetWorkload(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, parentID, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
-	}
-	service, err := h.svc.Workloads.Get(ctx, serviceID)
+	service, err := h.svc.Workloads.Get(ctx, serviceID, *parentID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -431,47 +379,17 @@ func (h *Handler) GetWorkload(ctx context.Context, input *WorkloadPathInput) (*G
 }
 
 func (h *Handler) DeleteWorkload(ctx context.Context, input *WorkloadPathInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDelete, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDelete, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	return nil, h.svc.Workloads.Delete(ctx, serviceID)
 }
 
 func (h *Handler) StartService(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDeploy, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	svc, err := h.svc.Workloads.Start(ctx, serviceID)
 	if err != nil {
@@ -481,24 +399,9 @@ func (h *Handler) StartService(ctx context.Context, input *WorkloadPathInput) (*
 }
 
 func (h *Handler) StopService(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDeploy, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	svc, err := h.svc.Workloads.Stop(ctx, serviceID)
 	if err != nil {
@@ -531,24 +434,9 @@ type PatchWorkloadInput struct {
 }
 
 func (h *Handler) PatchWorkload(ctx context.Context, input *PatchWorkloadInput) (*GetWorkloadOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 
 	in := svc.UpdateWorkloadInput{
@@ -613,24 +501,9 @@ type GetEnvVarsOutput struct {
 }
 
 func (h *Handler) GetServiceEnvVars(ctx context.Context, input *WorkloadPathInput) (*GetEnvVarsOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	envVars, err := h.svc.Workloads.GetEnvVars(ctx, serviceID)
 	if err != nil {
@@ -648,24 +521,9 @@ type GetBuildConfigOutput struct {
 }
 
 func (h *Handler) GetServiceBuildConfig(ctx context.Context, input *WorkloadPathInput) (*GetBuildConfigOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	bc, err := h.svc.Workloads.GetBuildConfig(ctx, serviceID)
 	if err != nil {
@@ -701,24 +559,9 @@ type GetBuildEnvVarsOutput struct {
 }
 
 func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuildConfigInput) (*GetBuildConfigOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 
 	in := svc.UpdateBuildConfigInput{
@@ -763,24 +606,9 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 }
 
 func (h *Handler) GetServiceBuildEnvVars(ctx context.Context, input *WorkloadPathInput) (*GetBuildEnvVarsOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	val, err := h.svc.Workloads.GetBuildEnvVars(ctx, serviceID)
 	if err != nil {
@@ -801,24 +629,9 @@ type PutBuildEnvVarsInput struct {
 }
 
 func (h *Handler) PutServiceBuildEnvVars(ctx context.Context, input *PutBuildEnvVarsInput) (*GetBuildEnvVarsOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	_, err = h.svc.Workloads.UpsertBuildConfig(ctx, serviceID, svc.UpdateBuildConfigInput{
 		BuildEnvVars: &input.Body.BuildEnvVars,
@@ -836,24 +649,9 @@ type GetDatabaseConfigOutput struct {
 }
 
 func (h *Handler) GetDatabaseConfig(ctx context.Context, input *WorkloadPathInput) (*GetDatabaseConfigOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	dc, err := h.svc.Workloads.GetDatabaseConfig(ctx, serviceID)
 	if err != nil {
@@ -867,24 +665,9 @@ type ResetDatabaseOutput struct {
 }
 
 func (h *Handler) ResetDatabase(ctx context.Context, input *WorkloadPathInput) (*ResetDatabaseOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDeploy, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDelete, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	dep, err := h.svc.Deployments.ResetDatabase(ctx, serviceID)
 	if err != nil {
@@ -900,24 +683,9 @@ type DBSchemaOutput struct {
 }
 
 func (h *Handler) DBSchema(ctx context.Context, input *WorkloadPathInput) (*DBSchemaOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	tables, err := h.svc.DBExplorer.Schema(ctx, serviceID)
 	if err != nil {
@@ -941,24 +709,13 @@ type DBQueryOutput struct {
 }
 
 func (h *Handler) DBQuery(ctx context.Context, input *DBQueryInput) (*DBQueryOutput, error) {
-	userID, err := requireUser(ctx)
+	action := db.ActionView
+	if !input.Body.ReadOnly {
+		action = db.ActionUpdate
+	}
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, action, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	result, err := h.svc.DBExplorer.Query(ctx, serviceID, input.Body.Query, input.Body.ReadOnly)
 	if err != nil {
@@ -972,27 +729,12 @@ type ListServicePodsOutput struct {
 }
 
 func (h *Handler) ListServicePods(ctx context.Context, input *WorkloadPathInput) (*ListServicePodsOutput, error) {
-	userID, err := requireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	if h.svc.K8s == nil {
 		return nil, huma.Error503ServiceUnavailable("kubernetes not available")
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	namespace, k8sName, err := h.svc.Workloads.GetK8sInfo(ctx, serviceID)
 	if err != nil {
@@ -1013,27 +755,12 @@ type GetPodMetricsOutput struct {
 }
 
 func (h *Handler) GetPodMetrics(ctx context.Context, input *WorkloadPathInput) (*GetPodMetricsOutput, error) {
-	userID, err := requireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	if h.svc.K8s == nil || h.svc.K8sRestConfig == nil {
 		return nil, huma.Error503ServiceUnavailable("kubernetes not available")
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	namespace, k8sName, err := h.svc.Workloads.GetK8sInfo(ctx, serviceID)
 	if err != nil {

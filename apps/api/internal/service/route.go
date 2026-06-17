@@ -75,7 +75,14 @@ func (s *RouteService) ListByOrg(ctx context.Context, orgID uuid.UUID) ([]db.Rou
 	return routes, err
 }
 
-func (s *RouteService) Get(ctx context.Context, routeID uuid.UUID) (*db.Route, error) {
+func (s *RouteService) Get(ctx context.Context, routeID, projectID uuid.UUID) (*db.Route, error) {
+	var route db.Route
+	err := s.db.WithContext(ctx).Preload("Targets").
+		First(&route, "id = ? AND project_id = ?", routeID, projectID).Error
+	return &route, err
+}
+
+func (s *RouteService) getByID(ctx context.Context, routeID uuid.UUID) (*db.Route, error) {
 	var route db.Route
 	err := s.db.WithContext(ctx).Preload("Targets").First(&route, "id = ?", routeID).Error
 	return &route, err
@@ -261,13 +268,17 @@ func (s *RouteService) DeleteTarget(ctx context.Context, targetID uuid.UUID) err
 // ── Route delete ──────────────────────────────────────────────────────────────
 
 func (s *RouteService) Delete(ctx context.Context, routeID uuid.UUID) error {
-	return s.db.WithContext(ctx).Delete(&db.Route{}, "id = ?", routeID).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceRoute, routeID).
+			Delete(&db.ResourcePermission{})
+		return tx.Delete(&db.Route{}, "id = ?", routeID).Error
+	})
 }
 
 // ── Custom domain verification ────────────────────────────────────────────────
 
 func (s *RouteService) VerifyCustomHostname(ctx context.Context, routeID uuid.UUID) (*db.Route, error) {
-	route, err := s.Get(ctx, routeID)
+	route, err := s.getByID(ctx, routeID)
 	if err != nil {
 		return nil, huma.Error404NotFound("route not found")
 	}

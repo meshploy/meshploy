@@ -38,11 +38,11 @@ func (s *VolumeService) List(ctx context.Context, projectID uuid.UUID) ([]db.Vol
 	return volumes, err
 }
 
-func (s *VolumeService) Get(ctx context.Context, volumeID uuid.UUID) (*db.Volume, error) {
+func (s *VolumeService) Get(ctx context.Context, volumeID, projectID uuid.UUID) (*db.Volume, error) {
 	var volume db.Volume
 	err := s.db.WithContext(ctx).
 		Preload("Mounts.Volume").
-		First(&volume, "id = ?", volumeID).Error
+		First(&volume, "id = ? AND project_id = ?", volumeID, projectID).Error
 	return &volume, err
 }
 

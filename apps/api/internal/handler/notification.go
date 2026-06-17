@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 	"github.com/meshploy/apps/api/internal/service"
 	meshdb "github.com/meshploy/packages/db"
 )
@@ -18,12 +17,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
 	}) (*struct{ Body []meshdb.NotificationChannel }, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
+		_, orgID, _, err := h.checkOrgMemberAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org id", err)
+			return nil, err
 		}
 		rows, err := h.svc.Notifications.List(ctx, orgID)
 		if err != nil {
@@ -47,12 +43,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 			Events []string                       `json:"events"`
 		}
 	}) (*struct{ Body *meshdb.NotificationChannel }, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org id", err)
+			return nil, err
 		}
 		row, err := h.svc.Notifications.Create(ctx, orgID, service.CreateNotificationInput{
 			Name:   in.Body.Name,
@@ -81,16 +74,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 			Enabled *bool             `json:"enabled,omitempty"`
 		}
 	}) (*struct{ Body *meshdb.NotificationChannel }, error) {
-		if _, err := requireUser(ctx); err != nil {
+		_, orgID, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
+		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org id", err)
-		}
-		id, err := uuid.Parse(in.ID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid id", err)
 		}
 		row, err := h.svc.Notifications.Update(ctx, id, orgID, service.UpdateNotificationInput{
 			Name:    in.Body.Name,
@@ -113,16 +99,9 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 		OrgID string `path:"orgId"`
 		ID    string `path:"id"`
 	}) (*struct{}, error) {
-		if _, err := requireUser(ctx); err != nil {
+		_, orgID, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
+		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org id", err)
-		}
-		id, err := uuid.Parse(in.ID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid id", err)
 		}
 		return nil, h.svc.Notifications.Delete(ctx, id, orgID)
 	})

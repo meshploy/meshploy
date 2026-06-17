@@ -79,20 +79,9 @@ type ListVariableGroupsOutput struct {
 }
 
 func (h *Handler) ListVariableGroups(ctx context.Context, input *ListVariableGroupsInput) (*ListVariableGroupsOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groups, err := h.svc.VariableGroups.List(ctx, projectID)
 	if err != nil {
@@ -120,20 +109,9 @@ type CreateVariableGroupOutput struct {
 }
 
 func (h *Handler) CreateVariableGroup(ctx context.Context, input *CreateVariableGroupInput) (*CreateVariableGroupOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionCreate, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionCreate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	g, err := h.svc.VariableGroups.Create(ctx, service.CreateGroupInput{
 		ProjectID:   projectID,
@@ -159,26 +137,15 @@ type GetVariableGroupOutput struct {
 }
 
 func (h *Handler) GetVariableGroup(ctx context.Context, input *GetVariableGroupInput) (*GetVariableGroupOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groupID, err := parseUUID(input.GroupID)
 	if err != nil {
 		return nil, err
 	}
-	g, err := h.svc.VariableGroups.Get(ctx, groupID)
+	g, err := h.svc.VariableGroups.Get(ctx, groupID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -198,20 +165,8 @@ type UpdateVariableGroupInput struct {
 }
 
 func (h *Handler) UpdateVariableGroup(ctx context.Context, input *UpdateVariableGroupInput) (*GetVariableGroupOutput, error) {
-	userID, err := requireUser(ctx)
-	if err != nil {
+	if _, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, ""); err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groupID, err := parseUUID(input.GroupID)
 	if err != nil {
@@ -236,20 +191,8 @@ type DeleteVariableGroupInput struct {
 }
 
 func (h *Handler) DeleteVariableGroup(ctx context.Context, input *DeleteVariableGroupInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
-	if err != nil {
+	if _, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionDelete, ""); err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionDelete, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groupID, err := parseUUID(input.GroupID)
 	if err != nil {
@@ -275,20 +218,8 @@ type UpsertVariableGroupItemOutput struct {
 }
 
 func (h *Handler) UpsertVariableGroupItem(ctx context.Context, input *UpsertVariableGroupItemInput) (*UpsertVariableGroupItemOutput, error) {
-	userID, err := requireUser(ctx)
-	if err != nil {
+	if _, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, ""); err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groupID, err := parseUUID(input.GroupID)
 	if err != nil {
@@ -322,20 +253,8 @@ type DeleteVariableGroupItemInput struct {
 }
 
 func (h *Handler) DeleteVariableGroupItem(ctx context.Context, input *DeleteVariableGroupItemInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
-	if err != nil {
+	if _, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, ""); err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	itemID, err := parseUUID(input.ItemID)
 	if err != nil {
@@ -356,24 +275,9 @@ type ListServiceVariableGroupsOutput struct {
 }
 
 func (h *Handler) ListServiceVariableGroups(ctx context.Context, input *ListServiceVariableGroupsInput) (*ListServiceVariableGroupsOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groups, err := h.svc.VariableGroups.ListForService(ctx, serviceID)
 	if err != nil {
@@ -398,24 +302,9 @@ type AttachVariableGroupInput struct {
 }
 
 func (h *Handler) AttachVariableGroup(ctx context.Context, input *AttachVariableGroupInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groupID, err := uuid.Parse(input.Body.GroupID)
 	if err != nil {
@@ -432,24 +321,9 @@ type DetachVariableGroupInput struct {
 }
 
 func (h *Handler) DetachVariableGroup(ctx context.Context, input *DetachVariableGroupInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionUpdate, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	groupID, err := parseUUID(input.GroupID)
 	if err != nil {

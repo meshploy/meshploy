@@ -59,10 +59,7 @@ func (h *Handler) registerDomainRoutes(api huma.API) {
 }
 
 func (h *Handler) ListDomains(ctx context.Context, input *ListDomainsInput) (*ListDomainsOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -74,16 +71,16 @@ func (h *Handler) ListDomains(ctx context.Context, input *ListDomainsInput) (*Li
 }
 
 func (h *Handler) GetDomain(ctx context.Context, input *DomainPathInput) (*GetDomainOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	domainID, err := parseUUID(input.DomainID)
+	_, orgID, domainID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.DomainID)
 	if err != nil {
 		return nil, err
 	}
 	domain, err := h.svc.Domains.Get(ctx, domainID)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if domain.OrganizationID != orgID {
+		return nil, huma.Error404NotFound("domain not found")
 	}
 	return &GetDomainOutput{Body: domain}, nil
 }

@@ -72,7 +72,16 @@ func (s *JobService) List(ctx context.Context, projectID uuid.UUID) ([]db.Job, e
 	return rows, err
 }
 
-func (s *JobService) Get(ctx context.Context, jobID uuid.UUID) (*db.Job, error) {
+func (s *JobService) Get(ctx context.Context, jobID, projectID uuid.UUID) (*db.Job, error) {
+	var row db.Job
+	err := s.db.WithContext(ctx).First(&row, "id = ? AND project_id = ?", jobID, projectID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("job not found")
+	}
+	return &row, err
+}
+
+func (s *JobService) getByID(ctx context.Context, jobID uuid.UUID) (*db.Job, error) {
 	var row db.Job
 	err := s.db.WithContext(ctx).First(&row, "id = ?", jobID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -231,14 +240,18 @@ func (s *JobService) Delete(ctx context.Context, jobID uuid.UUID) error {
 		}
 	}
 
-	res := s.db.WithContext(ctx).Delete(&db.Job{}, "id = ?", jobID)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return fmt.Errorf("job not found")
-	}
-	return nil
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceJob, jobID).
+			Delete(&db.ResourcePermission{})
+		res := tx.Delete(&db.Job{}, "id = ?", jobID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return fmt.Errorf("job not found")
+		}
+		return nil
+	})
 }
 
 // applyCronJob ensures the K8s CronJob matches the current job config.
@@ -369,7 +382,7 @@ func (s *JobService) reconcileCronRuns(ctx context.Context) {
 // Trigger creates a JobRun and launches the K8s Job in a background goroutine.
 // If no k8s client is configured, the run stays pending (dev mode).
 func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, error) {
-	job, err := s.Get(ctx, jobID)
+	job, err := s.getByID(ctx, jobID)
 	if err != nil {
 		return nil, err
 	}

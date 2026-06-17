@@ -180,15 +180,8 @@ func (h *Handler) ListMemberPermissions(ctx context.Context, input *MemberPermis
 }
 
 func (h *Handler) GrantPermission(ctx context.Context, input *GrantPermissionInput) (*struct{}, error) {
-	callerID, err := requireUser(ctx)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 		return nil, err
 	}
 	targetID, err := parseUUID(input.UserID)
@@ -203,15 +196,8 @@ func (h *Handler) GrantPermission(ctx context.Context, input *GrantPermissionInp
 }
 
 func (h *Handler) RevokePermission(ctx context.Context, input *RevokePermissionInput) (*struct{}, error) {
-	callerID, err := requireUser(ctx)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 		return nil, err
 	}
 	targetID, err := parseUUID(input.UserID)
@@ -226,18 +212,7 @@ func (h *Handler) RevokePermission(ctx context.Context, input *RevokePermissionI
 }
 
 func (h *Handler) listResourcePermissions(ctx context.Context, input *ResourcePermissionsPathInput, rt db.ResourceType) (*ListResourcePermissionsOutput, error) {
-	callerID, err := requireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
-		return nil, err
-	}
-	resourceID, err := parseUUID(input.ResourceID)
+	_, orgID, resourceID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.ResourceID)
 	if err != nil {
 		return nil, err
 	}

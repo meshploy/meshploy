@@ -310,10 +310,7 @@ func (h *Handler) CreateOrg(ctx context.Context, input *CreateOrgInput) (*Create
 }
 
 func (h *Handler) GetOrg(ctx context.Context, input *OrgPathInput) (*GetOrgOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -325,10 +322,7 @@ func (h *Handler) GetOrg(ctx context.Context, input *OrgPathInput) (*GetOrgOutpu
 }
 
 func (h *Handler) UpdateOrg(ctx context.Context, input *UpdateOrgInput) (*UpdateOrgOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -369,10 +363,7 @@ func toMemberDTO(m db.OrganizationMember) MemberDTO {
 }
 
 func (h *Handler) ListMembers(ctx context.Context, input *OrgPathInput) (*ListMembersOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -388,10 +379,7 @@ func (h *Handler) ListMembers(ctx context.Context, input *OrgPathInput) (*ListMe
 }
 
 func (h *Handler) AddMember(ctx context.Context, input *AddMemberInput) (*AddMemberOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -474,10 +462,7 @@ func (h *Handler) CreateInvitation(ctx context.Context, input *CreateInvitationI
 }
 
 func (h *Handler) ListInvitations(ctx context.Context, input *OrgPathInput) (*ListInvitationsOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}

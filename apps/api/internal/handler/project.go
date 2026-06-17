@@ -107,11 +107,7 @@ func (h *Handler) registerProjectRoutes(api huma.API) {
 }
 
 func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*ListProjectsOutput, error) {
-	userID, err := requireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
+	callerID, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +115,7 @@ func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*
 	if err != nil {
 		return nil, err
 	}
-	visibleIDs, isAdmin, err := h.svc.Permissions.VisibleProjectIDs(ctx, orgID, userID)
+	visibleIDs, isAdmin, err := h.svc.Permissions.VisibleProjectIDs(ctx, orgID, callerID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,15 +132,8 @@ func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*
 }
 
 func (h *Handler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
-	callerID, err := requireUser(ctx)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 		return nil, err
 	}
 	project, err := h.svc.Projects.Create(ctx, orgID, input.Body.Name, input.Body.Slug)
@@ -155,20 +144,9 @@ func (h *Handler) CreateProject(ctx context.Context, input *CreateProjectInput) 
 }
 
 func (h *Handler) GetProject(ctx context.Context, input *ProjectPathInput) (*GetProjectOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionView, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	project, err := h.svc.Projects.GetWithCounts(ctx, projectID)
 	if err != nil {
@@ -178,20 +156,9 @@ func (h *Handler) GetProject(ctx context.Context, input *ProjectPathInput) (*Get
 }
 
 func (h *Handler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*UpdateProjectOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	project, err := h.svc.Projects.Update(ctx, projectID, input.Body.Name)
 	if err != nil {
@@ -201,39 +168,17 @@ func (h *Handler) UpdateProject(ctx context.Context, input *UpdateProjectInput) 
 }
 
 func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionDelete, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionDelete, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	return nil, h.svc.Projects.Delete(ctx, projectID)
 }
 
 func (h *Handler) ClearBuildCache(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, "")
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, projectID, db.ResourceProject, db.ActionUpdate, nil); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	project, err := h.svc.Projects.Get(ctx, projectID)
 	if err != nil {

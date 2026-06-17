@@ -129,7 +129,7 @@ func TestVolumeDelete(t *testing.T) {
 
 		require.NoError(t, svcs.Volumes.Delete(ctx, vol.ID))
 
-		_, err = svcs.Volumes.Get(ctx, vol.ID)
+		_, err = svcs.Volumes.Get(ctx, vol.ID, pid)
 		require.Error(t, err)
 	})
 }

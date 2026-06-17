@@ -41,7 +41,13 @@ func (s *DeploymentService) List(ctx context.Context, serviceID uuid.UUID) ([]db
 	return deployments, err
 }
 
-func (s *DeploymentService) Get(ctx context.Context, deploymentID uuid.UUID) (*db.Deployment, error) {
+func (s *DeploymentService) Get(ctx context.Context, deploymentID, serviceID uuid.UUID) (*db.Deployment, error) {
+	var d db.Deployment
+	err := s.db.WithContext(ctx).First(&d, "id = ? AND service_id = ?", deploymentID, serviceID).Error
+	return &d, err
+}
+
+func (s *DeploymentService) getByID(ctx context.Context, deploymentID uuid.UUID) (*db.Deployment, error) {
 	var d db.Deployment
 	err := s.db.WithContext(ctx).First(&d, "id = ?", deploymentID).Error
 	return &d, err

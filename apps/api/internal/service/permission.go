@@ -31,8 +31,16 @@ type PermissionWithContext struct {
 	ParentProjectID *uuid.UUID        `json:"parent_project_id,omitempty"`
 }
 
-// Grant creates a permission grant. Silently succeeds if the grant already exists.
+// Grant creates a permission grant. No-ops if the grant already exists or if
+// the target user is already an admin/owner (grants are redundant for them).
 func (s *PermissionService) Grant(ctx context.Context, orgID, userID, resourceID uuid.UUID, resourceType db.ResourceType, action db.ResourceAction) error {
+	isAdmin, err := s.IsAdminOrOwner(ctx, orgID, userID)
+	if err != nil {
+		return err
+	}
+	if isAdmin {
+		return nil
+	}
 	perm := db.ResourcePermission{
 		OrganizationID: orgID,
 		UserID:         userID,
@@ -40,16 +48,34 @@ func (s *PermissionService) Grant(ctx context.Context, orgID, userID, resourceID
 		ResourceID:     resourceID,
 		Action:         action,
 	}
-	return s.db.WithContext(ctx).
-		Where(perm).
-		FirstOrCreate(&perm).Error
+	return s.db.WithContext(ctx).Where(perm).FirstOrCreate(&perm).Error
 }
 
-// Revoke removes a permission grant.
+// Revoke removes a permission grant. Returns an error if no matching grant exists.
 func (s *PermissionService) Revoke(ctx context.Context, orgID, userID, resourceID uuid.UUID, resourceType db.ResourceType, action db.ResourceAction) error {
-	return s.db.WithContext(ctx).
+	tx := s.db.WithContext(ctx).
 		Where("organization_id = ? AND user_id = ? AND resource_type = ? AND resource_id = ? AND action = ?",
 			orgID, userID, resourceType, resourceID, action).
+		Delete(&db.ResourcePermission{})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	return nil
+}
+
+// RevokeAll removes all permission grants for a user in an org.
+// Called when a member is removed from the org.
+func (s *PermissionService) RevokeAll(ctx context.Context, orgID, userID uuid.UUID) error {
+	return s.db.WithContext(ctx).
+		Where("organization_id = ? AND user_id = ?", orgID, userID).
+		Delete(&db.ResourcePermission{}).Error
+}
+
+// RevokeForResource removes all permission grants targeting a specific resource.
+// Called when a resource (service, stack, job, project, volume) is deleted.
+func (s *PermissionService) RevokeForResource(ctx context.Context, orgID uuid.UUID, resourceType db.ResourceType, resourceID uuid.UUID) error {
+	return s.db.WithContext(ctx).
+		Where("organization_id = ? AND resource_type = ? AND resource_id = ?", orgID, resourceType, resourceID).
 		Delete(&db.ResourcePermission{}).Error
 }
 
@@ -125,8 +151,9 @@ func (s *PermissionService) ListForResource(ctx context.Context, orgID uuid.UUID
 }
 
 // CheckAccess returns nil if the caller can perform action on the resource.
-// owner/admin bypass all checks. For members, checks direct resource grant first,
-// then falls back to a parent project grant if parentProjectID is provided.
+// Flow: membership check → project ownership check → admin bypass → grant check.
+// The project ownership check runs before the admin bypass to prevent cross-org
+// IDOR where an admin passes orgId=A but projectId=B_proj (from org B).
 func (s *PermissionService) CheckAccess(ctx context.Context, orgID, userID, resourceID uuid.UUID, resourceType db.ResourceType, action db.ResourceAction, parentProjectID *uuid.UUID) error {
 	var member db.OrganizationMember
 	if err := s.db.WithContext(ctx).
@@ -137,6 +164,20 @@ func (s *PermissionService) CheckAccess(ctx context.Context, orgID, userID, reso
 		}
 		return err
 	}
+
+	// Verify the parent project belongs to this org before any role bypass.
+	if parentProjectID != nil {
+		var count int64
+		if err := s.db.WithContext(ctx).Model(&db.Project{}).
+			Where("id = ? AND organization_id = ?", *parentProjectID, orgID).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return errForbidden
+		}
+	}
+
 	if member.Role == db.RoleOwner || member.Role == db.RoleAdmin {
 		return nil
 	}
@@ -176,7 +217,9 @@ func (s *PermissionService) IsAdminOrOwner(ctx context.Context, orgID, userID uu
 	return m.Role == db.RoleOwner || m.Role == db.RoleAdmin, nil
 }
 
-// VisibleProjectIDs returns the set of project IDs a member has any permission on.
+// VisibleProjectIDs returns the set of project IDs a member can see.
+// Includes projects with a direct project grant AND projects that are parent
+// of any service/stack/job the user has a grant on.
 // Returns (nil, true, nil) for admins/owners — caller should skip filtering.
 func (s *PermissionService) VisibleProjectIDs(ctx context.Context, orgID, userID uuid.UUID) (map[uuid.UUID]bool, bool, error) {
 	admin, err := s.IsAdminOrOwner(ctx, orgID, userID)
@@ -186,19 +229,31 @@ func (s *PermissionService) VisibleProjectIDs(ctx context.Context, orgID, userID
 	if admin {
 		return nil, true, nil
 	}
-	var perms []db.ResourcePermission
-	if err := s.db.WithContext(ctx).
-		Where("organization_id = ? AND user_id = ? AND resource_type = ?",
-			orgID, userID, db.ResourceProject).
-		Distinct("resource_id").
-		Find(&perms).Error; err != nil {
+	var ids []uuid.UUID
+	err = s.db.WithContext(ctx).Raw(`
+		SELECT resource_id FROM resource_permissions
+		WHERE organization_id = ? AND user_id = ? AND resource_type = 'project'
+		UNION
+		SELECT s.project_id FROM resource_permissions rp
+		JOIN services s ON s.id = rp.resource_id
+		WHERE rp.organization_id = ? AND rp.user_id = ? AND rp.resource_type = 'service'
+		UNION
+		SELECT st.project_id FROM resource_permissions rp
+		JOIN stacks st ON st.id = rp.resource_id
+		WHERE rp.organization_id = ? AND rp.user_id = ? AND rp.resource_type = 'stack'
+		UNION
+		SELECT j.project_id FROM resource_permissions rp
+		JOIN jobs j ON j.id = rp.resource_id
+		WHERE rp.organization_id = ? AND rp.user_id = ? AND rp.resource_type = 'job'
+	`, orgID, userID, orgID, userID, orgID, userID, orgID, userID).Scan(&ids).Error
+	if err != nil {
 		return nil, false, err
 	}
-	ids := make(map[uuid.UUID]bool, len(perms))
-	for _, p := range perms {
-		ids[p.ResourceID] = true
+	result := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		result[id] = true
 	}
-	return ids, false, nil
+	return result, false, nil
 }
 
 func (s *PermissionService) hasGrant(ctx context.Context, orgID, userID uuid.UUID, resourceType db.ResourceType, resourceID uuid.UUID, action db.ResourceAction) (bool, error) {

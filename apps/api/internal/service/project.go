@@ -170,5 +170,9 @@ func (s *ProjectService) Update(ctx context.Context, projectID uuid.UUID, name s
 }
 
 func (s *ProjectService) Delete(ctx context.Context, projectID uuid.UUID) error {
-	return s.db.WithContext(ctx).Delete(&db.Project{}, "id = ?", projectID).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceProject, projectID).
+			Delete(&db.ResourcePermission{})
+		return tx.Delete(&db.Project{}, "id = ?", projectID).Error
+	})
 }

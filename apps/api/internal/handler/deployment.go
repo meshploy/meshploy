@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/meshploy/apps/api/internal/middleware"
 	"github.com/meshploy/apps/api/internal/service"
 	"github.com/meshploy/packages/db"
@@ -95,24 +96,9 @@ func (h *Handler) registerDeploymentRoutes(api huma.API) {
 }
 
 func (h *Handler) TriggerDeployment(ctx context.Context, input *ListDeploymentsInput) (*GetDeploymentOutput, error) {
-	userID, err := requireUser(ctx)
+	userID, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDeploy, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	deployment, err := h.svc.Deployments.Trigger(ctx, service.TriggerInput{
 		ServiceID:   serviceID,
@@ -125,24 +111,9 @@ func (h *Handler) TriggerDeployment(ctx context.Context, input *ListDeploymentsI
 }
 
 func (h *Handler) ListDeployments(ctx context.Context, input *ListDeploymentsInput) (*ListDeploymentsOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	deployments, err := h.svc.Deployments.List(ctx, serviceID)
 	if err != nil {
@@ -152,30 +123,15 @@ func (h *Handler) ListDeployments(ctx context.Context, input *ListDeploymentsInp
 }
 
 func (h *Handler) GetDeployment(ctx context.Context, input *DeploymentPathInput) (*GetDeploymentOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	deploymentID, err := parseUUID(input.DeploymentID)
 	if err != nil {
 		return nil, err
 	}
-	deployment, err := h.svc.Deployments.Get(ctx, deploymentID)
+	deployment, err := h.svc.Deployments.Get(ctx, deploymentID, serviceID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -183,24 +139,9 @@ func (h *Handler) GetDeployment(ctx context.Context, input *DeploymentPathInput)
 }
 
 func (h *Handler) CancelDeployment(ctx context.Context, input *DeploymentPathInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDeploy, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	deploymentID, err := parseUUID(input.DeploymentID)
 	if err != nil {
@@ -213,24 +154,9 @@ func (h *Handler) CancelDeployment(ctx context.Context, input *DeploymentPathInp
 }
 
 func (h *Handler) RollbackDeployment(ctx context.Context, input *DeploymentPathInput) (*GetDeploymentOutput, error) {
-	userID, err := requireUser(ctx)
+	_, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDeploy, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	deploymentID, err := parseUUID(input.DeploymentID)
 	if err != nil {
@@ -244,24 +170,9 @@ func (h *Handler) RollbackDeployment(ctx context.Context, input *DeploymentPathI
 }
 
 func (h *Handler) DeleteDeploymentRecord(ctx context.Context, input *DeploymentPathInput) (*struct{}, error) {
-	userID, err := requireUser(ctx)
+	_, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDelete, input.ProjectID)
 	if err != nil {
 		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	projectID, err := parseUUID(input.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	serviceID, err := parseUUID(input.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDelete, &projectID); err != nil {
-		return nil, huma.Error403Forbidden(err.Error())
 	}
 	deploymentID, err := parseUUID(input.DeploymentID)
 	if err != nil {
@@ -276,8 +187,28 @@ func (h *Handler) DeleteDeploymentRecord(ctx context.Context, input *DeploymentP
 // StreamDeploymentLogs is a raw SSE handler — registered via RegisterRaw, not Huma.
 // GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream
 func (h *Handler) StreamDeploymentLogs(w http.ResponseWriter, r *http.Request) {
-	if _, ok := middleware.UserFromContext(r.Context()); !ok {
+	userID, ok := middleware.UserFromContext(r.Context())
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	orgID, err := uuid.Parse(chi.URLParam(r, "orgId"))
+	if err != nil {
+		http.Error(w, "invalid org id", http.StatusBadRequest)
+		return
+	}
+	projectID, err := uuid.Parse(chi.URLParam(r, "projectId"))
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+	serviceID, err := uuid.Parse(chi.URLParam(r, "serviceId"))
+	if err != nil {
+		http.Error(w, "invalid service id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.Permissions.CheckAccess(r.Context(), orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -304,14 +235,28 @@ func (h *Handler) StreamDeploymentLogs(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream
 // Query params: tail=<n>  since=<duration>  follow=<true|false>
 func (h *Handler) StreamServiceLogs(w http.ResponseWriter, r *http.Request) {
-	if _, ok := middleware.UserFromContext(r.Context()); !ok {
+	userID, ok := middleware.UserFromContext(r.Context())
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-
-	serviceID, err := parseUUID(chi.URLParam(r, "serviceId"))
+	orgID, err := uuid.Parse(chi.URLParam(r, "orgId"))
+	if err != nil {
+		http.Error(w, "invalid org id", http.StatusBadRequest)
+		return
+	}
+	projectID, err := uuid.Parse(chi.URLParam(r, "projectId"))
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+	serviceID, err := uuid.Parse(chi.URLParam(r, "serviceId"))
 	if err != nil {
 		http.Error(w, "invalid service id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.Permissions.CheckAccess(r.Context(), orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -337,14 +282,28 @@ func (h *Handler) StreamServiceLogs(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs
 // Query params: tail=<n>  since=<duration>
 func (h *Handler) GetServiceLogs(w http.ResponseWriter, r *http.Request) {
-	if _, ok := middleware.UserFromContext(r.Context()); !ok {
+	userID, ok := middleware.UserFromContext(r.Context())
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-
-	serviceID, err := parseUUID(chi.URLParam(r, "serviceId"))
+	orgID, err := uuid.Parse(chi.URLParam(r, "orgId"))
+	if err != nil {
+		http.Error(w, "invalid org id", http.StatusBadRequest)
+		return
+	}
+	projectID, err := uuid.Parse(chi.URLParam(r, "projectId"))
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+	serviceID, err := uuid.Parse(chi.URLParam(r, "serviceId"))
 	if err != nil {
 		http.Error(w, "invalid service id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.Permissions.CheckAccess(r.Context(), orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 

@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 	"github.com/meshploy/apps/api/internal/service"
 	db "github.com/meshploy/packages/db"
 )
@@ -52,12 +51,9 @@ func (h *Handler) registerRegistryRoutes(api huma.API) {
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
 	}) (*ListRegistriesOutput, error) {
-		if _, err := requireUser(ctx); err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
+			return nil, err
 		}
 		items, err := h.svc.Registries.List(ctx, orgID)
 		if err != nil {
@@ -74,15 +70,8 @@ func (h *Handler) registerRegistryRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *CreateRegistryInput) (*CreateRegistryOutput, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		item, err := h.svc.Registries.Create(ctx, orgID, service.CreateRegistryInput{
@@ -108,19 +97,8 @@ func (h *Handler) registerRegistryRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *RegistryPathInput) (*struct{}, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
-			return nil, err
-		}
-		id, err := uuid.Parse(in.ID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid ID")
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		return nil, h.svc.Registries.Delete(ctx, id, orgID)

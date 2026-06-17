@@ -71,7 +71,7 @@ func TestStackGet(t *testing.T) {
 	created, err := svcs.Stacks.Create(ctx, pid, service.CreateStackInput{Name: "fetch-stack", Spec: validStackSpec})
 	require.NoError(t, err)
 
-	got, err := svcs.Stacks.Get(ctx, created.ID)
+	got, err := svcs.Stacks.Get(ctx, created.ID, pid)
 	require.NoError(t, err)
 	assert.Equal(t, created.ID, got.ID)
 	assert.Equal(t, "fetch-stack", got.Name)
@@ -120,7 +120,7 @@ func TestStackDelete(t *testing.T) {
 
 	require.NoError(t, svcs.Stacks.Delete(ctx, stack.ID))
 
-	_, err = svcs.Stacks.Get(ctx, stack.ID)
+	_, err = svcs.Stacks.Get(ctx, stack.ID, pid)
 	require.Error(t, err)
 }
 

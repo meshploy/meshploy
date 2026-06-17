@@ -77,7 +77,13 @@ func (s *StackService) List(ctx context.Context, projectID uuid.UUID) ([]meshdb.
 	return stacks, err
 }
 
-func (s *StackService) Get(ctx context.Context, stackID uuid.UUID) (*meshdb.Stack, error) {
+func (s *StackService) Get(ctx context.Context, stackID, projectID uuid.UUID) (*meshdb.Stack, error) {
+	var stack meshdb.Stack
+	err := s.db.WithContext(ctx).First(&stack, "id = ? AND project_id = ?", stackID, projectID).Error
+	return &stack, err
+}
+
+func (s *StackService) getByID(ctx context.Context, stackID uuid.UUID) (*meshdb.Stack, error) {
 	var stack meshdb.Stack
 	err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error
 	return &stack, err
@@ -136,11 +142,15 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 	if err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	return s.Get(ctx, stackID)
+	return s.getByID(ctx, stackID)
 }
 
 func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
-	return s.db.WithContext(ctx).Delete(&meshdb.Stack{}, "id = ?", stackID).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tx.Where("resource_type = ? AND resource_id = ?", meshdb.ResourceStack, stackID).
+			Delete(&meshdb.ResourcePermission{})
+		return tx.Delete(&meshdb.Stack{}, "id = ?", stackID).Error
+	})
 }
 
 // Sync fetches the compose spec from the stack's git source, updates Spec,

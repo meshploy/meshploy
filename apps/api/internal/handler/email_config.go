@@ -59,15 +59,8 @@ func (h *Handler) registerEmailConfigRoutes(api huma.API) {
 }
 
 func (h *Handler) GetEmailConfig(ctx context.Context, input *EmailConfigOrgInput) (*EmailConfigOutput, error) {
-	callerID, err := requireUser(ctx)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 		return nil, err
 	}
 	cfg, err := h.svc.EmailConfig.Get(ctx, orgID)
@@ -78,15 +71,8 @@ func (h *Handler) GetEmailConfig(ctx context.Context, input *EmailConfigOrgInput
 }
 
 func (h *Handler) SaveEmailConfig(ctx context.Context, input *SaveEmailConfigInput) (*EmailConfigOutput, error) {
-	callerID, err := requireUser(ctx)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 		return nil, err
 	}
 	cfg, err := h.svc.EmailConfig.Save(ctx, orgID, svc.SaveEmailConfigInput{
@@ -105,15 +91,8 @@ func (h *Handler) SaveEmailConfig(ctx context.Context, input *SaveEmailConfigInp
 }
 
 func (h *Handler) DeleteEmailConfig(ctx context.Context, input *EmailConfigOrgInput) (*struct{}, error) {
-	callerID, err := requireUser(ctx)
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
-		return nil, err
-	}
-	orgID, err := parseUUID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 		return nil, err
 	}
 	return nil, h.svc.EmailConfig.Delete(ctx, orgID)

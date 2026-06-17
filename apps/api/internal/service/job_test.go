@@ -120,7 +120,7 @@ func TestJobDelete(t *testing.T) {
 
 	require.NoError(t, svcs.Jobs.Delete(ctx, job.ID))
 
-	_, err = svcs.Jobs.Get(ctx, job.ID)
+	_, err = svcs.Jobs.Get(ctx, job.ID, parseUUID(t, projID))
 	require.Error(t, err)
 }
 

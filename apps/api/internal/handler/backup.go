@@ -88,24 +88,9 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		ProjectID string `path:"projectId"`
 		ServiceID string `path:"serviceId"`
 	}) (*ListBackupsOutput, error) {
-		userID, err := requireUser(ctx)
+		_, _, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionView, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		projectID, err := uuid.Parse(in.ProjectID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid project ID")
-		}
-		serviceID, err := uuid.Parse(in.ServiceID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid service ID")
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		items, err := h.svc.Backups.List(ctx, serviceID)
 		if err != nil {
@@ -123,24 +108,9 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, in *CreateBackupInput) (*CreateBackupOutput, error) {
-		userID, err := requireUser(ctx)
+		_, orgID, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionUpdate, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		projectID, err := uuid.Parse(in.ProjectID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid project ID")
-		}
-		serviceID, err := uuid.Parse(in.ServiceID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid service ID")
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		storageID, err := uuid.Parse(in.Body.StorageIntegrationID)
 		if err != nil {
@@ -166,24 +136,9 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *UpdateBackupBody) (*CreateBackupOutput, error) {
-		userID, err := requireUser(ctx)
+		_, _, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionUpdate, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		projectID, err := uuid.Parse(in.ProjectID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid project ID")
-		}
-		serviceID, err := uuid.Parse(in.ServiceID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid service ID")
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		id, err := uuid.Parse(in.ID)
 		if err != nil {
@@ -210,24 +165,9 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *BackupPathInput) (*struct{}, error) {
-		userID, err := requireUser(ctx)
+		_, _, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionUpdate, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		projectID, err := uuid.Parse(in.ProjectID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid project ID")
-		}
-		serviceID, err := uuid.Parse(in.ServiceID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid service ID")
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionUpdate, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		id, err := uuid.Parse(in.ID)
 		if err != nil {
@@ -245,24 +185,9 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusAccepted,
 	}, func(ctx context.Context, in *BackupPathInput) (*CreateBackupOutput, error) {
-		userID, err := requireUser(ctx)
+		_, _, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionDeploy, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		projectID, err := uuid.Parse(in.ProjectID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid project ID")
-		}
-		serviceID, err := uuid.Parse(in.ServiceID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid service ID")
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		id, err := uuid.Parse(in.ID)
 		if err != nil {
@@ -285,24 +210,9 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 	}, func(ctx context.Context, in *BackupPathInput) (*struct {
 		Body []service.BackupObject
 	}, error) {
-		userID, err := requireUser(ctx)
+		_, _, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionView, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		projectID, err := uuid.Parse(in.ProjectID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid project ID")
-		}
-		serviceID, err := uuid.Parse(in.ServiceID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid service ID")
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionView, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		id, err := uuid.Parse(in.ID)
 		if err != nil {
@@ -332,24 +242,9 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 			Key string `json:"key" minLength:"1"`
 		}
 	}) (*struct{}, error) {
-		userID, err := requireUser(ctx)
+		_, _, serviceID, _, err := h.checkAccess(ctx, in.OrgID, in.ServiceID, db.ResourceService, db.ActionDeploy, in.ProjectID)
 		if err != nil {
 			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		projectID, err := uuid.Parse(in.ProjectID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid project ID")
-		}
-		serviceID, err := uuid.Parse(in.ServiceID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid service ID")
-		}
-		if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID, db.ResourceService, db.ActionDeploy, &projectID); err != nil {
-			return nil, huma.Error403Forbidden(err.Error())
 		}
 		id, err := uuid.Parse(in.ID)
 		if err != nil {
@@ -370,15 +265,8 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
 	}) (*SystemBackupOutput, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		item, err := h.svc.Backups.GetSystem(ctx, orgID)
@@ -396,15 +284,8 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *UpsertSystemBackupInput) (*SystemBackupOutput, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		storageID, err := uuid.Parse(in.Body.StorageIntegrationID)
@@ -435,15 +316,8 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
 	}) (*SystemBackupOutput, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		item, err := h.svc.Backups.TriggerSystem(ctx, orgID)
@@ -465,15 +339,8 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 	}) (*struct {
 		Body []service.BackupObject
 	}, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		items, err := h.svc.Backups.ListSystemObjects(ctx, orgID)
@@ -497,15 +364,8 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 			Key string `json:"key" minLength:"1"`
 		}
 	}) (*struct{}, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		return nil, h.svc.Backups.RestoreSystem(ctx, orgID, in.Body.Key)
@@ -522,15 +382,8 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
 	}) (*struct{}, error) {
-		callerID, err := requireUser(ctx)
+		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
 		if err != nil {
-			return nil, err
-		}
-		orgID, err := uuid.Parse(in.OrgID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org ID")
-		}
-		if err := h.enforceAdminRole(ctx, orgID, callerID); err != nil {
 			return nil, err
 		}
 		return nil, h.svc.Backups.DeleteSystem(ctx, orgID)

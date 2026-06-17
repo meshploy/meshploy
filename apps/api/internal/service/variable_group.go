@@ -28,7 +28,14 @@ func (s *VariableGroupService) List(ctx context.Context, projectID uuid.UUID) ([
 	return groups, err
 }
 
-func (s *VariableGroupService) Get(ctx context.Context, groupID uuid.UUID) (*db.VariableGroup, error) {
+func (s *VariableGroupService) Get(ctx context.Context, groupID, projectID uuid.UUID) (*db.VariableGroup, error) {
+	var g db.VariableGroup
+	err := s.db.WithContext(ctx).Preload("Items").
+		First(&g, "id = ? AND project_id = ?", groupID, projectID).Error
+	return &g, err
+}
+
+func (s *VariableGroupService) getByID(ctx context.Context, groupID uuid.UUID) (*db.VariableGroup, error) {
 	var g db.VariableGroup
 	err := s.db.WithContext(ctx).Preload("Items").First(&g, "id = ?", groupID).Error
 	return &g, err
@@ -92,7 +99,7 @@ func (s *VariableGroupService) Update(ctx context.Context, groupID uuid.UUID, in
 			return nil, err
 		}
 	}
-	return s.Get(ctx, groupID)
+	return s.getByID(ctx, groupID)
 }
 
 func (s *VariableGroupService) Delete(ctx context.Context, groupID uuid.UUID) error {

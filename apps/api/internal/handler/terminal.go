@@ -64,6 +64,13 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 	}
+	claims, claimsOK := tok.Claims.(jwt.MapClaims)
+	rawUID, _ := claims["uid"].(string)
+	userID, uidErr := uuid.Parse(rawUID)
+	if !claimsOK || uidErr != nil {
+		http.Error(w, "invalid token claims", http.StatusUnauthorized)
+		return
+	}
 
 	// ── Load node ────────────────────────────────────────────────────────────
 	orgIDStr := chi.URLParam(r, "orgId")
@@ -77,6 +84,11 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 	nodeID, err := uuid.Parse(nodeIDStr)
 	if err != nil {
 		http.Error(w, "invalid nodeId", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := h.svc.Orgs.MemberRole(ctx, orgID, userID); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -254,6 +266,13 @@ func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 	}
+	claims, claimsOK := tok.Claims.(jwt.MapClaims)
+	rawUID, _ := claims["uid"].(string)
+	userID, uidErr := uuid.Parse(rawUID)
+	if !claimsOK || uidErr != nil {
+		http.Error(w, "invalid token claims", http.StatusUnauthorized)
+		return
+	}
 
 	orgIDStr := chi.URLParam(r, "orgId")
 	serviceIDStr := chi.URLParam(r, "serviceId")
@@ -269,7 +288,10 @@ func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid serviceId", http.StatusBadRequest)
 		return
 	}
-	_ = orgID // future: verify org membership
+	if _, err := h.svc.Orgs.MemberRole(ctx, orgID, userID); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 
 	if h.svc.K8s == nil {
 		http.Error(w, "kubernetes not available", http.StatusServiceUnavailable)

@@ -108,9 +108,15 @@ func (s *OrgService) UpdateMemberRole(ctx context.Context, orgID, userID uuid.UU
 }
 
 func (s *OrgService) RemoveMember(ctx context.Context, orgID, userID uuid.UUID) error {
-	return s.db.WithContext(ctx).
-		Where("organization_id = ? AND user_id = ?", orgID, userID).
-		Delete(&db.OrganizationMember{}).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("organization_id = ? AND user_id = ?", orgID, userID).
+			Delete(&db.OrganizationMember{}).Error; err != nil {
+			return err
+		}
+		// Clean up all resource grants so re-invitation starts with a clean slate.
+		return tx.Where("organization_id = ? AND user_id = ?", orgID, userID).
+			Delete(&db.ResourcePermission{}).Error
+	})
 }
 
 // StoreHeadscalePreAuthKey encrypts and persists a Headscale preauth key on the org record.

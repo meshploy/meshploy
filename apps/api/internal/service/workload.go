@@ -84,7 +84,16 @@ func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.S
 	return services, err
 }
 
-func (s *WorkloadService) Get(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
+// Get fetches a service scoped to its project — use this in handler layer.
+func (s *WorkloadService) Get(ctx context.Context, serviceID, projectID uuid.UUID) (*db.Service, error) {
+	var service db.Service
+	err := s.db.WithContext(ctx).Preload("Ports").
+		First(&service, "id = ? AND project_id = ?", serviceID, projectID).Error
+	return &service, err
+}
+
+// getByID fetches a service by ID only — for internal use within the service layer.
+func (s *WorkloadService) getByID(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
 	var service db.Service
 	err := s.db.WithContext(ctx).Preload("Ports").First(&service, "id = ?", serviceID).Error
 	return &service, err
@@ -349,7 +358,7 @@ func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.S
 	if err := s.db.WithContext(ctx).Model(&svc).Update("status", db.ServiceRunning).Error; err != nil {
 		return nil, err
 	}
-	return s.Get(ctx, serviceID)
+	return s.getByID(ctx, serviceID)
 }
 
 func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
@@ -365,7 +374,7 @@ func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Se
 	if err := s.db.WithContext(ctx).Model(&svc).Update("status", db.ServiceStopped).Error; err != nil {
 		return nil, err
 	}
-	return s.Get(ctx, serviceID)
+	return s.getByID(ctx, serviceID)
 }
 
 func (s *WorkloadService) GetDatabaseConfig(ctx context.Context, serviceID uuid.UUID) (*db.DatabaseConfig, error) {
@@ -395,7 +404,11 @@ func (s *WorkloadService) GetK8sInfo(ctx context.Context, serviceID uuid.UUID) (
 }
 
 func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error {
-	return s.db.WithContext(ctx).Delete(&db.Service{}, "id = ?", serviceID).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceService, serviceID).
+			Delete(&db.ResourcePermission{})
+		return tx.Delete(&db.Service{}, "id = ?", serviceID).Error
+	})
 }
 
 // ─── Update ───────────────────────────────────────────────────────────────────
@@ -493,7 +506,7 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 			return nil, err
 		}
 	}
-	return s.Get(ctx, serviceID)
+	return s.getByID(ctx, serviceID)
 }
 
 func (s *WorkloadService) GetEnvVars(ctx context.Context, serviceID uuid.UUID) (string, error) {

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
 import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react"
 import { useMutation } from "@tanstack/react-query"
@@ -8,6 +8,10 @@ import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/_auth/login")({
+  loader: async () => {
+    const status = await auth.status()
+    if (status.registration_open) throw redirect({ to: "/register" })
+  },
   component: LoginPage,
 })
 
