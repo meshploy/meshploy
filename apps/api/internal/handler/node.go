@@ -794,6 +794,16 @@ func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*
 	if h.svc.Headscale == nil {
 		return nil, huma.NewError(503, "Headscale is not configured on this gateway")
 	}
+
+	// Resolve the caller's org and enforce admin role before generating a mesh join token.
+	orgs, err := h.svc.Orgs.ListForUser(ctx, userID)
+	if err != nil || len(orgs) == 0 {
+		return nil, huma.Error403Forbidden("no organization found")
+	}
+	if err := h.enforceAdminRole(ctx, orgs[0].ID, userID); err != nil {
+		return nil, err
+	}
+
 	hsUser := "meshploy"
 	if h.cfg != nil && h.cfg.HeadscaleUser != "" {
 		hsUser = h.cfg.HeadscaleUser
@@ -803,12 +813,8 @@ func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*
 		return nil, huma.NewError(502, "failed to generate Headscale preauth key: "+err.Error())
 	}
 
-	// Persist the key so the UI can retrieve it across page navigations.
-	orgs, err := h.svc.Orgs.ListForUser(ctx, userID)
-	if err == nil && len(orgs) > 0 {
-		if storeErr := h.svc.Orgs.StoreHeadscalePreAuthKey(ctx, orgs[0].ID, key.Key, key.Expiration); storeErr != nil {
-			log.Printf("warning: persist headscale preauth key for org %s: %v", orgs[0].ID, storeErr)
-		}
+	if storeErr := h.svc.Orgs.StoreHeadscalePreAuthKey(ctx, orgs[0].ID, key.Key, key.Expiration); storeErr != nil {
+		log.Printf("warning: persist headscale preauth key for org %s: %v", orgs[0].ID, storeErr)
 	}
 
 	out := &HeadscalePreAuthKeyOutput{}

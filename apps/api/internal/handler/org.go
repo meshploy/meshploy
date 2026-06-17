@@ -480,7 +480,7 @@ func (h *Handler) ListInvitations(ctx context.Context, input *OrgPathInput) (*Li
 func (h *Handler) GetInvitation(ctx context.Context, input *InvitationTokenInput) (*InvitationInfoOutput, error) {
 	inv, err := h.svc.Orgs.GetInvitationByToken(ctx, input.Token)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, huma.Error404NotFound("invitation not found or expired")
 	}
 	out := &InvitationInfoOutput{}
 	out.Body.Email = inv.Email
@@ -492,7 +492,7 @@ func (h *Handler) GetInvitation(ctx context.Context, input *InvitationTokenInput
 func (h *Handler) AcceptInvitation(ctx context.Context, input *AcceptInvitationInput) (*AcceptInvitationOutput, error) {
 	_, err := h.svc.Orgs.AcceptInvitation(ctx, input.Token, input.Body.Username, input.Body.Password)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, huma.Error400BadRequest("could not accept invitation")
 	}
 	out := &AcceptInvitationOutput{}
 	out.Body.Message = "account created successfully"
