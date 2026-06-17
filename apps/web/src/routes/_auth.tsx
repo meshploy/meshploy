@@ -38,7 +38,7 @@ function AuthLayout() {
           </div>
           <div className="text-center">
             <h1 className="text-lg font-semibold tracking-tight">meshploy</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Zero-trust Internal Developer Platform</p>
+            <p className="text-sm text-muted-foreground mt-0.5">Internal Developer Platform</p>
           </div>
         </div>
         <Outlet />

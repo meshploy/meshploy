@@ -263,7 +263,7 @@ No `if EE` checks anywhere in the CE codebase. The CE binary literally cannot ex
 
 Meshploy doesn't invent new technology. WireGuard, K3s, CoreDNS, Caddy, Headscale, PostgreSQL — none of these are new, and none of them were built for Meshploy. They're mature, well-understood tools that each solve one problem well.
 
-What Meshploy does is assemble them into a coherent, opinionated stack with a clear contract: a single developer or small team should be able to run production-grade infrastructure without a dedicated DevOps function. The architecture patterns that large engineering teams take for granted — zero-trust networking, encrypted secrets at rest, automated TLS with wildcard certificates, ephemeral build runners, multi-tenant RBAC — shouldn't require a platform team to operate.
+What Meshploy does is assemble them into a coherent, opinionated stack with a clear contract: a single developer or small team should be able to run production-grade infrastructure without a dedicated DevOps function. The architecture patterns that large engineering teams take for granted — private mesh networking, encrypted secrets at rest, automated TLS with wildcard certificates, ephemeral build runners, multi-tenant RBAC — shouldn't require a platform team to operate.
 
 The decisions documented here reflect that constraint. Every time there was a choice between a more powerful solution and a simpler one, the question was: *can one person understand, debug, and operate this at 2am when something breaks?* An Ingress controller with a CRD-heavy cert-manager setup is powerful. Caddy with a DNS plugin and a routes table in Postgres is something you can reason about end to end.
 

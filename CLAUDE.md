@@ -1,6 +1,6 @@
 # Meshploy — Monorepo Rules & Architecture
 
-Zero-trust Internal Developer Platform. Go Workspaces monorepo + Vite/React frontend deployed via Docker Compose.
+Internal Developer Platform. Go Workspaces monorepo + Vite/React frontend deployed via Docker Compose.
 
 ---
 
@@ -31,7 +31,7 @@ meshploy/
 - **apps/web** — Vite + React 19 + TanStack Router frontend. Dark-only, Tailwind CSS v4 (CSS-first via `@tailwindcss/vite`, no config file), shadcn/ui Nova preset, `@base-ui/react` primitives.
 - **deploy/** — Headscale (WireGuard mesh), CoreDNS, Docker Compose. The gateway node is the only public-internet-facing machine; all workers are dark.
 
-### Zero-trust routing
+### Mesh routing
 
 ```
 Internet → Caddy (TLS) → apps/proxy (:8081) → WireGuard mesh → K3s worker node
