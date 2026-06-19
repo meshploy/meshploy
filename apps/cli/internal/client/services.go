@@ -128,6 +128,100 @@ func (c *Client) RetryDeployment(orgID, projectID, serviceID, deploymentID strin
 	return decodePtr[Deployment](resp)
 }
 
+type BuildConfig struct {
+	ID                    string  `json:"id"`
+	ServiceID             string  `json:"service_id"`
+	Builder               string  `json:"builder"`
+	GitRepo               string  `json:"git_repo"`
+	Branch                string  `json:"branch"`
+	DockerfilePath        string  `json:"dockerfile_path"`
+	AutoDeploy            bool    `json:"auto_deploy"`
+	GitIntegrationID      *string `json:"git_integration_id"`
+	RegistryIntegrationID *string `json:"registry_integration_id"`
+	LastBuiltImage        string  `json:"last_built_image"`
+	LastBuiltAt           *string `json:"last_built_at"`
+}
+
+type UpdateBuildConfigBody struct {
+	GitRepo               *string `json:"git_repo,omitempty"`
+	Branch                *string `json:"branch,omitempty"`
+	Builder               *string `json:"builder,omitempty"`
+	DockerfilePath        *string `json:"dockerfile_path,omitempty"`
+	AutoDeploy            *bool   `json:"auto_deploy,omitempty"`
+	GitIntegrationID      *string `json:"git_integration_id,omitempty"`
+	RegistryIntegrationID *string `json:"registry_integration_id,omitempty"`
+}
+
+func (c *Client) GetEnvVars(orgID, projectID, serviceID string) (string, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/env-vars", nil)
+	if err != nil {
+		return "", err
+	}
+	type body struct {
+		EnvVars string `json:"env_vars"`
+	}
+	b, err := decode[body](resp)
+	return b.EnvVars, err
+}
+
+func (c *Client) SetEnvVars(orgID, projectID, serviceID, envVars string) error {
+	type body struct {
+		EnvVars *string `json:"env_vars,omitempty"`
+	}
+	resp, err := c.do("PATCH", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID, body{EnvVars: &envVars})
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) GetBuildConfig(orgID, projectID, serviceID string) (*BuildConfig, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/build-config", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[BuildConfig](resp)
+}
+
+func (c *Client) UpdateBuildConfig(orgID, projectID, serviceID string, body UpdateBuildConfigBody) (*BuildConfig, error) {
+	resp, err := c.do("PATCH", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/build-config", body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[BuildConfig](resp)
+}
+
+func (c *Client) GetBuildEnvVars(orgID, projectID, serviceID string) (string, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/build-config/env-vars", nil)
+	if err != nil {
+		return "", err
+	}
+	type body struct {
+		BuildEnvVars string `json:"build_env_vars"`
+	}
+	b, err := decode[body](resp)
+	return b.BuildEnvVars, err
+}
+
+func (c *Client) SetBuildEnvVars(orgID, projectID, serviceID, envVars string) error {
+	type body struct {
+		BuildEnvVars string `json:"build_env_vars"`
+	}
+	resp, err := c.do("PUT", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/build-config/env-vars", body{BuildEnvVars: envVars})
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // GetServiceByName resolves a service by ID or name within a project.
 func (c *Client) GetServiceByName(orgID, projectID, ref string) (*Service, error) {
 	services, err := c.ListServices(orgID, projectID)

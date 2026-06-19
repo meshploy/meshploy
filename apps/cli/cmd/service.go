@@ -3,8 +3,10 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
+	"github.com/meshploy/apps/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -297,6 +299,282 @@ Pass a deployment ID as a second argument to retry a specific one.`,
 	},
 }
 
+// ─── service env ──────────────────────────────────────────────────────────────
+
+var serviceEnvCmd = &cobra.Command{
+	Use:   "env",
+	Short: "Manage runtime environment variables",
+}
+
+var serviceEnvGetCmd = &cobra.Command{
+	Use:   "get <name|id>",
+	Short: "Print the decrypted .env block for a service",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := apiClient()
+		pid := resolveProjectID(serviceProject)
+		svc, err := c.GetServiceByName(orgID(), pid, args[0])
+		if err != nil {
+			return err
+		}
+		envVars, err := c.GetEnvVars(orgID(), pid, svc.ID)
+		if err != nil {
+			return err
+		}
+		fmt.Print(envVars)
+		if envVars != "" && !strings.HasSuffix(envVars, "\n") {
+			fmt.Println()
+		}
+		return nil
+	},
+}
+
+var serviceEnvSetCmd = &cobra.Command{
+	Use:   "set <name|id> [KEY=VALUE ...]",
+	Short: "Set runtime environment variables (merges with existing)",
+	Long: `Set runtime environment variables for a service.
+
+With KEY=VALUE arguments, the given keys are merged into the existing .env block.
+With --file, the entire .env block is replaced with the file contents.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := apiClient()
+		pid := resolveProjectID(serviceProject)
+		svc, err := c.GetServiceByName(orgID(), pid, args[0])
+		if err != nil {
+			return err
+		}
+
+		envFile, _ := cmd.Flags().GetString("file")
+		var final string
+
+		if envFile != "" {
+			b, err := os.ReadFile(envFile)
+			if err != nil {
+				return fmt.Errorf("read file: %w", err)
+			}
+			final = string(b)
+		} else {
+			if len(args) < 2 {
+				return fmt.Errorf("provide KEY=VALUE arguments or --file .env")
+			}
+			existing, err := c.GetEnvVars(orgID(), pid, svc.ID)
+			if err != nil {
+				return err
+			}
+			final = mergeEnvVars(existing, args[1:])
+		}
+
+		if err := c.SetEnvVars(orgID(), pid, svc.ID, final); err != nil {
+			return err
+		}
+		fmt.Printf("✔  Environment variables updated for %q.\n", svc.Name)
+		return nil
+	},
+}
+
+// ─── service build-config ─────────────────────────────────────────────────────
+
+var serviceBuildConfigCmd = &cobra.Command{
+	Use:   "build-config",
+	Short: "Manage the build configuration for a service",
+}
+
+var serviceBuildConfigGetCmd = &cobra.Command{
+	Use:   "get <name|id>",
+	Short: "Print the build configuration for a service",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := apiClient()
+		pid := resolveProjectID(serviceProject)
+		svc, err := c.GetServiceByName(orgID(), pid, args[0])
+		if err != nil {
+			return err
+		}
+		bc, err := c.GetBuildConfig(orgID(), pid, svc.ID)
+		if err != nil {
+			return err
+		}
+		printBuildConfig(bc)
+		return nil
+	},
+}
+
+var serviceBuildConfigSetCmd = &cobra.Command{
+	Use:   "set <name|id>",
+	Short: "Update the build configuration for a service",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := apiClient()
+		pid := resolveProjectID(serviceProject)
+		svc, err := c.GetServiceByName(orgID(), pid, args[0])
+		if err != nil {
+			return err
+		}
+
+		body := client.UpdateBuildConfigBody{}
+		if cmd.Flags().Changed("repo") {
+			v, _ := cmd.Flags().GetString("repo")
+			body.GitRepo = &v
+		}
+		if cmd.Flags().Changed("branch") {
+			v, _ := cmd.Flags().GetString("branch")
+			body.Branch = &v
+		}
+		if cmd.Flags().Changed("builder") {
+			v, _ := cmd.Flags().GetString("builder")
+			body.Builder = &v
+		}
+		if cmd.Flags().Changed("dockerfile") {
+			v, _ := cmd.Flags().GetString("dockerfile")
+			body.DockerfilePath = &v
+		}
+		if cmd.Flags().Changed("auto-deploy") {
+			v, _ := cmd.Flags().GetBool("auto-deploy")
+			body.AutoDeploy = &v
+		}
+		if cmd.Flags().Changed("git-integration") {
+			v, _ := cmd.Flags().GetString("git-integration")
+			body.GitIntegrationID = &v
+		}
+		if cmd.Flags().Changed("registry") {
+			v, _ := cmd.Flags().GetString("registry")
+			body.RegistryIntegrationID = &v
+		}
+
+		bc, err := c.UpdateBuildConfig(orgID(), pid, svc.ID, body)
+		if err != nil {
+			return err
+		}
+		printBuildConfig(bc)
+		return nil
+	},
+}
+
+// ─── service build-env ────────────────────────────────────────────────────────
+
+var serviceBuildEnvCmd = &cobra.Command{
+	Use:   "build-env",
+	Short: "Manage build-time environment variables",
+}
+
+var serviceBuildEnvGetCmd = &cobra.Command{
+	Use:   "get <name|id>",
+	Short: "Print the build-time .env block for a service",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := apiClient()
+		pid := resolveProjectID(serviceProject)
+		svc, err := c.GetServiceByName(orgID(), pid, args[0])
+		if err != nil {
+			return err
+		}
+		envVars, err := c.GetBuildEnvVars(orgID(), pid, svc.ID)
+		if err != nil {
+			return err
+		}
+		fmt.Print(envVars)
+		if envVars != "" && !strings.HasSuffix(envVars, "\n") {
+			fmt.Println()
+		}
+		return nil
+	},
+}
+
+var serviceBuildEnvSetCmd = &cobra.Command{
+	Use:   "set <name|id> [KEY=VALUE ...]",
+	Short: "Set build-time environment variables (merges with existing)",
+	Long: `Set build-time environment variables for a service.
+
+With KEY=VALUE arguments, the given keys are merged into the existing .env block.
+With --file, the entire build .env block is replaced with the file contents.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := apiClient()
+		pid := resolveProjectID(serviceProject)
+		svc, err := c.GetServiceByName(orgID(), pid, args[0])
+		if err != nil {
+			return err
+		}
+
+		envFile, _ := cmd.Flags().GetString("file")
+		var final string
+
+		if envFile != "" {
+			b, err := os.ReadFile(envFile)
+			if err != nil {
+				return fmt.Errorf("read file: %w", err)
+			}
+			final = string(b)
+		} else {
+			if len(args) < 2 {
+				return fmt.Errorf("provide KEY=VALUE arguments or --file .env")
+			}
+			existing, err := c.GetBuildEnvVars(orgID(), pid, svc.ID)
+			if err != nil {
+				return err
+			}
+			final = mergeEnvVars(existing, args[1:])
+		}
+
+		if err := c.SetBuildEnvVars(orgID(), pid, svc.ID, final); err != nil {
+			return err
+		}
+		fmt.Printf("✔  Build environment variables updated for %q.\n", svc.Name)
+		return nil
+	},
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+// mergeEnvVars overlays KEY=VALUE pairs onto an existing .env block.
+// Existing keys are overwritten; new keys are appended.
+func mergeEnvVars(existing string, pairs []string) string {
+	env := map[string]string{}
+	var order []string
+	for _, line := range strings.Split(existing, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
+			if _, seen := env[k]; !seen {
+				order = append(order, k)
+			}
+			env[k] = v
+		}
+	}
+	for _, pair := range pairs {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok {
+			fmt.Fprintf(os.Stderr, "warning: skipping %q — not in KEY=VALUE format\n", pair)
+			continue
+		}
+		if _, seen := env[k]; !seen {
+			order = append(order, k)
+		}
+		env[k] = v
+	}
+	var sb strings.Builder
+	for _, k := range order {
+		sb.WriteString(k + "=" + env[k] + "\n")
+	}
+	return sb.String()
+}
+
+func printBuildConfig(bc *client.BuildConfig) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "Builder:\t%s\n", bc.Builder)
+	fmt.Fprintf(w, "Git repo:\t%s\n", bc.GitRepo)
+	fmt.Fprintf(w, "Branch:\t%s\n", bc.Branch)
+	fmt.Fprintf(w, "Dockerfile:\t%s\n", bc.DockerfilePath)
+	fmt.Fprintf(w, "Auto-deploy:\t%v\n", bc.AutoDeploy)
+	if bc.LastBuiltImage != "" {
+		fmt.Fprintf(w, "Last built:\t%s\n", bc.LastBuiltImage)
+	}
+	w.Flush()
+}
+
 func init() {
 	serviceCmd.PersistentFlags().StringVarP(&serviceProject, "project", "p", "", "Project ID or slug")
 
@@ -306,10 +584,26 @@ func init() {
 	serviceLogsCmd.Flags().BoolVar(&logsFollow, "follow", true, "Stream new log lines (set --follow=false to fetch a snapshot)")
 	serviceRollbackCmd.Flags().String("to", "", "Specific deployment ID to roll back to")
 
+	serviceEnvSetCmd.Flags().StringP("file", "f", "", "Replace the entire .env block from a file")
+	serviceEnvCmd.AddCommand(serviceEnvGetCmd, serviceEnvSetCmd)
+
+	serviceBuildConfigSetCmd.Flags().String("repo", "", "Git repository URL")
+	serviceBuildConfigSetCmd.Flags().String("branch", "", "Git branch")
+	serviceBuildConfigSetCmd.Flags().String("builder", "", "Builder type: nixpacks, railpack, dockerfile, image")
+	serviceBuildConfigSetCmd.Flags().String("dockerfile", "", "Path to Dockerfile (dockerfile builder only)")
+	serviceBuildConfigSetCmd.Flags().Bool("auto-deploy", false, "Enable auto-deploy on push")
+	serviceBuildConfigSetCmd.Flags().String("git-integration", "", "Git integration ID")
+	serviceBuildConfigSetCmd.Flags().String("registry", "", "Registry integration ID (empty string = internal registry)")
+	serviceBuildConfigCmd.AddCommand(serviceBuildConfigGetCmd, serviceBuildConfigSetCmd)
+
+	serviceBuildEnvSetCmd.Flags().StringP("file", "f", "", "Replace the entire build .env block from a file")
+	serviceBuildEnvCmd.AddCommand(serviceBuildEnvGetCmd, serviceBuildEnvSetCmd)
+
 	serviceCmd.AddCommand(
 		serviceListCmd, serviceDeployCmd, serviceStartCmd, serviceStopCmd,
 		serviceLogsCmd, serviceDeleteCmd,
 		serviceDeploymentsCmd, serviceRollbackCmd, serviceCancelCmd, serviceRetryCmd,
+		serviceEnvCmd, serviceBuildConfigCmd, serviceBuildEnvCmd,
 	)
 	rootCmd.AddCommand(serviceCmd)
 }
