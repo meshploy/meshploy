@@ -18,8 +18,9 @@ import (
 )
 
 type JobService struct {
-	db  *gorm.DB
-	k8s kubernetes.Interface
+	db    *gorm.DB
+	k8s   kubernetes.Interface
+	notif *NotificationService
 }
 
 // ─── Input types ─────────────────────────────────────────────────────────────
@@ -438,12 +439,12 @@ func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, 
 		NodeName:   nodeName,
 	}
 
-	go s.executeRun(job, &run, namespace, params)
+	go s.executeRun(job, &run, namespace, params, project.OrganizationID, project.Name)
 
 	return &run, nil
 }
 
-func (s *JobService) executeRun(job *db.Job, run *db.JobRun, namespace string, params appk8s.RunJobParams) {
+func (s *JobService) executeRun(job *db.Job, run *db.JobRun, namespace string, params appk8s.RunJobParams, orgID uuid.UUID, projectName string) {
 	bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -455,12 +456,12 @@ func (s *JobService) executeRun(job *db.Job, run *db.JobRun, namespace string, p
 	s.db.Model(job).Update("status", db.JobStatusRunning)
 
 	if err := appk8s.EnsureNamespace(bgCtx, s.k8s, namespace); err != nil {
-		s.failRun(job, run, "failed to ensure namespace: "+err.Error())
+		s.failRun(bgCtx, job, run, "failed to ensure namespace: "+err.Error(), orgID, projectName)
 		return
 	}
 
 	if err := appk8s.CreateRunJob(bgCtx, s.k8s, params); err != nil {
-		s.failRun(job, run, "failed to create k8s job: "+err.Error())
+		s.failRun(bgCtx, job, run, "failed to create k8s job: "+err.Error(), orgID, projectName)
 		return
 	}
 
@@ -480,9 +481,15 @@ func (s *JobService) executeRun(job *db.Job, run *db.JobRun, namespace string, p
 		"status":      status,
 		"last_run_at": finished.Format(time.RFC3339),
 	})
+	if !result.Success && s.notif != nil {
+		s.notif.Dispatch(bgCtx, orgID, "job.failed", NotificationData{
+			ServiceName: job.Name,
+			ProjectName: projectName,
+		})
+	}
 }
 
-func (s *JobService) failRun(job *db.Job, run *db.JobRun, msg string) {
+func (s *JobService) failRun(ctx context.Context, job *db.Job, run *db.JobRun, msg string, orgID uuid.UUID, projectName string) {
 	finished := time.Now()
 	s.db.Model(run).Updates(map[string]any{
 		"status":      db.JobStatusFailed,
@@ -490,6 +497,12 @@ func (s *JobService) failRun(job *db.Job, run *db.JobRun, msg string) {
 		"finished_at": &finished,
 	})
 	s.db.Model(job).Update("status", db.JobStatusFailed)
+	if s.notif != nil {
+		s.notif.Dispatch(ctx, orgID, "job.failed", NotificationData{
+			ServiceName: job.Name,
+			ProjectName: projectName,
+		})
+	}
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

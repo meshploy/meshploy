@@ -72,6 +72,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		gatewayIP = c.GatewayIP
 		hostGatewayIP = c.HostGatewayIP
 	}
+	notif := &NotificationService{db: db}
 	nodes := &NodeService{db: db, gatewayIP: gatewayIP, hostGatewayIP: hostGatewayIP}
 	domains := &DomainService{db: db}
 	auth := &AuthService{db: db}
@@ -156,7 +157,6 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		}()
 	}
 
-	notif := &NotificationService{db: db}
 	varGroups := &VariableGroupService{db: db}
 	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups}
 	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups, notif: notif}
@@ -164,6 +164,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
+
+	nodes.headscale = headscaleSvc
+	nodes.notif = notif
 
 	svc := &Services{
 		Auth:            auth,
@@ -182,11 +185,11 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Storage:         &StorageService{db: db},
 		Backups:         backups,
 		System:          &SystemService{db: db},
-		Notifications:   &NotificationService{db: db},
+		Notifications:   notif,
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,
 		Jobs:            func() *JobService {
-			j := &JobService{db: db, k8s: k8sClient}
+			j := &JobService{db: db, k8s: k8sClient, notif: notif}
 			if k8sClient != nil {
 				go j.StartReconciler(context.Background())
 			}
@@ -200,6 +203,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	go backups.StartScheduler(context.Background())
 	go backups.StartRetentionReaper(context.Background())
+	go nodes.StartNodeMonitor(context.Background())
 
 	return svc
 }

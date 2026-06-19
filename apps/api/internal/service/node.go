@@ -37,6 +37,54 @@ type NodeService struct {
 	db            *gorm.DB
 	gatewayIP     string // gateway mesh IP (MESH_IP) — used to detect self-scrape
 	hostGatewayIP string // Docker bridge host IP (HOST_GATEWAY_IP) — used instead of gatewayIP when API is in Docker
+	headscale     *HeadscaleService
+	notif         *NotificationService
+}
+
+// StartNodeMonitor polls Headscale every 2 minutes and dispatches node.offline
+// notifications when a node transitions from online to offline.
+func (s *NodeService) StartNodeMonitor(ctx context.Context) {
+	if s.headscale == nil || s.notif == nil {
+		return
+	}
+	offlineNotified := make(map[uuid.UUID]bool)
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.checkNodeOnlineStatus(ctx, offlineNotified)
+		}
+	}
+}
+
+func (s *NodeService) checkNodeOnlineStatus(ctx context.Context, offlineNotified map[uuid.UUID]bool) {
+	var nodes []db.Node
+	if err := s.db.WithContext(ctx).Where("headscale_id != ''").Find(&nodes).Error; err != nil {
+		return
+	}
+	hsNodes, err := s.headscale.ListNodes(ctx)
+	if err != nil {
+		return
+	}
+	online := make(map[string]bool, len(hsNodes))
+	for _, hn := range hsNodes {
+		online[hn.ID] = hn.Online
+	}
+	for _, node := range nodes {
+		isOnline := online[node.HeadscaleID]
+		wasOffline := offlineNotified[node.ID]
+		if !isOnline && !wasOffline {
+			offlineNotified[node.ID] = true
+			s.notif.Dispatch(ctx, node.OrganizationID, "node.offline", NotificationData{
+				NodeName: node.Name,
+			})
+		} else if isOnline && wasOffline {
+			delete(offlineNotified, node.ID)
+		}
+	}
 }
 
 func (s *NodeService) List(ctx context.Context, orgID uuid.UUID) ([]db.Node, error) {

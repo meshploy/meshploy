@@ -1,8 +1,5 @@
 # Meshploy — Upcoming
 
-- **JWT key rotation**
-  Support seamless key rotation for signed tokens — issue new tokens with an updated key while honoring existing ones during a configurable transition window.
-
 - **Node attestation / continuous re-verification**
   Periodically re-verify node identity after initial registration via heartbeat challenges, with automatic Headscale expiry for nodes that go silent.
 
