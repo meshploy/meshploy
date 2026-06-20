@@ -30,10 +30,18 @@ cp .env.example .env
 Minimum env vars to start locally:
 
 ```
-DATABASE_URL=postgres://user:pass@localhost:5432/meshploy?sslmode=disable
+DATABASE_URL=postgres://meshploy:meshploy@localhost:5432/meshploy?sslmode=disable
 JWT_SECRET=any-long-random-string
 ENCRYPTION_KEY=exactly-32-characters-here!!!!!
 ```
+
+### Start PostgreSQL
+
+```bash
+docker compose -f deploy/docker-compose.dev.yml up -d
+```
+
+This starts only PostgreSQL on port 5432 with default credentials (`meshploy/meshploy`). No Headscale, no CoreDNS, no Caddy needed.
 
 ### Start the API
 

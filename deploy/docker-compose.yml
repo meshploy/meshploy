@@ -1,12 +1,11 @@
 services:
-
   # ── Database ───────────────────────────────────────────────────────────────
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       ${POSTGRES_DB:-meshploy}
-      POSTGRES_USER:     ${POSTGRES_USER:-meshploy}
+      POSTGRES_DB: ${POSTGRES_DB:-meshploy}
+      POSTGRES_USER: ${POSTGRES_USER:-meshploy}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -27,7 +26,7 @@ services:
       - 1.0.0.1
     ports:
       - "127.0.0.1:8085:8080"
-      - "127.0.0.1:9090:9090"   # Prometheus metrics, localhost only
+      - "127.0.0.1:9090:9090" # Prometheus metrics, localhost only
     volumes:
       - ./headscale/config:/etc/headscale:z
       - ./headscale/data:/var/lib/headscale:z
@@ -52,13 +51,13 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      DOMAIN:           ${DOMAIN}
-      MESH_IP:          ${MESH_IP:-100.64.0.1}
-      PUBLIC_IP:        ${PUBLIC_IP}
+      DOMAIN: ${DOMAIN}
+      MESH_IP: ${MESH_IP:-100.64.0.1}
+      PUBLIC_IP: ${PUBLIC_IP}
       GATEWAY_HOSTNAME: ${GATEWAY_HOSTNAME}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro,z
-      - ./coredns/zones:/etc/coredns/zones:z  # shared with CoreDNS for ACME TXT records
+      - ./coredns/zones:/etc/coredns/zones:z # shared with CoreDNS for ACME TXT records
       - caddy_data:/data
       - caddy_config:/config
 
@@ -73,7 +72,7 @@ services:
       - 1.1.1.1
       - 1.0.0.1
     ports:
-      - "5000:5000"   # bind all interfaces so mesh nodes can reach it
+      - "5000:5000" # bind all interfaces so mesh nodes can reach it
     environment:
       REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
       REGISTRY_STORAGE_DELETE_ENABLED: "true"
@@ -93,22 +92,23 @@ services:
     ports:
       - "4000:4000"
     environment:
-      DATABASE_URL:      postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
-      JWT_SECRET:        ${JWT_SECRET}
-      ENCRYPTION_KEY:    ${ENCRYPTION_KEY}
-      API_BASE_URL:      ${API_BASE_URL:-https://api.${DOMAIN}}
-      FRONTEND_URL:      ${FRONTEND_URL:-https://console.${DOMAIN}}
-      HEADSCALE_URL:     http://headscale:8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      API_BASE_URL: ${API_BASE_URL:-https://api.${DOMAIN}}
+      FRONTEND_URL: ${FRONTEND_URL:-https://console.${DOMAIN}}
+      HEADSCALE_URL: http://headscale:8080
       HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
-      KUBECONFIG:        /etc/rancher/k3s/k3s.yaml
-      K3S_SERVER_URL:    https://host.meshploy.internal:6443
-      K3S_TOKEN:                  ${K3S_TOKEN}
-      API_PORT:                   4000
-      DOMAIN:                     ${DOMAIN}
-      MESH_IP:                    ${MESH_IP:-100.64.0.1}
-      HOST_GATEWAY_IP:            ${HOST_GATEWAY_IP}
-      GATEWAY_HOSTNAME:           ${GATEWAY_HOSTNAME}
-      BUILTIN_REGISTRY_ENDPOINT:  ${MESH_IP:-100.64.0.1}:5000
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      K3S_SERVER_URL: https://host.meshploy.internal:6443
+      K3S_TOKEN: ${K3S_TOKEN}
+      API_PORT: 4000
+      DOMAIN: ${DOMAIN}
+      MESH_IP: ${MESH_IP:-100.64.0.1}
+      PUBLIC_IP: ${PUBLIC_IP}
+      HOST_GATEWAY_IP: ${HOST_GATEWAY_IP}
+      GATEWAY_HOSTNAME: ${GATEWAY_HOSTNAME}
+      BUILTIN_REGISTRY_ENDPOINT: ${MESH_IP:-100.64.0.1}:5000
     extra_hosts:
       - "host.meshploy.internal:${HOST_GATEWAY_IP}"
     volumes:
@@ -148,9 +148,9 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
     environment:
-      DATABASE_URL:   postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      PROXY_PORT:     8081
+      PROXY_PORT: 8081
     depends_on:
       postgres:
         condition: service_healthy

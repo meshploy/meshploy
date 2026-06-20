@@ -46,7 +46,7 @@ Internet → Caddy (TLS) → apps/proxy (:8081) → WireGuard mesh → K3s worke
 Single K3s cluster spanning all mesh nodes. Control plane on gateway (`k3s_role=server`), workers join as agents. Builds run as ephemeral K8s Jobs with `meshploy.com/role=builder` node selector.
 
 ### Node lifecycle
-Workers self-register via `POST /api/v1/orgs/{id}/nodes/self-register` using an `mreg-<hex>` registration token. The node ID and token are saved to `/etc/meshploy/node.conf`. On uninstall, `DELETE /api/v1/orgs/{id}/nodes/self-deregister` removes the node from Headscale, the k3s cluster, and the database.
+Workers self-register via `POST /api/v1/nodes/self-register` using an `mreg-<hex>` registration token or a single-use `mprov-<hex>` provisioning token. The node ID is saved to `/etc/meshploy/node.conf`. On uninstall, `DELETE /api/v1/nodes/self-deregister` removes the node from Headscale, the k3s cluster, and the database.
 
 ---
 
@@ -64,6 +64,9 @@ replace github.com/meshploy/packages/db => ../../packages/db
 ## Dev commands
 
 ```bash
+# Start PostgreSQL (only infra needed for local dev)
+docker compose -f deploy/docker-compose.dev.yml up -d
+
 # API
 cd apps/api && go run main.go
 
@@ -75,12 +78,9 @@ cd apps/cli && go build -o meshploy .
 
 # Web (Vite dev server + auto-generates TanStack Router route tree)
 cd apps/web && npm run dev
-
-# Infra (Headscale + CoreDNS)
-cd deploy && docker compose -f docker-compose.dev.yml up -d
 ```
 
-Database migrations run automatically when the API starts.
+Database migrations run automatically when the API starts. Headscale, K3s, CoreDNS, and Caddy are optional for local dev — the API and frontend work without them (mesh/node features are no-ops).
 
 ---
 
@@ -88,46 +88,53 @@ Database migrations run automatically when the API starts.
 
 Required in `.env` at the monorepo root:
 
+**Required:**
+
 | Variable | Description |
 |---|---|
 | `DATABASE_URL` | `postgres://user:pass@host:5432/db?sslmode=disable` |
-| `API_PORT` | API listen port (default: `4000`) |
-| `PROXY_PORT` | Proxy listen port (default: `8081`) |
 | `JWT_SECRET` | Long random string for JWT signing |
 | `ENCRYPTION_KEY` | Exactly 32 characters — used for AES-256-GCM at-rest encryption |
-| `HEADSCALE_URL` | Headscale server URL (optional for dev) |
-| `HEADSCALE_API_KEY` | Headscale API key (optional for dev) |
+
+**Optional (infrastructure — set by `install.sh` on gateway):**
+
+| Variable | Description |
+|---|---|
+| `API_PORT` | API listen port (default: `4000`) |
+| `PROXY_PORT` | Proxy listen port (default: `8081`) |
+| `HEADSCALE_URL` | Headscale server URL |
+| `HEADSCALE_API_KEY` | Headscale API key |
+| `KUBECONFIG` | Path to kubeconfig file (empty = in-cluster) |
+| `K3S_SERVER_URL` | Override K3s API server URL (needed when API runs in Docker) |
+| `K3S_TOKEN` | Node token for workers joining the cluster |
+| `DOMAIN` | Base domain — seeds the org domain record |
+| `MESH_IP` | WireGuard IP of the gateway node |
+| `PUBLIC_IP` | Public internet IP — backfilled on the gateway node record |
+| `GATEWAY_HOSTNAME` | Gateway server hostname |
+| `HOST_GATEWAY_IP` | Docker bridge gateway IP — used to reach node_exporter from inside the API container |
+| `BUILTIN_REGISTRY_ENDPOINT` | Seeds a built-in registry row per org (format: `<host>:<port>`) |
 
 ---
 
-## packages/db — schema (19 CE tables)
+## packages/db — schema (36 CE tables)
 
-| Table | Purpose |
+Full schema documented in `packages/db/README.md`. Key groups:
+
+| Group | Tables |
 |---|---|
-| `users` | Identity |
-| `organizations` | Tenancy root |
-| `organization_members` | User ↔ Org join (roles: owner/admin/member) |
-| `resource_permissions` | Per-resource ACL (service, route) |
-| `projects` | K8s namespace (slug = namespace name) |
-| `nodes` | Mesh worker nodes + K3s + Headscale metadata |
-| `node_registration_tokens` | `mreg-<hex>` tokens for worker self-register/deregister |
-| `secrets` | AES-encrypted project-scoped secrets |
-| `service_secrets` | Service ↔ Secret join (mirrors `secretKeyRef`) |
-| `services` | Polymorphic workload: application or database |
-| `build_configs` | Git source, builder type, registry target (1:1 with service) |
-| `database_configs` | Engine, version, storage (1:1 with service) |
-| `routes` | Hostname → mesh IP + port (proxy hot-path) |
-| `deployments` | Deployment history + K8s artefacts + log |
-| `storage_integrations` | S3-compatible storage credentials (org-scoped) |
-| `registry_integrations` | Container registry credentials (org-scoped) |
-| `backup_configs` | Scheduled DB backup config |
-| `notification_channels` | Slack/webhook/email event routing |
-| `templates` | 1-click deployment blueprints (official + user) |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
+| Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
+| Workloads | `stacks`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
+| Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups` |
+| Traffic | `routes`, `route_targets` |
+| History | `deployments`, `jobs`, `job_runs` |
+| Integrations | `storage_integrations`, `registry_integrations`, `git_integrations` |
+| Operations | `backup_configs`, `system_backup_configs`, `notification_channels`, `org_email_configs` |
+| Templates | `templates` |
 
 **Partial unique indexes** (in `applyConstraints`):
 - `idx_one_owner_per_org` — exactly one owner per org
-- `idx_secrets_project_name` — secret names unique within a project
-- `idx_service_secrets_env_key` — no duplicate env keys per service
+- `idx_unique_domain_per_org` — domain names unique within an org
 
 **Encryption**: `EncryptedString` GORM type uses AES-256-GCM. Call `db.SetEncryptionKey()` before any DB operation. Never stored as plaintext.
 
@@ -142,54 +149,60 @@ internal/
 ├── config/       # Config struct + Load() from env
 ├── middleware/   # Auth() — soft JWT middleware (sets user in ctx, doesn't block)
 ├── handler/      # HTTP layer only — thin, delegates to service layer
-│   ├── handler.go          # Handler struct + Register()
-│   ├── auth.go             # POST /auth/register, POST /auth/login
-│   ├── org.go              # CRUD + member management
-│   ├── project.go          # CRUD
-│   ├── node.go             # CRUD, self-register, self-deregister, enrichment
-│   ├── workload.go         # Service CRUD
-│   ├── route.go            # CRUD
-│   ├── deployment.go       # List + trigger
+│   ├── handler.go          # Handler struct + Register() + RegisterRaw()
+│   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess()
+│   ├── auth.go             # /auth/*, /me, TOTP, 2FA
+│   ├── org.go              # Org CRUD, members, invitations
+│   ├── project.go          # Project CRUD
+│   ├── permission.go       # Per-resource permission grants
+│   ├── node.go             # Node CRUD, self-register, self-deregister, metrics
+│   ├── workload.go         # Service CRUD, env vars, build/db config, pods
+│   ├── stack.go            # Stack CRUD, apply, sync
+│   ├── job.go              # Job CRUD, trigger, run history
+│   ├── volume.go           # Volume CRUD, mounts, backup config
+│   ├── route.go            # Route CRUD, targets, hostname verify
+│   ├── deployment.go       # List, trigger, rollback, SSE log streams
+│   ├── backup.go           # Service backups + system backup
+│   ├── notification.go     # Notification channels
+│   ├── email_config.go     # Org SMTP config
+│   ├── variable_group.go   # Variable group CRUD + service attach/detach
+│   ├── git_integration.go  # Git provider integrations + OAuth callbacks
+│   ├── registry.go         # Registry integration CRUD
+│   ├── storage.go          # Storage integration CRUD
+│   ├── terminal.go         # WebSocket: node terminal + pod terminal
+│   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
 │   ├── domain.go           # Domain CRUD + DNS verification
-│   └── git_integration.go  # Git provider integrations
+│   ├── system.go           # Version, install/uninstall scripts
+│   └── health.go           # GET /health
 └── service/      # Business logic
-    ├── service.go      # Services aggregate struct
-    ├── auth.go         # Register (user + default org in tx), Login (JWT)
-    ├── org.go
-    ├── project.go
-    ├── node.go         # Node CRUD, registration token, headscale_id management
-    ├── workload.go
-    ├── route.go
-    ├── deployment.go
-    └── headscale.go    # Headscale API client: list, get, delete, rename nodes
+    ├── service.go          # Services aggregate struct + New()
+    ├── auth.go             # Register (user + default org in tx), Login, TOTP
+    ├── org.go              # Org CRUD, members, invitations
+    ├── project.go          # Project CRUD
+    ├── permission.go       # Resource permission grants
+    ├── node.go             # Node CRUD, registration/provisioning tokens, offline monitor
+    ├── node_exporter.go    # Live metrics scraping from node_exporter
+    ├── workload.go         # Service CRUD, env vars, build/db config
+    ├── stack.go            # Stack parse, apply, sync
+    ├── job.go              # Job CRUD, trigger, K8s Job reconciler goroutine
+    ├── volume.go           # Volume CRUD, mounts, K8s PVC lifecycle
+    ├── route.go            # Route + target CRUD
+    ├── domain.go           # Domain CRUD + DNS verification
+    ├── deployment.go       # Deployment trigger, rollback, K8s Job lifecycle
+    ├── backup.go           # Backup schedule, trigger, restore, retention reaper
+    ├── backup_executor.go  # Backup/restore K8s Job execution
+    ├── notification.go     # Dispatch: Slack, Discord, email, HMAC webhook
+    ├── email_config.go     # Org SMTP config
+    ├── variable_group.go   # Variable group CRUD + service attachment
+    ├── git_integration.go  # Git provider connections + OAuth flows
+    ├── registry.go         # Registry integration CRUD
+    ├── storage.go          # Storage integration CRUD
+    ├── db_explorer.go      # Live DB query + schema via K8s exec
+    ├── system.go           # Version info, install/uninstall script serving
+    └── headscale.go        # Headscale API client: list, get, delete, rename nodes
 ```
 
-### API routes (all under `/api/v1`)
-
-All authenticated routes require `Authorization: Bearer <jwt>`. Error responses follow RFC 7807 (Huma built-in).
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| POST | `/auth/register` | — | Create user + default org (transaction) |
-| POST | `/auth/login` | — | Return signed JWT (24h) |
-| GET/POST | `/orgs` | ✓ | List / create orgs |
-| GET/PUT/DELETE | `/orgs/{id}` | ✓ | Get / update / delete org |
-| GET/POST | `/orgs/{id}/members` | ✓ | List / add members |
-| DELETE | `/orgs/{id}/members/{userId}` | ✓ | Remove member |
-| GET/POST | `/orgs/{id}/projects` | ✓ | List / create projects |
-| GET/PUT/DELETE | `/orgs/{id}/projects/{id}` | ✓ | Project CRUD |
-| GET/POST | `/orgs/{id}/nodes` | ✓ | List / register nodes |
-| GET/PUT/DELETE | `/orgs/{id}/nodes/{id}` | ✓ | Node CRUD |
-| POST | `/orgs/{id}/nodes/self-register` | — | Worker self-registration (`mreg-` token) |
-| DELETE | `/orgs/{id}/nodes/self-deregister` | — | Worker self-removal (`mreg-` token + node ID) |
-| GET/POST | `/orgs/{id}/node-registration-token` | ✓ | Get / rotate registration token |
-| GET/POST | `/orgs/{id}/projects/{id}/services` | ✓ | Service CRUD |
-| GET/PUT/DELETE | `/orgs/{id}/projects/{id}/services/{id}` | ✓ | Service CRUD |
-| GET/POST | `/orgs/{id}/projects/{id}/routes` | ✓ | Route CRUD |
-| DELETE | `/orgs/{id}/projects/{id}/routes/{id}` | ✓ | Delete route |
-| GET/POST | `/orgs/{id}/projects/{id}/services/{id}/deployments` | ✓ | List / trigger deployments |
-| GET/POST/PATCH/DELETE | `/orgs/{id}/domains/{id}` | ✓ | Domain CRUD |
-| POST | `/orgs/{id}/domains/{id}/verify` | ✓ | Verify domain DNS |
+Full API route reference: `apps/api/README.md`.
 
 ---
 

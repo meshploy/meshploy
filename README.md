@@ -191,13 +191,6 @@ All operations go through `get.sh` — no Docker Compose commands needed.
 
 > **TLS cert cache**: Caddy stores Let's Encrypt certificates in a Docker volume. `--reinstall` always preserves this volume to avoid hitting rate limits (5 certs per domain per week). Use `--wipe-data` only when you genuinely need a clean slate.
 
-### Private repo (while in development)
-
-```bash
-export GITHUB_PAT=ghp_xxxx
-sudo -E bash -c "$(curl -fsSL "https://${GITHUB_PAT}@raw.githubusercontent.com/meshploy/meshploy/main/get.sh")"
-```
-
 ---
 
 ## Local Development
@@ -225,11 +218,13 @@ JWT_SECRET=your-long-random-secret
 ENCRYPTION_KEY=exactly-32-characters-here!!!!!   # openssl rand -hex 16
 ```
 
-### 2. Start the infrastructure
+### 2. Start PostgreSQL
 
 ```bash
-cd deploy && docker compose up -d
+docker compose -f deploy/docker-compose.dev.yml up -d
 ```
+
+This starts only PostgreSQL on port 5432. Headscale, CoreDNS, Caddy, and the registry are **not needed** for local development — the API and frontend work without them.
 
 ### 3. Run the API
 

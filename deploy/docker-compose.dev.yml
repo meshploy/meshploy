@@ -1,0 +1,28 @@
+# Local development stack — PostgreSQL only.
+# Headscale, CoreDNS, Caddy, and the registry are not included;
+# the API and frontend work without them (mesh/node features are no-ops).
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.dev.yml up -d
+#   docker compose -f deploy/docker-compose.dev.yml down
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-meshploy}
+      POSTGRES_USER:     ${POSTGRES_USER:-meshploy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meshploy}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-meshploy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
