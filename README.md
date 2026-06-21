@@ -1,8 +1,8 @@
 # Meshploy
 
-**One mesh. Any server. PaaS simplicity.**
+**Your servers. Private by default. PaaS simplicity.**
 
-Meshploy is a self-hosted PaaS that orchestrates multi-node deployments across a WireGuard mesh network. Worker nodes are completely dark to the public internet — no open ports, no exposed services. The only public-facing component is the Meshploy Edge Gateway.
+Meshploy is a self-hosted PaaS that orchestrates multi-node deployments across a WireGuard mesh network, powered by K3s. Worker nodes are completely dark to the public internet — no open ports, no exposed services. The only public-facing component is the Meshploy Edge Gateway.
 
 Deploy apps, provision managed databases, and ship to a global distributed cluster with a Vercel-like developer experience backed by enterprise-grade infrastructure.
 
@@ -10,43 +10,25 @@ Deploy apps, provision managed databases, and ship to a global distributed clust
 
 ## Documentation
 
+### For users
+
 | Document | Description |
 |---|---|
-| [CLAUDE.md](./CLAUDE.md) | Coding standards, architecture overview, safety guardrails — read this first |
-| [CONCEPTS.md](./CONCEPTS.md) | Architectural decisions — what Meshploy does differently and why |
-| [apps/api/README.md](./apps/api/README.md) | REST API — routes, node enrichment, self-register/deregister |
-| [apps/proxy/README.md](./apps/proxy/README.md) | Edge proxy — "Ask & Resolve" routing, route cache |
-| [apps/web/README.md](./apps/web/README.md) | Web dashboard — stack, API client, production build |
-| [apps/web/AGENTS.md](./apps/web/AGENTS.md) | Web coding rules — @base-ui/react patterns, TanStack Router conventions |
-| [apps/cli/README.md](./apps/cli/README.md) | CLI — installation, all commands, config file, workflows |
-| [packages/db/README.md](./packages/db/README.md) | Shared DB models — schema, migrations, encryption, CE/EE boundary |
+| [How it works](./HOW_IT_WORKS.md) | Why NS delegation, why dark workers, how TLS works, CLI vs dashboard, MCP server — the questions that come up when you're setting up or evaluating Meshploy |
+| [Self-hosting guide](#self-hosting) | Install, DNS setup, supported distros, managing your installation |
+| [API reference](./apps/api/README.md) | All REST routes — useful when scripting against the API directly |
+| [CLI reference](./apps/cli/README.md) | All CLI commands, config file, node workflows |
 
----
+### For contributors & engineers
 
-## How Meshploy Differs
-
-Meshploy makes deliberate architectural choices that differ from how most platforms approach the same problems — no Ingress controller, no cert-manager, no external CI runners, encrypted DB columns instead of K8s Secrets, and a WireGuard mesh instead of cloud VPC lock-in.
-
-[**CONCEPTS.md**](./CONCEPTS.md) walks through each of these decisions: what the standard approach is, what Meshploy does instead, and why.
-
----
-
-## How It Works
-
-```
-User → Caddy (TLS) → Go Proxy → WireGuard Mesh → K3s Worker Node
-                         ↑
-                    "Ask & Resolve"
-                  reads Host header,
-                  looks up route in DB,
-                  finds Headscale IP + port
-```
-
-**Every request:**
-1. Caddy terminates TLS and blindly forwards to the Meshploy Proxy
-2. The Proxy reads the `Host` header and queries the database for the matching route
-3. The request is streamed over the WireGuard mesh to the target node's K3s ingress
-4. Worker nodes never bind to public interfaces — all traffic flows through the mesh
+| Document | Description |
+|---|---|
+| [CONCEPTS.md](./CONCEPTS.md) | Architectural decisions — why each technical choice was made and what the alternative was |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Dev setup, coding guidelines, local vs VPS testing, PR process |
+| [CLAUDE.md](./CLAUDE.md) | Coding standards, repo layout, safety guardrails — read before making changes |
+| [packages/db/README.md](./packages/db/README.md) | Shared DB models — schema, migrations, encryption |
+| [apps/proxy/README.md](./apps/proxy/README.md) | Edge proxy internals — route cache, "Ask & Resolve" pattern |
+| [apps/web/AGENTS.md](./apps/web/AGENTS.md) | Frontend coding rules — @base-ui/react patterns, TanStack Router conventions |
 
 ---
 
@@ -88,18 +70,31 @@ See [**apps/cli/README.md**](./apps/cli/README.md) for the full command referenc
 
 ---
 
-## Features (Community Edition)
+## Features
 
-- **Application deployments** — Node.js, Go, Python, Ruby, and any Dockerfile
-- **Build systems** — Nixpacks, Heroku Buildpacks, Dockerfile, or pre-built images
-- **Managed databases** — PostgreSQL, MySQL, Redis, MongoDB provisioned as K3s workloads
-- **Docker Compose support** — Lift-and-shift existing compose files
-- **1-Click Templates** — Ghost, WordPress, Outline, Meilisearch, and more
-- **Multi-node K3s cluster** — Unlimited worker nodes joining over the Headscale mesh
-- **Automated backups** — Scheduled dumps to any S3-compatible storage (R2, MinIO, AWS)
-- **Webhook notifications** — Slack, Discord, email, or generic webhooks on deploy events
-- **Real-time monitoring** — Node and container CPU / memory / network metrics
-- **Multi-tenant RBAC** — Organizations, projects, Owner / Admin / Member roles, per-resource permissions
+- **Application deployments**: Nixpacks, Railpack, or Dockerfile; pre-built images also supported; any language or framework
+- **Managed databases**: PostgreSQL, MySQL, Redis, MongoDB, Dragonfly, ClickHouse as K8s workloads
+- **Docker Compose**: native Compose file support via compose-go; lift-and-shift existing stacks
+- **AI-native**: MCP server with 90+ tools — Claude Code can deploy, query, manage, and monitor your platform without leaving your editor
+- **WireGuard mesh networking**: workers are dark to the public internet; all traffic routes over the mesh
+- **Multi-node K3s cluster**: unlimited workers; builds and jobs run as ephemeral K8s Jobs
+- **Git integrations**: GitHub (App), GitLab, and Gitea; auto-detect build context
+- **Jobs & cron**: one-off and scheduled jobs with full run history
+- **Automated backups**: scheduled to any S3-compatible storage (R2, MinIO, AWS); restore from dashboard
+- **Real-time monitoring**: node and container CPU / memory / network metrics
+- **Web terminal**: SSH into any node or exec into any pod from the browser
+- **DB Explorer**: run live queries and browse schema from the dashboard
+- **Notifications**: Slack, Discord, email, or generic webhooks on deploy events
+- **RBAC**: organizations, projects, Owner / Admin / Member roles, per-resource permissions
+- **CLI**: manage nodes, deployments, and services from the terminal
+
+---
+
+## Who is this for?
+
+- **Solo developers and small teams** who want Render or Railway-level simplicity but on their own servers — no per-seat pricing, no vendor lock-in
+- **Teams with compliance or data residency requirements** — every workload runs on your infrastructure, nothing leaves it
+- **Engineers running multi-cloud or bare-metal** — mix Hetzner, AWS spot instances, and home servers in one cluster without cloud VPC complexity
 
 ---
 
@@ -114,8 +109,8 @@ meshploy/
 │   └── web/          # Dashboard — Vite + React 19 + TanStack Router
 ├── packages/
 │   └── db/           # Shared GORM models — imported by api and proxy
-│       ├── models.go     # All 19 CE table definitions
-│       ├── db.go         # Open(), Migrate(), RegisterMigration() (EE hook)
+│       ├── models.go     # All 36 table definitions
+│       ├── db.go         # Open(), Migrate(), RegisterMigration()
 │       ├── types.go      # Custom JSONB types (EnvVarsMap, JSONObject, StringArray)
 │       └── crypto.go     # AES-256-GCM EncryptedString type
 ├── deploy/
@@ -148,8 +143,9 @@ meshploy/
 ### Prerequisites
 
 - A supported Linux distro (see above)
-- A public domain with NS records pointing to this server
-- Ports **80**, **443**, **53** (TCP+UDP) open on the gateway
+- At least **5 GB** free disk space (images + k3s + data)
+- A public domain with NS records pointing to this server's public IP (required before TLS certificates can be issued)
+- Ports **80**, **443**, **53** (TCP+UDP), and **3478/UDP** open in your firewall *and* not in use by other services on the host (port 53 conflicts with `systemd-resolved` on Ubuntu 22.04+ — the installer will warn you)
 - Root / sudo access
 
 ### Install
@@ -258,12 +254,6 @@ See [**apps/api/README.md**](./apps/api/README.md) for the full route reference.
 
 ---
 
-## Open-Core Model
-
-Meshploy is open-core. The Community Edition (this repository) is MIT-licensed and fully functional. An Enterprise Edition adds multi-tailnet isolation, SSO/SAML, audit logs, and multi-cluster fleet management via a separate private module that extends CE via Go's `init()` side-effect pattern — the CE codebase has zero awareness of EE.
-
----
-
 ## Contributing
 
 1. Fork the repository
@@ -275,7 +265,13 @@ Meshploy is open-core. The Community Edition (this repository) is MIT-licensed a
 
 ## License
 
-Community Edition — [MIT](LICENSE)
+[MIT](LICENSE)
+
+---
+
+## Acknowledgements
+
+Inspired by Northflank, Tailscale, and Dokploy.
 
 ---
 

@@ -128,6 +128,20 @@ ask_yn() {
   [[ "$yn" =~ ^[Yy]$ ]]
 }
 
+# port_in_use <port> — returns 0 (true) if the port is bound on any non-loopback address.
+# Ignores 127.x.x.x (e.g. systemd-resolved on 127.0.0.53) since Docker can still
+# bind the same port on 0.0.0.0 without conflict.
+port_in_use() {
+  local port="$1"
+  if command -v ss &>/dev/null; then
+    ss -tlnp 2>/dev/null | grep -v "127\." | grep -q ":${port}[[:space:]]" && return 0
+    ss -ulnp 2>/dev/null | grep -v "127\." | grep -q ":${port}[[:space:]]" && return 0
+  elif command -v netstat &>/dev/null; then
+    netstat -tlnp 2>/dev/null | grep -v "127\." | grep -q ":${port}[[:space:]]" && return 0
+  fi
+  return 1
+}
+
 # ── Banner ────────────────────────────────────────────────────────────────────
 clear
 echo -e "${BOLD}${BLUE}"
@@ -149,6 +163,19 @@ header "Checking prerequisites"
 
 OS="$(uname -s)"
 [[ "$OS" != "Linux" ]] && die "This script requires Linux."
+
+# systemd
+if ! command -v systemctl &>/dev/null || ! systemctl status &>/dev/null 2>&1; then
+  die "systemd is required. Alpine and other non-systemd distros are not supported."
+fi
+success "systemd is running"
+
+# Disk space (5 GB minimum on /)
+_DISK_AVAIL_GB=$(df --output=avail -BG / 2>/dev/null | tail -1 | tr -d 'G ')
+if [[ -n "$_DISK_AVAIL_GB" && "$_DISK_AVAIL_GB" -lt 5 ]]; then
+  die "Insufficient disk space: ${_DISK_AVAIL_GB} GB free on /. At least 5 GB is required (images + k3s + data)."
+fi
+success "Disk space: ${_DISK_AVAIL_GB:-?} GB free on /"
 
 # ── Container runtime detection ──────────────────────────────────────────────
 # Supports Docker (preferred) and Podman. CRI-O is a k8s-level runtime and is
@@ -267,11 +294,78 @@ if [[ "$NODE_TYPE" == "master" ]]; then
 
   header "Master configuration"
 
+  # ── Port availability ────────────────────────────────────────────────────────
+  # On reinstall our own containers may already hold these ports — skip the check.
+  if ! $REINSTALL; then
+    _PORT_OK=true
+    for _port in 80 443 53; do
+      if port_in_use "$_port"; then
+        _holder=$(ss -tlnp 2>/dev/null | grep -v "127\." | grep ":${_port}[[:space:]]" \
+          | grep -oP '"[^"]+"' | head -1 || echo "unknown process")
+        warn "Port ${_port} is already in use by ${_holder}."
+        [[ "$_port" == "53" ]] && warn "  Tip: if this is systemd-resolved, run: systemctl stop systemd-resolved && systemctl disable systemd-resolved"
+        _PORT_OK=false
+      else
+        success "Port ${_port}: free"
+      fi
+    done
+    if ! $_PORT_OK; then
+      ask_yn "Ports are in use — continue anyway?" "n" || die "Free the conflicting ports and re-run."
+    fi
+  fi
+
+  # ── Open required public firewall ports ──────────────────────────────────────
+  if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    for _p in 80/tcp 443/tcp 53/tcp 53/udp 3478/udp; do
+      ufw status | grep -q "^${_p%%/*}[[:space:]]\|^${_p}[[:space:]]" || \
+        ufw allow "$_p" comment "Meshploy" >/dev/null 2>&1
+    done
+    success "UFW: 80/tcp, 443/tcp, 53 (TCP+UDP), 3478/udp opened"
+  elif command -v firewall-cmd &>/dev/null && firewall-cmd --state 2>/dev/null | grep -q "running"; then
+    firewall-cmd --permanent --add-service=http  >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-service=https >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-service=dns   >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-port=3478/udp >/dev/null 2>&1 || true
+    firewall-cmd --reload >/dev/null 2>&1
+    success "firewalld: http, https, dns, 3478/udp opened"
+  else
+    info "No active firewall detected — skipping public port rules."
+  fi
+
   # Auto-detect public IP
   DETECTED_IP="$(curl -4 -fsSL https://ifconfig.me 2>/dev/null || echo "")"
 
   ask DOMAIN       "Base domain (e.g. meshploy.example.com)"
   ask PUBLIC_IP    "Public IP of this server" "$DETECTED_IP"
+
+  # ── DNS NS delegation check ──────────────────────────────────────────────────
+  # Caddy uses DNS-01 ACME for wildcard TLS — CoreDNS must be authoritative for
+  # the domain before Let's Encrypt can verify the _acme-challenge TXT record.
+  # NS records must point to this server's public IP before certs can be issued.
+  if ! $AUTO_MODE; then
+    info "Checking NS delegation for ${DOMAIN}…"
+    _NS_RESULT=""
+    if command -v dig &>/dev/null; then
+      _NS_RESULT="$(dig +short NS "${DOMAIN}" @8.8.8.8 2>/dev/null | head -1 || true)"
+    elif command -v host &>/dev/null; then
+      _NS_RESULT="$(host -t NS "${DOMAIN}" 8.8.8.8 2>/dev/null | awk '/name server/{print $NF}' | head -1 || true)"
+    else
+      _NS_RESULT="$(curl -sfL "https://dns.google/resolve?name=${DOMAIN}&type=NS" 2>/dev/null \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['Answer'][0]['data'] if d.get('Answer') else '')" 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$_NS_RESULT" ]]; then
+      warn "No NS records found for '${DOMAIN}' at 8.8.8.8."
+      warn "CoreDNS needs to be authoritative for this domain for wildcard TLS to work."
+      warn "At your registrar, add an NS record pointing '${DOMAIN}' to ${PUBLIC_IP}."
+      warn "TLS certificates will not be issued until NS records propagate (can take minutes to hours)."
+      ask_yn "Continue anyway? (TLS will complete once NS propagates)" "n" \
+        || die "Aborted — configure NS records at your registrar and re-run."
+    else
+      success "NS records found for ${DOMAIN} → ${_NS_RESULT}"
+    fi
+  fi
+
   ask MESH_IP      "WireGuard mesh IP for this node" "100.64.0.1"
   ask_optional POSTGRES_PASSWORD "Postgres password (or press enter to auto-generate)"
 

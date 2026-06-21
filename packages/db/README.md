@@ -8,14 +8,14 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 | File | Purpose |
 |---|---|
-| `db.go` | `Open()`, `Migrate()`, `FromEnv()`, `RegisterMigration()` (EE hook) |
-| `models.go` | All 36 CE table definitions |
+| `db.go` | `Open()`, `Migrate()`, `FromEnv()`, `RegisterMigration()` |
+| `models.go` | All 36 table definitions |
 | `types.go` | Custom JSONB types: `EnvVarsMap`, `JSONObject`, `StringArray` |
 | `crypto.go` | `EncryptedString` — AES-256-GCM GORM type |
 
 ---
 
-## Schema (36 CE tables)
+## Schema
 
 ### Identity & Access
 
@@ -126,9 +126,9 @@ Fields using this type (registry credentials, storage keys, git tokens) are stor
 
 ---
 
-## Open-core CE/EE boundary
+## Extension Registry
 
-`db.RegisterMigration(fn)` allows the EE module to register additional schema migrations via Go's `init()` side-effect import pattern. The CE binary never imports the EE module so `eeHooks` remains empty in all CE builds. The hook runs after `AutoMigrate` and `applyConstraints`.
+`db.RegisterMigration(fn)` registers additional schema migrations that run after `AutoMigrate` and `applyConstraints`. Call it from any package's `init()` to extend the schema without modifying `packages/db` directly.
 
 ---
 
