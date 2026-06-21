@@ -23,7 +23,9 @@ func New(c *client.Client, orgID string) *mcpsdk.MCPServer {
 		),
 	)
 	s.registerReadTools(ms)
+	s.registerReadToolsExtended(ms)
 	s.registerWriteTools(ms)
+	s.registerWriteToolsExtended(ms)
 	return ms
 }
 

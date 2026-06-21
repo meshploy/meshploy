@@ -38,9 +38,12 @@ type CreateJobBody struct {
 }
 
 type UpdateJobBody struct {
+	Name              *string `json:"name,omitempty"`
 	Image             *string `json:"image,omitempty"`
 	Command           *string `json:"command,omitempty"`
 	Schedule          *string `json:"schedule,omitempty"`
+	IsCron            *bool   `json:"is_cron,omitempty"`
+	EnvVars           *string `json:"env_vars,omitempty"`
 	ConcurrencyPolicy *string `json:"concurrency_policy,omitempty"`
 	HistoryLimit      *int    `json:"history_limit,omitempty"`
 }

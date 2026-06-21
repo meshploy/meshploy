@@ -14,10 +14,10 @@ func (s *srv) registerReadTools(ms *mcpsdk.MCPServer) {
 			mcp.WithString("type",
 				mcp.Required(),
 				mcp.Description("Resource type"),
-				mcp.Enum("services", "jobs", "volumes", "stacks", "routes", "projects", "nodes"),
+				mcp.Enum("services", "jobs", "volumes", "stacks", "routes", "secrets", "projects", "nodes"),
 			),
 			mcp.WithString("project_id",
-				mcp.Description("Project ID — required for services, jobs, volumes, stacks, routes"),
+				mcp.Description("Project ID — required for services, jobs, volumes, stacks, routes, secrets"),
 			),
 		),
 		s.handleListResources,
@@ -40,6 +40,69 @@ func (s *srv) registerReadTools(ms *mcpsdk.MCPServer) {
 			),
 		),
 		s.handleGetResource,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("get_env_vars",
+			mcp.WithDescription("Get runtime env vars for a service as KEY=VALUE lines."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("service_id", mcp.Required(), mcp.Description("Service ID or name")),
+		),
+		s.handleGetEnvVars,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("list_deployments",
+			mcp.WithDescription("List deployment history for a service."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("service_id", mcp.Required(), mcp.Description("Service ID or name")),
+		),
+		s.handleListDeployments,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("list_job_runs",
+			mcp.WithDescription("List run history for a job."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("job_id", mcp.Required(), mcp.Description("Job ID or name")),
+		),
+		s.handleListJobRuns,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("get_build_config",
+			mcp.WithDescription("Get the build configuration (git repo, branch, builder) for a service."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("service_id", mcp.Required(), mcp.Description("Service ID or name")),
+		),
+		s.handleGetBuildConfig,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("get_build_env_vars",
+			mcp.WithDescription("Get the build-time env vars for a service as KEY=VALUE lines."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("service_id", mcp.Required(), mcp.Description("Service ID or name")),
+		),
+		s.handleGetBuildEnvVars,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("list_variable_groups",
+			mcp.WithDescription("List variable groups in a project, or those attached to a specific service when service_id is given."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("service_id", mcp.Description("Service ID or name — if set, returns only groups attached to that service")),
+		),
+		s.handleListVariableGroups,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("get_variable_group",
+			mcp.WithDescription("Get a variable group and its items by ID or name."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("group_id", mcp.Required(), mcp.Description("Variable group ID or name")),
+		),
+		s.handleGetVariableGroup,
 	)
 }
 
@@ -148,9 +211,173 @@ func (s *srv) handleListResources(_ context.Context, req mcp.CallToolRequest) (*
 		}
 		return jsonResult(out)
 
+	case "secrets":
+		if projectID == "" {
+			return mcp.NewToolResultError("project_id is required for type=secrets"), nil
+		}
+		items, err := s.c.ListSecrets(s.orgID, projectID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		out := make([]MCPSecret, 0, len(items))
+		for _, sec := range items {
+			out = append(out, MCPSecret{ID: sec.ID, Name: sec.Name})
+		}
+		return jsonResult(out)
+
 	default:
 		return mcp.NewToolResultError("unknown type: " + resType), nil
 	}
+}
+
+func (s *srv) handleGetEnvVars(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	serviceRef := mcp.ParseString(req, "service_id", "")
+
+	svc, err := s.c.GetServiceByName(s.orgID, projectID, serviceRef)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	envVars, err := s.c.GetEnvVars(s.orgID, projectID, svc.ID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(envVars), nil
+}
+
+func (s *srv) handleListDeployments(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	serviceRef := mcp.ParseString(req, "service_id", "")
+
+	svc, err := s.c.GetServiceByName(s.orgID, projectID, serviceRef)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	items, err := s.c.ListDeployments(s.orgID, projectID, svc.ID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	out := make([]MCPDeployment, 0, len(items))
+	for _, d := range items {
+		deployedAt := ""
+		if d.DeployedAt != nil {
+			deployedAt = *d.DeployedAt
+		}
+		out = append(out, MCPDeployment{ID: d.ID, Status: d.Status, Image: d.Image, DeployedAt: deployedAt})
+	}
+	return jsonResult(out)
+}
+
+func (s *srv) handleListJobRuns(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	jobRef := mcp.ParseString(req, "job_id", "")
+
+	j, err := s.c.GetJobByName(s.orgID, projectID, jobRef)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	items, err := s.c.ListJobRuns(s.orgID, projectID, j.ID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	out := make([]MCPJobRun, 0, len(items))
+	for _, r := range items {
+		startedAt, finishedAt := "", ""
+		if r.StartedAt != nil {
+			startedAt = *r.StartedAt
+		}
+		if r.FinishedAt != nil {
+			finishedAt = *r.FinishedAt
+		}
+		out = append(out, MCPJobRun{ID: r.ID, Status: r.Status, StartedAt: startedAt, FinishedAt: finishedAt})
+	}
+	return jsonResult(out)
+}
+
+func (s *srv) handleGetBuildConfig(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	serviceRef := mcp.ParseString(req, "service_id", "")
+
+	svc, err := s.c.GetServiceByName(s.orgID, projectID, serviceRef)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	bc, err := s.c.GetBuildConfig(s.orgID, projectID, svc.ID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(MCPBuildConfig{
+		Builder:        bc.Builder,
+		GitRepo:        bc.GitRepo,
+		Branch:         bc.Branch,
+		DockerfilePath: bc.DockerfilePath,
+		AutoDeploy:     bc.AutoDeploy,
+	})
+}
+
+func (s *srv) handleGetBuildEnvVars(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	serviceRef := mcp.ParseString(req, "service_id", "")
+
+	svc, err := s.c.GetServiceByName(s.orgID, projectID, serviceRef)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	envVars, err := s.c.GetBuildEnvVars(s.orgID, projectID, svc.ID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(envVars), nil
+}
+
+func (s *srv) handleListVariableGroups(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	serviceRef := mcp.ParseString(req, "service_id", "")
+
+	if serviceRef != "" {
+		svc, err := s.c.GetServiceByName(s.orgID, projectID, serviceRef)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		items, err := s.c.ListServiceVariableGroups(s.orgID, projectID, svc.ID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		out := make([]MCPVariableGroup, 0, len(items))
+		for _, g := range items {
+			out = append(out, MCPVariableGroup{ID: g.ID, Name: g.Name, Description: g.Description})
+		}
+		return jsonResult(out)
+	}
+	items, err := s.c.ListVariableGroups(s.orgID, projectID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	out := make([]MCPVariableGroup, 0, len(items))
+	for _, g := range items {
+		out = append(out, MCPVariableGroup{ID: g.ID, Name: g.Name, Description: g.Description})
+	}
+	return jsonResult(out)
+}
+
+func (s *srv) handleGetVariableGroup(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	groupRef := mcp.ParseString(req, "group_id", "")
+
+	g, err := s.c.GetVariableGroupByName(s.orgID, projectID, groupRef)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	items := make([]MCPVariableGroupItem, 0, len(g.Items))
+	for _, it := range g.Items {
+		items = append(items, MCPVariableGroupItem{
+			ID:       it.ID,
+			Key:      it.Key,
+			Value:    it.Value,
+			IsSecret: it.IsSecret,
+		})
+	}
+	return jsonResult(MCPVariableGroup{ID: g.ID, Name: g.Name, Description: g.Description, Items: items})
 }
 
 func (s *srv) handleGetResource(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

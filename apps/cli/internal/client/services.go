@@ -222,6 +222,128 @@ func (c *Client) SetBuildEnvVars(orgID, projectID, serviceID, envVars string) er
 	return nil
 }
 
+type CreateServiceBody struct {
+	Name          string  `json:"name"`
+	Image         string  `json:"image,omitempty"`
+	NodeID        *string `json:"node_id,omitempty"`
+	EnvVars       string  `json:"env_vars,omitempty"`
+	Replicas      int     `json:"replicas,omitempty"`
+	CPURequest    string  `json:"cpu_request,omitempty"`
+	CPULimit      string  `json:"cpu_limit,omitempty"`
+	MemoryRequest string  `json:"memory_request,omitempty"`
+	MemoryLimit   string  `json:"memory_limit,omitempty"`
+	GitRepo       string  `json:"git_repo,omitempty"`
+	Branch        string  `json:"branch,omitempty"`
+	Builder       string  `json:"builder,omitempty"`
+	Type          string  `json:"type,omitempty"`
+	Engine        string  `json:"engine,omitempty"`
+	Version       string  `json:"version,omitempty"`
+	StorageGB     int     `json:"storage_gb,omitempty"`
+}
+
+type UpdateServiceBody struct {
+	Name          *string `json:"name,omitempty"`
+	Image         *string `json:"image,omitempty"`
+	NodeID        *string `json:"node_id,omitempty"`
+	Replicas      *int    `json:"replicas,omitempty"`
+	CPURequest    *string `json:"cpu_request,omitempty"`
+	CPULimit      *string `json:"cpu_limit,omitempty"`
+	MemoryRequest *string `json:"memory_request,omitempty"`
+	MemoryLimit   *string `json:"memory_limit,omitempty"`
+	EnvVars       *string `json:"env_vars,omitempty"`
+}
+
+func (c *Client) CreateService(orgID, projectID string, body CreateServiceBody) (*Service, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services", body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Service](resp)
+}
+
+func (c *Client) UpdateService(orgID, projectID, serviceID string, body UpdateServiceBody) (*Service, error) {
+	resp, err := c.do("PATCH", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID, body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Service](resp)
+}
+
+type DatabaseConfig struct {
+	ServiceID string `json:"service_id"`
+	Engine    string `json:"engine"`
+	Version   string `json:"version"`
+	StorageGB int    `json:"storage_gb"`
+	DBName    string `json:"db_name"`
+	DBUser    string `json:"db_user"`
+	NodePort  int    `json:"node_port,omitempty"`
+}
+
+type Pod struct {
+	Name      string `json:"name"`
+	Phase     string `json:"phase"`
+	Ready     bool   `json:"ready"`
+	Restarts  int32  `json:"restarts"`
+	NodeName  string `json:"node_name"`
+	StartedAt string `json:"started_at,omitempty"`
+}
+
+func (c *Client) GetDeployment(orgID, projectID, serviceID, deploymentID string) (*Deployment, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/deployments/"+deploymentID, nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Deployment](resp)
+}
+
+func (c *Client) GetDatabaseConfig(orgID, projectID, serviceID string) (*DatabaseConfig, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/database-config", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[DatabaseConfig](resp)
+}
+
+type QueryResult struct {
+	Columns []string        `json:"columns"`
+	Rows    [][]interface{} `json:"rows"`
+	Count   int             `json:"count"`
+}
+
+func (c *Client) DBQuery(orgID, projectID, serviceID, query string, readOnly bool) (*QueryResult, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/db/query",
+		map[string]any{"query": query, "read_only": readOnly})
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[QueryResult](resp)
+}
+
+type SchemaTable struct {
+	Name    string `json:"name"`
+	Columns []struct {
+		Name     string `json:"name"`
+		DataType string `json:"data_type"`
+		Nullable bool   `json:"nullable"`
+	} `json:"columns"`
+}
+
+func (c *Client) DBSchema(orgID, projectID, serviceID string) ([]SchemaTable, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/db/schema", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decode[[]SchemaTable](resp)
+}
+
+func (c *Client) ListPods(orgID, projectID, serviceID string) ([]Pod, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/pods", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decode[[]Pod](resp)
+}
+
 // GetServiceByName resolves a service by ID or name within a project.
 func (c *Client) GetServiceByName(orgID, projectID, ref string) (*Service, error) {
 	services, err := c.ListServices(orgID, projectID)

@@ -78,6 +78,14 @@ func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, err
 	return decodePtr[ApplyResult](resp)
 }
 
+func (c *Client) SyncStack(orgID, projectID, stackID string) (*ApplyResult, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/stacks/"+stackID+"/sync", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[ApplyResult](resp)
+}
+
 func (c *Client) GetStackByName(orgID, projectID, ref string) (*Stack, error) {
 	stacks, err := c.ListStacks(orgID, projectID)
 	if err != nil {

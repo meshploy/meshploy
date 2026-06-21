@@ -28,6 +28,14 @@ func (c *Client) DeleteProject(orgID, projectID string) error {
 }
 
 // GetProjectBySlugOrID resolves a project by ID or slug.
+func (c *Client) UpdateProject(orgID, projectID, name string) (*Project, error) {
+	resp, err := c.do("PATCH", "/api/v1/orgs/"+orgID+"/projects/"+projectID, map[string]string{"name": name})
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Project](resp)
+}
+
 func (c *Client) GetProjectBySlugOrID(orgID, ref string) (*Project, error) {
 	projects, err := c.ListProjects(orgID)
 	if err != nil {
