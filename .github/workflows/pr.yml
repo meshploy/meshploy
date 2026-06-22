@@ -46,6 +46,21 @@ jobs:
       - name: build
         run: cd apps/cli && go build ./...
 
+  # ── CLI tests ────────────────────────────────────────────────────────────────
+  test-cli:
+    name: CLI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      - name: test
+        run: cd apps/cli && go test ./... -v -timeout 60s
+
   # ── DB migration test ─────────────────────────────────────────────────────────
   test-db:
     name: DB migration test
