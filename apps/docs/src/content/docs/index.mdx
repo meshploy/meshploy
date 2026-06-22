@@ -1,0 +1,32 @@
+---
+title: Meshploy
+description: Self-hosted PaaS built on WireGuard mesh — deploy across multi-cloud and bare metal.
+template: splash
+hero:
+  tagline: Your servers. Private by default. PaaS simplicity.
+  actions:
+    - text: Get started
+      link: /introduction/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/meshploy/meshploy
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="WireGuard mesh" icon="random">
+    Worker nodes are completely dark to the public internet. No open ports, no exposed services — all traffic routes over the mesh.
+  </Card>
+  <Card title="Any language, any framework" icon="rocket">
+    Nixpacks, Railpack, Dockerfile, or pre-built images. Managed databases, Docker Compose stacks, cron jobs.
+  </Card>
+  <Card title="AI-native" icon="star">
+    MCP server with 90+ tools — Claude Code can deploy, query, manage, and monitor your platform without leaving your editor.
+  </Card>
+  <Card title="Open source" icon="open-book">
+    MIT licensed. Self-host on bare metal, Hetzner, AWS, or any mix. No per-seat pricing, no vendor lock-in.
+  </Card>
+</CardGrid>

@@ -1,0 +1,64 @@
+/* ── Onest (body + headings) — matches apps/web ──────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap');
+
+/* ── Geist Mono (code) — local, matches apps/web ────────────────────────── */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Font variables ───────────────────────────────────────────────────────── */
+:root {
+  --sl-font: "Onest", ui-sans-serif, -apple-system, system-ui, sans-serif;
+  --sl-font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ── Dark theme — olive-tinted near-black + emerald accent (matches web) ─── */
+:root[data-theme='dark'] {
+  /* Surfaces */
+  --sl-color-bg:            oklch(0.09 0.006 90);   /* --background */
+  --sl-color-bg-nav:        oklch(0.09 0.006 90);
+  --sl-color-bg-sidebar:    oklch(0.09 0.006 90);
+  --sl-color-bg-inline-code:oklch(0.15 0.004 90);   /* --muted */
+
+  /* Text */
+  --sl-color-white:         oklch(0.97 0 0);
+  --sl-color-text:          oklch(0.97 0 0);         /* --foreground */
+  --sl-color-text-accent:   oklch(0.72 0.17 160);    /* emerald */
+
+  /* Accent — emerald (web --primary dark) */
+  --sl-color-accent-low:    oklch(0.18 0.01 160);
+  --sl-color-accent:        oklch(0.72 0.17 160);
+  --sl-color-accent-high:   oklch(0.84 0.15 160);
+
+  /* Borders */
+  --sl-color-hairline:      oklch(0.28 0.005 90);    /* --border */
+  --sl-color-hairline-light:oklch(0.20 0.005 90);
+
+  /* Grey scale */
+  --sl-color-black:         oklch(0.09 0.006 90);
+  --sl-color-gray-6:        oklch(0.12 0.005 90);    /* --card */
+  --sl-color-gray-5:        oklch(0.17 0.004 90);    /* --secondary */
+  --sl-color-gray-4:        oklch(0.28 0.005 90);    /* --border */
+  --sl-color-gray-3:        oklch(0.45 0.004 90);
+  --sl-color-gray-2:        oklch(0.65 0.005 90);    /* --muted-foreground */
+  --sl-color-gray-1:        oklch(0.85 0 0);
+}
+
+/* ── Light theme — keep minimal, use web's light palette ─────────────────── */
+:root[data-theme='light'] {
+  --sl-color-accent-low:    oklch(0.95 0.04 160);
+  --sl-color-accent:        oklch(0.50 0.17 160);    /* web --primary light */
+  --sl-color-accent-high:   oklch(0.35 0.17 160);
+  --sl-color-text-accent:   oklch(0.50 0.17 160);
+}

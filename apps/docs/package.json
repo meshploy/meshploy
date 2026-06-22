@@ -1,0 +1,19 @@
+{
+  "name": "@meshploy/docs",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "sync": "node sync-docs.mjs",
+    "dev": "node sync-docs.mjs && astro dev",
+    "start": "node sync-docs.mjs && astro dev",
+    "build": "node sync-docs.mjs && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.40.0",
+    "astro": "^6.4.5",
+    "sharp": "^0.34.5"
+  }
+}
