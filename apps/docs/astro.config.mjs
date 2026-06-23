@@ -13,15 +13,13 @@ export default defineConfig({
 			logo: {
 				src: './src/assets/logo.svg',
 				replacesTitle: false,
+				href: 'https://meshploy.com',
 			},
 			favicon: '/favicon.svg',
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/meshploy/meshploy' },
 			],
-			editLink: {
-				baseUrl: 'https://github.com/meshploy/meshploy/edit/main/',
-			},
-			sidebar: [
+sidebar: [
 				{
 					label: 'Getting Started',
 					items: [

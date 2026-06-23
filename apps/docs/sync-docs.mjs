@@ -134,12 +134,26 @@ const linkMap = {
   './CLAUDE.md':             `${GITHUB_BASE}/CLAUDE.md`,
 };
 
+// Anchor-only links that were section headings in the source README but are
+// now separate pages in the docs site.
+const anchorMap = {
+  '#self-hosting': '/self-hosting',
+};
+
 function rewriteLinks(content) {
-  return content.replace(/\]\(([^)]+\.md)(#[^)]*)?\)/g, (match, path, anchor = '') => {
+  // Rewrite .md file links
+  content = content.replace(/\]\(([^)]+\.md)(#[^)]*)?\)/g, (match, path, anchor = '') => {
     const resolved = linkMap[path];
     if (!resolved) return match;
     return `](${resolved}${anchor})`;
   });
+  // Rewrite anchor-only links that correspond to split-out pages
+  content = content.replace(/\]\((#[^)]+)\)/g, (match, anchor) => {
+    const resolved = anchorMap[anchor];
+    if (!resolved) return match;
+    return `](${resolved})`;
+  });
+  return content;
 }
 
 let synced = 0;
