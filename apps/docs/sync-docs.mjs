@@ -115,6 +115,33 @@ for (const asset of staticAssets) {
   copyFileSync(asset.src, asset.dest);
 }
 
+// ── Link rewriting ────────────────────────────────────────────────────────────
+// Maps source-relative .md paths → Starlight slugs (or GitHub URLs for files
+// that have no corresponding docs page).
+const GITHUB_BASE = 'https://github.com/meshploy/meshploy/blob/main';
+const linkMap = {
+  './CONCEPTS.md':           '/architecture/concepts',
+  './CONTRIBUTING.md':       '/contributing/guide',
+  './HOW_IT_WORKS.md':       '/architecture/how-it-works',
+  './packages/db/README.md': '/architecture/database',
+  './SECURITY.md':           '/contributing/security',
+  './TODO.md':               '/contributing/roadmap',
+  './apps/cli/README.md':    '/cli/reference',
+  './apps/api/README.md':    '/api/reference',
+  // No docs page — point to GitHub
+  './apps/proxy/README.md':  `${GITHUB_BASE}/apps/proxy/README.md`,
+  './apps/web/AGENTS.md':    `${GITHUB_BASE}/apps/web/AGENTS.md`,
+  './CLAUDE.md':             `${GITHUB_BASE}/CLAUDE.md`,
+};
+
+function rewriteLinks(content) {
+  return content.replace(/\]\(([^)]+\.md)(#[^)]*)?\)/g, (match, path, anchor = '') => {
+    const resolved = linkMap[path];
+    if (!resolved) return match;
+    return `](${resolved}${anchor})`;
+  });
+}
+
 let synced = 0;
 
 for (const doc of docs) {
@@ -132,6 +159,9 @@ for (const doc of docs) {
 
   // Strip the leading H1 — Starlight renders its own from the frontmatter title
   content = content.trimStart().replace(/^#[^\n]*\r?\n?/, '');
+
+  // Rewrite internal .md links to Starlight slugs
+  content = rewriteLinks(content);
 
   const frontmatter = [
     '---',
