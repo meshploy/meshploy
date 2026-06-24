@@ -1,5 +1,13 @@
 # Meshploy
 
+[![PR Checks](https://github.com/meshploy/meshploy/actions/workflows/pr.yml/badge.svg)](https://github.com/meshploy/meshploy/actions/workflows/pr.yml)
+[![Build & Push](https://github.com/meshploy/meshploy/actions/workflows/build.yml/badge.svg)](https://github.com/meshploy/meshploy/actions/workflows/build.yml)
+[![CLI Release](https://github.com/meshploy/meshploy/actions/workflows/cli.yml/badge.svg)](https://github.com/meshploy/meshploy/actions/workflows/cli.yml)
+[![Release](https://img.shields.io/github/v/release/meshploy/meshploy)](https://github.com/meshploy/meshploy/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/meshploy/meshploy/blob/main/LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)](https://go.dev)
+[![Docs](https://img.shields.io/badge/docs-meshploy.com-brightgreen)](https://docs.meshploy.com)
+
 **Your servers. Private by default. PaaS simplicity.**
 
 Meshploy is a self-hosted PaaS that orchestrates multi-node deployments across a WireGuard mesh network, powered by K3s. Worker nodes are completely dark to the public internet — no open ports, no exposed services. The only public-facing component is the Meshploy Edge Gateway.
