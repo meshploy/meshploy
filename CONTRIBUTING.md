@@ -184,7 +184,7 @@ additional ports is not required and not recommended.
 
 ```bash
 # Install Meshploy on the gateway server
-curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh | sudo bash
+sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)"
 ```
 
 Point a wildcard DNS record at the gateway's public IP before installing,

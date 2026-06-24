@@ -37,11 +37,22 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const root = document.getElementById("root")!
-createRoot(root).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  </StrictMode>
-)
+async function bootstrap() {
+  if (import.meta.env.VITE_DEMO_MODE === "true") {
+    const { worker } = await import("./mocks/browser")
+    await worker.start({ onUnhandledRequest: "warn" })
+    // Signal to Playwright (and any other automation) that MSW is active
+    ;(window as Window & { __MSW_READY__?: true }).__MSW_READY__ = true
+  }
+
+  const root = document.getElementById("root")!
+  createRoot(root).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </StrictMode>
+  )
+}
+
+bootstrap()

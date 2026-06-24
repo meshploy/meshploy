@@ -20,8 +20,9 @@ function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth)
   const setOrgs = useOrgStore((s) => s.setOrgs)
 
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const isDemo = import.meta.env.VITE_DEMO_MODE === "true"
+  const [email, setEmail] = useState(isDemo ? "demo@meshploy.com" : "")
+  const [password, setPassword] = useState(isDemo ? "demo" : "")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

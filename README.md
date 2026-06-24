@@ -1,12 +1,8 @@
 # Meshploy
 
-[![PR Checks](https://github.com/meshploy/meshploy/actions/workflows/pr.yml/badge.svg)](https://github.com/meshploy/meshploy/actions/workflows/pr.yml)
-[![Build & Push](https://github.com/meshploy/meshploy/actions/workflows/build.yml/badge.svg)](https://github.com/meshploy/meshploy/actions/workflows/build.yml)
-[![CLI Release](https://github.com/meshploy/meshploy/actions/workflows/cli.yml/badge.svg)](https://github.com/meshploy/meshploy/actions/workflows/cli.yml)
-[![Release](https://img.shields.io/github/v/release/meshploy/meshploy)](https://github.com/meshploy/meshploy/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/meshploy/meshploy/blob/main/LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)](https://go.dev)
-[![Docs](https://img.shields.io/badge/docs-meshploy.com-brightgreen)](https://docs.meshploy.com)
+[![ci](https://img.shields.io/github/actions/workflow/status/meshploy/meshploy/pr.yml?label=ci)](https://github.com/meshploy/meshploy/actions/workflows/pr.yml)
+[![release](https://img.shields.io/github/v/release/meshploy/meshploy)](https://github.com/meshploy/meshploy/releases)
+[![docs](https://img.shields.io/badge/docs-site-blue)](https://docs.meshploy.com)
 
 **Your servers. Private by default. PaaS simplicity.**
 
@@ -70,8 +66,11 @@ meshploy node token get
 sudo meshploy node install
 sudo meshploy node uninstall
 
-# Update the CLI on an existing node without re-running install
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)" _ --cli-only
+# Update the CLI binary (preferred)
+meshploy update
+
+# Or re-fetch from the install script
+sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)" _ --cli-only
 ```
 
 See [**apps/cli/README.md**](./apps/cli/README.md) for the full command reference.
@@ -159,7 +158,7 @@ meshploy/
 ### Install
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
+sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)"
 ```
 
 The script installs Docker (if needed), downloads Meshploy to `/opt/meshploy`, walks you through an interactive setup (domain, IP, secrets), and starts the full stack. Select **Master** for the gateway node or **Worker** to join an existing mesh.
@@ -191,7 +190,7 @@ All operations go through `get.sh` — no Docker Compose commands needed.
 | `sudo bash -c "$(curl -fsSL URL)" _ --uninstall` | Remove Meshploy (interactive) |
 | `sudo bash -c "$(curl -fsSL URL)" _ --cli-only` | Install or update the `meshploy` CLI binary only — safe on existing nodes |
 
-> Replace `URL` with `https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh`
+> Replace `URL` with `https://meshploy.com/install.sh`
 
 > **TLS cert cache**: Caddy stores Let's Encrypt certificates in a Docker volume. `--reinstall` always preserves this volume to avoid hitting rate limits (5 certs per domain per week). Use `--wipe-data` only when you genuinely need a clean slate.
 

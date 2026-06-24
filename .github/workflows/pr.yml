@@ -109,3 +109,28 @@ jobs:
 
       - name: typecheck
         run: cd apps/web && npx tsc -b
+
+  # ── Web E2E (demo mode) ───────────────────────────────────────────────────────
+  e2e-web:
+    name: Web E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: install
+        run: cd apps/web && npm ci
+
+      - name: install playwright browsers
+        run: cd apps/web && npx playwright install chromium --with-deps
+
+      - name: e2e tests
+        run: cd apps/web && npx playwright test
+        env:
+          CI: true
+          VITE_DEMO_MODE: "true"

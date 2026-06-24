@@ -7,13 +7,13 @@ The `meshploy` CLI manages your Meshploy installation from the terminal — node
 ## Installation
 
 ```bash
-sudo bash -c "$(curl -fsSL https://meshploy.com/get.sh)"
+sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)"
 ```
 
 To install or update the CLI only (skips node setup):
 
 ```bash
-sudo bash -c "$(curl -fsSL https://meshploy.com/get.sh)" _ --cli-only
+sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)" _ --cli-only
 ```
 
 The binary is installed to `/usr/local/bin/meshploy`.
