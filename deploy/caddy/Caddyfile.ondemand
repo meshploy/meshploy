@@ -1,0 +1,79 @@
+# Meshploy Caddyfile — On-Demand TLS variant (DNS_MODE=ondemand)
+# Selected by install.sh when the user manages their own DNS instead of
+# delegating the zone by NS record. Caddy runs with network_mode: host, so all
+# reverse_proxy targets are localhost.
+#
+# TLS strategy (no DNS-01, no CoreDNS dependency):
+#   - Named subdomains (headscale, api, console) are explicit site blocks and
+#     get certs automatically via HTTP-01 / TLS-ALPN — no ask endpoint needed.
+#   - *.{DOMAIN} workload subdomains and custom user domains use On-Demand TLS.
+#     Caddy asks the API before issuing, so only active routes / verified
+#     custom domains receive a cert.
+#   - *.internal.{DOMAIN} uses Caddy's internal CA (mesh-only traffic), since a
+#     public wildcard cert would require DNS-01.
+#
+# Prerequisites (written by the user at their DNS provider):
+#   - Wildcard A record:  *.{DOMAIN}  → PUBLIC_IP
+#   - Base A record:       {DOMAIN}   → PUBLIC_IP
+#   - Ports 80 and 443 reachable on the gateway (HTTP-01 / TLS-ALPN).
+
+{
+    on_demand_tls {
+        # Authorize on-demand issuance for workload subdomains + verified custom
+        # domains. Separate from /domain-check so the NS-delegation path is
+        # untouched.
+        ask http://localhost:4000/api/v1/internal/ondemand-tls-check
+    }
+}
+
+# ── Headscale control plane (named → automatic HTTP-01) ──────────────────────
+headscale.{$DOMAIN} {
+    reverse_proxy localhost:8085
+}
+
+# ── Meshploy API (named → automatic HTTP-01) ─────────────────────────────────
+api.{$DOMAIN} {
+    reverse_proxy localhost:4000 {
+        flush_interval -1
+    }
+}
+
+# ── Meshploy Web UI + API (named → automatic HTTP-01) ────────────────────────
+console.{$DOMAIN} {
+    handle /api/* {
+        reverse_proxy localhost:4000 {
+            flush_interval -1
+        }
+    }
+    handle {
+        reverse_proxy localhost:5173
+    }
+}
+
+# ── Public workload routes — wildcard (On-Demand TLS) ────────────────────────
+# Arbitrary service subdomains resolve here via the wildcard A record. Caddy
+# asks the API (ondemand-tls-check) before issuing a per-hostname cert.
+*.{$DOMAIN} {
+    tls {
+        on_demand
+    }
+    reverse_proxy localhost:8081
+}
+
+# ── Internal mesh traffic — wildcard (internal CA) ───────────────────────────
+# Mesh-only; no public DNS-01 available in this mode, so use Caddy's local CA.
+*.internal.{$DOMAIN} {
+    bind {$MESH_IP}
+    tls internal
+    reverse_proxy localhost:8081
+}
+
+# ── Custom user domains (On-Demand TLS) ──────────────────────────────────────
+# Catchall for any hostname not matched above (e.g. myapp.com). Same ask gate:
+# only hostnames authorized by ondemand-tls-check receive a cert.
+:443 {
+    tls {
+        on_demand
+    }
+    reverse_proxy localhost:8081
+}

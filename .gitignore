@@ -27,3 +27,4 @@ deploy/headscale/data/*
 # deploy/coredns/zones/_acme-challenge.*
 # !deploy/coredns/zones/_acme-challenge.{DOMAIN}
 .claude/worktrees/
+.playwright-mcp/

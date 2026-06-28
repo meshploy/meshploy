@@ -305,6 +305,15 @@ func (s *RouteService) IsCustomDomainVerified(ctx context.Context, hostname stri
 	return err == nil
 }
 
+// HasRoute reports whether any route exists for the exact hostname. Used by the
+// on-demand TLS ask endpoint (self-managed DNS mode) to authorize certs for
+// active workload subdomains under the base domain.
+func (s *RouteService) HasRoute(ctx context.Context, hostname string) bool {
+	var route db.Route
+	err := s.db.WithContext(ctx).Where("hostname = ?", hostname).First(&route).Error
+	return err == nil
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 // validateRedirectTarget enforces zone and chain rules when a redirect target is requested.

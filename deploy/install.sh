@@ -338,10 +338,13 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   ask DOMAIN       "Base domain (e.g. meshploy.example.com)"
   ask PUBLIC_IP    "Public IP of this server" "$DETECTED_IP"
 
-  # ── DNS NS delegation check ──────────────────────────────────────────────────
-  # Caddy uses DNS-01 ACME for wildcard TLS — CoreDNS must be authoritative for
-  # the domain before Let's Encrypt can verify the _acme-challenge TXT record.
-  # NS records must point to this server's public IP before certs can be issued.
+  # ── DNS mode: NS delegation (wildcard DNS-01) vs self-managed (on-demand TLS) ─
+  # Default path delegates ${DOMAIN} to the built-in CoreDNS via an NS record,
+  # yielding one wildcard cert for *.${DOMAIN} through DNS-01. Some providers
+  # (e.g. Hostinger) can't delegate a subdomain by NS at all — for them we offer
+  # on-demand TLS: the user adds a wildcard A record and Caddy issues a cert per
+  # hostname on first request. DNS_MODE flows into .env and the Caddy config.
+  DNS_MODE="delegation"
   if ! $AUTO_MODE; then
     info "Checking NS delegation for ${DOMAIN}…"
     _NS_RESULT=""
@@ -354,15 +357,43 @@ if [[ "$NODE_TYPE" == "master" ]]; then
         | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['Answer'][0]['data'] if d.get('Answer') else '')" 2>/dev/null || true)"
     fi
 
-    if [[ -z "$_NS_RESULT" ]]; then
-      warn "No NS records found for '${DOMAIN}' at 8.8.8.8."
-      warn "CoreDNS needs to be authoritative for this domain for wildcard TLS to work."
-      warn "At your registrar, add an NS record pointing '${DOMAIN}' to ${PUBLIC_IP}."
-      warn "TLS certificates will not be issued until NS records propagate (can take minutes to hours)."
-      ask_yn "Continue anyway? (TLS will complete once NS propagates)" "n" \
-        || die "Aborted — configure NS records at your registrar and re-run."
+    if [[ -n "$_NS_RESULT" ]]; then
+      success "NS delegation found for ${DOMAIN} → ${_NS_RESULT}"
+      DNS_MODE="delegation"
     else
-      success "NS records found for ${DOMAIN} → ${_NS_RESULT}"
+      warn "NS delegation for '${DOMAIN}' isn't visible at 8.8.8.8 yet."
+      echo
+      echo -e "  Your registrar may not have propagated the NS record — or may not"
+      echo -e "  support delegating a subdomain by NS at all (e.g. Hostinger)."
+      echo -e "  Choose how Meshploy should obtain TLS certificates:"
+      echo
+      echo -e "  ${BOLD}1) Keep NS delegation${RESET}  (recommended where your provider supports it)"
+      echo -e "       • One wildcard certificate for ${CYAN}*.${DOMAIN}${RESET} via DNS-01."
+      echo -e "       • Add an ${BOLD}NS record${RESET} delegating ${BOLD}${DOMAIN}${RESET} to ${BOLD}${PUBLIC_IP}${RESET}."
+      echo -e "       • Certificates complete automatically once NS propagates"
+      echo -e "         (minutes to a few hours)."
+      echo
+      echo -e "  ${BOLD}2) Manage your own DNS${RESET}  (works on any provider, including Hostinger)"
+      echo -e "       • No NS delegation. Caddy issues a certificate ${BOLD}per hostname${RESET}"
+      echo -e "         on first request (on-demand TLS)."
+      echo -e "       • Add a ${BOLD}wildcard A record${RESET} at your DNS provider:"
+      echo -e "             ${CYAN}*.${DOMAIN}${RESET}   A   ${PUBLIC_IP}"
+      echo -e "             ${CYAN}${DOMAIN}${RESET}     A   ${PUBLIC_IP}"
+      echo -e "       • Trade-off: a cert per subdomain instead of a single wildcard."
+      echo
+      while true; do
+        printf "  ${BOLD}Select DNS mode${RESET} [${BOLD}1${RESET}/2]: "
+        read -r _DNS_CHOICE
+        case "${_DNS_CHOICE:-1}" in
+          1) DNS_MODE="delegation"
+             warn "Keeping NS delegation — TLS completes once the NS record propagates."
+             break ;;
+          2) DNS_MODE="ondemand"
+             success "On-demand TLS selected. Ensure the wildcard A record above is in place."
+             break ;;
+          *) warn "Please enter 1 or 2." ;;
+        esac
+      done
     fi
   fi
 
@@ -383,6 +414,11 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   echo -e "  ${BOLD}Summary${RESET}"
   hr
   echo -e "  Domain         ${CYAN}${DOMAIN}${RESET}"
+  if [[ "$DNS_MODE" == "ondemand" ]]; then
+    echo -e "  DNS mode       ${CYAN}on-demand TLS${RESET} (wildcard A record: *.${DOMAIN} → ${PUBLIC_IP})"
+  else
+    echo -e "  DNS mode       ${CYAN}NS delegation${RESET} (wildcard DNS-01)"
+  fi
   echo -e "  Public IP      ${CYAN}${PUBLIC_IP}${RESET}"
   echo -e "  Mesh IP        ${CYAN}${MESH_IP}${RESET}"
   echo -e "  Headscale URL  ${CYAN}https://headscale.${DOMAIN}${RESET}"
@@ -507,6 +543,7 @@ REGEOF
   # .env
   cat > .env <<ENVEOF
 DOMAIN=${DOMAIN}
+DNS_MODE=${DNS_MODE}
 PUBLIC_IP=${PUBLIC_IP}
 MESH_IP=${MESH_IP}
 GATEWAY_HOSTNAME=${GATEWAY_HOSTNAME}
@@ -555,7 +592,14 @@ ENVEOF
 
   # Caddyfile uses {$DOMAIN} (Caddy env var syntax) — substitute at runtime via DOMAIN env var
   # We export DOMAIN so Caddy can read it; no file substitution needed for Caddyfile.
-  success "caddy/Caddyfile ready (uses \${DOMAIN} env var at runtime)"
+  # On-demand mode uses a separate Caddyfile (HTTP-01 + on_demand, no DNS-01). The
+  # delegation path leaves the default Caddyfile untouched.
+  if [[ "$DNS_MODE" == "ondemand" ]]; then
+    cp -f caddy/Caddyfile.ondemand caddy/Caddyfile
+    success "caddy/Caddyfile set to on-demand TLS variant (self-managed DNS)"
+  else
+    success "caddy/Caddyfile ready (uses \${DOMAIN} env var at runtime)"
+  fi
 
   # ── Private registry login ──────────────────────────────────────────────────
   header "Container registry"
@@ -776,24 +820,35 @@ NEUNIT
 
   # ── Wait for TLS certificates ─────────────────────────────────────────────────
   # Shown after the summary so keys are always visible even if you Ctrl+C.
-  # Caddy uses DNS-01 ACME challenges for wildcard certs (*.domain + *.internal.domain).
-  # CoreDNS must propagate the _acme-challenge TXT records before Let's Encrypt
-  # can verify them. This typically takes 1–3 minutes.
+  # The wait differs by DNS mode:
+  #   delegation — DNS-01 wildcard cert; CoreDNS must propagate the
+  #                _acme-challenge TXT records first (typically 1–3 minutes).
+  #   ondemand   — no propagation to wait on; Caddy issues a cert per hostname
+  #                on first request, so the probe itself warms console's cert.
   echo
-  echo -e "  ${YELLOW}Waiting for Caddy to obtain wildcard TLS certificates (DNS-01 ACME).${RESET}"
-  echo -e "  ${YELLOW}This typically takes 1–3 minutes. Press Ctrl+C to skip — certs will${RESET}"
-  echo -e "  ${YELLOW}finish in the background and the dashboard will be available shortly.${RESET}"
-  echo
-  TLS_MAX_WAIT=300   # 5 minutes
-  TLS_INTERVAL=5
+  if [[ "$DNS_MODE" == "ondemand" ]]; then
+    echo -e "  ${YELLOW}On-demand TLS: Caddy issues a certificate per hostname on first request.${RESET}"
+    echo -e "  ${YELLOW}Make sure the wildcard A record is live:  *.${DOMAIN} → ${PUBLIC_IP}${RESET}"
+    echo
+    TLS_MAX_WAIT=60    # no propagation delay — the first request triggers issuance
+    TLS_INTERVAL=5
+  else
+    echo -e "  ${YELLOW}Waiting for Caddy to obtain wildcard TLS certificates (DNS-01 ACME).${RESET}"
+    echo -e "  ${YELLOW}This typically takes 1–3 minutes. Press Ctrl+C to skip — certs will${RESET}"
+    echo -e "  ${YELLOW}finish in the background and the dashboard will be available shortly.${RESET}"
+    echo
+    TLS_MAX_WAIT=300   # 5 minutes — allow for DNS-01 TXT propagation
+    TLS_INTERVAL=5
+  fi
+
   TLS_WAITED=0
   TLS_OK=0
   while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
-    if curl -sf -k --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
-      if curl -sf --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
-        TLS_OK=1
-        break
-      fi
+    # A strict (cert-validating) request both probes readiness and, in ondemand
+    # mode, triggers issuance for console.${DOMAIN}.
+    if curl -sf --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
+      TLS_OK=1
+      break
     fi
     sleep $TLS_INTERVAL
     TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
@@ -803,7 +858,11 @@ NEUNIT
   echo
 
   if [[ $TLS_OK -eq 1 ]]; then
-    success "TLS certificates issued — ${CYAN}https://console.${DOMAIN}${RESET} is live!"
+    success "TLS certificate issued — ${CYAN}https://console.${DOMAIN}${RESET} is live!"
+  elif [[ "$DNS_MODE" == "ondemand" ]]; then
+    warn "Certificate not confirmed yet — it will be issued on first visit once the"
+    warn "wildcard A record (*.${DOMAIN} → ${PUBLIC_IP}) has propagated."
+    warn "Monitor: $COMPOSE_CMD logs -f caddy"
   else
     warn "TLS not confirmed after ${TLS_MAX_WAIT}s — still provisioning in background."
     warn "Monitor: $COMPOSE_CMD logs -f caddy"

@@ -121,9 +121,13 @@ Is this a development branch? Set MESHPLOY_BRANCH or use --edge."
 fi
 
 if [[ -n "$AUTH_HEADER" ]]; then
-  curl -fsSL -H "$AUTH_HEADER" -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL"
+  curl -fsSL --connect-timeout 15 --max-time 120 \
+    -H "$AUTH_HEADER" -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL" \
+    || die "CLI download failed. Check your connection and retry."
 else
-  curl -fsSL -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL"
+  curl -fsSL --connect-timeout 15 \
+    -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL" \
+    || die "CLI download failed. Check your connection and retry."
 fi
 chmod +x "$CLI_BIN"
 success "meshploy CLI installed at ${CLI_BIN}"
@@ -146,11 +150,13 @@ mkdir -p "$INSTALL_DIR"
 
 info "Downloading Meshploy deploy config (${BRANCH})…"
 if [[ -n "$AUTH_HEADER" ]]; then
-  curl -fsSL -H "$AUTH_HEADER" "$TARBALL_URL" \
-    | tar -xz --strip-components=2 -C "$INSTALL_DIR" --wildcards "*/deploy"
+  curl -fsSL --connect-timeout 15 -H "$AUTH_HEADER" "$TARBALL_URL" \
+    | tar -xz --strip-components=2 -C "$INSTALL_DIR" --wildcards "*/deploy" \
+    || die "Deploy config download failed. Check your connection and retry."
 else
-  curl -fsSL "$TARBALL_URL" \
-    | tar -xz --strip-components=2 -C "$INSTALL_DIR" --wildcards "*/deploy"
+  curl -fsSL --connect-timeout 15 "$TARBALL_URL" \
+    | tar -xz --strip-components=2 -C "$INSTALL_DIR" --wildcards "*/deploy" \
+    || die "Deploy config download failed. Check your connection and retry."
 fi
 success "Deploy config ready at ${INSTALL_DIR}/"
 
