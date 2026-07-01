@@ -41,6 +41,10 @@ type CreateStackInput struct {
 	GitBranch        string
 	GitPath          string
 	GitIntegrationID *uuid.UUID
+
+	// Template provenance — set when the stack is created from a template.
+	TemplateID      string
+	TemplateVersion string
 }
 
 type UpdateStackInput struct {
@@ -113,6 +117,8 @@ func (s *StackService) Create(ctx context.Context, projectID uuid.UUID, in Creat
 		GitBranch:        gitBranch,
 		GitPath:          gitPath,
 		GitIntegrationID: in.GitIntegrationID,
+		TemplateID:       in.TemplateID,
+		TemplateVersion:  in.TemplateVersion,
 	}
 	err := s.db.WithContext(ctx).Create(stack).Error
 	return stack, err

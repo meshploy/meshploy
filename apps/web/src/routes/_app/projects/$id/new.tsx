@@ -43,6 +43,8 @@ import {
   domains as domainsApi,
   jobs as jobsApi,
   stacks as stacksApi,
+  templates as templatesApi,
+  type TemplateManifest,
   volumes as volumesApi,
   variableGroups as groupsApi,
   gitIntegrations as gitApi,
@@ -1691,7 +1693,7 @@ const DEFAULT_STACK_SPEC = `services:
         port: 3000
 `
 
-type StackSourceMode = "raw" | "git"
+type StackSourceMode = "raw" | "git" | "template"
 type StackGitVisibility = "public" | "private"
 type StackFetchMode = "file" | "repo"
 
@@ -1734,6 +1736,30 @@ function StackForm({ projectId }: { projectId: string }) {
     staleTime: 2 * 60 * 1000,
   })
 
+  // Template source state
+  const [templateId, setTemplateId] = useState("")
+  const [promptValues, setPromptValues] = useState<Record<string, string>>({})
+
+  const { data: templateList = [] } = useQuery({
+    queryKey: ["templates"],
+    queryFn: () => templatesApi.list(token),
+    enabled: sourceMode === "template",
+  })
+
+  const { data: templateDetail } = useQuery({
+    queryKey: ["template", templateId],
+    queryFn: () => templatesApi.get(templateId, token),
+    enabled: sourceMode === "template" && !!templateId,
+  })
+
+  // Prefill the editor with the template's compose when a template is selected.
+  useEffect(() => {
+    if (templateDetail) setSpec(templateDetail.compose)
+  }, [templateDetail])
+
+  const promptVars = templateDetail?.manifest.variables.filter((v) => v.prompt) ?? []
+  const generatedVars = templateDetail?.manifest.variables.filter((v) => v.generate) ?? []
+
   function buildCreateBody() {
     if (sourceMode === "git") {
       return {
@@ -1748,13 +1774,38 @@ function StackForm({ projectId }: { projectId: string }) {
     return { name: name.trim(), spec }
   }
 
+  const canDeployTemplate =
+    !!templateId &&
+    promptVars.every((v) => !v.required || (promptValues[v.key] ?? "").trim().length > 0)
+
   const canCreate =
-    name.trim().length > 0 &&
-    (sourceMode === "raw"
-      ? true
-      : gitRepo.trim().length > 0 &&
-        gitBranch.trim().length > 0 &&
-        (gitVisibility === "public" || gitIntegrationId.length > 0))
+    sourceMode === "template"
+      ? canDeployTemplate
+      : name.trim().length > 0 &&
+        (sourceMode === "raw"
+          ? true
+          : gitRepo.trim().length > 0 &&
+            gitBranch.trim().length > 0 &&
+            (gitVisibility === "public" || gitIntegrationId.length > 0))
+
+  const deployMutation = useMutation({
+    mutationFn: () =>
+      templatesApi.deploy(
+        orgId!,
+        projectId,
+        templateId,
+        { spec, prompt_values: promptValues },
+        token
+      ),
+    onSuccess: (stack) => {
+      queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
+      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      navigate({
+        to: "/projects/$id/stacks/$stackId/services",
+        params: { id: projectId, stackId: stack.id },
+      })
+    },
+  })
 
   const createMutation = useMutation({
     mutationFn: () => stacksApi.create(orgId!, projectId, buildCreateBody(), token),
@@ -1788,29 +1839,35 @@ function StackForm({ projectId }: { projectId: string }) {
     },
   })
 
-  const isPending = createMutation.isPending || createAndApplyMutation.isPending
-  const error = (createMutation.error || createAndApplyMutation.error) as Error | null
+  const isPending =
+    createMutation.isPending || createAndApplyMutation.isPending || deployMutation.isPending
+  const error = (createMutation.error ||
+    createAndApplyMutation.error ||
+    deployMutation.error) as Error | null
 
   return (
     <div className="space-y-8">
-      <Section title="Name" subtitle="Deploy a group of services together using a Docker Compose spec.">
-        <Field label="Stack name">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="my-stack"
-            className={inputCls}
-          />
-        </Field>
-      </Section>
+      {sourceMode !== "template" && (
+        <Section title="Name" subtitle="Deploy a group of services together using a Docker Compose spec.">
+          <Field label="Stack name">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="my-stack"
+              className={inputCls}
+            />
+          </Field>
+        </Section>
+      )}
 
-      <Section title="Source" subtitle="Provide a Compose spec inline or pull it from a git repository.">
+      <Section title="Source" subtitle="Write a Compose spec inline, pull it from git, or start from a template.">
         <SegmentedControl
           value={sourceMode}
           onValueChange={(v) => setSourceMode(v as StackSourceMode)}
           options={[
             { value: "raw", label: "Inline" },
             { value: "git", label: "Git" },
+            { value: "template", label: "Template" },
           ]}
           className="text-sm"
         />
@@ -1964,6 +2021,55 @@ function StackForm({ projectId }: { projectId: string }) {
               </p>
             </Field>
           </div>
+        ) : sourceMode === "template" ? (
+          <div className="space-y-4 mt-4">
+            <Field label="Template" required>
+              <Select value={templateId} onValueChange={(v) => setTemplateId(v ?? "")}>
+                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue
+                    placeholder={
+                      templateList.length === 0 ? "No templates available" : "Choose a template…"
+                    }
+                  >
+                    {templateList.find((t: TemplateManifest) => t.id === templateId)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {templateList.map((t: TemplateManifest) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            {templateDetail && (
+              <>
+                {promptVars.map((v) => (
+                  <Field key={v.key} label={v.prompt || v.key} required={v.required}>
+                    <input
+                      value={promptValues[v.key] ?? ""}
+                      onChange={(e) =>
+                        setPromptValues((p) => ({ ...p, [v.key]: e.target.value }))
+                      }
+                      placeholder={v.key}
+                      className={inputCls}
+                    />
+                  </Field>
+                ))}
+                {generatedVars.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Auto-generated: {generatedVars.map((v) => v.key).join(", ")}
+                  </p>
+                )}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Compose (editable)</p>
+                  <StackEditor value={spec} onChange={setSpec} minHeight="300px" />
+                </div>
+              </>
+            )}
+          </div>
         ) : (
           <div className="mt-4">
             <StackEditor value={spec} onChange={setSpec} minHeight="360px" />
@@ -1978,23 +2084,36 @@ function StackForm({ projectId }: { projectId: string }) {
       )}
 
       <div className="flex gap-2">
-        <Button
-          variant="outline"
-          className="flex-1 gap-2"
-          disabled={!canCreate || isPending}
-          onClick={() => createMutation.mutate()}
-        >
-          {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Create stack
-        </Button>
-        <Button
-          className="flex-1 gap-2"
-          disabled={!canCreate || isPending}
-          onClick={() => createAndApplyMutation.mutate()}
-        >
-          {createAndApplyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {sourceMode === "git" ? "Create & Sync" : "Create & Apply"}
-        </Button>
+        {sourceMode === "template" ? (
+          <Button
+            className="flex-1 gap-2"
+            disabled={!canCreate || isPending}
+            onClick={() => deployMutation.mutate()}
+          >
+            {deployMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Deploy
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              disabled={!canCreate || isPending}
+              onClick={() => createMutation.mutate()}
+            >
+              {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Create stack
+            </Button>
+            <Button
+              className="flex-1 gap-2"
+              disabled={!canCreate || isPending}
+              onClick={() => createAndApplyMutation.mutate()}
+            >
+              {createAndApplyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {sourceMode === "git" ? "Create & Sync" : "Create & Apply"}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   )

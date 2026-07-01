@@ -551,6 +551,12 @@ type Stack struct {
 	GitLastSyncedAt  *time.Time  `json:"git_last_synced_at"`
 	GitLastSyncSHA   string      `gorm:"not null;default:''"                  json:"git_last_sync_sha"`
 
+	// Template provenance — non-empty TemplateID means this stack was created from
+	// a template (a third stack source, alongside inline and git). Mirrors the
+	// git-source fields; the hook for "template update available" detection.
+	TemplateID      string `gorm:"not null;default:''" json:"template_id"`
+	TemplateVersion string `gorm:"not null;default:''" json:"template_version"`
+
 	Project          Project          `gorm:"foreignKey:ProjectID"                            json:"-"`
 	Services         []Service        `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
 	GitIntegration   *GitIntegration  `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL" json:"-"`

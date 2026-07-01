@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/apps/api/internal/config"
 	appk8s "github.com/meshploy/apps/api/internal/k8s"
+	"github.com/meshploy/apps/api/internal/templates"
 	meshdb "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
@@ -35,6 +37,7 @@ type Services struct {
 	EmailConfig     *EmailConfigService
 	VariableGroups  *VariableGroupService
 	Jobs            *JobService
+	Templates       *TemplateService
 	DBExplorer      *DBExplorerService
 	Headscale       *HeadscaleService    // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
@@ -201,9 +204,29 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		K8sRestConfig: k8sRestCfg,
 	}
 
+	// Template service — depends on the stack + route services, so wire it after
+	// the aggregate is built. A nil registry (no TEMPLATE_DIR) is a valid
+	// "no catalog" state.
+	svc.Templates = &TemplateService{
+		db:       db,
+		cfg:      c,
+		registry: newTemplateRegistry(c),
+		stacks:   svc.Stacks,
+		routes:   svc.Routes,
+	}
+
 	go backups.StartScheduler(context.Background())
 	go backups.StartRetentionReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
 
 	return svc
+}
+
+// newTemplateRegistry builds the template catalog registry from TEMPLATE_DIR,
+// or returns nil when no local catalog is configured.
+func newTemplateRegistry(c *config.Config) *templates.Registry {
+	if c == nil || c.TemplateDir == "" {
+		return nil
+	}
+	return templates.NewRegistry(os.DirFS(c.TemplateDir), ".")
 }

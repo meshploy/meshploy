@@ -37,6 +37,11 @@ type Config struct {
 	// Format: <host>:<port>, e.g. "100.64.0.1:5000" (mesh IP of gateway).
 	// When set, a registry_integrations row is auto-seeded for every org on startup.
 	BuiltinRegistryEndpoint string // BUILTIN_REGISTRY_ENDPOINT
+
+	// TemplateDir is a local directory of one-click templates (<dir>/<id>/...).
+	// Empty = no catalog configured (the template feature returns an empty list).
+	// The live-fetch registry + pinned embed fallback layer on this later.
+	TemplateDir string // TEMPLATE_DIR
 }
 
 func Load() (*Config, error) {
@@ -93,6 +98,7 @@ func Load() (*Config, error) {
 		HostGatewayIP:   os.Getenv("HOST_GATEWAY_IP"),
 
 		BuiltinRegistryEndpoint: os.Getenv("BUILTIN_REGISTRY_ENDPOINT"),
+		TemplateDir:             os.Getenv("TEMPLATE_DIR"),
 	}
 
 	if len(missing) > 0 {
