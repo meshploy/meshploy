@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -39,9 +40,16 @@ type Config struct {
 	BuiltinRegistryEndpoint string // BUILTIN_REGISTRY_ENDPOINT
 
 	// TemplateDir is a local directory of one-click templates (<dir>/<id>/...).
-	// Empty = no catalog configured (the template feature returns an empty list).
-	// The live-fetch registry + pinned embed fallback layer on this later.
+	// When set it overrides the remote catalog — used for local dev, offline, or
+	// air-gapped installs. Empty = fetch the catalog from TemplateRepo.
 	TemplateDir string // TEMPLATE_DIR
+
+	// TemplateRepo is the GitHub "owner/repo" the one-click catalog is fetched
+	// from when TemplateDir is unset. TemplateRepoRef is the git ref (branch/tag)
+	// and TemplateRefreshInterval how often the in-memory cache is refreshed.
+	TemplateRepo            string        // TEMPLATE_REPO             (default: meshploy/meshploy-templates)
+	TemplateRepoRef         string        // TEMPLATE_REPO_REF         (default: main)
+	TemplateRefreshInterval time.Duration // TEMPLATE_REFRESH_INTERVAL (default: 1h)
 }
 
 func Load() (*Config, error) {
@@ -99,6 +107,24 @@ func Load() (*Config, error) {
 
 		BuiltinRegistryEndpoint: os.Getenv("BUILTIN_REGISTRY_ENDPOINT"),
 		TemplateDir:             os.Getenv("TEMPLATE_DIR"),
+		TemplateRepo: func() string {
+			if v := os.Getenv("TEMPLATE_REPO"); v != "" {
+				return v
+			}
+			return "meshploy/meshploy-templates"
+		}(),
+		TemplateRepoRef: func() string {
+			if v := os.Getenv("TEMPLATE_REPO_REF"); v != "" {
+				return v
+			}
+			return "main"
+		}(),
+		TemplateRefreshInterval: func() time.Duration {
+			if d, err := time.ParseDuration(os.Getenv("TEMPLATE_REFRESH_INTERVAL")); err == nil && d > 0 {
+				return d
+			}
+			return time.Hour
+		}(),
 	}
 
 	if len(missing) > 0 {

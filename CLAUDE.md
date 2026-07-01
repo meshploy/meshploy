@@ -113,6 +113,10 @@ Required in `.env` at the monorepo root:
 | `GATEWAY_HOSTNAME` | Gateway server hostname |
 | `HOST_GATEWAY_IP` | Docker bridge gateway IP — used to reach node_exporter from inside the API container |
 | `BUILTIN_REGISTRY_ENDPOINT` | Seeds a built-in registry row per org (format: `<host>:<port>`) |
+| `TEMPLATE_DIR` | Local one-click template catalog dir (`<dir>/<id>/...`). Set = offline/air-gapped source; overrides the remote repo |
+| `TEMPLATE_REPO` | GitHub `owner/repo` the catalog is fetched from when `TEMPLATE_DIR` is unset (default: `meshploy/meshploy-templates`) |
+| `TEMPLATE_REPO_REF` | Git ref for the catalog repo (default: `main`) |
+| `TEMPLATE_REFRESH_INTERVAL` | How often the in-memory catalog cache refreshes (Go duration, default: `1h`) |
 
 ---
 

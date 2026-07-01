@@ -1740,11 +1740,12 @@ function StackForm({ projectId }: { projectId: string }) {
   const [templateId, setTemplateId] = useState("")
   const [promptValues, setPromptValues] = useState<Record<string, string>>({})
 
-  const { data: templateList = [] } = useQuery({
+  const { data: templateListRaw } = useQuery({
     queryKey: ["templates"],
     queryFn: () => templatesApi.list(token),
     enabled: sourceMode === "template",
   })
+  const templateList = templateListRaw ?? []
 
   const { data: templateDetail } = useQuery({
     queryKey: ["template", templateId],
@@ -1757,8 +1758,8 @@ function StackForm({ projectId }: { projectId: string }) {
     if (templateDetail) setSpec(templateDetail.compose)
   }, [templateDetail])
 
-  const promptVars = templateDetail?.manifest.variables.filter((v) => v.prompt) ?? []
-  const generatedVars = templateDetail?.manifest.variables.filter((v) => v.generate) ?? []
+  const promptVars = templateDetail?.manifest.variables?.filter((v) => v.prompt) ?? []
+  const generatedVars = templateDetail?.manifest.variables?.filter((v) => v.generate) ?? []
 
   function buildCreateBody() {
     if (sourceMode === "git") {

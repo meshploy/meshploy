@@ -205,14 +205,14 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	}
 
 	// Template service — depends on the stack + route services, so wire it after
-	// the aggregate is built. A nil registry (no TEMPLATE_DIR) is a valid
-	// "no catalog" state.
+	// the aggregate is built. The catalog is remote (GitHub) by default, or a
+	// local dir when TEMPLATE_DIR is set.
 	svc.Templates = &TemplateService{
-		db:       db,
-		cfg:      c,
-		registry: newTemplateRegistry(c),
-		stacks:   svc.Stacks,
-		routes:   svc.Routes,
+		db:      db,
+		cfg:     c,
+		catalog: newTemplateCatalog(c),
+		stacks:  svc.Stacks,
+		routes:  svc.Routes,
 	}
 
 	go backups.StartScheduler(context.Background())
@@ -222,11 +222,17 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	return svc
 }
 
-// newTemplateRegistry builds the template catalog registry from TEMPLATE_DIR,
-// or returns nil when no local catalog is configured.
-func newTemplateRegistry(c *config.Config) *templates.Registry {
-	if c == nil || c.TemplateDir == "" {
-		return nil
+// newTemplateCatalog builds the one-click template catalog. A local TEMPLATE_DIR
+// (dev / offline / air-gapped) takes precedence; otherwise the catalog is fetched
+// from the public GitHub repo (TEMPLATE_REPO) and refreshed in the background.
+func newTemplateCatalog(c *config.Config) templates.Catalog {
+	if c == nil {
+		return templates.NewRegistry(nil, ".") // nil-safe empty catalog
 	}
-	return templates.NewRegistry(os.DirFS(c.TemplateDir), ".")
+	if c.TemplateDir != "" {
+		return templates.NewRegistry(os.DirFS(c.TemplateDir), ".")
+	}
+	remote := templates.NewRemoteCatalog(c.TemplateRepo, c.TemplateRepoRef, c.TemplateRefreshInterval)
+	go remote.StartRefresh(context.Background())
+	return remote
 }

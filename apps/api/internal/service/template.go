@@ -16,21 +16,21 @@ import (
 // (templates.PrepareSpec — the only deploy-time spec conversion), then lowers to
 // the existing stack create + apply + route machinery.
 type TemplateService struct {
-	db       *gorm.DB
-	cfg      *config.Config
-	registry *templates.Registry
-	stacks   *StackService
-	routes   *RouteService
+	db      *gorm.DB
+	cfg     *config.Config
+	catalog templates.Catalog
+	stacks  *StackService
+	routes  *RouteService
 }
 
 // List returns the catalog manifests (empty if no catalog is configured).
 func (s *TemplateService) List() ([]*templates.Manifest, error) {
-	return s.registry.List()
+	return s.catalog.List()
 }
 
 // Get returns a single template.
 func (s *TemplateService) Get(id string) (*templates.Template, error) {
-	return s.registry.Get(id)
+	return s.catalog.Get(id)
 }
 
 // Deploy instantiates templateID into projectID as a stack.
@@ -40,7 +40,7 @@ func (s *TemplateService) Get(id string) (*templates.Template, error) {
 // prompted variables. The created stack records template provenance, is applied,
 // and a public route is created for each exposed service.
 func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templateID, spec string, promptValues map[string]string, triggeredBy uuid.UUID) (*meshdb.Stack, error) {
-	tpl, err := s.registry.Get(templateID)
+	tpl, err := s.catalog.Get(templateID)
 	if err != nil {
 		return nil, err
 	}

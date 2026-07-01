@@ -6,6 +6,15 @@ import (
 	"sort"
 )
 
+// Catalog is the read surface the TemplateService depends on: list manifests and
+// load a single template by id. Both the local filesystem Registry and the
+// GitHub-backed RemoteCatalog implement it, so the deploy engine is agnostic to
+// where templates come from.
+type Catalog interface {
+	List() ([]*Manifest, error)
+	Get(id string) (*Template, error)
+}
+
 // Registry serves templates from a filesystem tree of `<root>/<id>/` directories
 // (each with meta.yaml + docker-compose.yml). This is the minimal source used by
 // the deploy engine today; the live-fetch + in-memory cache + pinned embed
@@ -34,13 +43,13 @@ func (r *Registry) Get(id string) (*Template, error) {
 // skipped so one bad template does not break the catalog.
 func (r *Registry) List() ([]*Manifest, error) {
 	if r == nil {
-		return nil, nil
+		return []*Manifest{}, nil
 	}
 	entries, err := fs.ReadDir(r.fsys, r.root)
 	if err != nil {
 		return nil, fmt.Errorf("read template root: %w", err)
 	}
-	var out []*Manifest
+	out := []*Manifest{}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
