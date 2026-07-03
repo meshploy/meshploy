@@ -22,12 +22,13 @@ import (
 // keeps being served (serve-stale). It satisfies Catalog, so the deploy engine
 // is identical whether templates come from disk or GitHub.
 type RemoteCatalog struct {
-	repo    string // "owner/repo"
-	ref     string // branch/tag
-	rawBase string // https://raw.githubusercontent.com/<repo>/<ref>/
-	treeURL string // git tree API (recursive)
-	refresh time.Duration
-	client  *http.Client
+	repo     string // "owner/repo"
+	ref      string // branch/tag
+	rawBase  string // https://raw.githubusercontent.com/<repo>/<ref>/
+	treeURL  string // git tree API (recursive)
+	refresh  time.Duration
+	client   *http.Client
+	fallback Catalog // pinned snapshot served while the live catalog is empty
 
 	fetchMu sync.Mutex // serializes refreshes so we never fan out duplicate fetches
 
@@ -40,8 +41,10 @@ type RemoteCatalog struct {
 }
 
 // NewRemoteCatalog builds a catalog over repo (e.g. "meshploy/meshploy-templates")
-// at ref, refreshing every refresh interval.
-func NewRemoteCatalog(repo, ref string, refresh time.Duration) *RemoteCatalog {
+// at ref, refreshing every refresh interval. fallback (may be nil) is served
+// while the live catalog is empty — pass NewEmbeddedCatalog() for the pinned
+// snapshot so the catalog is never empty on a cold or offline start.
+func NewRemoteCatalog(repo, ref string, refresh time.Duration, fallback Catalog) *RemoteCatalog {
 	repo = strings.Trim(strings.TrimSpace(repo), "/")
 	if ref == "" {
 		ref = "main"
@@ -50,12 +53,13 @@ func NewRemoteCatalog(repo, ref string, refresh time.Duration) *RemoteCatalog {
 		refresh = time.Hour
 	}
 	return &RemoteCatalog{
-		repo:    repo,
-		ref:     ref,
-		rawBase: fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/", repo, ref),
-		treeURL: fmt.Sprintf("https://api.github.com/repos/%s/git/trees/%s?recursive=1", repo, ref),
-		refresh: refresh,
-		client:  &http.Client{Timeout: 20 * time.Second},
+		repo:     repo,
+		ref:      ref,
+		rawBase:  fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/", repo, ref),
+		treeURL:  fmt.Sprintf("https://api.github.com/repos/%s/git/trees/%s?recursive=1", repo, ref),
+		refresh:  refresh,
+		client:   &http.Client{Timeout: 20 * time.Second},
+		fallback: fallback,
 	}
 }
 
@@ -65,9 +69,13 @@ func NewRemoteCatalog(repo, ref string, refresh time.Duration) *RemoteCatalog {
 func (c *RemoteCatalog) List() ([]*Manifest, error) {
 	c.ensureLoaded()
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	out := make([]*Manifest, len(c.manifests))
 	copy(out, c.manifests)
+	c.mu.RUnlock()
+	// Serve the pinned snapshot while the live catalog hasn't loaded anything.
+	if len(out) == 0 && c.fallback != nil {
+		return c.fallback.List()
+	}
 	return out, nil
 }
 
@@ -78,8 +86,14 @@ func (c *RemoteCatalog) Get(id string) (*Template, error) {
 	c.ensureLoaded()
 	c.mu.RLock()
 	t, ok := c.byID[id]
+	empty := len(c.byID) == 0
 	c.mu.RUnlock()
 	if !ok {
+		// Only consult the snapshot when the live catalog is empty; once live has
+		// loaded, a missing id genuinely isn't in the catalog.
+		if empty && c.fallback != nil {
+			return c.fallback.Get(id)
+		}
 		return nil, fmt.Errorf("template %q not found in catalog", id)
 	}
 	if t.Compose != "" {
@@ -96,6 +110,33 @@ func (c *RemoteCatalog) Get(id string) (*Template, error) {
 	t.Compose = string(composeB)
 	c.mu.Unlock()
 	return t, nil
+}
+
+// Icon fetches a template's icon bytes over raw.githubusercontent, falling back
+// to the embedded snapshot when the live catalog is empty or the fetch fails.
+func (c *RemoteCatalog) Icon(id string) ([]byte, string, error) {
+	c.ensureLoaded()
+	c.mu.RLock()
+	t, ok := c.byID[id]
+	empty := len(c.byID) == 0
+	c.mu.RUnlock()
+	if !ok {
+		if empty && c.fallback != nil {
+			return c.fallback.Icon(id)
+		}
+		return nil, "", fmt.Errorf("template %q not found in catalog", id)
+	}
+	name := iconFilename(t.Manifest)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	b, err := c.fetchRaw(ctx, "templates/"+id+"/"+name)
+	if err != nil {
+		if c.fallback != nil {
+			return c.fallback.Icon(id) // e.g. offline — serve the embedded icon if present
+		}
+		return nil, "", err
+	}
+	return b, iconContentType(name), nil
 }
 
 // ensureLoaded does a one-time synchronous fetch on the first request so the UI

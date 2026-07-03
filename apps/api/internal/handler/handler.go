@@ -50,6 +50,9 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	r.Get("/install.sh", h.ServeInstallScript)
 	r.Get("/uninstall.sh", h.ServeUninstallScript)
 
+	// Template icons — public image bytes, served for <img src>.
+	r.Get("/api/v1/templates/{templateId}/icon", h.ServeTemplateIcon)
+
 	// Git OAuth / App callbacks
 	r.Get("/api/v1/github/app-callback", h.GitHubAppCallback)
 	r.Get("/api/v1/github/callback", h.GitHubCallback)

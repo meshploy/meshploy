@@ -1,0 +1,24 @@
+# pgAdmin 4 — web UI for managing PostgreSQL servers.
+# Single service: it connects to external Postgres instances you add from the UI,
+# so it needs no database of its own — only a persistent volume for its config,
+# saved server connections, and sessions.
+#
+# Listens on 5050 (not 80) to avoid binding a privileged port inside the
+# container. The exposed route (see meta.yaml) targets this port.
+services:
+  pgadmin:
+    image: dpage/pgadmin4:8.14
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_LISTEN_PORT: "5050"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    x-meshploy:
+      type: application
+      deploy:
+        port: 5050
+        replicas: 1
+
+volumes:
+  pgadmin-data:

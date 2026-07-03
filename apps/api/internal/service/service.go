@@ -227,12 +227,15 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 // from the public GitHub repo (TEMPLATE_REPO) and refreshed in the background.
 func newTemplateCatalog(c *config.Config) templates.Catalog {
 	if c == nil {
-		return templates.NewRegistry(nil, ".") // nil-safe empty catalog
+		return templates.NewEmbeddedCatalog() // pinned snapshot — never empty
 	}
 	if c.TemplateDir != "" {
 		return templates.NewRegistry(os.DirFS(c.TemplateDir), ".")
 	}
-	remote := templates.NewRemoteCatalog(c.TemplateRepo, c.TemplateRepoRef, c.TemplateRefreshInterval)
+	remote := templates.NewRemoteCatalog(
+		c.TemplateRepo, c.TemplateRepoRef, c.TemplateRefreshInterval,
+		templates.NewEmbeddedCatalog(), // fallback while the live catalog is empty
+	)
 	go remote.StartRefresh(context.Background())
 	return remote
 }

@@ -11,6 +11,10 @@ const BASE =
   import.meta.env.VITE_API_URL ??
   "http://localhost:4000"
 
+// API_BASE is exported for building non-fetch URLs (e.g. <img src>) that need the
+// same origin resolution as apiFetch. "" in production (relative), full URL in dev.
+export const API_BASE = BASE
+
 export class ApiError extends Error {
   constructor(
     public status: number,

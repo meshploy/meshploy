@@ -4,15 +4,41 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strings"
 )
 
-// Catalog is the read surface the TemplateService depends on: list manifests and
-// load a single template by id. Both the local filesystem Registry and the
-// GitHub-backed RemoteCatalog implement it, so the deploy engine is agnostic to
-// where templates come from.
+// Catalog is the read surface the TemplateService depends on: list manifests,
+// load a single template, and fetch its icon bytes. Both the local filesystem
+// Registry and the GitHub-backed RemoteCatalog implement it, so the deploy
+// engine is agnostic to where templates come from.
 type Catalog interface {
 	List() ([]*Manifest, error)
 	Get(id string) (*Template, error)
+	Icon(id string) (data []byte, contentType string, err error)
+}
+
+// iconContentType maps an icon filename to a MIME type for the HTTP response.
+func iconContentType(name string) string {
+	switch {
+	case strings.HasSuffix(name, ".svg"):
+		return "image/svg+xml"
+	case strings.HasSuffix(name, ".png"):
+		return "image/png"
+	case strings.HasSuffix(name, ".jpg"), strings.HasSuffix(name, ".jpeg"):
+		return "image/jpeg"
+	case strings.HasSuffix(name, ".webp"):
+		return "image/webp"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// iconFilename returns the manifest's icon filename, defaulting to logo.svg.
+func iconFilename(m *Manifest) string {
+	if m != nil && m.Icon != "" {
+		return m.Icon
+	}
+	return "logo.svg"
 }
 
 // Registry serves templates from a filesystem tree of `<root>/<id>/` directories
@@ -37,6 +63,23 @@ func (r *Registry) Get(id string) (*Template, error) {
 		return nil, fmt.Errorf("template registry not configured")
 	}
 	return Load(r.fsys, r.root+"/"+id)
+}
+
+// Icon reads a template's icon file from the filesystem.
+func (r *Registry) Icon(id string) ([]byte, string, error) {
+	if r == nil {
+		return nil, "", fmt.Errorf("template registry not configured")
+	}
+	tpl, err := Load(r.fsys, r.root+"/"+id)
+	if err != nil {
+		return nil, "", err
+	}
+	name := iconFilename(tpl.Manifest)
+	b, err := fs.ReadFile(r.fsys, r.root+"/"+id+"/"+name)
+	if err != nil {
+		return nil, "", err
+	}
+	return b, iconContentType(name), nil
 }
 
 // List loads every template's manifest, sorted by id. Malformed entries are

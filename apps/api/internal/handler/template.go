@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/meshploy/apps/api/internal/templates"
 	"github.com/meshploy/packages/db"
 )
@@ -97,6 +99,21 @@ func (h *Handler) GetTemplate(ctx context.Context, input *TemplatePathInput) (*G
 		return nil, huma.Error404NotFound("template not found")
 	}
 	return &GetTemplateOutput{Body: TemplateDetail{Manifest: tpl.Manifest, Compose: tpl.Compose}}, nil
+}
+
+// ServeTemplateIcon streams a template's icon bytes. It is a raw, unauthenticated
+// route (registered in RegisterRaw) so it works as an <img src>; template icons
+// are public catalog data.
+func (h *Handler) ServeTemplateIcon(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "templateId")
+	data, contentType, err := h.svc.Templates.Icon(id)
+	if err != nil {
+		http.Error(w, "icon not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(data)
 }
 
 func (h *Handler) DeployTemplate(ctx context.Context, input *DeployTemplateInput) (*GetStackOutput, error) {

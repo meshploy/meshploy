@@ -69,6 +69,7 @@ import { SourceFields, type SourceState } from "@/components/services/source-fie
 export const Route = createFileRoute("/_app/projects/$id/new")({
   validateSearch: (search: Record<string, unknown>) => ({
     type: (search.type as ResourceType | undefined) ?? "service",
+    template: (search.template as string | undefined) || undefined,
   }),
   component: NewResourcePage,
 })
@@ -168,7 +169,7 @@ function NewResourcePage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const { type: resourceType } = Route.useSearch()
+  const { type: resourceType, template: initialTemplateId } = Route.useSearch()
   const [form, setForm] = useState<FormState>(INITIAL)
 
   const patch = (partial: Partial<FormState>) =>
@@ -309,7 +310,7 @@ function NewResourcePage() {
               projectId={projectId}
             />
           ) : resourceType === "stack" ? (
-            <StackForm projectId={projectId} />
+            <StackForm projectId={projectId} initialTemplateId={initialTemplateId} />
           ) : resourceType === "database" ? (
             <DatabaseForm projectId={projectId} />
           ) : resourceType === "route" ? (
@@ -1697,7 +1698,7 @@ type StackSourceMode = "raw" | "git" | "template"
 type StackGitVisibility = "public" | "private"
 type StackFetchMode = "file" | "repo"
 
-function StackForm({ projectId }: { projectId: string }) {
+function StackForm({ projectId, initialTemplateId }: { projectId: string; initialTemplateId?: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
@@ -1706,8 +1707,8 @@ function StackForm({ projectId }: { projectId: string }) {
   const [name, setName] = useState("")
   const [spec, setSpec] = useState(DEFAULT_STACK_SPEC)
 
-  // Git source state
-  const [sourceMode, setSourceMode] = useState<StackSourceMode>("raw")
+  // Git source state — default to the template source when arriving via a gallery deep-link
+  const [sourceMode, setSourceMode] = useState<StackSourceMode>(initialTemplateId ? "template" : "raw")
   const [gitVisibility, setGitVisibility] = useState<StackGitVisibility>("public")
   const [gitIntegrationId, setGitIntegrationId] = useState("")
   const [gitRepo, setGitRepo] = useState("")
@@ -1737,7 +1738,7 @@ function StackForm({ projectId }: { projectId: string }) {
   })
 
   // Template source state
-  const [templateId, setTemplateId] = useState("")
+  const [templateId, setTemplateId] = useState(initialTemplateId ?? "")
   const [promptValues, setPromptValues] = useState<Record<string, string>>({})
 
   const { data: templateListRaw } = useQuery({

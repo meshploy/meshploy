@@ -1,0 +1,22 @@
+id: pgadmin
+name: pgAdmin 4
+description: Web-based administration and management tool for PostgreSQL.
+category: database
+version: 1.0.0
+icon: logo.svg
+links:
+  website: https://www.pgadmin.org
+  source: https://github.com/pgadmin-org/pgadmin4
+maintainers: [pritthishnath]
+
+variables:
+  - key: PGADMIN_EMAIL
+    prompt: "Login email"
+    required: true
+  - key: PGADMIN_PASSWORD
+    generate: password        # auto-filled, hidden — the initial login password
+  - key: PRIMARY_DOMAIN
+    generate: subdomain       # → pgadmin-<rand>.<org base domain>; auto-routes
+    expose:
+      service: pgadmin
+      port: 5050

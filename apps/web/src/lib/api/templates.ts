@@ -1,4 +1,4 @@
-import { apiFetch } from "./core"
+import { apiFetch, API_BASE } from "./core"
 import type { ApiStack } from "./stacks"
 
 export interface TemplateVariable {
@@ -35,6 +35,9 @@ export interface DeployTemplateBody {
 export const templates = {
   list: (token: string) =>
     apiFetch<TemplateManifest[]>(`/api/v1/templates`, {}, token),
+
+  /** Public icon URL for an <img src> (unauthenticated route). */
+  iconUrl: (id: string) => `${API_BASE}/api/v1/templates/${id}/icon`,
 
   get: (id: string, token: string) =>
     apiFetch<TemplateDetail>(`/api/v1/templates/${id}`, {}, token),

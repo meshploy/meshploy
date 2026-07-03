@@ -33,6 +33,11 @@ func (s *TemplateService) Get(id string) (*templates.Template, error) {
 	return s.catalog.Get(id)
 }
 
+// Icon returns a template's icon bytes and content type.
+func (s *TemplateService) Icon(id string) ([]byte, string, error) {
+	return s.catalog.Icon(id)
+}
+
 // Deploy instantiates templateID into projectID as a stack.
 //
 // spec, when non-empty, is the (possibly user-edited) compose from the stack

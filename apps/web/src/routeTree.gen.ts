@@ -15,6 +15,7 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AppUsersIndexRouteImport } from './routes/_app/users/index'
+import { Route as AppTemplatesIndexRouteImport } from './routes/_app/templates/index'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
@@ -22,6 +23,7 @@ import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrat
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppUsersUserIdRouteImport } from './routes/_app/users/$userId'
+import { Route as AppTemplatesIdRouteImport } from './routes/_app/templates/$id'
 import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
 import { Route as AppIntegrationsNewRouteImport } from './routes/_app/integrations/new'
@@ -92,6 +94,11 @@ const AppUsersIndexRoute = AppUsersIndexRouteImport.update({
   path: '/users/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTemplatesIndexRoute = AppTemplatesIndexRouteImport.update({
+  id: '/templates/',
+  path: '/templates/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
@@ -125,6 +132,11 @@ const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
 const AppUsersUserIdRoute = AppUsersUserIdRouteImport.update({
   id: '/users/$userId',
   path: '/users/$userId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTemplatesIdRoute = AppTemplatesIdRouteImport.update({
+  id: '/templates/$id',
+  path: '/templates/$id',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProjectsNewRoute = AppProjectsNewRouteImport.update({
@@ -371,6 +383,7 @@ export interface FileRoutesByFullPath {
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
+  '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
   '/account/': typeof AppAccountIndexRoute
   '/cluster/': typeof AppClusterIndexRoute
@@ -378,6 +391,7 @@ export interface FileRoutesByFullPath {
   '/nodes/': typeof AppNodesIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/templates/': typeof AppTemplatesIndexRoute
   '/users/': typeof AppUsersIndexRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
@@ -424,6 +438,7 @@ export interface FileRoutesByTo {
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
+  '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
   '/account': typeof AppAccountIndexRoute
   '/cluster': typeof AppClusterIndexRoute
@@ -431,6 +446,7 @@ export interface FileRoutesByTo {
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/templates': typeof AppTemplatesIndexRoute
   '/users': typeof AppUsersIndexRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
@@ -477,6 +493,7 @@ export interface FileRoutesById {
   '/_app/integrations/new': typeof AppIntegrationsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
   '/_app/projects/new': typeof AppProjectsNewRoute
+  '/_app/templates/$id': typeof AppTemplatesIdRoute
   '/_app/users/$userId': typeof AppUsersUserIdRoute
   '/_app/account/': typeof AppAccountIndexRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
@@ -484,6 +501,7 @@ export interface FileRoutesById {
   '/_app/nodes/': typeof AppNodesIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/templates/': typeof AppTemplatesIndexRoute
   '/_app/users/': typeof AppUsersIndexRoute
   '/_app/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/_app/projects/$id/new': typeof AppProjectsIdNewRoute
@@ -533,6 +551,7 @@ export interface FileRouteTypes {
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
+    | '/templates/$id'
     | '/users/$userId'
     | '/account/'
     | '/cluster/'
@@ -540,6 +559,7 @@ export interface FileRouteTypes {
     | '/nodes/'
     | '/projects/'
     | '/settings/'
+    | '/templates/'
     | '/users/'
     | '/projects/$id/databases'
     | '/projects/$id/new'
@@ -586,6 +606,7 @@ export interface FileRouteTypes {
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
+    | '/templates/$id'
     | '/users/$userId'
     | '/account'
     | '/cluster'
@@ -593,6 +614,7 @@ export interface FileRouteTypes {
     | '/nodes'
     | '/projects'
     | '/settings'
+    | '/templates'
     | '/users'
     | '/projects/$id/databases'
     | '/projects/$id/new'
@@ -638,6 +660,7 @@ export interface FileRouteTypes {
     | '/_app/integrations/new'
     | '/_app/nodes/$id'
     | '/_app/projects/new'
+    | '/_app/templates/$id'
     | '/_app/users/$userId'
     | '/_app/account/'
     | '/_app/cluster/'
@@ -645,6 +668,7 @@ export interface FileRouteTypes {
     | '/_app/nodes/'
     | '/_app/projects/'
     | '/_app/settings/'
+    | '/_app/templates/'
     | '/_app/users/'
     | '/_app/projects/$id/databases'
     | '/_app/projects/$id/new'
@@ -734,6 +758,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppUsersIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/templates/': {
+      id: '/_app/templates/'
+      path: '/templates'
+      fullPath: '/templates/'
+      preLoaderRoute: typeof AppTemplatesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings/': {
       id: '/_app/settings/'
       path: '/settings'
@@ -781,6 +812,13 @@ declare module '@tanstack/react-router' {
       path: '/users/$userId'
       fullPath: '/users/$userId'
       preLoaderRoute: typeof AppUsersUserIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/templates/$id': {
+      id: '/_app/templates/$id'
+      path: '/templates/$id'
+      fullPath: '/templates/$id'
+      preLoaderRoute: typeof AppTemplatesIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/projects/new': {
@@ -1225,6 +1263,7 @@ interface AppRouteChildren {
   AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
   AppProjectsNewRoute: typeof AppProjectsNewRoute
+  AppTemplatesIdRoute: typeof AppTemplatesIdRoute
   AppUsersUserIdRoute: typeof AppUsersUserIdRoute
   AppAccountIndexRoute: typeof AppAccountIndexRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
@@ -1232,6 +1271,7 @@ interface AppRouteChildren {
   AppNodesIndexRoute: typeof AppNodesIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
+  AppTemplatesIndexRoute: typeof AppTemplatesIndexRoute
   AppUsersIndexRoute: typeof AppUsersIndexRoute
 }
 
@@ -1241,6 +1281,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIntegrationsNewRoute: AppIntegrationsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
   AppProjectsNewRoute: AppProjectsNewRoute,
+  AppTemplatesIdRoute: AppTemplatesIdRoute,
   AppUsersUserIdRoute: AppUsersUserIdRoute,
   AppAccountIndexRoute: AppAccountIndexRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,
@@ -1248,6 +1289,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppNodesIndexRoute: AppNodesIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
+  AppTemplatesIndexRoute: AppTemplatesIndexRoute,
   AppUsersIndexRoute: AppUsersIndexRoute,
 }
 

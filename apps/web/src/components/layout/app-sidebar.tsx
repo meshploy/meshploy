@@ -6,6 +6,7 @@ import {
   Download,
   FolderKanban,
   Home,
+  LayoutTemplate,
   Network,
   Plug,
   Server,
@@ -38,6 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/", icon: Home, label: "Overview", exact: true },
       { href: "/projects", icon: FolderKanban, label: "Projects", exact: false },
+      { href: "/templates", icon: LayoutTemplate, label: "Templates", exact: false },
       { href: "/nodes", icon: Server, label: "Nodes", exact: false },
       { href: "/cluster", icon: Network, label: "Cluster", exact: false },
     ],
