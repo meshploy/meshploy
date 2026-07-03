@@ -11,6 +11,11 @@ import "embed"
 // not the source of truth — it need not contain the entire catalog, just enough
 // that a fresh or disconnected install is never empty.
 //
+// Refresh the snapshot with `go generate ./...` from apps/api. The -ids list
+// below is the curated set of templates to embed (authoritative — edit it to
+// add/remove staples as the catalog grows).
+//
+//go:generate go run ../../tools/sync-builtin -ids pgadmin -out builtin
 //go:embed builtin
 var builtinFS embed.FS
 
