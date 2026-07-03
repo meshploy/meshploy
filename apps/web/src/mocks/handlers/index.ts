@@ -6,6 +6,7 @@ import { servicesHandlers } from "./services"
 import { jobsHandlers } from "./jobs"
 import { volumesHandlers } from "./volumes"
 import { stacksHandlers } from "./stacks"
+import { templatesHandlers } from "./templates"
 import { routesHandlers } from "./routes"
 import { clusterHandlers } from "./cluster"
 import { systemHandlers } from "./system"
@@ -19,6 +20,7 @@ export const handlers = [
   ...jobsHandlers,
   ...volumesHandlers,
   ...stacksHandlers,
+  ...templatesHandlers,
   ...routesHandlers,
   ...clusterHandlers,
   ...systemHandlers,

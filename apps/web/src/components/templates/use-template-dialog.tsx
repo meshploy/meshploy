@@ -94,7 +94,9 @@ export function UseTemplateDialog({
             <label className="text-xs font-medium text-muted-foreground">Project</label>
             <Select value={projectId} onValueChange={(v) => setProjectId(v ?? "")}>
               <SelectTrigger className="w-full h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue placeholder="Select a project…" />
+                <SelectValue placeholder="Select a project…">
+                  {projects.find((p) => p.id === projectId)?.name}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {projects.map((p) => (
