@@ -67,7 +67,7 @@ import { SourceFields, type SourceState } from "@/components/services/source-fie
 // ─── Route ───────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute("/_app/projects/$id/new")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { type: ResourceType; template?: string } => ({
     type: (search.type as ResourceType | undefined) ?? "service",
     template: (search.template as string | undefined) || undefined,
   }),
