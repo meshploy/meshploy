@@ -3,7 +3,7 @@ package mcpserver
 import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpsdk "github.com/mark3labs/mcp-go/server"
-	"github.com/meshploy/apps/cli/internal/client"
+	"github.com/meshploy/apps/cli/client"
 )
 
 type srv struct {

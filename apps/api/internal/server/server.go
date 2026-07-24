@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -40,7 +41,9 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 	// Build services first so the org-member middleware can reference them.
 	svc := service.New(db, cfg)
 
-	r.Use(middleware.Auth(cfg.JWTSecret))
+	// 20 invalid agent-token attempts per minute per IP (defence-in-depth).
+	agentFailLimiter := middleware.NewIPRateLimiter(rate.Every(3*time.Second), 20)
+	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, agentFailLimiter))
 	r.Use(middleware.RequireAuth)
 	r.Use(middleware.PathRateLimiter(map[string]*middleware.IPRateLimiter{
 		// 5 attempts per minute per IP — brute-force protection

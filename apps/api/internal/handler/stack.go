@@ -180,6 +180,16 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 	}, h.ApplyStack)
 
 	huma.Register(api, huma.Operation{
+		OperationID:   "apply-manifest",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/apply",
+		Summary:       "Upsert a stack from an inline compose manifest and reconcile it",
+		Tags:          []string{"Stacks"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 200,
+	}, h.ApplyManifest)
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "sync-stack",
 		Method:        "POST",
 		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/sync",
@@ -345,6 +355,35 @@ func (h *Handler) ListStackServices(ctx context.Context, input *StackPathInput) 
 		return nil, err
 	}
 	return &ListStackServicesOutput{Body: services}, nil
+}
+
+// ApplyManifestInput is the one-shot declarative apply: push an inline compose
+// manifest to a project and reconcile it in a single call.
+type ApplyManifestInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	Body      struct {
+		Name string `json:"name" minLength:"1" maxLength:"100" doc:"Stack name — the manifest is upserted under this name"`
+		Spec string `json:"spec" minLength:"1" doc:"Docker Compose–style YAML with x-meshploy extensions"`
+	}
+}
+
+func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) (*ApplyResultOutput, error) {
+	userID, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionCreate, "")
+	if err != nil {
+		return nil, err
+	}
+	result, err := h.svc.Stacks.ApplyManifest(ctx, projectID, input.Body.Name, input.Body.Spec, userID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &ApplyResultOutput{Body: &applyResultBody{
+		Stack:   result.Stack,
+		Created: result.Created,
+		Updated: result.Updated,
+		Deleted: result.Deleted,
+		Errors:  result.Errors,
+	}}, nil
 }
 
 func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*ApplyResultOutput, error) {

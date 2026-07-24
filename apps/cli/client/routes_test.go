@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/meshploy/apps/cli/internal/client"
+	"github.com/meshploy/apps/cli/client"
 )
 
 func TestListRoutes(t *testing.T) {

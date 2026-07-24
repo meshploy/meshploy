@@ -1,0 +1,269 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
+import { useState } from "react"
+import {
+  projects as projectsApi,
+  permissions as permissionsApi,
+  type ApiPermission,
+  type ApiProject,
+  RESOURCE_ACTIONS,
+  type ResourceAction,
+} from "@/lib/api"
+import { cn } from "@/lib/utils"
+
+const ACTION_LABELS: Record<ResourceAction, string> = {
+  view: "view",
+  create: "create",
+  deploy: "deploy",
+  update: "update",
+  delete: "delete",
+}
+
+/**
+ * PrincipalPermissions renders the project-level permission grid for any
+ * principal — a human member or an agent. Both are just a user id from the
+ * permission system's point of view, so this component is shared between the
+ * Users detail page and the Agents detail page.
+ */
+export function PrincipalPermissions({ orgId, principalId, token }: {
+  orgId: string
+  principalId: string
+  token: string
+}) {
+  const qc = useQueryClient()
+  const [pending, setPending] = useState<Set<string>>(new Set())
+
+  const { data: projects = [], isLoading: projectsLoading } = useQuery({
+    queryKey: ["projects", orgId],
+    queryFn: () => projectsApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+
+  const { data: perms = [], isLoading: permsLoading } = useQuery({
+    queryKey: ["member-permissions", orgId, principalId],
+    queryFn: () => permissionsApi.listForMember(orgId, principalId, token),
+    enabled: !!orgId && !!principalId,
+  })
+
+  const { mutate } = useMutation({
+    mutationFn: ({ projectId, action, granted }: { projectId: string; action: ResourceAction; granted: boolean }) => {
+      const body = { resource_type: "project" as const, resource_id: projectId, action }
+      return granted
+        ? permissionsApi.revoke(orgId, principalId, body, token)
+        : permissionsApi.grant(orgId, principalId, body, token)
+    },
+    onMutate: ({ projectId, action }) => {
+      setPending((s) => new Set(s).add(`${projectId}-${action}`))
+    },
+    onSettled: (_, __, { projectId, action }) => {
+      setPending((s) => { const n = new Set(s); n.delete(`${projectId}-${action}`); return n })
+      qc.invalidateQueries({ queryKey: ["member-permissions", orgId, principalId] })
+    },
+  })
+
+  if (projectsLoading || permsLoading) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground text-sm">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span>Loading…</span>
+      </div>
+    )
+  }
+
+  const projectGrantMap = buildProjectGrantMap(perms)
+  const resourcePerms = perms.filter((p) => p.resource_type !== "project")
+  const overridesByProject = buildOverrideMap(resourcePerms)
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-medium">Project Permissions</h2>
+        <p className="text-xs text-muted-foreground">Click an action to grant or revoke access</p>
+      </div>
+
+      {projects.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/50 py-8 flex flex-col items-center gap-2 text-muted-foreground">
+          <p className="text-xs">No projects yet</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+          {projects.map((project) => {
+            const granted = projectGrantMap.get(project.id) ?? new Set<ResourceAction>()
+            const overrides = overridesByProject.get(project.id) ?? []
+            return (
+              <ProjectRow
+                key={project.id}
+                project={project}
+                granted={granted}
+                overrides={overrides}
+                pending={pending}
+                onToggle={(action) => mutate({ projectId: project.id, action, granted: granted.has(action) })}
+              />
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProjectRow({
+  project, granted, overrides, pending, onToggle,
+}: {
+  project: ApiProject
+  granted: Set<ResourceAction>
+  overrides: ApiPermission[]
+  pending: Set<string>
+  onToggle: (action: ResourceAction) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  const byResource = groupByResource(overrides)
+  const hasOverrides = byResource.length > 0
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">{project.name}</p>
+          <p className="text-xs text-muted-foreground/50 font-mono">{project.slug}</p>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {RESOURCE_ACTIONS.map((action) => (
+            <ActionPill
+              key={action}
+              action={action}
+              granted={granted.has(action)}
+              loading={pending.has(`${project.id}-${action}`)}
+              onToggle={() => onToggle(action)}
+            />
+          ))}
+        </div>
+
+        {hasOverrides ? (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0 ml-2 w-20 justify-end"
+          >
+            {byResource.length} override{byResource.length !== 1 ? "s" : ""}
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+        ) : (
+          <span className="w-20 shrink-0" />
+        )}
+      </div>
+
+      {expanded && hasOverrides && (
+        <div className="border-t border-border/40 bg-muted/10 divide-y divide-border/30">
+          {byResource.map(({ resourceId, resourceName, resourceType, actions }) => (
+            <ResourceOverrideRow
+              key={resourceId}
+              resourceName={resourceName}
+              resourceType={resourceType}
+              actions={actions}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ResourceOverrideRow({ resourceName, resourceType, actions }: {
+  resourceName: string
+  resourceType: string
+  actions: ResourceAction[]
+}) {
+  return (
+    <div className="flex items-center gap-3 px-6 py-2.5">
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground/60 shrink-0">
+          {resourceType}
+        </span>
+        <p className="text-sm text-muted-foreground truncate">{resourceName}</p>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {actions.map((action) => (
+          <span
+            key={action}
+            className="h-5 px-2 text-[10px] font-medium rounded border bg-primary/10 text-primary border-primary/25"
+          >
+            {action}
+          </span>
+        ))}
+      </div>
+      <span className="w-20 shrink-0" />
+    </div>
+  )
+}
+
+function ActionPill({ action, granted, loading, onToggle }: {
+  action: ResourceAction
+  granted: boolean
+  loading: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={loading}
+      className={cn(
+        "h-6 px-2.5 text-[11px] font-medium rounded-md border transition-colors select-none",
+        granted
+          ? "bg-primary/15 text-primary border-primary/30 hover:bg-primary/25"
+          : "bg-transparent text-muted-foreground/35 border-border/30 hover:text-muted-foreground/70 hover:border-border/60",
+        loading && "opacity-40 cursor-wait pointer-events-none"
+      )}
+    >
+      {ACTION_LABELS[action]}
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function buildOverrideMap(perms: ApiPermission[]): Map<string, ApiPermission[]> {
+  const map = new Map<string, ApiPermission[]>()
+  for (const p of perms) {
+    if (p.resource_type === "project" || !p.parent_project_id) continue
+    const list = map.get(p.parent_project_id) ?? []
+    list.push(p)
+    map.set(p.parent_project_id, list)
+  }
+  return map
+}
+
+function groupByResource(perms: ApiPermission[]): {
+  resourceId: string
+  resourceName: string
+  resourceType: string
+  actions: ResourceAction[]
+}[] {
+  const map = new Map<string, { resourceName: string; resourceType: string; actions: ResourceAction[] }>()
+  for (const p of perms) {
+    const existing = map.get(p.resource_id)
+    if (existing) {
+      existing.actions.push(p.action)
+    } else {
+      map.set(p.resource_id, {
+        resourceName: p.resource_name ?? p.resource_id.slice(0, 8),
+        resourceType: p.resource_type,
+        actions: [p.action],
+      })
+    }
+  }
+  return Array.from(map.entries()).map(([resourceId, v]) => ({ resourceId, ...v }))
+}
+
+function buildProjectGrantMap(perms: ApiPermission[]): Map<string, Set<ResourceAction>> {
+  const map = new Map<string, Set<ResourceAction>>()
+  for (const p of perms) {
+    if (p.resource_type !== "project") continue
+    if (!map.has(p.resource_id)) map.set(p.resource_id, new Set())
+    map.get(p.resource_id)!.add(p.action)
+  }
+  return map
+}

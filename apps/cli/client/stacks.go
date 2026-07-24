@@ -78,6 +78,17 @@ func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, err
 	return decodePtr[ApplyResult](resp)
 }
 
+// ApplyManifest upserts a raw stack named name from an inline compose spec and
+// reconciles it in one call. Idempotent — re-applying converges in place.
+func (c *Client) ApplyManifest(orgID, projectID, name, spec string) (*ApplyResult, error) {
+	body := map[string]string{"name": name, "spec": spec}
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/apply", body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[ApplyResult](resp)
+}
+
 func (c *Client) SyncStack(orgID, projectID, stackID string) (*ApplyResult, error) {
 	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/stacks/"+stackID+"/sync", nil)
 	if err != nil {

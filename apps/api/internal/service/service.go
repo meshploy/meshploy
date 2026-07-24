@@ -18,6 +18,7 @@ import (
 
 type Services struct {
 	Auth            *AuthService
+	Agents          *AgentService
 	Orgs            *OrgService
 	Permissions     *PermissionService
 	Projects        *ProjectService
@@ -58,6 +59,11 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		k8sClient, k8sRestCfg, err = appk8s.NewClientWithConfig(c.KubeconfigPath, c.K3sServerURL)
 		if err != nil {
 			log.Printf("warning: K8s not available (%v) — build/deploy features disabled", err)
+			// NewClientWithConfig returns a typed-nil *Clientset on error, which
+			// becomes a NON-nil kubernetes.Interface once assigned above. Blank it
+			// explicitly so downstream `if k8s != nil` guards actually skip K8s work
+			// instead of dereferencing a nil clientset and panicking.
+			k8sClient, k8sRestCfg = nil, nil
 		} else {
 			go appk8s.CleanupOrphanedShellPods(context.Background(), k8sClient)
 		}
@@ -173,6 +179,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	svc := &Services{
 		Auth:            auth,
+		Agents:          &AgentService{db: db},
 		Orgs:            &OrgService{db: db},
 		Permissions:     &PermissionService{db: db},
 		Projects:        &ProjectService{db: db},

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/meshploy/apps/cli/internal/client"
+	"github.com/meshploy/apps/cli/client"
 	"github.com/meshploy/apps/cli/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"

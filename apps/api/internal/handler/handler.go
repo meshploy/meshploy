@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/meshploy/apps/api/internal/config"
@@ -41,6 +43,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerVolumeRoutes(api)
 	h.registerSystemRoutes(api)
 	h.registerPermissionRoutes(api)
+	h.registerAgentRoutes(api)
 }
 
 // RegisterRaw wires routes that need raw http.HandlerFunc access:
@@ -52,6 +55,10 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 
 	// Template icons — public image bytes, served for <img src>.
 	r.Get("/api/v1/templates/{templateId}/icon", h.ServeTemplateIcon)
+
+	// Remote MCP (Streamable HTTP) — authed by an agent token, permission-scoped.
+	r.Handle("/mcp", http.HandlerFunc(h.MCPHandler))
+	r.Handle("/mcp/*", http.HandlerFunc(h.MCPHandler))
 
 	// Git OAuth / App callbacks
 	r.Get("/api/v1/github/app-callback", h.GitHubAppCallback)

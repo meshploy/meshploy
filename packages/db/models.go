@@ -18,6 +18,16 @@ const (
 	RoleMember MemberRole = "member"
 )
 
+// UserType discriminates human users from machine (agent) principals. Agents
+// share the users table and the entire membership/permission model — they differ
+// only in authentication (token, not email+password). See AgentToken.
+type UserType string
+
+const (
+	UserHuman UserType = "human"
+	UserAgent UserType = "agent"
+)
+
 type NodeStatus string
 
 const (
@@ -72,12 +82,12 @@ const (
 type DatabaseEngine string
 
 const (
-	DatabasePostgres    DatabaseEngine = "postgres"
-	DatabaseMySQL       DatabaseEngine = "mysql"
-	DatabaseRedis       DatabaseEngine = "redis"
-	DatabaseMongoDB     DatabaseEngine = "mongodb"
-	DatabaseDragonfly   DatabaseEngine = "dragonfly"
-	DatabaseClickHouse  DatabaseEngine = "clickhouse"
+	DatabasePostgres   DatabaseEngine = "postgres"
+	DatabaseMySQL      DatabaseEngine = "mysql"
+	DatabaseRedis      DatabaseEngine = "redis"
+	DatabaseMongoDB    DatabaseEngine = "mongodb"
+	DatabaseDragonfly  DatabaseEngine = "dragonfly"
+	DatabaseClickHouse DatabaseEngine = "clickhouse"
 )
 
 type DeploymentStatus string
@@ -103,7 +113,7 @@ const (
 type JobStatus string
 
 const (
-	JobStatusIdle    JobStatus = "idle"    // cron job waiting for next fire
+	JobStatusIdle    JobStatus = "idle" // cron job waiting for next fire
 	JobStatusPending JobStatus = "pending"
 	JobStatusRunning JobStatus = "running"
 	JobStatusSuccess JobStatus = "success"
@@ -210,12 +220,37 @@ type Base struct {
 
 type User struct {
 	Base
-	Username    string          `gorm:"uniqueIndex;not null" json:"username"`
-	Email       string          `gorm:"uniqueIndex;not null" json:"email"`
+	Username string `gorm:"uniqueIndex;not null" json:"username"`
+	// Email is unique among human users only. Agents (Kind == UserAgent) carry an
+	// empty email; the uniqueness constraint is a partial index (WHERE email <> '')
+	// applied in applyConstraints, so many agents may share the empty value.
+	Email       string          `gorm:"index"                  json:"email"`
 	Password    string          `json:"-"`
-	TOTPSecret  EncryptedString `gorm:"type:text"            json:"-"`
+	TOTPSecret  EncryptedString `gorm:"type:text"              json:"-"`
 	TOTPEnabled bool            `gorm:"not null;default:false" json:"totp_enabled"`
+	// Kind discriminates human users from agent (machine) principals.
+	Kind UserType `gorm:"type:varchar(10);not null;default:'human'" json:"kind"`
 }
+
+// AgentToken is a bearer credential authenticating an agent principal. One agent
+// (a users row with Kind == UserAgent) may hold many tokens to support rotation.
+// The plaintext (format: magt-<hex>) is shown once at creation and never stored —
+// only its SHA-256 hash is persisted, so the token is unrecoverable if lost.
+type AgentToken struct {
+	Base
+	AgentID     uuid.UUID  `gorm:"type:uuid;not null;index"  json:"agent_id"`     // the agent's users.id
+	Name        string     `gorm:"not null"                  json:"name"`         // human label, e.g. "lovable-prod"
+	TokenHash   string     `gorm:"not null;uniqueIndex"      json:"-"`            // sha-256 hex of the token
+	TokenPrefix string     `gorm:"not null"                  json:"token_prefix"` // display, e.g. "magt-a1b2…"
+	LastUsedAt  *time.Time `                                 json:"last_used_at,omitempty"`
+	ExpiresAt   *time.Time `                                 json:"expires_at,omitempty"`
+	RevokedAt   *time.Time `                                 json:"revoked_at,omitempty"`
+	CreatedBy   uuid.UUID  `gorm:"type:uuid;not null"        json:"created_by"` // the human who minted it
+
+	Agent User `gorm:"foreignKey:AgentID" json:"-"`
+}
+
+func (AgentToken) TableName() string { return "agent_tokens" }
 
 type TrustedDevice struct {
 	Base
@@ -388,7 +423,7 @@ type Service struct {
 	Base
 	ProjectID uuid.UUID   `gorm:"type:uuid;not null;index"                     json:"project_id"`
 	StackID   *uuid.UUID  `gorm:"type:uuid;index"                              json:"stack_id"` // nullable — service may belong to a stack
-	NodeID    *uuid.UUID  `gorm:"type:uuid;index"                              json:"node_id"` // nullable = let K3s schedule
+	NodeID    *uuid.UUID  `gorm:"type:uuid;index"                              json:"node_id"`  // nullable = let K3s schedule
 	Name      string      `gorm:"not null"                                     json:"name"`
 	Type      ServiceType `gorm:"type:varchar(15);not null;default:'application'" json:"type"`
 
@@ -424,13 +459,13 @@ type Service struct {
 	HealthcheckRetries         int32  `gorm:"default:0"             json:"healthcheck_retries,omitempty"`
 	HealthcheckStartPeriodSecs int32  `gorm:"default:0"             json:"healthcheck_start_period_secs,omitempty"`
 
-	Project                Project              `gorm:"foreignKey:ProjectID"                                         json:"-"`
-	Node                   *Node                `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"               json:"-"`
+	Project                 Project              `gorm:"foreignKey:ProjectID"                                         json:"-"`
+	Node                    *Node                `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"               json:"-"`
 	PullRegistryIntegration *RegistryIntegration `gorm:"foreignKey:PullRegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
-	BuildConfig            *BuildConfig         `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
-	DatabaseConfig         *DatabaseConfig      `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
-	Deployments            []Deployment         `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
-	Ports                  []ServicePort        `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"ports,omitempty"`
+	BuildConfig             *BuildConfig         `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
+	DatabaseConfig          *DatabaseConfig      `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
+	Deployments             []Deployment         `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"-"`
+	Ports                   []ServicePort        `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"             json:"ports,omitempty"`
 }
 
 // ServicePort represents one exposed port on a service.
@@ -457,9 +492,9 @@ type BuildConfig struct {
 
 	// Git source
 	GitIntegrationID *uuid.UUID `gorm:"type:uuid"              json:"git_integration_id"`
-	GitRepo           string    `json:"git_repo"`
-	Branch            string    `gorm:"default:'main'"         json:"branch"`
-	RootDir  string `gorm:"default:'.'"`           // root of the app within the repo
+	GitRepo          string     `json:"git_repo"`
+	Branch           string     `gorm:"default:'main'"         json:"branch"`
+	RootDir          string     `gorm:"default:'.'"` // root of the app within the repo
 	// Dockerfile builder
 	DockerfilePath string     `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
 	BuildArgs      EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"build_args"`
@@ -535,21 +570,21 @@ const (
 
 type Stack struct {
 	Base
-	ProjectID     uuid.UUID    `gorm:"type:uuid;not null;index"                      json:"project_id"`
-	Name          string       `gorm:"not null"                                      json:"name"`
-	Spec          string       `gorm:"type:text;not null;default:''"                 json:"spec"`
-	Variables     JSONObject   `gorm:"type:jsonb;not null;default:'{}'"              json:"variables"`
-	Status        StackStatus  `gorm:"type:varchar(10);not null;default:'idle'"      json:"status"`
-	LastAppliedAt *time.Time   `json:"last_applied_at"`
+	ProjectID     uuid.UUID   `gorm:"type:uuid;not null;index"                      json:"project_id"`
+	Name          string      `gorm:"not null"                                      json:"name"`
+	Spec          string      `gorm:"type:text;not null;default:''"                 json:"spec"`
+	Variables     JSONObject  `gorm:"type:jsonb;not null;default:'{}'"              json:"variables"`
+	Status        StackStatus `gorm:"type:varchar(10);not null;default:'idle'"      json:"status"`
+	LastAppliedAt *time.Time  `json:"last_applied_at"`
 
 	// Git source fields — non-empty GitMode means the spec is managed from git.
-	GitMode         StackGitMode `gorm:"type:varchar(10);not null;default:''" json:"git_mode"`
-	GitRepo         string       `gorm:"not null;default:''"                  json:"git_repo"`
-	GitBranch       string       `gorm:"not null;default:'main'"              json:"git_branch"`
-	GitPath         string       `gorm:"not null;default:'docker-compose.yml'" json:"git_path"`
-	GitIntegrationID *uuid.UUID  `gorm:"type:uuid"                            json:"git_integration_id"`
-	GitLastSyncedAt  *time.Time  `json:"git_last_synced_at"`
-	GitLastSyncSHA   string      `gorm:"not null;default:''"                  json:"git_last_sync_sha"`
+	GitMode          StackGitMode `gorm:"type:varchar(10);not null;default:''" json:"git_mode"`
+	GitRepo          string       `gorm:"not null;default:''"                  json:"git_repo"`
+	GitBranch        string       `gorm:"not null;default:'main'"              json:"git_branch"`
+	GitPath          string       `gorm:"not null;default:'docker-compose.yml'" json:"git_path"`
+	GitIntegrationID *uuid.UUID   `gorm:"type:uuid"                            json:"git_integration_id"`
+	GitLastSyncedAt  *time.Time   `json:"git_last_synced_at"`
+	GitLastSyncSHA   string       `gorm:"not null;default:''"                  json:"git_last_sync_sha"`
 
 	// Template provenance — non-empty TemplateID means this stack was created from
 	// a template (a third stack source, alongside inline and git). Mirrors the
@@ -557,9 +592,9 @@ type Stack struct {
 	TemplateID      string `gorm:"not null;default:''" json:"template_id"`
 	TemplateVersion string `gorm:"not null;default:''" json:"template_version"`
 
-	Project          Project          `gorm:"foreignKey:ProjectID"                            json:"-"`
-	Services         []Service        `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
-	GitIntegration   *GitIntegration  `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
+	Project        Project         `gorm:"foreignKey:ProjectID"                            json:"-"`
+	Services       []Service       `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
+	GitIntegration *GitIntegration `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
 func (Stack) TableName() string { return "stacks" }
@@ -669,8 +704,8 @@ type Domain struct {
 
 type Route struct {
 	Base
-	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"  json:"organization_id"`
-	ProjectID      uuid.UUID  `gorm:"type:uuid;not null;index"  json:"project_id"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index"  json:"organization_id"`
+	ProjectID      uuid.UUID `gorm:"type:uuid;not null;index"  json:"project_id"`
 	// DomainID links to the managed Domain. Nullable for manually-specified hostnames.
 	DomainID  *uuid.UUID `gorm:"type:uuid;index"           json:"domain_id"`
 	Zone      RouteZone  `gorm:"type:varchar(10)"           json:"zone"`     // public|internal|preview
@@ -733,10 +768,10 @@ type Deployment struct {
 // Maps to batch/v1 Job (one-shot) or batch/v1 CronJob (scheduled) in K8s.
 type Job struct {
 	Base
-	ProjectID uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
+	ProjectID uuid.UUID  `gorm:"type:uuid;not null;index" json:"project_id"`
 	NodeID    *uuid.UUID `gorm:"type:uuid;index"         json:"node_id"` // nil = auto-schedule
-	Name      string    `gorm:"not null"                 json:"name"`
-	IsCron    bool      `gorm:"not null;default:false"   json:"is_cron"`
+	Name      string     `gorm:"not null"                 json:"name"`
+	IsCron    bool       `gorm:"not null;default:false"   json:"is_cron"`
 
 	// Source — image only for now; git builds can be added later.
 	Image   string `gorm:"not null;default:''" json:"image"`
@@ -752,9 +787,9 @@ type Job struct {
 	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
 	// Cron-only fields (ignored when IsCron=false)
-	Schedule          string            `gorm:"not null;default:''"       json:"schedule"`           // standard cron: "0 2 * * *"
+	Schedule          string            `gorm:"not null;default:''"       json:"schedule"` // standard cron: "0 2 * * *"
 	ConcurrencyPolicy ConcurrencyPolicy `gorm:"type:varchar(10);not null;default:'Allow'" json:"concurrency_policy"`
-	HistoryLimit      int               `gorm:"not null;default:5"        json:"history_limit"`      // how many completed JobRuns to retain
+	HistoryLimit      int               `gorm:"not null;default:5"        json:"history_limit"` // how many completed JobRuns to retain
 
 	// Status — reflects the most recent run.
 	Status    JobStatus  `gorm:"type:varchar(10);not null;default:'idle'" json:"status"`
@@ -763,8 +798,8 @@ type Job struct {
 	// Stable K8s resource name assigned at creation (e.g. "myjob-a3f2b1").
 	K8sName string `gorm:"not null;default:''" json:"k8s_name"`
 
-	Project Project `gorm:"foreignKey:ProjectID"                           json:"-"`
-	Node    *Node   `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL" json:"-"`
+	Project Project  `gorm:"foreignKey:ProjectID"                           json:"-"`
+	Node    *Node    `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL" json:"-"`
 	Runs    []JobRun `gorm:"foreignKey:JobID;constraint:OnDelete:CASCADE"  json:"-"`
 }
 
@@ -773,11 +808,11 @@ func (Job) TableName() string { return "jobs" }
 // JobRun records a single execution of a Job (analogous to Deployment for services).
 type JobRun struct {
 	Base
-	JobID      uuid.UUID `gorm:"type:uuid;not null;index"                    json:"job_id"`
-	Status     JobStatus `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
+	JobID      uuid.UUID  `gorm:"type:uuid;not null;index"                    json:"job_id"`
+	Status     JobStatus  `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
 	StartedAt  *time.Time `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
-	Log        string    `gorm:"type:text;not null;default:''"               json:"log"`
+	Log        string     `gorm:"type:text;not null;default:''"               json:"log"`
 	// K8s batch/v1 Job name for this specific run (e.g. "myjob-a3f2b1-1714123456").
 	K8sJobName string `gorm:"not null;default:''" json:"k8s_job_name"`
 
@@ -803,7 +838,7 @@ type StorageIntegration struct {
 	AccessKeyID     EncryptedString `gorm:"type:text;not null" json:"-"`
 	SecretAccessKey EncryptedString `gorm:"type:text;not null" json:"-"`
 
-	Organization Organization   `gorm:"foreignKey:OrganizationID"                               json:"-"`
+	Organization  Organization   `gorm:"foreignKey:OrganizationID"                               json:"-"`
 	BackupConfigs []BackupConfig `gorm:"foreignKey:StorageIntegrationID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
@@ -816,12 +851,12 @@ type RegistryIntegration struct {
 	OrganizationID uuid.UUID        `gorm:"type:uuid;not null;index"  json:"organization_id"`
 	Name           string           `gorm:"not null"                  json:"name"`
 	Provider       RegistryProvider `gorm:"type:varchar(15);not null" json:"provider"`
-	Endpoint       string           `json:"endpoint"`   // custom registry URL
-	Namespace      string           `json:"namespace"`  // e.g. "ghcr.io/myorg"
+	Endpoint       string           `json:"endpoint"`  // custom registry URL
+	Namespace      string           `json:"namespace"` // e.g. "ghcr.io/myorg"
 	Username       EncryptedString  `gorm:"type:text;not null" json:"-"`
 	Password       EncryptedString  `gorm:"type:text;not null" json:"-"` // token for GHCR/ECR
 
-	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }
 
 func (RegistryIntegration) TableName() string { return "registry_integrations" }
@@ -834,20 +869,20 @@ func (RegistryIntegration) TableName() string { return "registry_integrations" }
 // GitLab/Gitea support two auth methods:
 //   - PAT:   InstallationID = personal access token (encrypted)
 //   - OAuth: OAuthClientID + OAuthClientSecret = OAuth App credentials;
-//            InstallationID = OAuth access token (populated after callback)
+//     InstallationID = OAuth access token (populated after callback)
 type GitIntegration struct {
 	Base
 	OrganizationID    uuid.UUID       `gorm:"type:uuid;not null;index"   json:"organization_id"`
-	Provider          string          `gorm:"type:varchar(15);not null"  json:"provider"`          // "github" | "gitlab" | "gitea"
-	AuthMethod        string          `gorm:"not null;default:'pat'"     json:"auth_method"`       // "app" | "pat" | "oauth"
+	Provider          string          `gorm:"type:varchar(15);not null"  json:"provider"`    // "github" | "gitlab" | "gitea"
+	AuthMethod        string          `gorm:"not null;default:'pat'"     json:"auth_method"` // "app" | "pat" | "oauth"
 	Name              string          `gorm:"not null"                   json:"name"`
-	InstallationID    EncryptedString `gorm:"type:text"                  json:"-"`                 // GitHub: installation_id; GitLab/Gitea PAT: token; GitLab/Gitea OAuth: access token
-	BaseURL           string          `gorm:"not null;default:''"        json:"base_url"`          // empty = hosted (github.com / gitlab.com); self-hosted URL otherwise
-	OAuthClientID     string          `gorm:"not null;default:''"        json:"-"`                 // GitLab/Gitea OAuth App client_id
-	OAuthClientSecret EncryptedString `gorm:"type:text"                  json:"-"`                 // GitLab/Gitea OAuth App client_secret
-	OAuthRedirectURI  string          `gorm:"not null;default:''"        json:"-"`                 // redirect_uri used when initiating the OAuth flow — must match callback
-	OAuthRefreshToken EncryptedString `gorm:"type:text"                  json:"-"`                 // GitLab/Gitea OAuth refresh token (used to renew expired access tokens)
-	OAuthTokenExpiry  *time.Time      `gorm:"default:null"               json:"-"`                 // when the current access token expires; nil = unknown / PAT
+	InstallationID    EncryptedString `gorm:"type:text"                  json:"-"`                // GitHub: installation_id; GitLab/Gitea PAT: token; GitLab/Gitea OAuth: access token
+	BaseURL           string          `gorm:"not null;default:''"        json:"base_url"`         // empty = hosted (github.com / gitlab.com); self-hosted URL otherwise
+	OAuthClientID     string          `gorm:"not null;default:''"        json:"-"`                // GitLab/Gitea OAuth App client_id
+	OAuthClientSecret EncryptedString `gorm:"type:text"                  json:"-"`                // GitLab/Gitea OAuth App client_secret
+	OAuthRedirectURI  string          `gorm:"not null;default:''"        json:"-"`                // redirect_uri used when initiating the OAuth flow — must match callback
+	OAuthRefreshToken EncryptedString `gorm:"type:text"                  json:"-"`                // GitLab/Gitea OAuth refresh token (used to renew expired access tokens)
+	OAuthTokenExpiry  *time.Time      `gorm:"default:null"               json:"-"`                // when the current access token expires; nil = unknown / PAT
 	Groups            string          `gorm:"not null;default:''"        json:"groups,omitempty"` // GitLab: group path; Gitea: org name — scopes repo listing
 
 	// GitHub App credentials (auth_method="app" only). All encrypted at rest.
@@ -875,14 +910,14 @@ func (GitIntegration) TableName() string { return "git_integrations" }
 // Backup execution targets the StorageIntegration's S3-compatible bucket.
 type BackupConfig struct {
 	Base
-	ServiceID             uuid.UUID    `gorm:"type:uuid;not null;index" json:"service_id"`
-	StorageIntegrationID  uuid.UUID    `gorm:"type:uuid;not null"       json:"storage_integration_id"`
-	Schedule              string       `gorm:"not null"                 json:"schedule"`       // cron: "0 2 * * *"
-	RetentionDays         int          `gorm:"not null;default:30"      json:"retention_days"`
-	PathPrefix            string       `json:"path_prefix"` // S3 key prefix for this service
-	Enabled               bool         `gorm:"default:true"             json:"enabled"`
-	LastBackupAt          *time.Time   `json:"last_backup_at"`
-	LastBackupStatus      *BackupStatus `json:"last_backup_status"`
+	ServiceID            uuid.UUID     `gorm:"type:uuid;not null;index" json:"service_id"`
+	StorageIntegrationID uuid.UUID     `gorm:"type:uuid;not null"       json:"storage_integration_id"`
+	Schedule             string        `gorm:"not null"                 json:"schedule"` // cron: "0 2 * * *"
+	RetentionDays        int           `gorm:"not null;default:30"      json:"retention_days"`
+	PathPrefix           string        `json:"path_prefix"` // S3 key prefix for this service
+	Enabled              bool          `gorm:"default:true"             json:"enabled"`
+	LastBackupAt         *time.Time    `json:"last_backup_at"`
+	LastBackupStatus     *BackupStatus `json:"last_backup_status"`
 
 	Service            Service            `gorm:"foreignKey:ServiceID"            json:"-"`
 	StorageIntegration StorageIntegration `gorm:"foreignKey:StorageIntegrationID" json:"-"`
@@ -894,13 +929,13 @@ func (BackupConfig) TableName() string { return "backup_configs" }
 // At most one config per volume (uniqueIndex on volume_id).
 type VolumeBackupConfig struct {
 	Base
-	VolumeID             uuid.UUID    `gorm:"type:uuid;not null;uniqueIndex" json:"volume_id"`
-	StorageIntegrationID uuid.UUID    `gorm:"type:uuid;not null"             json:"storage_integration_id"`
-	Schedule             string       `gorm:"not null"                       json:"schedule"`
-	RetentionDays        int          `gorm:"not null;default:30"            json:"retention_days"`
-	PathPrefix           string       `json:"path_prefix"`
-	Enabled              bool         `gorm:"default:true"                   json:"enabled"`
-	LastBackupAt         *time.Time   `json:"last_backup_at"`
+	VolumeID             uuid.UUID     `gorm:"type:uuid;not null;uniqueIndex" json:"volume_id"`
+	StorageIntegrationID uuid.UUID     `gorm:"type:uuid;not null"             json:"storage_integration_id"`
+	Schedule             string        `gorm:"not null"                       json:"schedule"`
+	RetentionDays        int           `gorm:"not null;default:30"            json:"retention_days"`
+	PathPrefix           string        `json:"path_prefix"`
+	Enabled              bool          `gorm:"default:true"                   json:"enabled"`
+	LastBackupAt         *time.Time    `json:"last_backup_at"`
 	LastBackupStatus     *BackupStatus `json:"last_backup_status"`
 }
 
@@ -927,13 +962,15 @@ func (SystemBackupConfig) TableName() string { return "system_backup_configs" }
 
 // NotificationChannel defines a webhook/email destination for org-level events.
 // Config JSONB schema depends on Type:
-//   slack/discord: {"webhook_url": "https://..."}
-//   email:         {"address": "ops@company.com"}
-//   webhook:       {"url": "https://...", "secret": "..."}
+//
+//	slack/discord: {"webhook_url": "https://..."}
+//	email:         {"address": "ops@company.com"}
+//	webhook:       {"url": "https://...", "secret": "..."}
 //
 // Events JSONB is an array of event strings:
-//   "deploy.success" | "deploy.failed" | "node.offline" |
-//   "backup.success" | "backup.failed"
+//
+//	"deploy.success" | "deploy.failed" | "node.offline" |
+//	"backup.success" | "backup.failed"
 type NotificationChannel struct {
 	Base
 	OrganizationID uuid.UUID               `gorm:"type:uuid;not null;index"  json:"organization_id"`

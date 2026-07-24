@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Github, Globe, LayoutTemplate, Loader2, Search, ServerCrash } from "lucide-react"
+import { Globe, LayoutTemplate, Loader2, Search, ServerCrash } from "lucide-react"
+import { SiGithub } from "@icons-pack/react-simple-icons"
 import { templates as templatesApi, type TemplateManifest } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { cn } from "@/lib/utils"
@@ -136,7 +137,7 @@ function TemplateCard({ t }: { t: TemplateManifest }) {
         <div className="flex items-center gap-2.5 text-muted-foreground/50">
           {t.links?.source && (
             <a href={t.links.source} target="_blank" rel="noopener" title="Source" className="hover:text-foreground transition-colors">
-              <Github className="h-3.5 w-3.5" />
+              <SiGithub className="h-3.5 w-3.5" />
             </a>
           )}
           {t.links?.website && (

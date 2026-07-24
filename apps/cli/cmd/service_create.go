@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/meshploy/apps/cli/internal/client"
+	"github.com/meshploy/apps/cli/client"
 	"github.com/spf13/cobra"
 )
 

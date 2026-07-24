@@ -120,13 +120,13 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (36 CE tables)
+## packages/db — schema (37 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `agent_tokens`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Workloads | `stacks`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
 | Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups` |
@@ -139,6 +139,9 @@ Full schema documented in `packages/db/README.md`. Key groups:
 **Partial unique indexes** (in `applyConstraints`):
 - `idx_one_owner_per_org` — exactly one owner per org
 - `idx_unique_domain_per_org` — domain names unique within an org
+- `idx_users_email_unique` — `users(email) WHERE email <> ''` — email unique among humans only; agents (`users.kind = 'agent'`) carry an empty email so many can coexist
+
+**Agent principals**: an agent is a `users` row with `kind = 'agent'` (empty email, no password/TOTP) that reuses `organization_members` + `resource_permissions` unchanged — it differs from a human only in auth (a `magt-` token in `agent_tokens`, SHA-256 hashed, shown once). `requireUser`/`checkAccess` are untouched. Remote MCP is served at `/mcp` (Streamable HTTP) under an agent token and is permission-scoped by construction; operator tools (node registration token, system backups, member/permission enumeration, `db_query`/`db_schema`) are stripped from the remote surface. The MCP tool code lives in `apps/cli/{client,mcpserver}` (moved out of `internal/` so `apps/api` can import it for the in-gateway `/mcp` server).
 
 **Encryption**: `EncryptedString` GORM type uses AES-256-GCM. Call `db.SetEncryptionKey()` before any DB operation. Never stored as plaintext.
 
@@ -151,11 +154,13 @@ Full schema documented in `packages/db/README.md`. Key groups:
 ```
 internal/
 ├── config/       # Config struct + Load() from env
-├── middleware/   # Auth() — soft JWT middleware (sets user in ctx, doesn't block)
+├── middleware/   # Auth() — soft principal middleware: resolves a JWT (human) OR a magt- agent token to the same user-id in ctx
 ├── handler/      # HTTP layer only — thin, delegates to service layer
 │   ├── handler.go          # Handler struct + Register() + RegisterRaw()
 │   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess()
 │   ├── auth.go             # /auth/*, /me, TOTP, 2FA
+│   ├── agent.go            # Agent principals: create, list, token mint/rotate/revoke, delete
+│   ├── mcp.go              # Remote MCP (Streamable HTTP) at /mcp — agent-token authed, permission-scoped
 │   ├── org.go              # Org CRUD, members, invitations
 │   ├── project.go          # Project CRUD
 │   ├── permission.go       # Per-resource permission grants
@@ -181,6 +186,7 @@ internal/
 └── service/      # Business logic
     ├── service.go          # Services aggregate struct + New()
     ├── auth.go             # Register (user + default org in tx), Login, TOTP
+    ├── agent.go            # Agent principals + agent_tokens; ResolveToken() for the auth middleware
     ├── org.go              # Org CRUD, members, invitations
     ├── project.go          # Project CRUD
     ├── permission.go       # Resource permission grants
