@@ -2,7 +2,7 @@ package cmd
 
 import (
 	mcpsdk "github.com/mark3labs/mcp-go/server"
-	"github.com/meshploy/apps/cli/internal/mcpserver"
+	"github.com/meshploy/apps/cli/mcpserver"
 	"github.com/spf13/cobra"
 )
 

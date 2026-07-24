@@ -45,6 +45,12 @@ console.{$DOMAIN} {
             flush_interval -1
         }
     }
+    # Remote MCP (Streamable HTTP) → Go API. Agents connect here with a magt- token.
+    handle /mcp* {
+        reverse_proxy localhost:4000 {
+            flush_interval -1
+        }
+    }
     handle {
         reverse_proxy localhost:5173
     }

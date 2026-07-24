@@ -21,12 +21,14 @@ import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/ind
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
 import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrations/index'
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
+import { Route as AppAgentsIndexRouteImport } from './routes/_app/agents/index'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppUsersUserIdRouteImport } from './routes/_app/users/$userId'
 import { Route as AppTemplatesIdRouteImport } from './routes/_app/templates/$id'
 import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
 import { Route as AppIntegrationsNewRouteImport } from './routes/_app/integrations/new'
+import { Route as AppAgentsAgentIdRouteImport } from './routes/_app/agents/$agentId'
 import { Route as AppProjectsIdRouteRouteImport } from './routes/_app/projects/$id/route'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/_app/projects/$id/index'
 import { Route as AppProjectsIdSettingsRouteImport } from './routes/_app/projects/$id/settings'
@@ -124,6 +126,11 @@ const AppClusterIndexRoute = AppClusterIndexRouteImport.update({
   path: '/cluster/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAgentsIndexRoute = AppAgentsIndexRouteImport.update({
+  id: '/agents/',
+  path: '/agents/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
   id: '/account/',
   path: '/account/',
@@ -152,6 +159,11 @@ const AppNodesIdRoute = AppNodesIdRouteImport.update({
 const AppIntegrationsNewRoute = AppIntegrationsNewRouteImport.update({
   id: '/integrations/new',
   path: '/integrations/new',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAgentsAgentIdRoute = AppAgentsAgentIdRouteImport.update({
+  id: '/agents/$agentId',
+  path: '/agents/$agentId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProjectsIdRouteRoute = AppProjectsIdRouteRouteImport.update({
@@ -380,12 +392,14 @@ export interface FileRoutesByFullPath {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
+  '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
   '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
   '/account/': typeof AppAccountIndexRoute
+  '/agents/': typeof AppAgentsIndexRoute
   '/cluster/': typeof AppClusterIndexRoute
   '/integrations/': typeof AppIntegrationsIndexRoute
   '/nodes/': typeof AppNodesIndexRoute
@@ -435,12 +449,14 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
+  '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
   '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
   '/account': typeof AppAccountIndexRoute
+  '/agents': typeof AppAgentsIndexRoute
   '/cluster': typeof AppClusterIndexRoute
   '/integrations': typeof AppIntegrationsIndexRoute
   '/nodes': typeof AppNodesIndexRoute
@@ -490,12 +506,14 @@ export interface FileRoutesById {
   '/_auth/register': typeof AuthRegisterRoute
   '/_app/': typeof AppIndexRoute
   '/_app/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
+  '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/_app/integrations/new': typeof AppIntegrationsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
   '/_app/projects/new': typeof AppProjectsNewRoute
   '/_app/templates/$id': typeof AppTemplatesIdRoute
   '/_app/users/$userId': typeof AppUsersUserIdRoute
   '/_app/account/': typeof AppAccountIndexRoute
+  '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
   '/_app/integrations/': typeof AppIntegrationsIndexRoute
   '/_app/nodes/': typeof AppNodesIndexRoute
@@ -548,12 +566,14 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/projects/$id'
+    | '/agents/$agentId'
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
     | '/templates/$id'
     | '/users/$userId'
     | '/account/'
+    | '/agents/'
     | '/cluster/'
     | '/integrations/'
     | '/nodes/'
@@ -603,12 +623,14 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/register'
+    | '/agents/$agentId'
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
     | '/templates/$id'
     | '/users/$userId'
     | '/account'
+    | '/agents'
     | '/cluster'
     | '/integrations'
     | '/nodes'
@@ -657,12 +679,14 @@ export interface FileRouteTypes {
     | '/_auth/register'
     | '/_app/'
     | '/_app/projects/$id'
+    | '/_app/agents/$agentId'
     | '/_app/integrations/new'
     | '/_app/nodes/$id'
     | '/_app/projects/new'
     | '/_app/templates/$id'
     | '/_app/users/$userId'
     | '/_app/account/'
+    | '/_app/agents/'
     | '/_app/cluster/'
     | '/_app/integrations/'
     | '/_app/nodes/'
@@ -800,6 +824,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClusterIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/agents/': {
+      id: '/_app/agents/'
+      path: '/agents'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AppAgentsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/account/': {
       id: '/_app/account/'
       path: '/account'
@@ -840,6 +871,13 @@ declare module '@tanstack/react-router' {
       path: '/integrations/new'
       fullPath: '/integrations/new'
       preLoaderRoute: typeof AppIntegrationsNewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/agents/$agentId': {
+      id: '/_app/agents/$agentId'
+      path: '/agents/$agentId'
+      fullPath: '/agents/$agentId'
+      preLoaderRoute: typeof AppAgentsAgentIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/projects/$id': {
@@ -1260,12 +1298,14 @@ const AppProjectsIdRouteRouteWithChildren =
 interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppProjectsIdRouteRoute: typeof AppProjectsIdRouteRouteWithChildren
+  AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
   AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
   AppProjectsNewRoute: typeof AppProjectsNewRoute
   AppTemplatesIdRoute: typeof AppTemplatesIdRoute
   AppUsersUserIdRoute: typeof AppUsersUserIdRoute
   AppAccountIndexRoute: typeof AppAccountIndexRoute
+  AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
   AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute
   AppNodesIndexRoute: typeof AppNodesIndexRoute
@@ -1278,12 +1318,14 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppProjectsIdRouteRoute: AppProjectsIdRouteRouteWithChildren,
+  AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
   AppIntegrationsNewRoute: AppIntegrationsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
   AppProjectsNewRoute: AppProjectsNewRoute,
   AppTemplatesIdRoute: AppTemplatesIdRoute,
   AppUsersUserIdRoute: AppUsersUserIdRoute,
   AppAccountIndexRoute: AppAccountIndexRoute,
+  AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,
   AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
   AppNodesIndexRoute: AppNodesIndexRoute,

@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"github.com/meshploy/apps/cli/internal/client"
+	"github.com/meshploy/apps/cli/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

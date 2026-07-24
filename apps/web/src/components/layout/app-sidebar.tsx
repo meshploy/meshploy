@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
 import {
+  Bot,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -50,6 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/integrations", icon: Plug, label: "Integrations", exact: false },
       { href: "/users", icon: Users, label: "Users", exact: false },
+      { href: "/agents", icon: Bot, label: "Agents", exact: false },
       { href: "/settings", icon: Settings, label: "Settings", exact: false },
     ],
   },

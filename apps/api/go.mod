@@ -83,6 +83,7 @@ require (
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-shellwords v1.0.12 // indirect
+	github.com/meshploy/apps/cli v0.0.0
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
@@ -143,3 +144,5 @@ require (
 )
 
 replace github.com/meshploy/packages/db => ../../packages/db
+
+replace github.com/meshploy/apps/cli => ../cli

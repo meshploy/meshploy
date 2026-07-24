@@ -6,7 +6,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpsdk "github.com/mark3labs/mcp-go/server"
-	"github.com/meshploy/apps/cli/internal/client"
+	"github.com/meshploy/apps/cli/client"
 )
 
 func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
@@ -276,6 +276,16 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 	)
 
 	ms.AddTool(
+		mcp.NewTool("apply_manifest",
+			mcp.WithDescription("Deploy a whole app in one call: upsert a stack from an inline Docker Compose manifest (with x-meshploy extensions) and reconcile it into live services. Idempotent — re-apply the same manifest to converge. This is the fastest path from an app spec to running services."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("name", mcp.Required(), mcp.Description("Stack name — the manifest is upserted under this name")),
+			mcp.WithString("spec", mcp.Required(), mcp.Description("Docker Compose–style YAML with x-meshploy extensions")),
+		),
+		s.handleApplyManifest,
+	)
+
+	ms.AddTool(
 		mcp.NewTool("delete_stack",
 			mcp.WithDescription("DESTRUCTIVE — delete a stack and all its managed services. Confirm with the user before calling."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
@@ -494,6 +504,18 @@ func (s *srv) handleApplyStack(_ context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	result, err := s.c.ApplyStack(s.orgID, projectID, st.ID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(result)
+}
+
+func (s *srv) handleApplyManifest(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	name := mcp.ParseString(req, "name", "")
+	spec := mcp.ParseString(req, "spec", "")
+
+	result, err := s.c.ApplyManifest(s.orgID, projectID, name, spec)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

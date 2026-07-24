@@ -58,6 +58,7 @@ func Migrate(db *gorm.DB) error {
 		&User{},
 		&TrustedDevice{},
 		&RecoveryCode{},
+		&AgentToken{},
 		&Organization{},
 		&OrganizationMember{},
 		&ResourcePermission{},
@@ -140,6 +141,14 @@ func applyConstraints(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
 		 ON organization_members (organization_id)
 		 WHERE role = 'owner'`,
+		// User email is unique among humans only. Agents carry an empty email and
+		// must not collide with each other, so the full unique index created by the
+		// old `uniqueIndex` struct tag is replaced with a partial one. AutoMigrate
+		// never drops the retired index itself, so drop it explicitly first.
+		`DROP INDEX IF EXISTS idx_users_email`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+		 ON users (email)
+		 WHERE email <> ''`,
 		// Variable group item keys must be unique within a group
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_variable_group_item_key
 		 ON variable_group_items (group_id, key)`,
@@ -199,6 +208,8 @@ func applyConstraints(db *gorm.DB) error {
 		table, column, refTable, onDelete string
 	}
 	fks := []fkSpec{
+		// Agent tokens → the agent's users row CASCADE (delete agent → tokens go)
+		{"agent_tokens", "agent_id", "users", "CASCADE"},
 		// Organization → children CASCADE
 		{"organization_members", "organization_id", "organizations", "CASCADE"},
 		{"projects", "organization_id", "organizations", "CASCADE"},
