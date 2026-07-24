@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.0](https://github.com/meshploy/meshploy/compare/v0.5.0...v0.6.0) (2026-07-24)
+
+
+### Features
+
+* add go:generate command to sync embedded template snapshot ([a0a2abc](https://github.com/meshploy/meshploy/commit/a0a2abce605b9c7c0f6a7056a21cf0b7e62ca9fa))
+* add MSW demo mode and Playwright E2E tests ([8d5d463](https://github.com/meshploy/meshploy/commit/8d5d46391ba94cbfcaeb4f71df40b556b1c46744))
+* add Starlight docs site ([ded88d0](https://github.com/meshploy/meshploy/commit/ded88d0913fc829c474518d37432c99dfca9f298))
+* add template gallery with logos, deploy flow, and offline fallback ([b1c5afb](https://github.com/meshploy/meshploy/commit/b1c5afb8bed6b1851c295b0850cadd410d9cb99e))
+* add template management functionality ([3aab39f](https://github.com/meshploy/meshploy/commit/3aab39fe327fc116e61aa94de01bff7a0014db92))
+* agent-first platform — token-authed agent principals, gateway-served remote MCP, and one-shot declarative apply ([10670c4](https://github.com/meshploy/meshploy/commit/10670c4fa41dcd06d98f1fa6795f7535c386389c))
+* fetch template catalog from meshploy-templates repo ([8ec5451](https://github.com/meshploy/meshploy/commit/8ec54512c503a07f7bc94020ba08e1c081f97a22))
+* implement on-demand TLS support and update installation script for DNS mode selection ([4589661](https://github.com/meshploy/meshploy/commit/4589661cad14546c6909879ae278a803d2f39423))
+
+
+### Bug Fixes
+
+* add templates mock handlers and layout update ([c9847ee](https://github.com/meshploy/meshploy/commit/c9847eebd79dd8f8406b23d2cd08addcdbdfdc00))
+* fix template gallery type errors and missing GitHub icon export ([f9fa938](https://github.com/meshploy/meshploy/commit/f9fa938ef72b19ec7a206e8131c560425d19f7e9))
+* rewrite docs anchor links and trim changelog ([446919f](https://github.com/meshploy/meshploy/commit/446919f8c6bd07f78fcceb21a09c6ac4aa8b24aa))
+
 ## [0.5.0](https://github.com/meshploy/meshploy/compare/v0.4.0...v0.5.0) (2026-06-22)
 
 
