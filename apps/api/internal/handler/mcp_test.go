@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	cliclient "github.com/meshploy/apps/cli/client"
-	"github.com/meshploy/apps/cli/mcpserver"
+	cliclient "github.com/meshploy/packages/client"
+	"github.com/meshploy/packages/mcpserver"
 )
 
 // TestRemoteExcludedToolsAreRealAndRemoved verifies that every tool named in

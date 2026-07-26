@@ -5,7 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/meshploy/apps/cli/client"
+	"github.com/meshploy/packages/client"
 	"github.com/spf13/cobra"
 )
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpsdk "github.com/mark3labs/mcp-go/server"
-	"github.com/meshploy/apps/cli/client"
+	"github.com/meshploy/packages/client"
 )
 
 func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {

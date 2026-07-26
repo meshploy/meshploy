@@ -16,6 +16,8 @@ COPY apps/api/go.mod apps/api/go.sum ./apps/api/
 COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
 COPY apps/cli/go.mod apps/cli/go.sum ./apps/cli/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
+COPY packages/client/go.mod packages/client/go.sum* ./packages/client/
+COPY packages/mcpserver/go.mod packages/mcpserver/go.sum* ./packages/mcpserver/
 
 # go work sync requires all modules in go.work to be present.
 # Only download deps for the modules we actually build here.
@@ -23,9 +25,12 @@ RUN go work sync && \
     cd apps/api && go mod download && \
     cd /workspace/packages/db && go mod download
 
-# Copy full source.
+# Copy full source. apps/api imports packages/client + packages/mcpserver (the
+# remote MCP surface), so their source must be present for the workspace build.
 COPY apps/api ./apps/api
 COPY packages/db ./packages/db
+COPY packages/client ./packages/client
+COPY packages/mcpserver ./packages/mcpserver
 
 # Build a fully static binary.
 WORKDIR /workspace/apps/api

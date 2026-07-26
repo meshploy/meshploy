@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/meshploy/apps/cli/client"
+	"github.com/meshploy/packages/client"
 	"github.com/spf13/cobra"
 )
 

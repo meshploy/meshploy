@@ -4,5 +4,7 @@ use (
 	./apps/api
 	./apps/cli
 	./apps/proxy
+	./packages/client
 	./packages/db
+	./packages/mcpserver
 )

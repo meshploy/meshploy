@@ -43,6 +43,8 @@ jobs:
             api:
               - "apps/api/**"
               - "packages/db/**"
+              - "packages/client/**"
+              - "packages/mcpserver/**"
               - "go.work"
               - "go.work.sum"
 

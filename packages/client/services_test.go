@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/meshploy/apps/cli/client"
+	"github.com/meshploy/packages/client"
 )
 
 // ─── GetEnvVars ───────────────────────────────────────────────────────────────

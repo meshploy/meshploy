@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/meshploy/apps/cli/client"
+	"github.com/meshploy/packages/client"
 )
 
 func TestListVolumes(t *testing.T) {
