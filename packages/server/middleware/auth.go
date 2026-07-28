@@ -157,9 +157,10 @@ var publicRules = []publicRule{
 	{Method: "POST", Path: "/api/v1/nodes/self-register", Match: matchExact},
 	{Method: "DELETE", Path: "/api/v1/nodes/self-deregister", Match: matchExact},
 
-	// WebSocket terminals validate a JWT from the ?token= query parameter
-	// internally, because the browser WebSocket API cannot set headers. The
-	// paths carry variable segments, so they are matched by suffix.
+	// WebSocket terminals redeem a single-use ?ticket= internally, because the
+	// browser WebSocket API cannot set headers. The paths carry variable
+	// segments, so they are matched by suffix. Minting a ticket is a normal
+	// authenticated POST and is deliberately NOT listed here.
 	{Method: "GET", Path: "/terminal", Match: matchSuffix},
 
 	// Invitation accept flow — the invitee has no account yet. The invite token

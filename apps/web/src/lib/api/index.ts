@@ -1,5 +1,6 @@
 export { ApiError } from "./core"
 export * from "./auth"
+export * from "./terminal"
 export * from "./orgs"
 export * from "./nodes"
 export * from "./projects"

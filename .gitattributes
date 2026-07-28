@@ -1,0 +1,12 @@
+# Shell scripts must be LF in the repository regardless of contributor platform.
+#
+# get.sh and deploy/install.sh are fetched over HTTP and piped straight into sh
+# on Linux nodes. A CRLF copy fails there with an obscure error — the shebang
+# resolves to "/usr/bin/env sh\r", which does not exist. Today these files are
+# LF only because core.autocrlf happened to normalise them on the machines they
+# were committed from; this makes it a property of the repository instead.
+*.sh text eol=lf
+
+# Same reasoning: CRLF breaks line continuations and here-docs in RUN steps.
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf

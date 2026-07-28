@@ -45,6 +45,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerPermissionRoutes(api)
 	h.registerAgentRoutes(api)
 	h.registerEntitlementRoutes(api)
+	h.registerTerminalRoutes(api)
 
 	// Extension routes last, so an extension can rely on the CE surface
 	// already being mounted. Empty in CE builds.

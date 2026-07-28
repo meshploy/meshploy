@@ -4,12 +4,13 @@ import { FitAddon } from "@xterm/addon-fit"
 import { Loader2 } from "lucide-react"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { createTerminalTicket } from "@/lib/api/terminal"
 import type { TerminalPayload } from "@/store/tab-store"
 import "@xterm/xterm/css/xterm.css"
 
 type ConnState = "connecting" | "connected" | "error" | "closed"
 
-function terminalWsUrl(orgId: string, nodeId: string, token: string): string {
+function terminalWsUrl(orgId: string, nodeId: string, ticket: string): string {
   const apiBase =
     (window as { __MESHPLOY_CONFIG__?: { apiUrl?: string } }).__MESHPLOY_CONFIG__?.apiUrl ??
     import.meta.env.VITE_API_URL ??
@@ -21,7 +22,7 @@ function terminalWsUrl(orgId: string, nodeId: string, token: string): string {
   } else {
     base = base.replace(/^http/, "ws")
   }
-  return `${base}/api/v1/orgs/${orgId}/nodes/${nodeId}/terminal?token=${encodeURIComponent(token)}`
+  return `${base}/api/v1/orgs/${orgId}/nodes/${nodeId}/terminal?ticket=${encodeURIComponent(ticket)}`
 }
 
 export function NodeTerminal({ payload }: { payload: TerminalPayload }) {
@@ -67,49 +68,70 @@ export function NodeTerminal({ payload }: { payload: TerminalPayload }) {
     term.open(containerRef.current)
     fit.fit()
 
-    const ws = new WebSocket(terminalWsUrl(orgId, payload.nodeId, token))
-    ws.binaryType = "arraybuffer"
+    // The socket cannot be opened synchronously any more: it needs a ticket,
+    // and minting one is a round trip. `ws` is therefore assigned later, and
+    // `cancelled` covers unmounting while that request is still in flight.
+    let ws: WebSocket | null = null
+    let cancelled = false
 
-    ws.onopen = () => {
-      setConnState("connected")
-      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }))
-    }
-
-    ws.onmessage = (e) => {
-      if (e.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(e.data))
-      } else {
-        term.write(e.data)
+    void (async () => {
+      let ticket: string
+      try {
+        ticket = (await createTerminalTicket(token)).ticket
+      } catch {
+        if (!cancelled) {
+          setConnState("error")
+          term.write("\r\n\x1b[31mCould not authorize the terminal session.\x1b[0m\r\n")
+        }
+        return
       }
-    }
+      if (cancelled) return
 
-    ws.onerror = () => {
-      setConnState("error")
-      term.write("\r\n\x1b[31mWebSocket error — check the API logs.\x1b[0m\r\n")
-    }
-    ws.onclose = () => {
-      setConnState((s) => s === "connected" ? "closed" : s)
-      term.write("\r\n\x1b[33mConnection closed.\x1b[0m\r\n")
-    }
+      ws = new WebSocket(terminalWsUrl(orgId, payload.nodeId, ticket))
+      ws.binaryType = "arraybuffer"
+
+      ws.onopen = () => {
+        setConnState("connected")
+        ws?.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }))
+      }
+
+      ws.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer) {
+          term.write(new Uint8Array(e.data))
+        } else {
+          term.write(e.data)
+        }
+      }
+
+      ws.onerror = () => {
+        setConnState("error")
+        term.write("\r\n\x1b[31mWebSocket error — check the API logs.\x1b[0m\r\n")
+      }
+      ws.onclose = () => {
+        setConnState((s) => s === "connected" ? "closed" : s)
+        term.write("\r\n\x1b[33mConnection closed.\x1b[0m\r\n")
+      }
+    })()
 
     const onData = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws?.readyState === WebSocket.OPEN) {
         ws.send(new TextEncoder().encode(data))
       }
     })
 
     const observer = new ResizeObserver(() => {
       fit.fit()
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }))
       }
     })
     observer.observe(containerRef.current!)
 
     return () => {
+      cancelled = true
       onData.dispose()
       observer.disconnect()
-      ws.close()
+      ws?.close()
       term.dispose()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

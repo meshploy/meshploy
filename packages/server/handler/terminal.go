@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -21,7 +23,67 @@ import (
 )
 
 var wsUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true }, // JWT auth is enforced below
+	CheckOrigin: func(r *http.Request) bool { return true }, // ticket auth is enforced below
+}
+
+// TerminalTicketOutput carries a single-use ticket for a WebSocket upgrade.
+type TerminalTicketOutput struct {
+	Body struct {
+		Ticket    string    `json:"ticket"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+}
+
+// registerTerminalRoutes mounts the ticket exchange. The WebSocket endpoints
+// themselves are raw routes (see RegisterRaw) because they hijack the
+// connection; this one is an ordinary authenticated request, so it goes through
+// the normal Huma pipeline and inherits bearer auth.
+func (h *Handler) registerTerminalRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "create-terminal-ticket",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/terminal/ticket",
+		Summary:     "Mint a single-use ticket for a terminal WebSocket",
+		Description: "Browsers cannot set headers on a WebSocket handshake, so the " +
+			"terminal endpoints authenticate with a short-lived single-use ticket " +
+			"passed in the query string instead of the session token.",
+		Tags:     []string{"Terminal"},
+		Security: []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, _ *struct{}) (*TerminalTicketOutput, error) {
+		userID, err := requireUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		tok, exp, err := h.svc.Tickets.Mint(userID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("mint ticket: " + err.Error())
+		}
+		out := &TerminalTicketOutput{}
+		out.Body.Ticket = tok
+		out.Body.ExpiresAt = exp
+		return out, nil
+	})
+}
+
+// wsUserFromTicket redeems the single-use ticket in the query string and
+// returns the user it identifies.
+//
+// This replaces passing the session JWT as `?token=`. A WebSocket handshake
+// from a browser cannot carry headers, so the credential must sit in the URL —
+// and URLs are logged. chimiddleware.Logger writes the full request URI to
+// stdout, which in a container image is a log file on disk, so every terminal
+// session used to persist a full-privilege bearer token in cleartext. A ticket
+// is single-use and lives for TicketTTL, so the logged copy is inert.
+//
+// Redeeming only establishes identity. Every caller must still authorize the
+// specific org and resource afterwards.
+func (h *Handler) wsUserFromTicket(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	userID, ok := h.svc.Tickets.Redeem(r.URL.Query().Get("ticket"))
+	if !ok {
+		http.Error(w, "invalid or expired ticket", http.StatusUnauthorized)
+		return uuid.Nil, false
+	}
+	return userID, true
 }
 
 // resizeQueue feeds terminal resize events into the K8s SPDY executor.
@@ -39,7 +101,8 @@ func (q *resizeQueue) Next() *remotecommand.TerminalSize {
 
 // NodeTerminal upgrades the HTTP connection to WebSocket and streams an
 // interactive root shell on the target worker node via a K8s privileged pod.
-// The JWT must be passed as the `token` query parameter.
+// Authenticated by a single-use ticket passed as the `ticket` query parameter,
+// obtained from POST /api/v1/terminal/ticket.
 //
 // Protocol:
 //   - Client → Server text message: JSON {"type":"resize","cols":N,"rows":N}
@@ -48,27 +111,8 @@ func (q *resizeQueue) Next() *remotecommand.TerminalSize {
 func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// ── Auth: validate JWT from query param (browser WS can't set headers) ──
-	tokenStr := r.URL.Query().Get("token")
-	if tokenStr == "" {
-		http.Error(w, "missing token", http.StatusUnauthorized)
-		return
-	}
-	tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrSignatureInvalid
-		}
-		return []byte(h.cfg.JWTSecret), nil
-	})
-	if err != nil || !tok.Valid {
-		http.Error(w, "invalid token", http.StatusUnauthorized)
-		return
-	}
-	claims, claimsOK := tok.Claims.(jwt.MapClaims)
-	rawUID, _ := claims["uid"].(string)
-	userID, uidErr := uuid.Parse(rawUID)
-	if !claimsOK || uidErr != nil {
-		http.Error(w, "invalid token claims", http.StatusUnauthorized)
+	userID, ok := h.wsUserFromTicket(w, r)
+	if !ok {
 		return
 	}
 
@@ -245,36 +289,20 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 
 // ServiceTerminal upgrades the HTTP connection to WebSocket and streams an
 // interactive shell inside an existing service pod via K8s exec.
-// The JWT must be passed as the `token` query parameter.
+// Authenticated by a single-use ticket passed as the `ticket` query parameter,
+// obtained from POST /api/v1/terminal/ticket.
 //
 // Protocol is identical to NodeTerminal (resize JSON + binary stdin/stdout).
 func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	tokenStr := r.URL.Query().Get("token")
-	if tokenStr == "" {
-		http.Error(w, "missing token", http.StatusUnauthorized)
-		return
-	}
-	tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrSignatureInvalid
-		}
-		return []byte(h.cfg.JWTSecret), nil
-	})
-	if err != nil || !tok.Valid {
-		http.Error(w, "invalid token", http.StatusUnauthorized)
-		return
-	}
-	claims, claimsOK := tok.Claims.(jwt.MapClaims)
-	rawUID, _ := claims["uid"].(string)
-	userID, uidErr := uuid.Parse(rawUID)
-	if !claimsOK || uidErr != nil {
-		http.Error(w, "invalid token claims", http.StatusUnauthorized)
+	userID, ok := h.wsUserFromTicket(w, r)
+	if !ok {
 		return
 	}
 
 	orgIDStr := chi.URLParam(r, "orgId")
+	projectIDStr := chi.URLParam(r, "projectId")
 	serviceIDStr := chi.URLParam(r, "serviceId")
 	podName := chi.URLParam(r, "podName")
 
@@ -283,12 +311,25 @@ func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid orgId", http.StatusBadRequest)
 		return
 	}
+	projectID, err := uuid.Parse(projectIDStr)
+	if err != nil {
+		http.Error(w, "invalid projectId", http.StatusBadRequest)
+		return
+	}
 	serviceID, err := uuid.Parse(serviceIDStr)
 	if err != nil {
 		http.Error(w, "invalid serviceId", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.svc.Orgs.MemberRole(ctx, orgID, userID); err != nil {
+
+	// Authorize the service itself, not merely membership of the org named in
+	// the URL. Checking only MemberRole(orgID, userID) let any member of any org
+	// exec into any other org's container: the service was then loaded by ID
+	// alone and the namespace taken from ITS project, so the orgId path segment
+	// never had to match the target. ActionUpdate rather than ActionView because
+	// a shell inside the container is not a read-only capability.
+	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, serviceID,
+		db.ResourceService, db.ActionUpdate, &projectID); err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -301,6 +342,26 @@ func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
 	namespace, containerName, err := h.svc.Workloads.GetK8sInfo(ctx, serviceID)
 	if err != nil {
 		http.Error(w, "service not found", http.StatusNotFound)
+		return
+	}
+
+	// podName arrives from the URL and is passed straight to K8s exec, so it
+	// must be confirmed to belong to this service rather than merely to exist
+	// in the namespace.
+	pods, err := appk8s.ListServicePods(ctx, h.svc.K8s, namespace, containerName)
+	if err != nil {
+		http.Error(w, "list pods: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	podOK := false
+	for _, p := range pods {
+		if p.Name == podName {
+			podOK = true
+			break
+		}
+	}
+	if !podOK {
+		http.Error(w, "pod not found for this service", http.StatusNotFound)
 		return
 	}
 
