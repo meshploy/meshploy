@@ -150,8 +150,9 @@ All routes are under `/api/v1`. Authenticated routes require `Authorization: Bea
 | DELETE | `/nodes/self-deregister` | — | Worker self-removal |
 | GET/POST | `/orgs/{orgId}/node-registration-token` | ✓ | Get / rotate registration token |
 | GET/POST | `/orgs/{orgId}/node-provisioning-tokens` | ✓ | List / create provisioning tokens |
-| GET | `/cluster/headscale-preauth-key` | ✓ admin | Generate Headscale pre-auth key |
-| GET | `/cluster/join-token` | ✓ admin | Get K3s join token |
+| GET | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ admin | Get Headscale pre-auth key |
+| POST | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ admin | Generate Headscale pre-auth key |
+| GET | `/orgs/{orgId}/cluster/join-token` | ✓ admin | Get K3s join token |
 
 ### Services
 

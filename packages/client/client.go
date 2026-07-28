@@ -170,8 +170,11 @@ type K3sJoinToken struct {
 	ServerURL string `json:"server_url"`
 }
 
-func (c *Client) GetK3sJoinToken() (K3sJoinToken, error) {
-	resp, err := c.do("GET", "/api/v1/cluster/join-token", nil)
+// Cluster-credential endpoints are org-scoped and admin-only — they hand out
+// credentials that let a machine join the mesh and the k3s cluster.
+
+func (c *Client) GetK3sJoinToken(orgID string) (K3sJoinToken, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/cluster/join-token", nil)
 	if err != nil {
 		return K3sJoinToken{}, err
 	}
@@ -183,16 +186,16 @@ type HeadscalePreAuthKey struct {
 	HeadscaleURL string `json:"headscale_url"`
 }
 
-func (c *Client) GetHeadscalePreAuthKey() (HeadscalePreAuthKey, error) {
-	resp, err := c.do("GET", "/api/v1/cluster/headscale-preauth-key", nil)
+func (c *Client) GetHeadscalePreAuthKey(orgID string) (HeadscalePreAuthKey, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/cluster/headscale-preauth-key", nil)
 	if err != nil {
 		return HeadscalePreAuthKey{}, err
 	}
 	return decode[HeadscalePreAuthKey](resp)
 }
 
-func (c *Client) CreateHeadscalePreAuthKey() (HeadscalePreAuthKey, error) {
-	resp, err := c.do("POST", "/api/v1/cluster/headscale-preauth-key", nil)
+func (c *Client) CreateHeadscalePreAuthKey(orgID string) (HeadscalePreAuthKey, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/cluster/headscale-preauth-key", nil)
 	if err != nil {
 		return HeadscalePreAuthKey{}, err
 	}

@@ -253,20 +253,22 @@ function ProvisioningTokensPanel() {
 
 function HeadscalePreAuthKeyPanel() {
   const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
   const queryClient = useQueryClient()
   const [visible, setVisible] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ["headscale-preauth-key"],
-    queryFn: () => clusterApi.getHeadscalePreAuthKey(token),
+    queryKey: ["headscale-preauth-key", orgId],
+    queryFn: () => clusterApi.getHeadscalePreAuthKey(orgId!, token),
+    enabled: !!orgId,
   })
 
   const { mutate: generate, isPending: generating } = useMutation({
-    mutationFn: () => clusterApi.createHeadscalePreAuthKey(token),
+    mutationFn: () => clusterApi.createHeadscalePreAuthKey(orgId!, token),
     onSuccess: (res) => {
       setVisible(true)
-      queryClient.setQueryData(["headscale-preauth-key"], {
+      queryClient.setQueryData(["headscale-preauth-key", orgId], {
         has_active_key: true,
         key: res.key,
         headscale_url: res.headscale_url,
@@ -300,7 +302,10 @@ function HeadscalePreAuthKeyPanel() {
           variant="outline"
           className="h-7 text-xs gap-1.5"
           onClick={() => generate()}
-          disabled={generating || isLoading || unavailable}
+          // !orgId is required: the query above is disabled (not loading) until
+          // the org resolves, so isLoading is false and the button would
+          // otherwise POST to /orgs/undefined/...
+          disabled={generating || isLoading || unavailable || !orgId}
         >
           {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
           {activeKey ? "New key" : "Generate key"}
@@ -388,12 +393,14 @@ function HeadscalePreAuthKeyPanel() {
 
 function K3sJoinTokenPanel() {
   const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
   const [visible, setVisible] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ["cluster-join-token"],
-    queryFn: () => clusterApi.getJoinToken(token),
+    queryKey: ["cluster-join-token", orgId],
+    queryFn: () => clusterApi.getJoinToken(orgId!, token),
+    enabled: !!orgId,
   })
 
   const k3sToken = data?.token ?? ""

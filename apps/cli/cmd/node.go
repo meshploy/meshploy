@@ -571,7 +571,7 @@ Examples:
 
 		// ── Preauth key (auto-fetch, or prompt as fallback) ───────────────────
 		if preauthKey == "" {
-			preauth, err := c.GetHeadscalePreAuthKey()
+			preauth, err := c.GetHeadscalePreAuthKey(orgID())
 			if err == nil && preauth.Key != "" {
 				preauthKey = preauth.Key
 				fmt.Println("  Preauth key fetched automatically.")
@@ -581,7 +581,7 @@ Examples:
 				}
 			} else {
 				// Fallback: generate a new one
-				preauth, err = c.CreateHeadscalePreAuthKey()
+				preauth, err = c.CreateHeadscalePreAuthKey(orgID())
 				if err == nil && preauth.Key != "" {
 					preauthKey = preauth.Key
 					fmt.Println("  Generated new preauth key.")
@@ -621,7 +621,7 @@ Examples:
 		}
 
 		// ── Fetch k3s join token (so auto mode can join the cluster) ─────────
-		k3sJoin, err := c.GetK3sJoinToken()
+		k3sJoin, err := c.GetK3sJoinToken(orgID())
 		if err != nil {
 			fmt.Printf("  warning: could not fetch k3s join token (%v) — node will not join the cluster automatically\n", err)
 		}

@@ -49,7 +49,7 @@ func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLim
 			if strings.HasPrefix(tokenStr, AgentTokenPrefix) {
 				if resolveAgent != nil {
 					if agentID, ok := resolveAgent(r.Context(), tokenStr); ok {
-						ctx := context.WithValue(r.Context(), userIDKey, agentID)
+						ctx := ContextWithUser(r.Context(), agentID)
 						next.ServeHTTP(w, r.WithContext(ctx))
 						return
 					}
@@ -91,10 +91,18 @@ func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLim
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userIDKey, userID)
+			ctx := ContextWithUser(r.Context(), userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// ContextWithUser returns a copy of ctx carrying userID as the authenticated
+// principal. This is the only place the principal is written — Auth() uses it
+// for both the JWT and agent-token paths, and tests use it to construct an
+// authenticated context without going through HTTP.
+func ContextWithUser(ctx context.Context, userID uuid.UUID) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
 }
 
 // UserFromContext returns the authenticated user ID from the request context.

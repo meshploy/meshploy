@@ -358,21 +358,24 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 	}, h.SelfDeregisterNode)
 
-	// K3s cluster join token — authenticated, gateway-only value from config
+	// K3s cluster join token — org-scoped, admin-only. Hands out a credential that
+	// lets a machine join the k3s cluster, so it is gated like its siblings
+	// GetNodeRegistrationToken and CreateProvisioningToken.
 	huma.Register(api, huma.Operation{
 		OperationID: "get-cluster-join-token",
 		Method:      "GET",
-		Path:        "/api/v1/cluster/join-token",
+		Path:        "/api/v1/orgs/{orgId}/cluster/join-token",
 		Summary:     "Get the k3s node token for joining the cluster",
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetClusterJoinToken)
 
-	// Headscale preauth key — get the most recent active key, or generate a new one
+	// Headscale preauth key — org-scoped, admin-only. Get the most recent active
+	// key, or generate a new one.
 	huma.Register(api, huma.Operation{
 		OperationID: "get-headscale-preauth-key",
 		Method:      "GET",
-		Path:        "/api/v1/cluster/headscale-preauth-key",
+		Path:        "/api/v1/orgs/{orgId}/cluster/headscale-preauth-key",
 		Summary:     "Get the most recent active Headscale preauth key",
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
@@ -381,7 +384,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-headscale-preauth-key",
 		Method:      "POST",
-		Path:        "/api/v1/cluster/headscale-preauth-key",
+		Path:        "/api/v1/orgs/{orgId}/cluster/headscale-preauth-key",
 		Summary:     "Generate a new Headscale preauth key for joining the WireGuard mesh",
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
@@ -549,8 +552,16 @@ type ClusterJoinTokenOutput struct {
 
 const k3sTokenPath = "/var/lib/rancher/k3s/server/node-token"
 
-func (h *Handler) GetClusterJoinToken(ctx context.Context, _ *struct{}) (*ClusterJoinTokenOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+// ClusterPathInput scopes the cluster-credential endpoints to an organization.
+// These endpoints hand out credentials that let a machine join the mesh and the
+// k3s cluster, so they are org-scoped and admin-only — matching their siblings
+// GetNodeRegistrationToken and CreateProvisioningToken.
+type ClusterPathInput struct {
+	OrgID string `path:"orgId"`
+}
+
+func (h *Handler) GetClusterJoinToken(ctx context.Context, input *ClusterPathInput) (*ClusterJoinTokenOutput, error) {
+	if _, _, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, ""); err != nil {
 		return nil, err
 	}
 	out := &ClusterJoinTokenOutput{}
@@ -747,8 +758,8 @@ type HeadscalePreAuthKeyOutput struct {
 // The key is persisted encrypted in the DB by CreateHeadscalePreAuthKey and auto-cleared
 // here when it has passed its expiry. This lets the UI display the key across page
 // navigations without requiring the user to generate a new one every session.
-func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyStatusOutput, error) {
-	userID, err := requireUser(ctx)
+func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, input *ClusterPathInput) (*HeadscalePreAuthKeyStatusOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -761,11 +772,10 @@ func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*Hea
 		}
 	}
 
-	orgs, err := h.svc.Orgs.ListForUser(ctx, userID)
-	if err != nil || len(orgs) == 0 {
+	org, err := h.svc.Orgs.Get(ctx, orgID)
+	if err != nil {
 		return out, nil
 	}
-	org := orgs[0]
 
 	if org.HeadscalePreAuthKey == "" || org.HeadscalePreAuthKeyExpiry == nil {
 		return out, nil
@@ -786,22 +796,13 @@ func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*Hea
 // CreateHeadscalePreAuthKey generates a fresh reusable Headscale preauth key and
 // persists it encrypted on the org record so GetHeadscalePreAuthKey can return it
 // on subsequent page loads without requiring another POST.
-func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*HeadscalePreAuthKeyOutput, error) {
-	userID, err := requireUser(ctx)
+func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, input *ClusterPathInput) (*HeadscalePreAuthKeyOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
 	if h.svc.Headscale == nil {
 		return nil, huma.NewError(503, "Headscale is not configured on this gateway")
-	}
-
-	// Resolve the caller's org and enforce admin role before generating a mesh join token.
-	orgs, err := h.svc.Orgs.ListForUser(ctx, userID)
-	if err != nil || len(orgs) == 0 {
-		return nil, huma.Error403Forbidden("no organization found")
-	}
-	if err := h.enforceAdminRole(ctx, orgs[0].ID, userID); err != nil {
-		return nil, err
 	}
 
 	hsUser := "meshploy"
@@ -813,8 +814,8 @@ func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, _ *struct{}) (*
 		return nil, huma.NewError(502, "failed to generate Headscale preauth key: "+err.Error())
 	}
 
-	if storeErr := h.svc.Orgs.StoreHeadscalePreAuthKey(ctx, orgs[0].ID, key.Key, key.Expiration); storeErr != nil {
-		log.Printf("warning: persist headscale preauth key for org %s: %v", orgs[0].ID, storeErr)
+	if storeErr := h.svc.Orgs.StoreHeadscalePreAuthKey(ctx, orgID, key.Key, key.Expiration); storeErr != nil {
+		log.Printf("warning: persist headscale preauth key for org %s: %v", orgID, storeErr)
 	}
 
 	out := &HeadscalePreAuthKeyOutput{}
