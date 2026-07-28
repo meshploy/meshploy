@@ -21,15 +21,20 @@ jobs:
             apps/cli/go.sum
             apps/proxy/go.sum
             packages/db/go.sum
+            packages/server/go.sum
+            packages/client/go.sum
+            packages/mcpserver/go.sum
 
-      - name: vet api
-        run: cd apps/api && go vet ./...
-
-      - name: vet cli
-        run: cd apps/cli && go vet ./...
-
-      - name: vet proxy
-        run: cd apps/proxy && go vet ./...
+      # Every module in go.work. The API core lives in packages/server since it
+      # moved out of apps/api/internal, so vetting only apps/* would skip most
+      # of the codebase.
+      - name: vet all workspace modules
+        run: |
+          for m in apps/api apps/cli apps/proxy                    packages/db packages/client packages/mcpserver                    packages/license packages/server; do
+            echo "::group::go vet $m"
+            (cd "$m" && go vet ./...) || exit 1
+            echo "::endgroup::"
+          done
 
   # ── CLI build ─────────────────────────────────────────────────────────────────
   build-cli:
@@ -78,7 +83,7 @@ jobs:
 
   # ── API service tests ─────────────────────────────────────────────────────────
   test-api:
-    name: API service tests
+    name: API service tests (packages/server)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +94,7 @@ jobs:
           cache-dependency-path: apps/api/go.sum
 
       - name: test
-        run: cd apps/api && go test ./internal/service/... -v -timeout 180s
+        run: cd packages/server && go test ./... -v -timeout 300s
 
   # ── Web typecheck ─────────────────────────────────────────────────────────────
   typecheck-web:

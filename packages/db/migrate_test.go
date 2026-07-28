@@ -42,7 +42,9 @@ func TestMigrate(t *testing.T) {
 		"users", "organizations", "organization_members",
 		"projects", "nodes", "services", "build_configs",
 		"database_configs", "stacks", "volumes", "volume_mounts",
-		"secrets", "routes", "deployments", "jobs",
+		"routes", "deployments", "jobs",
+		// Tables added by the EE foundation.
+		"agent_tokens", "installed_licenses",
 	}
 	for _, tbl := range tables {
 		var count int64

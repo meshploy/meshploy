@@ -11,6 +11,12 @@ on:
       - "apps/builder/**"
       - "deploy/**"
       - "packages/db/**"
+      # The API core moved here from apps/api/internal — without these, a
+      # change to the server or its license verifier would rebuild nothing.
+      - "packages/server/**"
+      - "packages/license/**"
+      - "packages/client/**"
+      - "packages/mcpserver/**"
       - "go.work"
       - "go.work.sum"
       - "get.sh"
@@ -45,6 +51,8 @@ jobs:
               - "packages/db/**"
               - "packages/client/**"
               - "packages/mcpserver/**"
+              - "packages/server/**"
+              - "packages/license/**"
               - "go.work"
               - "go.work.sum"
 
@@ -54,6 +62,9 @@ jobs:
             proxy:
               - "apps/proxy/**"
               - "packages/db/**"
+              # go work sync needs every workspace module manifest present.
+              - "packages/server/**"
+              - "packages/license/**"
               - "go.work"
               - "go.work.sum"
 
