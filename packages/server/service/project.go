@@ -156,6 +156,9 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 }
 
 func (s *ProjectService) Create(ctx context.Context, orgID uuid.UUID, name, slug string) (*db.Project, error) {
+	if err := checkQuota(ctx, orgID, QuotaProject); err != nil {
+		return nil, err
+	}
 	project := &db.Project{OrganizationID: orgID, Name: name, Slug: slug}
 	return project, s.db.WithContext(ctx).Create(project).Error
 }

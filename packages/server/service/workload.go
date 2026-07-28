@@ -136,6 +136,16 @@ func dbDefaults(engine db.DatabaseEngine, version string) (image string, port in
 }
 
 func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in CreateWorkloadInput) (*db.Service, error) {
+	// Quota is metered per org; resolve it from the project. Runs before the
+	// database branch so both service kinds are metered.
+	var proj db.Project
+	if err := s.db.WithContext(ctx).Select("organization_id").First(&proj, "id = ?", projectID).Error; err != nil {
+		return nil, err
+	}
+	if err := checkQuota(ctx, proj.OrganizationID, QuotaService); err != nil {
+		return nil, err
+	}
+
 	if in.Type == db.ServiceTypeDatabase {
 		return s.createDatabase(ctx, projectID, in)
 	}

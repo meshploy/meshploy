@@ -106,6 +106,13 @@ func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tails
 	if len(role) > 0 && role[0] != "" {
 		k3sRole = role[0]
 	}
+	// Meter worker nodes only — the gateway is fixed overhead, not capacity,
+	// and counting it would make an HA gateway consume the customer's allowance.
+	if k3sRole != db.K3sRoleServer {
+		if err := checkQuota(ctx, orgID, QuotaNode); err != nil {
+			return nil, err
+		}
+	}
 	// Server nodes are the running gateway — seed them as online.
 	// Agent nodes start offline until their first heartbeat.
 	status := db.NodeOffline

@@ -226,6 +226,13 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 		},
 	}
 
+	// Extension mutators run last, on the final object. A mutator that errors
+	// aborts submission — build isolation must fail closed rather than let an
+	// unisolated build run. No-op in CE builds.
+	if err := applyJobMutators(ctx, JobBuild, job); err != nil {
+		return err
+	}
+
 	_, err := client.BatchV1().Jobs(p.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	return err
 }

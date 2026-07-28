@@ -82,6 +82,11 @@ func CreateRunJob(ctx context.Context, client kubernetes.Interface, p RunJobPara
 		},
 	}
 
+	// Extension mutators run last, on the final object. No-op in CE builds.
+	if err := applyJobMutators(ctx, JobRun, job); err != nil {
+		return err
+	}
+
 	_, err := client.BatchV1().Jobs(p.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	return err
 }

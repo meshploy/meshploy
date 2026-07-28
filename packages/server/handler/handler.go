@@ -44,6 +44,12 @@ func (h *Handler) Register(api huma.API) {
 	h.registerSystemRoutes(api)
 	h.registerPermissionRoutes(api)
 	h.registerAgentRoutes(api)
+
+	// Extension routes last, so an extension can rely on the CE surface
+	// already being mounted. Empty in CE builds.
+	for _, fn := range routeHooks {
+		fn(api, h)
+	}
 }
 
 // RegisterRaw wires routes that need raw http.HandlerFunc access:

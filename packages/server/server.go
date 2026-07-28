@@ -41,6 +41,12 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 	// Build services first so the org-member middleware can reference them.
 	svc := service.New(db, cfg)
 
+	// Extension middleware, pre-auth phase. Empty in CE builds — the caller is
+	// not yet known here, so this is for transport concerns only.
+	for _, mw := range middlewareFor(0, PriorityBeforeAuth) {
+		r.Use(mw)
+	}
+
 	// 20 invalid agent-token attempts per minute per IP (defence-in-depth).
 	agentFailLimiter := middleware.NewIPRateLimiter(rate.Every(3*time.Second), 20)
 	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, agentFailLimiter))
@@ -55,6 +61,12 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 		_, err := svc.Orgs.MemberRole(ctx, orgID, userID)
 		return err
 	}))
+
+	// Extension middleware, post-auth phase. Empty in CE builds. The principal
+	// is in context by this point, which is what audit logging requires.
+	for _, mw := range middlewareFor(PriorityBeforeAuth, PriorityAfterAuth) {
+		r.Use(mw)
+	}
 
 	apiCfg := huma.DefaultConfig("Meshploy API", "1.0.0")
 	apiCfg.Info.Description = "Meshploy internal developer platform API"
