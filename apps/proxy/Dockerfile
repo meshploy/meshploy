@@ -13,9 +13,13 @@ COPY apps/api/go.mod apps/api/go.sum* ./apps/api/
 COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
 COPY apps/cli/go.mod apps/cli/go.sum ./apps/cli/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
-# proxy doesn't import these, but go work sync needs every workspace module's go.mod.
+# proxy doesn't import these, but go work sync needs every workspace module's
+# go.mod. Keep this list in step with the `use (...)` block in go.work —
+# adding a module there without adding it here breaks this build.
 COPY packages/client/go.mod packages/client/go.sum* ./packages/client/
 COPY packages/mcpserver/go.mod packages/mcpserver/go.sum* ./packages/mcpserver/
+COPY packages/license/go.mod packages/license/go.sum* ./packages/license/
+COPY packages/server/go.mod packages/server/go.sum* ./packages/server/
 
 # go work sync requires all modules in go.work to be present.
 # Only download deps for the modules we actually build here.
