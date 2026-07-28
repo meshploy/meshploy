@@ -84,7 +84,11 @@ services:
   # WireGuard mesh (100.64.0.1:4000). External traffic goes through Caddy on 443;
   # the API is JWT-authenticated so direct access on 4000 is safe.
   api:
-    image: ghcr.io/meshploy/api:${MESHPLOY_CHANNEL:-latest}
+    # The repository is overridable so an Enterprise install can point at the EE
+    # image without editing this file — get.sh re-extracts deploy/ on every
+    # upgrade, so an edit here would not survive one. Set MESHPLOY_API_IMAGE in
+    # .env, which is never part of the release tarball.
+    image: ${MESHPLOY_API_IMAGE:-ghcr.io/meshploy/api}:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
     dns:
       - 1.1.1.1

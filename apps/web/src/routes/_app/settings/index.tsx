@@ -12,6 +12,8 @@ import {
   domains as domainsApi,
   storage as storageApi,
   backups as backupsApi,
+  entitlements as entitlementsApi,
+  ApiError,
   type ApiDomain,
   type ApiStorageIntegration,
   type ApiSystemBackupConfig,
@@ -63,7 +65,129 @@ function SettingsPage() {
       <PrimaryDomainSection />
 
       <SystemBackupSection />
+
+      <LicenseSection />
     </div>
+  )
+}
+
+// LicenseSection is present in the open-source build on purpose: it is how an
+// operator moves from CE to EE. On a CE binary activation fails with "this
+// build trusts no license signing key" — that message is the upgrade
+// instruction, since the trusted key is compiled into the EE image rather than
+// configured at runtime.
+function LicenseSection() {
+  const token = useAuthStore((s) => s.token)!
+  const qc = useQueryClient()
+  const [licenseToken, setLicenseToken] = useState("")
+  const [error, setError] = useState<string | null>(null)
+
+  const { data: ent, isLoading } = useQuery({
+    queryKey: ["entitlements"],
+    queryFn: () => entitlementsApi.get(token),
+  })
+
+  const { mutate: activate, isPending } = useMutation({
+    mutationFn: () => entitlementsApi.activate(licenseToken.trim(), token),
+    onSuccess: (updated) => {
+      qc.setQueryData(["entitlements"], updated)
+      setLicenseToken("")
+      setError(null)
+    },
+    // The API's messages are already written for an operator ("this license has
+    // expired", "not valid for this install's domain"), so show them verbatim
+    // rather than flattening them into one generic failure.
+    onError: (e) => setError(e instanceof ApiError ? e.detail : "Could not activate this licence."),
+  })
+
+  if (isLoading) {
+    return (
+      <Section title="Licence">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span>Loading…</span>
+        </div>
+      </Section>
+    )
+  }
+
+  const active = ent?.licensed && !ent.expired
+
+  return (
+    <Section
+      title="Licence"
+      subtitle={active ? "This install is licensed for Enterprise features" : "Community Edition"}
+    >
+      {active && ent && (
+        <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Check className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="text-sm font-medium">{ent.tier ?? "Enterprise"}</span>
+            {ent.customer && (
+              <span className="text-xs text-muted-foreground">· {ent.customer}</span>
+            )}
+          </div>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            {ent.expires_at && (
+              <>
+                <dt className="text-muted-foreground">Expires</dt>
+                <dd>{new Date(ent.expires_at).toLocaleDateString()}</dd>
+              </>
+            )}
+            <dt className="text-muted-foreground">Nodes</dt>
+            <dd className={cn(ent.over_limit && "text-destructive")}>
+              {ent.node_count}
+              {ent.node_limit ? ` / ${ent.node_limit}` : " (unlimited)"}
+            </dd>
+          </dl>
+          {ent.features.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1">
+              {ent.features.map((f) => (
+                <span key={f} className="text-[11px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
+                  {f}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* A licence that is installed but not in force — expired, wrong domain,
+          over its node limit. Silence here would look like a broken install. */}
+      {ent?.problem && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+          <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+          <p className="text-xs text-destructive">{ent.problem}</p>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-muted-foreground">
+          {active ? "Replace licence" : "Activate a licence"}
+        </label>
+        <textarea
+          value={licenseToken}
+          onChange={(e) => { setLicenseToken(e.target.value); setError(null) }}
+          placeholder="mlic-v1.…"
+          rows={3}
+          spellCheck={false}
+          className={cn(inputCls, "h-auto py-2 font-mono text-xs resize-y")}
+        />
+        {error && (
+          <p className="text-xs text-destructive mt-1">{error}</p>
+        )}
+        <div className="flex justify-end mt-2">
+          <Button
+            size="sm"
+            onClick={() => activate()}
+            disabled={isPending || licenseToken.trim() === ""}
+          >
+            {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+            {active ? "Replace" : "Activate"}
+          </Button>
+        </div>
+      </div>
+    </Section>
   )
 }
 

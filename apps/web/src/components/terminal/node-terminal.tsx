@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit"
 import { Loader2 } from "lucide-react"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { createTerminalTicket } from "@/lib/api/terminal"
+import { terminal as terminalApi } from "@/lib/api/terminal"
 import type { TerminalPayload } from "@/store/tab-store"
 import "@xterm/xterm/css/xterm.css"
 
@@ -77,7 +77,7 @@ export function NodeTerminal({ payload }: { payload: TerminalPayload }) {
     void (async () => {
       let ticket: string
       try {
-        ticket = (await createTerminalTicket(token)).ticket
+        ticket = (await terminalApi.createTicket(token)).ticket
       } catch {
         if (!cancelled) {
           setConnState("error")
