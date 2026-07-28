@@ -93,11 +93,14 @@ the proxy, node registration, or the actual build/deploy execution path.
 ## Project layout
 
 ```
-apps/api/     Chi + Huma REST API. Business logic in internal/service/, HTTP in internal/handler/.
-apps/proxy/   Edge reverse proxy. Reads Host header → WireGuard mesh → upstream.
-apps/cli/     Cobra CLI binary. Wraps API calls; node install/uninstall shells out to scripts.
-apps/web/     Vite + React 19 + TanStack Router frontend.
-packages/db/  Shared GORM models imported by api and proxy.
+apps/api/            Thin CE entrypoint (main.go calls server.Main()). Chi + Huma REST API core lives in packages/server — business logic in service/, HTTP in handler/.
+apps/proxy/          Edge reverse proxy. Reads Host header → WireGuard mesh → upstream.
+apps/cli/            Cobra CLI binary. Wraps API calls; node install/uninstall shells out to scripts.
+apps/web/            Vite + React 19 + TanStack Router frontend.
+packages/db/         Shared GORM models imported by api and proxy.
+packages/server/     API core — config, service, handler, middleware, k8s, templates. Imported by apps/api.
+packages/client/     Typed Go REST client for the API. Imported by cli and mcpserver.
+packages/mcpserver/  MCP tool definitions. Imported by cli (stdio) and by packages/server (remote /mcp).
 ```
 
 ---
@@ -106,7 +109,7 @@ packages/db/  Shared GORM models imported by api and proxy.
 
 ### Go (api, proxy, cli)
 
-- **Never put business logic in handlers.** Handlers call the service layer and return results. Logic belongs in `internal/service/`.
+- **Never put business logic in handlers.** Handlers call the service layer and return results. Logic belongs in `packages/server/service/`.
 - **Use GORM for all DB access.** No raw SQL — use `applyConstraints()` in `packages/db/db.go` for DDL.
 - **Register DB migrations** via `db.RegisterMigration()` — don't add columns directly to `AutoMigrate`.
 - **Secrets stay encrypted.** Use `db.EncryptedString` for any sensitive column. Never store plaintext.
@@ -149,7 +152,7 @@ One subject line, no trailing period. Keep it under 72 characters.
 ## Pull requests
 
 - **One concern per PR.** A refactor and a bug fix are two PRs.
-- **Tests for service-layer changes.** The `apps/api/internal/service/` package has integration tests — add coverage for new service methods.
+- **Tests for service-layer changes.** The `packages/server/service/` package has integration tests — add coverage for new service methods.
 - **Build must pass.** Run `go build ./...` before pushing.
 - **Type-check the frontend.** Run `npm run build` in `apps/web/` to catch TypeScript errors.
 

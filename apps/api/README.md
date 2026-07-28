@@ -18,64 +18,80 @@ The Meshploy REST API. Built with Go, Chi router, and [Huma](https://huma.rocks/
 
 ## Directory structure
 
+`apps/api/` is a thin entrypoint — its `main.go` just calls `server.Main()`. The actual API core (config, HTTP handlers, business logic) lives in `packages/server`, which `apps/api` imports via a `go.work` replace directive. This split lets the API core be reused (e.g. embedded as the in-gateway `/mcp` server) without depending on the `apps/api` binary.
+
 ```
 apps/api/
-├── main.go
-└── internal/
-    ├── config/       # Typed env config — Load() from environment
-    ├── middleware/   # Auth() — soft JWT middleware, sets user in ctx
-    ├── handler/      # HTTP layer only — thin, delegates to service
-    │   ├── handler.go          # Handler struct, Register(), RegisterRaw()
-    │   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess() helpers
-    │   ├── auth.go             # /auth/register, /auth/login, /me, TOTP, 2FA
-    │   ├── org.go              # Org CRUD, member management, invitations
-    │   ├── project.go          # Project CRUD
-    │   ├── permission.go       # Per-resource permission grants
-    │   ├── node.go             # Node CRUD, self-register, self-deregister, metrics
-    │   ├── workload.go         # Service CRUD, env vars, build/db config, pods
-    │   ├── stack.go            # Stack CRUD, apply, sync
-    │   ├── job.go              # Job CRUD, trigger, run history
-    │   ├── volume.go           # Volume CRUD, mounts, backup config
-    │   ├── route.go            # Route CRUD, targets, hostname verify
-    │   ├── domain.go           # Domain CRUD + DNS verification
-    │   ├── deployment.go       # Deployment list, trigger, rollback, SSE logs
-    │   ├── backup.go           # Service backups + system backup
-    │   ├── notification.go     # Notification channels
-    │   ├── email_config.go     # Org SMTP config
-    │   ├── variable_group.go   # Variable group CRUD + service attach/detach
-    │   ├── git_integration.go  # Git provider integrations + OAuth callbacks
-    │   ├── registry.go         # Registry integration CRUD
-    │   ├── storage.go          # Storage integration CRUD
-    │   ├── terminal.go         # WebSocket: node terminal + pod terminal
-    │   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
-    │   ├── system.go           # System version, install/uninstall scripts
-    │   └── health.go           # GET /health
-    └── service/      # Business logic — one file per domain
-        ├── service.go          # Services aggregate struct + New()
-        ├── auth.go             # Register (user + default org in tx), Login, TOTP
-        ├── org.go              # Org CRUD, member management, invitations
-        ├── project.go          # Project CRUD
-        ├── permission.go       # Resource permission grants
-        ├── node.go             # Node CRUD, registration/provisioning tokens, monitor
-        ├── node_exporter.go    # Live metrics scraping from node_exporter
-        ├── workload.go         # Service CRUD, env vars, build/db config
-        ├── stack.go            # Stack parse, apply, sync
-        ├── job.go              # Job CRUD, trigger, reconciler goroutine
-        ├── volume.go           # Volume CRUD, mounts, K8s PVC lifecycle
-        ├── route.go            # Route + target CRUD
-        ├── domain.go           # Domain CRUD + DNS verification
-        ├── deployment.go       # Deployment trigger, rollback, K8s Job lifecycle
-        ├── backup.go           # Backup schedule, trigger, restore, retention
-        ├── backup_executor.go  # Backup/restore K8s Job execution
-        ├── notification.go     # Notification dispatch (Slack, Discord, email, webhook)
-        ├── email_config.go     # Org SMTP config
-        ├── variable_group.go   # Variable group CRUD + service attachment
-        ├── git_integration.go  # Git provider connections + OAuth flows
-        ├── registry.go         # Registry integration CRUD
-        ├── storage.go          # Storage integration CRUD
-        ├── db_explorer.go      # Live DB query + schema via K8s exec
-        ├── system.go           # Version info, install/uninstall script serving
-        └── headscale.go        # Headscale API client (list, get, delete, rename nodes)
+├── main.go        # Calls server.Main() — no business logic here
+├── Dockerfile
+├── go.mod
+└── tools/
+
+packages/server/
+├── server.go       # HTTP server setup, route registration
+├── entrypoint.go   # Main() — config load, DB connect, server start
+├── config/         # Typed env config — Load() from environment
+├── middleware/      # Auth() — soft principal middleware, sets user in ctx
+├── handler/        # HTTP layer only — thin, delegates to service
+│   ├── handler.go          # Handler struct, Register(), RegisterRaw()
+│   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess() helpers
+│   ├── auth.go             # /auth/register, /auth/login, /me, TOTP, 2FA
+│   ├── agent.go            # Agent principals: create, list, token mint/rotate/revoke, delete
+│   ├── mcp.go              # Remote MCP (Streamable HTTP) at /mcp — agent-token authed, permission-scoped
+│   ├── org.go              # Org CRUD, member management, invitations
+│   ├── project.go          # Project CRUD
+│   ├── permission.go       # Per-resource permission grants
+│   ├── node.go             # Node CRUD, self-register, self-deregister, metrics
+│   ├── workload.go         # Service CRUD, env vars, build/db config, pods
+│   ├── stack.go            # Stack CRUD, apply, sync
+│   ├── job.go              # Job CRUD, trigger, run history
+│   ├── volume.go           # Volume CRUD, mounts, backup config
+│   ├── route.go            # Route CRUD, targets, hostname verify
+│   ├── domain.go           # Domain CRUD + DNS verification
+│   ├── deployment.go       # Deployment list, trigger, rollback, SSE logs
+│   ├── backup.go           # Service backups + system backup
+│   ├── notification.go     # Notification channels
+│   ├── email_config.go     # Org SMTP config
+│   ├── variable_group.go   # Variable group CRUD + service attach/detach
+│   ├── git_integration.go  # Git provider integrations + OAuth callbacks
+│   ├── registry.go         # Registry integration CRUD
+│   ├── storage.go          # Storage integration CRUD
+│   ├── terminal.go         # WebSocket: node terminal + pod terminal
+│   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
+│   ├── template.go         # One-click template catalog
+│   ├── system.go           # System version, install/uninstall scripts
+│   └── health.go           # GET /health
+├── service/        # Business logic — one file per domain
+│   ├── service.go          # Services aggregate struct + New()
+│   ├── auth.go             # Register (user + default org in tx), Login, TOTP
+│   ├── agent.go            # Agent principals + agent_tokens; ResolveToken() for the auth middleware
+│   ├── org.go              # Org CRUD, member management, invitations
+│   ├── project.go          # Project CRUD
+│   ├── permission.go       # Resource permission grants
+│   ├── node.go             # Node CRUD, registration/provisioning tokens, monitor
+│   ├── node_exporter.go    # Live metrics scraping from node_exporter
+│   ├── workload.go         # Service CRUD, env vars, build/db config
+│   ├── stack.go            # Stack parse, apply, sync
+│   ├── job.go              # Job CRUD, trigger, reconciler goroutine
+│   ├── volume.go           # Volume CRUD, mounts, K8s PVC lifecycle
+│   ├── route.go            # Route + target CRUD
+│   ├── domain.go           # Domain CRUD + DNS verification
+│   ├── deployment.go       # Deployment trigger, rollback, K8s Job lifecycle
+│   ├── backup.go           # Backup schedule, trigger, restore, retention
+│   ├── backup_executor.go  # Backup/restore K8s Job execution
+│   ├── notification.go     # Notification dispatch (Slack, Discord, email, webhook)
+│   ├── email_config.go     # Org SMTP config
+│   ├── variable_group.go   # Variable group CRUD + service attachment
+│   ├── git_integration.go  # Git provider connections + OAuth flows
+│   ├── registry.go         # Registry integration CRUD
+│   ├── storage.go          # Storage integration CRUD
+│   ├── db_explorer.go      # Live DB query + schema via K8s exec
+│   ├── system.go           # Version info, install/uninstall script serving
+│   ├── template.go         # Template catalog fetch/cache
+│   └── headscale.go        # Headscale API client (list, get, delete, rename nodes)
+├── k8s/            # Kubernetes client helpers
+├── templates/      # Built-in template assets
+└── version/        # Build/version metadata
 ```
 
 ---

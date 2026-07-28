@@ -1,5 +1,5 @@
 // Command sync-builtin refreshes the embedded fallback snapshot
-// (internal/templates/builtin) from the meshploy-templates repo.
+// (packages/server/templates/builtin) from the meshploy-templates repo.
 //
 // The embed is a curated *subset* of the catalog — the handful of staples a
 // fresh or offline install shows before/without a live fetch. This tool pulls
@@ -7,10 +7,10 @@
 // and writes them into the snapshot; the id list is authoritative (dirs not in
 // it are pruned).
 //
-// Run it via `go generate ./...` (directive in internal/templates/embed.go) or
-// directly from apps/api:
+// Run it via `go generate ./templates/` (directive in
+// packages/server/templates/embed.go) or directly from apps/api:
 //
-//	go run ./tools/sync-builtin -ids pgadmin,redis -out internal/templates/builtin
+//	go run ./tools/sync-builtin -ids pgadmin,redis -out ../../packages/server/templates/builtin
 package main
 
 import (
@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meshploy/apps/api/internal/templates"
+	"github.com/meshploy/packages/server/templates"
 )
 
 func main() {

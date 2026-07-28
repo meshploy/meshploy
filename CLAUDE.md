@@ -14,9 +14,12 @@ meshploy/
 │   ├── cli/          # Static Go binary — node & cluster management CLI
 │   └── web/          # Vite + React 19 + TanStack Router frontend
 ├── packages/
-│   └── db/           # Shared GORM + PostgreSQL models (imported by api and proxy)
+│   ├── db/           # Shared GORM + PostgreSQL models (imported by api and proxy)
+│   ├── client/       # Typed Go REST client for the API (imported by cli and mcpserver)
+│   ├── mcpserver/    # MCP tool definitions (imported by cli for stdio, api for remote /mcp)
+│   └── server/       # API core — config, service, handler, middleware, k8s (imported by apps/api)
 ├── deploy/           # Headscale, CoreDNS, Docker Compose infra
-├── go.work           # Go Workspaces: ties apps/api + apps/proxy + apps/cli + packages/db
+├── go.work           # Go Workspaces: ties apps/* + packages/*
 └── .env              # Local secrets (never committed)
 ```
 
@@ -24,10 +27,12 @@ meshploy/
 
 ## Architecture overview
 
-- **apps/api** — Chi router + Huma (OpenAPI 3.1) REST API. All business logic lives in `internal/service/`, HTTP concerns in `internal/handler/`. Config loaded from env via `internal/config/`.
+- **apps/api** — Thin CE entrypoint: `main.go` calls `server.Main()`. The API itself lives in `packages/server` — business logic in `service/`, HTTP concerns in `handler/`, config in `config/`.
 - **apps/proxy** — Minimal L7 reverse proxy. Reads the `Host` header → in-memory route cache (backed by PostgreSQL, refreshed every 30s) → streams over WireGuard mesh to target node. Listens on port 8081.
 - **apps/cli** — Static Go binary (`/usr/local/bin/meshploy`). Wraps API calls and shells out to `install.sh` / `uninstall.sh` for node operations. Built with Cobra.
 - **packages/db** — Shared GORM models backed by **PostgreSQL**. `AutoMigrate` + supplementary partial unique indexes run on API startup via `db.Migrate()`. Exports an Extensible Migration Registry (`RegisterMigration`) for the EE open-core pattern. Imported by both `apps/api` and `apps/proxy`.
+- **packages/client** — Typed Go REST client for the Meshploy API. Imported by `apps/cli` (every command) and by `packages/mcpserver`. Lives in `packages/` so no app depends on another app.
+- **packages/mcpserver** — The MCP tool definitions (~85 tools) built on `packages/client`. Imported by `apps/cli` for the local stdio server (`meshploy mcp`) and by `packages/server` for the gateway-served remote `/mcp` endpoint.
 - **apps/web** — Vite + React 19 + TanStack Router frontend. Dark-only, Tailwind CSS v4 (CSS-first via `@tailwindcss/vite`, no config file), shadcn/ui Nova preset, `@base-ui/react` primitives.
 - **deploy/** — Headscale (WireGuard mesh), CoreDNS, Docker Compose. The gateway node is the only public-internet-facing machine; all workers are dark.
 
@@ -141,7 +146,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 - `idx_unique_domain_per_org` — domain names unique within an org
 - `idx_users_email_unique` — `users(email) WHERE email <> ''` — email unique among humans only; agents (`users.kind = 'agent'`) carry an empty email so many can coexist
 
-**Agent principals**: an agent is a `users` row with `kind = 'agent'` (empty email, no password/TOTP) that reuses `organization_members` + `resource_permissions` unchanged — it differs from a human only in auth (a `magt-` token in `agent_tokens`, SHA-256 hashed, shown once). `requireUser`/`checkAccess` are untouched. Remote MCP is served at `/mcp` (Streamable HTTP) under an agent token and is permission-scoped by construction; operator tools (node registration token, system backups, member/permission enumeration, `db_query`/`db_schema`) are stripped from the remote surface. The MCP tool code lives in `apps/cli/{client,mcpserver}` (moved out of `internal/` so `apps/api` can import it for the in-gateway `/mcp` server).
+**Agent principals**: an agent is a `users` row with `kind = 'agent'` (empty email, no password/TOTP) that reuses `organization_members` + `resource_permissions` unchanged — it differs from a human only in auth (a `magt-` token in `agent_tokens`, SHA-256 hashed, shown once). `requireUser`/`checkAccess` are untouched. Remote MCP is served at `/mcp` (Streamable HTTP) under an agent token and is permission-scoped by construction; operator tools (node registration token, system backups, member/permission enumeration, `db_query`/`db_schema`) are stripped from the remote surface. The MCP tool code lives in `packages/{client,mcpserver}` — shared modules imported by both `apps/cli` (stdio) and `packages/server` (remote `/mcp`), so no app depends on another app.
 
 **Encryption**: `EncryptedString` GORM type uses AES-256-GCM. Call `db.SetEncryptionKey()` before any DB operation. Never stored as plaintext.
 
@@ -149,10 +154,12 @@ Full schema documented in `packages/db/README.md`. Key groups:
 
 ---
 
-## apps/api — internal directory structure
+## packages/server — directory structure
 
 ```
-internal/
+packages/server/
+├── server.go     # Router assembly, middleware chain, Huma config
+├── entrypoint.go # Main() — shared by the CE and EE binaries
 ├── config/       # Config struct + Load() from env
 ├── middleware/   # Auth() — soft principal middleware: resolves a JWT (human) OR a magt- agent token to the same user-id in ctx
 ├── handler/      # HTTP layer only — thin, delegates to service layer
@@ -183,33 +190,36 @@ internal/
 │   ├── domain.go           # Domain CRUD + DNS verification
 │   ├── system.go           # Version, install/uninstall scripts
 │   └── health.go           # GET /health
-└── service/      # Business logic
-    ├── service.go          # Services aggregate struct + New()
-    ├── auth.go             # Register (user + default org in tx), Login, TOTP
-    ├── agent.go            # Agent principals + agent_tokens; ResolveToken() for the auth middleware
-    ├── org.go              # Org CRUD, members, invitations
-    ├── project.go          # Project CRUD
-    ├── permission.go       # Resource permission grants
-    ├── node.go             # Node CRUD, registration/provisioning tokens, offline monitor
-    ├── node_exporter.go    # Live metrics scraping from node_exporter
-    ├── workload.go         # Service CRUD, env vars, build/db config
-    ├── stack.go            # Stack parse, apply, sync
-    ├── job.go              # Job CRUD, trigger, K8s Job reconciler goroutine
-    ├── volume.go           # Volume CRUD, mounts, K8s PVC lifecycle
-    ├── route.go            # Route + target CRUD
-    ├── domain.go           # Domain CRUD + DNS verification
-    ├── deployment.go       # Deployment trigger, rollback, K8s Job lifecycle
-    ├── backup.go           # Backup schedule, trigger, restore, retention reaper
-    ├── backup_executor.go  # Backup/restore K8s Job execution
-    ├── notification.go     # Dispatch: Slack, Discord, email, HMAC webhook
-    ├── email_config.go     # Org SMTP config
-    ├── variable_group.go   # Variable group CRUD + service attachment
-    ├── git_integration.go  # Git provider connections + OAuth flows
-    ├── registry.go         # Registry integration CRUD
-    ├── storage.go          # Storage integration CRUD
-    ├── db_explorer.go      # Live DB query + schema via K8s exec
-    ├── system.go           # Version info, install/uninstall script serving
-    └── headscale.go        # Headscale API client: list, get, delete, rename nodes
+├── service/      # Business logic
+│   ├── service.go          # Services aggregate struct + New()
+│   ├── auth.go             # Register (user + default org in tx), Login, TOTP
+│   ├── agent.go            # Agent principals + agent_tokens; ResolveToken() for the auth middleware
+│   ├── org.go              # Org CRUD, members, invitations
+│   ├── project.go          # Project CRUD
+│   ├── permission.go       # Resource permission grants
+│   ├── node.go             # Node CRUD, registration/provisioning tokens, offline monitor
+│   ├── node_exporter.go    # Live metrics scraping from node_exporter
+│   ├── workload.go         # Service CRUD, env vars, build/db config
+│   ├── stack.go            # Stack parse, apply, sync
+│   ├── job.go              # Job CRUD, trigger, K8s Job reconciler goroutine
+│   ├── volume.go           # Volume CRUD, mounts, K8s PVC lifecycle
+│   ├── route.go            # Route + target CRUD
+│   ├── domain.go           # Domain CRUD + DNS verification
+│   ├── deployment.go       # Deployment trigger, rollback, K8s Job lifecycle
+│   ├── backup.go           # Backup schedule, trigger, restore, retention reaper
+│   ├── backup_executor.go  # Backup/restore K8s Job execution
+│   ├── notification.go     # Dispatch: Slack, Discord, email, HMAC webhook
+│   ├── email_config.go     # Org SMTP config
+│   ├── variable_group.go   # Variable group CRUD + service attachment
+│   ├── git_integration.go  # Git provider connections + OAuth flows
+│   ├── registry.go         # Registry integration CRUD
+│   ├── storage.go          # Storage integration CRUD
+│   ├── db_explorer.go      # Live DB query + schema via K8s exec
+│   ├── system.go           # Version info, install/uninstall script serving
+│   └── headscale.go        # Headscale API client: list, get, delete, rename nodes
+├── k8s/          # Kubernetes client, exec, terminal helpers
+├── templates/    # One-click template catalog (embedded + remote)
+└── version/      # Current — overridden at build time via -ldflags
 ```
 
 Full API route reference: `apps/api/README.md`.

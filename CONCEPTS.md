@@ -158,12 +158,12 @@ On first use, the node saves its assigned ID and secret to `/etc/meshploy/node.c
 
 ## The API layer
 
-`apps/api` uses two libraries on top of Go's `net/http`:
+The API layer (`packages/server`) uses two libraries on top of Go's `net/http`:
 
 - **Chi** — a lightweight router. Handles URL parameter extraction, middleware chaining, and grouping. No reflection, no magic.
 - **Huma** — generates OpenAPI 3.1 schemas from Go function signatures. Each handler is a function with typed input and output structs; Huma validates the request, deserializes it, calls the function, and serializes the response. Interactive docs are served at `GET /docs`.
 
-The handler layer is strictly thin: no business logic, no direct DB access. Handlers call services, return results. The service layer (`internal/service/`) owns all business logic and talks to PostgreSQL via GORM. This boundary is enforced by convention rather than Go's type system — `Handler` holds a `*service.Services` aggregate, not individual DB connections.
+The handler layer is strictly thin: no business logic, no direct DB access. Handlers call services, return results. The service layer (`packages/server/service/`) owns all business logic and talks to PostgreSQL via GORM. This boundary is enforced by convention rather than Go's type system — `Handler` holds a `*service.Services` aggregate, not individual DB connections.
 
 ```
 HTTP request
@@ -236,7 +236,7 @@ The isolation boundary that actually matters at runtime is the **project**. Each
 
 ## Auth model
 
-`apps/api/internal/middleware/auth.go` runs on every route. It attempts to parse the JWT from the `Authorization` header; if valid, it stores the user in the request context. If the token is missing or invalid, it does nothing — the request continues to the handler unauthenticated.
+`packages/server/middleware/auth.go` runs on every route. It attempts to parse the JWT from the `Authorization` header; if valid, it stores the user in the request context. If the token is missing or invalid, it does nothing — the request continues to the handler unauthenticated.
 
 Each handler that requires a logged-in user calls `requireUser(ctx)` explicitly:
 

@@ -7,4 +7,5 @@ use (
 	./packages/client
 	./packages/db
 	./packages/mcpserver
+	./packages/server
 )

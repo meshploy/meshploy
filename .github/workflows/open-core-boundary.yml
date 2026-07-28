@@ -1,0 +1,19 @@
+name: Open-core boundary
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  no-ee-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert the public repo never imports EE
+        run: |
+          if grep -rIn "github.com/meshploy/ee" --include='*.go' --include='go.mod' apps packages; then
+            echo "::error::The public repo must never import the private EE module."
+            exit 1
+          fi
+          echo "OK: no EE imports in the public repo."
