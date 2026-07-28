@@ -18,6 +18,7 @@ import (
 
 type Services struct {
 	Auth            *AuthService
+	Entitlements    *EntitlementService
 	Agents          *AgentService
 	Orgs            *OrgService
 	Permissions     *PermissionService
@@ -179,6 +180,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	svc := &Services{
 		Auth:            auth,
+		Entitlements:    &EntitlementService{db: db, domain: entitlementDomain(c)},
 		Agents:          &AgentService{db: db},
 		Orgs:            &OrgService{db: db},
 		Permissions:     &PermissionService{db: db},

@@ -252,6 +252,20 @@ type AgentToken struct {
 
 func (AgentToken) TableName() string { return "agent_tokens" }
 
+// InstalledLicense holds the Enterprise license token pasted by an admin.
+// At most one row exists per install — licenses are install-scoped for
+// self-hosted (Cloud uses org.plan instead, via a different Entitlements
+// implementation). The token is a signed, non-secret `mlic-` string verified
+// offline against an embedded public key, so it is stored as-is rather than
+// encrypted: nothing in it is confidential and the signature is what matters.
+type InstalledLicense struct {
+	Base
+	Token       string    `gorm:"not null"          json:"-"`
+	ActivatedBy uuid.UUID `gorm:"type:uuid;not null" json:"activated_by"`
+}
+
+func (InstalledLicense) TableName() string { return "installed_licenses" }
+
 type TrustedDevice struct {
 	Base
 	UserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`

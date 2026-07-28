@@ -18,6 +18,7 @@ COPY apps/cli/go.mod apps/cli/go.sum ./apps/cli/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
 COPY packages/client/go.mod packages/client/go.sum* ./packages/client/
 COPY packages/mcpserver/go.mod packages/mcpserver/go.sum* ./packages/mcpserver/
+COPY packages/license/go.mod packages/license/go.sum* ./packages/license/
 COPY packages/server/go.mod packages/server/go.sum* ./packages/server/
 
 # go work sync requires all modules in go.work to be present.
@@ -33,6 +34,7 @@ COPY apps/api ./apps/api
 COPY packages/db ./packages/db
 COPY packages/client ./packages/client
 COPY packages/mcpserver ./packages/mcpserver
+COPY packages/license ./packages/license
 COPY packages/server ./packages/server
 
 # Build a fully static binary.

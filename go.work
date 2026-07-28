@@ -6,6 +6,7 @@ use (
 	./apps/proxy
 	./packages/client
 	./packages/db
+	./packages/license
 	./packages/mcpserver
 	./packages/server
 )
