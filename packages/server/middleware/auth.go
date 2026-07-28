@@ -111,28 +111,72 @@ func UserFromContext(ctx context.Context) (uuid.UUID, bool) {
 	return id, ok
 }
 
-// publicPaths are routes that do not require a JWT. Checked by RequireAuth.
-// Terminal paths handle their own JWT validation from the ?token= query param.
-var publicPaths = []string{
-	"GET /health",
-	"GET /api/v1/auth/status",
-	"POST /api/v1/auth/login",
-	"POST /api/v1/auth/register",
+// matchKind says how a rule's path is compared. Every rule is anchored: there
+// is no substring matching, because an unanchored rule silently exempts any
+// route whose path happens to contain the pattern.
+type matchKind int
+
+const (
+	matchExact  matchKind = iota // the whole path equals Path
+	matchPrefix                  // the path starts with Path (which must end in "/")
+	matchSuffix                  // the path ends with Path (for routes with variable segments)
+)
+
+// publicRule exempts one route from RequireAuth.
+type publicRule struct {
+	Method string // required — a rule that ignores method is almost always too broad
+	Path   string
+	Match  matchKind
+}
+
+// publicRules are the routes that do not require an authenticated principal.
+//
+// Every entry must be justified by the route being unable to carry an
+// Authorization header — a bootstrap step, a third-party redirect, or a
+// machine credential of a different kind. Anything a logged-in browser calls
+// normally does NOT belong here.
+//
+// Rules are anchored and method-scoped. A previous version carried
+// `"GET /api/"` as a prefix rule (annotated "OpenAPI schema served by Huma"),
+// which exempted *every GET under /api/* from authentication — and it did not
+// even serve its stated purpose, since Huma mounts its spec at /openapi, /docs
+// and /schemas. Only per-handler checks were holding the line; a handler that
+// omitted one served unauthenticated. That was verified against a running
+// binary, not theorised.
+var publicRules = []publicRule{
+	{Method: "GET", Path: "/health", Match: matchExact},
+	{Method: "GET", Path: "/api/v1/auth/status", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/auth/login", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/auth/register", Match: matchExact},
+
 	// MFA second-factor steps — no Bearer token exists yet at this point.
-	"POST /api/v1/auth/totp",
-	"POST /api/v1/auth/recovery",
-	// Node self-registration uses mreg- tokens, not JWTs.
-	"/self-register",
-	"/self-deregister",
-	// WebSocket terminals validate JWT from ?token= internally.
-	"/terminal",
-	// Invitation accept flow — public endpoints for new user sign-up via invite link.
-	"GET /api/v1/invitations/",
-	"POST /api/v1/invitations/",
+	{Method: "POST", Path: "/api/v1/auth/totp", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/auth/recovery", Match: matchExact},
+
+	// Node self-registration presents an mreg-/mprov- token, not a JWT.
+	{Method: "POST", Path: "/api/v1/nodes/self-register", Match: matchExact},
+	{Method: "DELETE", Path: "/api/v1/nodes/self-deregister", Match: matchExact},
+
+	// WebSocket terminals validate a JWT from the ?token= query parameter
+	// internally, because the browser WebSocket API cannot set headers. The
+	// paths carry variable segments, so they are matched by suffix.
+	{Method: "GET", Path: "/terminal", Match: matchSuffix},
+
+	// Invitation accept flow — the invitee has no account yet. The invite token
+	// in the path is the credential.
+	{Method: "GET", Path: "/api/v1/invitations/", Match: matchPrefix},
+	{Method: "POST", Path: "/api/v1/invitations/", Match: matchPrefix},
+
 	// Inbound webhooks — validated by HMAC signature or per-service deploy token.
-	"POST /api/v1/webhooks/",
-	// OpenAPI schema served by Huma.
-	"GET /api/",
+	{Method: "POST", Path: "/api/v1/webhooks/", Match: matchPrefix},
+
+	// Git provider OAuth/App redirects. These arrive from the provider, so no
+	// Authorization header can be attached; CSRF is covered by the `state`
+	// parameter the handlers validate.
+	{Method: "GET", Path: "/api/v1/github/app-callback", Match: matchExact},
+	{Method: "GET", Path: "/api/v1/github/callback", Match: matchExact},
+	{Method: "GET", Path: "/api/v1/gitlab/callback", Match: matchExact},
+	{Method: "GET", Path: "/api/v1/gitea/callback", Match: matchExact},
 }
 
 // RequireAuth is a fail-closed middleware that returns 401 for any request
@@ -154,17 +198,27 @@ func RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// isPublic reports whether a request is exempt from authentication.
+//
+// Fail closed: an unrecognised route is never public, and every rule must match
+// both the method and an anchored portion of the path.
 func isPublic(r *http.Request) bool {
-	methodPath := r.Method + " " + r.URL.Path
-	for _, p := range publicPaths {
-		if strings.HasPrefix(p, r.Method+" ") {
-			// Method-prefixed rule — exact match on method+path prefix.
-			if strings.HasPrefix(methodPath, p) {
+	path := r.URL.Path
+	for _, rule := range publicRules {
+		if rule.Method != r.Method {
+			continue
+		}
+		switch rule.Match {
+		case matchExact:
+			if path == rule.Path {
 				return true
 			}
-		} else {
-			// Path-only rule — match anywhere in the path.
-			if strings.Contains(r.URL.Path, p) {
+		case matchPrefix:
+			if strings.HasPrefix(path, rule.Path) {
+				return true
+			}
+		case matchSuffix:
+			if strings.HasSuffix(path, rule.Path) {
 				return true
 			}
 		}
