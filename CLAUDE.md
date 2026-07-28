@@ -59,6 +59,8 @@ Workers self-register via `POST /api/v1/nodes/self-register` using an `mreg-<hex
 
 `go.work` uses `replace` so local modules resolve from the filesystem. When adding new local modules, add them to `go.work` — do **not** use pseudo-versions.
 
+Adding a module to `go.work` also means adding a `COPY <module>/go.mod` line to every Dockerfile that runs `go work sync` (`apps/api`, `apps/proxy`), because that command reads the manifest of **every** workspace module — including ones the image never builds. `go build`/`go vet`/`go test` resolve from the filesystem and stay green, so the omission only shows up in a Docker build. `scripts/check-workspace-dockerfiles.sh` enforces this and runs in CI.
+
 ```
 # apps/api/go.mod
 replace github.com/meshploy/packages/db => ../../packages/db

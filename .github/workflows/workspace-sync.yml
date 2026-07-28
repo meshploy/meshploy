@@ -1,0 +1,17 @@
+name: Workspace sync
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  dockerfiles-match-go-work:
+    name: go.work matches the Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Invoked through `sh` so the check does not depend on the executable
+      # bit, which does not survive a Windows checkout.
+      - name: Assert every workspace module is COPYed into each image
+        run: sh scripts/check-workspace-dockerfiles.sh
