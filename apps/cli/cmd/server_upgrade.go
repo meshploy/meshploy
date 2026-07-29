@@ -15,10 +15,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	meshployRepo    = "meshploy/meshploy"
-	meshployInstDir = "/opt/meshploy"
-)
+const meshployRepo = "meshploy/meshploy"
+
+// meshployInstDir is where get.sh lays down deploy/. A var, not a const, so
+// tests can point the .env helpers at a temporary directory.
+var meshployInstDir = "/opt/meshploy"
 
 var serverUpgradeCmd = &cobra.Command{
 	Use:   "server-upgrade",
@@ -29,7 +30,20 @@ Corefile with values from .env, then pulls new container images and restarts.
 Must be run as root on the gateway server (sudo meshploy server-upgrade).
 
 By default pulls the latest stable release. Use --edge to follow the main branch.
-Use --no-sync to skip the config download (e.g. when CI has already rsync'd configs).`,
+Use --no-sync to skip the config download (e.g. when CI has already rsync'd configs).
+
+Enterprise
+  --ee switches this install to the Enterprise API image. Activate the licence
+  in the console first (Settings → Licence); this command then reads which
+  image that licence grants and points the stack at it.
+
+  Nothing else changes: the licence is already stored server-side and every
+  feature gate reads it at runtime, so the image is the whole difference
+  between a Community and an Enterprise install.
+
+  Without --ee, a licensed install running the stock image is told about it and
+  left alone — a routine upgrade should not silently change which product is
+  running.`,
 	RunE: runServerUpgrade,
 }
 
@@ -40,6 +54,8 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 	edge, _ := cmd.Flags().GetBool("edge")
 	noSync, _ := cmd.Flags().GetBool("no-sync")
+	ee, _ := cmd.Flags().GetBool("ee")
+	eeImage, _ := cmd.Flags().GetString("ee-image")
 
 	if !noSync && os.Getuid() != 0 {
 		return fmt.Errorf("must be run as root — try: sudo meshploy server-upgrade")
@@ -80,6 +96,21 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("corefile substitution: %w", err)
 	}
 	fmt.Println("✔  Corefile configured")
+
+	// Enterprise image selection. Explicit --ee switches; otherwise a licensed
+	// install running the stock image just gets told, because a routine upgrade
+	// should not silently change which product is running.
+	scope := entitledRegistryScope()
+	if ee {
+		if eeImage == "" {
+			eeImage = scope
+		}
+		if err := applyEEImage(eeImage, pat); err != nil {
+			return err
+		}
+	} else {
+		eeNotice(currentAPIImage(), scope)
+	}
 
 	fmt.Println("Pulling images…")
 	if err := composeRun(runtime, "pull", "--quiet"); err != nil {
@@ -241,18 +272,26 @@ func downloadDeployTarball(pat, ref string) error {
 // syncEnvChannel sets MESHPLOY_CHANNEL in /opt/meshploy/.env, updating the
 // existing value if present or appending if missing.
 func syncEnvChannel(channel string) error {
+	return setEnvVar("MESHPLOY_CHANNEL", channel)
+}
+
+// setEnvVar rewrites KEY=value in /opt/meshploy/.env, appending it when absent.
+//
+// .env is the only configuration that survives an upgrade — the deploy tarball
+// overwrites everything else in that directory — so it is where a setting that
+// must outlive `server-upgrade` belongs.
+func setEnvVar(key, value string) error {
 	envFile := meshployInstDir + "/.env"
 	data, err := os.ReadFile(envFile)
 	if err != nil {
 		return err
 	}
-	line := "MESHPLOY_CHANNEL=" + channel
+	line := key + "=" + value
 	content := string(data)
-	if strings.Contains(content, "MESHPLOY_CHANNEL=") {
-		// Replace existing line.
+	if strings.Contains(content, key+"=") {
 		lines := strings.Split(content, "\n")
 		for i, l := range lines {
-			if strings.HasPrefix(l, "MESHPLOY_CHANNEL=") {
+			if strings.HasPrefix(l, key+"=") {
 				lines[i] = line
 			}
 		}
@@ -261,6 +300,15 @@ func syncEnvChannel(channel string) error {
 		content = strings.TrimRight(content, "\n") + "\n" + line + "\n"
 	}
 	return os.WriteFile(envFile, []byte(content), 0600)
+}
+
+// readEnvVar returns one value from /opt/meshploy/.env, or "" if unset.
+func readEnvVar(key string) string {
+	vars, err := parseEnvFile(meshployInstDir+"/.env", key)
+	if err != nil {
+		return ""
+	}
+	return vars[key]
 }
 
 func detectContainerRuntime() string {
@@ -290,5 +338,7 @@ func init() {
 	serverUpgradeCmd.Flags().String("token", "", "GitHub personal access token for private repo (or set GITHUB_PAT env var)")
 	serverUpgradeCmd.Flags().Bool("edge", false, "Sync from main branch and pull edge images instead of latest stable")
 	serverUpgradeCmd.Flags().Bool("no-sync", false, "Skip config download — only substitute Corefile, pull images, and restart")
+	serverUpgradeCmd.Flags().Bool("ee", false, "Switch this install to the Enterprise API image (requires a licence)")
+	serverUpgradeCmd.Flags().String("ee-image", "", "Enterprise image to use; defaults to the one this licence grants")
 	rootCmd.AddCommand(serverUpgradeCmd)
 }

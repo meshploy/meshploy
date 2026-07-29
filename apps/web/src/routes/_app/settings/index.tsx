@@ -161,32 +161,59 @@ function LicenseSection() {
         </div>
       )}
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">
-          {active ? "Replace licence" : "Activate a licence"}
-        </label>
-        <textarea
-          value={licenseToken}
-          onChange={(e) => { setLicenseToken(e.target.value); setError(null) }}
-          placeholder="mlic-v1.…"
-          rows={3}
-          spellCheck={false}
-          className={cn(inputCls, "h-auto py-2 font-mono text-xs resize-y")}
-        />
-        {error && (
-          <p className="text-xs text-destructive mt-1">{error}</p>
-        )}
-        <div className="flex justify-end mt-2">
-          <Button
-            size="sm"
-            onClick={() => activate()}
-            disabled={isPending || licenseToken.trim() === ""}
-          >
-            {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-            {active ? "Replace" : "Activate"}
-          </Button>
+      {/* A Community build trusts no signing key, so activation cannot succeed
+          here at all — the image has to be swapped first. Explaining that up
+          front beats letting someone paste a licence they just paid for and
+          receive a bare "this build trusts no license signing key". */}
+      {ent && !ent.can_activate ? (
+        <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            This is the Community image. It cannot verify a licence, so activation
+            happens <span className="text-foreground">after</span> switching to the
+            Enterprise image — not before.
+          </p>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">
+              Run on the gateway, then reload this page:
+            </p>
+            <code className="block rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] text-foreground overflow-x-auto">
+              sudo meshploy server-upgrade --ee
+            </code>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            You will need a licence and registry access first. The command pulls
+            the Enterprise image and restarts the stack; your data and settings
+            are untouched.
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">
+            {active ? "Replace licence" : "Activate a licence"}
+          </label>
+          <textarea
+            value={licenseToken}
+            onChange={(e) => { setLicenseToken(e.target.value); setError(null) }}
+            placeholder="mlic-v1.…"
+            rows={3}
+            spellCheck={false}
+            className={cn(inputCls, "h-auto py-2 font-mono text-xs resize-y")}
+          />
+          {error && (
+            <p className="text-xs text-destructive mt-1">{error}</p>
+          )}
+          <div className="flex justify-end mt-2">
+            <Button
+              size="sm"
+              onClick={() => activate()}
+              disabled={isPending || licenseToken.trim() === ""}
+            >
+              {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              {active ? "Replace" : "Activate"}
+            </Button>
+          </div>
+        </div>
+      )}
     </Section>
   )
 }

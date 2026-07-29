@@ -41,6 +41,21 @@ type Status struct {
 	NodeCount int       `json:"node_count"`
 	OverLimit bool      `json:"over_limit"`
 	Problem   string    `json:"problem,omitempty"` // why an installed license is not active
+
+	// RegistryScope names the private image this license grants access to, so a
+	// client can act on it without the operator having to know the repository
+	// path. Not a secret: it is a claim inside the customer's own token, and
+	// knowing the name grants nothing without registry credentials.
+	RegistryScope string `json:"registry_scope,omitempty"`
+
+	// CanActivate reports whether this build trusts any signing key. False in a
+	// stock CE build, where activation always fails.
+	//
+	// The UI needs this to explain the upgrade path instead of surfacing a bare
+	// "this build trusts no license signing key" after someone pastes a licence
+	// they just paid for. The order is switch image, then activate — a CE binary
+	// cannot store a licence at all.
+	CanActivate bool `json:"can_activate"`
 }
 
 // Entitlements answers "may this org use feature X".
@@ -169,9 +184,10 @@ func (s *EntitlementService) Describe(ctx context.Context, _ uuid.UUID) (Status,
 	s.mu.RUnlock()
 
 	st := Status{
-		Licensed: active,
-		Features: claims.Features,
-		Problem:  reason,
+		Licensed:    active,
+		Features:    claims.Features,
+		Problem:     reason,
+		CanActivate: len(trustedKeys()) > 0,
 	}
 	if st.Features == nil {
 		st.Features = []string{}
@@ -182,6 +198,7 @@ func (s *EntitlementService) Describe(ctx context.Context, _ uuid.UUID) (Status,
 		st.ExpiresAt = claims.ExpiresAt
 		st.Expired = claims.Expired()
 		st.NodeLimit = claims.NodeLimit
+		st.RegistryScope = claims.RegistryScope
 	}
 
 	// Soft node metering: worker nodes only. The gateway is fixed overhead, so

@@ -12,6 +12,14 @@ export interface ApiEntitlements {
   over_limit: boolean
   /** Why an installed licence is not active. Empty when it is. */
   problem?: string
+  /** The private image this licence grants, e.g. "ghcr.io/meshploy/api-ee". */
+  registry_scope?: string
+  /**
+   * False in a stock Community build, which trusts no signing key and so cannot
+   * store a licence at all. The upgrade order is: switch to the Enterprise
+   * image first, then activate.
+   */
+  can_activate: boolean
 }
 
 export const entitlements = {
