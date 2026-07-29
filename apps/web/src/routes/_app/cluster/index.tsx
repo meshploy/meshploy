@@ -19,7 +19,7 @@ import {
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { nodes as nodesApi, cluster as clusterApi, toNode } from "@/lib/api"
+import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useOrgRole } from "@/store/org-store"
@@ -154,12 +154,19 @@ function ProvisioningTokensPanel() {
   const [visible, setVisible] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
+  const [error, setError] = useState<string | null>(null)
+
   const { mutate: generate, isPending: generating } = useMutation({
     mutationFn: () => nodesApi.createProvisioningToken(orgId!, "worker", null, token),
     onSuccess: (res) => {
       setProvToken(res.token)
       setVisible(true)
+      setError(null)
     },
+    // Without this a failure is silent: the spinner stops and no token appears,
+    // which reads as the button doing nothing.
+    onError: (e) =>
+      setError(e instanceof ApiError ? e.detail : "Could not generate a token."),
   })
 
   const copy = async (text: string, field: string) => {
@@ -181,7 +188,10 @@ function ProvisioningTokensPanel() {
           variant="outline"
           className="h-7 text-xs gap-1.5"
           onClick={() => generate()}
-          disabled={generating}
+          // !orgId is required: this panel has no query to gate on, so nothing
+          // else stops a click during the window before the org store hydrates
+          // — which would POST to /orgs/undefined/provisioning-tokens.
+          disabled={generating || !orgId}
         >
           {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
           {provToken ? "New token" : "Generate token"}
@@ -189,6 +199,12 @@ function ProvisioningTokensPanel() {
       </div>
 
       <div className="p-4 space-y-4">
+        {error && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+            <ShieldAlert className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+            <p className="text-xs text-destructive">{error}</p>
+          </div>
+        )}
         {!provToken ? (
           <p className="text-sm text-muted-foreground">
             Generate a single-use token to get the worker install command.
