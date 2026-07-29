@@ -104,7 +104,14 @@ services:
       HEADSCALE_URL: http://headscale:8080
       HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      # The address is rewritten because the kubeconfig points at 127.0.0.1,
+      # which is the host, not this container. The cluster certificate is not
+      # issued for this name, so verification is pinned to a name it does carry
+      # rather than switched off — this connection carries cluster-admin
+      # credentials. Override only if the cluster uses a custom --tls-san.
       K3S_SERVER_URL: https://host.meshploy.internal:6443
+      K3S_TLS_SERVER_NAME: ${K3S_TLS_SERVER_NAME:-}
+      K3S_SKIP_TLS_VERIFY: ${K3S_SKIP_TLS_VERIFY:-}
       K3S_TOKEN: ${K3S_TOKEN}
       API_PORT: 4000
       DOMAIN: ${DOMAIN}

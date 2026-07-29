@@ -26,6 +26,12 @@ type Config struct {
 	BuilderImage   string // BUILDER_IMAGE   override the builder container image
 	K3sToken       string // K3S_TOKEN       node token for workers to join the cluster
 
+	// TLS handling for K3S_SERVER_URL. The rewrite breaks hostname verification
+	// because the cluster certificate is not issued for the rewritten address,
+	// so the name to verify against is pinned instead of dropping verification.
+	K3sTLSServerName string // K3S_TLS_SERVER_NAME  empty = k8s.DefaultTLSServerName
+	K3sSkipTLSVerify bool   // K3S_SKIP_TLS_VERIFY  escape hatch; disables authentication of the connection
+
 	// Gateway seeding — set by install.sh on master nodes.
 	// When present, the first user to register gets a gateway node + domain pre-created.
 	Domain          string // DOMAIN           base domain (e.g. meshp.example.com)
@@ -78,10 +84,10 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DatabaseURL:   require("DATABASE_URL"),
-		APIPort:       port,
-		HeadscaleURL:  os.Getenv("HEADSCALE_URL"),
-		HeadscaleKey:  os.Getenv("HEADSCALE_API_KEY"),
+		DatabaseURL:  require("DATABASE_URL"),
+		APIPort:      port,
+		HeadscaleURL: os.Getenv("HEADSCALE_URL"),
+		HeadscaleKey: os.Getenv("HEADSCALE_API_KEY"),
 		HeadscaleUser: func() string {
 			if v := os.Getenv("HEADSCALE_USER"); v != "" {
 				return v
@@ -98,6 +104,9 @@ func Load() (*Config, error) {
 		K3sServerURL:   os.Getenv("K3S_SERVER_URL"),
 		BuilderImage:   os.Getenv("BUILDER_IMAGE"),
 		K3sToken:       os.Getenv("K3S_TOKEN"),
+
+		K3sTLSServerName: os.Getenv("K3S_TLS_SERVER_NAME"),
+		K3sSkipTLSVerify: envBool("K3S_SKIP_TLS_VERIFY"),
 
 		Domain:          os.Getenv("DOMAIN"),
 		GatewayIP:       os.Getenv("MESH_IP"),
@@ -136,4 +145,12 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// envBool reads a boolean environment variable. Anything strconv accepts as
+// true ("1", "t", "true", "TRUE"…) enables it; unset, empty, or unparseable is
+// false. Used for opt-in switches where the safe answer is "off".
+func envBool(key string) bool {
+	v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key)))
+	return err == nil && v
 }

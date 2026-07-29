@@ -113,6 +113,8 @@ Required in `.env` at the monorepo root:
 | `HEADSCALE_API_KEY` | Headscale API key |
 | `KUBECONFIG` | Path to kubeconfig file (empty = in-cluster) |
 | `K3S_SERVER_URL` | Override K3s API server URL (needed when API runs in Docker) |
+| `K3S_TLS_SERVER_NAME` | Name the cluster certificate is verified against when `K3S_SERVER_URL` rewrites the address (default: `kubernetes.default.svc.cluster.local`) |
+| `K3S_SKIP_TLS_VERIFY` | Escape hatch — disables authentication of the cluster connection. Leave unset |
 | `K3S_TOKEN` | Node token for workers joining the cluster |
 | `DOMAIN` | Base domain — seeds the org domain record |
 | `MESH_IP` | WireGuard IP of the gateway node |

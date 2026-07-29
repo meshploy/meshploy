@@ -58,7 +58,12 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	var k8sRestCfg *rest.Config
 	if c != nil {
 		var err error
-		k8sClient, k8sRestCfg, err = appk8s.NewClientWithConfig(c.KubeconfigPath, c.K3sServerURL)
+		k8sClient, k8sRestCfg, err = appk8s.NewClientWithOptions(appk8s.Options{
+			KubeconfigPath: c.KubeconfigPath,
+			ServerURL:      c.K3sServerURL,
+			TLSServerName:  c.K3sTLSServerName,
+			SkipTLSVerify:  c.K3sSkipTLSVerify,
+		})
 		if err != nil {
 			log.Printf("warning: K8s not available (%v) — build/deploy features disabled", err)
 			// NewClientWithConfig returns a typed-nil *Clientset on error, which
