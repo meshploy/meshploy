@@ -21,6 +21,7 @@ import {
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
+import { UpgradeDialog } from "@/components/licence/upgrade-dialog"
 import { BackupCard } from "@/components/backups/backup-card"
 import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
@@ -81,6 +82,7 @@ function LicenseSection() {
   const qc = useQueryClient()
   const [licenseToken, setLicenseToken] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [comparing, setComparing] = useState(false)
 
   const { data: ent, isLoading } = useQuery({
     queryKey: ["entitlements"],
@@ -117,7 +119,17 @@ function LicenseSection() {
     <Section
       title="Licence"
       subtitle={active ? "This install is licensed for Enterprise features" : "Community Edition"}
+      // Only offered when there is something to upgrade to. On a licensed
+      // install this would be pure noise.
+      action={
+        !active ? (
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setComparing(true)}>
+            Compare editions
+          </Button>
+        ) : undefined
+      }
     >
+      <UpgradeDialog open={comparing} onOpenChange={setComparing} />
       {active && ent && (
         <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
           <div className="flex items-center gap-2">

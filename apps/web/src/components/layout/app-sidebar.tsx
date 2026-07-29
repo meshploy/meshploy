@@ -20,13 +20,15 @@ import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useQuery } from "@tanstack/react-query"
 import { system } from "@/lib/api/system"
+import { entitlements as entitlementsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { eeNavItems } from "@/ee"
 
 type NavItem = {
   href: string
   icon: React.ElementType
   label: string
-  exact: boolean
+  exact?: boolean
 }
 
 type NavGroup = {
@@ -85,6 +87,37 @@ export function AppSidebar() {
     retry: false,
   })
 
+  // Entitlements are only needed to decide which EE nav items to show, so this
+  // costs a stock Community build nothing: eeNavItems is empty there and the
+  // query never runs.
+  const { data: ent } = useQuery({
+    queryKey: ["entitlements"],
+    queryFn: () => entitlementsApi.get(token!),
+    enabled: !!token && eeNavItems.length > 0,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+
+  // EE navigation is supplied by the build overlay. In the open-source build
+  // this is empty, so the group below renders nothing and the bundle contains
+  // no EE labels or routes.
+  //
+  // An item with no `feature` shows on any active licence; one that names a
+  // feature shows only when the licence includes it, so a partial licence
+  // reveals only what it covers.
+  const eeGroup: NavGroup | null =
+    eeNavItems.length > 0 && ent?.licensed && !ent.expired
+      ? {
+          items: eeNavItems.filter(
+            (i) => !i.feature || ent.features.includes(i.feature)
+          ),
+        }
+      : null
+
+  const navGroups = eeGroup && eeGroup.items.length > 0
+    ? [...NAV_GROUPS, eeGroup]
+    : NAV_GROUPS
+
   return (
     <aside
       className={cn(
@@ -104,7 +137,7 @@ export function AppSidebar() {
 
       {/* Navigation */}
       <nav className="flex flex-col p-2 flex-1 gap-4">
-        {NAV_GROUPS.filter((g) => !g.adminOnly || isAdmin).map((group, gi) => (
+        {navGroups.filter((g) => !g.adminOnly || isAdmin).map((group, gi) => (
           <div key={gi} className="flex flex-col gap-0.5">
             {/* Group label — only in expanded mode */}
             {group.label && !sidebarCollapsed && (
