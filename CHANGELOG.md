@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/meshploy/meshploy/compare/v0.6.0...v0.7.0) (2026-07-30)
+
+
+### Features
+
+* add an edition comparison dialog and render EE navigation from the overlay slot ([2d7d8cc](https://github.com/meshploy/meshploy/commit/2d7d8cc3d8dcb7d2c9ca6efde3e1146c9e57bc1b))
+* define licence feature flags in the shared package ([696acee](https://github.com/meshploy/meshploy/commit/696aceeafaac948e68620c803b2a1babb28a6367))
+* use the mesh mark for icons and stop syncing the docs logo from the favicon ([652f208](https://github.com/meshploy/meshploy/commit/652f2087f2b15443675038ce3f1e5a6bedc3198b))
+
+
+### Bug Fixes
+
+* guard the provisioning token button until the org resolves ([bb35b06](https://github.com/meshploy/meshploy/commit/bb35b06a419c7fadecac89d1127e3bdd4ef84911))
+
 ## [0.6.0](https://github.com/meshploy/meshploy/compare/v0.5.0...v0.6.0) (2026-07-29)
 
 
