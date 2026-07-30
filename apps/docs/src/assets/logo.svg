@@ -2,8 +2,11 @@
   <rect width="100" height="100" rx="22" fill="#0d0f0e"></rect>
   <g fill="none" stroke="#34d399" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="18,78 18,22 50,58 82,22 82,78" stroke-width="7"></polyline>
-    <line x1="18" y1="78" x2="50" y2="58" stroke-width="4" opacity="0.45"></line>
-    <line x1="82" y1="78" x2="50" y2="58" stroke-width="4" opacity="0.45"></line>
+    <!-- The two diagonals close the mesh; without them this is a plain letter M.
+         Geometry and weight match meshploy-site's Nav.astro, so the docs header
+         and the marketing site show the same mark. -->
+    <line x1="18" y1="78" x2="50" y2="58" stroke-width="7" opacity="0.45"></line>
+    <line x1="82" y1="78" x2="50" y2="58" stroke-width="7" opacity="0.45"></line>
   </g>
   <g fill="#34d399">
     <circle cx="18" cy="78" r="7"></circle>

@@ -107,7 +107,11 @@ const staticAssets = [
   { src: `${webPublic}/apple-touch-icon.png`,     dest: resolve(__dirname, 'public/apple-touch-icon.png') },
   { src: `${webPublic}/fonts/GeistMono-Regular.woff2`, dest: resolve(__dirname, 'public/fonts/GeistMono-Regular.woff2') },
   { src: `${webPublic}/fonts/GeistMono-Medium.woff2`,  dest: resolve(__dirname, 'public/fonts/GeistMono-Medium.woff2') },
-  { src: `${webPublic}/favicon.svg`,              dest: resolve(__dirname, 'src/assets/logo.svg') },
+  // src/assets/logo.svg is deliberately NOT synced from favicon.svg. It used to
+  // be, back when the two were the same file — but the favicon now draws its
+  // diagonals at weight 4 so the mark survives 16px, while the header logo
+  // renders at 24px+ and uses the full weight 7. Copying one onto the other
+  // would put the small-size variant in a logo slot.
 ];
 
 for (const asset of staticAssets) {
