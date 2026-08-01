@@ -23,7 +23,7 @@ const defaultEEImage = "ghcr.io/meshploy/api-ee"
 // is already stored server-side, and every feature gate reads it at runtime. So
 // "upgrading" is one env var plus a restart — which is why this lives in
 // server-upgrade rather than being a separate workflow.
-func applyEEImage(image, pat string) error {
+func applyEEImage(runtime, image, pat string) error {
 	if image == "" {
 		image = defaultEEImage
 	}
@@ -40,41 +40,72 @@ func applyEEImage(image, pat string) error {
 
 	// A private image needs credentials. Check before pulling so the failure
 	// names the cause rather than surfacing as a compose error.
-	if pullable(image) {
+	fmt.Printf("Checking access to %s…\n", image)
+	if pullable(runtime, image) {
 		return nil
 	}
 
 	if pat == "" {
 		return fmt.Errorf("cannot pull %s — the Enterprise image is a private package.\n"+
 			"Authenticate first, then re-run:\n\n"+
-			"  echo $GITHUB_PAT | docker login ghcr.io -u <github-username> --password-stdin\n\n"+
-			"or pass a token with --token (needs read:packages)", image)
+			"  echo $GITHUB_PAT | %s login ghcr.io -u <github-username> --password-stdin\n\n"+
+			"or pass a token with --token (needs read:packages)", image, runtime)
 	}
 
-	user := os.Getenv("GHCR_USER")
-	if user == "" {
-		user = "meshploy"
-	}
 	fmt.Println("Authenticating to ghcr.io…")
-	login := exec.Command("docker", "login", "ghcr.io", "--username", user, "--password-stdin")
+	login := exec.Command(runtime, "login", "ghcr.io", "--username", ghcrUser(), "--password-stdin")
 	login.Stdin = strings.NewReader(pat)
 	login.Stdout, login.Stderr = os.Stdout, os.Stderr
 	if err := login.Run(); err != nil {
-		return fmt.Errorf("docker login ghcr.io: %w — check the token has read:packages, "+
-			"and set GHCR_USER if your username differs", err)
+		return fmt.Errorf("%s login ghcr.io: %w\n"+
+			"The token must carry read:packages, must not have expired, and must "+
+			"belong to an account granted read on the package", runtime, err)
 	}
-	if !pullable(image) {
-		return fmt.Errorf("authenticated, but %s is still not pullable — "+
-			"does this licence grant access to it?", image)
+	if !pullable(runtime, image) {
+		return fmt.Errorf("authenticated to ghcr.io, but %s is still not pullable — "+
+			"this account has no read grant on that package", image)
 	}
 	return nil
 }
 
-// pullable reports whether the image manifest can be read with the credentials
-// currently available to the daemon.
-func pullable(image string) bool {
-	// Any tag would do; latest is what compose resolves to by default.
-	return exec.Command("docker", "manifest", "inspect", image+":latest").Run() == nil
+// pullable reports whether the image can be fetched with the credentials the
+// runtime currently holds.
+//
+// A pull rather than `manifest inspect`: podman's manifest command operates on
+// local manifest lists and does not answer "can I reach this remote image". The
+// product installer settled on the same probe for the same reason. Nothing is
+// wasted when it succeeds — `compose pull` runs moments later and finds the
+// layers already cached.
+func pullable(runtime, image string) bool {
+	return exec.Command(runtime, "pull", image+":"+pullChannel()).Run() == nil
+}
+
+// ghcrUser is the account name to present to ghcr.io.
+//
+// install.sh records the username it authenticated with, so a re-login here
+// uses the same account. Read from .env rather than the environment because
+// this command runs under sudo, which resets the environment by default — an
+// exported GHCR_USER would never reach us.
+//
+// The fallback covers an install that declined registry login, leaving nothing
+// recorded. ghcr derives identity from the token and does not validate this
+// field: our own CI proves it, logging in as github.actor with a token owned by
+// github-actions[bot]. x-access-token is GitHub's convention for token auth.
+func ghcrUser() string {
+	if u := readEnvVar("GHCR_USER"); u != "" {
+		return u
+	}
+	return "x-access-token"
+}
+
+// pullChannel is the tag compose will actually resolve, rather than a hardcoded
+// latest: an install following the edge channel has no :latest of its own, so
+// probing for one would report the image unreachable when it is not.
+func pullChannel() string {
+	if c := readEnvVar("MESHPLOY_CHANNEL"); c != "" {
+		return c
+	}
+	return "latest"
 }
 
 // eeNotice tells an operator running a plain upgrade that their licence entitles

@@ -612,7 +612,16 @@ ENVEOF
     ask_secret GHCR_TOKEN "GitHub PAT (read:packages)"
     echo "$GHCR_TOKEN" | $CONTAINER_RUNTIME login ghcr.io --username "$GHCR_USER" --password-stdin \
       && success "Logged in to ghcr.io as ${BOLD}${GHCR_USER}${RESET}" \
-      || die "$CONTAINER_RUNTIME login failed — check your username and token."
+      || die "$CONTAINER_RUNTIME login failed — check the token's read:packages scope."
+    # Recorded so `server-upgrade --ee` can re-authenticate later without asking
+    # again. It reads this from .env rather than the environment because that
+    # command runs under sudo, which resets the environment by default.
+    #
+    # The username only; the token stays out of .env deliberately — the runtime
+    # already keeps its own credential store, and a token in a config file is a
+    # token that outlives its usefulness.
+    echo "GHCR_USER=${GHCR_USER}" >> .env
+    unset GHCR_TOKEN
   else
     warn "Skipping registry login. '$COMPOSE_CMD pull' will fail if images are private."
   fi

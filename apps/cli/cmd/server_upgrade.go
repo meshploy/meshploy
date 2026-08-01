@@ -105,7 +105,7 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 		if eeImage == "" {
 			eeImage = scope
 		}
-		if err := applyEEImage(eeImage, pat); err != nil {
+		if err := applyEEImage(runtime, eeImage, pat); err != nil {
 			return err
 		}
 	} else {

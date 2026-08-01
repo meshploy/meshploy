@@ -103,6 +103,37 @@ func TestReadEnvVar(t *testing.T) {
 	}
 }
 
+// The username install.sh recorded must win. Reading it from .env rather than
+// the environment is the whole point: server-upgrade runs under sudo, which
+// resets the environment, so an exported GHCR_USER would never arrive.
+func TestGhcrUserPrefersTheRecordedAccount(t *testing.T) {
+	withEnvFile(t, "GHCR_USER=meshploy-acme\nDOMAIN=example.com\n")
+	if got := ghcrUser(); got != "meshploy-acme" {
+		t.Fatalf("recorded username should win, got %q", got)
+	}
+
+	// An install that declined registry login records nothing. ghcr does not
+	// validate this field, so the fallback only has to be well-formed.
+	withEnvFile(t, "DOMAIN=example.com\n")
+	if got := ghcrUser(); got != "x-access-token" {
+		t.Fatalf("with nothing recorded the fallback should be x-access-token, got %q", got)
+	}
+}
+
+// Probing :latest on an edge install would report the image unreachable when it
+// is perfectly reachable under the tag compose actually resolves.
+func TestPullChannelFollowsTheConfiguredChannel(t *testing.T) {
+	withEnvFile(t, "MESHPLOY_CHANNEL=main\n")
+	if got := pullChannel(); got != "main" {
+		t.Fatalf("configured channel should win, got %q", got)
+	}
+
+	withEnvFile(t, "DOMAIN=example.com\n")
+	if got := pullChannel(); got != "latest" {
+		t.Fatalf("unset channel should fall back to latest, got %q", got)
+	}
+}
+
 // An install with no override is a CE install; that is what decides whether the
 // upgrade notice is shown.
 func TestCurrentAPIImageFallsBackToCE(t *testing.T) {
