@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/meshploy/meshploy/compare/v0.7.0...v0.8.0) (2026-08-03)
+
+
+### Features
+
+* add licence status and activate commands with an MCP tool extension hook ([ea71d6d](https://github.com/meshploy/meshploy/commit/ea71d6d6d3f7484b7cd2813f07fab41f1911f208))
+
+
+### Bug Fixes
+
+* refactor image upgrade to include runtime parameter and enhance authentication handling ([3b53ac5](https://github.com/meshploy/meshploy/commit/3b53ac5756705a7a0036189c469b4d8526948fd3))
+
 ## [0.7.0](https://github.com/meshploy/meshploy/compare/v0.6.0...v0.7.0) (2026-07-30)
 
 
