@@ -27,7 +27,6 @@ on:
 env:
   REGISTRY: ghcr.io
   ORG: meshploy
-  DEPLOY_DIR: /opt/meshploy
 
 jobs:
   # ── Detect changed paths ──────────────────────────────────────────────────────
@@ -39,7 +38,6 @@ jobs:
       proxy:   ${{ steps.filter.outputs.proxy }}
       builder: ${{ steps.filter.outputs.builder }}
       caddy:   ${{ steps.filter.outputs.caddy }}
-      deploy:  ${{ steps.filter.outputs.deploy }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -73,9 +71,6 @@ jobs:
 
             caddy:
               - "deploy/caddy/**"
-
-            deploy:
-              - "deploy/**"
 
 
   # ── API ───────────────────────────────────────────────────────────────────────
@@ -262,48 +257,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  # ── Deploy ────────────────────────────────────────────────────────────────────
-  # Runs after all build jobs (whether they ran or were skipped).
-  # Syncs deploy/ configs to the server, pulls new images, restarts containers.
-  deploy:
-    needs: [api, web, caddy, proxy, builder, changes]
-    if: |
-      always() && !failure() && !cancelled() &&
-      (
-        needs.changes.outputs.api     == 'true' ||
-        needs.changes.outputs.web     == 'true' ||
-        needs.changes.outputs.proxy   == 'true' ||
-        needs.changes.outputs.caddy   == 'true' ||
-        needs.changes.outputs.deploy  == 'true' ||
-        github.event_name             == 'workflow_dispatch'
-      )
-    name: Deploy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
-
-      # Sync deploy/ configs to server. Corefile is synced as a template;
-      # .env and zone files are protected by .rsyncignore and never overwritten.
-      - name: Sync deploy configs
-        run: |
-          rsync -az --delete \
-            --exclude-from='deploy/.rsyncignore' \
-            deploy/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_DIR }}/
-
-      # Substitute Corefile template, pull new images, restart services.
-      - name: Deploy
-        run: |
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "meshploy server-upgrade --no-sync"
 
   # ── Builder ───────────────────────────────────────────────────────────────────
   builder:

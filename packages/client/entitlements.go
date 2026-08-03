@@ -35,3 +35,17 @@ func (c *Client) GetEntitlements() (*Entitlements, error) {
 	}
 	return decode[*Entitlements](resp)
 }
+
+// ActivateLicense installs a licence token and returns the resulting
+// entitlements. The server verifies the signature before storing, so a bad
+// token fails here rather than silently persisting.
+//
+// A stock Community build trusts no signing key and rejects every token; check
+// Entitlements.CanActivate first to tell "wrong token" from "wrong image".
+func (c *Client) ActivateLicense(token string) (*Entitlements, error) {
+	resp, err := c.do("POST", "/api/v1/entitlements/license", map[string]string{"token": token})
+	if err != nil {
+		return nil, err
+	}
+	return decode[*Entitlements](resp)
+}
