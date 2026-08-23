@@ -236,6 +236,23 @@ func applyConstraints(db *gorm.DB) error {
 		{"database_configs", "service_id", "services", "CASCADE"},
 		{"deployments", "service_id", "services", "CASCADE"},
 		{"backup_configs", "service_id", "services", "CASCADE"},
+		// Join tables and volume mounts also hang off a service. Without these the
+		// FK defaults to NO ACTION and deleting a service fails outright — the
+		// attachment rows are bookkeeping, not something to preserve past the
+		// service they describe.
+		{"service_variable_groups", "service_id", "services", "CASCADE"},
+		{"volume_mounts", "service_id", "services", "CASCADE"},
+		// A system-managed group exists only for its service.
+		{"variable_groups", "service_id", "services", "CASCADE"},
+		// Variable group → its attachments and items.
+		{"service_variable_groups", "group_id", "variable_groups", "CASCADE"},
+		{"variable_group_items", "group_id", "variable_groups", "CASCADE"},
+		// Volume → its mounts; project → its volumes and stacks.
+		{"volume_mounts", "volume_id", "volumes", "CASCADE"},
+		{"volumes", "project_id", "projects", "CASCADE"},
+		{"stacks", "project_id", "projects", "CASCADE"},
+		// A volume pinned to a node outlives the node record.
+		{"volumes", "node_id", "nodes", "SET NULL"},
 		// RouteTarget → Route CASCADE
 		{"route_targets", "route_id", "routes", "CASCADE"},
 		// RouteTarget → service/node SET NULL

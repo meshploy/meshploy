@@ -391,8 +391,8 @@ type ServiceVariableGroup struct {
 	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
 	GroupID   uuid.UUID `gorm:"type:uuid;not null;index" json:"group_id"`
 
-	Service Service       `gorm:"foreignKey:ServiceID" json:"-"`
-	Group   VariableGroup `gorm:"foreignKey:GroupID"   json:"-"`
+	Service Service       `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE" json:"-"`
+	Group   VariableGroup `gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"   json:"-"`
 }
 
 func (ServiceVariableGroup) TableName() string { return "service_variable_groups" }
