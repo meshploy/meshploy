@@ -49,7 +49,7 @@ func TestVolumeCreate(t *testing.T) {
 	pid := parseUUID(t, projID)
 
 	t.Run("creates volume row with pending status", func(t *testing.T) {
-		vol, err := svcs.Volumes.Create(ctx, pid, "my-vol", 10)
+		vol, err := svcs.Volumes.Create(ctx, pid, "my-vol", 10, nil)
 		require.NoError(t, err)
 		assert.NotEmpty(t, vol.ID)
 		assert.Equal(t, "my-vol", vol.Name)
@@ -60,13 +60,13 @@ func TestVolumeCreate(t *testing.T) {
 	})
 
 	t.Run("default storage applied when size zero", func(t *testing.T) {
-		vol, err := svcs.Volumes.Create(ctx, pid, "default-vol", 0)
+		vol, err := svcs.Volumes.Create(ctx, pid, "default-vol", 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, 5, vol.StorageGB)
 	})
 
 	t.Run("empty name returns error", func(t *testing.T) {
-		_, err := svcs.Volumes.Create(ctx, pid, "", 5)
+		_, err := svcs.Volumes.Create(ctx, pid, "", 5, nil)
 		require.Error(t, err)
 	})
 }
@@ -76,7 +76,7 @@ func TestVolumeAttachDetach(t *testing.T) {
 	svcs, _, _, projID, svcID := setupVolumeTest(t)
 	pid := parseUUID(t, projID)
 
-	vol, err := svcs.Volumes.Create(ctx, pid, "attach-vol", 5)
+	vol, err := svcs.Volumes.Create(ctx, pid, "attach-vol", 5, nil)
 	require.NoError(t, err)
 
 	t.Run("attach creates mount row", func(t *testing.T) {
@@ -112,7 +112,7 @@ func TestVolumeDelete(t *testing.T) {
 	pid := parseUUID(t, projID)
 
 	t.Run("delete attached volume is blocked", func(t *testing.T) {
-		vol, err := svcs.Volumes.Create(ctx, pid, "attached-vol", 5)
+		vol, err := svcs.Volumes.Create(ctx, pid, "attached-vol", 5, nil)
 		require.NoError(t, err)
 
 		_, err = svcs.Volumes.Attach(ctx, vol.ID, parseUUID(t, svcID), "/data")
@@ -124,7 +124,7 @@ func TestVolumeDelete(t *testing.T) {
 	})
 
 	t.Run("delete unattached volume succeeds", func(t *testing.T) {
-		vol, err := svcs.Volumes.Create(ctx, pid, "free-vol", 5)
+		vol, err := svcs.Volumes.Create(ctx, pid, "free-vol", 5, nil)
 		require.NoError(t, err)
 
 		require.NoError(t, svcs.Volumes.Delete(ctx, vol.ID))
@@ -139,7 +139,7 @@ func TestVolumeAttachValidation(t *testing.T) {
 	svcs, _, _, projID, svcID := setupVolumeTest(t)
 	pid := parseUUID(t, projID)
 
-	vol, err := svcs.Volumes.Create(ctx, pid, "validate-vol", 5)
+	vol, err := svcs.Volumes.Create(ctx, pid, "validate-vol", 5, nil)
 	require.NoError(t, err)
 
 	t.Run("empty mount path rejected", func(t *testing.T) {

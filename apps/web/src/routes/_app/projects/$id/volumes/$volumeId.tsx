@@ -3,7 +3,7 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   HardDrive, Loader2, Unplug, Link2, Trash2,
-  AlertTriangle, AlertCircle, Check, Pencil, X,
+  AlertTriangle, AlertCircle, Check, Pencil, X, Server,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,8 @@ import {
   volumes as volumesApi,
   services as servicesApi,
   storage as storageApi,
+  nodes as nodesApi,
+  type ApiNode,
   type ApiVolume,
   type ApiVolumeMount,
   type ApiVolumeBackupConfig,
@@ -22,9 +24,159 @@ import {
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Section, Field, inputCls } from "@/components/services/form-primitives"
+import { Section, Field, inputCls, NodeCard } from "@/components/services/form-primitives"
 import { DetailPageHeader } from "@/components/layout/detail-page-header"
 import { cn, formatRelativeTime } from "@/lib/utils"
+
+// ─── Placement ────────────────────────────────────────────────────────────────
+
+/**
+ * Where the volume physically lives.
+ *
+ * Two values matter and they are not the same: the *requested* node stored on
+ * the volume, and the node the claim is actually bound to. Local-path storage
+ * cannot be moved, so once a claim binds, the request is frozen — and any
+ * service mounting it is pinned to that node too. Surfacing the bound node here
+ * is what turns "pod stuck Pending forever" into an obvious cause.
+ */
+function PlacementSection({
+  volume, projectId, orgId, token,
+}: {
+  volume: ApiVolume
+  projectId: string
+  orgId: string
+  token: string
+}) {
+  const qc = useQueryClient()
+  const [selected, setSelected] = useState<string>(volume.node_id ?? "")
+
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+  const workerNodes = rawNodes.filter(
+    (n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent"
+  )
+
+  const { data: placement } = useQuery({
+    queryKey: ["volume-placement", orgId, projectId, volume.id],
+    queryFn: () => volumesApi.placement(orgId, projectId, volume.id, token),
+    enabled: !!orgId,
+    refetchInterval: 15_000,
+  })
+
+  const setNodeMut = useMutation({
+    mutationFn: (nodeId: string) =>
+      volumesApi.setNode(orgId, projectId, volume.id, nodeId || null, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["volume", orgId, projectId, volume.id] })
+      qc.invalidateQueries({ queryKey: ["volume-placement", orgId, projectId, volume.id] })
+    },
+  })
+
+  const bound = placement?.bound ?? false
+  const boundNode = placement?.node ?? ""
+  // A bound claim on a node that is no longer in the cluster is unrecoverable
+  // by configuration: nothing can mount it and no pod using it will schedule.
+  const boundNodeMissing =
+    bound && boundNode !== "" && rawNodes.length > 0 &&
+    !rawNodes.some((n) => n.k8s_node_name === boundNode || n.name === boundNode)
+
+  return (
+    <Section
+      title="Placement"
+      subtitle="Which node stores this volume. Storage is node-local and cannot be moved once written."
+    >
+      {placement?.exists && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Claim</span>
+          <Badge
+            variant="outline"
+            className={cn(
+              "font-mono",
+              bound
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+            )}
+          >
+            {placement.phase || "Unknown"}
+          </Badge>
+          {boundNode && (
+            <>
+              <span className="text-muted-foreground">on</span>
+              <span className="font-mono text-foreground">{boundNode}</span>
+            </>
+          )}
+        </div>
+      )}
+
+      {boundNodeMissing && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-3">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <div className="text-xs text-destructive/90 space-y-1">
+            <p className="font-medium text-destructive">Bound to a node that is gone</p>
+            <p>
+              This volume is provisioned on <span className="font-mono">{boundNode}</span>,
+              which is no longer in the cluster. Nothing can mount it, and any
+              service using it will stay Pending. Delete and recreate the volume
+              to place it on a live node.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+          <Server className="h-3.5 w-3.5" /> Target node
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <NodeCard
+            label="Auto-schedule"
+            sub="Picked on first mount"
+            selected={selected === ""}
+            onClick={() => !bound && setSelected("")}
+          />
+          {workerNodes.map((node) => (
+            <NodeCard
+              key={node.id}
+              label={node.name}
+              sub={node.tailscale_ip}
+              selected={selected === node.id}
+              onClick={() => !bound && setSelected(node.id)}
+              online
+            />
+          ))}
+        </div>
+
+        {bound ? (
+          <p className="text-[11px] text-muted-foreground">
+            Already provisioned{boundNode ? ` on ${boundNode}` : ""} — the location is
+            fixed. Delete and recreate the volume to move it.
+          </p>
+        ) : (
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              disabled={setNodeMut.isPending || selected === (volume.node_id ?? "")}
+              onClick={() => setNodeMut.mutate(selected)}
+            >
+              {setNodeMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              Save placement
+            </Button>
+            <p className="text-[11px] text-muted-foreground">
+              The claim is not bound yet, so it can still be moved.
+            </p>
+          </div>
+        )}
+
+        {setNodeMut.error && (
+          <p className="text-xs text-destructive">{(setNodeMut.error as Error).message}</p>
+        )}
+      </div>
+    </Section>
+  )
+}
 
 export const Route = createFileRoute("/_app/projects/$id/volumes/$volumeId")({
   component: VolumeDetailPage,
@@ -546,6 +698,14 @@ function VolumeDetailPage() {
           <p className="text-sm text-muted-foreground">{formatRelativeTime(new Date(volume.created_at))}</p>
         </div>
       </div>
+
+      {/* Placement */}
+      <PlacementSection
+        volume={volume}
+        projectId={projectId}
+        orgId={orgId}
+        token={token}
+      />
 
       {/* Attachment */}
       <AttachmentSection

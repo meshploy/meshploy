@@ -7,6 +7,8 @@ export interface ApiVolume {
   slug: string
   storage_gb: number
   status: "pending" | "ready"
+  /** Requested node. null = auto-schedule (provisioner picks on first mount). */
+  node_id: string | null
   mounts?: ApiVolumeMount[]
   created_at: string
   updated_at: string
@@ -36,6 +38,17 @@ export interface ApiVolumeBackupConfig {
   updated_at: string
 }
 
+/**
+ * Where a volume's claim actually lives. This can differ from the requested
+ * node_id: node-local storage cannot be moved once the claim is bound.
+ */
+export interface ApiVolumePlacement {
+  exists: boolean
+  phase: string
+  bound: boolean
+  node: string
+}
+
 export const volumes = {
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiVolume[]>(
@@ -51,10 +64,35 @@ export const volumes = {
       token
     ),
 
-  create: (orgId: string, projectId: string, body: { name: string; storage_gb?: number }, token: string) =>
+  create: (
+    orgId: string,
+    projectId: string,
+    body: { name: string; storage_gb?: number; node_id?: string | null },
+    token: string
+  ) =>
     apiFetch<ApiVolume>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/volumes`,
       { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  setNode: (
+    orgId: string,
+    projectId: string,
+    volumeId: string,
+    nodeId: string | null,
+    token: string
+  ) =>
+    apiFetch<ApiVolume>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/volumes/${volumeId}/node`,
+      { method: "PUT", body: JSON.stringify({ node_id: nodeId }) },
+      token
+    ),
+
+  placement: (orgId: string, projectId: string, volumeId: string, token: string) =>
+    apiFetch<ApiVolumePlacement>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/volumes/${volumeId}/placement`,
+      {},
       token
     ),
 

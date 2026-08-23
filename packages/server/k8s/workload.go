@@ -406,6 +406,29 @@ func ScaleDeployment(ctx context.Context, client kubernetes.Interface, name, nam
 	return err
 }
 
+// SetDeploymentNode updates the node pin on a live Deployment's pod template.
+// Changing the template triggers a rollout, so the change takes effect without a
+// full redeploy. An empty nodeName clears the pin and returns the workload to
+// normal scheduling. No-op when the Deployment does not exist yet.
+func SetDeploymentNode(ctx context.Context, client kubernetes.Interface, name, namespace, nodeName string) error {
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get deployment: %w", err)
+	}
+	if dep.Spec.Template.Spec.NodeName == nodeName {
+		return nil
+	}
+	dep.Spec.Template.Spec.NodeName = nodeName
+	_, err = client.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("update deployment node: %w", err)
+	}
+	return nil
+}
+
 // PodInfo is a summarised view of a running pod for the UI.
 type PodInfo struct {
 	Name      string `json:"name"`

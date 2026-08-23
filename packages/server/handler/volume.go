@@ -46,6 +46,35 @@ type GetVolumeOutput struct {
 type CreateVolumeBody struct {
 	Name      string `json:"name"`
 	StorageGB int    `json:"storage_gb"`
+	// NodeID pins the volume to a node. Omit or send null to auto-schedule,
+	// letting the provisioner choose when the first pod mounts it.
+	NodeID *string `json:"node_id,omitempty"`
+}
+
+// SetVolumeNodeBody changes where a volume is provisioned. Only takes effect
+// while the claim is unbound — node-local storage cannot be moved once written.
+type SetVolumeNodeBody struct {
+	NodeID *string `json:"node_id"` // null = auto-schedule
+}
+
+type SetVolumeNodeInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	VolumeID  string `path:"volumeId"`
+	Body      SetVolumeNodeBody
+}
+
+// VolumePlacement is the truth about where a claim lives, as opposed to the
+// requested NodeID on the volume record.
+type VolumePlacement struct {
+	Exists bool   `json:"exists"`
+	Phase  string `json:"phase"`
+	Bound  bool   `json:"bound"`
+	Node   string `json:"node"`
+}
+
+type VolumePlacementOutput struct {
+	Body VolumePlacement
 }
 
 type CreateVolumeInput struct {
@@ -96,6 +125,23 @@ type UpsertVolumeBackupInput struct {
 // ─── Route registration ───────────────────────────────────────────────────────
 
 func (h *Handler) registerVolumeRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "set-volume-node",
+		Method:        "PUT",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/node",
+		Summary:       "Pin a volume to a node, or clear the pin to auto-schedule",
+		Tags:          []string{"volumes"},
+		DefaultStatus: 200,
+	}, h.SetVolumeNode)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-volume-placement",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/placement",
+		Summary:     "Where the volume's claim is actually bound or pinned",
+		Tags:        []string{"volumes"},
+	}, h.GetVolumePlacement)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "list-volumes",
 		Method:      "GET",
@@ -191,11 +237,72 @@ func (h *Handler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*
 	if err != nil {
 		return nil, err
 	}
-	volume, err := h.svc.Volumes.Create(ctx, projectID, input.Body.Name, input.Body.StorageGB)
+	nodeID, err := optionalUUID(input.Body.NodeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid node_id")
+	}
+	volume, err := h.svc.Volumes.Create(ctx, projectID, input.Body.Name, input.Body.StorageGB, nodeID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &GetVolumeOutput{Body: volume}, nil
+}
+
+// optionalUUID converts an optional string id into a *uuid.UUID. A nil or empty
+// value means "unset" (auto-schedule), which is distinct from an invalid id.
+func optionalUUID(v *string) (*uuid.UUID, error) {
+	if v == nil || *v == "" {
+		return nil, nil
+	}
+	id, err := uuid.Parse(*v)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+func (h *Handler) SetVolumeNode(ctx context.Context, input *SetVolumeNodeInput) (*GetVolumeOutput, error) {
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, "")
+	if err != nil {
+		return nil, err
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid volume id")
+	}
+	if _, err := h.svc.Volumes.Get(ctx, volumeID, projectID); err != nil {
+		return nil, huma.Error404NotFound("volume not found")
+	}
+	nodeID, err := optionalUUID(input.Body.NodeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid node_id")
+	}
+	volume, err := h.svc.Volumes.SetNode(ctx, volumeID, nodeID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return &GetVolumeOutput{Body: volume}, nil
+}
+
+func (h *Handler) GetVolumePlacement(ctx context.Context, input *VolumePathInput) (*VolumePlacementOutput, error) {
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	if err != nil {
+		return nil, err
+	}
+	volumeID, err := parseUUID(input.VolumeID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid volume id")
+	}
+	if _, err := h.svc.Volumes.Get(ctx, volumeID, projectID); err != nil {
+		return nil, huma.Error404NotFound("volume not found")
+	}
+	st, err := h.svc.Volumes.PVCStatus(ctx, volumeID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to read volume placement", err)
+	}
+	return &VolumePlacementOutput{Body: VolumePlacement{
+		Exists: st.Exists, Phase: st.Phase, Bound: st.Bound, Node: st.Node,
+	}}, nil
 }
 
 func (h *Handler) GetVolume(ctx context.Context, input *VolumePathInput) (*GetVolumeOutput, error) {

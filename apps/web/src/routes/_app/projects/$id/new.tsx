@@ -2134,9 +2134,27 @@ function VolumeForm({ projectId }: { projectId: string }) {
   const qc = useQueryClient()
   const [name, setName] = useState("")
   const [storageGB, setStorageGB] = useState(5)
+  const [nodeId, setNodeId] = useState("")
+
+  // Only online agent nodes can hold a volume. The gateway is excluded for the
+  // same reason it is excluded for services: it is tainted against workloads.
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId!, token),
+    enabled: !!orgId,
+  })
+  const workerNodes = rawNodes.filter(
+    (n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent"
+  )
 
   const createMutation = useMutation({
-    mutationFn: () => volumesApi.create(orgId!, projectId, { name, storage_gb: storageGB }, token),
+    mutationFn: () =>
+      volumesApi.create(
+        orgId!,
+        projectId,
+        { name, storage_gb: storageGB, node_id: nodeId || null },
+        token
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["volumes", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
@@ -2167,6 +2185,35 @@ function VolumeForm({ projectId }: { projectId: string }) {
           />
           <p className="text-[11px] text-muted-foreground mt-1">Default: 5 GB. Can be increased but not decreased after creation.</p>
         </Field>
+
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Server className="h-3.5 w-3.5" /> Target node
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <NodeCard
+              label="Auto-schedule"
+              sub="Picked on first mount"
+              selected={nodeId === ""}
+              onClick={() => setNodeId("")}
+            />
+            {workerNodes.map((node) => (
+              <NodeCard
+                key={node.id}
+                label={node.name}
+                sub={node.tailscale_ip}
+                selected={nodeId === node.id}
+                onClick={() => setNodeId(node.id)}
+                online
+              />
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Storage is node-local. Whichever node it lands on holds the data
+            permanently — the volume cannot be moved later, and any service using
+            it must run there.
+          </p>
+        </div>
       </Section>
 
       {/* Replica tradeoff callout */}

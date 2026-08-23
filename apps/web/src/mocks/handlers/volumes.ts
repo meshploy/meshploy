@@ -15,6 +15,16 @@ export const volumesHandlers = [
     return HttpResponse.json({ ...demoVolume, id: crypto.randomUUID(), name: body.name })
   }),
 
+  // Placement: the demo volume is bound, so the UI shows the immutable state.
+  http.get("/api/v1/orgs/:orgId/projects/:projectId/volumes/:volumeId/placement", () =>
+    HttpResponse.json({ exists: true, phase: "Bound", bound: true, node: "worker-1" })
+  ),
+
+  http.put("/api/v1/orgs/:orgId/projects/:projectId/volumes/:volumeId/node", async ({ request }) => {
+    const body = (await request.json()) as { node_id: string | null }
+    return HttpResponse.json({ ...demoVolume, node_id: body.node_id })
+  }),
+
   http.delete("/api/v1/orgs/:orgId/projects/:projectId/volumes/:volumeId", () =>
     new HttpResponse(null, { status: 204 })
   ),

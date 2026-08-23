@@ -516,7 +516,69 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 			return nil, err
 		}
 	}
+
+	// A target-node change has to reach the running workload, not just the row.
+	// Previously the value was saved and silently ignored until the next deploy,
+	// so the UI reported a placement the cluster was not honouring.
+	if in.UpdateNode {
+		if err := s.applyNodePin(ctx, serviceID, in.NodeID); err != nil {
+			return nil, err
+		}
+	}
 	return s.getByID(ctx, serviceID)
+}
+
+// applyNodePin pushes the service's target node onto its live Deployment.
+//
+// It refuses a move that the storage cannot follow: a service holding a bound
+// node-local volume can only run where that volume lives, and pinning it
+// elsewhere would leave the pod Pending forever with the reason buried in
+// kubectl describe.
+func (s *WorkloadService) applyNodePin(ctx context.Context, serviceID uuid.UUID, nodeID *uuid.UUID) error {
+	if s.k8s == nil {
+		return nil
+	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return err
+	}
+
+	nodeName := ""
+	if nodeID != nil {
+		var node db.Node
+		if err := s.db.WithContext(ctx).First(&node, "id = ?", *nodeID).Error; err != nil {
+			return fmt.Errorf("target node not found")
+		}
+		nodeName = node.Name
+	}
+
+	// Guard: bound volumes anchor the workload to their own node.
+	var mounts []db.VolumeMount
+	if err := s.db.WithContext(ctx).Preload("Volume").
+		Where("service_id = ?", serviceID).Find(&mounts).Error; err == nil {
+		for _, m := range mounts {
+			if m.Volume.Slug == "" {
+				continue
+			}
+			st, err := appk8s.GetVolumePVCStatus(ctx, s.k8s, m.Volume.Slug, svc.Project.Slug)
+			if err != nil || !st.Bound || st.Node == "" {
+				continue
+			}
+			if nodeName == "" {
+				// Auto-schedule with a bound volume still resolves to the volume's
+				// node; pin explicitly so the intent is visible in the cluster.
+				nodeName = st.Node
+				continue
+			}
+			if st.Node != nodeName {
+				return fmt.Errorf(
+					"volume %q is provisioned on %q — the service cannot run on %q; move it back or recreate the volume",
+					m.Volume.Name, st.Node, nodeName)
+			}
+		}
+	}
+
+	return appk8s.SetDeploymentNode(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, nodeName)
 }
 
 func (s *WorkloadService) GetEnvVars(ctx context.Context, serviceID uuid.UUID) (string, error) {

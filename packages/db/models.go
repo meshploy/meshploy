@@ -631,8 +631,14 @@ type Volume struct {
 	Slug      string       `gorm:"not null;uniqueIndex"               json:"slug"` // K8s PVC name
 	StorageGB int          `gorm:"not null;default:5"                 json:"storage_gb"`
 	Status    VolumeStatus `gorm:"type:varchar(15);default:'pending'" json:"status"`
+	// NodeID pins where the volume is provisioned. nil = auto-schedule: the
+	// provisioner picks when the first pod mounts it (local-path uses
+	// WaitForFirstConsumer). Once the PVC is bound the choice is immutable —
+	// local-path storage is node-local and cannot be moved.
+	NodeID *uuid.UUID `gorm:"type:uuid;index" json:"node_id"`
 
 	Project Project       `gorm:"foreignKey:ProjectID"                            json:"-"`
+	Node    *Node         `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"  json:"-"`
 	Mounts  []VolumeMount `gorm:"foreignKey:VolumeID;constraint:OnDelete:CASCADE" json:"mounts,omitempty"`
 }
 

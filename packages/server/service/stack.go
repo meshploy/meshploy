@@ -655,7 +655,9 @@ func (s *StackService) resolveNamedVolumes(
 			out[volName] = &existing
 			continue
 		}
-		created, err := s.volumes.Create(ctx, projectID, storedName, 5)
+		// Stack-declared volumes are unpinned: the compose spec says nothing about
+		// placement, so let the provisioner choose when the first pod mounts them.
+		created, err := s.volumes.Create(ctx, projectID, storedName, 5, nil)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("volume %s: %v", volName, err))
 			continue

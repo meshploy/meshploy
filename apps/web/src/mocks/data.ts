@@ -255,6 +255,7 @@ export const demoVolume = {
   slug: "uploads",
   storage_gb: 10,
   status: "ready" as const,
+  node_id: null,
   mounts: [],
   created_at: DEMO_NOW,
   updated_at: DEMO_NOW,

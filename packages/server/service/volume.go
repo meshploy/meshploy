@@ -46,12 +46,16 @@ func (s *VolumeService) Get(ctx context.Context, volumeID, projectID uuid.UUID) 
 	return &volume, err
 }
 
-func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name string, storageGB int) (*db.Volume, error) {
+func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name string, storageGB int, nodeID *uuid.UUID) (*db.Volume, error) {
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
 	if storageGB <= 0 {
 		storageGB = 5
+	}
+	nodeName, err := s.resolveNodeName(ctx, nodeID)
+	if err != nil {
+		return nil, err
 	}
 	slug := volumeSlug()
 	volume := &db.Volume{
@@ -60,17 +64,20 @@ func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name st
 		Slug:      slug,
 		StorageGB: storageGB,
 		Status:    db.VolumePending,
+		NodeID:    nodeID,
 	}
 	if err := s.db.WithContext(ctx).Create(volume).Error; err != nil {
 		return nil, err
 	}
 
 	// Provision the PVC if K8s is available. We need the project namespace.
+	// nodeName == "" leaves the claim unpinned, so the provisioner picks a node
+	// when the first pod mounts it (WaitForFirstConsumer).
 	if s.k8s != nil {
 		var project db.Project
 		if err := s.db.WithContext(ctx).First(&project, "id = ?", projectID).Error; err == nil {
 			if err := appk8s.EnsureNamespace(ctx, s.k8s, project.Slug); err == nil {
-				if err := appk8s.EnsureVolumePVC(ctx, s.k8s, slug, project.Slug, storageGB); err == nil {
+				if err := appk8s.EnsureVolumePVC(ctx, s.k8s, slug, project.Slug, storageGB, nodeName); err == nil {
 					s.db.WithContext(ctx).Model(volume).Update("status", db.VolumeReady)
 					volume.Status = db.VolumeReady
 				}
@@ -78,6 +85,94 @@ func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name st
 		}
 	}
 	return volume, nil
+}
+
+// resolveNodeName maps a node id to its Kubernetes node name. A nil id means
+// auto-schedule and yields an empty name.
+func (s *VolumeService) resolveNodeName(ctx context.Context, nodeID *uuid.UUID) (string, error) {
+	if nodeID == nil {
+		return "", nil
+	}
+	var node db.Node
+	if err := s.db.WithContext(ctx).First(&node, "id = ?", *nodeID).Error; err != nil {
+		return "", fmt.Errorf("target node not found")
+	}
+	return node.Name, nil
+}
+
+// PVCStatus reports where a volume's claim actually lives. The stored NodeID is
+// a request; this is the truth, and the two diverge whenever a claim was bound
+// before the request changed or the claim was removed outside Meshploy.
+func (s *VolumeService) PVCStatus(ctx context.Context, volumeID uuid.UUID) (appk8s.VolumePVCStatus, error) {
+	var volume db.Volume
+	if err := s.db.WithContext(ctx).First(&volume, "id = ?", volumeID).Error; err != nil {
+		return appk8s.VolumePVCStatus{}, err
+	}
+	if s.k8s == nil {
+		return appk8s.VolumePVCStatus{}, nil
+	}
+	var project db.Project
+	if err := s.db.WithContext(ctx).First(&project, "id = ?", volume.ProjectID).Error; err != nil {
+		return appk8s.VolumePVCStatus{}, err
+	}
+	return appk8s.GetVolumePVCStatus(ctx, s.k8s, volume.Slug, project.Slug)
+}
+
+// SetNode changes which node a volume is provisioned on.
+//
+// Node-local storage cannot be moved, so this only succeeds while the claim is
+// unbound: the claim is recreated with the new pin (nothing has been written to
+// it yet, so there is no data to lose). A bound claim is refused with an
+// explanation rather than silently accepting a change that cannot take effect —
+// the failure mode otherwise is a pod that stays Pending forever against a node
+// it can never reach.
+func (s *VolumeService) SetNode(ctx context.Context, volumeID uuid.UUID, nodeID *uuid.UUID) (*db.Volume, error) {
+	var volume db.Volume
+	if err := s.db.WithContext(ctx).First(&volume, "id = ?", volumeID).Error; err != nil {
+		return nil, err
+	}
+	nodeName, err := s.resolveNodeName(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	var project db.Project
+	if err := s.db.WithContext(ctx).First(&project, "id = ?", volume.ProjectID).Error; err != nil {
+		return nil, err
+	}
+
+	if s.k8s != nil {
+		status, err := appk8s.GetVolumePVCStatus(ctx, s.k8s, volume.Slug, project.Slug)
+		if err != nil {
+			return nil, err
+		}
+		if status.Bound && status.Node != nodeName {
+			return nil, fmt.Errorf(
+				"volume is already provisioned on %q — local storage cannot be moved; delete and recreate the volume to place it elsewhere",
+				status.Node)
+		}
+		// Unbound: recreate the claim so the new pin takes effect. Deleting an
+		// unbound claim discards no data.
+		if status.Exists && status.Node != nodeName {
+			if err := appk8s.DeleteVolumePVC(ctx, s.k8s, volume.Slug, project.Slug); err != nil {
+				return nil, err
+			}
+		}
+		if err := appk8s.EnsureVolumePVC(ctx, s.k8s, volume.Slug, project.Slug, volume.StorageGB, nodeName); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.db.WithContext(ctx).Model(&volume).Update("node_id", nodeID).Error; err != nil {
+		return nil, err
+	}
+	return s.getVolumeByID(ctx, volumeID)
+}
+
+func (s *VolumeService) getVolumeByID(ctx context.Context, volumeID uuid.UUID) (*db.Volume, error) {
+	var v db.Volume
+	err := s.db.WithContext(ctx).Preload("Mounts").First(&v, "id = ?", volumeID).Error
+	return &v, err
 }
 
 func (s *VolumeService) Delete(ctx context.Context, volumeID uuid.UUID) error {
