@@ -436,7 +436,17 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		return nil, err
 	}
 
-	result := &ApplyResult{Stack: &stack}
+	// Initialise every slice: a nil slice marshals to JSON null, and the UI reads
+	// these as arrays (`result.updated.length`). An apply that creates something
+	// but updates nothing would otherwise return "updated": null and crash the
+	// page that renders the outcome.
+	result := &ApplyResult{
+		Stack:   &stack,
+		Created: []string{},
+		Updated: []string{},
+		Deleted: []string{},
+		Errors:  []string{},
+	}
 
 	// Build environment map: stored variables + one-shot overrides.
 	envMap := jsonObjToStrMap(stack.Variables)

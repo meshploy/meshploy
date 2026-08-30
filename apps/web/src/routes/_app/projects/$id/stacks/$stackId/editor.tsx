@@ -229,18 +229,24 @@ function StackEditorTab() {
           {(() => {
             const data = applyMutation.data ?? syncMutation.data
             if (!data) return null
+            // Tolerate a missing list rather than blanking the page: one absent
+            // field should not cost the user the outcome of their apply.
+            const created = data.created ?? []
+            const updated = data.updated ?? []
+            const deleted = data.deleted ?? []
+            const errors = data.errors ?? []
             return (
               <p className="text-xs text-muted-foreground">
                 {syncMutation.isSuccess ? "Sync" : "Apply"} complete —
-                {data.created.length > 0 && ` created: ${data.created.join(", ")}`}
-                {data.updated.length > 0 && ` updated: ${data.updated.join(", ")}`}
-                {data.deleted.length > 0 && ` unlinked: ${data.deleted.join(", ")}`}
-                {data.errors.length > 0 && (
-                  <span className="text-destructive"> errors: {data.errors.join("; ")}</span>
+                {created.length > 0 && ` created: ${created.join(", ")}`}
+                {updated.length > 0 && ` updated: ${updated.join(", ")}`}
+                {deleted.length > 0 && ` unlinked: ${deleted.join(", ")}`}
+                {errors.length > 0 && (
+                  <span className="text-destructive"> errors: {errors.join("; ")}</span>
                 )}
-                {data.created.length === 0 &&
-                  data.updated.length === 0 &&
-                  data.errors.length === 0 && " no changes"}
+                {created.length === 0 &&
+                  updated.length === 0 &&
+                  errors.length === 0 && " no changes"}
               </p>
             )
           })()}

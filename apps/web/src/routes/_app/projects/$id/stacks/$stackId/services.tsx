@@ -81,30 +81,30 @@ function StackServicesTab() {
         <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
           <p className="text-xs font-medium text-foreground">Apply complete</p>
           <div className="flex flex-wrap gap-3">
-            {applyResult.created.length > 0 && (
+            {(applyResult.created ?? []).length > 0 && (
               <div className="flex items-center gap-1.5 text-xs text-emerald-400">
                 <CheckCircle2 className="h-3 w-3" />
-                Created: {applyResult.created.join(", ")}
+                Created: {(applyResult.created ?? []).join(", ")}
               </div>
             )}
-            {applyResult.updated.length > 0 && (
+            {(applyResult.updated ?? []).length > 0 && (
               <div className="flex items-center gap-1.5 text-xs text-blue-400">
                 <CheckCircle2 className="h-3 w-3" />
-                Updated: {applyResult.updated.join(", ")}
+                Updated: {(applyResult.updated ?? []).join(", ")}
               </div>
             )}
-            {applyResult.deleted.length > 0 && (
+            {(applyResult.deleted ?? []).length > 0 && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                Unlinked: {applyResult.deleted.join(", ")}
+                Unlinked: {(applyResult.deleted ?? []).join(", ")}
               </div>
             )}
-            {applyResult.errors.length > 0 && (
+            {(applyResult.errors ?? []).length > 0 && (
               <div className="flex items-center gap-1.5 text-xs text-destructive">
                 <XCircle className="h-3 w-3" />
-                Errors: {applyResult.errors.join("; ")}
+                Errors: {(applyResult.errors ?? []).join("; ")}
               </div>
             )}
-            {applyResult.created.length === 0 && applyResult.updated.length === 0 && applyResult.errors.length === 0 && (
+            {(applyResult.created ?? []).length === 0 && (applyResult.updated ?? []).length === 0 && (applyResult.errors ?? []).length === 0 && (
               <p className="text-xs text-muted-foreground">No changes</p>
             )}
           </div>
