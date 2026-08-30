@@ -19,6 +19,10 @@ type WorkloadService struct {
 	db        *gorm.DB
 	k8s       kubernetes.Interface // nil when K8s is not configured
 	varGroups *VariableGroupService
+	// deployment re-applies a service's K8s Deployment from its current DB
+	// config. Assigned after construction in service.New because the two
+	// services reference each other.
+	deployment *DeploymentService
 }
 
 // PortInput describes one port the caller wants to expose.
@@ -356,12 +360,31 @@ func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.S
 	if svc.Image == "" {
 		return nil, errors.New("service has never been deployed — trigger a deployment first")
 	}
-	if s.k8s != nil {
-		replicas := int32(svc.Replicas)
-		if replicas == 0 {
-			replicas = 1
+	// Replicas must be at least one for a start to mean anything.
+	if svc.Replicas == 0 {
+		if err := s.db.WithContext(ctx).Model(&svc).Update("replicas", 1).Error; err != nil {
+			return nil, err
 		}
-		if err := appk8s.ScaleDeployment(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, replicas); err != nil {
+		svc.Replicas = 1
+	}
+	if s.k8s != nil {
+		// Re-apply the whole spec rather than scaling what is already in the
+		// cluster. Scaling resurrects whatever K8s happens to hold, which may be
+		// a Deployment left behind by a deleted service of the same name, or a
+		// spec from before the image, env, node or volumes changed — starting a
+		// service must not silently run stale configuration.
+		//
+		// ReapplyService only acts on a running service, so the status is written
+		// first; a failure below rolls it back rather than leaving the row
+		// claiming the service runs.
+		if err := s.db.WithContext(ctx).Model(&svc).Update("status", db.ServiceRunning).Error; err != nil {
+			return nil, err
+		}
+		if s.deployment == nil {
+			return nil, errors.New("deployment service unavailable")
+		}
+		if err := s.deployment.ReapplyService(ctx, serviceID); err != nil {
+			_ = s.db.WithContext(ctx).Model(&svc).Update("status", db.ServiceStopped).Error
 			return nil, err
 		}
 	}
@@ -414,6 +437,23 @@ func (s *WorkloadService) GetK8sInfo(ctx context.Context, serviceID uuid.UUID) (
 }
 
 func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error {
+	// Remove the cluster workload before the row. Deleting only the record
+	// leaves the Deployment and Service running under the same name, and a later
+	// service with that name silently adopts the orphan — inheriting its image,
+	// env and volume claims.
+	//
+	// A failure here is returned rather than ignored: dropping the row while the
+	// workload keeps running is the bug this prevents, so the caller should see
+	// that the cluster could not be cleaned up.
+	if s.k8s != nil {
+		var svc db.Service
+		if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
+			return err
+		}
+		if err := appk8s.DeleteWorkload(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug); err != nil {
+			return fmt.Errorf("remove workload from the cluster: %w", err)
+		}
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceService, serviceID).
 			Delete(&db.ResourcePermission{})

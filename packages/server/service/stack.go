@@ -25,6 +25,9 @@ type StackService struct {
 	db       *gorm.DB
 	workload *WorkloadService
 	volumes  *VolumeService
+	// deployment rolls out services this apply just created. Assigned after
+	// construction in service.New.
+	deployment *DeploymentService
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +443,10 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	// these as arrays (`result.updated.length`). An apply that creates something
 	// but updates nothing would otherwise return "updated": null and crash the
 	// page that renders the outcome.
+	// Services created by this apply are rolled out at the end; ones that already
+	// existed keep whatever run state the operator left them in.
+	var createdIDs []uuid.UUID
+
 	result := &ApplyResult{
 		Stack:   &stack,
 		Created: []string{},
@@ -593,6 +600,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 
 			s.attachVolumeMounts(ctx, svc.ID, svcDef.Volumes, volumesByName)
 			result.Created = append(result.Created, svcName)
+			createdIDs = append(createdIDs, svc.ID)
 		} else {
 			updates := map[string]any{
 				"image":                         svcDef.Image,
@@ -637,6 +645,28 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	stack.Status = finalStatus
 	stack.LastAppliedAt = &now
 	result.Stack = &stack
+
+	// Roll out what this apply created. "Apply" means make it so — leaving new
+	// services stopped turns a one-click template into a two-click one, and
+	// leaves any route created for them pointing at nothing.
+	//
+	// Only newly created services are started. An apply that merely updates a
+	// stack must not resurrect a service the operator deliberately stopped.
+	//
+	// A failed rollout is reported but does not fail the apply: the records are
+	// correct, only the rollout did not land, and that is visible on the
+	// service's own page.
+	if s.deployment != nil {
+		for i, id := range createdIDs {
+			if _, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: id, TriggeredBy: triggerBy}); err != nil {
+				name := ""
+				if i < len(result.Created) {
+					name = result.Created[i]
+				}
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: created but not deployed: %v", name, err))
+			}
+		}
+	}
 
 	return result, nil
 }

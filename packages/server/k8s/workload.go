@@ -429,6 +429,44 @@ func SetDeploymentNode(ctx context.Context, client kubernetes.Interface, name, n
 	return nil
 }
 
+// DeploymentState is the cluster's view of a workload, used to reconcile the
+// status stored on a service row against what is actually running.
+type DeploymentState struct {
+	Exists    bool
+	Replicas  int32 // spec.replicas — 0 means scaled down
+	Available int32 // status.availableReplicas
+	// Stalled is true when K8s gave up making progress (ProgressDeadlineExceeded),
+	// e.g. an image that cannot be pulled or a pod that cannot be scheduled.
+	Stalled bool
+}
+
+// GetDeploymentState reads a Deployment's replica counts and progress condition.
+// A missing Deployment is reported via Exists rather than as an error.
+func GetDeploymentState(ctx context.Context, client kubernetes.Interface, name, namespace string) (DeploymentState, error) {
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return DeploymentState{}, nil
+	}
+	if err != nil {
+		return DeploymentState{}, fmt.Errorf("get deployment: %w", err)
+	}
+	st := DeploymentState{
+		Exists:    true,
+		Available: dep.Status.AvailableReplicas,
+	}
+	if dep.Spec.Replicas != nil {
+		st.Replicas = *dep.Spec.Replicas
+	}
+	for _, c := range dep.Status.Conditions {
+		if c.Type == appsv1.DeploymentProgressing &&
+			c.Status == corev1.ConditionFalse &&
+			c.Reason == "ProgressDeadlineExceeded" {
+			st.Stalled = true
+		}
+	}
+	return st, nil
+}
+
 // PodInfo is a summarised view of a running pod for the UI.
 type PodInfo struct {
 	Name      string `json:"name"`

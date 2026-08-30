@@ -183,6 +183,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	nodes.headscale = headscaleSvc
 	nodes.notif = notif
+	// Workloads need the deployment service to re-apply a Deployment from current
+	// config on start; the two are wired after construction because deployments
+	// is built from workloads' dependencies.
+	workloads.deployment = deployments
 
 	svc := &Services{
 		Auth:            auth,
@@ -193,7 +197,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Projects:        &ProjectService{db: db},
 		Nodes:           nodes,
 		Workloads:       workloads,
-		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes},
+		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes, deployment: deployments},
 		Volumes:         volumes,
 		Domains:         domains,
 		Routes:          &RouteService{db: db},
@@ -229,6 +233,11 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		catalog: newTemplateCatalog(c),
 		stacks:  svc.Stacks,
 		routes:  svc.Routes,
+	}
+
+	// Keep stored service status in step with the cluster.
+	if k8sClient != nil {
+		go workloads.StartStatusReconciler(context.Background())
 	}
 
 	go backups.StartScheduler(context.Background())
