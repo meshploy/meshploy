@@ -31,6 +31,12 @@ export interface ApplyStackResult {
   errors: string[]
 }
 
+export interface DestroyStackResult {
+  stack: ApiStack
+  destroyed: string[]
+  errors: string[]
+}
+
 export interface SyncStackResult extends ApplyStackResult {
   suggested_mode: StackGitMode
   warning: string
@@ -105,6 +111,13 @@ export const stacks = {
     apiFetch<ApplyStackResult>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/stacks/${stackId}/apply`,
       { method: "POST", body: JSON.stringify({ env_overrides: envOverrides ?? {} }) },
+      token
+    ),
+
+  destroy: (orgId: string, projectId: string, stackId: string, token: string) =>
+    apiFetch<DestroyStackResult>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/stacks/${stackId}/destroy`,
+      { method: "POST" },
       token
     ),
 

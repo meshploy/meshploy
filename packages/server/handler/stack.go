@@ -112,6 +112,24 @@ type applyResultBody struct {
 	Errors  []string  `json:"errors"`
 }
 
+// DestroyStackInput has no body: destroy takes no options, so that "destroy"
+// cannot mean two different amounts of destruction depending on a flag.
+type DestroyStackInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	StackID   string `path:"stackId"`
+}
+
+type DestroyResultOutput struct {
+	Body *destroyResultBody
+}
+
+type destroyResultBody struct {
+	Stack     *db.Stack `json:"stack"`
+	Destroyed []string  `json:"destroyed"`
+	Errors    []string  `json:"errors"`
+}
+
 func (h *Handler) registerStackRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-stacks",
@@ -178,6 +196,18 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: 200,
 	}, h.ApplyStack)
+
+	// Destroy — the counterpart to apply. Gated on ActionDeploy like apply
+	// itself: the pair are the same authority over what this stack is running.
+	huma.Register(api, huma.Operation{
+		OperationID:   "destroy-stack",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/destroy",
+		Summary:       "Destroy the services this stack created, keeping the stack",
+		Tags:          []string{"Stacks"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 200,
+	}, h.DestroyStack)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "apply-manifest",
@@ -383,6 +413,22 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 		Updated: result.Updated,
 		Deleted: result.Deleted,
 		Errors:  result.Errors,
+	}}, nil
+}
+
+func (h *Handler) DestroyStack(ctx context.Context, input *DestroyStackInput) (*DestroyResultOutput, error) {
+	_, _, stackID, _, err := h.checkAccess(ctx, input.OrgID, input.StackID, db.ResourceStack, db.ActionDeploy, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := h.svc.Stacks.Destroy(ctx, stackID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &DestroyResultOutput{Body: &destroyResultBody{
+		Stack:     result.Stack,
+		Destroyed: result.Destroyed,
+		Errors:    result.Errors,
 	}}, nil
 }
 

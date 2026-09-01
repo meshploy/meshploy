@@ -1,9 +1,13 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Server, PlayCircle, CheckCircle2, XCircle } from "lucide-react"
+import { Loader2, Server, PlayCircle, CheckCircle2, XCircle, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { stacks as stacksApi, type ApiService, type ApplyStackResult } from "@/lib/api"
+import { stacks as stacksApi, type ApiService, type ApplyStackResult, type DestroyStackResult } from "@/lib/api"
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog"
+import { useState } from "react"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -48,7 +52,18 @@ function StackServicesTab() {
     },
   })
 
+  const [confirmDestroy, setConfirmDestroy] = useState(false)
+  const destroyMutation = useMutation({
+    mutationFn: () => stacksApi.destroy(orgId!, projectId, stackId, token),
+    onSuccess: () => {
+      setConfirmDestroy(false)
+      queryClient.invalidateQueries({ queryKey: stackQueryKey })
+      queryClient.invalidateQueries({ queryKey: servicesQueryKey })
+    },
+  })
+
   const applyResult = applyMutation.data as ApplyStackResult | undefined
+  const destroyResult = destroyMutation.data as DestroyStackResult | undefined
 
   return (
     <div className="p-6 space-y-4">
@@ -60,6 +75,7 @@ function StackServicesTab() {
             <span className="text-xs text-muted-foreground">{serviceList.length}</span>
           )}
         </div>
+        <div className="flex items-center gap-2">
         <Button
           size="sm"
           variant="outline"
@@ -74,7 +90,68 @@ function StackServicesTab() {
           )}
           Apply
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 text-destructive hover:text-destructive"
+          onClick={() => setConfirmDestroy(true)}
+          disabled={destroyMutation.isPending || serviceList.length === 0}
+        >
+          {destroyMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+          Destroy
+        </Button>
+        </div>
       </div>
+
+      {destroyResult && (
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
+          <p className="text-xs font-medium text-foreground">Destroy complete</p>
+          {(destroyResult.destroyed ?? []).length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CheckCircle2 className="h-3 w-3" />
+              Destroyed: {(destroyResult.destroyed ?? []).join(", ")}
+            </div>
+          )}
+          {(destroyResult.errors ?? []).map((e) => (
+            <div key={e} className="flex items-center gap-1.5 text-xs text-destructive">
+              <XCircle className="h-3 w-3 shrink-0" />
+              {e}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={confirmDestroy} onOpenChange={setConfirmDestroy}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Destroy this stack&apos;s services?</DialogTitle>
+            <DialogDescription>
+              The {serviceList.length} service{serviceList.length === 1 ? "" : "s"} this stack created
+              are removed from the cluster and from meshploy. The stack and its spec stay, so Apply
+              recreates them. Volumes and routes are kept — your data and hostnames are not touched.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmDestroy(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => destroyMutation.mutate()}
+              disabled={destroyMutation.isPending}
+            >
+              {destroyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Destroy
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Apply result summary */}
       {applyResult && (
