@@ -88,7 +88,7 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 					continue
 				}
 				port := e.Port
-				_, _ = s.routes.Create(ctx, CreateRouteInput{
+				route, err := s.routes.Create(ctx, CreateRouteInput{
 					OrgID:     orgID,
 					ProjectID: projectID,
 					DomainID:  domainID,
@@ -96,6 +96,11 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 					Subdomain: e.Subdomain,
 					Targets:   []TargetInput{{ServiceID: &svc.ID, Port: port}},
 				})
+				// Record the originating stack. Set after creation rather than
+				// widening CreateRouteInput, which every other caller shares.
+				if err == nil && route != nil {
+					_ = s.db.WithContext(ctx).Model(route).Update("stack_id", stack.ID).Error
+				}
 			}
 		}
 	}

@@ -7,9 +7,16 @@ import { services as servicesApi, type ApiService } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 import type { ServiceStatus } from "@/types"
 
-function ServiceCard({ svc, onClick }: { svc: ApiService; onClick: () => void }) {
+function ServiceCard({ svc, onClick, stackNames, orgId, projectId }: {
+  svc: ApiService
+  onClick: () => void
+  stackNames: Map<string, string>
+  orgId: string | undefined
+  projectId: string | undefined
+}) {
   const statusStyle = STATUS_STYLES[svc.status] ?? STATUS_STYLES.stopped
   return (
     <div
@@ -22,7 +29,10 @@ function ServiceCard({ svc, onClick }: { svc: ApiService; onClick: () => void })
             <Server className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-foreground leading-tight">{svc.name}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-semibold text-foreground leading-tight">{svc.name}</p>
+              <StackPill stackId={svc.stack_id} stackNames={stackNames} orgId={orgId} projectId={projectId} />
+            </div>
             <p className="text-[11px] text-muted-foreground">port :{(svc.ports?.find((p) => p.is_primary) ?? svc.ports?.[0])?.port ?? "—"} · ×{svc.replicas}</p>
           </div>
         </div>
@@ -62,6 +72,7 @@ function ServicesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/services/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const stackNames = useStackNames(orgId, projectId)
   const navigate = useNavigate()
 
   const ACTIVE_SERVICE_STATUSES = new Set(["deploying"])
@@ -124,6 +135,9 @@ function ServicesTab() {
             <ServiceCard
               key={svc.id}
               svc={svc}
+              stackNames={stackNames}
+              orgId={orgId}
+              projectId={projectId}
               onClick={() => navigate({ to: "/projects/$id/services/$serviceId", params: { id: projectId, serviceId: svc.id } })}
             />
           ))}

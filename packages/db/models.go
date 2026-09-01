@@ -174,6 +174,9 @@ const (
 	StackIdle     StackStatus = "idle"
 	StackApplying StackStatus = "applying"
 	StackFailed   StackStatus = "failed"
+	// StackDestroyed means the stack's services were torn down while the stack
+	// and its spec were kept. Applying again recreates them.
+	StackDestroyed StackStatus = "destroyed"
 )
 
 type ResourceType string
@@ -608,6 +611,8 @@ type Stack struct {
 
 	Project        Project         `gorm:"foreignKey:ProjectID"                            json:"-"`
 	Services       []Service       `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
+	Volumes        []Volume        `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
+	Routes         []Route         `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
 	GitIntegration *GitIntegration `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
@@ -644,6 +649,10 @@ type Volume struct {
 	// WaitForFirstConsumer). Once the PVC is bound the choice is immutable —
 	// local-path storage is node-local and cannot be moved.
 	NodeID *uuid.UUID `gorm:"type:uuid;index" json:"node_id"`
+	// StackID records the stack whose apply created this volume, so the UI can
+	// show where a resource came from. SET NULL on stack delete, like Service:
+	// losing the stack must not destroy stored data.
+	StackID *uuid.UUID `gorm:"type:uuid;index" json:"stack_id"`
 
 	Project Project       `gorm:"foreignKey:ProjectID"                            json:"-"`
 	Node    *Node         `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"  json:"-"`
@@ -742,6 +751,9 @@ type Route struct {
 	// Custom-domain verification. Only relevant when DomainID IS NULL.
 	CustomDomainVerified    bool   `gorm:"default:false"       json:"custom_domain_verified"`
 	CustomDomainVerifyToken string `gorm:"not null;default:''" json:"custom_domain_verify_token"`
+	// StackID records the stack that created this route (a template deploy
+	// exposes services through one). SET NULL on stack delete.
+	StackID *uuid.UUID `gorm:"type:uuid;index" json:"stack_id"`
 
 	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
 	Project      Project       `gorm:"foreignKey:ProjectID"      json:"-"`

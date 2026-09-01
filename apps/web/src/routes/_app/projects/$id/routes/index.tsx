@@ -7,6 +7,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { routes as routesApi, type ApiDbRoute } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/")({
   component: RoutesTab,
@@ -23,6 +24,7 @@ function RoutesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/routes/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const stackNames = useStackNames(orgId, projectId)
   const navigate = useNavigate()
 
   const { data: routeList = [], isLoading } = useQuery({
@@ -80,6 +82,9 @@ function RoutesTab() {
                 <RouteRow
                   key={route.id}
                   route={route}
+                  stackNames={stackNames}
+                  orgId={orgId}
+                  projectId={projectId}
                   onClick={() => navigate({ to: "/projects/$id/routes/$routeId", params: { id: projectId, routeId: route.id } })}
                 />
               ))}
@@ -91,7 +96,13 @@ function RoutesTab() {
   )
 }
 
-function RouteRow({ route, onClick }: { route: ApiDbRoute; onClick: () => void }) {
+function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
+  route: ApiDbRoute
+  onClick: () => void
+  stackNames: Map<string, string>
+  orgId: string | undefined
+  projectId: string
+}) {
   const MAX_PATHS = 3
   const shown = route.targets.slice(0, MAX_PATHS)
   const overflow = route.targets.length - MAX_PATHS
@@ -102,6 +113,7 @@ function RouteRow({ route, onClick }: { route: ApiDbRoute; onClick: () => void }
         <div className="flex items-center gap-2">
           <Globe className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
           <span className="font-medium text-foreground font-mono text-sm">{route.hostname}</span>
+          <StackPill stackId={route.stack_id} stackNames={stackNames} orgId={orgId} projectId={projectId} />
         </div>
       </TableCell>
       <TableCell className="px-4 py-3">

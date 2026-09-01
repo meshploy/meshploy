@@ -7,6 +7,7 @@ import { volumes as volumesApi, type ApiVolume } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 
 export const Route = createFileRoute("/_app/projects/$id/volumes/")({
   component: VolumesTab,
@@ -19,7 +20,12 @@ const STATUS_STYLES: Record<ApiVolume["status"], string> = {
   failed: "bg-destructive/10 text-destructive border-destructive/20",
 }
 
-function VolumeCard({ volume, projectId }: { volume: ApiVolume; projectId: string }) {
+function VolumeCard({ volume, projectId, stackNames, orgId }: {
+  volume: ApiVolume
+  projectId: string
+  stackNames: Map<string, string>
+  orgId: string | undefined
+}) {
   const mount = volume.mounts?.[0]
 
   return (
@@ -34,7 +40,10 @@ function VolumeCard({ volume, projectId }: { volume: ApiVolume; projectId: strin
             <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-foreground leading-tight">{volume.name}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-semibold text-foreground leading-tight">{volume.name}</p>
+              <StackPill stackId={volume.stack_id} stackNames={stackNames} orgId={orgId} projectId={projectId} />
+            </div>
             <p className="text-[11px] text-muted-foreground font-mono">{volume.slug}</p>
           </div>
         </div>
@@ -70,6 +79,7 @@ function VolumesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/volumes/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const stackNames = useStackNames(orgId, projectId)
   const navigate = useNavigate()
 
   const { data: volumeList = [], isLoading } = useQuery({
@@ -123,7 +133,7 @@ function VolumesTab() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {volumeList.map((v) => (
-            <VolumeCard key={v.id} volume={v} projectId={projectId} />
+            <VolumeCard key={v.id} volume={v} projectId={projectId} stackNames={stackNames} orgId={orgId} />
           ))}
         </div>
       )}

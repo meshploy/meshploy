@@ -24,6 +24,8 @@ export interface ApiDbRoute {
   subdomain: string
   hostname: string
   custom_domain_verified: boolean
+  /** Stack that created this route. null = created directly. */
+  stack_id: string | null
   targets: ApiRouteTarget[]
   created_at: string
   updated_at: string

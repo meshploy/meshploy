@@ -259,6 +259,12 @@ func applyConstraints(db *gorm.DB) error {
 		{"stacks", "project_id", "projects", "CASCADE"},
 		// A volume pinned to a node outlives the node record.
 		{"volumes", "node_id", "nodes", "SET NULL"},
+		// Stack-created resources outlive their stack. SET NULL, matching
+		// services: deleting a stack records that the link is gone, it does not
+		// destroy stored data or take a live hostname out of the proxy.
+		{"volumes", "stack_id", "stacks", "SET NULL"},
+		{"routes", "stack_id", "stacks", "SET NULL"},
+		{"services", "stack_id", "stacks", "SET NULL"},
 		// RouteTarget → Route CASCADE
 		{"route_targets", "route_id", "routes", "CASCADE"},
 		// RouteTarget → service/node SET NULL

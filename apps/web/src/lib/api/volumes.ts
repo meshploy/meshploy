@@ -14,6 +14,8 @@ export interface ApiVolume {
   status: "idle" | "ready" | "failed"
   /** Requested node. null = auto-schedule (provisioner picks on first mount). */
   node_id: string | null
+  /** Stack whose apply created this volume. null = created directly. */
+  stack_id: string | null
   mounts?: ApiVolumeMount[]
   created_at: string
   updated_at: string

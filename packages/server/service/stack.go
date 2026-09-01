@@ -209,6 +209,62 @@ func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
 	})
 }
 
+// DestroyResult reports what a destroy removed.
+type DestroyResult struct {
+	Stack     *meshdb.Stack
+	Destroyed []string
+	Errors    []string
+}
+
+// Destroy removes the services this stack created, leaving the stack itself,
+// its spec, and its data behind — the counterpart to Apply, in the sense
+// terraform destroy is the counterpart to terraform apply. Applying again
+// recreates everything from the same spec.
+//
+// Deliberately narrower than "delete everything the apply touched":
+//
+//   - Volumes are kept. They hold the data the services were running on, and a
+//     destroy meant to free compute would silently be a data-loss button. A
+//     volume is removed from its own page, where the consequence is stated.
+//   - Routes are kept. The hostname is the part a user published and told other
+//     people about; re-applying reattaches the recreated service to the route
+//     it already had. Their targets fall to NULL in the meantime.
+//
+// Each service goes through WorkloadService.Delete, so the cluster workload is
+// removed before the row and a later service cannot adopt an orphan.
+func (s *StackService) Destroy(ctx context.Context, stackID uuid.UUID) (*DestroyResult, error) {
+	var stack meshdb.Stack
+	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
+		return nil, err
+	}
+	var services []meshdb.Service
+	if err := s.db.WithContext(ctx).Where("stack_id = ?", stackID).Find(&services).Error; err != nil {
+		return nil, err
+	}
+
+	result := &DestroyResult{Stack: &stack, Destroyed: []string{}, Errors: []string{}}
+	if s.workload == nil {
+		return result, nil
+	}
+	for _, svc := range services {
+		if err := s.workload.Delete(ctx, svc.ID); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", svc.Name, err))
+			continue
+		}
+		result.Destroyed = append(result.Destroyed, svc.Name)
+	}
+
+	// A destroyed stack has nothing deployed. Reflect that rather than leaving
+	// the status describing the apply that is no longer true.
+	status := meshdb.StackDestroyed
+	if len(result.Errors) > 0 {
+		status = meshdb.StackFailed
+	}
+	s.db.WithContext(ctx).Model(&stack).Update("status", status)
+	stack.Status = status
+	return result, nil
+}
+
 // Sync fetches the compose spec from the stack's git source, updates Spec,
 // detects mode mismatches, then calls Apply.
 func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy uuid.UUID) (*SyncResult, error) {
@@ -472,7 +528,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	}
 
 	// Resolve top-level named volumes → PVC records.
-	volumesByName := s.resolveNamedVolumes(ctx, stack.ProjectID, stack.Name, project.Volumes, result)
+	volumesByName := s.resolveNamedVolumes(ctx, stack.ProjectID, stack.ID, stack.Name, project.Volumes, result)
 
 	// Current services in this stack.
 	var existing []meshdb.Service
@@ -682,6 +738,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 func (s *StackService) resolveNamedVolumes(
 	ctx context.Context,
 	projectID uuid.UUID,
+	stackID uuid.UUID,
 	stackName string,
 	composeVolumes composetypes.Volumes,
 	result *ApplyResult,
@@ -705,6 +762,12 @@ func (s *StackService) resolveNamedVolumes(
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("volume %s: %v", volName, err))
 			continue
+		}
+		// Record which stack produced it, so the UI can show the origin. Set
+		// after creation rather than widening VolumeService.Create, which is
+		// called from several unrelated paths.
+		if err := s.db.WithContext(ctx).Model(created).Update("stack_id", stackID).Error; err == nil {
+			created.StackID = &stackID
 		}
 		out[volName] = created
 	}
