@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,20 +62,44 @@ func (s *NodeService) StartNodeMonitor(ctx context.Context) {
 }
 
 func (s *NodeService) checkNodeOnlineStatus(ctx context.Context, offlineNotified map[uuid.UUID]bool) {
+	// Select on the mesh IP rather than headscale_id: a node that registered
+	// while the Headscale credential was dead never got an ID stored, and
+	// filtering on it would exclude that node from monitoring forever.
 	var nodes []db.Node
-	if err := s.db.WithContext(ctx).Where("headscale_id != ''").Find(&nodes).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("tailscale_ip <> ''").Find(&nodes).Error; err != nil {
 		return
 	}
 	hsNodes, err := s.headscale.ListNodes(ctx)
 	if err != nil {
 		return
 	}
-	online := make(map[string]bool, len(hsNodes))
+	peerByID := make(map[string]HeadscaleNode, len(hsNodes))
+	peerByIP := make(map[string]HeadscaleNode, len(hsNodes))
 	for _, hn := range hsNodes {
-		online[hn.ID] = hn.Online
+		peerByID[hn.ID] = hn
+		if len(hn.IPAddresses) > 0 {
+			peerByIP[hn.IPAddresses[0]] = hn
+		}
 	}
 	for _, node := range nodes {
-		isOnline := online[node.HeadscaleID]
+		peer, known := peerByID[node.HeadscaleID]
+		if !known {
+			// Fall back to the mesh IP and repair the missing link, so one
+			// outage does not orphan a node past the end of that outage.
+			if p, found := peerByIP[node.TailscaleIP]; found {
+				peer, known = p, true
+				if err := s.SetHeadscaleID(ctx, node.ID, p.ID); err != nil {
+					log.Printf("warning: monitor backfill headscale_id for node %s: %v", node.ID, err)
+				}
+			}
+		}
+		if !known && node.HeadscaleID == "" {
+			// Never linked to a mesh peer at all -- a row registered out of band
+			// that never joined. There is no online -> offline transition here,
+			// so stay quiet rather than inventing one.
+			continue
+		}
+		isOnline := known && peer.Online
 		wasOffline := offlineNotified[node.ID]
 		if !isOnline && !wasOffline {
 			offlineNotified[node.ID] = true

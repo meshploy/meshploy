@@ -390,6 +390,18 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.CreateHeadscalePreAuthKey)
 
+	// Mesh health — org-scoped, admin-only. Reports whether the API can still
+	// talk to Headscale, so a dead credential shows up in the UI instead of
+	// silently freezing node liveness.
+	huma.Register(api, huma.Operation{
+		OperationID: "get-mesh-health",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/cluster/mesh-health",
+		Summary:     "Report whether the control plane can reach Headscale",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetMeshHealth)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "get-node-metrics",
 		Method:      "GET",
@@ -551,6 +563,42 @@ type ClusterJoinTokenOutput struct {
 }
 
 const k3sTokenPath = "/var/lib/rancher/k3s/server/node-token"
+
+// MeshHealthOutput reports the control plane's ability to reach Headscale.
+type MeshHealthOutput struct {
+	Body struct {
+		Configured    bool       `json:"configured"`               // Headscale is wired up at all
+		Checked       bool       `json:"checked"`                  // a call has been attempted
+		Healthy       bool       `json:"healthy"`                  // last call succeeded
+		Unauthorized  bool       `json:"unauthorized"`             // credential rejected -- needs a new API key
+		LastError     string     `json:"last_error,omitempty"`
+		LastErrorAt   *time.Time `json:"last_error_at,omitempty"`
+		LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
+	}
+}
+
+// GetMeshHealth surfaces the last observed Headscale result. An expired API key
+// degrades the mesh invisibly: node liveness freezes at its last known value
+// while the nodes list keeps rendering it as current. Reporting it lets the UI
+// mark that state as stale rather than presenting it as fact.
+func (h *Handler) GetMeshHealth(ctx context.Context, input *ClusterPathInput) (*MeshHealthOutput, error) {
+	if _, _, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, ""); err != nil {
+		return nil, err
+	}
+	out := &MeshHealthOutput{}
+	if h.svc == nil || h.svc.Headscale == nil {
+		return out, nil
+	}
+	hh := h.svc.Headscale.Health()
+	out.Body.Configured = true
+	out.Body.Checked = hh.Checked
+	out.Body.Healthy = hh.Healthy
+	out.Body.Unauthorized = hh.Unauthorized
+	out.Body.LastError = hh.LastError
+	out.Body.LastErrorAt = hh.LastErrorAt
+	out.Body.LastSuccessAt = hh.LastSuccessAt
+	return out, nil
+}
 
 // ClusterPathInput scopes the cluster-credential endpoints to an organization.
 // These endpoints hand out credentials that let a machine join the mesh and the

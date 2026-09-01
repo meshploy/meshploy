@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -52,6 +53,29 @@ type HeadscaleService struct {
 	url    string
 	key    string
 	client *http.Client
+
+	// Health of the last observed call. A dead Headscale credential degrades
+	// the mesh silently -- node liveness freezes at its last known value while
+	// the UI keeps presenting it as current -- so the outcome is recorded and
+	// surfaced rather than only logged.
+	mu           sync.RWMutex
+	lastErr      string
+	lastErrAt    time.Time
+	lastOKAt     time.Time
+	unauthorized bool
+}
+
+// HeadscaleHealth is a point-in-time view of the API's ability to talk to
+// Headscale. Unauthorized is tracked separately from a generic failure because
+// an expired or wrong API key never recovers on its own -- it needs an operator
+// to mint a new one -- whereas a timeout usually does.
+type HeadscaleHealth struct {
+	Checked       bool       `json:"checked"`
+	Healthy       bool       `json:"healthy"`
+	Unauthorized  bool       `json:"unauthorized"`
+	LastError     string     `json:"last_error,omitempty"`
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
 }
 
 func NewHeadscaleService(url, key string) *HeadscaleService {
@@ -62,6 +86,45 @@ func NewHeadscaleService(url, key string) *HeadscaleService {
 			Timeout: 5 * time.Second,
 		},
 	}
+}
+
+// observe records the outcome of a Headscale call. status is the HTTP status
+// when there was a response, or 0 when the request never completed.
+func (h *HeadscaleService) observe(err error, status int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err == nil {
+		h.lastOKAt = time.Now()
+		h.lastErr = ""
+		h.unauthorized = false
+		return
+	}
+	h.lastErr = err.Error()
+	h.lastErrAt = time.Now()
+	h.unauthorized = status == http.StatusUnauthorized || status == http.StatusForbidden
+}
+
+// Health reports the last observed state of the Headscale connection. A service
+// that has not been called yet reports Checked false, so callers can distinguish
+// "no evidence" from "known good".
+func (h *HeadscaleService) Health() HeadscaleHealth {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := HeadscaleHealth{
+		Checked:      !h.lastOKAt.IsZero() || h.lastErr != "",
+		Healthy:      h.lastErr == "",
+		Unauthorized: h.unauthorized,
+		LastError:    h.lastErr,
+	}
+	if !h.lastErrAt.IsZero() {
+		t := h.lastErrAt
+		out.LastErrorAt = &t
+	}
+	if !h.lastOKAt.IsZero() {
+		t := h.lastOKAt
+		out.LastSuccessAt = &t
+	}
+	return out
 }
 
 // PreAuthKey mirrors the relevant fields from the Headscale preauth key response.
@@ -256,28 +319,37 @@ func (h *HeadscaleService) RenameNode(ctx context.Context, id, name string) erro
 }
 
 // ListNodes calls GET {url}/api/v1/node and returns all nodes.
+// ListNodes doubles as the health probe for the Headscale connection: it runs
+// on every node-list request and on each tick of the node monitor, so its
+// outcome is recorded for Health().
 func (h *HeadscaleService) ListNodes(ctx context.Context) ([]HeadscaleNode, error) {
+	nodes, status, err := h.listNodes(ctx)
+	h.observe(err, status)
+	return nodes, err
+}
+
+func (h *HeadscaleService) listNodes(ctx context.Context) ([]HeadscaleNode, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/node", nil)
 	if err != nil {
-		return nil, fmt.Errorf("headscale list nodes: %w", err)
+		return nil, 0, fmt.Errorf("headscale list nodes: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+h.key)
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("headscale list nodes: %w", err)
+		return nil, 0, fmt.Errorf("headscale list nodes: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("headscale list nodes: unexpected status %d", resp.StatusCode)
+		return nil, resp.StatusCode, fmt.Errorf("headscale list nodes: unexpected status %d", resp.StatusCode)
 	}
 
 	var body struct {
 		Nodes []HeadscaleNode `json:"nodes"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("headscale list nodes: decode: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("headscale list nodes: decode: %w", err)
 	}
-	return body.Nodes, nil
+	return body.Nodes, resp.StatusCode, nil
 }

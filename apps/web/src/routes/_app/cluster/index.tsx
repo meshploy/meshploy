@@ -20,6 +20,8 @@ import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
+import type { MeshHealth } from "@/lib/api/cluster"
+import { formatRelativeTime } from "@/lib/utils"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useOrgRole } from "@/store/org-store"
@@ -27,6 +29,40 @@ import { useOrgStore, useOrgRole } from "@/store/org-store"
 export const Route = createFileRoute("/_app/cluster/")({
   component: ClusterPage,
 })
+
+// MeshHealthBanner warns when the control plane cannot reach Headscale. Without
+// it the failure is invisible: node liveness simply freezes at its last known
+// value and every screen keeps presenting that stale value as current.
+function MeshHealthBanner({ health }: { health?: MeshHealth }) {
+  if (!health || !health.configured || !health.checked || health.healthy) return null
+
+  const lastOK = health.last_success_at ? new Date(health.last_success_at) : null
+  return (
+    <div className="flex items-start gap-2.5 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5">
+      <ShieldAlert className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+      <div className="space-y-1 min-w-0">
+        <p className="text-xs font-medium text-destructive">
+          {health.unauthorized
+            ? "Headscale rejected the control plane's API key"
+            : "Control plane cannot reach Headscale"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Mesh status below is stale{lastOK ? ` — last confirmed ${formatRelativeTime(lastOK)}` : ""}.
+          Node online/offline changes are not being detected.
+          {health.unauthorized && (
+            <>
+              {" "}Mint a new key and set <code className="text-[11px]">HEADSCALE_API_KEY</code>:{" "}
+              <code className="text-[11px]">headscale apikeys create -e 3650d</code>
+            </>
+          )}
+        </p>
+        {health.last_error && (
+          <p className="text-[11px] text-muted-foreground/70 font-mono truncate">{health.last_error}</p>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function ClusterPage() {
   const role = useOrgRole()
@@ -42,6 +78,13 @@ function ClusterPage() {
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
+  })
+
+  const { data: meshHealth } = useQuery({
+    queryKey: ["mesh-health", orgId],
+    queryFn: () => clusterApi.getMeshHealth(orgId!, token),
+    enabled: !!orgId,
+    refetchInterval: 60_000,
   })
 
   // Only show nodes that are in the k8s cluster
@@ -71,6 +114,8 @@ function ClusterPage() {
         <h1 className="text-xl font-semibold tracking-tight">Cluster</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Single K3s cluster spanning all mesh nodes</p>
       </div>
+
+      <MeshHealthBanner health={meshHealth} />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard
