@@ -679,7 +679,11 @@ for u in json.load(sys.stdin):
   fi
   success "Pre-auth key generated (reusable, 1h): ${BOLD}${PREAUTH_KEY}${RESET}"
 
-  _APIKEY_RAW="$($COMPOSE_CMD exec -T headscale headscale apikeys create 2>&1 || true)"
+  # Long expiry on purpose: this is a machine-to-machine key held by the API on
+  # the same host as the Headscale server it authenticates to, so rotation buys
+  # nothing. Headscale defaults to 90d, and an expired key fails silently --
+  # node liveness freezes and new nodes never get their headscale_id stored.
+  _APIKEY_RAW="$($COMPOSE_CMD exec -T headscale headscale apikeys create -e 3650d 2>&1 || true)"
   HEADSCALE_API_KEY="$(echo "$_APIKEY_RAW" | grep -oE '[A-Za-z0-9_-]{40,}' | head -1 || true)"
   if [[ -z "$HEADSCALE_API_KEY" ]]; then
     error "headscale apikeys output was:"
