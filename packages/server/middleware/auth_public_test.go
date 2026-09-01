@@ -59,6 +59,8 @@ func TestGenuinelyPublicRoutesStayPublic(t *testing.T) {
 		// validate a JWT from ?token= themselves.
 		{http.MethodGet, "/api/v1/orgs/o1/nodes/n1/terminal"},
 		{http.MethodGet, "/api/v1/orgs/o1/projects/p1/services/s1/pods/pod1/terminal"},
+		// Template icons are rendered as <img src>, which cannot set headers.
+		{http.MethodGet, "/api/v1/templates/pgadmin/icon"},
 	}
 	for _, c := range cases {
 		if !public(c.method, c.path) {
@@ -115,6 +117,31 @@ func TestHumaDocEndpointsAreNotSilentlyExempt(t *testing.T) {
 	for _, p := range []string{"/docs", "/openapi.json", "/openapi.yaml", "/schemas/HealthOutputBody.json"} {
 		if public(http.MethodGet, p) {
 			t.Errorf("GET %s is not in the allowlist and must not be exempt by accident", p)
+		}
+	}
+}
+
+// The template icon exemption is anchored at both ends. The catalog list and the
+// template detail sit under the same prefix and must stay protected -- the
+// detail carries the compose spec.
+func TestTemplateIconExemptionIsNarrow(t *testing.T) {
+	if !public(http.MethodGet, "/api/v1/templates/pgadmin/icon") {
+		t.Error("GET template icon must be public — <img src> cannot send an Authorization header")
+	}
+	shouldBeProtected := []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/templates"},
+		{http.MethodGet, "/api/v1/templates/"},
+		{http.MethodGet, "/api/v1/templates/pgadmin"},
+		{http.MethodGet, "/api/v1/templates/pgadmin/compose"},
+		// The suffix alone must not exempt anything outside the catalog.
+		{http.MethodGet, "/api/v1/orgs/o1/icon"},
+		// Method-scoped, like every other rule.
+		{http.MethodPost, "/api/v1/templates/pgadmin/icon"},
+		{http.MethodDelete, "/api/v1/templates/pgadmin/icon"},
+	}
+	for _, c := range shouldBeProtected {
+		if public(c.method, c.path) {
+			t.Errorf("%s %s must require authentication", c.method, c.path)
 		}
 	}
 }

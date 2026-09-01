@@ -127,6 +127,10 @@ type publicRule struct {
 	Method string // required — a rule that ignores method is almost always too broad
 	Path   string
 	Match  matchKind
+	// Suffix, when set, is an additional constraint: the path must also end
+	// with it. It anchors a rule at both ends, so a route with a variable
+	// middle segment can be exempted without exempting its siblings.
+	Suffix string
 }
 
 // publicRules are the routes that do not require an authenticated principal.
@@ -171,6 +175,12 @@ var publicRules = []publicRule{
 	// Inbound webhooks — validated by HMAC signature or per-service deploy token.
 	{Method: "POST", Path: "/api/v1/webhooks/", Match: matchPrefix},
 
+	// Template icons — catalog images rendered as <img src>, which cannot carry
+	// an Authorization header. Anchored at both ends so only the icon route is
+	// exempt: the catalog list and the template detail (which carries the
+	// compose spec) still require authentication.
+	{Method: "GET", Path: "/api/v1/templates/", Match: matchPrefix, Suffix: "/icon"},
+
 	// Git provider OAuth/App redirects. These arrive from the provider, so no
 	// Authorization header can be attached; CSRF is covered by the `state`
 	// parameter the handlers validate.
@@ -209,19 +219,17 @@ func isPublic(r *http.Request) bool {
 		if rule.Method != r.Method {
 			continue
 		}
+		var matched bool
 		switch rule.Match {
 		case matchExact:
-			if path == rule.Path {
-				return true
-			}
+			matched = path == rule.Path
 		case matchPrefix:
-			if strings.HasPrefix(path, rule.Path) {
-				return true
-			}
+			matched = strings.HasPrefix(path, rule.Path)
 		case matchSuffix:
-			if strings.HasSuffix(path, rule.Path) {
-				return true
-			}
+			matched = strings.HasSuffix(path, rule.Path)
+		}
+		if matched && (rule.Suffix == "" || strings.HasSuffix(path, rule.Suffix)) {
+			return true
 		}
 	}
 	return false
