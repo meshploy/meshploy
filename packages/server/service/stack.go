@@ -656,7 +656,11 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	// A failed rollout is reported but does not fail the apply: the records are
 	// correct, only the rollout did not land, and that is visible on the
 	// service's own page.
-	if s.deployment != nil {
+	//
+	// An instance with no cluster skips the rollout outright. There is nothing
+	// to deploy to, that is a supported state for local dev, and reporting it
+	// once per created service would repeat one instance-level fact N times.
+	if s.deployment.K8sConfigured() {
 		for i, id := range createdIDs {
 			if _, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: id, TriggeredBy: triggerBy}); err != nil {
 				name := ""

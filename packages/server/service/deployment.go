@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
+
+// ErrK8sNotConfigured is returned when an operation needs a cluster and this
+// instance has none -- the documented local-dev state, where mesh and cluster
+// features are no-ops. It is an instance-level condition, not a per-resource
+// failure: a caller that fans out over many resources should check it once and
+// skip, rather than reporting the same sentence once per resource.
+var ErrK8sNotConfigured = errors.New("kubernetes is not configured on this instance")
+
+// K8sConfigured reports whether this instance has a cluster to deploy to.
+// Callers that roll out many services use it to skip the rollout entirely
+// rather than failing each one with the same instance-level reason.
+func (s *DeploymentService) K8sConfigured() bool { return s != nil && s.k8s != nil }
 
 type DeploymentService struct {
 	db        *gorm.DB
@@ -69,7 +82,7 @@ type TriggerInput struct {
 // BuildConfig. The goroutine handles all subsequent status updates.
 func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.Deployment, error) {
 	if s.k8s == nil {
-		return nil, fmt.Errorf("kubernetes is not configured on this instance (set KUBECONFIG)")
+		return nil, fmt.Errorf("%w (set KUBECONFIG)", ErrK8sNotConfigured)
 	}
 
 	// Load the service + its project (for namespace) + build config.
@@ -177,7 +190,7 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 // PullRegistryIntegrationID set.
 func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Service, triggeredBy uuid.UUID) (*db.Deployment, error) {
 	if s.k8s == nil {
-		return nil, fmt.Errorf("kubernetes is not configured on this instance (set KUBECONFIG)")
+		return nil, fmt.Errorf("%w (set KUBECONFIG)", ErrK8sNotConfigured)
 	}
 	deploymentID := uuid.New()
 	deployment := db.Deployment{
@@ -666,7 +679,7 @@ func (s *DeploymentService) DeleteRecord(ctx context.Context, deploymentID uuid.
 // namespace. It is recreated automatically on the next build.
 func (s *DeploymentService) ClearBuildCache(ctx context.Context, namespace string) error {
 	if s.k8s == nil {
-		return fmt.Errorf("kubernetes is not configured on this instance")
+		return ErrK8sNotConfigured
 	}
 	return appk8s.DeleteBuildCachePVC(ctx, s.k8s, namespace)
 }
@@ -677,7 +690,7 @@ func (s *DeploymentService) ClearBuildCache(ctx context.Context, namespace strin
 // triggering a new build. Returns a new Deployment record immediately.
 func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID) (*db.Deployment, error) {
 	if s.k8s == nil {
-		return nil, fmt.Errorf("kubernetes is not configured on this instance")
+		return nil, ErrK8sNotConfigured
 	}
 	var target db.Deployment
 	if err := s.db.WithContext(ctx).Preload("Service.Project").Preload("Service.Ports").First(&target, "id = ?", deploymentID).Error; err != nil {
@@ -1353,7 +1366,7 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 // All stored data is permanently lost.
 func (s *DeploymentService) ResetDatabase(ctx context.Context, serviceID uuid.UUID) (*db.Deployment, error) {
 	if s.k8s == nil {
-		return nil, fmt.Errorf("kubernetes is not configured on this instance")
+		return nil, ErrK8sNotConfigured
 	}
 	var svc db.Service
 	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
