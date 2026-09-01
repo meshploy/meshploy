@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select"
+import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import {
@@ -20,6 +23,12 @@ import {
 import { PrincipalPermissions } from "@/components/permissions/principal-permissions"
 import { TokenRevealDialog } from "@/components/agents/token-reveal-dialog"
 import { useMcpUrl } from "@/components/agents/use-mcp-url"
+import {
+  MCP_CLIENT_GUIDES,
+  MCP_TOKEN_PLACEHOLDER,
+  getMcpClientGuide,
+  type McpClientId,
+} from "@/components/agents/mcp-clients"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useOrgRole } from "@/store/org-store"
 import { cn, formatRelativeTime } from "@/lib/utils"
@@ -151,31 +160,80 @@ function RoleBadge({ role }: { role: AgentRole }) {
 // MCP connect
 // ---------------------------------------------------------------------------
 
-function McpConnectPanel({ mcpUrl }: { mcpUrl: string }) {
+function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="h-8 w-8 shrink-0"
+      aria-label={label}
+      onClick={async () => {
+        await navigator.clipboard.writeText(value)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }}
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+    </Button>
+  )
+}
+
+function McpConnectPanel({ mcpUrl }: { mcpUrl: string }) {
+  const [clientId, setClientId] = useState<McpClientId>("claude-code")
+  const guide = getMcpClientGuide(clientId)
+  const snippet = guide.snippet?.(mcpUrl, MCP_TOKEN_PLACEHOLDER) ?? ""
+
   return (
     <div className="rounded-lg border border-border/60 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/40 bg-muted/20">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Remote MCP</p>
       </div>
-      <div className="p-4 space-y-1.5">
-        <p className="text-xs text-muted-foreground font-medium">Connect endpoint</p>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
-            {mcpUrl}
-          </code>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0"
-            onClick={async () => { await navigator.clipboard.writeText(mcpUrl); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-          </Button>
+      <div className="p-4 space-y-4">
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground font-medium">Connect endpoint</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+              {mcpUrl}
+            </code>
+            <CopyButton value={mcpUrl} label="Copy connect endpoint" />
+          </div>
         </div>
-        <p className="text-[11px] text-muted-foreground/60">
-          Paste this URL plus one of the agent's tokens into your agent platform to connect over MCP.
-        </p>
+
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground font-medium">Configuration</p>
+          <Select value={clientId} onValueChange={(v) => setClientId((v as McpClientId) ?? "claude-code")}>
+            <SelectTrigger className="w-full! h-8 text-xs bg-muted/20 border-border/60">
+              {/* Base UI renders the raw value unless the label is passed as children. */}
+              <SelectValue placeholder="Choose your agent platform">{guide.name}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {MCP_CLIENT_GUIDES.map((g) => (
+                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {guide.snippet ? (
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[11px] text-muted-foreground/60">
+                Paste this into <span className="font-mono text-muted-foreground">{guide.file}</span>, swapping{" "}
+                <span className="font-mono text-muted-foreground">{MCP_TOKEN_PLACEHOLDER}</span> for one of the
+                agent&apos;s tokens below.
+              </p>
+              <div className="relative">
+                <pre className="text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 pr-11 text-foreground overflow-x-auto">
+                  {snippet}
+                </pre>
+                <div className="absolute top-1.5 right-1.5">
+                  <CopyButton value={snippet} label={`Copy ${guide.name} configuration`} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="pt-1 text-[11px] text-muted-foreground/60">{guide.note}</p>
+          )}
+        </div>
       </div>
     </div>
   )
