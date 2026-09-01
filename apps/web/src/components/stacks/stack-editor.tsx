@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
+import { parse as parseYaml, stringify as stringifyYaml, parseDocument, isMap } from "yaml"
 import CodeMirror from "@uiw/react-codemirror"
 import { yaml } from "@codemirror/lang-yaml"
 import { Plus, Trash2, Code2, LayoutGrid, ChevronDown, Server, Wand2 } from "lucide-react"
@@ -35,6 +35,12 @@ const DB_ENGINES = [
 
 export interface VisualService {
   _key: string
+  /**
+   * The key this service has in the YAML document, or "" when the visual editor
+   * created it. Renames are applied to that key so the rest of the service's
+   * YAML — every field the visual editor does not model — survives.
+   */
+  _origName: string
   serviceType: "app" | "database"
   name: string
   // App — source
@@ -67,6 +73,7 @@ export interface VisualService {
 function newService(): VisualService {
   return {
     _key: crypto.randomUUID(),
+    _origName: "",
     serviceType: "app",
     name: "",
     source: "git",
@@ -215,6 +222,7 @@ export function yamlToVisual(spec: string): VisualService[] {
         return {
           ...newService(),
           _key: crypto.randomUUID(),
+          _origName: name,
           serviceType: "database" as const,
           name,
           dbEngine: engine,
@@ -237,6 +245,7 @@ export function yamlToVisual(spec: string): VisualService[] {
       return {
         ...newService(),
         _key: crypto.randomUUID(),
+        _origName: name,
         serviceType: "app" as const,
         name,
         source,
@@ -251,10 +260,12 @@ export function yamlToVisual(spec: string): VisualService[] {
         port: deploy.port ?? 3000,
         replicas: deploy.replicas ?? 1,
         nodeId: deploy.node ?? "",
-        cpuRequest: deploy.cpu_request ?? "100m",
-        cpuLimit: deploy.cpu_limit ?? "500m",
-        memoryRequest: deploy.memory_request ?? "128Mi",
-        memoryLimit: deploy.memory_limit ?? "512Mi",
+        // Absent means absent. Defaulting these on read materialises resource
+        // limits the spec never had as soon as the user opens the visual tab.
+        cpuRequest: deploy.cpu_request ?? "",
+        cpuLimit: deploy.cpu_limit ?? "",
+        memoryRequest: deploy.memory_request ?? "",
+        memoryLimit: deploy.memory_limit ?? "",
       }
     })
   } catch {
@@ -262,68 +273,106 @@ export function yamlToVisual(spec: string): VisualService[] {
   }
 }
 
-export function visualToYaml(services: VisualService[]): string {
-  if (services.length === 0) return "services: {}\n"
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const svcs: Record<string, any> = {}
+/**
+ * visualToYaml applies the visual editor's changes back onto the ORIGINAL
+ * document, rather than rebuilding one from the visual model.
+ *
+ * The model only describes what the visual editor can edit: image, source,
+ * build and deploy. A compose file holds much more — environment, volumes,
+ * depends_on, healthcheck, command, labels, the top-level volumes and networks
+ * blocks, and comments. Regenerating from the model deleted every one of them,
+ * so merely opening the visual tab and switching back silently dropped a
+ * service's volume mount and its environment, and the user then deployed a spec
+ * that no longer persisted anything.
+ *
+ * Editing the parsed document preserves untouched keys and comments, and only
+ * the fields the visual editor owns are written.
+ */
+export function visualToYaml(services: VisualService[], originalSpec = ""): string {
+  const doc = (() => {
+    try {
+      const d = parseDocument(originalSpec)
+      return d.errors.length === 0 ? d : parseDocument("")
+    } catch {
+      return parseDocument("")
+    }
+  })()
+
+  if (!isMap(doc.get("services"))) doc.set("services", doc.createNode({}))
+  const svcMap = doc.get("services") as ReturnType<typeof doc.createNode> & {
+    items: { key: { value: string } }[]
+  }
+
+  // Drop services the visual editor removed. Compared on the original key, so a
+  // rename is a rename rather than a delete plus an add that loses everything.
+  const keep = new Set(services.map((s) => s._origName).filter(Boolean))
+  for (const item of [...(svcMap.items ?? [])]) {
+    const key = String(item.key?.value ?? "")
+    if (key && !keep.has(key)) doc.deleteIn(["services", key])
+  }
+
+  const setIn = (path: (string | number)[], v: unknown) => {
+    if (v === "" || v === undefined || v === null) doc.deleteIn(path)
+    else doc.setIn(path, v)
+  }
 
   for (const s of services) {
-    const name = s.name.trim() || "service"
+    const name = s.name.trim() || s._origName || "service"
+
+    // Rename in place, carrying the whole node across so unmodelled keys move
+    // with it.
+    if (s._origName && s._origName !== name) {
+      const node = doc.getIn(["services", s._origName])
+      doc.deleteIn(["services", s._origName])
+      doc.setIn(["services", name], node ?? doc.createNode({}))
+    }
+    if (!isMap(doc.getIn(["services", name]))) {
+      doc.setIn(["services", name], doc.createNode({}))
+    }
 
     if (s.serviceType === "database") {
       const engine = s.dbEngine || "postgres"
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dbDeploy: Record<string, any> = {
-        port: s.port || dbDefaultPort(engine),
-        replicas: s.replicas || 1,
-      }
-      if (s.nodeId) dbDeploy.node = s.nodeId
-      svcs[name] = {
-        image: `${engine}:${s.dbVersion || "latest"}`,
-        "x-meshploy": {
-          type: "database",
-          database: { engine, version: s.dbVersion || "latest", storage_gb: s.dbStorageGB || 10 },
-          deploy: dbDeploy,
-        },
-      }
+      const version = s.dbVersion || "latest"
+      setIn(["services", name, "image"], `${engine}:${version}`)
+      setIn(["services", name, "x-meshploy", "type"], "database")
+      setIn(["services", name, "x-meshploy", "database", "engine"], engine)
+      setIn(["services", name, "x-meshploy", "database", "version"], version)
+      setIn(["services", name, "x-meshploy", "database", "storage_gb"], s.dbStorageGB || 10)
+      setIn(["services", name, "x-meshploy", "deploy", "port"], s.port || dbDefaultPort(engine))
+      setIn(["services", name, "x-meshploy", "deploy", "replicas"], s.replicas || 1)
+      setIn(["services", name, "x-meshploy", "deploy", "node"], s.nodeId)
       continue
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const deploy: Record<string, any> = {
-      port: s.port || 3000,
-      replicas: s.replicas || 1,
-    }
-    if (s.nodeId) deploy.node = s.nodeId
-    if (s.cpuRequest)    deploy.cpu_request    = s.cpuRequest
-    if (s.cpuLimit)      deploy.cpu_limit      = s.cpuLimit
-    if (s.memoryRequest) deploy.memory_request = s.memoryRequest
-    if (s.memoryLimit)   deploy.memory_limit   = s.memoryLimit
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mp: Record<string, any> = { deploy }
-
-    if (s.source === "git") {
-      mp.source = {
-        integration_id: s.integrationId,
-        git: s.gitRepo,
-        branch: s.gitBranch,
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const build: Record<string, any> = { builder: s.builder }
-      if (s.builderNodeName)        build.builder_node            = s.builderNodeName
-      if (s.builderCPURequest)      build.builder_cpu_request     = s.builderCPURequest
-      if (s.builderMemoryRequest)   build.builder_memory_request  = s.builderMemoryRequest
-      mp.build = build
+    if (s.source === "image") {
+      setIn(["services", name, "image"], s.image)
+      // An image service has no git source or build step; clear any left from a
+      // previous git configuration rather than leaving a contradictory spec.
+      doc.deleteIn(["services", name, "x-meshploy", "source"])
+      doc.deleteIn(["services", name, "x-meshploy", "build"])
+    } else {
+      doc.deleteIn(["services", name, "image"])
+      setIn(["services", name, "x-meshploy", "source", "integration_id"], s.integrationId)
+      setIn(["services", name, "x-meshploy", "source", "git"], s.gitRepo)
+      setIn(["services", name, "x-meshploy", "source", "branch"], s.gitBranch)
+      setIn(["services", name, "x-meshploy", "build", "builder"], s.builder)
+      setIn(["services", name, "x-meshploy", "build", "builder_node"], s.builderNodeName)
+      setIn(["services", name, "x-meshploy", "build", "builder_cpu_request"], s.builderCPURequest)
+      setIn(["services", name, "x-meshploy", "build", "builder_memory_request"], s.builderMemoryRequest)
     }
 
-    svcs[name] = {
-      image: s.source === "image" ? s.image : "",
-      "x-meshploy": mp,
-    }
+    setIn(["services", name, "x-meshploy", "deploy", "port"], s.port || 3000)
+    setIn(["services", name, "x-meshploy", "deploy", "replicas"], s.replicas || 1)
+    setIn(["services", name, "x-meshploy", "deploy", "node"], s.nodeId)
+    // Written only when set. Empty clears the key instead of pinning a default,
+    // so a spec that never declared limits does not acquire them by being looked at.
+    setIn(["services", name, "x-meshploy", "deploy", "cpu_request"], s.cpuRequest)
+    setIn(["services", name, "x-meshploy", "deploy", "cpu_limit"], s.cpuLimit)
+    setIn(["services", name, "x-meshploy", "deploy", "memory_request"], s.memoryRequest)
+    setIn(["services", name, "x-meshploy", "deploy", "memory_limit"], s.memoryLimit)
   }
 
-  return stringifyYaml({ services: svcs }, { lineWidth: 120 })
+  return doc.toString({ lineWidth: 120 })
 }
 
 // ─── StackEditor ──────────────────────────────────────────────────────────────
@@ -346,9 +395,9 @@ export function StackEditor({ value, onChange, minHeight = "360px", readOnly = f
   }, [value])
 
   const switchToYaml = useCallback(() => {
-    onChange?.(visualToYaml(visual))
+    onChange?.(visualToYaml(visual, value))
     setMode("yaml")
-  }, [visual, onChange])
+  }, [visual, value, onChange])
 
   const handleConvert = useCallback(() => {
     onChange?.(convertCompose(value))
