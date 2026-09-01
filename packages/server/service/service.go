@@ -180,6 +180,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
+	routes := &RouteService{db: db}
 
 	nodes.headscale = headscaleSvc
 	nodes.notif = notif
@@ -195,12 +196,12 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Orgs:            &OrgService{db: db},
 		Permissions:     &PermissionService{db: db},
 		Projects:        &ProjectService{db: db},
+		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes, routes: routes, deployment: deployments},
 		Nodes:           nodes,
 		Workloads:       workloads,
-		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes, deployment: deployments},
 		Volumes:         volumes,
 		Domains:         domains,
-		Routes:          &RouteService{db: db},
+		Routes:          routes,
 		Deployments:     deployments,
 		GitIntegrations: gitSvc,
 		Registries:      registries,

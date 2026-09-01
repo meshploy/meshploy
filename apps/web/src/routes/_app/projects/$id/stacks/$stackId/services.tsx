@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { useState } from "react"
+import { Switch } from "@/components/ui/switch"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -53,12 +54,29 @@ function StackServicesTab() {
   })
 
   const [confirmDestroy, setConfirmDestroy] = useState(false)
+  // Both default off on every open: the extra destruction is opt-in each time,
+  // never remembered from a previous run.
+  const [deleteVolumes, setDeleteVolumes] = useState(false)
+  const [deleteRoutes, setDeleteRoutes] = useState(false)
+
+  const openDestroy = () => {
+    setDeleteVolumes(false)
+    setDeleteRoutes(false)
+    setConfirmDestroy(true)
+  }
+
   const destroyMutation = useMutation({
-    mutationFn: () => stacksApi.destroy(orgId!, projectId, stackId, token),
+    mutationFn: () =>
+      stacksApi.destroy(orgId!, projectId, stackId, token, {
+        delete_volumes: deleteVolumes,
+        delete_routes: deleteRoutes,
+      }),
     onSuccess: () => {
       setConfirmDestroy(false)
       queryClient.invalidateQueries({ queryKey: stackQueryKey })
       queryClient.invalidateQueries({ queryKey: servicesQueryKey })
+      queryClient.invalidateQueries({ queryKey: ["volumes", orgId, projectId] })
+      queryClient.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
     },
   })
 
@@ -94,8 +112,11 @@ function StackServicesTab() {
           size="sm"
           variant="outline"
           className="gap-1.5 text-destructive hover:text-destructive"
-          onClick={() => setConfirmDestroy(true)}
-          disabled={destroyMutation.isPending || serviceList.length === 0}
+          onClick={openDestroy}
+          // Not disabled when the service list is empty: a stack whose services
+          // are already gone may still own volumes or routes, and that is
+          // exactly when someone comes back to clean them up.
+          disabled={destroyMutation.isPending}
         >
           {destroyMutation.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -116,6 +137,18 @@ function StackServicesTab() {
               Destroyed: {(destroyResult.destroyed ?? []).join(", ")}
             </div>
           )}
+          {(destroyResult.volumes ?? []).length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CheckCircle2 className="h-3 w-3" />
+              Volumes deleted: {(destroyResult.volumes ?? []).join(", ")}
+            </div>
+          )}
+          {(destroyResult.routes ?? []).length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CheckCircle2 className="h-3 w-3" />
+              Routes deleted: {(destroyResult.routes ?? []).join(", ")}
+            </div>
+          )}
           {(destroyResult.errors ?? []).map((e) => (
             <div key={e} className="flex items-center gap-1.5 text-xs text-destructive">
               <XCircle className="h-3 w-3 shrink-0" />
@@ -128,13 +161,38 @@ function StackServicesTab() {
       <Dialog open={confirmDestroy} onOpenChange={setConfirmDestroy}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Destroy this stack&apos;s services?</DialogTitle>
+            <DialogTitle>Destroy this stack?</DialogTitle>
             <DialogDescription>
-              The {serviceList.length} service{serviceList.length === 1 ? "" : "s"} this stack created
-              are removed from the cluster and from meshploy. The stack and its spec stay, so Apply
-              recreates them. Volumes and routes are kept — your data and hostnames are not touched.
+              {serviceList.length > 0
+                ? `The ${serviceList.length} service${serviceList.length === 1 ? "" : "s"} this stack created ${serviceList.length === 1 ? "is" : "are"} removed from the cluster and from meshploy. The stack and its spec stay, so Apply recreates them.`
+                : "This stack has no services left to remove. The stack and its spec stay, so Apply recreates them."}
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-3 py-1">
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 p-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-medium text-foreground">Also delete volumes</p>
+                <p className="text-[11px] text-muted-foreground/70">
+                  Deletes the volumes this stack created and everything stored in them. This cannot
+                  be undone — applying again gives you empty volumes.
+                </p>
+              </div>
+              <Switch checked={deleteVolumes} onCheckedChange={(v) => setDeleteVolumes(Boolean(v))} />
+            </div>
+
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 p-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-medium text-foreground">Also delete routes</p>
+                <p className="text-[11px] text-muted-foreground/70">
+                  Frees the hostnames this stack published. Anyone using them stops being able to
+                  reach it, and applying again may not produce the same hostname.
+                </p>
+              </div>
+              <Switch checked={deleteRoutes} onCheckedChange={(v) => setDeleteRoutes(Boolean(v))} />
+            </div>
+          </div>
+
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setConfirmDestroy(false)}>
               Cancel

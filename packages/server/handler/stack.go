@@ -112,12 +112,19 @@ type applyResultBody struct {
 	Errors  []string  `json:"errors"`
 }
 
-// DestroyStackInput has no body: destroy takes no options, so that "destroy"
-// cannot mean two different amounts of destruction depending on a flag.
+// DestroyStackBody selects how far the destroy goes. Both default to false, so
+// a caller that sends an empty body destroys only the services -- the choice
+// that cannot lose data or take a published hostname out of service.
+type DestroyStackBody struct {
+	DeleteVolumes bool `json:"delete_volumes" doc:"Also delete the volumes this stack created, and the data in them"`
+	DeleteRoutes  bool `json:"delete_routes"  doc:"Also delete the routes this stack created, freeing their hostnames"`
+}
+
 type DestroyStackInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	StackID   string `path:"stackId"`
+	Body      DestroyStackBody
 }
 
 type DestroyResultOutput struct {
@@ -127,6 +134,8 @@ type DestroyResultOutput struct {
 type destroyResultBody struct {
 	Stack     *db.Stack `json:"stack"`
 	Destroyed []string  `json:"destroyed"`
+	Volumes   []string  `json:"volumes"`
+	Routes    []string  `json:"routes"`
 	Errors    []string  `json:"errors"`
 }
 
@@ -421,13 +430,18 @@ func (h *Handler) DestroyStack(ctx context.Context, input *DestroyStackInput) (*
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.svc.Stacks.Destroy(ctx, stackID)
+	result, err := h.svc.Stacks.Destroy(ctx, stackID, service.DestroyOptions{
+		DeleteVolumes: input.Body.DeleteVolumes,
+		DeleteRoutes:  input.Body.DeleteRoutes,
+	})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &DestroyResultOutput{Body: &destroyResultBody{
 		Stack:     result.Stack,
 		Destroyed: result.Destroyed,
+		Volumes:   result.Volumes,
+		Routes:    result.Routes,
 		Errors:    result.Errors,
 	}}, nil
 }

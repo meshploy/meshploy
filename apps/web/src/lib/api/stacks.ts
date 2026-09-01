@@ -34,7 +34,14 @@ export interface ApplyStackResult {
 export interface DestroyStackResult {
   stack: ApiStack
   destroyed: string[]
+  volumes: string[]
+  routes: string[]
   errors: string[]
+}
+
+export interface DestroyStackBody {
+  delete_volumes: boolean
+  delete_routes: boolean
 }
 
 export interface SyncStackResult extends ApplyStackResult {
@@ -114,10 +121,10 @@ export const stacks = {
       token
     ),
 
-  destroy: (orgId: string, projectId: string, stackId: string, token: string) =>
+  destroy: (orgId: string, projectId: string, stackId: string, token: string, body: DestroyStackBody) =>
     apiFetch<DestroyStackResult>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/stacks/${stackId}/destroy`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify(body) },
       token
     ),
 

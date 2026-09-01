@@ -25,6 +25,7 @@ type StackService struct {
 	db       *gorm.DB
 	workload *WorkloadService
 	volumes  *VolumeService
+	routes   *RouteService
 	// deployment rolls out services this apply just created. Assigned after
 	// construction in service.New.
 	deployment *DeploymentService
@@ -209,49 +210,89 @@ func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
 	})
 }
 
-// DestroyResult reports what a destroy removed.
+// DestroyOptions selects how much of what the stack created is torn down.
+//
+// Services always go: they are the thing the stack is running, and a destroy
+// that left them is not a destroy. Volumes and routes are opt-in because each
+// destroys something the services themselves are not — stored data, and a
+// hostname other people have been given.
+type DestroyOptions struct {
+	DeleteVolumes bool
+	DeleteRoutes  bool
+}
+
+// DestroyResult reports what a destroy removed, per kind, so the UI can state
+// what actually happened rather than what was asked for.
 type DestroyResult struct {
 	Stack     *meshdb.Stack
 	Destroyed []string
+	Volumes   []string
+	Routes    []string
 	Errors    []string
 }
 
-// Destroy removes the services this stack created, leaving the stack itself,
-// its spec, and its data behind — the counterpart to Apply, in the sense
-// terraform destroy is the counterpart to terraform apply. Applying again
-// recreates everything from the same spec.
+// Destroy removes what this stack created, leaving the stack and its spec
+// behind — the counterpart to Apply, in the sense terraform destroy is the
+// counterpart to terraform apply. Applying again recreates from the same spec.
 //
-// Deliberately narrower than "delete everything the apply touched":
-//
-//   - Volumes are kept. They hold the data the services were running on, and a
-//     destroy meant to free compute would silently be a data-loss button. A
-//     volume is removed from its own page, where the consequence is stated.
-//   - Routes are kept. The hostname is the part a user published and told other
-//     people about; re-applying reattaches the recreated service to the route
-//     it already had. Their targets fall to NULL in the meantime.
+// Order is load-bearing. Services go first: a volume cannot be deleted while it
+// is still mounted, and deleting the service is what removes the mount. Routes
+// go last, so a hostname stops resolving only once there is nothing behind it.
 //
 // Each service goes through WorkloadService.Delete, so the cluster workload is
 // removed before the row and a later service cannot adopt an orphan.
-func (s *StackService) Destroy(ctx context.Context, stackID uuid.UUID) (*DestroyResult, error) {
+func (s *StackService) Destroy(ctx context.Context, stackID uuid.UUID, opts DestroyOptions) (*DestroyResult, error) {
 	var stack meshdb.Stack
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
 	}
+
+	result := &DestroyResult{
+		Stack:     &stack,
+		Destroyed: []string{},
+		Volumes:   []string{},
+		Routes:    []string{},
+		Errors:    []string{},
+	}
+
 	var services []meshdb.Service
 	if err := s.db.WithContext(ctx).Where("stack_id = ?", stackID).Find(&services).Error; err != nil {
 		return nil, err
 	}
-
-	result := &DestroyResult{Stack: &stack, Destroyed: []string{}, Errors: []string{}}
-	if s.workload == nil {
-		return result, nil
-	}
-	for _, svc := range services {
-		if err := s.workload.Delete(ctx, svc.ID); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", svc.Name, err))
-			continue
+	if s.workload != nil {
+		for _, svc := range services {
+			if err := s.workload.Delete(ctx, svc.ID); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("service %s: %v", svc.Name, err))
+				continue
+			}
+			result.Destroyed = append(result.Destroyed, svc.Name)
 		}
-		result.Destroyed = append(result.Destroyed, svc.Name)
+	}
+
+	if opts.DeleteVolumes && s.volumes != nil {
+		var volumes []meshdb.Volume
+		if err := s.db.WithContext(ctx).Where("stack_id = ?", stackID).Find(&volumes).Error; err == nil {
+			for _, v := range volumes {
+				if err := s.volumes.Delete(ctx, v.ID); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("volume %s: %v", v.Name, err))
+					continue
+				}
+				result.Volumes = append(result.Volumes, v.Name)
+			}
+		}
+	}
+
+	if opts.DeleteRoutes && s.routes != nil {
+		var routes []meshdb.Route
+		if err := s.db.WithContext(ctx).Where("stack_id = ?", stackID).Find(&routes).Error; err == nil {
+			for _, r := range routes {
+				if err := s.routes.Delete(ctx, r.ID); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("route %s: %v", r.Hostname, err))
+					continue
+				}
+				result.Routes = append(result.Routes, r.Hostname)
+			}
+		}
 	}
 
 	// A destroyed stack has nothing deployed. Reflect that rather than leaving
@@ -753,6 +794,16 @@ func (s *StackService) resolveNamedVolumes(
 		if err := s.db.WithContext(ctx).
 			Where("project_id = ? AND name = ?", projectID, storedName).
 			First(&existing).Error; err == nil {
+			// Claim a volume this stack already owns by name. Without this an
+			// apply only ever links volumes it creates, so a volume from before
+			// stack ownership existed -- or from any earlier apply -- would stay
+			// unlinked forever and a destroy would not see it. Re-applying is
+			// therefore enough to repair the link.
+			if existing.StackID == nil {
+				if err := s.db.WithContext(ctx).Model(&existing).Update("stack_id", stackID).Error; err == nil {
+					existing.StackID = &stackID
+				}
+			}
 			out[volName] = &existing
 			continue
 		}

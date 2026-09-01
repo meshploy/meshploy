@@ -180,6 +180,34 @@ func applyConstraints(db *gorm.DB) error {
 		`UPDATE volumes SET status = 'idle' WHERE status = 'pending'`,
 		`ALTER TABLE volumes ALTER COLUMN status SET DEFAULT 'idle'`,
 
+		// Backfill stack ownership onto volumes and routes created before the
+		// column existed. Without this, a destroy on an existing stack would find
+		// no volumes or routes to remove and silently do less than it says.
+		//
+		// Volumes: stack apply names them "<stack>-<compose volume>", so the name
+		// is the record of which stack made it. Scoped to the same project, and
+		// only where nothing is claimed yet, so it is idempotent and cannot steal
+		// a volume from a stack that already owns it.
+		`UPDATE volumes v SET stack_id = st.id
+		 FROM stacks st
+		 WHERE v.stack_id IS NULL
+		   AND st.project_id = v.project_id
+		   AND v.name LIKE st.name || '-%'`,
+		// Routes: derived from what they point at rather than from a name. A route
+		// whose targets all resolve to services of one stack was created for that
+		// stack; one spanning several stacks, or mixing stack and standalone
+		// services, is deliberately left unclaimed -- destroying it would remove a
+		// hostname another stack is still serving.
+		`UPDATE routes r SET stack_id = sub.stack_id
+		 FROM (
+		   SELECT rt.route_id, MIN(s.stack_id::text)::uuid AS stack_id
+		   FROM route_targets rt
+		   LEFT JOIN services s ON s.id = rt.service_id
+		   GROUP BY rt.route_id
+		   HAVING COUNT(DISTINCT s.stack_id) = 1 AND bool_and(s.stack_id IS NOT NULL)
+		 ) sub
+		 WHERE r.id = sub.route_id AND r.stack_id IS NULL`,
+
 		// Drop old single-port columns from services (idempotent — no-op when already absent)
 		`ALTER TABLE services DROP COLUMN IF EXISTS port`,
 		`ALTER TABLE services DROP COLUMN IF EXISTS node_port`,
