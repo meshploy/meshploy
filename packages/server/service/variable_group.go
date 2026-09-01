@@ -195,7 +195,23 @@ func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Se
 	// Build all items for this service's ports
 	items := buildServiceItems(prefix, host, svc.Ports)
 
-	// Replace all items atomically and ensure the group is attached to its own service.
+	// Replace all items atomically.
+	//
+	// The group is deliberately NOT attached to the service it describes. These
+	// variables exist so OTHER services can reach this one; a service already
+	// knows its own address, and `runtimeEnvVars` injects its PORT separately.
+	//
+	// Injecting them into the service itself actively breaks applications. The
+	// key is derived from the service's own name, so an application whose own
+	// configuration variable follows the same pattern gets it silently
+	// overwritten with a value meaning something else. Uptime Kuma reads
+	// `UPTIME_KUMA_HOST` as the address to BIND; a service named `uptime-kuma`
+	// was handed its own cluster FQDN there and crash-looped on EADDRNOTAVAIL,
+	// because a pod cannot bind a Service address. Self-attachment is also the
+	// only case where that collision is systematic rather than coincidental.
+	//
+	// Any prior self-attachment is removed, so existing services are repaired on
+	// their next deploy rather than staying broken until recreated.
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("group_id = ?", group.ID).Delete(&db.VariableGroupItem{}).Error; err != nil {
 			return err
@@ -206,9 +222,8 @@ func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Se
 				return err
 			}
 		}
-		// Auto-attach the system group to its own service so vars are injected at deploy time.
-		svg := db.ServiceVariableGroup{ServiceID: svc.ID, GroupID: group.ID}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&svg).Error
+		return tx.Where("service_id = ? AND group_id = ?", svc.ID, group.ID).
+			Delete(&db.ServiceVariableGroup{}).Error
 	})
 }
 
