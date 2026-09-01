@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/google/uuid"
+	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
 	"github.com/meshploy/packages/server/templates"
-	meshdb "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 )
 
@@ -77,32 +79,19 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 		return stack, fmt.Errorf("template deployed but reconcile failed: %w", err)
 	}
 
-	// Create a public route per exposed service. Best-effort: a missing domain or
-	// service should not fail an otherwise-successful deploy.
-	if domainID != nil {
-		orgID, err := s.projectOrgID(ctx, projectID)
-		if err == nil {
-			for _, e := range exposes {
-				svc := s.findStackService(ctx, stack.ID, e.Service)
-				if svc == nil {
-					continue
-				}
-				port := e.Port
-				route, err := s.routes.Create(ctx, CreateRouteInput{
-					OrgID:     orgID,
-					ProjectID: projectID,
-					DomainID:  domainID,
-					Zone:      meshdb.RouteZonePublic,
-					Subdomain: e.Subdomain,
-					Targets:   []TargetInput{{ServiceID: &svc.ID, Port: port}},
-				})
-				// Record the originating stack. Set after creation rather than
-				// widening CreateRouteInput, which every other caller shares.
-				if err == nil && route != nil {
-					_ = s.db.WithContext(ctx).Model(route).Update("stack_id", stack.ID).Error
-				}
-			}
-		}
+	// Create a public route per exposed service, in the background.
+	//
+	// This cannot be done inline. A route target resolves to the service's
+	// NodePort, and that is assigned by the deployment -- which Apply starts in
+	// its own goroutine. Inline, the port is always still zero, so route
+	// creation returned "service has not been deployed yet" every single time
+	// and the error was discarded: a template declaring `expose` produced a
+	// deployed app with no way to reach it, and nothing in the logs.
+	//
+	// Waiting here instead would hold the HTTP request open for the length of a
+	// rollout, so the wait is detached and bounded.
+	if len(exposes) > 0 {
+		go s.createExposedRoutes(context.Background(), tpl.Manifest.ID, stack.ID, projectID, domainID, exposes)
 	}
 
 	return stack, nil
@@ -148,4 +137,89 @@ func (s *TemplateService) findStackService(ctx context.Context, stackID uuid.UUI
 		return nil
 	}
 	return &svc
+}
+
+// routeWaitTimeout bounds how long the background route creator waits for a
+// service to come up. Long enough for a first image pull on a slow link, short
+// enough that a service which never starts stops holding a goroutine.
+const routeWaitTimeout = 10 * time.Minute
+
+// createExposedRoutes waits for each exposed service to have a routable
+// NodePort, then creates its public route. Run detached from the deploy request.
+//
+// It polls rather than watching the cluster: the thing it needs is a database
+// column that the deployment writes after the rollout, so the database is the
+// authority, and a poll keeps this independent of how deployments are driven.
+func (s *TemplateService) createExposedRoutes(
+	ctx context.Context,
+	templateID string,
+	stackID, projectID uuid.UUID,
+	domainID *uuid.UUID,
+	exposes []templates.ResolvedExpose,
+) {
+	if domainID == nil {
+		log.Printf("template %s: no verified base domain — %d exposed service(s) got no route",
+			templateID, len(exposes))
+		return
+	}
+	orgID, err := s.projectOrgID(ctx, projectID)
+	if err != nil {
+		log.Printf("template %s: resolve org for project %s: %v — no routes created", templateID, projectID, err)
+		return
+	}
+
+	deadline := time.Now().Add(routeWaitTimeout)
+	for _, e := range exposes {
+		svc := s.findStackService(ctx, stackID, e.Service)
+		if svc == nil {
+			log.Printf("template %s: exposed service %q is not in the applied stack — no route for %s",
+				templateID, e.Service, e.Hostname)
+			continue
+		}
+		if !s.waitForRoutablePort(ctx, svc.ID, deadline) {
+			log.Printf("template %s: service %q never got a routable port — no route for %s; create one from the routes tab once it is running",
+				templateID, e.Service, e.Hostname)
+			continue
+		}
+		route, err := s.routes.Create(ctx, CreateRouteInput{
+			OrgID:     orgID,
+			ProjectID: projectID,
+			DomainID:  domainID,
+			Zone:      meshdb.RouteZonePublic,
+			Subdomain: e.Subdomain,
+			Targets:   []TargetInput{{ServiceID: &svc.ID, Port: e.Port}},
+		})
+		if err != nil {
+			log.Printf("template %s: create route %s for service %q: %v", templateID, e.Hostname, e.Service, err)
+			continue
+		}
+		// Record the originating stack. Set after creation rather than widening
+		// CreateRouteInput, which every other caller shares.
+		if route != nil {
+			_ = s.db.WithContext(ctx).Model(route).Update("stack_id", stackID).Error
+		}
+		log.Printf("template %s: route %s created for service %q", templateID, e.Hostname, e.Service)
+	}
+}
+
+// waitForRoutablePort reports whether the service has a public HTTP port with a
+// NodePort assigned, waiting until it does or the deadline passes.
+func (s *TemplateService) waitForRoutablePort(ctx context.Context, serviceID uuid.UUID, deadline time.Time) bool {
+	for {
+		var count int64
+		s.db.WithContext(ctx).Model(&meshdb.ServicePort{}).
+			Where("service_id = ? AND is_public = true AND is_http = true AND node_port <> 0", serviceID).
+			Count(&count)
+		if count > 0 {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(3 * time.Second):
+		}
+	}
 }
