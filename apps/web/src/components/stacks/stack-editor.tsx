@@ -62,10 +62,42 @@ export interface VisualService {
   cpuLimit: string
   memoryRequest: string
   memoryLimit: string
+  // Environment — compose `environment`, as ordered pairs so the editor can
+  // hold a half-typed row without dropping it.
+  env: { key: string; value: string }[]
+  // Volumes — compose `volumes`, kept as raw mount strings ("name:/path").
+  volumes: string[]
+  /**
+   * Keys present on this service in the YAML that the visual editor does not
+   * render. Listed in the UI so the spec has no invisible parts, and carried
+   * through untouched on write.
+   */
+  unmodelled: string[]
   // Database
   dbEngine: string
   dbVersion: string
   dbStorageGB: number | ""
+}
+
+/** Service keys the visual editor renders. Anything else is reported as unmodelled. */
+const MODELLED_KEYS = new Set(["image", "environment", "volumes", "x-meshploy"])
+
+/** Reads compose `environment` in either form: a map, or a list of "K=V". */
+function readEnv(raw: unknown): { key: string; value: string }[] {
+  if (Array.isArray(raw)) {
+    return raw.map((e) => {
+      const str = String(e)
+      const i = str.indexOf("=")
+      return i < 0 ? { key: str, value: "" } : { key: str.slice(0, i), value: str.slice(i + 1) }
+    })
+  }
+  if (raw && typeof raw === "object") {
+    return Object.entries(raw as Record<string, unknown>).map(([key, value]) => ({
+      key,
+      value: value == null ? "" : String(value),
+    }))
+  }
+  return []
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -85,6 +117,9 @@ function newService(): VisualService {
     builderNodeName: "",
     builderCPURequest: "1000m",
     builderMemoryRequest: "1Gi",
+    env: [],
+    volumes: [],
+    unmodelled: [],
     port: 3000,
     replicas: 1,
     nodeId: "",
@@ -225,6 +260,9 @@ export function yamlToVisual(spec: string): VisualService[] {
           _origName: name,
           serviceType: "database" as const,
           name,
+          env: readEnv(svc?.environment),
+          volumes: Array.isArray(svc?.volumes) ? svc.volumes.map(String) : [],
+          unmodelled: Object.keys(svc ?? {}).filter((k) => !MODELLED_KEYS.has(k)),
           dbEngine: engine,
           dbVersion: db.version ?? dbVersions(engine)[0],
           dbStorageGB: db.storage_gb ?? 10,
@@ -248,6 +286,9 @@ export function yamlToVisual(spec: string): VisualService[] {
         _origName: name,
         serviceType: "app" as const,
         name,
+        env: readEnv(svc?.environment),
+        volumes: Array.isArray(svc?.volumes) ? svc.volumes.map(String) : [],
+        unmodelled: Object.keys(svc ?? {}).filter((k) => !MODELLED_KEYS.has(k)),
         source,
         image,
         integrationId,
@@ -271,6 +312,47 @@ export function yamlToVisual(spec: string): VisualService[] {
   } catch {
     return []
   }
+}
+
+/**
+ * writeEnv updates a service's `environment`, but only when it actually
+ * differs from what is already in the document.
+ *
+ * Replacing an unchanged block would rewrite it as a plain map and drop the
+ * comments inside it — which is how a template's explanation of WHY a variable
+ * is set disappears just because someone opened the visual tab. Leaving an
+ * untouched block alone keeps both the comments and the author's chosen form
+ * (map or "K=V" list).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function writeEnv(doc: any, name: string, env: { key: string; value: string }[]) {
+  const rows = env.filter((e) => e.key.trim() !== "")
+  const current = readEnv(doc.getIn(["services", name, "environment"])?.toJSON?.() ?? doc.getIn(["services", name, "environment"]))
+  const same =
+    current.length === rows.length &&
+    current.every((c, i) => c.key === rows[i].key && c.value === rows[i].value)
+  if (same) return
+  if (rows.length === 0) {
+    doc.deleteIn(["services", name, "environment"])
+    return
+  }
+  const obj: Record<string, string> = {}
+  for (const r of rows) obj[r.key.trim()] = r.value
+  doc.setIn(["services", name, "environment"], doc.createNode(obj))
+}
+
+/** writeVolumes mirrors writeEnv for the service's mount list. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function writeVolumes(doc: any, name: string, volumes: string[]) {
+  const rows = volumes.map((v) => v.trim()).filter(Boolean)
+  const raw = doc.getIn(["services", name, "volumes"])
+  const current: string[] = Array.isArray(raw?.toJSON?.() ?? raw) ? (raw.toJSON?.() ?? raw).map(String) : []
+  if (current.length === rows.length && current.every((c, i) => c === rows[i])) return
+  if (rows.length === 0) {
+    doc.deleteIn(["services", name, "volumes"])
+    return
+  }
+  doc.setIn(["services", name, "volumes"], doc.createNode(rows))
 }
 
 /**
@@ -370,6 +452,9 @@ export function visualToYaml(services: VisualService[], originalSpec = ""): stri
     setIn(["services", name, "x-meshploy", "deploy", "cpu_limit"], s.cpuLimit)
     setIn(["services", name, "x-meshploy", "deploy", "memory_request"], s.memoryRequest)
     setIn(["services", name, "x-meshploy", "deploy", "memory_limit"], s.memoryLimit)
+
+    writeEnv(doc, name, s.env)
+    writeVolumes(doc, name, s.volumes)
   }
 
   return doc.toString({ lineWidth: 120 })
@@ -583,6 +668,8 @@ function ServiceCard({
             builderNodes={builderNodes}
           />
         )}
+
+        <EnvAndVolumeFields svc={svc} onChange={onChange} />
       </div>
     </div>
   )
@@ -858,6 +945,121 @@ function AppFields({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── EnvAndVolumeFields ───────────────────────────────────────────────────────
+
+/**
+ * Environment, volumes, and a note of anything else the spec carries.
+ *
+ * Rendered for every service type. The visual and YAML tabs are two views of one
+ * document, so a key that exists in the YAML has to be visible here too —
+ * otherwise the visual tab quietly under-reports what a service is, and editing
+ * through it feels like it lost something even when it did not.
+ */
+function EnvAndVolumeFields({
+  svc,
+  onChange,
+}: {
+  svc: VisualService
+  onChange: (p: Partial<VisualService>) => void
+}) {
+  const setEnv = (i: number, patch: Partial<{ key: string; value: string }>) =>
+    onChange({ env: svc.env.map((e, idx) => (idx === i ? { ...e, ...patch } : e)) })
+
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <SectionHeader title="Environment" subtitle="Variables passed to the container" />
+        {svc.env.length === 0 && (
+          <p className="text-xs text-muted-foreground/60">No environment variables.</p>
+        )}
+        {svc.env.map((e, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              value={e.key}
+              onChange={(ev) => setEnv(i, { key: ev.target.value })}
+              placeholder="KEY"
+              className={`${inputCls} font-mono flex-1`}
+            />
+            <input
+              value={e.value}
+              onChange={(ev) => setEnv(i, { value: ev.target.value })}
+              placeholder="value"
+              className={`${inputCls} font-mono flex-1`}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+              aria-label={`Remove ${e.key || "variable"}`}
+              onClick={() => onChange({ env: svc.env.filter((_, idx) => idx !== i) })}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => onChange({ env: [...svc.env, { key: "", value: "" }] })}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add variable
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <SectionHeader title="Volumes" subtitle="Mounts, as name:/path/in/container" />
+        {svc.volumes.length === 0 && (
+          <p className="text-xs text-muted-foreground/60">No volumes mounted.</p>
+        )}
+        {svc.volumes.map((v, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              value={v}
+              onChange={(ev) =>
+                onChange({ volumes: svc.volumes.map((x, idx) => (idx === i ? ev.target.value : x)) })
+              }
+              placeholder="data:/var/lib/data"
+              className={`${inputCls} font-mono flex-1`}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+              aria-label={`Remove mount ${v}`}
+              onClick={() => onChange({ volumes: svc.volumes.filter((_, idx) => idx !== i) })}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => onChange({ volumes: [...svc.volumes, ""] })}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add volume
+        </Button>
+      </div>
+
+      {svc.unmodelled.length > 0 && (
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+          <p className="text-xs font-medium text-foreground">Also set in YAML</p>
+          <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+            This service also sets{" "}
+            <span className="font-mono text-muted-foreground">{svc.unmodelled.join(", ")}</span>. There
+            is no field for {svc.unmodelled.length === 1 ? "it" : "them"} here yet — edit in the YAML
+            tab. {svc.unmodelled.length === 1 ? "It is" : "They are"} kept as written.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
