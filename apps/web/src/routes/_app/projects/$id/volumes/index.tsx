@@ -13,8 +13,10 @@ export const Route = createFileRoute("/_app/projects/$id/volumes/")({
 })
 
 const STATUS_STYLES: Record<ApiVolume["status"], string> = {
-  pending: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  ready:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  // idle is a resting state, not a warning: nothing has mounted the volume yet.
+  idle:   "bg-muted/40 text-muted-foreground border-border/60",
+  ready:  "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  failed: "bg-destructive/10 text-destructive border-destructive/20",
 }
 
 function VolumeCard({ volume, projectId }: { volume: ApiVolume; projectId: string }) {

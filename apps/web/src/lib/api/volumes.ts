@@ -6,7 +6,12 @@ export interface ApiVolume {
   name: string
   slug: string
   storage_gb: number
-  status: "pending" | "ready"
+  /**
+   * idle   — no storage provisioned yet because nothing has mounted it (normal)
+   * ready  — claim bound, storage usable
+   * failed — claim missing, or bound to a node that has left the cluster
+   */
+  status: "idle" | "ready" | "failed"
   /** Requested node. null = auto-schedule (provisioner picks on first mount). */
   node_id: string | null
   mounts?: ApiVolumeMount[]

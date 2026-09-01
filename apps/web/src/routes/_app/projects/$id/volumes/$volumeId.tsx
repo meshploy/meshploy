@@ -185,8 +185,10 @@ export const Route = createFileRoute("/_app/projects/$id/volumes/$volumeId")({
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<ApiVolume["status"], string> = {
-  pending: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  ready:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  // idle is a resting state, not a warning: nothing has mounted the volume yet.
+  idle:   "bg-muted/40 text-muted-foreground border-border/60",
+  ready:  "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  failed: "bg-destructive/10 text-destructive border-destructive/20",
 }
 
 const BACKUP_STATUS_DOT: Record<string, string> = {
@@ -638,7 +640,9 @@ function VolumeDetailPage() {
     queryKey: ["volume", orgId, projectId, volumeId],
     queryFn: () => volumesApi.get(orgId, projectId, volumeId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => query.state.data?.status === "pending" ? 3000 : false,
+    // Poll only while the volume is still settling. "idle" is a resting state —
+    // an unmounted claim stays unbound indefinitely, so polling it is pointless.
+    refetchInterval: (query) => query.state.data?.status === "failed" ? 3000 : false,
   })
 
   const deleteMut = useMutation({

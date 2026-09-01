@@ -56,7 +56,7 @@ func TestVolumeCreate(t *testing.T) {
 		assert.Equal(t, 10, vol.StorageGB)
 		assert.NotEmpty(t, vol.Slug)
 		// No k8s → stays pending.
-		assert.Equal(t, meshdb.VolumePending, vol.Status)
+		assert.Equal(t, meshdb.VolumeIdle, vol.Status)
 	})
 
 	t.Run("default storage applied when size zero", func(t *testing.T) {

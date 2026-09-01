@@ -620,8 +620,16 @@ func (Stack) TableName() string { return "stacks" }
 type VolumeStatus string
 
 const (
-	VolumePending VolumeStatus = "pending" // PVC not yet provisioned
-	VolumeReady   VolumeStatus = "ready"   // PVC bound and available
+	// VolumeIdle means no storage has been provisioned yet because nothing has
+	// mounted the volume. With a WaitForFirstConsumer provisioner (k3s ships
+	// local-path) that is the normal resting state, not a failure in progress —
+	// which is why it is not called "pending".
+	VolumeIdle VolumeStatus = "idle"
+	// VolumeReady means the claim is bound and the storage is usable.
+	VolumeReady VolumeStatus = "ready"
+	// VolumeFailed means the claim should exist but does not, or is bound to a
+	// node that has left the cluster. Neither resolves on its own.
+	VolumeFailed VolumeStatus = "failed"
 )
 
 type Volume struct {
@@ -630,7 +638,7 @@ type Volume struct {
 	Name      string       `gorm:"not null"                           json:"name"`
 	Slug      string       `gorm:"not null;uniqueIndex"               json:"slug"` // K8s PVC name
 	StorageGB int          `gorm:"not null;default:5"                 json:"storage_gb"`
-	Status    VolumeStatus `gorm:"type:varchar(15);default:'pending'" json:"status"`
+	Status    VolumeStatus `gorm:"type:varchar(15);default:'idle'" json:"status"`
 	// NodeID pins where the volume is provisioned. nil = auto-schedule: the
 	// provisioner picks when the first pod mounts it (local-path uses
 	// WaitForFirstConsumer). Once the PVC is bound the choice is immutable —

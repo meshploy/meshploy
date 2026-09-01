@@ -174,6 +174,12 @@ func applyConstraints(db *gorm.DB) error {
 		`ALTER TABLE routes DROP COLUMN IF EXISTS target_ip`,
 		`ALTER TABLE routes DROP COLUMN IF EXISTS target_port`,
 
+		// Volume status "pending" was renamed to "idle": with a
+		// WaitForFirstConsumer provisioner an unmounted volume rests unprovisioned
+		// indefinitely, which "pending" wrongly implied was work in progress.
+		`UPDATE volumes SET status = 'idle' WHERE status = 'pending'`,
+		`ALTER TABLE volumes ALTER COLUMN status SET DEFAULT 'idle'`,
+
 		// Drop old single-port columns from services (idempotent — no-op when already absent)
 		`ALTER TABLE services DROP COLUMN IF EXISTS port`,
 		`ALTER TABLE services DROP COLUMN IF EXISTS node_port`,

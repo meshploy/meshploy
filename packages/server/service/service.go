@@ -238,6 +238,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	// Keep stored service status in step with the cluster.
 	if k8sClient != nil {
 		go workloads.StartStatusReconciler(context.Background())
+		go volumes.StartVolumeStatusReconciler(context.Background())
 	}
 
 	go backups.StartScheduler(context.Background())

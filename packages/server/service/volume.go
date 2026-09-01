@@ -63,7 +63,7 @@ func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name st
 		Name:      name,
 		Slug:      slug,
 		StorageGB: storageGB,
-		Status:    db.VolumePending,
+		Status:    db.VolumeIdle,
 		NodeID:    nodeID,
 	}
 	if err := s.db.WithContext(ctx).Create(volume).Error; err != nil {
@@ -78,8 +78,14 @@ func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name st
 		if err := s.db.WithContext(ctx).First(&project, "id = ?", projectID).Error; err == nil {
 			if err := appk8s.EnsureNamespace(ctx, s.k8s, project.Slug); err == nil {
 				if err := appk8s.EnsureVolumePVC(ctx, s.k8s, slug, project.Slug, storageGB, nodeName); err == nil {
-					s.db.WithContext(ctx).Model(volume).Update("status", db.VolumeReady)
-					volume.Status = db.VolumeReady
+					// Creating the claim is not the same as having storage. An
+					// unpinned claim stays unbound until a pod mounts it, so read
+					// the real state rather than declaring the volume ready
+					// because the API call returned.
+					if st, err := appk8s.GetVolumePVCStatus(ctx, s.k8s, slug, project.Slug); err == nil && st.Bound {
+						s.db.WithContext(ctx).Model(volume).Update("status", db.VolumeReady)
+						volume.Status = db.VolumeReady
+					}
 				}
 			}
 		}
