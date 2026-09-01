@@ -282,10 +282,27 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			}
 		}
 
+		// Applying the manifest only means the API server accepted it. Follow the
+		// rollout to its actual outcome, streaming what the cluster does on the
+		// way, so a service that never starts is reported as failed rather than
+		// as "Deployment applied successfully".
+		log := deployment.Log + "Deployment applied. Waiting for the rollout…\n"
+		s.appendLog(deploymentID, &log, "")
+		res := appk8s.WatchRollout(bgCtx, s.k8s, slugify(svc.Name), namespace, rolloutTimeout,
+			func(line string) { s.appendLog(deploymentID, &log, line) })
+
+		if !res.Succeeded {
+			s.failDeployment(deploymentID, log+"\nRollout failed: "+res.Reason)
+			s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
+				"status": db.ServiceFailed,
+			})
+			return
+		}
+
 		now := time.Now()
 		s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
 			"status":      db.DeploymentSuccess,
-			"log":         deployment.Log + "Deployment applied successfully.",
+			"log":         log,
 			"deployed_at": &now,
 		})
 		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
@@ -444,11 +461,28 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 
+	// Follow the rollout rather than reporting the apply as the outcome -- see
+	// the note on WatchRollout. A built image that starts and immediately exits
+	// is a failed deploy, not a successful one.
+	log := result.Log + "\nDeployment applied. Waiting for the rollout…\n"
+	s.appendLog(a.deployment.ID, &log, "")
+	res := appk8s.WatchRollout(ctx, s.k8s, slugify(a.svc.Name), a.namespace, rolloutTimeout,
+		func(line string) { s.appendLog(a.deployment.ID, &log, line) })
+
+	if !res.Succeeded {
+		s.failDeployment(a.deployment.ID, log+"\nRollout failed: "+res.Reason)
+		s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(map[string]any{
+			"image":  a.imageName,
+			"status": db.ServiceFailed,
+		})
+		return
+	}
+
 	// Update service image and status.
 	now := time.Now()
 	s.db.Model(&db.Deployment{}).Where("id = ?", a.deployment.ID).Updates(map[string]any{
 		"status":      db.DeploymentSuccess,
-		"log":         result.Log + "\nDeployment applied successfully.",
+		"log":         log,
 		"deployed_at": &now,
 	})
 	s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(map[string]any{
@@ -1150,6 +1184,22 @@ func (s *DeploymentService) waitForBuildPod(ctx context.Context, namespace, jobN
 
 // runtimeEnvVars parses a raw .env block into K8s EnvVar slice and ensures
 // PORT is set to the container port. The user-supplied value wins if present.
+// rolloutTimeout bounds how long a deploy waits for replicas to become
+// available. Generous, because a first pull of a large image on a slow link is
+// legitimately slow; a container the cluster has already given up on is
+// reported immediately regardless, so this only bounds the ambiguous case.
+const rolloutTimeout = 10 * time.Minute
+
+// appendLog adds one line to a deployment's log and persists it, so the log
+// streams to the UI while the rollout is still running instead of arriving in
+// one block at the end.
+func (s *DeploymentService) appendLog(deploymentID uuid.UUID, log *string, line string) {
+	if line != "" {
+		*log += line + "\n"
+	}
+	s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Update("log", *log)
+}
+
 func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
 	portStr := fmt.Sprintf("%d", port)
 	hasPort := false
