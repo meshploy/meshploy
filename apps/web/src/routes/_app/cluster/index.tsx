@@ -80,6 +80,14 @@ function ClusterPage() {
     enabled: !!orgId,
   })
 
+  const { data: orphanData } = useQuery({
+    queryKey: ["cluster-orphans", orgId],
+    queryFn: () => clusterApi.listOrphans(orgId!, token),
+    enabled: !!orgId,
+    refetchInterval: 60_000,
+  })
+  const orphans = orphanData?.orphans ?? []
+
   const { data: meshHealth } = useQuery({
     queryKey: ["mesh-health", orgId],
     queryFn: () => clusterApi.getMeshHealth(orgId!, token),
@@ -116,6 +124,43 @@ function ClusterPage() {
       </div>
 
       <MeshHealthBanner health={meshHealth} />
+
+      {orphans.length > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+          <div className="px-4 py-3 border-b border-amber-500/20 flex items-start gap-2.5">
+            <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-medium text-amber-400">
+                {orphans.length} workload{orphans.length === 1 ? "" : "s"} with no service behind{" "}
+                {orphans.length === 1 ? "it" : "them"}
+              </p>
+              <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                Running in the cluster but absent from meshploy — left by a delete that could not
+                reach the cluster, a rename from before renames moved the workload, or a change made
+                with kubectl. They still hold memory on their node. Remove them with kubectl once you
+                have confirmed what each one is.
+              </p>
+            </div>
+          </div>
+          <div className="divide-y divide-amber-500/10">
+            {orphans.map((o) => (
+              <div key={`${o.namespace}/${o.name}`} className="px-4 py-2.5 flex items-center gap-3">
+                <code className="text-xs font-mono text-foreground flex-1 min-w-0 truncate">
+                  {o.namespace}/{o.name}
+                </code>
+                {o.has_pvc && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                    has data
+                  </Badge>
+                )}
+                <span className="text-[11px] text-muted-foreground/60 shrink-0">
+                  {o.ready}/{o.replicas} ready · {o.age_days}d old
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard

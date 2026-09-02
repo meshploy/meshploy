@@ -12,9 +12,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/meshploy/packages/server/service"
-	"github.com/meshploy/packages/db"
 )
 
 // NodeResponse extends db.Node with live data from Headscale and the K8s cluster.
@@ -390,6 +390,17 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.CreateHeadscalePreAuthKey)
 
+	// Orphaned workloads — org-scoped, admin-only. Read-only by design: it
+	// reports drift between the database and the cluster, it does not act on it.
+	huma.Register(api, huma.Operation{
+		OperationID: "list-orphan-workloads",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/cluster/orphans",
+		Summary:     "List cluster workloads that no service owns",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListOrphanWorkloads)
+
 	// Mesh health — org-scoped, admin-only. Reports whether the API can still
 	// talk to Headscale, so a dead credential shows up in the UI instead of
 	// silently freezing node liveness.
@@ -557,8 +568,8 @@ func (h *Handler) GenerateNodeRegistrationToken(ctx context.Context, input *List
 // Empty string if K3S_TOKEN is not set (k3s not installed on master yet).
 type ClusterJoinTokenOutput struct {
 	Body struct {
-		Token      string `json:"token"`       // empty if k3s not installed
-		ServerURL  string `json:"server_url"`  // e.g. https://100.64.0.1:6443
+		Token     string `json:"token"`      // empty if k3s not installed
+		ServerURL string `json:"server_url"` // e.g. https://100.64.0.1:6443
 	}
 }
 
@@ -567,14 +578,40 @@ const k3sTokenPath = "/var/lib/rancher/k3s/server/node-token"
 // MeshHealthOutput reports the control plane's ability to reach Headscale.
 type MeshHealthOutput struct {
 	Body struct {
-		Configured    bool       `json:"configured"`               // Headscale is wired up at all
-		Checked       bool       `json:"checked"`                  // a call has been attempted
-		Healthy       bool       `json:"healthy"`                  // last call succeeded
-		Unauthorized  bool       `json:"unauthorized"`             // credential rejected -- needs a new API key
+		Configured    bool       `json:"configured"`   // Headscale is wired up at all
+		Checked       bool       `json:"checked"`      // a call has been attempted
+		Healthy       bool       `json:"healthy"`      // last call succeeded
+		Unauthorized  bool       `json:"unauthorized"` // credential rejected -- needs a new API key
 		LastError     string     `json:"last_error,omitempty"`
 		LastErrorAt   *time.Time `json:"last_error_at,omitempty"`
 		LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
 	}
+}
+
+// OrphanWorkloadsOutput lists workloads running with no service behind them.
+type OrphanWorkloadsOutput struct {
+	Body struct {
+		Orphans []service.OrphanWorkload `json:"orphans"`
+	}
+}
+
+// ListOrphanWorkloads reports what is running in the cluster that meshploy has
+// no record of — a delete that failed, a rename from before renames moved the
+// workload, a restore, or a manual kubectl change. Surfacing it is the point:
+// these are invisible otherwise, and an unowned Deployment holds real memory on
+// a node for as long as nobody looks.
+func (h *Handler) ListOrphanWorkloads(ctx context.Context, input *ClusterPathInput) (*OrphanWorkloadsOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	orphans, err := h.svc.Orphans.List(ctx, orgID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list orphan workloads: " + err.Error())
+	}
+	out := &OrphanWorkloadsOutput{}
+	out.Body.Orphans = orphans
+	return out, nil
 }
 
 // GetMeshHealth surfaces the last observed Headscale result. An expired API key
@@ -778,7 +815,6 @@ func (h *Handler) CreateProvisioningToken(ctx context.Context, input *CreateProv
 	return out, nil
 }
 
-
 // ─── Headscale preauth key ───────────────────────────────────────────────────
 
 // HeadscalePreAuthKeyStatusOutput is returned by GET.
@@ -879,7 +915,6 @@ func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, input *ClusterP
 	}
 	return out, nil
 }
-
 
 // meshRoleLabelsMatch returns true if the k8s node's labels already reflect the
 // desired MeshRole, meaning no reconciliation is needed.

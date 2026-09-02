@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/meshploy/packages/server/templates"
-	meshdb "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -25,6 +25,7 @@ type Services struct {
 	Projects        *ProjectService
 	Nodes           *NodeService
 	Workloads       *WorkloadService
+	Orphans         *OrphanService
 	Stacks          *StackService
 	Volumes         *VolumeService
 	Domains         *DomainService
@@ -180,7 +181,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
-	routes := &RouteService{db: db}
+	routes := &RouteService{db: db, k8s: k8sClient}
 
 	nodes.headscale = headscaleSvc
 	nodes.notif = notif
@@ -196,6 +197,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Orgs:            &OrgService{db: db},
 		Permissions:     &PermissionService{db: db},
 		Projects:        &ProjectService{db: db},
+		Orphans:         &OrphanService{db: db, k8s: k8sClient, workloads: workloads},
 		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes, routes: routes, deployment: deployments},
 		Nodes:           nodes,
 		Workloads:       workloads,
@@ -211,7 +213,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Notifications:   notif,
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,
-		Jobs:            func() *JobService {
+		Jobs: func() *JobService {
 			j := &JobService{db: db, k8s: k8sClient, notif: notif}
 			if k8sClient != nil {
 				go j.StartReconciler(context.Background())

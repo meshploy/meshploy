@@ -10,7 +10,24 @@ export interface MeshHealth {
   last_success_at?: string | null
 }
 
+export interface OrphanWorkload {
+  name: string
+  project: string
+  namespace: string
+  replicas: number
+  ready: number
+  age_days: number
+  has_pvc: boolean
+}
+
 export const cluster = {
+  listOrphans: (orgId: string, token: string) =>
+    apiFetch<{ orphans: OrphanWorkload[] }>(
+      `/api/v1/orgs/${orgId}/cluster/orphans`,
+      {},
+      token
+    ),
+
   getJoinToken: (orgId: string, token: string) =>
     apiFetch<{ token: string; server_url: string }>(
       `/api/v1/orgs/${orgId}/cluster/join-token`,
