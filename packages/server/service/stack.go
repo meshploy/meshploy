@@ -18,6 +18,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
 )
 
@@ -602,8 +603,8 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		}
 
 		replicas := 1
-		cpuRequest, cpuLimit := "100m", "500m"
-		memRequest, memLimit := "128Mi", "512Mi"
+		cpuRequest, cpuLimit := appk8s.DefaultCPURequest, appk8s.DefaultCPULimit
+		memRequest, memLimit := appk8s.DefaultMemoryRequest, appk8s.DefaultMemoryLimit
 		var nodeID *uuid.UUID
 		if ext != nil && ext.Deploy != nil {
 			if ext.Deploy.Replicas > 0 {

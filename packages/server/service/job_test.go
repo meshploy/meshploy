@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/meshploy/packages/server/service"
 	meshdb "github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
+	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -79,10 +80,13 @@ func TestJobCreate(t *testing.T) {
 			Image:     "alpine:latest",
 		})
 		require.NoError(t, err)
-		assert.Equal(t, "100m", job.CPURequest)
-		assert.Equal(t, "500m", job.CPULimit)
-		assert.Equal(t, "128Mi", job.MemoryRequest)
-		assert.Equal(t, "512Mi", job.MemoryLimit)
+		// Asserted against the shared constants, not repeated literals: the point
+		// is that a job with no resources set inherits the platform defaults, not
+		// that those defaults are any particular number this week.
+		assert.Equal(t, appk8s.DefaultCPURequest, job.CPURequest)
+		assert.Equal(t, appk8s.DefaultCPULimit, job.CPULimit)
+		assert.Equal(t, appk8s.DefaultMemoryRequest, job.MemoryRequest)
+		assert.Equal(t, appk8s.DefaultMemoryLimit, job.MemoryLimit)
 	})
 }
 

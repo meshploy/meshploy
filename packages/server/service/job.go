@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/meshploy/packages/db"
-	batchv1 "k8s.io/api/batch/v1"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -139,10 +139,10 @@ func (s *JobService) Create(ctx context.Context, in CreateJobInput) (*db.Job, er
 		Schedule:          in.Schedule,
 		ConcurrencyPolicy: policy,
 		HistoryLimit:      historyLimit,
-		CPURequest:        orDefault(in.CPURequest, "100m"),
-		CPULimit:          orDefault(in.CPULimit, "500m"),
-		MemoryRequest:     orDefault(in.MemoryRequest, "128Mi"),
-		MemoryLimit:       orDefault(in.MemoryLimit, "512Mi"),
+		CPURequest:        orDefault(in.CPURequest, appk8s.DefaultCPURequest),
+		CPULimit:          orDefault(in.CPULimit, appk8s.DefaultCPULimit),
+		MemoryRequest:     orDefault(in.MemoryRequest, appk8s.DefaultMemoryRequest),
+		MemoryLimit:       orDefault(in.MemoryLimit, appk8s.DefaultMemoryLimit),
 		EnvVars:           db.EncryptedString(in.EnvVars),
 		Status:            db.JobStatusIdle,
 		K8sName:           k8sName,

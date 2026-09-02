@@ -31,10 +31,14 @@ type WorkloadParams struct {
 	Replicas  int32
 	Env       []corev1.EnvVar
 
-	CPURequest    string // "100m"
-	CPULimit      string // "500m"
-	MemoryRequest string // "128Mi"
-	MemoryLimit   string // "512Mi"
+	// Empty means "use the platform default" — see DefaultResources. A workload
+	// with no limit at all is not a lighter workload, it is an unbounded one:
+	// it can take the whole node with it, and on the gateway that is the control
+	// plane as well.
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
 
 	// NodeName pins the pod to a specific node (optional).
 	NodeName string
@@ -59,6 +63,10 @@ type VolumeAttachment struct {
 
 // ApplyDeployment creates or updates a K8s Deployment.
 func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p WorkloadParams) error {
+	// Applied here rather than at each call site: a service created by hand used
+	// to reach the cluster with no resources block at all, so a stack service was
+	// capped while an identical hand-made one was unbounded.
+	withResourceDefaults(&p)
 	replicas := p.Replicas
 	if replicas == 0 {
 		replicas = 1
@@ -198,6 +206,44 @@ func ApplyService(ctx context.Context, client kubernetes.Interface, name, namesp
 	}
 	_, err = client.CoreV1().Services(namespace).Update(ctx, desired, metav1.UpdateOptions{})
 	return err
+}
+
+// Platform defaults for a workload that specifies none of its own.
+//
+// The limit is a ceiling, not a reservation: only the request is held against
+// the node, so the ceiling is set generously and the request honestly.
+//
+// It is generous because a runtime sizes itself from the CGROUP LIMIT rather
+// than from what it needs. Node derives V8's heap from it, and the JVM its
+// max heap, so a tight ceiling does not merely constrain a process -- it makes
+// the runtime choose a heap too small to work in, and the process aborts inside
+// its own limit without ever being marked OOMKilled.
+//
+// The request reflects what services actually use (measured: 107-180Mi for a
+// typical app), so the scheduler's view stays close to reality. A request set
+// far below real usage is how a node ends up overcommitted and evicting pods
+// that did nothing wrong.
+const (
+	DefaultCPURequest    = "100m"
+	DefaultCPULimit      = "1000m"
+	DefaultMemoryRequest = "256Mi"
+	DefaultMemoryLimit   = "1Gi"
+)
+
+// withResourceDefaults fills in any resource field the caller left empty.
+func withResourceDefaults(p *WorkloadParams) {
+	if p.CPURequest == "" {
+		p.CPURequest = DefaultCPURequest
+	}
+	if p.CPULimit == "" {
+		p.CPULimit = DefaultCPULimit
+	}
+	if p.MemoryRequest == "" {
+		p.MemoryRequest = DefaultMemoryRequest
+	}
+	if p.MemoryLimit == "" {
+		p.MemoryLimit = DefaultMemoryLimit
+	}
 }
 
 // ApplyAliasService publishes a second ClusterIP Service for an existing
