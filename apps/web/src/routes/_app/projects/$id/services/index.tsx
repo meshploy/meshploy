@@ -9,6 +9,7 @@ import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 import type { ServiceStatus } from "@/types"
+import { livePoll } from "@/lib/live-poll"
 
 function ServiceCard({ svc, onClick, stackNames, orgId, projectId }: {
   svc: ApiService
@@ -81,10 +82,7 @@ function ServicesTab() {
     queryKey: ["services", orgId, projectId],
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => {
-      const data = query.state.data as ApiService[] | undefined
-      return data?.some((s) => ACTIVE_SERVICE_STATUSES.has(s.status)) ? 5000 : false
-    },
+    refetchInterval: livePoll<ApiService[]>((d) => d.some((s) => ACTIVE_SERVICE_STATUSES.has(s.status))),
   })
 
   const serviceList = allServices.filter((s) => s.type === "application")

@@ -7,6 +7,7 @@ import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/")({
   component: JobsPage,
@@ -31,10 +32,9 @@ function JobsPage() {
     queryKey: ["jobs", orgId, projectId],
     queryFn: () => jobsApi.list(orgId, projectId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => {
-      const jobs = query.state.data ?? []
-      return jobs.some((j) => j.status === "running" || j.status === "pending") ? 3000 : false
-    },
+    refetchInterval: livePoll<{ status: string }[]>((jobs) =>
+      jobs.some((j) => j.status === "running" || j.status === "pending")
+    ),
   })
 
   const deleteMut = useMutation({

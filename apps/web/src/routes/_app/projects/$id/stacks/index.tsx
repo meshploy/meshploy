@@ -7,6 +7,7 @@ import { stacks as stacksApi, type ApiStack } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { livePoll } from "@/lib/live-poll"
 
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/")({
@@ -90,10 +91,7 @@ function StacksTab() {
     queryKey,
     queryFn: () => stacksApi.list(orgId!, projectId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => {
-      const data = query.state.data as ApiStack[] | undefined
-      return data?.some((s) => s.status === "applying") ? 3000 : false
-    },
+    refetchInterval: livePoll<ApiStack[]>((d) => d.some((s) => s.status === "applying")),
   })
 
   const goToNew = () =>

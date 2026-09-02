@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { LIVE_ACTIVE_MS, LIVE_SETTLED_MS } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/$jobId/runs")({
   component: RunsPage,
@@ -35,7 +36,10 @@ function RunsPage() {
     queryKey: ["job-runs", orgId, projectId, jobId],
     queryFn: () => jobsApi.listRuns(orgId, projectId, jobId, token),
     enabled: !!orgId,
-    refetchInterval: job?.status === "running" || job?.status === "pending" ? 3000 : false,
+    // Keyed off the job, not the runs: a run appears because the job fired, and
+    // that happens on a schedule with nothing here to observe it starting.
+    refetchInterval:
+      job?.status === "running" || job?.status === "pending" ? LIVE_ACTIVE_MS : LIVE_SETTLED_MS,
   })
 
   if (isFetching && runs.length === 0) {

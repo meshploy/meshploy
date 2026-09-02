@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
+import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/volumes/")({
   component: VolumesTab,
@@ -86,6 +87,7 @@ function VolumesTab() {
     queryKey: ["volumes", orgId, projectId],
     queryFn: () => volumesApi.list(orgId, projectId, token),
     enabled: !!orgId,
+    refetchInterval: livePoll<ApiVolume[]>((d) => d.some((v) => v.status === "failed")),
   })
 
   if (isLoading) {

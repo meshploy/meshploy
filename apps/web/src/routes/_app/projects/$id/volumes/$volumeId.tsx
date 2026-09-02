@@ -27,6 +27,7 @@ import { useOrgStore } from "@/store/org-store"
 import { Section, Field, inputCls, NodeCard } from "@/components/services/form-primitives"
 import { DetailPageHeader } from "@/components/layout/detail-page-header"
 import { cn, formatRelativeTime } from "@/lib/utils"
+import { livePoll } from "@/lib/live-poll"
 
 // ─── Placement ────────────────────────────────────────────────────────────────
 
@@ -640,9 +641,10 @@ function VolumeDetailPage() {
     queryKey: ["volume", orgId, projectId, volumeId],
     queryFn: () => volumesApi.get(orgId, projectId, volumeId, token),
     enabled: !!orgId,
-    // Poll only while the volume is still settling. "idle" is a resting state —
-    // an unmounted claim stays unbound indefinitely, so polling it is pointless.
-    refetchInterval: (query) => query.state.data?.status === "failed" ? 3000 : false,
+    // A settled volume is still watched, slowly: "ready" is not permanent — a
+    // bound claim whose node leaves the cluster becomes failed with nothing the
+    // browser did, and that is exactly the change the pill has to show.
+    refetchInterval: livePoll<{ status: string }>((d) => d.status === "failed"),
   })
 
   const deleteMut = useMutation({

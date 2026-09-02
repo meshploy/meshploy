@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 import { useIsAdmin } from "@/store/org-store"
+import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId")({
   component: StackLayout,
@@ -29,10 +30,7 @@ function StackLayout() {
     queryKey: ["stack", orgId, projectId, stackId],
     queryFn: () => stacksApi.get(orgId!, projectId, stackId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => {
-      const d = query.state.data as ApiStack | undefined
-      return d?.status === "applying" ? 3000 : false
-    },
+    refetchInterval: livePoll<ApiStack>((d) => d.status === "applying"),
   })
 
   const tabs = [

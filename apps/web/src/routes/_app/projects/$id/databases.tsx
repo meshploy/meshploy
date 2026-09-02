@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { livePoll } from "@/lib/live-poll"
 
 const ENGINE_LABELS: Record<string, string> = {
   postgres: "PostgreSQL",
@@ -117,10 +118,9 @@ function DatabasesTab() {
     queryKey: ["services", orgId, projectId],
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => {
-      const data = query.state.data as ApiService[] | undefined
-      return data?.filter((s) => s.type === "database").some((s) => ACTIVE_DB_STATUSES.has(s.status)) ? 5000 : false
-    },
+    refetchInterval: livePoll<ApiService[]>((d) =>
+      d.filter((s) => s.type === "database").some((s) => ACTIVE_DB_STATUSES.has(s.status))
+    ),
   })
 
   const dbList = allServices.filter((s) => s.type === "database")

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 import { cn } from "@/lib/utils"
 import { useIsAdmin } from "@/store/org-store"
+import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/$jobId")({
   component: JobLayout,
@@ -42,10 +43,7 @@ function JobLayout() {
     queryKey: ["job", orgId, projectId, jobId],
     queryFn: () => jobsApi.get(orgId, projectId, jobId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => {
-      const d = query.state.data
-      return d?.status === "running" || d?.status === "pending" ? 3000 : false
-    },
+    refetchInterval: livePoll<{ status: string }>((d) => d.status === "running" || d.status === "pending"),
   })
 
   const triggerMut = useMutation({

@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 import { useIsAdmin } from "@/store/org-store"
+import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
   component: ServiceLayout,
@@ -52,7 +53,7 @@ function ServiceLayout() {
     queryKey,
     queryFn: () => servicesApi.get(orgId!, projectId, serviceId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => query.state.data?.status === "deploying" ? 3000 : false,
+    refetchInterval: livePoll<{ status: string }>((d) => d.status === "deploying"),
   })
 
   const startMutation = useMutation({

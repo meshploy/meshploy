@@ -20,6 +20,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import type { ServiceStatus } from "@/types"
+import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId/services")({
   component: StackServicesTab,
@@ -46,10 +47,7 @@ function StackServicesTab() {
     queryKey: servicesQueryKey,
     queryFn: () => stacksApi.listServices(orgId!, projectId, stackId, token),
     enabled: !!orgId,
-    refetchInterval: (query) => {
-      const data = query.state.data as ApiService[] | undefined
-      return data?.some((s) => s.status === "deploying") ? 5000 : false
-    },
+    refetchInterval: livePoll<ApiService[]>((d) => d.some((s) => s.status === "deploying")),
   })
 
   const applyMutation = useMutation({
