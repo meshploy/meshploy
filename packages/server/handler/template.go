@@ -6,8 +6,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
-	"github.com/meshploy/packages/server/templates"
 	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/templates"
 )
 
 // ── I/O types ───────────────────────────────────────────────────────────────
@@ -48,6 +48,18 @@ type DeployTemplateInput struct {
 // ── Registration ─────────────────────────────────────────────────────────────
 
 func (h *Handler) registerTemplateRoutes(api huma.API) {
+	// Re-read the catalog now. Any authenticated user may ask: it refetches a
+	// public index and changes nothing else, and the person who just published a
+	// template is not necessarily an admin.
+	huma.Register(api, huma.Operation{
+		OperationID: "refresh-templates",
+		Method:      "POST",
+		Path:        "/api/v1/templates/refresh",
+		Summary:     "Re-read the template catalog from its source",
+		Tags:        []string{"Templates"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.RefreshTemplates)
+
 	huma.Register(api, huma.Operation{
 		OperationID: "list-templates",
 		Method:      "GET",
@@ -99,6 +111,34 @@ func (h *Handler) GetTemplate(ctx context.Context, input *TemplatePathInput) (*G
 		return nil, huma.Error404NotFound("template not found")
 	}
 	return &GetTemplateOutput{Body: TemplateDetail{Manifest: tpl.Manifest, Compose: tpl.Compose}}, nil
+}
+
+// RefreshTemplatesInput carries no parameters — the catalog is a single global
+// source, not a per-org one.
+type RefreshTemplatesInput struct{}
+
+type RefreshTemplatesOutput struct {
+	Body struct {
+		Count int `json:"count"`
+	}
+}
+
+// RefreshTemplates re-reads the catalog and reports how many templates it now
+// holds, so the caller can see the refresh took effect rather than trusting it.
+func (h *Handler) RefreshTemplates(ctx context.Context, _ *RefreshTemplatesInput) (*RefreshTemplatesOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := h.svc.Templates.Refresh(ctx); err != nil {
+		return nil, huma.Error502BadGateway("could not reach the template catalog: " + err.Error())
+	}
+	list, err := h.svc.Templates.List()
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	out := &RefreshTemplatesOutput{}
+	out.Body.Count = len(list)
+	return out, nil
 }
 
 // ServeTemplateIcon streams a template's icon bytes. It is a raw, unauthenticated

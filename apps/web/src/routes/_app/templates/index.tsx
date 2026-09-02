@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { Globe, LayoutTemplate, Loader2, Search, ServerCrash } from "lucide-react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { Globe, LayoutTemplate, Loader2, RefreshCw, Search, ServerCrash } from "lucide-react"
 import { SiGithub } from "@icons-pack/react-simple-icons"
 import { templates as templatesApi, type TemplateManifest } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -24,6 +24,12 @@ function TemplatesPage() {
     queryFn: () => templatesApi.list(token),
   })
   const list = data ?? []
+
+  const qc = useQueryClient()
+  const refreshCatalog = useMutation({
+    mutationFn: () => templatesApi.refresh(token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["templates"] }),
+  })
 
   const categories = useMemo(() => {
     const set = new Set<string>()
@@ -66,11 +72,26 @@ function TemplatesPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">Templates</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          One-click apps. Deploy a template as a stack into any project.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">Templates</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            One-click apps. Deploy a template as a stack into any project.
+          </p>
+        </div>
+        {/* The catalog is cached and re-read on a slow timer, so a template
+            published minutes ago is not here yet. Asking is faster than waiting
+            out the poll, and far faster than restarting the API. */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 shrink-0"
+          onClick={() => refreshCatalog.mutate()}
+          disabled={refreshCatalog.isPending}
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", refreshCatalog.isPending && "animate-spin")} />
+          Refresh
+        </Button>
       </div>
 
       {/* Filters */}

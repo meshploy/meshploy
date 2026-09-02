@@ -25,6 +25,29 @@ type TemplateService struct {
 	routes  *RouteService
 }
 
+// refresher is a catalog that can be asked to re-read its source. The remote
+// catalog implements it; a local directory and the embedded snapshot do not,
+// because there is nothing to re-fetch.
+type refresher interface {
+	Refresh(ctx context.Context) error
+}
+
+// Refresh re-reads the catalog now instead of waiting for the next scheduled
+// poll.
+//
+// The cache exists so a busy page does not hammer GitHub, but it also means a
+// template published minutes ago is invisible for up to an hour, with nothing
+// to do about it but restart the API. Publishing is exactly when someone wants
+// to see the result, so it is worth being able to ask.
+func (s *TemplateService) Refresh(ctx context.Context) error {
+	r, ok := s.catalog.(refresher)
+	if !ok {
+		// A local or embedded catalog is already whatever its source says.
+		return nil
+	}
+	return r.Refresh(ctx)
+}
+
 // List returns the catalog manifests (empty if no catalog is configured).
 func (s *TemplateService) List() ([]*templates.Manifest, error) {
 	return s.catalog.List()

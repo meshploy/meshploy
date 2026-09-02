@@ -36,6 +36,10 @@ export const templates = {
   list: (token: string) =>
     apiFetch<TemplateManifest[]>(`/api/v1/templates`, {}, token),
 
+  /** Re-read the catalog from its source instead of waiting for the poll. */
+  refresh: (token: string) =>
+    apiFetch<{ count: number }>(`/api/v1/templates/refresh`, { method: "POST" }, token),
+
   /** Public icon URL for an <img src> (unauthenticated route). */
   iconUrl: (id: string) => `${API_BASE}/api/v1/templates/${id}/icon`,
 
