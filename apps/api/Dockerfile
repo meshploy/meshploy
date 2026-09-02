@@ -40,8 +40,9 @@ COPY packages/server ./packages/server
 # Build a fully static binary.
 WORKDIR /workspace/apps/api
 ARG VERSION=dev
+ARG CHANNEL=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X github.com/meshploy/packages/server/version.Current=${VERSION}" \
+    -ldflags="-s -w -X github.com/meshploy/packages/server/version.Current=${VERSION} -X github.com/meshploy/packages/server/version.Channel=${CHANNEL}" \
     -o /out/api \
     .
 

@@ -236,6 +236,12 @@ export function AppSidebar() {
         {!sidebarCollapsed && ver && (
           <p className="px-3 text-[10px] text-sidebar-foreground/30">
             v{ver.current}
+            {/* An edge build is not the release it names — it was cut after it,
+                from main. Saying so is what distinguishes it from a stable build
+                of the same version, and explains why no update is offered. */}
+            {ver.channel === "edge" && (
+              <span className="ml-1.5 text-sidebar-foreground/40">· edge</span>
+            )}
           </p>
         )}
         <Tooltip>

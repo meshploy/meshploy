@@ -16,10 +16,14 @@ import (
 const (
 	githubReleaseURL = "https://api.github.com/repos/meshploy/meshploy/releases/latest"
 	updateCacheTTL   = time.Hour
+
+	// channelEdge is a build cut from main rather than from a release tag.
+	channelEdge = "edge"
 )
 
 type VersionInfo struct {
 	Current         string `json:"current"`
+	Channel         string `json:"channel"`
 	Latest          string `json:"latest"`
 	UpdateAvailable bool   `json:"update_available"`
 	ReleaseURL      string `json:"release_url"`
@@ -57,6 +61,7 @@ func (s *SystemService) fetchVersionInfo(ctx context.Context) VersionInfo {
 	current := version.Current
 	info := VersionInfo{
 		Current: current,
+		Channel: version.Channel,
 		Latest:  current,
 	}
 
@@ -89,7 +94,16 @@ func (s *SystemService) fetchVersionInfo(ctx context.Context) VersionInfo {
 	latest := stripV(release.TagName)
 	info.Latest = latest
 	info.ReleaseURL = release.HTMLURL
-	info.UpdateAvailable = isNewer(latest, current)
+	// An edge build tracks main, so releases are not the thing it is behind.
+	// It carries the version of the release it was cut after, which means the
+	// moment that release is published the comparison reads as parity and then,
+	// at the next release, as "please upgrade" — to code the build may already
+	// contain. Neither answer is true, so it is not offered: the channel and the
+	// commit are shown instead, and "meshploy server-upgrade --edge" is how an
+	// edge install moves forward.
+	if info.Channel != channelEdge {
+		info.UpdateAvailable = isNewer(latest, current)
+	}
 	return info
 }
 
