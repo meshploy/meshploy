@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.8.0](https://github.com/meshploy/meshploy/compare/v0.7.0...v0.8.0) (2026-09-02)
+
+
+### Features
+
+* add a per-client MCP configuration picker to the agent connect panel ([8672b14](https://github.com/meshploy/meshploy/commit/8672b14d880ae2780f48108858e6da3d65217152))
+* add licence status and activate commands with an MCP tool extension hook ([ea71d6d](https://github.com/meshploy/meshploy/commit/ea71d6d6d3f7484b7cd2813f07fab41f1911f208))
+* add stack destroy to tear down its services while keeping the stack ([3ed37ba](https://github.com/meshploy/meshploy/commit/3ed37ba87392f230052cd9bb45d142df6ce7e197))
+* derive stack status from its services instead of leaving it idle ([028d8ae](https://github.com/meshploy/meshploy/commit/028d8ae426debd3510efa86f6ecdf64d10ab826e))
+* follow the rollout and stream cluster events into the deployment log ([3ea5431](https://github.com/meshploy/meshploy/commit/3ea543138ad138f13ceb55dccc3e16bf3a36fe00))
+* keep every status pill polling so a settled view cannot go stale ([72b46dd](https://github.com/meshploy/meshploy/commit/72b46ddb2717c9d40db761a7ef040fdf89bb2c8d))
+* let stack destroy optionally remove its volumes and routes ([3b1f924](https://github.com/meshploy/meshploy/commit/3b1f924da3ef72602ea63c147d420fa966a1fc1c))
+* mark stack-owned services, volumes and routes with a stack pill ([e3c4c66](https://github.com/meshploy/meshploy/commit/e3c4c661371587a0f92ae7614ced2a8700559c78))
+* show a stack's routes and volumes alongside its services ([6cf3337](https://github.com/meshploy/meshploy/commit/6cf3337b5739324384436d4d14eeebec1cb0c8d5))
+* show environment and volumes in the visual stack editor ([a4a2c3e](https://github.com/meshploy/meshploy/commit/a4a2c3e2bdfe4a9736fe1c99ff00d6d695145505))
+
+
+### Bug Fixes
+
+* address a database by its real workload name so status stop and delete work ([20fdf77](https://github.com/meshploy/meshploy/commit/20fdf77ca6c44d099237485129bde33c30f8904a))
+* bind flannel to the mesh interface so pod traffic fits the wireguard mtu ([bda5edf](https://github.com/meshploy/meshploy/commit/bda5edf37904288413c2a597d2d95909cd73f5f3))
+* cascade service and group deletes so attachments do not block them ([575b877](https://github.com/meshploy/meshploy/commit/575b877ab2b1915eb4c0ecbb6d4316b7439a3801))
+* create template routes once the service has a routable port ([44f87c6](https://github.com/meshploy/meshploy/commit/44f87c66898c8e7ef1397144ceea58f27277d7b7))
+* deploy on apply, re-apply on start, clean up k8s on delete, derive status from the cluster ([49596e0](https://github.com/meshploy/meshploy/commit/49596e0c8fb1a5cb15d724b680d85c8e68987d0c))
+* derive volume status from the claim and rename pending to idle ([8533b79](https://github.com/meshploy/meshploy/commit/8533b797da1fba05739613c259fef8177f5bff6e))
+* give every workload the same resource defaults so none deploys unbounded ([ffbd4f5](https://github.com/meshploy/meshploy/commit/ffbd4f50f6776fb04072ba0247fa55f2000b6b0a))
+* give pods a resolver without the mesh search domains on every node ([33b2ddd](https://github.com/meshploy/meshploy/commit/33b2ddd9faa93cbc89a94a08f494d9ab6890b582))
+* give the Headscale API key a long expiry so mesh access does not silently lapse ([63ba221](https://github.com/meshploy/meshploy/commit/63ba22130e3f5ede581191c3d8fe3680b4f7e53c))
+* let a stack stuck in applying recover instead of holding that status forever ([0177b72](https://github.com/meshploy/meshploy/commit/0177b721be0cbe484ae04c4c578dcb0c5adcb312))
+* let template icons load by exempting only the icon route from auth ([6aabd26](https://github.com/meshploy/meshploy/commit/6aabd26a2cd96405cd68ac0c4d1e426aef4971a8))
+* let the member role dropdown open instead of navigating to the detail page ([c626d9d](https://github.com/meshploy/meshploy/commit/c626d9da283a3640f30a8ac5b9d1a5e9a6f79bc6))
+* link a stack-created database to its stack ([299faf6](https://github.com/meshploy/meshploy/commit/299faf630550012124a0e422c4b602a13bd31989))
+* make mcp structured content a json object so tool results validate ([86c5102](https://github.com/meshploy/meshploy/commit/86c5102c9313ce9cf2a46c4f411b61ba40c96554))
+* make target node take effect and give volumes a node selector ([34e8e49](https://github.com/meshploy/meshploy/commit/34e8e49f3f9ee78955a0002a785dbd9d56758f57))
+* mark a service deploying while its deployment runs ([3b823ae](https://github.com/meshploy/meshploy/commit/3b823ae4e256a527e733d56185a790be0f2bf833))
+* publish a database under its compose service name so intra-stack connections resolve ([40d172b](https://github.com/meshploy/meshploy/commit/40d172b0730ea404f9e8166666e2a1ee4ec46eb4))
+* refactor image upgrade to include runtime parameter and enhance authentication handling ([3b53ac5](https://github.com/meshploy/meshploy/commit/3b53ac5756705a7a0036189c469b4d8526948fd3))
+* relink a stack service whose stack link was lost on the next apply ([538e069](https://github.com/meshploy/meshploy/commit/538e06936271e858c67a2f2866267eee9a2dbde3))
+* return empty apply lists instead of null so the result page renders ([7edd9b6](https://github.com/meshploy/meshploy/commit/7edd9b625ae012700163c26fd04169f1d3259ca0))
+* stop injecting a service's own discovery variables into itself ([0e68826](https://github.com/meshploy/meshploy/commit/0e68826c363a75cff732612b6747b2d7a667a488))
+* stop the secret64 generator spinning forever on a byte overflow ([f778844](https://github.com/meshploy/meshploy/commit/f778844489d2310c4da11abbc4696cfea27bbbf8))
+* stop the visual stack editor discarding spec it does not model ([ec34a8d](https://github.com/meshploy/meshploy/commit/ec34a8de4f1ef399ca8be86a88fb8ba4050c4ed9))
+* surface a broken Headscale connection instead of serving stale mesh state ([937051d](https://github.com/meshploy/meshploy/commit/937051d80b6da2318d0df13e8e3eb0188b641685))
+* treat a missing cluster as a skipped rollout, not a per-service failure ([7ea8382](https://github.com/meshploy/meshploy/commit/7ea8382ede1fc56cd22eab45d9053a1bfd67c4c5))
+
 ## [0.7.0](https://github.com/meshploy/meshploy/compare/v0.6.0...v0.7.0) (2026-07-30)
 
 
