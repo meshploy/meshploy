@@ -1,9 +1,16 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Server, PlayCircle, CheckCircle2, XCircle, Trash2 } from "lucide-react"
+import { Loader2, Server, PlayCircle, CheckCircle2, XCircle, Trash2, Globe, HardDrive } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { stacks as stacksApi, type ApiService, type ApplyStackResult, type DestroyStackResult } from "@/lib/api"
+import {
+  stacks as stacksApi,
+  routes as routesApi,
+  volumes as volumesApi,
+  type ApiService,
+  type ApplyStackResult,
+  type DestroyStackResult,
+} from "@/lib/api"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
@@ -79,6 +86,23 @@ function StackServicesTab() {
       queryClient.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
     },
   })
+
+  // Routes and volumes are project-scoped in the API and carry stack_id, so the
+  // stack's own are filtered from the project's list rather than needing a
+  // dedicated endpoint. A stack owns more than its services, and a page that
+  // shows only services under-reports what Destroy would touch.
+  const { data: allRoutes = [] } = useQuery({
+    queryKey: ["routes", orgId, projectId],
+    queryFn: () => routesApi.list(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  const { data: allVolumes = [] } = useQuery({
+    queryKey: ["volumes", orgId, projectId],
+    queryFn: () => volumesApi.list(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  const stackRoutes = allRoutes.filter((r) => r.stack_id === stackId)
+  const stackVolumes = allVolumes.filter((v) => v.stack_id === stackId)
 
   const applyResult = applyMutation.data as ApplyStackResult | undefined
   const destroyResult = destroyMutation.data as DestroyStackResult | undefined
@@ -295,6 +319,51 @@ function StackServicesTab() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {stackRoutes.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium">Routes</h2>
+            <span className="text-xs text-muted-foreground">{stackRoutes.length}</span>
+          </div>
+          <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+            {stackRoutes.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
+                onClick={() => navigate({ to: "/projects/$id/routes/$routeId", params: { id: projectId, routeId: r.id } })}
+              >
+                <Globe className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                <span className="text-sm font-mono text-foreground flex-1 min-w-0 truncate">{r.hostname}</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{r.zone}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stackVolumes.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium">Volumes</h2>
+            <span className="text-xs text-muted-foreground">{stackVolumes.length}</span>
+          </div>
+          <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+            {stackVolumes.map((v) => (
+              <div
+                key={v.id}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
+                onClick={() => navigate({ to: "/projects/$id/volumes/$volumeId", params: { id: projectId, volumeId: v.id } })}
+              >
+                <HardDrive className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">{v.name}</span>
+                <span className="text-[11px] text-muted-foreground/60 shrink-0">{v.storage_gb} GB</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{v.status}</Badge>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
