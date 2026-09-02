@@ -58,12 +58,12 @@ type UpdateStackInput struct {
 	Variables map[string]string
 
 	// Git source
-	GitMode          meshdb.StackGitMode
-	GitRepo          string
-	GitBranch        string
-	GitPath          string
-	UpdateGitIntegration  bool       // true = apply GitIntegrationID (even if nil, to clear it)
-	GitIntegrationID *uuid.UUID
+	GitMode              meshdb.StackGitMode
+	GitRepo              string
+	GitBranch            string
+	GitPath              string
+	UpdateGitIntegration bool // true = apply GitIntegrationID (even if nil, to clear it)
+	GitIntegrationID     *uuid.UUID
 }
 
 // SyncResult is returned by Sync after fetching and applying the spec from git.
@@ -657,10 +657,10 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
 			} else {
 				input := CreateWorkloadInput{
-					StackID:   &stackID,
-					Name:      svcName,
-					Type:      meshdb.ServiceTypeApplication,
-					Image:     svcDef.Image,
+					StackID: &stackID,
+					Name:    svcName,
+					Type:    meshdb.ServiceTypeApplication,
+					Image:   svcDef.Image,
 					Ports: []PortInput{{
 						Name:      "http",
 						Port:      port,
@@ -712,6 +712,14 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				"healthcheck_timeout_secs":      hcTimeout,
 				"healthcheck_retries":           hcRetries,
 				"healthcheck_start_period_secs": hcStartPeriod,
+			}
+			// Claim a service this stack owns but is not linked to. A database
+			// created before the link was carried through, or any service whose
+			// link was lost, would otherwise stay orphaned forever: it would not
+			// appear in the stack, and destroy would not find it to remove.
+			// Re-applying is then enough to repair it, with no migration needed.
+			if existingSvc.StackID == nil {
+				updates["stack_id"] = stackID
 			}
 			if err := s.db.WithContext(ctx).Model(&existingSvc).Updates(updates).Error; err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: update failed: %v", svcName, err))
