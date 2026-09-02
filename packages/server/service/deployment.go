@@ -169,6 +169,11 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		gitToken = tok
 	}
 
+	// Same as the direct path: the service is deploying until the pipeline says
+	// otherwise, and a build makes that window minutes long, not seconds.
+	s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", svc.ID).
+		Update("status", db.ServiceDeploying)
+
 	// Launch the pipeline in the background.
 	go s.runPipeline(context.Background(), runPipelineArgs{
 		deployment:   deployment,
@@ -204,6 +209,14 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 	if err := s.db.WithContext(ctx).Create(&deployment).Error; err != nil {
 		return nil, fmt.Errorf("create deployment record: %w", err)
 	}
+	// Mark the service as deploying for the duration.
+	//
+	// Nothing set this before, so a service kept whatever status it had while a
+	// deploy ran -- "stopped" for a freshly created one -- and its stack rolled
+	// that up as idle. The UI showed a deployment in progress beside a service
+	// claiming to be stopped, inside a stack claiming to be idle.
+	s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", svc.ID).
+		Update("status", db.ServiceDeploying)
 
 	go func() {
 		bgCtx := context.Background()

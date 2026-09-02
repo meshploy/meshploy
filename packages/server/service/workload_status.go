@@ -5,6 +5,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
+
 	db "github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
 )
@@ -58,9 +60,24 @@ func (s *WorkloadService) reconcileStatuses(ctx context.Context) {
 		return
 	}
 
+	// Services with a deploy in flight are left to the deploy path, which owns
+	// the outcome and sets it. Judging them here would race the rollout: a
+	// service created moments ago has no Deployment in the cluster yet, and
+	// "no Deployment" is read below as failure.
+	var deploying []uuid.UUID
+	s.db.WithContext(ctx).Model(&db.Deployment{}).
+		Where("status IN ?", []db.DeploymentStatus{
+			db.DeploymentPending, db.DeploymentBuilding, db.DeploymentDeploying,
+		}).
+		Distinct().Pluck("service_id", &deploying)
+	inFlight := make(map[uuid.UUID]bool, len(deploying))
+	for _, id := range deploying {
+		inFlight[id] = true
+	}
+
 	for i := range services {
 		svc := &services[i]
-		if svc.Project.Slug == "" {
+		if svc.Project.Slug == "" || inFlight[svc.ID] {
 			continue
 		}
 		state, err := appk8s.GetDeploymentState(ctx, s.k8s, s.k8sName(ctx, svc), svc.Project.Slug)
