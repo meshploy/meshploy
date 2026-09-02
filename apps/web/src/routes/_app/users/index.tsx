@@ -197,7 +197,7 @@ function MemberRow({ member, canEdit, orgId, token }: {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["org-members", orgId] }),
   })
 
-  const inner = (
+  const avatarAndName = (
     <>
       <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 shrink-0">
         <span className="text-xs font-semibold text-primary">{initials || "?"}</span>
@@ -206,48 +206,69 @@ function MemberRow({ member, canEdit, orgId, token }: {
         <p className="text-sm font-medium">{member.user_name}</p>
         <p className="text-xs text-muted-foreground">{member.user_email}</p>
       </div>
-      {canEdit ? (
-        <div onClick={(e) => e.stopPropagation()}>
-          <Select
-            value={member.role}
-            onValueChange={(v) => v && changeRole(v as "admin" | "member")}
-            disabled={isPending}
-          >
-            <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1 shrink-0">
-              {isPending
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <SelectValue>{member.role}</SelectValue>
-              }
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">admin</SelectItem>
-              <SelectItem value="member">member</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <RoleBadge role={member.role as OrgRole} />
-      )}
-      {canManagePermissions
-        ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 ml-1" />
-        : <span className="w-5 shrink-0" />
-      }
     </>
   )
 
+  const roleControl = canEdit ? (
+    <Select
+      value={member.role}
+      onValueChange={(v) => v && changeRole(v as "admin" | "member")}
+      disabled={isPending}
+    >
+      <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1 shrink-0">
+        {isPending
+          ? <Loader2 className="h-3 w-3 animate-spin" />
+          : <SelectValue>{member.role}</SelectValue>
+        }
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="admin">admin</SelectItem>
+        <SelectItem value="member">member</SelectItem>
+      </SelectContent>
+    </Select>
+  ) : (
+    <RoleBadge role={member.role as OrgRole} />
+  )
+
+  // The row links to the member's permissions page, but the role control is a
+  // button and must not sit inside that link.
+  //
+  // Nesting them put a button inside an anchor — invalid HTML, and it made the
+  // dropdown unopenable: stopping the click from reaching the Link also stopped
+  // the Link's own handler, which is what calls preventDefault, so the browser
+  // fell through to the anchor's default and did a full page load to the detail
+  // page. Linking the regions separately removes the conflict rather than
+  // suppressing it, and keeps each control doing one thing.
   if (canManagePermissions) {
     return (
-      <Link
-        to="/users/$userId"
-        params={{ userId: member.user_id }}
-        className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors"
-      >
-        {inner}
-      </Link>
+      <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors">
+        <Link
+          to="/users/$userId"
+          params={{ userId: member.user_id }}
+          className="flex items-center gap-3 flex-1 min-w-0"
+        >
+          {avatarAndName}
+        </Link>
+        {roleControl}
+        <Link
+          to="/users/$userId"
+          params={{ userId: member.user_id }}
+          aria-label={`Permissions for ${member.user_name}`}
+          className="shrink-0 ml-1"
+        >
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
+        </Link>
+      </div>
     )
   }
 
-  return <div className="flex items-center gap-3 px-4 py-3.5">{inner}</div>
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      {avatarAndName}
+      {roleControl}
+      <span className="w-5 shrink-0" />
+    </div>
+  )
 }
 
 function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
