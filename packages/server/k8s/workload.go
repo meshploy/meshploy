@@ -102,10 +102,10 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 		Image:           p.Image,
 		ImagePullPolicy: corev1.PullAlways,
 		Ports:           cPorts,
-		Env:            p.Env,
-		Resources:      resources,
-		LivenessProbe:  p.LivenessProbe,
-		ReadinessProbe: p.ReadinessProbe,
+		Env:             p.Env,
+		Resources:       resources,
+		LivenessProbe:   p.LivenessProbe,
+		ReadinessProbe:  p.ReadinessProbe,
 	}
 	var podVolumes []corev1.Volume
 	for i, va := range p.VolumeMounts {
@@ -196,6 +196,66 @@ func ApplyService(ctx context.Context, client kubernetes.Interface, name, namesp
 	if err != nil {
 		return err
 	}
+	_, err = client.CoreV1().Services(namespace).Update(ctx, desired, metav1.UpdateOptions{})
+	return err
+}
+
+// ApplyAliasService publishes a second ClusterIP Service for an existing
+// workload under a different name, selecting the same pods.
+//
+// A managed database's Deployment carries a random suffix, so its Service is
+// "umami-db-5e9871" while a compose spec addresses it as "umami-db" — the name
+// the author wrote, and the name compose semantics promise will resolve. Without
+// an alias that hostname does not exist in the cluster, and because an unmatched
+// name falls through to the mesh search domain it resolves to the gateway's
+// public address rather than failing, so the app connects to the wrong host and
+// reports itself healthy.
+//
+// The existing ClusterIP and resourceVersion are carried over on update: both
+// are immutable-or-required on a Service, and omitting them makes the update
+// rejected rather than applied.
+func ApplyAliasService(ctx context.Context, client kubernetes.Interface, aliasName, targetName, namespace string, ports []PortSpec) error {
+	svcPorts := make([]corev1.ServicePort, len(ports))
+	for i, p := range ports {
+		svcPorts[i] = corev1.ServicePort{
+			Name:       p.Name,
+			Port:       p.Port,
+			TargetPort: intstr.FromInt32(p.Port),
+			Protocol:   corev1.ProtocolTCP,
+		}
+	}
+	desired := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      aliasName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app":            targetName,
+				"managed-by":     "meshploy",
+				"meshploy-alias": "true",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": targetName},
+			Ports:    svcPorts,
+			Type:     corev1.ServiceTypeClusterIP,
+		},
+	}
+
+	existing, err := client.CoreV1().Services(namespace).Get(ctx, aliasName, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = client.CoreV1().Services(namespace).Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// Never rewrite a Service this did not create: an alias that collided with a
+	// real service would silently take over its name.
+	if existing.Labels["meshploy-alias"] != "true" {
+		return nil
+	}
+	desired.ResourceVersion = existing.ResourceVersion
+	desired.Spec.ClusterIP = existing.Spec.ClusterIP
 	_, err = client.CoreV1().Services(namespace).Update(ctx, desired, metav1.UpdateOptions{})
 	return err
 }

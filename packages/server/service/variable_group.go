@@ -164,6 +164,20 @@ func (s *VariableGroupService) Detach(ctx context.Context, serviceID, groupID uu
 
 var nonAlphanumRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
+// serviceDNSName is the in-cluster address of a service.
+//
+// It is built from the K8s Service name — the slugified service name — not the
+// service name itself. A name carrying a space or a capital ("My DB") is not a
+// legal DNS label, and a database's workload is deployed under a suffixed slug,
+// so addressing either by its raw name produced a hostname that does not exist.
+// That does not fail loudly: an unmatched name falls through to the mesh search
+// domain and resolves to the gateway, so the caller connects to the wrong host
+// and looks healthy. Databases are published under this name as an alias
+// Service, so one canonical form covers applications and databases alike.
+func serviceDNSName(serviceName, namespace string) string {
+	return fmt.Sprintf("%s.%s.svc.cluster.local", slugify(serviceName), namespace)
+}
+
 // serviceEnvPrefix converts a service name to an env var prefix.
 // "auth-api" → "AUTH_API", "my.service" → "MY_SERVICE"
 func serviceEnvPrefix(name string) string {
@@ -175,7 +189,7 @@ func serviceEnvPrefix(name string) string {
 // for a service. Called at service creation and after each successful deploy.
 func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Service, namespace string) error {
 	prefix := serviceEnvPrefix(svc.Name)
-	host := fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, namespace)
+	host := serviceDNSName(svc.Name, namespace)
 
 	// Find or create the group
 	var group db.VariableGroup

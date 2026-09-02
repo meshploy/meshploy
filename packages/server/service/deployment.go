@@ -7,15 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	db "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
 	appk8s "github.com/meshploy/packages/server/k8s"
-	db "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -170,16 +171,16 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 
 	// Launch the pipeline in the background.
 	go s.runPipeline(context.Background(), runPipelineArgs{
-		deployment:    deployment,
-		svc:           svc,
-		bc:            bc,
-		namespace:     namespace,
-		jobName:       jobName,
-		imageName:     imageName,
-		gitToken:      gitToken,
-		registryHost:  registryHost,
-		registryUser:  registryUser,
-		registryPass:  registryPass,
+		deployment:   deployment,
+		svc:          svc,
+		bc:           bc,
+		namespace:    namespace,
+		jobName:      jobName,
+		imageName:    imageName,
+		gitToken:     gitToken,
+		registryHost: registryHost,
+		registryUser: registryUser,
+		registryPass: registryPass,
 	})
 
 	return &deployment, nil
@@ -286,13 +287,13 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 		// rollout to its actual outcome, streaming what the cluster does on the
 		// way, so a service that never starts is reported as failed rather than
 		// as "Deployment applied successfully".
-		log := deployment.Log + "Deployment applied. Waiting for the rollout…\n"
-		s.appendLog(deploymentID, &log, "")
+		depLog := deployment.Log + "Deployment applied. Waiting for the rollout…\n"
+		s.appendLog(deploymentID, &depLog, "")
 		res := appk8s.WatchRollout(bgCtx, s.k8s, slugify(svc.Name), namespace, rolloutTimeout,
-			func(line string) { s.appendLog(deploymentID, &log, line) })
+			func(line string) { s.appendLog(deploymentID, &depLog, line) })
 
 		if !res.Succeeded {
-			s.failDeployment(deploymentID, log+"\nRollout failed: "+res.Reason)
+			s.failDeployment(deploymentID, depLog+"\nRollout failed: "+res.Reason)
 			s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
 				"status": db.ServiceFailed,
 			})
@@ -302,7 +303,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 		now := time.Now()
 		s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
 			"status":      db.DeploymentSuccess,
-			"log":         log,
+			"log":         depLog,
 			"deployed_at": &now,
 		})
 		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
@@ -356,17 +357,17 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 
 	// Create the build Job.
 	err := appk8s.CreateBuildJob(ctx, s.k8s, appk8s.BuildJobParams{
-		JobName:      a.jobName,
-		Namespace:    a.namespace,
-		GitRepo:      a.bc.GitRepo,
-		GitBranch:    a.bc.Branch,
-		GitToken:     a.gitToken,
-		RootDir:      a.bc.RootDir,
-		Builder:      string(a.bc.Builder),
-		ImageDest:    a.imageName,
-		RegistryHost: a.registryHost,
-		RegistryUser: a.registryUser,
-		RegistryPass: a.registryPass,
+		JobName:       a.jobName,
+		Namespace:     a.namespace,
+		GitRepo:       a.bc.GitRepo,
+		GitBranch:     a.bc.Branch,
+		GitToken:      a.gitToken,
+		RootDir:       a.bc.RootDir,
+		Builder:       string(a.bc.Builder),
+		ImageDest:     a.imageName,
+		RegistryHost:  a.registryHost,
+		RegistryUser:  a.registryUser,
+		RegistryPass:  a.registryPass,
 		BuildEnvVars:  string(a.bc.BuildEnvVars),
 		BuilderNode:   a.bc.BuilderNode,
 		CPURequest:    a.bc.BuilderCPURequest,
@@ -464,13 +465,13 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	// Follow the rollout rather than reporting the apply as the outcome -- see
 	// the note on WatchRollout. A built image that starts and immediately exits
 	// is a failed deploy, not a successful one.
-	log := result.Log + "\nDeployment applied. Waiting for the rollout…\n"
-	s.appendLog(a.deployment.ID, &log, "")
+	depLog := result.Log + "\nDeployment applied. Waiting for the rollout…\n"
+	s.appendLog(a.deployment.ID, &depLog, "")
 	res := appk8s.WatchRollout(ctx, s.k8s, slugify(a.svc.Name), a.namespace, rolloutTimeout,
-		func(line string) { s.appendLog(a.deployment.ID, &log, line) })
+		func(line string) { s.appendLog(a.deployment.ID, &depLog, line) })
 
 	if !res.Succeeded {
-		s.failDeployment(a.deployment.ID, log+"\nRollout failed: "+res.Reason)
+		s.failDeployment(a.deployment.ID, depLog+"\nRollout failed: "+res.Reason)
 		s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(map[string]any{
 			"image":  a.imageName,
 			"status": db.ServiceFailed,
@@ -482,7 +483,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	now := time.Now()
 	s.db.Model(&db.Deployment{}).Where("id = ?", a.deployment.ID).Updates(map[string]any{
 		"status":      db.DeploymentSuccess,
-		"log":         log,
+		"log":         depLog,
 		"deployed_at": &now,
 	})
 	s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(map[string]any{
@@ -511,7 +512,6 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	// Prune old images from the registry (best-effort, non-blocking).
 	go s.pruneOldImages(context.Background(), a.svc.ID, a.bc)
 }
-
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1396,6 +1396,17 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 		if err := appk8s.ApplyService(bgCtx, s.k8s, slug, namespace, dbPortSpecs); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
 			return
+		}
+		// Publish the database under its service name too. A compose spec reaches
+		// a database by the name its author wrote -- "umami-db" -- while the
+		// workload is deployed under a suffixed slug, so without this the
+		// connection string in every database-backed template resolves to nothing
+		// in the cluster. Best-effort: the suffixed name still works, and losing
+		// the alias should not fail a database that provisioned correctly.
+		if alias := slugify(svc.Name); alias != slug {
+			if err := appk8s.ApplyAliasService(bgCtx, s.k8s, alias, slug, namespace, dbPortSpecs); err != nil {
+				log.Printf("warning: alias service %s for database %s: %v", alias, slug, err)
+			}
 		}
 
 		now := time.Now()
