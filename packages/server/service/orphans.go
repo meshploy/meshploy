@@ -92,3 +92,37 @@ func (s *OrphanService) List(ctx context.Context, orgID uuid.UUID) ([]OrphanWork
 	}
 	return out, nil
 }
+
+// Delete removes one orphaned workload, after confirming it is still orphaned.
+//
+// The re-check is the point. The list the operator acted on was a snapshot, and
+// between rendering it and clicking Remove a service can have been created that
+// now owns this name — an apply, a rename landing, a deploy finishing. Deleting
+// on the strength of the snapshot would take a live workload out from under it.
+//
+// Data is never removed as a side effect: deleteData has to be asked for.
+func (s *OrphanService) Delete(ctx context.Context, orgID uuid.UUID, namespace, name string, deleteData bool) error {
+	if s.k8s == nil {
+		return fmt.Errorf("kubernetes is not configured")
+	}
+	var project db.Project
+	if err := s.db.WithContext(ctx).
+		Where("organization_id = ? AND slug = ?", orgID, namespace).
+		First(&project).Error; err != nil {
+		return fmt.Errorf("no project in this organization owns namespace %q", namespace)
+	}
+
+	var services []db.Service
+	if err := s.db.WithContext(ctx).
+		Preload("DatabaseConfig").
+		Where("project_id = ?", project.ID).
+		Find(&services).Error; err != nil {
+		return fmt.Errorf("list services: %w", err)
+	}
+	for i := range services {
+		if s.workloads.k8sName(ctx, &services[i]) == name {
+			return fmt.Errorf("%q now belongs to service %q — refresh and check again", name, services[i].Name)
+		}
+	}
+	return appk8s.DeleteManagedWorkload(ctx, s.k8s, name, namespace, deleteData)
+}

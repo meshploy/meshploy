@@ -21,6 +21,13 @@ export interface OrphanWorkload {
 }
 
 export const cluster = {
+  deleteOrphan: (orgId: string, namespace: string, name: string, deleteData: boolean, token: string) =>
+    apiFetch<{ removed: string }>(
+      `/api/v1/orgs/${orgId}/cluster/orphans/${namespace}/${name}?delete_data=${deleteData}`,
+      { method: "DELETE" },
+      token
+    ),
+
   listOrphans: (orgId: string, token: string) =>
     apiFetch<{ orphans: OrphanWorkload[] }>(
       `/api/v1/orgs/${orgId}/cluster/orphans`,

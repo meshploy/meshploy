@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -62,4 +63,56 @@ func ListManagedWorkloads(ctx context.Context, client kubernetes.Interface, name
 		out = append(out, w)
 	}
 	return out, nil
+}
+
+// DeleteManagedWorkload removes a workload and the Services that front it.
+//
+// It refuses anything not carrying meshploy's label. The caller has already
+// decided this workload is unowned, but that decision came from comparing two
+// systems, and the check here is against the object itself: whatever else is
+// true, meshploy does not delete what it did not create.
+//
+// Claims are removed only when deleteData is set, and never as a side effect of
+// removing compute. A deleted Deployment costs a redeploy; a deleted claim costs
+// whatever was in it.
+func DeleteManagedWorkload(ctx context.Context, client kubernetes.Interface, name, namespace string, deleteData bool) error {
+	if client == nil {
+		return fmt.Errorf("kubernetes is not configured")
+	}
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil // already gone — the desired end state
+	}
+	if err != nil {
+		return fmt.Errorf("get deployment %s: %w", name, err)
+	}
+	if dep.Labels["managed-by"] != "meshploy" {
+		return fmt.Errorf("%s is not managed by meshploy — refusing to delete it", name)
+	}
+
+	if err := client.AppsV1().Deployments(namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("delete deployment %s: %w", name, err)
+	}
+	for _, svcName := range []string{name, name + "-nodeport"} {
+		if err := client.CoreV1().Services(namespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("delete service %s: %w", svcName, err)
+		}
+	}
+
+	if !deleteData {
+		return nil
+	}
+	pvcs, err := client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("list claims in %s: %w", namespace, err)
+	}
+	for _, c := range pvcs.Items {
+		if len(c.Name) < len(name) || c.Name[:len(name)] != name {
+			continue
+		}
+		if err := client.CoreV1().PersistentVolumeClaims(namespace).Delete(ctx, c.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("delete claim %s: %w", c.Name, err)
+		}
+	}
+	return nil
 }

@@ -401,6 +401,17 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.ListOrphanWorkloads)
 
+	// Removing one orphan — org-scoped, admin-only. A per-item action a human
+	// takes, not a sweep: the operator has seen what it is and chosen it.
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-orphan-workload",
+		Method:      "DELETE",
+		Path:        "/api/v1/orgs/{orgId}/cluster/orphans/{namespace}/{name}",
+		Summary:     "Remove a cluster workload that no service owns",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.DeleteOrphanWorkload)
+
 	// Mesh health — org-scoped, admin-only. Reports whether the API can still
 	// talk to Headscale, so a dead credential shows up in the UI instead of
 	// silently freezing node liveness.
@@ -611,6 +622,37 @@ func (h *Handler) ListOrphanWorkloads(ctx context.Context, input *ClusterPathInp
 	}
 	out := &OrphanWorkloadsOutput{}
 	out.Body.Orphans = orphans
+	return out, nil
+}
+
+// DeleteOrphanInput identifies one orphan, and whether its data goes with it.
+type DeleteOrphanInput struct {
+	OrgID     string `path:"orgId"`
+	Namespace string `path:"namespace"`
+	Name      string `path:"name"`
+	// DeleteData is off unless asked for: removing compute is recoverable by a
+	// redeploy, removing a claim is not recoverable at all.
+	DeleteData bool `query:"delete_data"`
+}
+
+type DeleteOrphanOutput struct {
+	Body struct {
+		Removed string `json:"removed"`
+	}
+}
+
+// DeleteOrphanWorkload removes a single unowned workload. The service layer
+// re-checks that it is still unowned before touching the cluster.
+func (h *Handler) DeleteOrphanWorkload(ctx context.Context, input *DeleteOrphanInput) (*DeleteOrphanOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Orphans.Delete(ctx, orgID, input.Namespace, input.Name, input.DeleteData); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	out := &DeleteOrphanOutput{}
+	out.Body.Removed = input.Namespace + "/" + input.Name
 	return out, nil
 }
 

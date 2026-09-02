@@ -19,8 +19,12 @@ import {
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
-import type { MeshHealth } from "@/lib/api/cluster"
+import type { MeshHealth, OrphanWorkload } from "@/lib/api/cluster"
 import { formatRelativeTime } from "@/lib/utils"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
@@ -87,6 +91,18 @@ function ClusterPage() {
     refetchInterval: 60_000,
   })
   const orphans = orphanData?.orphans ?? []
+  const qc = useQueryClient()
+  const [removeTarget, setRemoveTarget] = useState<OrphanWorkload | null>(null)
+  const [removeData, setRemoveData] = useState(false)
+
+  const removeOrphan = useMutation({
+    mutationFn: () =>
+      clusterApi.deleteOrphan(orgId!, removeTarget!.namespace, removeTarget!.name, removeData, token),
+    onSuccess: () => {
+      setRemoveTarget(null)
+      qc.invalidateQueries({ queryKey: ["cluster-orphans", orgId] })
+    },
+  })
 
   const { data: meshHealth } = useQuery({
     queryKey: ["mesh-health", orgId],
@@ -125,6 +141,56 @@ function ClusterPage() {
 
       <MeshHealthBanner health={meshHealth} />
 
+      <Dialog open={Boolean(removeTarget)} onOpenChange={(o) => !o && setRemoveTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove this workload?</DialogTitle>
+            <DialogDescription>
+              <span className="font-mono text-foreground">
+                {removeTarget?.namespace}/{removeTarget?.name}
+              </span>{" "}
+              is running in the cluster with no service behind it. Removing it deletes the
+              deployment and its services. It is checked again first — if a service has since
+              claimed this name, nothing is removed.
+            </DialogDescription>
+          </DialogHeader>
+
+          {removeTarget?.has_pvc && (
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-medium text-destructive">Also delete its data</p>
+                <p className="text-[11px] text-muted-foreground/70">
+                  This workload has a volume claim. Left alone the data survives and can be
+                  reattached; deleted, it is gone. Removing the workload does not touch it unless
+                  you say so here.
+                </p>
+              </div>
+              <Switch checked={removeData} onCheckedChange={(v) => setRemoveData(Boolean(v))} />
+            </div>
+          )}
+
+          {removeOrphan.isError && (
+            <p className="text-xs text-destructive">{(removeOrphan.error as Error).message}</p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setRemoveTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => removeOrphan.mutate()}
+              disabled={removeOrphan.isPending}
+            >
+              {removeOrphan.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {orphans.length > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
           <div className="px-4 py-3 border-b border-amber-500/20 flex items-start gap-2.5">
@@ -137,8 +203,8 @@ function ClusterPage() {
               <p className="text-[11px] text-muted-foreground/70 mt-0.5">
                 Running in the cluster but absent from meshploy — left by a delete that could not
                 reach the cluster, a rename from before renames moved the workload, or a change made
-                with kubectl. They still hold memory on their node. Remove them with kubectl once you
-                have confirmed what each one is.
+                with kubectl. They still hold memory on their node. Remove one once you have
+                confirmed what it is.
               </p>
             </div>
           </div>
@@ -156,6 +222,14 @@ function ClusterPage() {
                 <span className="text-[11px] text-muted-foreground/60 shrink-0">
                   {o.ready}/{o.replicas} ready · {o.age_days}d old
                 </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[11px] text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={() => { setRemoveTarget(o); setRemoveData(false) }}
+                >
+                  Remove
+                </Button>
               </div>
             ))}
           </div>
