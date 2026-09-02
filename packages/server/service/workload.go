@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/google/uuid"
@@ -513,6 +514,27 @@ type UpdateWorkloadInput struct {
 }
 
 func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in UpdateWorkloadInput) (*db.Service, error) {
+	// A rename changes the K8s object's name, and K8s names are immutable — the
+	// old Deployment and Service cannot follow, they have to be replaced.
+	//
+	// Nothing did that before: the row was renamed and the cluster was left
+	// alone, so the workload kept running under the old name owned by nothing,
+	// and the next deploy created a second one under the new name. That is how a
+	// deployment ends up running for months with no service behind it.
+	//
+	// Only applications are affected. A database's K8s name is its stored slug,
+	// which is deliberately stable across renames.
+	var before db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&before, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+	renamedFrom := ""
+	if in.Name != nil && before.Type != db.ServiceTypeDatabase {
+		if old, want := slugify(before.Name), slugify(*in.Name); old != want {
+			renamedFrom = old
+		}
+	}
+
 	updates := map[string]any{}
 	if in.Name != nil {
 		updates["name"] = *in.Name
@@ -593,6 +615,24 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	if in.UpdateNode {
 		if err := s.applyNodePin(ctx, serviceID, in.NodeID); err != nil {
 			return nil, err
+		}
+	}
+
+	// Replace the workload under its new name: remove the old objects, then
+	// re-apply from the freshly renamed row. Order matters — the old Deployment
+	// goes first so the two never coexist, which is what produced a duplicate.
+	//
+	// Best-effort by design: the rename itself has already been committed, and
+	// failing the whole call would leave the caller unsure which half applied.
+	// The orphan report surfaces anything left behind.
+	if renamedFrom != "" && s.k8s != nil && before.Project.Slug != "" {
+		if err := appk8s.DeleteWorkload(ctx, s.k8s, renamedFrom, before.Project.Slug); err != nil {
+			log.Printf("warning: rename %s: remove old workload: %v", renamedFrom, err)
+		}
+		if s.deployment != nil {
+			if err := s.deployment.ReapplyService(ctx, serviceID); err != nil {
+				log.Printf("warning: rename %s: re-apply under the new name: %v", renamedFrom, err)
+			}
 		}
 	}
 	return s.getByID(ctx, serviceID)
