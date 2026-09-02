@@ -471,7 +471,16 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server already running: $(k3s --version | head -1)"
   else
     info "Installing k3s server…"
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP}" sh -
+    # --flannel-iface pins the pod network to the mesh interface.
+    #
+    # Without it flannel sizes its MTU from the default-route interface (1500 ->
+    # 1450) while pod traffic actually rides WireGuard, whose MTU is 1280. A
+    # 1450-byte packet then cannot cross the mesh, and because TCP sets DF with
+    # no ICMP fragmentation-needed coming back it is a silent blackhole: small
+    # requests succeed, and anything larger -- a TLS handshake carrying a
+    # certificate chain, an image layer, a package download -- hangs or resets.
+    # Binding flannel to the mesh interface derives the MTU from it instead.
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP} --flannel-iface=tailscale0" sh -
     success "k3s server installed and started"
   fi
 
@@ -1070,7 +1079,8 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
           K3S_TOKEN="$K3S_JOIN_TOKEN" \
           K3S_NODE_NAME="$NODE_HOSTNAME" \
           sh -s - agent \
-            --node-ip="${MESH_IP_ASSIGNED}"; then
+            --node-ip="${MESH_IP_ASSIGNED}" \
+            --flannel-iface=tailscale0; then
         error "k3s agent install failed."
         warn "Last log lines:"
         journalctl -u k3s-agent --no-pager -n 20 2>/dev/null || true
