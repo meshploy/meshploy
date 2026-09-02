@@ -15,6 +15,8 @@ import (
 
 const (
 	githubReleaseURL = "https://api.github.com/repos/meshploy/meshploy/releases/latest"
+	githubMainURL    = "https://api.github.com/repos/meshploy/meshploy/commits/main"
+	githubCompareURL = "https://github.com/meshploy/meshploy/compare"
 	updateCacheTTL   = time.Hour
 
 	// channelEdge is a build cut from main rather than from a release tag.
@@ -22,11 +24,26 @@ const (
 )
 
 type VersionInfo struct {
-	Current         string `json:"current"`
-	Channel         string `json:"channel"`
+	Current string `json:"current"`
+	Channel string `json:"channel"`
+	// Latest is the newest release for a stable build, and the short commit at
+	// the head of main for an edge one — in both cases, the thing this build
+	// would move to.
 	Latest          string `json:"latest"`
 	UpdateAvailable bool   `json:"update_available"`
 	ReleaseURL      string `json:"release_url"`
+}
+
+// buildCommit returns the commit an edge build was cut from, taken from the
+// "+sha" suffix its version carries. Empty when the build has none — a release
+// build, a local one, or an image from before edge builds recorded it.
+func buildCommit(current string) string {
+	for i := 0; i < len(current); i++ {
+		if current[i] == '+' {
+			return current[i+1:]
+		}
+	}
+	return ""
 }
 
 type SystemService struct {
@@ -63,6 +80,14 @@ func (s *SystemService) fetchVersionInfo(ctx context.Context) VersionInfo {
 		Current: current,
 		Channel: version.Channel,
 		Latest:  current,
+	}
+
+	// An edge build tracks main, so main is what it is measured against. Asking
+	// whether a release is newer would be answering a question it did not ask:
+	// the moment a release lands the comparison reads as parity, and at the next
+	// one as "please upgrade" -- to code the build may already contain.
+	if info.Channel == channelEdge {
+		return s.edgeVersionInfo(ctx, info)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleaseURL, nil)
@@ -136,4 +161,46 @@ func isNewer(latest, current string) bool {
 		return lMin > cMin
 	}
 	return lPat > cPat
+}
+
+// edgeVersionInfo compares an edge build against the head of main.
+//
+// Reported as an EDGE update, distinctly from a release: it is unreviewed code
+// that has not been cut into a version, and an operator choosing to take it
+// should know that is what they are taking.
+func (s *SystemService) edgeVersionInfo(ctx context.Context, info VersionInfo) VersionInfo {
+	running := buildCommit(info.Current)
+	if running == "" {
+		// Nothing to compare against — an older edge image that did not record
+		// its commit. Claiming either answer would be a guess.
+		return info
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubMainURL, nil)
+	if err != nil {
+		return info
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("edge version check: %v", err)
+		return info
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return info
+	}
+
+	var commit struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&commit); err != nil || len(commit.SHA) < 7 {
+		return info
+	}
+
+	head := commit.SHA[:7]
+	info.Latest = head
+	info.ReleaseURL = fmt.Sprintf("%s/%s...%s", githubCompareURL, running, head)
+	info.UpdateAvailable = head != running
+	return info
 }

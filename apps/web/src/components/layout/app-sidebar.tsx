@@ -216,7 +216,9 @@ export function AppSidebar() {
                 <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs">
-                Update available — v{ver.latest}
+                {ver.channel === "edge"
+                  ? `Edge update available — ${ver.latest}`
+                  : `Update available — v${ver.latest}`}
               </TooltipContent>
             </Tooltip>
           ) : (
@@ -227,7 +229,10 @@ export function AppSidebar() {
               className="flex items-center gap-2 h-8 w-full px-3 rounded-md text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
             >
               <Download className="h-3.5 w-3.5 shrink-0" />
-              <span>Update available</span>
+              {/* Named distinctly: an edge update is unreleased code from main,
+                  not a version someone cut and reviewed. Taking it is a different
+                  decision, so it should not read the same. */}
+              <span>{ver.channel === "edge" ? "Edge update" : "Update available"}</span>
               <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
             </a>
           )
