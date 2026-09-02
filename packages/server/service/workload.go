@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
 )
@@ -400,7 +400,7 @@ func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Se
 		return nil, err
 	}
 	if s.k8s != nil {
-		if err := appk8s.ScaleDeployment(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, 0); err != nil {
+		if err := appk8s.ScaleDeployment(ctx, s.k8s, s.k8sName(ctx, &svc), svc.Project.Slug, 0); err != nil {
 			return nil, err
 		}
 	}
@@ -414,6 +414,32 @@ func (s *WorkloadService) GetDatabaseConfig(ctx context.Context, serviceID uuid.
 	var dc db.DatabaseConfig
 	err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error
 	return &dc, err
+}
+
+// k8sName returns the Deployment name backing a service.
+//
+// A database's Deployment carries a random suffix — "umami-db" is deployed as
+// "umami-db-5e9871" — so its name cannot be derived from the service name. Any
+// cluster call that assumes it can silently addresses a workload that does not
+// exist: stopping a database reported success while it kept serving, deleting
+// one left its Deployment, Service and PVC orphaned, and the status reconciler
+// read the absence as failure and marked every database failed within thirty
+// seconds of creation.
+//
+// The preloaded config is used when present, and looked up otherwise, so this
+// is correct regardless of how the caller loaded the service.
+func (s *WorkloadService) k8sName(ctx context.Context, svc *db.Service) string {
+	if svc.Type != db.ServiceTypeDatabase {
+		return slugify(svc.Name)
+	}
+	if svc.DatabaseConfig != nil && svc.DatabaseConfig.Slug != "" {
+		return svc.DatabaseConfig.Slug
+	}
+	var dc db.DatabaseConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err == nil && dc.Slug != "" {
+		return dc.Slug
+	}
+	return slugify(svc.Name)
 }
 
 // GetK8sInfo returns the K8s namespace (= project slug) and deployment name
@@ -450,7 +476,7 @@ func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error
 		if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
 			return err
 		}
-		if err := appk8s.DeleteWorkload(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug); err != nil {
+		if err := appk8s.DeleteWorkload(ctx, s.k8s, s.k8sName(ctx, &svc), svc.Project.Slug); err != nil {
 			return fmt.Errorf("remove workload from the cluster: %w", err)
 		}
 	}
@@ -466,7 +492,7 @@ func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error
 type UpdateWorkloadInput struct {
 	Name          *string
 	Image         *string
-	UpdateNode    bool       // when true, NodeID is applied (nil = auto-schedule)
+	UpdateNode    bool // when true, NodeID is applied (nil = auto-schedule)
 	NodeID        *uuid.UUID
 	Replicas      *int
 	CPURequest    *string
@@ -478,8 +504,8 @@ type UpdateWorkloadInput struct {
 
 	// UpdatePullRegistry controls whether PullRegistryIntegrationID is written.
 	// When true, PullRegistryIntegrationID is applied (nil = clear / public image).
-	UpdatePullRegistry          bool
-	PullRegistryIntegrationID   *uuid.UUID
+	UpdatePullRegistry        bool
+	PullRegistryIntegrationID *uuid.UUID
 }
 
 func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in UpdateWorkloadInput) (*db.Service, error) {
@@ -618,7 +644,7 @@ func (s *WorkloadService) applyNodePin(ctx context.Context, serviceID uuid.UUID,
 		}
 	}
 
-	return appk8s.SetDeploymentNode(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, nodeName)
+	return appk8s.SetDeploymentNode(ctx, s.k8s, s.k8sName(ctx, &svc), svc.Project.Slug, nodeName)
 }
 
 func (s *WorkloadService) GetEnvVars(ctx context.Context, serviceID uuid.UUID) (string, error) {
