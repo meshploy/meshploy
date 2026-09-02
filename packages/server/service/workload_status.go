@@ -14,6 +14,12 @@ import (
 // stuck rollout stops claiming success within a minute.
 const statusReconcileInterval = 30 * time.Second
 
+// applyGracePeriod is how long a stack may sit in "applying" before the
+// reconciler takes the status back. Longer than any apply should need --
+// applies create records, they do not wait for rollouts -- and short enough
+// that a stack orphaned by a restart corrects itself within minutes.
+const applyGracePeriod = 10 * time.Minute
+
 // StartStatusReconciler keeps a service's stored status honest.
 //
 // Status used to be written from whether an API call returned without error —
@@ -85,8 +91,12 @@ func (s *WorkloadService) reconcileStackStatuses(ctx context.Context) {
 	}
 	for i := range stacks {
 		st := &stacks[i]
-		// An apply in flight owns the status until it finishes.
-		if st.Status == db.StackApplying {
+		// An apply in flight owns the status, but only for as long as an apply
+		// could plausibly still be running. Skipping "applying" unconditionally
+		// made the one state that cannot correct itself permanent: an apply
+		// interrupted by a restart leaves the row there for good, and the stack
+		// reads as mid-apply forever while its services sit healthy.
+		if st.Status == db.StackApplying && time.Since(st.UpdatedAt) < applyGracePeriod {
 			continue
 		}
 		var svcs []db.Service
