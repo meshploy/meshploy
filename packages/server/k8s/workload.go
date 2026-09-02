@@ -416,6 +416,32 @@ func DeleteDatabasePVC(ctx context.Context, client kubernetes.Interface, name, n
 	return nil
 }
 
+// GetNodePort reads the NodePort a workload's public port is exposed on, or 0
+// when there is no such Service or port.
+//
+// The assignment is made by the cluster and only mirrored into the database
+// afterwards, so the cluster is the authority. When the two disagree — a deploy
+// that assigned the port but failed before recording it, or a service deployed
+// by an older version — this is where the real answer is.
+func GetNodePort(ctx context.Context, client kubernetes.Interface, name, namespace string, port int32) (int32, error) {
+	if client == nil {
+		return 0, nil
+	}
+	svc, err := client.CoreV1().Services(namespace).Get(ctx, name+"-nodeport", metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("get nodeport service for %s: %w", name, err)
+	}
+	for _, p := range svc.Spec.Ports {
+		if p.Port == port {
+			return p.NodePort, nil
+		}
+	}
+	return 0, nil
+}
+
 // ApplyNodePortService creates-or-updates a NodePort Service for public ports only.
 // Returns a map of port name → assigned NodePort so callers can persist them.
 func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name, namespace string, ports []PortSpec) (map[string]int32, error) {

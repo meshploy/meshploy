@@ -14,13 +14,16 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
+	"k8s.io/client-go/kubernetes"
 )
 
 var wildcardSubdomainRe = regexp.MustCompile(`^\*\.[a-z0-9-]+$`)
 
 type RouteService struct {
-	db *gorm.DB
+	db  *gorm.DB
+	k8s kubernetes.Interface
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
@@ -100,15 +103,15 @@ var platformReservedSubdomains = map[string]bool{
 	"preview":   true,
 	"internal":  true,
 	// Standard DNS / internet conventions
-	"www":       true,
-	"mail":      true,
-	"smtp":      true,
-	"mx":        true,
-	"ns":        true,
-	"ns1":       true,
-	"ns2":       true,
+	"www":  true,
+	"mail": true,
+	"smtp": true,
+	"mx":   true,
+	"ns":   true,
+	"ns1":  true,
+	"ns2":  true,
 	// Bare wildcard
-	"*":         true,
+	"*": true,
 }
 
 func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Route, error) {
@@ -386,8 +389,27 @@ func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.
 		if err != nil {
 			return nil, huma.Error422UnprocessableEntity("no routable port found — deploy the service and ensure it has a public HTTP port")
 		}
+		// A missing NodePort in the row does not mean the service is undeployed.
+		// The cluster assigns the port and the row only mirrors it afterwards, so
+		// a deploy that assigned one but failed before recording it — or a service
+		// deployed by an older version — leaves a running workload with a zero
+		// here. Refusing on that basis told people to deploy a service that had
+		// been serving traffic for months.
+		//
+		// So ask the cluster, and write the answer back: the drift is repaired by
+		// the first thing that notices it.
+		if sp.NodePort == 0 && s.k8s != nil {
+			var svc db.Service
+			if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", *in.ServiceID).Error; err == nil && svc.Project.Slug != "" {
+				if np, err := appk8s.GetNodePort(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, int32(sp.Port)); err == nil && np != 0 {
+					sp.NodePort = int(np)
+					s.db.WithContext(ctx).Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
+				}
+			}
+		}
 		if sp.NodePort == 0 {
-			return nil, huma.Error422UnprocessableEntity("service has not been deployed yet — deploy it first to create a route")
+			return nil, huma.Error422UnprocessableEntity(
+				"no NodePort is published for this service — deploy it, then add the route")
 		}
 		// Route through the K8s NodePort on the gateway node. kube-proxy distributes
 		// traffic across all replicas regardless of which nodes they land on.
