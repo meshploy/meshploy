@@ -177,6 +177,11 @@ const (
 	// StackDestroyed means the stack's services were torn down while the stack
 	// and its spec were kept. Applying again recreates them.
 	StackDestroyed StackStatus = "destroyed"
+	// StackRunning means the stack's services are up. Rolled up from them
+	// rather than written by apply: apply finishing only means the records were
+	// reconciled, and a stack that is serving traffic should not read the same
+	// as one that was never applied.
+	StackRunning StackStatus = "running"
 )
 
 type ResourceType string

@@ -9,7 +9,7 @@ export interface ApiStack {
   name: string
   spec: string
   variables: Record<string, string>
-  status: "idle" | "applying" | "failed"
+  status: "idle" | "applying" | "running" | "failed" | "destroyed"
   last_applied_at: string | null
   created_at: string
   updated_at: string

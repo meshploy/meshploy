@@ -14,9 +14,11 @@ export const Route = createFileRoute("/_app/projects/$id/stacks/")({
 })
 
 const STATUS_STYLES: Record<ApiStack["status"], string> = {
-  idle:     "bg-muted text-muted-foreground border-border",
-  applying: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  failed:   "bg-destructive/10 text-destructive border-destructive/20",
+  idle:      "bg-muted text-muted-foreground border-border",
+  applying:  "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  running:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  failed:    "bg-destructive/10 text-destructive border-destructive/20",
+  destroyed: "bg-muted text-muted-foreground border-border",
 }
 
 function StackCard({ stack, projectId }: { stack: ApiStack; projectId: string }) {
