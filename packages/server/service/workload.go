@@ -305,12 +305,16 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 	}
 	service := &db.Service{
 		ProjectID: projectID,
-		NodeID:    in.NodeID,
-		Name:      in.Name,
-		Type:      db.ServiceTypeDatabase,
-		Image:     image,
-		Status:    db.ServiceStopped,
-		Replicas:  1,
+		// Carried through like every other field the caller sets. Dropping it
+		// left a stack-created database owned by nothing: it did not appear in
+		// its stack's service list, and destroy could not find it to remove.
+		StackID:  in.StackID,
+		NodeID:   in.NodeID,
+		Name:     in.Name,
+		Type:     db.ServiceTypeDatabase,
+		Image:    image,
+		Status:   db.ServiceStopped,
+		Replicas: 1,
 	}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(service).Error; err != nil {
