@@ -131,6 +131,46 @@ ask_yn() {
 # port_in_use <port> — returns 0 (true) if the port is bound on any non-loopback address.
 # Ignores 127.x.x.x (e.g. systemd-resolved on 127.0.0.53) since Docker can still
 # bind the same port on 0.0.0.0 without conflict.
+# configure_pod_dns writes the upstream resolver file kubelet hands to pods.
+#
+# Two problems are solved here, and the second is the one that bites hardest.
+#
+# On systemd-resolved hosts /etc/resolv.conf names 127.0.0.53, a loopback stub
+# that is unreachable from inside a pod network namespace.
+#
+# More seriously, the host's resolv.conf carries the mesh SEARCH DOMAINS that
+# tailscale registers (mesh.<domain>, internal.<domain>). Pods inherit them, and
+# with the cluster's ndots:5 every external hostname shorter than five dots is
+# tried against those domains FIRST. They answer with a wildcard pointing at the
+# gateway, so "binaries.prisma.sh" resolves to the gateway's public address, the
+# request lands on the edge proxy, and the caller gets an unrelated page or a
+# certificate error instead of a DNS failure. Any workload that fetches anything
+# at runtime breaks, silently and confusingly.
+#
+# So the file is written with nameservers only: no search list to inherit.
+configure_pod_dns() {
+  # The gateway path runs as root; a worker joins unprivileged and escalates per
+  # command, so writes go through tee rather than a redirect either way.
+  local SUDO=""
+  [[ ${EUID:-$(id -u)} -ne 0 ]] && SUDO="sudo"
+
+  local src=/etc/resolv.conf
+  [[ -f /run/systemd/resolve/resolv.conf ]] && src=/run/systemd/resolve/resolv.conf
+
+  local ns
+  ns="$(grep -E '^nameserver' "$src" 2>/dev/null | grep -v '127\.0\.0\.53' || true)"
+  [[ -z "$ns" ]] && ns=$'nameserver 8.8.8.8\nnameserver 1.1.1.1'
+
+  $SUDO mkdir -p /etc/rancher/k3s
+  printf '%s\noptions ndots:2\n' "$ns" | $SUDO tee /etc/k3s-resolv.conf > /dev/null
+
+  if ! $SUDO grep -q 'resolv-conf' /etc/rancher/k3s/config.yaml 2>/dev/null; then
+    printf 'kubelet-arg:\n  - "resolv-conf=/etc/k3s-resolv.conf"\n' \
+      | $SUDO tee -a /etc/rancher/k3s/config.yaml > /dev/null
+  fi
+  success "Pod DNS upstream written to /etc/k3s-resolv.conf (no inherited search domains)"
+}
+
 port_in_use() {
   local port="$1"
   if command -v ss &>/dev/null; then
@@ -484,16 +524,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server installed and started"
   fi
 
-  # ── Fix CoreDNS upstream on systemd-resolved hosts (Ubuntu 22.04+) ──────────
-  # k3s defaults CoreDNS to "forward . /etc/resolv.conf". On Ubuntu 22.04+
-  # systemd-resolved puts 127.0.0.53 there — a loopback address unreachable
-  # from inside pod network namespaces. Point k3s at the real upstream file.
-  if [[ -f /run/systemd/resolve/resolv.conf ]]; then
-    mkdir -p /etc/rancher/k3s
-    echo 'kubelet-arg: ["--resolv-conf=/run/systemd/resolve/resolv.conf"]' \
-      >> /etc/rancher/k3s/config.yaml
-    success "Configured k3s to use /run/systemd/resolve/resolv.conf for pod DNS"
-  fi
+  configure_pod_dns
 
   # ── Configure containerd to trust the built-in registry (HTTP) ─────────────
   # registry:2 runs on the gateway at MESH_IP:5000 inside the WireGuard mesh.
@@ -1073,6 +1104,11 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
 
     if [[ "${_do_k3s_join:-0}" -eq 1 ]]; then
       header "Joining k3s cluster"
+      # Before the agent starts, so its kubelet picks the file up on first boot.
+      # A worker needs this at least as much as the server: its pods are the ones
+      # that inherit the mesh search domains and resolve the whole internet to
+      # the gateway.
+      configure_pod_dns
       info "Installing k3s agent and joining ${K3S_SERVER_URL}…"
       if ! curl -sfL https://get.k3s.io | \
           sudo K3S_URL="$K3S_SERVER_URL" \
