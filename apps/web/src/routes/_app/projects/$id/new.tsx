@@ -25,7 +25,7 @@ import {
 import { cn } from "@/lib/utils"
 import CodeMirror from "@uiw/react-codemirror"
 import { envLanguage, envTheme } from "@/lib/env-lang"
-import { configFileLanguage } from "@/lib/config-file-lang"
+import { ConfigFileEditor } from "@/components/config-files/config-file-editor"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { StackEditor } from "@/components/stacks/stack-editor"
@@ -2312,19 +2312,29 @@ function ConfigFileForm({ projectId }: { projectId: string }) {
   const qc = useQueryClient()
 
   const [name, setName] = useState("")
-  const [path, setPath] = useState("")
+  // Prefilled with the directory nearly every image keeps its config in, so the
+  // common case is finishing a path rather than typing one. Only the parent --
+  // NOT a meshploy-owned directory: the file has to land where the application
+  // actually reads it, and a wrong default there fails silently, with the app
+  // starting on its baked-in config as though nothing were mounted.
+  const [path, setPath] = useState("/etc/")
+  const [pathTouched, setPathTouched] = useState(false)
   const [content, setContent] = useState("")
 
   const trimmedPath = path.trim()
   // Caught here as well as at the API so the reason is visible while typing --
   // a relative path is the one mistake this form invites, since every example
   // of a config file people have in mind is written relative to a project.
-  const pathError =
+  //
+  // Held back until the field is touched, or the prefilled "/etc/" would greet
+  // every visitor with a directory error it told them to start from.
+  const pathInvalid =
     trimmedPath !== "" && !trimmedPath.startsWith("/")
       ? "Must be an absolute path inside the container, starting with /"
       : trimmedPath.endsWith("/")
-        ? "Must be a file, not a directory"
+        ? "Must be a file, not a directory — add a filename"
         : null
+  const pathError = pathTouched ? pathInvalid : null
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -2353,7 +2363,15 @@ function ConfigFileForm({ projectId }: { projectId: string }) {
         <Field label="Mount path" required>
           <input
             value={path}
-            onChange={(e) => setPath(e.target.value)}
+            onChange={(e) => { setPath(e.target.value); setPathTouched(true) }}
+            // Land the caret after the prefilled "/etc/" rather than before it,
+            // so the first keystroke continues the path instead of preceding it.
+            onFocus={(e) => {
+              if (!pathTouched) {
+                const end = e.currentTarget.value.length
+                e.currentTarget.setSelectionRange(end, end)
+              }
+            }}
             placeholder="/etc/zot/config.json"
             className={cn(inputCls, "font-mono text-xs")}
             spellCheck={false}
@@ -2374,18 +2392,7 @@ function ConfigFileForm({ projectId }: { projectId: string }) {
 
       <Section title="Contents" subtitle="Attach the file to a service from that service's Config tab. Changes take effect on the next deploy.">
         <Field label="File contents">
-          <div className="rounded-md overflow-hidden border border-border/60">
-            <CodeMirror
-              value={content}
-              height="320px"
-              theme="dark"
-              extensions={configFileLanguage(trimmedPath)}
-              onChange={setContent}
-              placeholder={'{\n  "http": { "address": "0.0.0.0", "port": "5000" }\n}'}
-              style={{ fontSize: 13 }}
-              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
-            />
-          </div>
+          <ConfigFileEditor value={content} onChange={setContent} path={trimmedPath} />
         </Field>
       </Section>
 
@@ -2394,7 +2401,7 @@ function ConfigFileForm({ projectId }: { projectId: string }) {
       )}
 
       <Button
-        disabled={!name.trim() || !trimmedPath || Boolean(pathError) || createMut.isPending}
+        disabled={!name.trim() || !trimmedPath || Boolean(pathInvalid) || createMut.isPending}
         onClick={() => createMut.mutate()}
       >
         {createMut.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}

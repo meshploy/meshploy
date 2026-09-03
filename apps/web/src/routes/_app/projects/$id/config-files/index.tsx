@@ -5,7 +5,7 @@ import { FileCog, Loader2, Plus, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { ConfigFileEditor } from "@/components/config-files/config-file-editor"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
@@ -164,11 +164,12 @@ function ConfigFilesPage() {
               onChange={(e) => setPath(e.target.value)}
               className="font-mono text-xs"
             />
-            <Textarea
-              placeholder="File contents"
+            <ConfigFileEditor
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="font-mono text-xs min-h-[220px]"
+              onChange={setContent}
+              path={path}
+              height="260px"
+              placeholder="New file contents"
             />
           </div>
 
