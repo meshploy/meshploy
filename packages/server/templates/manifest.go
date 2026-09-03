@@ -52,7 +52,7 @@ type Expose struct {
 }
 
 func (v Variable) IsPrompt() bool    { return v.Prompt != "" }
-func (v Variable) IsGenerated() bool  { return v.Generate != "" }
+func (v Variable) IsGenerated() bool { return v.Generate != "" }
 func (v Variable) IsSubdomain() bool { return v.Generate == genSubdomain }
 
 // ParseManifest decodes and validates a meta.yaml.
@@ -75,6 +75,31 @@ func ParseManifest(b []byte) (*Manifest, error) {
 		seen[v.Key] = true
 		if v.IsPrompt() == v.IsGenerated() {
 			return nil, fmt.Errorf("manifest: variable %q must be exactly one of prompt or generate", v.Key)
+		}
+	}
+
+	// A derived generator is checked after every key is known, so it can refer
+	// to a variable declared below it. Rejecting a bad reference here means the
+	// catalog refuses to load the template rather than failing mid-deploy, when
+	// half the resources already exist.
+	for _, v := range m.Variables {
+		ref, ok := bcryptRef(v.Generate)
+		if !ok {
+			continue
+		}
+		if !seen[ref] {
+			return nil, fmt.Errorf("manifest: variable %q hashes %q, which is not declared", v.Key, ref)
+		}
+		if ref == v.Key {
+			return nil, fmt.Errorf("manifest: variable %q hashes itself", v.Key)
+		}
+		for _, other := range m.Variables {
+			if other.Key != ref {
+				continue
+			}
+			if _, chained := bcryptRef(other.Generate); chained {
+				return nil, fmt.Errorf("manifest: variable %q hashes %q, which is itself derived", v.Key, ref)
+			}
 		}
 	}
 	return &m, nil

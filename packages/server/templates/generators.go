@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Generator names usable in meta.yaml `generate:`.
@@ -15,7 +17,47 @@ const (
 	genHex32     = "hex32"     // 32-char hex
 	genUUID      = "uuid"      // v4 UUID
 	genSubdomain = "subdomain" // <id>-<rand>.<base domain>; handled in Resolve
+
+	// genBcryptPrefix marks a DERIVED generator, written `bcrypt(OTHER_KEY)`.
+	// It produces a bcrypt hash of another variable's resolved value, so a
+	// template can write a credential's hash into an htpasswd file instead of
+	// the credential. Handled in Resolve -- unlike every other generator it
+	// needs the other variables to exist first.
+	//
+	// Note what this does NOT buy: PrepareSpec substitutes into the compose and
+	// `stacks.spec` stores the result, so the hash is in the database as
+	// plaintext, and so is the password it came from, in `stacks.variables`.
+	// What is gained is that the config file, the Kubernetes Secret and the
+	// container hold only the hash.
+	genBcryptPrefix = "bcrypt("
 )
+
+// bcryptRef returns the variable a `bcrypt(KEY)` generator hashes, and whether
+// the generator was of that form at all.
+func bcryptRef(generate string) (string, bool) {
+	if !strings.HasPrefix(generate, genBcryptPrefix) || !strings.HasSuffix(generate, ")") {
+		return "", false
+	}
+	key := strings.TrimSpace(generate[len(genBcryptPrefix) : len(generate)-1])
+	if key == "" {
+		return "", false
+	}
+	return key, true
+}
+
+// bcryptHash hashes a value with the $2a$ prefix htpasswd consumers expect.
+//
+// Cost 10 is Apache's htpasswd default. Higher costs are better for a login
+// endpoint, but a registry authenticates every layer of every pull, and the
+// hash is checked on each -- cost 12 would turn a docker pull into a CPU-bound
+// operation on the gateway. 10 is the right point for this use.
+func bcryptHash(value string) (string, error) {
+	h, err := bcrypt.GenerateFromPassword([]byte(value), 10)
+	if err != nil {
+		return "", fmt.Errorf("bcrypt: %w", err)
+	}
+	return string(h), nil
+}
 
 const alphanumeric = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
@@ -35,6 +77,10 @@ func generateValue(name string) (string, error) {
 	case genUUID:
 		return uuid.NewString(), nil
 	default:
+		if _, ok := bcryptRef(name); ok {
+			// Derived: Resolve computes it once the referenced value exists.
+			return "", fmt.Errorf("generator %q is derived and must be resolved with the other variables", name)
+		}
 		return "", fmt.Errorf("unknown generator %q", name)
 	}
 }

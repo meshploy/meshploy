@@ -24,7 +24,18 @@ type ResolvedExpose struct {
 // as EncryptedString columns; they are never logged or echoed.
 func Resolve(m *Manifest, promptValues map[string]string, baseDomain string) (vars map[string]string, exposes []ResolvedExpose, err error) {
 	vars = make(map[string]string, len(m.Variables))
+
+	// Derived generators are held back for a second pass: bcrypt(KEY) hashes
+	// another variable, so every plain value has to exist first. Manifest
+	// parsing already rejects a reference to a missing or derived key, so the
+	// second pass cannot fail to find its input.
+	var derived []Variable
+
 	for _, v := range m.Variables {
+		if _, ok := bcryptRef(v.Generate); ok {
+			derived = append(derived, v)
+			continue
+		}
 		switch {
 		case v.IsPrompt():
 			val, ok := promptValues[v.Key]
@@ -56,6 +67,23 @@ func Resolve(m *Manifest, promptValues map[string]string, baseDomain string) (va
 			}
 			vars[v.Key] = val
 		}
+	}
+
+	for _, v := range derived {
+		ref, _ := bcryptRef(v.Generate)
+
+		// bcrypt hashes an empty string quite happily, and the result is a
+		// valid hash that an empty password opens. That is how a derived
+		// generator over an optional prompt would silently produce a service
+		// anyone can log into, so refuse instead.
+		if vars[ref] == "" {
+			return nil, nil, fmt.Errorf("variable %q hashes %q, which resolved to an empty value", v.Key, ref)
+		}
+		hash, herr := bcryptHash(vars[ref])
+		if herr != nil {
+			return nil, nil, fmt.Errorf("variable %q: %w", v.Key, herr)
+		}
+		vars[v.Key] = hash
 	}
 	return vars, exposes, nil
 }
