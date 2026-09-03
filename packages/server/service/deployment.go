@@ -946,10 +946,22 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	}
 
 	// Completed deployment — replay stored log then close.
-	if d.Status != db.DeploymentBuilding && d.Status != db.DeploymentDeploying && d.Status != db.DeploymentPending {
+	if !deploymentInFlight(d.Status) {
 		for _, line := range strings.Split(d.Log, "\n") {
 			sendLine(line)
 		}
+		sendDone()
+		return nil
+	}
+
+	// An image-based deploy builds nothing, so there is no pod to follow and the
+	// stored log is the entire record. Every stack service takes this path.
+	//
+	// Checked before the cluster is: tailing a stored log needs no Kubernetes,
+	// and on an instance without it that log holds the reason the deployment is
+	// going nowhere — the one thing worth streaming.
+	if d.BuildJobName == "" {
+		s.streamStoredLog(ctx, d.ID, 0, sendLine)
 		sendDone()
 		return nil
 	}
@@ -966,6 +978,17 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 		return fmt.Errorf("service not found")
 	}
 	namespace := svc.Project.Slug
+
+	// Everything already written before the build pod exists — "Build triggered
+	// by user …" and any early failure — so the stream is not blank while the
+	// pod is scheduled.
+	replayed := 0
+	if d.Log != "" {
+		for _, line := range strings.Split(strings.TrimSuffix(d.Log, "\n"), "\n") {
+			sendLine(line)
+		}
+		replayed = len(d.Log)
+	}
 
 	// Wait up to 60 s for the build pod to be scheduled.
 	sendLine(fmt.Sprintf("Waiting for build pod (job: %s)…", d.BuildJobName))
@@ -1030,8 +1053,78 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 		}
 	}
 
+	// The build pod's output ending is not the deployment ending: pushing the
+	// image, the rollout and its health checks all still write to the stored
+	// log. Closing here left the last and most interesting phase unstreamed.
+	s.streamStoredLog(ctx, d.ID, replayed, sendLine)
+
 	sendDone()
 	return nil
+}
+
+// deploymentInFlight reports whether a deployment is still doing work, and so
+// whether its log can still grow.
+func deploymentInFlight(status db.DeploymentStatus) bool {
+	return status == db.DeploymentBuilding ||
+		status == db.DeploymentDeploying ||
+		status == db.DeploymentPending
+}
+
+// streamStoredLog tails the deployment's own log from byte offset `from`,
+// emitting each new complete line until the deployment finishes.
+//
+// This is the only log an image-based deploy has. Nothing is built, so there is
+// no build pod to follow -- the rollout writes its progress with appendLog and
+// that is the whole story. Without this the stream sat waiting for a pod that
+// would never exist, and the lines only appeared on a reload, once the finished
+// deployment took the replay path instead.
+//
+// Only whole lines are sent while the deployment is in flight: a poll can land
+// mid-write, and half a line rendered in the terminal then completed by the
+// next tick reads as corruption.
+func (s *DeploymentService) streamStoredLog(ctx context.Context, deploymentID uuid.UUID, from int, sendLine func(string)) {
+	sent := from
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		var snap db.Deployment
+		if err := s.db.WithContext(ctx).
+			Select("status", "log").First(&snap, "id = ?", deploymentID).Error; err != nil {
+			return
+		}
+		done := !deploymentInFlight(snap.Status)
+
+		// A rollback rewrites the log rather than appending to it, so it can get
+		// shorter. Re-sending from the start beats slicing out of bounds.
+		if sent > len(snap.Log) {
+			sent = 0
+		}
+		pending := snap.Log[sent:]
+		if !done {
+			// Hold back anything after the last newline until it is complete.
+			if idx := strings.LastIndex(pending, "\n"); idx >= 0 {
+				pending = pending[:idx+1]
+			} else {
+				pending = ""
+			}
+		}
+		if pending != "" {
+			for _, line := range strings.Split(strings.TrimSuffix(pending, "\n"), "\n") {
+				sendLine(line)
+			}
+			sent += len(pending)
+		}
+
+		if done {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // LogOptions controls how runtime logs are fetched or streamed.
