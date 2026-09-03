@@ -16,12 +16,6 @@ import (
 // stuck rollout stops claiming success within a minute.
 const statusReconcileInterval = 30 * time.Second
 
-// applyGracePeriod is how long a stack may sit in "applying" before the
-// reconciler takes the status back. Longer than any apply should need --
-// applies create records, they do not wait for rollouts -- and short enough
-// that a stack orphaned by a restart corrects itself within minutes.
-const applyGracePeriod = 10 * time.Minute
-
 // StartStatusReconciler keeps a service's stored status honest.
 //
 // Status used to be written from whether an API call returned without error —
@@ -108,14 +102,18 @@ func (s *WorkloadService) reconcileStackStatuses(ctx context.Context) {
 	}
 	for i := range stacks {
 		st := &stacks[i]
-		// An apply in flight owns the status, but only for as long as an apply
-		// could plausibly still be running. Skipping "applying" unconditionally
-		// made the one state that cannot correct itself permanent: an apply
-		// interrupted by a restart leaves the row there for good, and the stack
-		// reads as mid-apply forever while its services sit healthy.
-		if st.Status == db.StackApplying && time.Since(st.UpdatedAt) < applyGracePeriod {
-			continue
-		}
+		// "applying" is NOT skipped, despite being what a running apply writes.
+		//
+		// Skipping it unconditionally made that state permanent when an apply was
+		// interrupted. Skipping it for a grace period was worse in a subtler way:
+		// deriveStackStatus returns "applying" for a stack whose services are
+		// still rolling out, so the reconciler wrote that value and then read it
+		// back as "an apply is in flight" and refused to look again — locking
+		// itself out of correcting its own write for the length of the grace.
+		//
+		// Nothing is skipped now. A reconciler write during an apply is harmless:
+		// Apply writes its final status after its work, so it wins, and the worst
+		// case is a status that is briefly right instead of briefly stale.
 		var svcs []db.Service
 		if err := s.db.WithContext(ctx).
 			Select("status").
