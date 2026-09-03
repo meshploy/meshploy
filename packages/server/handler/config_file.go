@@ -100,8 +100,28 @@ type configFileServiceRef struct {
 	Name string `json:"name"`
 }
 
+// configFileDetailDTO repeats configFileDTO's fields rather than embedding it,
+// and that is load-bearing rather than sloppy.
+//
+// Huma builds the response schema with its own reflection, and getFields skips
+// any field failing IsExported() BEFORE it looks at whether the field is
+// anonymous (huma/v2 schema.go). An embedded *unexported* type is therefore
+// dropped whole -- encoding/json promotes its fields, Huma does not, and the
+// response silently arrives with only the outer fields. That shipped: the
+// detail page rendered a config file with no name, no path and no size while
+// attached_services and updated_at came through fine.
+//
+// Embedding an exported type would also work. Spelling the fields out keeps
+// every DTO in this file unexported and makes the wire shape readable in one
+// place, which is worth more than the seven duplicated lines.
 type configFileDetailDTO struct {
-	configFileDTO
+	ID               string                 `json:"id"`
+	Name             string                 `json:"name"`
+	Path             string                 `json:"path"`
+	StackID          *string                `json:"stack_id"`
+	Size             int                    `json:"size"`
+	Services         []string               `json:"services"`
+	CreatedAt        string                 `json:"created_at"`
 	AttachedServices []configFileServiceRef `json:"attached_services"`
 	UpdatedAt        string                 `json:"updated_at"`
 }
@@ -194,15 +214,13 @@ func (h *Handler) GetConfigFile(ctx context.Context, input *ConfigFileGetInput) 
 
 	out := &ConfigFileGetOutput{}
 	out.Body = configFileDetailDTO{
-		configFileDTO: configFileDTO{
-			ID:        f.ID.String(),
-			Name:      f.Name,
-			Path:      f.Path,
-			StackID:   stackID,
-			Size:      len(string(f.Content)),
-			Services:  names,
-			CreatedAt: f.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		},
+		ID:               f.ID.String(),
+		Name:             f.Name,
+		Path:             f.Path,
+		StackID:          stackID,
+		Size:             len(string(f.Content)),
+		Services:         names,
+		CreatedAt:        f.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		AttachedServices: refs,
 		UpdatedAt:        f.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
