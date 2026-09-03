@@ -218,3 +218,18 @@ type MCPStorageIntegration struct {
 	Region   string `json:"region,omitempty"`
 	Bucket   string `json:"bucket"`
 }
+
+// MCPConfigFile is a config file as an agent sees it.
+//
+// There is no Content field, and that is deliberate rather than an oversight:
+// the API does not return file bodies, so an agent can read where a file mounts
+// and which services use it without the credential inside it entering a
+// transcript. Size stands in for the body when checking a write landed.
+type MCPConfigFile struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Path     string   `json:"path"`
+	Size     int      `json:"size"`
+	StackID  string   `json:"stack_id,omitempty"`
+	Services []string `json:"services"`
+}
