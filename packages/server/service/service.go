@@ -25,6 +25,7 @@ type Services struct {
 	Projects        *ProjectService
 	Nodes           *NodeService
 	Workloads       *WorkloadService
+	ConfigFiles     *ConfigFileService
 	Orphans         *OrphanService
 	Stacks          *StackService
 	Volumes         *VolumeService
@@ -182,6 +183,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
 	routes := &RouteService{db: db, k8s: k8sClient}
+	configFiles := &ConfigFileService{db: db, deployment: deployments}
+	deployments.configFiles = configFiles
 
 	nodes.headscale = headscaleSvc
 	nodes.notif = notif
@@ -197,8 +200,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Orgs:            &OrgService{db: db},
 		Permissions:     &PermissionService{db: db},
 		Projects:        &ProjectService{db: db},
+		ConfigFiles:     configFiles,
 		Orphans:         &OrphanService{db: db, k8s: k8sClient, workloads: workloads},
-		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes, routes: routes, deployment: deployments},
+		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes, routes: routes, configFiles: configFiles, deployment: deployments},
 		Nodes:           nodes,
 		Workloads:       workloads,
 		Volumes:         volumes,

@@ -394,6 +394,50 @@ func (VariableGroupItem) TableName() string { return "variable_group_items" }
 
 // ServiceVariableGroup is the join between a service and a variable group.
 // All items in the group are injected as env vars on the next deploy.
+// ConfigFile is a file projected into a container at a path.
+//
+// Environment variables cover most configuration, but a good deal of software is
+// configured by file and nothing else — Zot's auth block, nginx, Prometheus. A
+// template can declare env and volumes; before this it could not supply a file,
+// so those images could only be deployed in whatever state they ship in.
+//
+// Content is encrypted at rest and never serialised back out, like a variable
+// group's values: these hold htpasswd hashes, TLS keys and credentials far more
+// often than not.
+type ConfigFile struct {
+	Base
+	ProjectID uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
+	// StackID records the stack whose apply created this file, so the stack page
+	// can show it and destroy can find it. SET NULL on stack delete, matching
+	// services, volumes and routes.
+	StackID *uuid.UUID `gorm:"type:uuid;index" json:"stack_id"`
+	Name    string     `gorm:"not null"        json:"name"`
+	// Path is where the file lands inside the container, e.g.
+	// "/etc/zot/config.json". Absolute, and mounted by subPath so it sits beside
+	// whatever the image already ships in that directory rather than replacing it.
+	Path    string          `gorm:"not null" json:"path"`
+	Content EncryptedString `gorm:"type:text" json:"-"`
+
+	Project  Project             `gorm:"foreignKey:ProjectID"                           json:"-"`
+	Services []ServiceConfigFile `gorm:"foreignKey:ConfigFileID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (ConfigFile) TableName() string { return "config_files" }
+
+// ServiceConfigFile attaches a config file to a service. Many-to-many: one file
+// can serve several services (a CA bundle, a shared snippet), and one service
+// can mount several files.
+type ServiceConfigFile struct {
+	Base
+	ServiceID    uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
+	ConfigFileID uuid.UUID `gorm:"type:uuid;not null;index" json:"config_file_id"`
+
+	Service Service    `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE"    json:"-"`
+	File    ConfigFile `gorm:"foreignKey:ConfigFileID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (ServiceConfigFile) TableName() string { return "service_config_files" }
+
 type ServiceVariableGroup struct {
 	Base
 	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`

@@ -20,6 +20,7 @@ import {
   nodes as nodesApi,
   volumes as volumesApi,
   variableGroups as groupsApi,
+  configFiles as configFilesApi,
   toNode,
   type ApiNode,
   type ApiBuildConfig,
@@ -259,6 +260,111 @@ function VariableGroupsSection({ projectId, serviceId }: { projectId: string; se
     </Section>
   )
 }
+
+// ─── Config files section ─────────────────────────────────────────────────────
+
+/**
+ * Files mounted into this service.
+ *
+ * Detaching is allowed while the service runs and re-applies immediately. The
+ * mount is a copy taken at container start, so without the re-apply the file
+ * would linger in the running pod and vanish at some later restart — failing
+ * for a reason nobody would connect to this action.
+ */
+function ConfigFilesSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc = useQueryClient()
+  const [selectedId, setSelectedId] = useState("")
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["config-files", orgId, projectId],
+    queryFn: () => configFilesApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+  const all = data?.files ?? []
+  const { data: svc } = useQuery({
+    queryKey: ["service", orgId, projectId, serviceId],
+    queryFn: () => servicesApi.get(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+  const serviceName = svc?.name ?? ""
+
+  const attached = all.filter((f) => f.services.includes(serviceName))
+  const available = all.filter((f) => !f.services.includes(serviceName))
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["config-files", orgId, projectId] })
+  const attachMut = useMutation({
+    mutationFn: () => configFilesApi.attach(orgId, projectId, selectedId, serviceId, token),
+    onSuccess: () => { setSelectedId(""); invalidate() },
+  })
+  const detachMut = useMutation({
+    mutationFn: (fileId: string) => configFilesApi.detach(orgId, projectId, fileId, serviceId, token),
+    onSuccess: invalidate,
+  })
+
+  return (
+    <Section
+      title="Config files"
+      subtitle="Files mounted at a path in the container. Attaching or detaching re-applies the service."
+    >
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span className="text-xs">Loading…</span>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {attached.length > 0 && (
+            <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+              {attached.map((f) => (
+                <div key={f.id} className="flex items-center gap-3 px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-medium text-foreground">{f.name}</span>
+                    <code className="text-[11px] font-mono text-muted-foreground/60 truncate block">{f.path}</code>
+                  </div>
+                  <button
+                    onClick={() => detachMut.mutate(f.id)}
+                    disabled={detachMut.isPending}
+                    className="text-[11px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                  >
+                    {detachMut.isPending && detachMut.variables === f.id ? "Detaching…" : "Detach"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Select value={selectedId} onValueChange={(v) => setSelectedId(v ?? "")}>
+              <SelectTrigger className="w-full! h-8 text-xs bg-muted/20 border-border/60">
+                <SelectValue placeholder={available.length === 0 ? "No config files available" : "Select a config file…"}>
+                  {available.find((f) => f.id === selectedId)?.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {available.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>{f.name} — {f.path}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              className="gap-1.5 shrink-0"
+              onClick={() => attachMut.mutate()}
+              disabled={!selectedId || attachMut.isPending || available.length === 0}
+            >
+              {attachMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+              Attach
+            </Button>
+          </div>
+          {attachMut.isError && <p className="text-xs text-destructive">{(attachMut.error as Error).message}</p>}
+        </div>
+      )}
+    </Section>
+  )
+}
+
 
 // ─── Volumes section ──────────────────────────────────────────────────────────
 
@@ -1134,6 +1240,7 @@ function ConfigTab() {
     <div className="p-6 max-w-2xl space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
 <VariableGroupsSection projectId={projectId} serviceId={serviceId} />
+            <ConfigFilesSection projectId={projectId} serviceId={serviceId} />
       <PortsSection projectId={projectId} serviceId={serviceId} />
       <VolumesSection projectId={projectId} serviceId={serviceId} />
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />

@@ -23,7 +23,17 @@ type PortSpec struct {
 }
 
 // WorkloadParams describes a service to deploy.
+// ConfigFileMount is one file projected into the container at a path.
+type ConfigFileMount struct {
+	Path    string // absolute path inside the container
+	Content string
+}
+
 type WorkloadParams struct {
+	// ConfigFiles are rendered into one Secret for this workload and mounted
+	// individually by subPath. See applyConfigSecret.
+	ConfigFiles []ConfigFileMount
+
 	Name      string // K8s resource name (slug)
 	Namespace string // project slug
 	Image     string
@@ -129,6 +139,34 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 			},
 		})
 	}
+	// Config files come from one Secret, mounted a file at a time.
+	//
+	// subPath is what makes this usable: mounting a volume AT a directory
+	// replaces its contents, so projecting a config into /etc/zot that way would
+	// hide the rest of the directory and, for most images, stop the process
+	// starting. subPath places the single file beside what the image ships.
+	//
+	// The trade is that a subPath mount does not receive updates — it is a copy
+	// taken at start — so a changed file reaches a running pod only on re-apply.
+	// Every path that edits or detaches a config file re-applies for that reason.
+	if len(p.ConfigFiles) > 0 {
+		const cfgVol = "meshploy-config"
+		podVolumes = append(podVolumes, corev1.Volume{
+			Name: cfgVol,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: configSecretName(p.Name)},
+			},
+		})
+		for i, cf := range p.ConfigFiles {
+			container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+				Name:      cfgVol,
+				MountPath: cf.Path,
+				SubPath:   configSecretKey(i),
+				ReadOnly:  true,
+			})
+		}
+	}
+
 	podSpec := corev1.PodSpec{
 		Containers: []corev1.Container{container},
 		Volumes:    podVolumes,

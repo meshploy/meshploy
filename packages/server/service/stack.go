@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -23,10 +24,11 @@ import (
 )
 
 type StackService struct {
-	db       *gorm.DB
-	workload *WorkloadService
-	volumes  *VolumeService
-	routes   *RouteService
+	db          *gorm.DB
+	workload    *WorkloadService
+	volumes     *VolumeService
+	routes      *RouteService
+	configFiles *ConfigFileService
 	// deployment rolls out services this apply just created. Assigned after
 	// construction in service.New.
 	deployment *DeploymentService
@@ -466,11 +468,20 @@ func (s *StackService) ListServices(ctx context.Context, stackID uuid.UUID) ([]m
 
 type meshployExt struct {
 	Type     string            `json:"type"`
+	Files    []meshployFile    `json:"files"`
 	Source   *meshploySource   `json:"source"`
 	Build    *meshployBuild    `json:"build"`
 	Deploy   *meshployDeploy   `json:"deploy"`
 	Rollback *meshployRollback `json:"rollback"`
 	Database *meshployDatabase `json:"database"`
+}
+
+// meshployFile is a file the template projects into the container. Content has
+// already been ${VAR}-substituted by the time the spec reaches here, so a
+// generated credential reaches the file without being written into the spec.
+type meshployFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type meshployDatabase struct {
@@ -697,6 +708,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			}
 
 			s.attachVolumeMounts(ctx, svc.ID, svcDef.Volumes, volumesByName)
+			s.syncConfigFiles(ctx, stack, svc.ID, svcName, ext, result)
 			result.Created = append(result.Created, svcName)
 			createdIDs = append(createdIDs, svc.ID)
 		} else {
@@ -727,6 +739,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				continue
 			}
 			s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName)
+			s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, ext, result)
 			result.Updated = append(result.Updated, svcName)
 		}
 	}
@@ -1136,4 +1149,49 @@ func jsonObjToStrMap(obj meshdb.JSONObject) map[string]string {
 		}
 	}
 	return m
+}
+
+// syncConfigFiles reconciles the files a stack service declares.
+//
+// Named per stack and service so re-applying updates the same row instead of
+// creating a second file at the same path — an apply is a reconcile, not an
+// append. Ownership is recorded so the stack page can show them and destroy can
+// find them, the same as services, volumes and routes.
+func (s *StackService) syncConfigFiles(
+	ctx context.Context,
+	stack meshdb.Stack,
+	serviceID uuid.UUID,
+	svcName string,
+	ext *meshployExt,
+	result *ApplyResult,
+) {
+	if s.configFiles == nil || ext == nil || len(ext.Files) == 0 {
+		return
+	}
+	for _, f := range ext.Files {
+		name := fmt.Sprintf("%s-%s", svcName, path.Base(f.Path))
+
+		var existing meshdb.ConfigFile
+		err := s.db.WithContext(ctx).
+			Where("project_id = ? AND stack_id = ? AND path = ?", stack.ProjectID, stack.ID, f.Path).
+			First(&existing).Error
+
+		in := CreateConfigFileInput{Name: name, Path: f.Path, Content: f.Content, StackID: &stack.ID}
+		if err == nil {
+			if _, uerr := s.configFiles.Update(ctx, existing.ID, in); uerr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: config %s: %v", svcName, f.Path, uerr))
+			}
+			_ = s.configFiles.Attach(ctx, existing.ID, serviceID) // already-attached is not an error here
+			continue
+		}
+
+		created, cerr := s.configFiles.Create(ctx, stack.ProjectID, in)
+		if cerr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: config %s: %v", svcName, f.Path, cerr))
+			continue
+		}
+		if aerr := s.configFiles.Attach(ctx, created.ID, serviceID); aerr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: attach config %s: %v", svcName, f.Path, aerr))
+		}
+	}
 }

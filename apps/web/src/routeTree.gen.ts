@@ -42,6 +42,7 @@ import { Route as AppProjectsIdStacksIndexRouteImport } from './routes/_app/proj
 import { Route as AppProjectsIdServicesIndexRouteImport } from './routes/_app/projects/$id/services/index'
 import { Route as AppProjectsIdRoutesIndexRouteImport } from './routes/_app/projects/$id/routes/index'
 import { Route as AppProjectsIdJobsIndexRouteImport } from './routes/_app/projects/$id/jobs/index'
+import { Route as AppProjectsIdConfigFilesIndexRouteImport } from './routes/_app/projects/$id/config-files/index'
 import { Route as AppProjectsIdVolumesVolumeIdRouteImport } from './routes/_app/projects/$id/volumes/$volumeId'
 import { Route as AppProjectsIdVariablesGroupIdRouteImport } from './routes/_app/projects/$id/variables/$groupId'
 import { Route as AppProjectsIdRoutesRouteIdRouteImport } from './routes/_app/projects/$id/routes/$routeId'
@@ -236,6 +237,12 @@ const AppProjectsIdJobsIndexRoute = AppProjectsIdJobsIndexRouteImport.update({
   path: '/jobs/',
   getParentRoute: () => AppProjectsIdRouteRoute,
 } as any)
+const AppProjectsIdConfigFilesIndexRoute =
+  AppProjectsIdConfigFilesIndexRouteImport.update({
+    id: '/config-files/',
+    path: '/config-files/',
+    getParentRoute: () => AppProjectsIdRouteRoute,
+  } as any)
 const AppProjectsIdVolumesVolumeIdRoute =
   AppProjectsIdVolumesVolumeIdRouteImport.update({
     id: '/volumes/$volumeId',
@@ -419,6 +426,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
   '/projects/$id/variables/$groupId': typeof AppProjectsIdVariablesGroupIdRoute
   '/projects/$id/volumes/$volumeId': typeof AppProjectsIdVolumesVolumeIdRoute
+  '/projects/$id/config-files/': typeof AppProjectsIdConfigFilesIndexRoute
   '/projects/$id/jobs/': typeof AppProjectsIdJobsIndexRoute
   '/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
   '/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
@@ -472,6 +480,7 @@ export interface FileRoutesByTo {
   '/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
   '/projects/$id/variables/$groupId': typeof AppProjectsIdVariablesGroupIdRoute
   '/projects/$id/volumes/$volumeId': typeof AppProjectsIdVolumesVolumeIdRoute
+  '/projects/$id/config-files': typeof AppProjectsIdConfigFilesIndexRoute
   '/projects/$id/jobs': typeof AppProjectsIdJobsIndexRoute
   '/projects/$id/routes': typeof AppProjectsIdRoutesIndexRoute
   '/projects/$id/services': typeof AppProjectsIdServicesIndexRoute
@@ -533,6 +542,7 @@ export interface FileRoutesById {
   '/_app/projects/$id/routes/$routeId': typeof AppProjectsIdRoutesRouteIdRoute
   '/_app/projects/$id/variables/$groupId': typeof AppProjectsIdVariablesGroupIdRoute
   '/_app/projects/$id/volumes/$volumeId': typeof AppProjectsIdVolumesVolumeIdRoute
+  '/_app/projects/$id/config-files/': typeof AppProjectsIdConfigFilesIndexRoute
   '/_app/projects/$id/jobs/': typeof AppProjectsIdJobsIndexRoute
   '/_app/projects/$id/routes/': typeof AppProjectsIdRoutesIndexRoute
   '/_app/projects/$id/services/': typeof AppProjectsIdServicesIndexRoute
@@ -593,6 +603,7 @@ export interface FileRouteTypes {
     | '/projects/$id/routes/$routeId'
     | '/projects/$id/variables/$groupId'
     | '/projects/$id/volumes/$volumeId'
+    | '/projects/$id/config-files/'
     | '/projects/$id/jobs/'
     | '/projects/$id/routes/'
     | '/projects/$id/services/'
@@ -646,6 +657,7 @@ export interface FileRouteTypes {
     | '/projects/$id/routes/$routeId'
     | '/projects/$id/variables/$groupId'
     | '/projects/$id/volumes/$volumeId'
+    | '/projects/$id/config-files'
     | '/projects/$id/jobs'
     | '/projects/$id/routes'
     | '/projects/$id/services'
@@ -706,6 +718,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$id/routes/$routeId'
     | '/_app/projects/$id/variables/$groupId'
     | '/_app/projects/$id/volumes/$volumeId'
+    | '/_app/projects/$id/config-files/'
     | '/_app/projects/$id/jobs/'
     | '/_app/projects/$id/routes/'
     | '/_app/projects/$id/services/'
@@ -969,6 +982,13 @@ declare module '@tanstack/react-router' {
       path: '/jobs'
       fullPath: '/projects/$id/jobs/'
       preLoaderRoute: typeof AppProjectsIdJobsIndexRouteImport
+      parentRoute: typeof AppProjectsIdRouteRoute
+    }
+    '/_app/projects/$id/config-files/': {
+      id: '/_app/projects/$id/config-files/'
+      path: '/config-files'
+      fullPath: '/projects/$id/config-files/'
+      preLoaderRoute: typeof AppProjectsIdConfigFilesIndexRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
     }
     '/_app/projects/$id/volumes/$volumeId': {
@@ -1263,6 +1283,7 @@ interface AppProjectsIdRouteRouteChildren {
   AppProjectsIdStacksStackIdRouteRoute: typeof AppProjectsIdStacksStackIdRouteRouteWithChildren
   AppProjectsIdVariablesGroupIdRoute: typeof AppProjectsIdVariablesGroupIdRoute
   AppProjectsIdVolumesVolumeIdRoute: typeof AppProjectsIdVolumesVolumeIdRoute
+  AppProjectsIdConfigFilesIndexRoute: typeof AppProjectsIdConfigFilesIndexRoute
   AppProjectsIdJobsIndexRoute: typeof AppProjectsIdJobsIndexRoute
   AppProjectsIdServicesIndexRoute: typeof AppProjectsIdServicesIndexRoute
   AppProjectsIdStacksIndexRoute: typeof AppProjectsIdStacksIndexRoute
@@ -1285,6 +1306,7 @@ const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
     AppProjectsIdStacksStackIdRouteRouteWithChildren,
   AppProjectsIdVariablesGroupIdRoute: AppProjectsIdVariablesGroupIdRoute,
   AppProjectsIdVolumesVolumeIdRoute: AppProjectsIdVolumesVolumeIdRoute,
+  AppProjectsIdConfigFilesIndexRoute: AppProjectsIdConfigFilesIndexRoute,
   AppProjectsIdJobsIndexRoute: AppProjectsIdJobsIndexRoute,
   AppProjectsIdServicesIndexRoute: AppProjectsIdServicesIndexRoute,
   AppProjectsIdStacksIndexRoute: AppProjectsIdStacksIndexRoute,

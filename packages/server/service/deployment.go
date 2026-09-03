@@ -36,6 +36,10 @@ var ErrK8sNotConfigured = errors.New("kubernetes is not configured on this insta
 func (s *DeploymentService) K8sConfigured() bool { return s != nil && s.k8s != nil }
 
 type DeploymentService struct {
+	// configFiles supplies a service's projected files. Assigned after
+	// construction in service.New; the two services reference each other.
+	configFiles *ConfigFileService
+
 	db        *gorm.DB
 	cfg       *config.Config
 	k8s       kubernetes.Interface // nil when K8s is not configured
@@ -261,6 +265,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 		probe := buildProbeFromService(svc)
 
 		wp := appk8s.WorkloadParams{
+			ConfigFiles:         s.configMountsFor(bgCtx, svc.ID, slugify(svc.Name), namespace),
 			Name:                slugify(svc.Name),
 			Namespace:           namespace,
 			Image:               svc.Image,
@@ -438,6 +443,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	probe := buildProbeFromService(&a.svc)
 	volMounts := resolveServiceVolumeMounts(ctx, s.db, a.svc.ID)
 	wp := appk8s.WorkloadParams{
+		ConfigFiles:         s.configMountsFor(ctx, a.svc.ID, slugify(a.svc.Name), a.namespace),
 		Name:                slugify(a.svc.Name),
 		Namespace:           a.namespace,
 		Image:               a.imageName,
@@ -778,6 +784,7 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 		groupEnvs, _ := s.varGroups.CollectEnvVars(context.Background(), svc.ID)
 		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
 		wp := appk8s.WorkloadParams{
+			ConfigFiles:   s.configMountsFor(context.Background(), svc.ID, slugify(svc.Name), namespace),
 			Name:          slugify(svc.Name),
 			Namespace:     namespace,
 			Image:         target.Image,
@@ -1211,6 +1218,31 @@ func (s *DeploymentService) appendLog(deploymentID uuid.UUID, log *string, line 
 		*log += line + "\n"
 	}
 	s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Update("log", *log)
+}
+
+// configMountsFor loads a service's attached config files as workload mounts,
+// and writes them into the workload's Secret.
+//
+// Applied before the Deployment that references the Secret: a pod scheduled
+// against a Secret that does not exist yet stays in ContainerCreating until it
+// appears, which looks like a stuck deploy rather than an ordering mistake.
+func (s *DeploymentService) configMountsFor(ctx context.Context, serviceID uuid.UUID, workload, namespace string) []appk8s.ConfigFileMount {
+	if s.configFiles == nil {
+		return nil
+	}
+	files, err := s.configFiles.ForService(ctx, serviceID)
+	if err != nil {
+		log.Printf("warning: load config files for %s: %v", serviceID, err)
+		return nil
+	}
+	mounts := make([]appk8s.ConfigFileMount, 0, len(files))
+	for _, f := range files {
+		mounts = append(mounts, appk8s.ConfigFileMount{Path: f.Path, Content: string(f.Content)})
+	}
+	if err := appk8s.ApplyConfigSecret(ctx, s.k8s, workload, namespace, mounts); err != nil {
+		log.Printf("warning: apply config secret for %s: %v", workload, err)
+	}
+	return mounts
 }
 
 func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {

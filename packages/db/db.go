@@ -87,6 +87,8 @@ func Migrate(db *gorm.DB) error {
 		&VariableGroup{},
 		&VariableGroupItem{},
 		&ServiceVariableGroup{},
+		&ConfigFile{},
+		&ServiceConfigFile{},
 
 		// Traffic (Domain must migrate before Route; Route before RouteTarget)
 		&Route{},
@@ -291,6 +293,10 @@ func applyConstraints(db *gorm.DB) error {
 		// services: deleting a stack records that the link is gone, it does not
 		// destroy stored data or take a live hostname out of the proxy.
 		{"volumes", "stack_id", "stacks", "SET NULL"},
+		{"config_files", "project_id", "projects", "CASCADE"},
+		{"config_files", "stack_id", "stacks", "SET NULL"},
+		{"service_config_files", "service_id", "services", "CASCADE"},
+		{"service_config_files", "config_file_id", "config_files", "CASCADE"},
 		{"routes", "stack_id", "stacks", "SET NULL"},
 		{"services", "stack_id", "stacks", "SET NULL"},
 		// RouteTarget → Route CASCADE
