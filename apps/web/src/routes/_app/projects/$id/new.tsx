@@ -10,6 +10,7 @@ import {
   CornerDownRight,
   Database,
   Eye,
+  FileCog,
   EyeOff,
   Globe,
   HardDrive,
@@ -24,6 +25,7 @@ import {
 import { cn } from "@/lib/utils"
 import CodeMirror from "@uiw/react-codemirror"
 import { envLanguage, envTheme } from "@/lib/env-lang"
+import { configFileLanguage } from "@/lib/config-file-lang"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { StackEditor } from "@/components/stacks/stack-editor"
@@ -47,6 +49,7 @@ import {
   type TemplateManifest,
   volumes as volumesApi,
   variableGroups as groupsApi,
+  configFiles as configFilesApi,
   gitIntegrations as gitApi,
   toNode,
   type CreateServiceBody,
@@ -78,7 +81,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ResourceType = "service" | "route" | "job" | "database" | "stack" | "volume" | "variable-group"
+type ResourceType = "service" | "route" | "job" | "database" | "stack" | "volume" | "variable-group" | "config-file"
 type AppSource = "git" | "image"
 type Builder = "railpack" | "dockerfile"
 
@@ -159,6 +162,7 @@ const RESOURCE_TYPES: {
   { type: "stack",    icon: Layers,    label: "Stack"    },
   { type: "volume",   icon: HardDrive, label: "Volume"   },
   { type: "variable-group", icon: Layers,    label: "Variable Group", divider: true },
+  { type: "config-file",    icon: FileCog,   label: "Config File"     },
   { type: "job",            icon: Zap,       label: "Job"             },
 ]
 
@@ -323,6 +327,8 @@ function NewResourcePage() {
             <VolumeForm projectId={projectId} />
           ) : resourceType === "variable-group" ? (
             <VariableGroupForm projectId={projectId} />
+          ) : resourceType === "config-file" ? (
+            <ConfigFileForm projectId={projectId} />
           ) : (
             <ComingSoonForm type={resourceType} />
           )}
@@ -2292,6 +2298,107 @@ function VariableGroupForm({ projectId }: { projectId: string }) {
       >
         {createMut.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
         Create group
+      </Button>
+    </div>
+  )
+}
+
+// ─── Config file form ─────────────────────────────────────────────────────────
+
+function ConfigFileForm({ projectId }: { projectId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  const [name, setName] = useState("")
+  const [path, setPath] = useState("")
+  const [content, setContent] = useState("")
+
+  const trimmedPath = path.trim()
+  // Caught here as well as at the API so the reason is visible while typing --
+  // a relative path is the one mistake this form invites, since every example
+  // of a config file people have in mind is written relative to a project.
+  const pathError =
+    trimmedPath !== "" && !trimmedPath.startsWith("/")
+      ? "Must be an absolute path inside the container, starting with /"
+      : trimmedPath.endsWith("/")
+        ? "Must be a file, not a directory"
+        : null
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      configFilesApi.create(orgId, projectId, { name: name.trim(), path: trimmedPath, content }, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["config-files", orgId, projectId] })
+      navigate({ to: "/projects/$id/config-files", params: { id: projectId } })
+    },
+  })
+
+  return (
+    <div className="space-y-8">
+      <Section
+        title="Details"
+        subtitle="A file mounted into a service, for software configured by file rather than by environment variable. Stored encrypted; the contents are never shown again after saving."
+      >
+        <Field label="Name">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. zot config"
+            className={inputCls}
+          />
+        </Field>
+        <Field label="Mount path" required>
+          <input
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            placeholder="/etc/zot/config.json"
+            className={cn(inputCls, "font-mono text-xs")}
+            spellCheck={false}
+          />
+          <p className="text-[11px] text-muted-foreground/70 mt-1.5">
+            {pathError ? (
+              <span className="text-destructive">{pathError}</span>
+            ) : (
+              <>
+                Where the application reads its config — <code className="font-mono">/etc/zot/config.json</code>,{" "}
+                <code className="font-mono">/etc/nginx/nginx.conf</code>. It is mounted as a single file, so
+                everything else the image ships in that directory stays.
+              </>
+            )}
+          </p>
+        </Field>
+      </Section>
+
+      <Section title="Contents" subtitle="Attach the file to a service from that service's Config tab. Changes take effect on the next deploy.">
+        <Field label="File contents">
+          <div className="rounded-md overflow-hidden border border-border/60">
+            <CodeMirror
+              value={content}
+              height="320px"
+              theme="dark"
+              extensions={configFileLanguage(trimmedPath)}
+              onChange={setContent}
+              placeholder={'{\n  "http": { "address": "0.0.0.0", "port": "5000" }\n}'}
+              style={{ fontSize: 13 }}
+              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+            />
+          </div>
+        </Field>
+      </Section>
+
+      {createMut.error && (
+        <p className="text-xs text-destructive">{(createMut.error as Error).message}</p>
+      )}
+
+      <Button
+        disabled={!name.trim() || !trimmedPath || Boolean(pathError) || createMut.isPending}
+        onClick={() => createMut.mutate()}
+      >
+        {createMut.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+        Create config file
       </Button>
     </div>
   )

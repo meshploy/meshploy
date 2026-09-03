@@ -1,4 +1,4 @@
-import { createFileRoute, useParams } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { FileCog, Loader2, Plus, Trash2 } from "lucide-react"
@@ -24,6 +24,7 @@ function ConfigFilesPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const stackNames = useStackNames(orgId, projectId)
 
   const { data, isLoading } = useQuery({
@@ -34,29 +35,25 @@ function ConfigFilesPage() {
   })
   const files = data?.files ?? []
 
+  // Creating happens on the shared new-resource page; only replacing an
+  // existing file's contents is a dialog, because it is one field over a row
+  // the user is already looking at.
   const [editing, setEditing] = useState<ApiConfigFile | null>(null)
-  const [creating, setCreating] = useState(false)
   const [name, setName] = useState("")
   const [path, setPath] = useState("")
   const [content, setContent] = useState("")
   const [deleteTarget, setDeleteTarget] = useState<ApiConfigFile | null>(null)
 
-  const openCreate = () => {
-    setName(""); setPath(""); setContent(""); setEditing(null); setCreating(true)
-  }
   const openEdit = (f: ApiConfigFile) => {
     // Content is never returned, so an edit replaces it rather than amending it.
     // Saying so beats presenting an empty box that looks like data loss.
-    setName(f.name); setPath(f.path); setContent(""); setEditing(f); setCreating(true)
+    setName(f.name); setPath(f.path); setContent(""); setEditing(f)
   }
 
   const save = useMutation({
-    mutationFn: () =>
-      editing
-        ? configFilesApi.update(orgId!, projectId, editing.id, { name, path, content }, token)
-        : configFilesApi.create(orgId!, projectId, { name, path, content }, token),
+    mutationFn: () => configFilesApi.update(orgId!, projectId, editing!.id, { name, path, content }, token),
     onSuccess: () => {
-      setCreating(false)
+      setEditing(null)
       qc.invalidateQueries({ queryKey: ["config-files", orgId, projectId] })
     },
   })
@@ -79,7 +76,11 @@ function ConfigFilesPage() {
             environment variable. Stored encrypted; the contents are never shown again after saving.
           </p>
         </div>
-        <Button size="sm" className="gap-1.5 shrink-0" onClick={openCreate}>
+        <Button
+          size="sm"
+          className="gap-1.5 shrink-0"
+          onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "config-file" } })}
+        >
           <Plus className="h-3.5 w-3.5" />
           New file
         </Button>
@@ -88,9 +89,24 @@ function ConfigFilesPage() {
       {isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : files.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border/60 p-8 text-center">
-          <FileCog className="h-5 w-5 text-muted-foreground/40 mx-auto" />
-          <p className="text-sm text-muted-foreground mt-2">No config files yet</p>
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-muted/50">
+            <FileCog className="h-5 w-5 text-muted-foreground/60" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">No config files yet</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+              Create a file and attach it to a service from that service's Config tab.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "config-file" } })}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            New Config File
+          </Button>
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
@@ -127,18 +143,16 @@ function ConfigFilesPage() {
         </div>
       )}
 
-      <Dialog open={creating} onOpenChange={setCreating}>
+      <Dialog open={Boolean(editing)} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Replace file contents" : "New config file"}</DialogTitle>
+            <DialogTitle>Replace file contents</DialogTitle>
             <DialogDescription>
-              {editing
-                ? `Contents are stored encrypted and never shown again, so this replaces them rather than editing in place.${
-                    editing.services.length > 0
-                      ? ` ${editing.services.length} service${editing.services.length === 1 ? "" : "s"} will be redeployed.`
-                      : ""
-                  }`
-                : "The file is mounted at this path inside the container, beside whatever the image already ships there."}
+              {`Contents are stored encrypted and never shown again, so this replaces them rather than editing in place.${
+                editing && editing.services.length > 0
+                  ? ` ${editing.services.length} service${editing.services.length === 1 ? "" : "s"} will be redeployed.`
+                  : ""
+              }`}
             </DialogDescription>
           </DialogHeader>
 
@@ -161,7 +175,7 @@ function ConfigFilesPage() {
           {save.isError && <p className="text-xs text-destructive">{(save.error as Error).message}</p>}
 
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setCreating(false)}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
             <Button
               size="sm"
               className="gap-1.5"
