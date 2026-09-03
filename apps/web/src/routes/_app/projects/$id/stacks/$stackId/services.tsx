@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Server, PlayCircle, CheckCircle2, XCircle, Trash2, Globe, HardDrive } from "lucide-react"
+import { Loader2, Server, PlayCircle, CheckCircle2, XCircle, Trash2, Globe, HardDrive, FileCog } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   stacks as stacksApi,
   routes as routesApi,
   volumes as volumesApi,
+  configFiles as configFilesApi,
   type ApiService,
   type ApplyStackResult,
   type DestroyStackResult,
@@ -101,6 +102,13 @@ function StackServicesTab() {
   })
   const stackRoutes = allRoutes.filter((r) => r.stack_id === stackId)
   const stackVolumes = allVolumes.filter((v) => v.stack_id === stackId)
+
+  const { data: cfgData } = useQuery({
+    queryKey: ["config-files", orgId, projectId],
+    queryFn: () => configFilesApi.list(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  const stackConfigs = (cfgData?.files ?? []).filter((f) => f.stack_id === stackId)
 
   const applyResult = applyMutation.data as ApplyStackResult | undefined
   const destroyResult = destroyMutation.data as DestroyStackResult | undefined
@@ -336,6 +344,35 @@ function StackServicesTab() {
                 <Globe className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                 <span className="text-sm font-mono text-foreground flex-1 min-w-0 truncate">{r.hostname}</span>
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{r.zone}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stackConfigs.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium">Config files</h2>
+            <span className="text-xs text-muted-foreground">{stackConfigs.length}</span>
+          </div>
+          <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+            {stackConfigs.map((f) => (
+              <div
+                key={f.id}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
+                onClick={() => navigate({ to: "/projects/$id/config-files", params: { id: projectId } })}
+              >
+                <FileCog className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                <span className="text-sm font-medium text-foreground shrink-0">{f.name}</span>
+                <code className="text-[11px] font-mono text-muted-foreground/60 flex-1 min-w-0 truncate">
+                  {f.path}
+                </code>
+                {f.services.length > 0 && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                    {f.services.length === 1 ? f.services[0] : `${f.services.length} services`}
+                  </Badge>
+                )}
               </div>
             ))}
           </div>
