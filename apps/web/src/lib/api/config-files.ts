@@ -17,6 +17,12 @@ export interface ApiConfigFile {
   created_at: string
 }
 
+/** What the detail endpoint adds: service ids to link to, and a modified time. */
+export interface ApiConfigFileDetail extends ApiConfigFile {
+  attached_services: { id: string; name: string }[]
+  updated_at: string
+}
+
 export interface ConfigFileBody {
   name: string
   path: string
@@ -27,6 +33,13 @@ export const configFiles = {
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<{ files: ApiConfigFile[] }>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/config-files`,
+      {},
+      token
+    ),
+
+  get: (orgId: string, projectId: string, fileId: string, token: string) =>
+    apiFetch<ApiConfigFileDetail>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/config-files/${fileId}`,
       {},
       token
     ),

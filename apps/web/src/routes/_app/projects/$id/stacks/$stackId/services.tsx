@@ -361,7 +361,7 @@ function StackServicesTab() {
               <div
                 key={f.id}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
-                onClick={() => navigate({ to: "/projects/$id/config-files", params: { id: projectId } })}
+                onClick={() => navigate({ to: "/projects/$id/config-files/$fileId", params: { id: projectId, fileId: f.id } })}
               >
                 <FileCog className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                 <span className="text-sm font-medium text-foreground shrink-0">{f.name}</span>

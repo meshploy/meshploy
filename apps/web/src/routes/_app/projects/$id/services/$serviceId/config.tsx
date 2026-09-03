@@ -319,10 +319,14 @@ function ConfigFilesSection({ projectId, serviceId }: { projectId: string; servi
             <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
               {attached.map((f) => (
                 <div key={f.id} className="flex items-center gap-3 px-3 py-2">
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs font-medium text-foreground">{f.name}</span>
+                  <Link
+                    to="/projects/$id/config-files/$fileId"
+                    params={{ id: projectId, fileId: f.id }}
+                    className="flex-1 min-w-0 group"
+                  >
+                    <span className="text-xs font-medium text-foreground group-hover:underline">{f.name}</span>
                     <code className="text-[11px] font-mono text-muted-foreground/60 truncate block">{f.path}</code>
-                  </div>
+                  </Link>
                   <button
                     onClick={() => detachMut.mutate(f.id)}
                     disabled={detachMut.isPending}
