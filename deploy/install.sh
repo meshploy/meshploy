@@ -520,7 +520,15 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     # requests succeed, and anything larger -- a TLS handshake carrying a
     # certificate chain, an image layer, a package download -- hangs or resets.
     # Binding flannel to the mesh interface derives the MTU from it instead.
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP} --flannel-iface=tailscale0" sh -
+    # --secrets-encryption asks the API server to encrypt Secrets at rest rather
+    # than storing them base64-encoded in the datastore. Meshploy projects config
+    # files -- htpasswd credentials, TLS material -- through Secrets, and encrypts
+    # its own copy already; this stops the Kubernetes copy being the weaker one.
+    #
+    # On some k3s versions the flag alone leaves "identity" as the write provider
+    # and the switch has to be flipped with `k3s secrets-encrypt enable`, which is
+    # worth checking on an existing cluster: `k3s secrets-encrypt status`.
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP} --flannel-iface=tailscale0 --secrets-encryption" sh -
     success "k3s server installed and started"
   fi
 
