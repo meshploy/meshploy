@@ -580,6 +580,19 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		return nil, fmt.Errorf("invalid spec: %w", err)
 	}
 
+	// Config file contents are read from a SECOND, uninterpolated parse.
+	//
+	// compose-go expands $NAME in the spec, and a file's body is literal data
+	// that happens to be full of dollars: a bcrypt hash is $2a$10$<salt>, and
+	// the salt starts with a letter, so it parses as an undefined variable and
+	// is replaced with nothing. That silently produced a truncated htpasswd and
+	// a registry whose generated password was rejected. nginx's $host, a shell
+	// script, a Prometheus rule -- all the same.
+	//
+	// Interpolation stays on everywhere else, because service environment
+	// blocks are how stack variables reach a container.
+	rawFiles := s.uninterpolatedFiles(ctx, stack.Spec)
+
 	// Resolve top-level named volumes → PVC records.
 	volumesByName := s.resolveNamedVolumes(ctx, stack.ProjectID, stack.ID, stack.Name, project.Volumes, result)
 
@@ -708,7 +721,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			}
 
 			s.attachVolumeMounts(ctx, svc.ID, svcDef.Volumes, volumesByName)
-			s.syncConfigFiles(ctx, stack, svc.ID, svcName, ext, result)
+			s.syncConfigFiles(ctx, stack, svc.ID, svcName, rawFiles[svcName], result)
 			result.Created = append(result.Created, svcName)
 			createdIDs = append(createdIDs, svc.ID)
 		} else {
@@ -739,7 +752,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				continue
 			}
 			s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName)
-			s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, ext, result)
+			s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, rawFiles[svcName], result)
 			result.Updated = append(result.Updated, svcName)
 		}
 	}
@@ -1157,18 +1170,42 @@ func jsonObjToStrMap(obj meshdb.JSONObject) map[string]string {
 // creating a second file at the same path — an apply is a reconcile, not an
 // append. Ownership is recorded so the stack page can show them and destroy can
 // find them, the same as services, volumes and routes.
+// uninterpolatedFiles parses the spec with interpolation disabled and returns
+// each service's declared files, keyed by service name.
+//
+// The parse is deliberately best-effort: the interpolated parse has already
+// succeeded by the time this runs, so a failure here means something specific
+// to skipping interpolation. Returning no files then leaves existing config
+// files untouched, which beats writing corrupted ones.
+func (s *StackService) uninterpolatedFiles(ctx context.Context, spec string) map[string][]meshployFile {
+	out := map[string][]meshployFile{}
+	project, err := loader.LoadWithContext(ctx, composetypes.ConfigDetails{
+		WorkingDir:  "/",
+		ConfigFiles: []composetypes.ConfigFile{{Filename: "docker-compose.yml", Content: []byte(spec)}},
+	}, loader.WithSkipValidation, func(o *loader.Options) { o.SkipInterpolation = true })
+	if err != nil {
+		return out
+	}
+	for name, svcDef := range project.Services {
+		if ext := decodeExt(svcDef.Extensions); ext != nil && len(ext.Files) > 0 {
+			out[name] = ext.Files
+		}
+	}
+	return out
+}
+
 func (s *StackService) syncConfigFiles(
 	ctx context.Context,
 	stack meshdb.Stack,
 	serviceID uuid.UUID,
 	svcName string,
-	ext *meshployExt,
+	files []meshployFile,
 	result *ApplyResult,
 ) {
-	if s.configFiles == nil || ext == nil || len(ext.Files) == 0 {
+	if s.configFiles == nil || len(files) == 0 {
 		return
 	}
-	for _, f := range ext.Files {
+	for _, f := range files {
 		name := fmt.Sprintf("%s-%s", svcName, path.Base(f.Path))
 
 		var existing meshdb.ConfigFile
