@@ -227,6 +227,9 @@ All routes are under `/api/v1`. Authenticated routes require `Authorization: Bea
 | DELETE | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items/{itemId}` | ✓ | Delete item |
 | GET/POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups` | ✓ | List / attach group |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups/{groupId}` | ✓ | Detach group |
+| GET/POST | `/orgs/{orgId}/projects/{projectId}/config-files` | ✓ | List / create config files |
+| PATCH/DELETE | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}` | ✓ | Update / delete a config file |
+| POST/DELETE | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}/attach/{serviceId}` | ✓ | Attach / detach on a service |
 
 ### Routes & domains
 

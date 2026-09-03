@@ -59,6 +59,8 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `variable_groups` | Named collections of key/value variables (project-scoped) |
 | `variable_group_items` | Individual variable items within a group |
 | `service_variable_groups` | Service ↔ VariableGroup join |
+| `config_files` | Files projected into a workload at an absolute path; body is `EncryptedString` and never read back out (project-scoped) |
+| `service_config_files` | Service ↔ ConfigFile join |
 
 ### Traffic
 
