@@ -114,3 +114,62 @@ func TestConfigFileAttachesToManyServices(t *testing.T) {
 		assert.Equal(t, "/etc/ssl/ca.pem", files[0].Path)
 	}
 }
+
+// A caller is authorised against a project, never against a file. So a file id
+// that resolves but belongs to a different project has to come back as
+// not-found -- otherwise knowing an id is enough to read another project's
+// config, which is exactly what the project gate exists to prevent.
+func TestConfigFileGetIsScopedToItsProject(t *testing.T) {
+	ctx := context.Background()
+	svcs, orgID, projID, _ := setupStackTest(t)
+	pid := parseUUID(t, projID)
+
+	other, err := svcs.Projects.Create(ctx, parseUUID(t, orgID), "other-project", "other-project")
+	require.NoError(t, err)
+
+	file, err := svcs.ConfigFiles.Create(ctx, pid, service.CreateConfigFileInput{
+		Name: "zot config", Path: "/etc/zot/config.json", Content: "{}",
+	})
+	require.NoError(t, err)
+
+	got, err := svcs.ConfigFiles.GetForProject(ctx, pid, file.ID)
+	require.NoError(t, err, "the owning project must be able to read its own file")
+	assert.Equal(t, file.ID, got.ID)
+
+	_, err = svcs.ConfigFiles.GetForProject(ctx, other.ID, file.ID)
+	assert.Error(t, err, "another project must not be able to read it by id")
+}
+
+// The detail page names every service mounting a file, so the attachment list
+// has to survive a detach rather than going stale.
+func TestConfigFileAttachedServicesTracksDetach(t *testing.T) {
+	ctx := context.Background()
+	svcs, _, projID, _ := setupStackTest(t)
+	pid := parseUUID(t, projID)
+
+	file, err := svcs.ConfigFiles.Create(ctx, pid, service.CreateConfigFileInput{
+		Name: "shared", Path: "/etc/shared.conf", Content: "x",
+	})
+	require.NoError(t, err)
+
+	a, err := svcs.Workloads.Create(ctx, pid, service.CreateWorkloadInput{Name: "svc-a", Image: "nginx:alpine"})
+	require.NoError(t, err)
+	b, err := svcs.Workloads.Create(ctx, pid, service.CreateWorkloadInput{Name: "svc-b", Image: "nginx:alpine"})
+	require.NoError(t, err)
+	require.NoError(t, svcs.ConfigFiles.Attach(ctx, file.ID, a.ID))
+	require.NoError(t, svcs.ConfigFiles.Attach(ctx, file.ID, b.ID))
+
+	attached, err := svcs.ConfigFiles.AttachedServices(ctx, file.ID)
+	require.NoError(t, err)
+	names := []string{}
+	for i := range attached {
+		names = append(names, attached[i].Name)
+	}
+	assert.ElementsMatch(t, []string{"svc-a", "svc-b"}, names)
+
+	require.NoError(t, svcs.ConfigFiles.Detach(ctx, file.ID, a.ID))
+	attached, err = svcs.ConfigFiles.AttachedServices(ctx, file.ID)
+	require.NoError(t, err)
+	require.Len(t, attached, 1)
+	assert.Equal(t, "svc-b", attached[0].Name)
+}

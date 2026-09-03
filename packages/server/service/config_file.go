@@ -59,6 +59,22 @@ func (s *ConfigFileService) Get(ctx context.Context, fileID uuid.UUID) (*db.Conf
 	return &f, err
 }
 
+// GetForProject is Get scoped to a project.
+//
+// Callers are authorised against a project, never against a file, so a file id
+// from another project must come back as not-found rather than be served just
+// because the id resolves. Doing the check here rather than in the handler
+// keeps the rule with the data, and means every future caller inherits it.
+func (s *ConfigFileService) GetForProject(ctx context.Context, projectID, fileID uuid.UUID) (*db.ConfigFile, error) {
+	var f db.ConfigFile
+	err := s.db.WithContext(ctx).
+		First(&f, "id = ? AND project_id = ?", fileID, projectID).Error
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
 func (s *ConfigFileService) Create(ctx context.Context, projectID uuid.UUID, in CreateConfigFileInput) (*db.ConfigFile, error) {
 	if err := in.validate(); err != nil {
 		return nil, err

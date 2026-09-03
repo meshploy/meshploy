@@ -24,6 +24,15 @@ func (h *Handler) registerConfigFileRoutes(api huma.API) {
 	}, h.ListConfigFiles)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-config-file",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/config-files/{fileId}",
+		Summary:     "Get a config file and the services mounting it",
+		Tags:        []string{"ConfigFiles"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetConfigFile)
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "create-config-file",
 		Method:        "POST",
 		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/config-files",
@@ -83,6 +92,20 @@ type configFileDTO struct {
 	CreatedAt string   `json:"created_at"`
 }
 
+// configFileServiceRef carries the id as well as the name, so the detail page
+// can link to each service rather than only naming it. The list keeps plain
+// names: it renders a count, and does not need the ids for every row.
+type configFileServiceRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type configFileDetailDTO struct {
+	configFileDTO
+	AttachedServices []configFileServiceRef `json:"attached_services"`
+	UpdatedAt        string                 `json:"updated_at"`
+}
+
 type ConfigFileListInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
@@ -127,6 +150,61 @@ func (h *Handler) ListConfigFiles(ctx context.Context, input *ConfigFileListInpu
 			Services:  names,
 			CreatedAt: f.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		})
+	}
+	return out, nil
+}
+
+type ConfigFileGetInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	FileID    string `path:"fileId"`
+}
+
+type ConfigFileGetOutput struct {
+	Body configFileDetailDTO
+}
+
+func (h *Handler) GetConfigFile(ctx context.Context, input *ConfigFileGetInput) (*ConfigFileGetOutput, error) {
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	if err != nil {
+		return nil, err
+	}
+	fileID, err := parseUUID(input.FileID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid config file id")
+	}
+	f, err := h.svc.ConfigFiles.GetForProject(ctx, projectID, fileID)
+	if err != nil {
+		return nil, huma.Error404NotFound("config file not found")
+	}
+
+	names := []string{}
+	refs := []configFileServiceRef{}
+	if attached, aerr := h.svc.ConfigFiles.AttachedServices(ctx, f.ID); aerr == nil {
+		for i := range attached {
+			names = append(names, attached[i].Name)
+			refs = append(refs, configFileServiceRef{ID: attached[i].ID.String(), Name: attached[i].Name})
+		}
+	}
+	var stackID *string
+	if f.StackID != nil {
+		sid := f.StackID.String()
+		stackID = &sid
+	}
+
+	out := &ConfigFileGetOutput{}
+	out.Body = configFileDetailDTO{
+		configFileDTO: configFileDTO{
+			ID:        f.ID.String(),
+			Name:      f.Name,
+			Path:      f.Path,
+			StackID:   stackID,
+			Size:      len(string(f.Content)),
+			Services:  names,
+			CreatedAt: f.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		},
+		AttachedServices: refs,
+		UpdatedAt:        f.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	return out, nil
 }
