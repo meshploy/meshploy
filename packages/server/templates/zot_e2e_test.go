@@ -91,11 +91,26 @@ func TestZotTemplateResolvesWithWorkingHtpasswd(t *testing.T) {
 				} `json:"htpasswd"`
 			} `json:"auth"`
 		} `json:"http"`
+		// extensions is a TOP-LEVEL key in zot's config, not part of http.
+		Extensions struct {
+			Search struct {
+				Enable bool `json:"enable"`
+			} `json:"search"`
+			UI struct {
+				Enable bool `json:"enable"`
+			} `json:"ui"`
+		} `json:"extensions"`
 	}
 	if err := json.Unmarshal([]byte(byPath["/etc/zot/config.json"]), &cfg); err != nil {
 		t.Fatalf("config.json is not valid json: %v", err)
 	}
 	if cfg.HTTP.Auth.Htpasswd.Path != "/etc/zot/htpasswd" {
 		t.Fatalf("config does not reference the htpasswd file: %q", cfg.HTTP.Auth.Htpasswd.Path)
+	}
+
+	// Without these zot answers 404 at / and the registry looks broken in a
+	// browser even though it is working. ui needs search for its GraphQL.
+	if !cfg.Extensions.UI.Enable || !cfg.Extensions.Search.Enable {
+		t.Errorf("the web UI needs both search and ui enabled, got %+v", cfg.Extensions)
 	}
 }
