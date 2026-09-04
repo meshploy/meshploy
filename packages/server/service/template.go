@@ -87,7 +87,7 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 	}
 
 	stack, err := s.stacks.Create(ctx, projectID, CreateStackInput{
-		Name:            tpl.Manifest.ID,
+		Name:            s.uniqueStackName(ctx, projectID, tpl.Manifest.ID),
 		Spec:            resolvedSpec,
 		Variables:       vars,
 		TemplateID:      tpl.Manifest.ID,
@@ -118,6 +118,46 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 	}
 
 	return stack, nil
+}
+
+// uniqueStackName returns a stack name free within the project, numbering from
+// the second instance: "zot", then "zot-2", "zot-3".
+//
+// Stack names are not unique in the schema, so a second deploy of the same
+// template produced two stacks called "zot" -- and because a stack's volumes are
+// named "<stack>-<volume>", the second silently adopted the first's PVC and both
+// wrote to one disk. Numbering is right here rather than a random suffix: this
+// is a display name a person reads in a list, the k8s names that must never
+// collide are the service slugs, and the read-then-write race only costs a
+// duplicate name, not a shared volume.
+func (s *TemplateService) uniqueStackName(ctx context.Context, projectID uuid.UUID, base string) string {
+	return nextFreeName(base, func(candidate string) bool {
+		var count int64
+		if err := s.db.WithContext(ctx).Model(&meshdb.Stack{}).
+			Where("project_id = ? AND name = ?", projectID, candidate).
+			Count(&count).Error; err != nil {
+			// Cannot tell. Treat it as free: a duplicate display name is
+			// recoverable, refusing to deploy is not.
+			return false
+		}
+		return count > 0
+	})
+}
+
+// nextFreeName numbers from the second instance: "zot", then "zot-2", "zot-3".
+func nextFreeName(base string, taken func(string) bool) string {
+	for n := 1; n <= 100; n++ {
+		candidate := base
+		if n > 1 {
+			candidate = fmt.Sprintf("%s-%d", base, n)
+		}
+		if !taken(candidate) {
+			return candidate
+		}
+	}
+	// A hundred instances of one template in one project is not a case worth
+	// numbering past; fall back to something certainly free.
+	return fmt.Sprintf("%s-%d", base, time.Now().UnixMilli())
 }
 
 // orgBaseDomain returns the org's first verified domain (id + base domain) for
