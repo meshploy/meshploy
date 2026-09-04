@@ -182,6 +182,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		NodeID:                     in.NodeID,
 		StackID:                    in.StackID,
 		Name:                       in.Name,
+		Slug:                       s.allocateSlug(ctx, projectID, in.Name),
 		Type:                       db.ServiceTypeApplication,
 		Image:                      in.Image,
 		PullRegistryIntegrationID:  in.PullRegistryIntegrationID,
@@ -266,6 +267,66 @@ func dbSlug(name string) string {
 	base := strings.ToLower(name)
 	base = strings.NewReplacer(" ", "-", "_", "-").Replace(base)
 	return base + "-" + hex.EncodeToString(b)
+}
+
+// allocateSlug returns the Kubernetes object name for a new application
+// service: the plain slug when it is free in the project, and the slug plus a
+// random suffix when it is not.
+//
+// The namespace is the project, so two services sharing a name resolve to one
+// Deployment -- deploying the same template twice would have had the second
+// silently overwrite the first, and adopt its volume. Suffixing only on
+// collision keeps the ordinary single-instance case addressable as plain "zot"
+// rather than making every workload carry a suffix nobody needs.
+//
+// The check is a read-then-write and so races with a concurrent create of the
+// same name. Losing that race costs a suffix, not correctness: both rows get
+// distinct slugs on the retry, and the caller sees no error.
+func (s *WorkloadService) allocateSlug(ctx context.Context, projectID uuid.UUID, name string) string {
+	base := slugify(name)
+	if base == "" {
+		base = "service"
+	}
+	for attempt := 0; attempt < 5; attempt++ {
+		candidate := base
+		if attempt > 0 {
+			b := make([]byte, 3)
+			_, _ = rand.Read(b)
+			candidate = base + "-" + hex.EncodeToString(b)
+		}
+		if !s.slugTaken(ctx, projectID, candidate) {
+			return candidate
+		}
+	}
+	// Five collisions on a 24-bit suffix is not chance; fall through with one
+	// more rather than looping forever.
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	return base + "-" + hex.EncodeToString(b)
+}
+
+// slugTaken reports whether a project already uses a Kubernetes name, checking
+// both the stored slug and the legacy fallback so a pre-slug service still
+// blocks the name it actually occupies in the cluster.
+func (s *WorkloadService) slugTaken(ctx context.Context, projectID uuid.UUID, candidate string) bool {
+	var rows []db.Service
+	if err := s.db.WithContext(ctx).
+		Select("name", "slug").
+		Where("project_id = ?", projectID).Find(&rows).Error; err != nil {
+		// Unknown is not free: a suffix costs nothing, a collision costs a
+		// running workload.
+		return true
+	}
+	for i := range rows {
+		existing := rows[i].Slug
+		if existing == "" {
+			existing = slugify(rows[i].Name)
+		}
+		if existing == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUID, in CreateWorkloadInput) (*db.Service, error) {
@@ -435,6 +496,12 @@ func (s *WorkloadService) GetDatabaseConfig(ctx context.Context, serviceID uuid.
 // is correct regardless of how the caller loaded the service.
 func (s *WorkloadService) k8sName(ctx context.Context, svc *db.Service) string {
 	if svc.Type != db.ServiceTypeDatabase {
+		// Stored at creation. Empty on rows that predate the column, which fall
+		// back to the name they were already deployed under -- so nothing that
+		// is running gets renamed and no backfill is needed.
+		if svc.Slug != "" {
+			return svc.Slug
+		}
 		return slugify(svc.Name)
 	}
 	if svc.DatabaseConfig != nil && svc.DatabaseConfig.Slug != "" {
@@ -462,7 +529,7 @@ func (s *WorkloadService) GetK8sInfo(ctx context.Context, serviceID uuid.UUID) (
 		}
 		k8sName = dc.Slug
 	} else {
-		k8sName = slugify(svc.Name)
+		k8sName = appK8sName(&svc)
 	}
 	return
 }
@@ -528,8 +595,16 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	if err := s.db.WithContext(ctx).Preload("Project").First(&before, "id = ?", serviceID).Error; err != nil {
 		return nil, err
 	}
+	// A rename only moves the cluster workload for services with no stored slug
+	// -- rows from before the slug existed, whose Kubernetes name is still
+	// derived from their display name.
+	//
+	// Once a slug is stored the two are independent: renaming changes what the
+	// UI shows and nothing in the cluster, so there is no old Deployment to
+	// clean up. That removes the delete-and-recreate a rename used to trigger,
+	// and with it the orphan left behind whenever it failed partway.
 	renamedFrom := ""
-	if in.Name != nil && before.Type != db.ServiceTypeDatabase {
+	if in.Name != nil && before.Type != db.ServiceTypeDatabase && before.Slug == "" {
 		if old, want := slugify(before.Name), slugify(*in.Name); old != want {
 			renamedFrom = old
 		}

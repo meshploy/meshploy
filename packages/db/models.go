@@ -493,6 +493,22 @@ type Service struct {
 	Name      string      `gorm:"not null"                                     json:"name"`
 	Type      ServiceType `gorm:"type:varchar(15);not null;default:'application'" json:"type"`
 
+	// Slug is the Kubernetes object name, fixed when the service is created.
+	//
+	// Kubernetes names are derived from this rather than recomputed from Name,
+	// so renaming a service no longer renames its Deployment -- which used to
+	// mean delete-and-recreate, and left the old objects orphaned when anything
+	// went wrong midway.
+	//
+	// It also carries a random suffix when the plain name is already taken in
+	// the project, which is what lets the same template be deployed twice: the
+	// namespace is the project, so two stacks each with a service called "zot"
+	// would otherwise resolve to one Deployment.
+	//
+	// Empty on rows created before this existed. Those fall back to the name,
+	// so no existing workload is renamed and no migration is required.
+	Slug string `gorm:"index" json:"slug,omitempty"`
+
 	// Runtime image.
 	// - application/image builder: set at creation.
 	// - application/other builders: populated after first successful build.

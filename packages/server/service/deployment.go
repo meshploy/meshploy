@@ -133,12 +133,12 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 	imageName := fmt.Sprintf("%s/%s-%s:%s",
 		strings.TrimSuffix(registryHost, "/"),
 		svc.Project.Slug,
-		slugify(svc.Name),
+		appK8sName(&svc),
 		tag,
 	)
 
 	// Job name: build-{service-slug}-{tag}
-	jobName := fmt.Sprintf("build-%s-%s", slugify(svc.Name), tag)
+	jobName := fmt.Sprintf("build-%s-%s", appK8sName(&svc), tag)
 	namespace := svc.Project.Slug
 
 	deployment := db.Deployment{
@@ -265,8 +265,8 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 		probe := buildProbeFromService(svc)
 
 		wp := appk8s.WorkloadParams{
-			ConfigFiles:         s.configMountsFor(bgCtx, svc.ID, slugify(svc.Name), namespace),
-			Name:                slugify(svc.Name),
+			ConfigFiles:         s.configMountsFor(bgCtx, svc.ID, appK8sName(svc), namespace),
+			Name:                appK8sName(svc),
 			Namespace:           namespace,
 			Image:               svc.Image,
 			Ports:               portSpecs,
@@ -286,11 +286,11 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			s.failDeployment(deploymentID, "failed to apply K8s deployment: "+err.Error())
 			return
 		}
-		if err := appk8s.ApplyService(bgCtx, s.k8s, slugify(svc.Name), namespace, portSpecs); err != nil {
+		if err := appk8s.ApplyService(bgCtx, s.k8s, appK8sName(svc), namespace, portSpecs); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
 			return
 		}
-		assignedNPs, err := appk8s.ApplyNodePortService(bgCtx, s.k8s, slugify(svc.Name), namespace, portSpecs)
+		assignedNPs, err := appk8s.ApplyNodePortService(bgCtx, s.k8s, appK8sName(svc), namespace, portSpecs)
 		if err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s NodePort service: "+err.Error())
 			return
@@ -307,7 +307,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 		// as "Deployment applied successfully".
 		depLog := deployment.Log + "Deployment applied. Waiting for the rollout…\n"
 		s.appendLog(deploymentID, &depLog, "")
-		res := appk8s.WatchRollout(bgCtx, s.k8s, slugify(svc.Name), namespace, rolloutTimeout,
+		res := appk8s.WatchRollout(bgCtx, s.k8s, appK8sName(svc), namespace, rolloutTimeout,
 			func(line string) { s.appendLog(deploymentID, &depLog, line) })
 
 		if !res.Succeeded {
@@ -432,7 +432,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	// Ensure imagePullSecret when the built image is in a private registry.
 	pullSecretName := ""
 	if a.registryHost != "" && a.registryUser != "" {
-		pullSecretName = "meshploy-reg-" + slugify(a.svc.Name)
+		pullSecretName = "meshploy-reg-" + appK8sName(&a.svc)
 		if err := appk8s.EnsureRegistryPullSecret(ctx, s.k8s, a.namespace, pullSecretName, a.registryHost, a.registryUser, a.registryPass); err != nil {
 			s.failDeployment(a.deployment.ID, "failed to create pull secret: "+err.Error())
 			return
@@ -443,8 +443,8 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	probe := buildProbeFromService(&a.svc)
 	volMounts := resolveServiceVolumeMounts(ctx, s.db, a.svc.ID)
 	wp := appk8s.WorkloadParams{
-		ConfigFiles:         s.configMountsFor(ctx, a.svc.ID, slugify(a.svc.Name), a.namespace),
-		Name:                slugify(a.svc.Name),
+		ConfigFiles:         s.configMountsFor(ctx, a.svc.ID, appK8sName(&a.svc), a.namespace),
+		Name:                appK8sName(&a.svc),
 		Namespace:           a.namespace,
 		Image:               a.imageName,
 		Ports:               portSpecs,
@@ -464,11 +464,11 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
 		return
 	}
-	if err := appk8s.ApplyService(ctx, s.k8s, slugify(a.svc.Name), a.namespace, portSpecs); err != nil {
+	if err := appk8s.ApplyService(ctx, s.k8s, appK8sName(&a.svc), a.namespace, portSpecs); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s service: "+err.Error())
 		return
 	}
-	assignedNPs, err := appk8s.ApplyNodePortService(ctx, s.k8s, slugify(a.svc.Name), a.namespace, portSpecs)
+	assignedNPs, err := appk8s.ApplyNodePortService(ctx, s.k8s, appK8sName(&a.svc), a.namespace, portSpecs)
 	if err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s NodePort service: "+err.Error())
 		return
@@ -486,7 +486,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	// is a failed deploy, not a successful one.
 	depLog := result.Log + "\nDeployment applied. Waiting for the rollout…\n"
 	s.appendLog(a.deployment.ID, &depLog, "")
-	res := appk8s.WatchRollout(ctx, s.k8s, slugify(a.svc.Name), a.namespace, rolloutTimeout,
+	res := appk8s.WatchRollout(ctx, s.k8s, appK8sName(&a.svc), a.namespace, rolloutTimeout,
 		func(line string) { s.appendLog(a.deployment.ID, &depLog, line) })
 
 	if !res.Succeeded {
@@ -600,7 +600,7 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	}
 
 	return appk8s.ApplyDeployment(ctx, s.k8s, appk8s.WorkloadParams{
-		Name:                slugify(svc.Name),
+		Name:                appK8sName(&svc),
 		Namespace:           svc.Project.Slug,
 		Image:               svc.Image,
 		Ports:               portSpecs,
@@ -784,8 +784,8 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 		groupEnvs, _ := s.varGroups.CollectEnvVars(context.Background(), svc.ID)
 		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
 		wp := appk8s.WorkloadParams{
-			ConfigFiles:   s.configMountsFor(context.Background(), svc.ID, slugify(svc.Name), namespace),
-			Name:          slugify(svc.Name),
+			ConfigFiles:   s.configMountsFor(context.Background(), svc.ID, appK8sName(&svc), namespace),
+			Name:          appK8sName(&svc),
 			Namespace:     namespace,
 			Image:         target.Image,
 			Ports:         portSpecs,
@@ -801,11 +801,11 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			s.failDeployment(dep.ID, "rollback failed: "+err.Error())
 			return
 		}
-		if err := appk8s.ApplyService(context.Background(), s.k8s, slugify(svc.Name), namespace, portSpecs); err != nil {
+		if err := appk8s.ApplyService(context.Background(), s.k8s, appK8sName(&svc), namespace, portSpecs); err != nil {
 			s.failDeployment(dep.ID, "rollback failed to apply K8s service: "+err.Error())
 			return
 		}
-		assignedNPs, err := appk8s.ApplyNodePortService(context.Background(), s.k8s, slugify(svc.Name), namespace, portSpecs)
+		assignedNPs, err := appk8s.ApplyNodePortService(context.Background(), s.k8s, appK8sName(&svc), namespace, portSpecs)
 		if err != nil {
 			s.failDeployment(dep.ID, "rollback failed to apply K8s NodePort service: "+err.Error())
 			return
@@ -1160,7 +1160,7 @@ func (s *DeploymentService) findRuntimePod(ctx context.Context, serviceID uuid.U
 		return "", "", fmt.Errorf("service not found")
 	}
 	namespace = svc.Project.Slug
-	podSlug := slugify(svc.Name)
+	podSlug := appK8sName(&svc)
 	if svc.Type == db.ServiceTypeDatabase {
 		var dc db.DatabaseConfig
 		if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err == nil && dc.Slug != "" {
@@ -1390,6 +1390,22 @@ func mergeSecretEnvs(envs []corev1.EnvVar, secrets map[string]string) []corev1.E
 }
 
 // slugify converts a name to a K8s-safe lowercase slug.
+// appK8sName returns the Kubernetes object name for an application service.
+//
+// Every path that names a cluster object for a service must go through this.
+// Deploying under one name while status, stop, delete and exec look for another
+// is not a cosmetic mismatch -- it leaves a running workload nothing can see or
+// remove, which is how the orphaned Deployments happened.
+//
+// Slug is empty on rows created before it existed; those keep resolving to the
+// name they were deployed under, so nothing running is renamed.
+func appK8sName(svc *db.Service) string {
+	if svc.Slug != "" {
+		return svc.Slug
+	}
+	return slugify(svc.Name)
+}
+
 func slugify(s string) string {
 	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, " ", "-")

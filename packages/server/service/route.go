@@ -401,7 +401,7 @@ func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.
 		if sp.NodePort == 0 && s.k8s != nil {
 			var svc db.Service
 			if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", *in.ServiceID).Error; err == nil && svc.Project.Slug != "" {
-				if np, err := appk8s.GetNodePort(ctx, s.k8s, slugify(svc.Name), svc.Project.Slug, int32(sp.Port)); err == nil && np != 0 {
+				if np, err := appk8s.GetNodePort(ctx, s.k8s, appK8sName(&svc), svc.Project.Slug, int32(sp.Port)); err == nil && np != 0 {
 					sp.NodePort = int(np)
 					s.db.WithContext(ctx).Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
 				}
