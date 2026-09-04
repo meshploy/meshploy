@@ -44,7 +44,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | Table | Purpose |
 |---|---|
 | `stacks` | Docker Compose stacks — parsed spec + services |
-| `services` | Polymorphic workload: application or database |
+| `services` | Polymorphic workload: application or database. `slug` is the Kubernetes object name, fixed at creation and suffixed when the plain name is taken in the project; empty on pre-slug rows, which fall back to the display name |
 | `service_ports` | Exposed ports per service |
 | `build_configs` | Git source, builder type, registry target (1:1 with service) |
 | `database_configs` | Engine, version, storage size (1:1 with service) |
