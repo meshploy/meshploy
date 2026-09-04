@@ -64,6 +64,7 @@ export interface Project {
   jobsCount: number
   stacksCount: number
   volumesCount: number
+  configFilesCount: number
   createdAt: Date
 }
 

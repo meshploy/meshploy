@@ -16,6 +16,7 @@ export interface ApiProject {
   jobs_count: number
   stacks_count: number
   volumes_count: number
+  config_files_count: number
 }
 
 function parseTimestamp(s: string | null | undefined): Date | null {
@@ -38,6 +39,7 @@ export function toProject(p: ApiProject): Project {
     jobsCount: p.jobs_count ?? 0,
     stacksCount: p.stacks_count ?? 0,
     volumesCount: p.volumes_count ?? 0,
+    configFilesCount: p.config_files_count ?? 0,
     createdAt: parseTimestamp(p.created_at) ?? new Date(p.created_at),
   }
 }

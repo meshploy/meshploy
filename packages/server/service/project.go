@@ -16,14 +16,15 @@ type ProjectService struct {
 // Add new fields here as new resource types are introduced — the SQL query in
 // ListWithCounts uses a single CASE-based aggregation so adding a field is one line.
 type ProjectCounts struct {
-	ProjectID      uuid.UUID `gorm:"column:project_id"`
-	ServicesCount  int       `gorm:"column:services_count"  json:"services_count"`
-	DatabasesCount int       `gorm:"column:databases_count" json:"databases_count"`
-	RoutesCount    int       `gorm:"column:routes_count"    json:"routes_count"`
-	SecretsCount   int       `gorm:"column:secrets_count"   json:"secrets_count"`
-	JobsCount      int       `gorm:"column:jobs_count"      json:"jobs_count"`
-	StacksCount    int       `gorm:"column:stacks_count"    json:"stacks_count"`
-	VolumesCount   int       `gorm:"column:volumes_count"   json:"volumes_count"`
+	ProjectID        uuid.UUID `gorm:"column:project_id"`
+	ServicesCount    int       `gorm:"column:services_count"  json:"services_count"`
+	DatabasesCount   int       `gorm:"column:databases_count" json:"databases_count"`
+	RoutesCount      int       `gorm:"column:routes_count"    json:"routes_count"`
+	SecretsCount     int       `gorm:"column:secrets_count"   json:"secrets_count"`
+	JobsCount        int       `gorm:"column:jobs_count"      json:"jobs_count"`
+	StacksCount      int       `gorm:"column:stacks_count"    json:"stacks_count"`
+	VolumesCount     int       `gorm:"column:volumes_count"   json:"volumes_count"`
+	ConfigFilesCount int       `gorm:"column:config_files_count" json:"config_files_count"`
 }
 
 // ProjectWithCounts bundles a project with its resource counts.
@@ -66,7 +67,8 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			COALESCE(sec.secrets_count, 0) AS secrets_count,
 			COALESCE(j.jobs_count,      0) AS jobs_count,
 			COALESCE(st.stacks_count,   0) AS stacks_count,
-			COALESCE(v.volumes_count,   0) AS volumes_count
+			COALESCE(v.volumes_count,   0) AS volumes_count,
+			COALESCE(cf.config_files_count, 0) AS config_files_count
 		FROM projects p
 		LEFT JOIN (
 			SELECT project_id,
@@ -106,8 +108,14 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			WHERE project_id IN ?
 			GROUP BY project_id
 		) v ON v.project_id = p.id
+		LEFT JOIN (
+			SELECT project_id, COUNT(*) AS config_files_count
+			FROM config_files
+			WHERE project_id IN ?
+			GROUP BY project_id
+		) cf ON cf.project_id = p.id
 		WHERE p.id IN ?
-	`, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts)
+	`, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts)
 
 	// Index counts by project ID for O(1) lookup.
 	countMap := make(map[uuid.UUID]ProjectCounts, len(counts))
@@ -146,8 +154,9 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 			(SELECT COUNT(*) FROM secrets sec WHERE sec.project_id = ?) AS secrets_count,
 			(SELECT COUNT(*) FROM jobs j     WHERE j.project_id   = ?) AS jobs_count,
 			(SELECT COUNT(*) FROM stacks st  WHERE st.project_id  = ?) AS stacks_count,
-			(SELECT COUNT(*) FROM volumes v  WHERE v.project_id   = ?) AS volumes_count
-	`, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID).Scan(&counts)
+			(SELECT COUNT(*) FROM volumes v  WHERE v.project_id   = ?) AS volumes_count,
+			(SELECT COUNT(*) FROM config_files cf WHERE cf.project_id = ?) AS config_files_count
+	`, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID).Scan(&counts)
 	result := &ProjectWithCounts{Project: *project}
 	if len(counts) > 0 {
 		result.ProjectCounts = counts[0]

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+	svc "github.com/meshploy/packages/server/service"
 )
 
 // schemaProperties resolves a type through Huma's own reflection — the same
@@ -53,5 +54,26 @@ func TestConfigFileListSchemaCarriesEveryField(t *testing.T) {
 		if _, ok := props[want]; !ok {
 			t.Errorf("response schema is missing %q", want)
 		}
+	}
+}
+
+// ProjectWithCounts embeds two structs, and the project tab bar renders every
+// count from them. The embeds are of EXPORTED types, which is the only reason
+// Huma promotes their fields at all — so this pins the distinction rather than
+// leaving the tab counts resting on it silently.
+func TestProjectCountsSchemaCarriesEveryCount(t *testing.T) {
+	props := schemaProperties(t, svc.ProjectWithCounts{}, "ProjectWithCounts")
+
+	for _, want := range []string{
+		"services_count", "databases_count", "routes_count", "secrets_count",
+		"jobs_count", "stacks_count", "volumes_count", "config_files_count",
+	} {
+		if _, ok := props[want]; !ok {
+			t.Errorf("response schema is missing %q — that tab renders no count", want)
+		}
+	}
+	// The project's own fields come from the other embed.
+	if _, ok := props["name"]; !ok {
+		t.Error("the embedded project fields are missing")
 	}
 }
