@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.9.0](https://github.com/meshploy/meshploy/compare/v0.8.0...v0.9.0) (2026-09-04)
+
+
+### Features
+
+* add config file tools to the MCP surface ([cb06a7c](https://github.com/meshploy/meshploy/commit/cb06a7c6f6f486816214dc37e826894d7402876f))
+* add config files that project a file into a service at a path ([8fa5106](https://github.com/meshploy/meshploy/commit/8fa5106441dca90ea79e127325697ac902c0f1a3))
+* create config files on the new-resource page instead of a dialog ([38b99bb](https://github.com/meshploy/meshploy/commit/38b99bba44e265a13e69ed17078a8a88dbb083a4))
+* encrypt kubernetes secrets at rest on new gateway installs ([3396e24](https://github.com/meshploy/meshploy/commit/3396e24e970f2eb736eb9f417913119eb6deddc8))
+* fix a service's kubernetes name at creation instead of deriving it from its name ([09b148b](https://github.com/meshploy/meshploy/commit/09b148bf4c727489d0522b352a616e130e6b36e5))
+* give a config file a detail page listing the services that mount it ([39530c9](https://github.com/meshploy/meshploy/commit/39530c9a8117ed0969162666152ca633beb253d3))
+* let a template write a credential's bcrypt hash into a config file ([db7d10b](https://github.com/meshploy/meshploy/commit/db7d10bb1b69a8162472f4b365ea347c998b0e2d))
+* let an orphaned workload be removed from the cluster page ([166fee5](https://github.com/meshploy/meshploy/commit/166fee5dc2a09565aa3cf5ace2570e4b8ccd33a3))
+* let the template catalog be refreshed on demand instead of only on a timer ([d3d0b82](https://github.com/meshploy/meshploy/commit/d3d0b82189b38e2c5006b12e3953ec80938ccbce))
+* list a stack's config files beside its volumes and routes ([ddd4f86](https://github.com/meshploy/meshploy/commit/ddd4f86ed2d703a30bce90081f2286f67449ea8d))
+* mark edge builds with their commit and channel instead of a bare release version ([6691d3c](https://github.com/meshploy/meshploy/commit/6691d3c15b81118d510b1a0cb3153967fb87aa53))
+* prefill the config file parent path and share one editor between both forms ([0c109eb](https://github.com/meshploy/meshploy/commit/0c109ebd2e8e5ee898bd26fde5ff6ce8d5894cf4))
+* report cluster workloads that no service owns ([62ed54a](https://github.com/meshploy/meshploy/commit/62ed54aff5c454950a3592fa0914761bc91f1ecb))
+* serve a single config file scoped to its project ([0b4ea9c](https://github.com/meshploy/meshploy/commit/0b4ea9cb15660aac6616ff662c906f1d4c467a40))
+* show the config file count on the project tab bar ([1417848](https://github.com/meshploy/meshploy/commit/14178487979a5af8b664b60e6cc5a03c4a486cb0))
+* tell an edge install when main has moved, named as an edge update ([633e648](https://github.com/meshploy/meshploy/commit/633e648c66bf84edbbbfb4a538e35e00881630d8))
+
+
+### Bug Fixes
+
+* keep compose interpolation out of a config file's contents ([f8aeb08](https://github.com/meshploy/meshploy/commit/f8aeb08eb7d7441f35a2c13e59f87535c7f91334))
+* number a repeated template's stack so it cannot adopt the first one's volume ([6fb94cf](https://github.com/meshploy/meshploy/commit/6fb94cf8ece5bdc053c5ac5f5f834fa7672b5d86))
+* read a missing node port from the cluster instead of refusing the route ([bb3b1f5](https://github.com/meshploy/meshploy/commit/bb3b1f59ec2c5161d5c5340b47a93555e39022e5))
+* replace the old workload when a service is renamed ([c3d9491](https://github.com/meshploy/meshploy/commit/c3d9491dba2c121b7e6751183eae76dc29681015))
+* stop huma dropping a config file's fields from the detail response ([2706a53](https://github.com/meshploy/meshploy/commit/2706a53497376d9332bbbf72c905713fd9f7fa68))
+* stop the status reconciler locking itself out of its own applying write ([dbc12d1](https://github.com/meshploy/meshploy/commit/dbc12d117055f54661219cbddf97f3f2416755f9))
+* stream a deployment's log live when there is no build pod to follow ([284de53](https://github.com/meshploy/meshploy/commit/284de5389920285d903cabf67315c0c367709962))
+
 ## [0.8.0](https://github.com/meshploy/meshploy/compare/v0.7.0...v0.8.0) (2026-09-02)
 
 
