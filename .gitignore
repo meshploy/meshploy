@@ -26,5 +26,9 @@ deploy/headscale/data/*
 # Dynamic DNS edits — ignore substituted runtime zone files but keep the template
 # deploy/coredns/zones/_acme-challenge.*
 # !deploy/coredns/zones/_acme-challenge.{DOMAIN}
+# Claude Code: per-checkout, per-person state. settings.json (no .local) is the
+# shared, committable one — keep this rule narrow so a project-wide config can
+# still be added later without fighting the ignore.
+.claude/settings.local.json
 .claude/worktrees/
 .playwright-mcp/
