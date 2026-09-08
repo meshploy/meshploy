@@ -181,6 +181,25 @@ var publicRules = []publicRule{
 	// compose spec) still require authentication.
 	{Method: "GET", Path: "/api/v1/templates/", Match: matchPrefix, Suffix: "/icon"},
 
+	// Caddy's TLS "ask" endpoints. Caddy calls these before issuing a
+	// certificate and its ask mechanism cannot attach an Authorization header,
+	// so they meet the criterion above exactly. It also treats any non-2xx as
+	// "deny" -- while these answered 401 the on-demand DNS mode issued no
+	// certificate for anything, and custom domains got none in either mode.
+	// They were public under the old blanket "GET /api/" rule and were missed
+	// when it was removed.
+	//
+	// Deliberately not gated on a source address: the API runs in a container
+	// published on :4000 and Caddy proxies api.<DOMAIN> to that same port, so
+	// the ask call and ordinary public traffic are indistinguishable by origin.
+	// Deliberately not gated on a shared secret either: a key that drifts out of
+	// sync on an upgrade would silently stop all certificate issuance again,
+	// which is a worse failure than the disclosure. Both are read-only and
+	// answer only "is this hostname configured here" -- already observable by
+	// requesting the hostname and seeing whether it serves.
+	{Method: "GET", Path: "/api/v1/internal/domain-check", Match: matchExact},
+	{Method: "GET", Path: "/api/v1/internal/ondemand-tls-check", Match: matchExact},
+
 	// Git provider OAuth/App redirects. These arrive from the provider, so no
 	// Authorization header can be attached; CSRF is covered by the `state`
 	// parameter the handlers validate.

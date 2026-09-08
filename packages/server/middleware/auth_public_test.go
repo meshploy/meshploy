@@ -145,3 +145,43 @@ func TestTemplateIconExemptionIsNarrow(t *testing.T) {
 		}
 	}
 }
+
+// Caddy asks these before issuing a certificate and cannot attach an
+// Authorization header, and it reads any non-2xx as "deny". While they returned
+// 401 the self-managed-DNS install issued no certificate at all, and custom
+// domains got none in either DNS mode — with nothing logged, because a denial
+// is a normal answer.
+//
+// They were public under the old blanket "GET /api/" rule and were overlooked
+// when it was correctly removed. This pins them so the next tightening of the
+// allowlist cannot silently take TLS down with it.
+func TestCaddyAskEndpointsArePublic(t *testing.T) {
+	for _, path := range []string{
+		"/api/v1/internal/domain-check",
+		"/api/v1/internal/ondemand-tls-check",
+	} {
+		if !public("GET", path) {
+			t.Errorf("%s must be reachable without auth — Caddy cannot send a token, and a non-2xx denies the certificate", path)
+		}
+	}
+}
+
+// Being public is scoped to exactly those two GETs. The allowlist is anchored,
+// so nothing else under /api/v1/internal/ is exempt and neither endpoint is
+// exempt for a method that could change state.
+func TestCaddyAskExemptionIsNarrow(t *testing.T) {
+	cases := []struct {
+		method, path string
+	}{
+		{"POST", "/api/v1/internal/domain-check"},
+		{"POST", "/api/v1/internal/ondemand-tls-check"},
+		{"GET", "/api/v1/internal/"},
+		{"GET", "/api/v1/internal/db-query"},
+		{"GET", "/api/v1/internal/domain-check/extra"},
+	}
+	for _, c := range cases {
+		if public(c.method, c.path) {
+			t.Errorf("%s %s must NOT be public", c.method, c.path)
+		}
+	}
+}
