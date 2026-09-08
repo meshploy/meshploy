@@ -29,6 +29,9 @@ deploy/headscale/data/*
 # Claude Code: per-checkout, per-person state. settings.json (no .local) is the
 # shared, committable one — keep this rule narrow so a project-wide config can
 # still be added later without fighting the ignore.
+# install.sh keeps the pristine delegation config here before switching a
+# gateway to the on-demand TLS variant, so the choice can be reversed.
+deploy/caddy/Caddyfile.delegation.bak
 .claude/settings.local.json
 .claude/worktrees/
 .playwright-mcp/

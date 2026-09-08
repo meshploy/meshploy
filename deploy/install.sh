@@ -15,11 +15,22 @@ set -euo pipefail
 REINSTALL=false
 WIPE_DATA=false
 AUTO_MODE=false
+# Empty = decide interactively. --dns-mode is the only way to reach the
+# self-managed path under --auto, where nothing can be asked.
+DNS_MODE_FLAG=""
 for arg in "$@"; do
   case "$arg" in
     --reinstall) REINSTALL=true ;;
     --wipe-data) WIPE_DATA=true ;;
     --auto)      AUTO_MODE=true ;;
+    --dns-mode=*)
+      DNS_MODE_FLAG="${arg#*=}"
+      case "$DNS_MODE_FLAG" in
+        delegation|ondemand) ;;
+        *) echo "install.sh: --dns-mode must be 'delegation' or 'ondemand', got '${DNS_MODE_FLAG}'" >&2
+           exit 1 ;;
+      esac
+      ;;
   esac
 done
 
@@ -384,8 +395,25 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   # (e.g. Hostinger) can't delegate a subdomain by NS at all — for them we offer
   # on-demand TLS: the user adds a wildcard A record and Caddy issues a cert per
   # hostname on first request. DNS_MODE flows into .env and the Caddy config.
-  DNS_MODE="delegation"
-  if ! $AUTO_MODE; then
+  # Precedence: --dns-mode, then the mode recorded by a previous install, then
+  # probe and (interactively) offer the choice.
+  #
+  # Honouring the recorded mode matters: a re-run of a working self-managed
+  # install would otherwise find no NS delegation, fall into the prompt, and on
+  # a bare Enter take the default and restore the delegation Caddyfile --
+  # breaking TLS on a gateway that was serving fine.
+  DNS_MODE_PREV=""
+  if [[ -f .env ]]; then
+    DNS_MODE_PREV="$(grep -E '^DNS_MODE=' .env 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+  fi
+  DNS_MODE="${DNS_MODE_FLAG:-${DNS_MODE_PREV:-${DNS_MODE:-delegation}}}"
+
+  if [[ -n "$DNS_MODE_FLAG" ]]; then
+    info "DNS mode set by --dns-mode: ${BOLD}${DNS_MODE}${RESET}"
+  elif [[ -n "$DNS_MODE_PREV" ]]; then
+    info "Keeping the DNS mode this server was installed with: ${BOLD}${DNS_MODE}${RESET}"
+    info "Override with ${BOLD}--dns-mode=delegation${RESET} or ${BOLD}--dns-mode=ondemand${RESET}."
+  elif ! $AUTO_MODE; then
     info "Checking NS delegation for ${DOMAIN}…"
     _NS_RESULT=""
     if command -v dig &>/dev/null; then
@@ -640,13 +668,27 @@ ENVEOF
 
   # Caddyfile uses {$DOMAIN} (Caddy env var syntax) — substitute at runtime via DOMAIN env var
   # We export DOMAIN so Caddy can read it; no file substitution needed for Caddyfile.
-  # On-demand mode uses a separate Caddyfile (HTTP-01 + on_demand, no DNS-01). The
-  # delegation path leaves the default Caddyfile untouched.
+  # On-demand mode uses a separate Caddyfile (HTTP-01 + on_demand, no DNS-01).
+  #
+  # docker-compose mounts caddy/Caddyfile by a fixed path, so the selected
+  # variant is copied over it. The delegation config is kept aside first: it is
+  # the file tracked in git, and without a copy the switch was one-way -- once
+  # on-demand had overwritten it, re-running and choosing delegation left the
+  # on-demand config in place, recoverable only with `git checkout`.
   if [[ "$DNS_MODE" == "ondemand" ]]; then
+    if [[ ! -f caddy/Caddyfile.delegation.bak ]]; then
+      cp caddy/Caddyfile caddy/Caddyfile.delegation.bak
+      info "Saved the delegation Caddyfile to caddy/Caddyfile.delegation.bak"
+    fi
     cp -f caddy/Caddyfile.ondemand caddy/Caddyfile
     success "caddy/Caddyfile set to on-demand TLS variant (self-managed DNS)"
   else
-    success "caddy/Caddyfile ready (uses \${DOMAIN} env var at runtime)"
+    if [[ -f caddy/Caddyfile.delegation.bak ]]; then
+      cp -f caddy/Caddyfile.delegation.bak caddy/Caddyfile
+      success "caddy/Caddyfile restored to the NS-delegation variant"
+    else
+      success "caddy/Caddyfile ready (uses \${DOMAIN} env var at runtime)"
+    fi
   fi
 
   # ── Private registry login ──────────────────────────────────────────────────
@@ -873,10 +915,22 @@ NEUNIT
   echo -e "    ${BOLD}sudo bash /tmp/get.sh${RESET}"
   echo
   echo -e "  ${BOLD}Next steps${RESET}"
-  echo -e "    1. Point your domain's NS records to this server (${PUBLIC_IP})"
-  echo -e "    2. Verify DNS:  dig @${PUBLIC_IP} ${DOMAIN} A"
-  echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
-  echo -e "    4. Check mesh:  tailscale status"
+  # Mode-aware: telling a self-managed-DNS operator to add an NS record is the
+  # one instruction they already said they cannot follow, and querying this
+  # server for the zone only proves anything when the zone is delegated to it.
+  if [[ "$DNS_MODE" == "ondemand" ]]; then
+    echo -e "    1. Add these records at your DNS provider:"
+    echo -e "         ${CYAN}*.${DOMAIN}${RESET}   A   ${PUBLIC_IP}"
+    echo -e "         ${CYAN}${DOMAIN}${RESET}     A   ${PUBLIC_IP}"
+    echo -e "    2. Verify DNS:  dig +short console.${DOMAIN} A     ${YELLOW}# expect ${PUBLIC_IP}${RESET}"
+    echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
+    echo -e "    4. Check mesh:  tailscale status"
+  else
+    echo -e "    1. Point your domain's NS records to this server (${PUBLIC_IP})"
+    echo -e "    2. Verify DNS:  dig @${PUBLIC_IP} ${DOMAIN} A"
+    echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
+    echo -e "    4. Check mesh:  tailscale status"
+  fi
   hr
 
   # ── Wait for TLS certificates ─────────────────────────────────────────────────
