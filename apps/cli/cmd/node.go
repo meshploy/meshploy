@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -93,11 +94,11 @@ Examples:
   meshploy node remove worker-1 root@10.0.0.5 --identity-file ~/.ssh/id_ed25519`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name        := args[0]
-		sshTarget   := args[1]
-		yes, _      := cmd.Flags().GetBool("yes")
+		name := args[0]
+		sshTarget := args[1]
+		yes, _ := cmd.Flags().GetBool("yes")
 		identityFile, _ := cmd.Flags().GetString("identity-file")
-		sshPort, _  := cmd.Flags().GetInt("port")
+		sshPort, _ := cmd.Flags().GetInt("port")
 
 		// ── Look up node by name ──────────────────────────────────────────────
 		c := apiClient()
@@ -220,12 +221,46 @@ var nodeInstallCmd = &cobra.Command{
 Requires root. The install script handles dependency installation,
 k3s setup, Headscale registration, and saves /etc/meshploy/node.conf.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validated before the root check so a typo is reported as a typo
+		// rather than as a permissions problem.
+		if nodeInstallDNSMode != "" &&
+			nodeInstallDNSMode != "delegation" && nodeInstallDNSMode != "ondemand" {
+			return fmt.Errorf("--dns-mode must be 'delegation' or 'ondemand', got %q", nodeInstallDNSMode)
+		}
 		if os.Getuid() != 0 {
 			return fmt.Errorf("node install requires root — re-run with sudo")
 		}
-		return runScript(installScript, nil)
+		// Forward the install script's own flags.
+		//
+		// These were not declared, so `meshploy node install --reinstall` died
+		// on "unknown flag" before it ever reached the script -- and get.sh
+		// dispatches through exactly this command, which made the documented
+		// `--reinstall` / `--wipe-data` bootstrap unusable.
+		var scriptArgs []string
+		for flag, on := range map[string]bool{
+			"--reinstall": nodeInstallReinstall,
+			"--wipe-data": nodeInstallWipeData,
+			"--auto":      nodeInstallAuto,
+		} {
+			if on {
+				scriptArgs = append(scriptArgs, flag)
+			}
+		}
+		sort.Strings(scriptArgs) // map iteration order is random; keep it stable
+		if nodeInstallDNSMode != "" {
+			scriptArgs = append(scriptArgs, "--dns-mode="+nodeInstallDNSMode)
+		}
+		return runScript(installScript, scriptArgs)
 	},
 }
+
+// Flags forwarded verbatim to install.sh by `node install`.
+var (
+	nodeInstallReinstall bool
+	nodeInstallWipeData  bool
+	nodeInstallAuto      bool
+	nodeInstallDNSMode   string
+)
 
 // ── node uninstall ────────────────────────────────────────────────────────────
 
@@ -535,10 +570,10 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identityFile, _ := cmd.Flags().GetString("identity-file")
-		sshPort, _      := cmd.Flags().GetInt("port")
+		sshPort, _ := cmd.Flags().GetInt("port")
 		headscaleURL, _ := cmd.Flags().GetString("headscale-url")
-		preauthKey, _   := cmd.Flags().GetString("preauth-key")
-		githubPAT, _    := cmd.Flags().GetString("token")
+		preauthKey, _ := cmd.Flags().GetString("preauth-key")
+		githubPAT, _ := cmd.Flags().GetString("token")
 
 		sc := bufio.NewScanner(os.Stdin)
 
@@ -733,6 +768,11 @@ func init() {
 	nodeRemoveCmd.Flags().StringP("identity-file", "i", "", "SSH identity file (private key)")
 	nodeRemoveCmd.Flags().IntP("port", "P", 22, "SSH port on the remote host")
 	nodeRemoveCmd.Flags().String("token", "", "GitHub PAT for fallback script download (or set GITHUB_PAT)")
+	nodeInstallCmd.Flags().BoolVar(&nodeInstallReinstall, "reinstall", false, "Update images and config, preserving the database and TLS certs")
+	nodeInstallCmd.Flags().BoolVar(&nodeInstallWipeData, "wipe-data", false, "With --reinstall: wipe the database and TLS cert cache")
+	nodeInstallCmd.Flags().BoolVar(&nodeInstallAuto, "auto", false, "Non-interactive install, taking answers from the environment")
+	nodeInstallCmd.Flags().StringVar(&nodeInstallDNSMode, "dns-mode", "", "DNS strategy: 'delegation' (NS record, wildcard DNS-01) or 'ondemand' (wildcard A record, cert per hostname)")
+
 	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeRemoveCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd, nodeAddCmd)
 	rootCmd.AddCommand(nodeCmd)
 }

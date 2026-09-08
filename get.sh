@@ -17,6 +17,8 @@
 #     sudo bash -c "$(curl -fsSL URL)" _ --uninstall
 #     sudo bash -c "$(curl -fsSL URL)" _ --cli-only   # install/update CLI binary only
 #     sudo bash -c "$(curl -fsSL URL)" _ --edge        # use edge builds from main
+#     sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand  # self-managed DNS
+#                                                     # (wildcard A record, no NS delegation)
 #
 set -euo pipefail
 
@@ -33,6 +35,7 @@ MODE="install"
 WIPE_DATA=false
 CLI_ONLY=false
 EDGE=false
+DNS_MODE_FLAG=""
 for arg in "$@"; do
   case "$arg" in
     --uninstall)  MODE="uninstall" ;;
@@ -40,6 +43,13 @@ for arg in "$@"; do
     --wipe-data)  WIPE_DATA=true ;;
     --cli-only)   CLI_ONLY=true ;;
     --edge)       EDGE=true ;;
+    --dns-mode=*)
+      DNS_MODE_FLAG="${arg#*=}"
+      case "$DNS_MODE_FLAG" in
+        delegation|ondemand) ;;
+        *) die "--dns-mode must be 'delegation' or 'ondemand', got '${DNS_MODE_FLAG}'" ;;
+      esac
+      ;;
   esac
 done
 
@@ -166,10 +176,19 @@ cd "$INSTALL_DIR"
 case "$MODE" in
   install|reinstall)
     export MESHPLOY_CHANNEL
+    # Built as an array so each flag stays one argument, and so a fresh install
+    # can carry --dns-mode too — it is the only way to choose the self-managed
+    # DNS path, and it was previously reachable on neither path.
+    EXTRA_FLAGS=()
     if [[ "$MODE" == "reinstall" ]]; then
-      EXTRA_FLAGS="--reinstall"
-      $WIPE_DATA && EXTRA_FLAGS="$EXTRA_FLAGS --wipe-data"
-      exec "$CLI_BIN" node install $EXTRA_FLAGS
+      EXTRA_FLAGS+=("--reinstall")
+      $WIPE_DATA && EXTRA_FLAGS+=("--wipe-data")
+    fi
+    [[ -n "$DNS_MODE_FLAG" ]] && EXTRA_FLAGS+=("--dns-mode=${DNS_MODE_FLAG}")
+    # Expanding an empty array under `set -u` is an error on bash < 4.4, which
+    # is still what ships on older LTS images, so branch on the length.
+    if [[ ${#EXTRA_FLAGS[@]} -gt 0 ]]; then
+      exec "$CLI_BIN" node install "${EXTRA_FLAGS[@]}"
     fi
     exec "$CLI_BIN" node install
     ;;
