@@ -189,8 +189,11 @@ All operations go through `get.sh` — no Docker Compose commands needed.
 | `sudo bash -c "$(curl -fsSL URL)" _ --reinstall --wipe-data` | Full reinstall from scratch, wipes database and TLS cert cache |
 | `sudo bash -c "$(curl -fsSL URL)" _ --uninstall` | Remove Meshploy (interactive) |
 | `sudo bash -c "$(curl -fsSL URL)" _ --cli-only` | Install or update the `meshploy` CLI binary only — safe on existing nodes |
+| `sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand` | Install without NS delegation — you add a wildcard A record and Caddy issues a certificate per hostname |
 
 > Replace `URL` with `https://meshploy.com/install.sh`
+
+> **DNS mode**: by default Meshploy asks you to delegate the domain with an **NS record**, which yields one wildcard certificate. If your provider cannot delegate a subdomain (Hostinger, for example), pass `--dns-mode=ondemand` and add `*.<domain>` and `<domain>` **A records** pointing at the server instead. The installer also offers this choice interactively when it cannot see an NS delegation. Re-runs keep whichever mode the server was installed with.
 
 > **TLS cert cache**: Caddy stores Let's Encrypt certificates in a Docker volume. `--reinstall` always preserves this volume to avoid hitting rate limits (5 certs per domain per week). Use `--wipe-data` only when you genuinely need a clean slate.
 
