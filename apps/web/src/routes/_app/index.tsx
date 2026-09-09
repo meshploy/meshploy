@@ -16,6 +16,7 @@ import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { projectColorHue } from "@/lib/utils"
+import { ExposureNotice } from "@/components/system/exposure-notice"
 
 export const Route = createFileRoute("/_app/")({
   component: OverviewPage,
@@ -46,6 +47,8 @@ function OverviewPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <ExposureNotice />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Overview</h1>

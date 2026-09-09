@@ -40,6 +40,18 @@ type Config struct {
 	PublicIP        string // PUBLIC_IP        public internet IP of the gateway (for DNS instructions)
 	HostGatewayIP   string // HOST_GATEWAY_IP  Docker bridge gateway IP — used to reach node_exporter from within the API container
 
+	// Firewall state as install.sh observed it on the host, and when it looked.
+	// The API container mounts four read-only files and has no Docker socket, so
+	// it cannot inspect the host firewall itself; recording the installer's
+	// finding is the only way the console can know.
+	//
+	// Empty means "never recorded" — a dev box, or a gateway installed before
+	// this was written — and is reported as unknown rather than as a problem.
+	// The value is a point-in-time observation, not live state: install.sh
+	// rewrites .env on every run, so a re-install or server-upgrade refreshes it.
+	FirewallState     string // FIREWALL_STATE       none | ufw | firewalld
+	FirewallCheckedAt string // FIREWALL_CHECKED_AT  RFC3339 UTC
+
 	// SetupToken gates the very first registration. install.sh generates one and
 	// prints it once, so claiming a fresh gateway needs something only whoever
 	// ran the installer has seen.
@@ -124,6 +136,9 @@ func Load() (*Config, error) {
 		GatewayHostname: os.Getenv("GATEWAY_HOSTNAME"),
 		PublicIP:        os.Getenv("PUBLIC_IP"),
 		HostGatewayIP:   os.Getenv("HOST_GATEWAY_IP"),
+
+		FirewallState:     os.Getenv("FIREWALL_STATE"),
+		FirewallCheckedAt: os.Getenv("FIREWALL_CHECKED_AT"),
 
 		BuiltinRegistryEndpoint: os.Getenv("BUILTIN_REGISTRY_ENDPOINT"),
 		TemplateDir:             os.Getenv("TEMPLATE_DIR"),

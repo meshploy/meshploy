@@ -284,6 +284,21 @@ type TrustedDevice struct {
 
 func (TrustedDevice) TableName() string { return "trusted_devices" }
 
+// DismissedNotice records that a user has dismissed one of the console's
+// advisory banners, so it stays dismissed across reloads and devices.
+//
+// Per-user rather than per-org: these are operator advisories about the gateway
+// itself, and one operator dismissing an exposure notice should not hide it from
+// the next person who signs in. Key is a stable slug ("host-exposure"), never a
+// rendered message, so the copy can change without un-dismissing it.
+type DismissedNotice struct {
+	Base
+	UserID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_notice_per_user" json:"user_id"`
+	Key    string    `gorm:"not null;uniqueIndex:idx_notice_per_user"          json:"key"`
+}
+
+func (DismissedNotice) TableName() string { return "dismissed_notices" }
+
 type RecoveryCode struct {
 	Base
 	UserID   uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`

@@ -420,11 +420,20 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   fi
 
   # ── Open required public firewall ports ──────────────────────────────────────
+  # What is found here is also recorded into .env as FIREWALL_STATE, because the
+  # API container mounts four read-only files and has no Docker socket -- it
+  # cannot look at the host firewall itself. This is the only point in the system
+  # that can observe it, and the console's exposure notice depends on the answer.
+  #
+  # Managing the operator's firewall is deliberately out of scope: a cloud
+  # security group or an upstream appliance is invisible from here, so the
+  # console reports what was seen and lets the operator dismiss it.
   if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
     for _p in 80/tcp 443/tcp 53/tcp 53/udp 3478/udp; do
       ufw status | grep -q "^${_p%%/*}[[:space:]]\|^${_p}[[:space:]]" || \
         ufw allow "$_p" comment "Meshploy" >/dev/null 2>&1
     done
+    FIREWALL_STATE="ufw"
     success "UFW: 80/tcp, 443/tcp, 53 (TCP+UDP), 3478/udp opened"
   elif command -v firewall-cmd &>/dev/null && firewall-cmd --state 2>/dev/null | grep -q "running"; then
     firewall-cmd --permanent --add-service=http  >/dev/null 2>&1 || true
@@ -432,10 +441,14 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     firewall-cmd --permanent --add-service=dns   >/dev/null 2>&1 || true
     firewall-cmd --permanent --add-port=3478/udp >/dev/null 2>&1 || true
     firewall-cmd --reload >/dev/null 2>&1
+    FIREWALL_STATE="firewalld"
     success "firewalld: http, https, dns, 3478/udp opened"
   else
+    FIREWALL_STATE="none"
     info "No active firewall detected — skipping public port rules."
+    info "Meshploy will show what this leaves reachable in the dashboard."
   fi
+  FIREWALL_CHECKED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   # Auto-detect public IP
   DETECTED_IP="$(curl -4 -fsSL https://ifconfig.me 2>/dev/null || echo "")"
@@ -743,6 +756,8 @@ K3S_TOKEN=${K3S_TOKEN}
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME}
 HOST_GATEWAY_IP=${HOST_GATEWAY_IP}
 MESHPLOY_CHANNEL=${MESHPLOY_CHANNEL:-latest}
+FIREWALL_STATE=${FIREWALL_STATE:-unknown}
+FIREWALL_CHECKED_AT=${FIREWALL_CHECKED_AT}
 # Fill in after first start: $COMPOSE_CMD exec headscale headscale apikeys create
 HEADSCALE_API_KEY=
 ENVEOF

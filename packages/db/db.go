@@ -58,6 +58,7 @@ func Migrate(db *gorm.DB) error {
 		&User{},
 		&TrustedDevice{},
 		&RecoveryCode{},
+		&DismissedNotice{},
 		&AgentToken{},
 		&InstalledLicense{},
 		&Organization{},

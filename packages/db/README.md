@@ -24,6 +24,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `users` | Identity |
 | `trusted_devices` | Remembered devices — skips 2FA prompt on re-login |
 | `recovery_codes` | One-time 2FA recovery codes (hashed) |
+| `dismissed_notices` | Console advisories a user has dismissed — per-user, keyed by a stable slug |
 | `organizations` | Tenancy root |
 | `organization_members` | User ↔ Org join (roles: owner / admin / member) |
 | `resource_permissions` | Per-resource ACL grants (service, stack, job, project) |

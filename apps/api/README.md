@@ -297,6 +297,8 @@ All routes are under `/api/v1`. Authenticated routes require `Authorization: Bea
 | POST | `/webhooks/github/{integrationId}` | HMAC | Inbound GitHub push webhook |
 | POST | `/webhooks/deploy/{serviceId}` | token | Inbound deploy webhook |
 | GET | `/system/version` | — | API version |
+| GET | `/system/exposure` | — | Whether this gateway runs without a host firewall, and what it publishes |
+| POST | `/system/notices/{key}/dismiss` | — | Dismiss a console advisory for the current user |
 | GET | `/health` | — | Health check |
 
 ---

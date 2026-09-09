@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/meshploy/packages/server/config"
 	"github.com/meshploy/packages/server/version"
 	"gorm.io/gorm"
 )
@@ -51,6 +52,10 @@ type SystemService struct {
 	cached   *VersionInfo
 	cachedAt time.Time
 	db       *gorm.DB
+	// cfg carries the gateway facts install.sh recorded, including the firewall
+	// state the exposure advisory reads. Nil in tests and wherever New() was
+	// called without a config.
+	cfg *config.Config
 }
 
 func (s *SystemService) Ping(ctx context.Context) error {

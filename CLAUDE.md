@@ -121,6 +121,8 @@ Required in `.env` at the monorepo root:
 | `PUBLIC_IP` | Public internet IP — backfilled on the gateway node record |
 | `GATEWAY_HOSTNAME` | Gateway server hostname |
 | `HOST_GATEWAY_IP` | Docker bridge gateway IP — used to reach node_exporter from inside the API container |
+| `FIREWALL_STATE` | What `install.sh` saw on the host: `none`, `ufw` or `firewalld`. Read-only record — the API container cannot inspect the host firewall itself. Drives the console's exposure notice |
+| `FIREWALL_CHECKED_AT` | RFC3339 UTC timestamp of that check, so the notice never reads as live state |
 | `BUILTIN_REGISTRY_ENDPOINT` | Seeds a built-in registry row per org (format: `<host>:<port>`) |
 | `TEMPLATE_DIR` | Local one-click template catalog dir (`<dir>/<id>/...`). Set = offline/air-gapped source; overrides the remote repo |
 | `TEMPLATE_REPO` | GitHub `owner/repo` the catalog is fetched from when `TEMPLATE_DIR` is unset (default: `meshploy/meshploy-templates`) |
@@ -129,13 +131,13 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (39 CE tables)
+## packages/db — schema (40 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `agent_tokens`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Workloads | `stacks`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
 | Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups` |

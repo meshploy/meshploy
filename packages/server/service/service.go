@@ -216,7 +216,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
 		Backups:         backups,
-		System:          &SystemService{db: db},
+		System:          &SystemService{db: db, cfg: c},
 		Notifications:   notif,
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,
