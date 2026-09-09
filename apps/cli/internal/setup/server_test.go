@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type fakeRunner struct {
@@ -196,5 +197,57 @@ func TestInstallRefusedWithoutAnswers(t *testing.T) {
 	_, h := newTestServer(t, &fakeRunner{})
 	if got := do(h, "POST", "/api/install", "ms_token", "").Code; got != http.StatusBadRequest {
 		t.Errorf("want 400, got %d", got)
+	}
+}
+
+// Finishing setup must stop the installer. A privileged, token-gated installer
+// that keeps listening after it is needed is a permanent liability.
+func TestCompleteStopsTheServerAndClearsState(t *testing.T) {
+	s, h := newTestServer(t, &fakeRunner{})
+	_ = s.store.Update(func(st *State) {
+		st.Answers = Answers{Domain: "example.com", DNSMode: "ondemand", PublicIP: "203.0.113.10"}
+		st.Phase = PhaseVerify
+	})
+
+	select {
+	case <-s.Done():
+		t.Fatal("the server should still be serving before setup completes")
+	default:
+	}
+
+	if got := do(h, "POST", "/api/complete", "ms_token", "{}").Code; got != http.StatusOK {
+		t.Fatalf("complete: want 200, got %d", got)
+	}
+
+	select {
+	case <-s.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("finishing setup did not stop the server")
+	}
+
+	// A later run must start clean rather than resume a finished install.
+	if got := s.store.Get().Phase; got != PhaseAnswers {
+		t.Errorf("state should have been cleared, phase is %q", got)
+	}
+}
+
+// Completing is token-gated like everything else — otherwise a passer-by could
+// shut the installer down mid-setup.
+func TestCompleteRequiresTheToken(t *testing.T) {
+	_, h := newTestServer(t, &fakeRunner{})
+	if got := do(h, "POST", "/api/complete", "", "{}").Code; got != http.StatusForbidden {
+		t.Errorf("want 403, got %d", got)
+	}
+}
+
+// Two tabs, or a double-click, must not panic on a second close.
+func TestCompleteIsIdempotent(t *testing.T) {
+	s, h := newTestServer(t, &fakeRunner{})
+	do(h, "POST", "/api/complete", "ms_token", "{}")
+	do(h, "POST", "/api/complete", "ms_token", "{}")
+	select {
+	case <-s.Done():
+	default:
+		t.Fatal("expected the server to be done")
 	}
 }

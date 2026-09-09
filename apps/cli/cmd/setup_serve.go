@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -63,13 +64,14 @@ plain HTTP, because no certificate exists yet.`,
 			_ = store.Update(func(st *setup.State) { st.Answers.PublicIP = publicIP })
 		}
 
+		setupSrv := setup.NewServer(
+			store, token,
+			setup.PublicResolver(""),
+			setup.ScriptRunner{Script: meshployInstDir + "/install.sh", Dir: meshployInstDir},
+		)
 		srv := &http.Server{
-			Addr: setupServeAddr,
-			Handler: setup.NewServer(
-				store, token,
-				setup.PublicResolver(""),
-				setup.ScriptRunner{Script: meshployInstDir + "/install.sh", Dir: meshployInstDir},
-			).Handler(),
+			Addr:    setupServeAddr,
+			Handler: setupSrv.Handler(),
 			// Generous: an install runs for minutes and streams the whole time.
 			ReadHeaderTimeout: 15 * time.Second,
 		}
@@ -78,6 +80,23 @@ plain HTTP, because no certificate exists yet.`,
 		if err != nil {
 			return fmt.Errorf("listen on %s: %w", setupServeAddr, err)
 		}
+
+		// install.sh opens 80, 443, 53 and 3478 and nothing else, so on a host
+		// with an active firewall — most fresh cloud images — this page would
+		// otherwise be unreachable from the browser it exists for. The rule is
+		// owned by this process and removed when it stops: a setup port left
+		// open afterwards is a privileged installer left exposed.
+		closePort := func() {}
+		if _, port, perr := net.SplitHostPort(ln.Addr().String()); perr == nil {
+			if n, cerr := strconv.Atoi(port); cerr == nil {
+				var opened bool
+				closePort, opened = setup.NewPortGuard().Open(cmd.Context(), n)
+				if opened {
+					fmt.Printf("  Opened port %s in the firewall for the duration of setup.\n", port)
+				}
+			}
+		}
+		defer closePort()
 
 		fmt.Printf("\n  Setup is available at:\n\n")
 		for _, u := range setupURLs(publicIP, ln.Addr()) {
@@ -91,7 +110,14 @@ plain HTTP, because no certificate exists yet.`,
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		go func() {
-			<-ctx.Done()
+			// Either the operator interrupts, or they finish and leave for the
+			// console. Both stop the installer — leaving it listening once it is
+			// no longer needed is the liability.
+			select {
+			case <-ctx.Done():
+			case <-setupSrv.Done():
+				fmt.Println("\n  Setup complete — the console is yours. Stopping the installer.")
+			}
 			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_ = srv.Shutdown(shutdown)

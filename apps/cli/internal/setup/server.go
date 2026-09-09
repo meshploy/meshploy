@@ -33,11 +33,23 @@ type Server struct {
 	// the same directory.
 	mu      sync.Mutex
 	running bool
+
+	// done is closed when the operator leaves for the console. A privileged
+	// installer that keeps listening afterwards is a permanent liability, not a
+	// convenience, so finishing setup is what stops it.
+	done     chan struct{}
+	doneOnce sync.Once
 }
 
 func NewServer(store *Store, token string, resolver Resolver, runner Runner) *Server {
-	return &Server{store: store, token: token, resolver: resolver, runner: runner}
+	return &Server{
+		store: store, token: token, resolver: resolver, runner: runner,
+		done: make(chan struct{}),
+	}
 }
+
+// Done is closed once setup is finished and the server should stop.
+func (s *Server) Done() <-chan struct{} { return s.done }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -46,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/check-domain", s.auth(http.HandlerFunc(s.checkDomain)))
 	mux.Handle("POST /api/answers", s.auth(http.HandlerFunc(s.saveAnswers)))
 	mux.Handle("POST /api/install", s.auth(http.HandlerFunc(s.install)))
+	mux.Handle("POST /api/complete", s.auth(http.HandlerFunc(s.complete)))
 	return mux
 }
 
@@ -174,6 +187,22 @@ func (s *Server) install(w http.ResponseWriter, r *http.Request) {
 
 	_ = s.store.Update(func(x *State) { x.Phase = PhaseVerify; x.Failed = "" })
 	send("done", "")
+}
+
+// complete ends setup: the state file is removed so a later run starts clean
+// rather than resuming a finished install, and the server is told to stop.
+//
+// Deliberately does not check that a certificate exists. In on-demand mode one
+// is issued per hostname on first request, so requiring it would strand an
+// operator whose install is in fact correct — the failure this whole feature
+// exists to remove.
+func (s *Server) complete(w http.ResponseWriter, _ *http.Request) {
+	if err := s.store.Clear(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "complete"})
+	s.doneOnce.Do(func() { close(s.done) })
 }
 
 func validateAnswers(a Answers) error {

@@ -285,7 +285,13 @@
     api("check-domain", answers()).then(function (st) {
       renderChecks($("finalChecks"), st);
       $("consoleBtn").onclick = function () {
-        location.href = "https://console." + $("domain").value.trim();
+        var url = "https://console." + $("domain").value.trim();
+        // Tell the installer to stand down before leaving. Best effort: if this
+        // fails the operator still gets to the console, and Ctrl+C still stops
+        // the installer — a failed shutdown must not trap them on this page.
+        api("complete", {}).catch(function () {}).then(function () {
+          location.href = url;
+        });
       };
     });
   }
