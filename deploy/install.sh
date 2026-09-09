@@ -475,6 +475,14 @@ if [[ "$NODE_TYPE" == "master" ]]; then
 
   JWT_SECRET="$(openssl rand -hex 32)"
   ENCRYPTION_KEY="$(openssl rand -hex 16)"   # 32 hex chars = 16 bytes, stored as 32 char string
+  # The first account registered on a server becomes its owner, so claiming one
+  # has to require something only whoever ran this installer has seen. Reused on
+  # a re-install so an operator midway through setup is not handed a new token.
+  if [[ -f .env ]] && grep -q '^SETUP_TOKEN=' .env; then
+    SETUP_TOKEN="$(grep -E '^SETUP_TOKEN=' .env | tail -1 | cut -d= -f2-)"
+  else
+    SETUP_TOKEN="ms_$(openssl rand -hex 16)"
+  fi
   info "Auto-generated JWT_SECRET and ENCRYPTION_KEY."
 
   echo
@@ -628,6 +636,7 @@ POSTGRES_DB=meshploy
 POSTGRES_USER=meshploy
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
+SETUP_TOKEN=${SETUP_TOKEN}
 API_BASE_URL=https://api.${DOMAIN}
 FRONTEND_URL=https://console.${DOMAIN}
 K3S_TOKEN=${K3S_TOKEN}
@@ -902,6 +911,16 @@ NEUNIT
   echo -e "    Dashboard   ${CYAN}https://console.${DOMAIN}${RESET}"
   echo -e "    API         ${CYAN}https://api.${DOMAIN}${RESET}"
   echo -e "    Headscale   ${CYAN}https://headscale.${DOMAIN}${RESET}"
+  echo
+  # Shown once, and only while the server has no owner. The first account to
+  # register owns the instance, so this is the credential that decides who that
+  # is -- printed here rather than stored anywhere the UI can read it back.
+  echo -e "  ${BOLD}First-time setup${RESET}"
+  echo -e "    Creating the owner account needs this one-time token:"
+  echo -e "       ${BOLD}${CYAN}${SETUP_TOKEN}${RESET}"
+  echo -e "    ${YELLOW}Keep it until you have registered. It is not shown again${RESET}"
+  echo -e "    ${YELLOW}and is only accepted while the instance has no owner.${RESET}"
+  echo -e "    Lost it?  ${BOLD}meshploy setup-token rotate${RESET}  on this server."
   echo
   echo -e "  ${BOLD}To add a worker node${RESET}"
   echo -e "    1. Headscale pre-auth key (valid 1h, reusable):"

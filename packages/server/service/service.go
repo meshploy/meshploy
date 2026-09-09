@@ -94,6 +94,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	nodes := &NodeService{db: db, gatewayIP: gatewayIP, hostGatewayIP: hostGatewayIP}
 	domains := &DomainService{db: db}
 	auth := &AuthService{db: db}
+	if c != nil {
+		auth.setupToken = c.SetupToken
+	}
 	registries := &RegistryService{db: db}
 
 	// seedBuiltinRegistry ensures a builtin registry row exists for the org when

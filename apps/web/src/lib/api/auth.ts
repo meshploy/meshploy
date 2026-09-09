@@ -17,10 +17,23 @@ export const auth = {
       body: JSON.stringify({ mfa_token: mfaToken, code, trust_device: trustDevice }),
     }),
 
-  register: (username: string, email: string, password: string) =>
+  /**
+   * `setupToken` gates the first registration on a server — the account created
+   * there owns the instance. Omitted when the installer issued no token, which
+   * is the case for development and for installs predating it.
+   */
+  register: (username: string, email: string, password: string, setupToken?: string) =>
     apiFetch<{ id: string; username: string; email: string }>(
       "/api/v1/auth/register",
-      { method: "POST", body: JSON.stringify({ username, email, password }) }
+      {
+        method: "POST",
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          ...(setupToken ? { setup_token: setupToken } : {}),
+        }),
+      }
     ),
 
   getMe: (token: string) =>

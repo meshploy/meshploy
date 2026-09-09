@@ -75,12 +75,13 @@ function FirstBootRegisterForm() {
   const [username, setUsername] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [setupToken, setSetupToken] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const registerMutation = useMutation({
     mutationFn: async () => {
-      await auth.register(username, email, password)
+      await auth.register(username, email, password, setupToken.trim())
       const result = await auth.login(email, password)
       const token = result.token!
       const payload = JSON.parse(atob(token.split(".")[1]))
@@ -111,6 +112,15 @@ function FirstBootRegisterForm() {
             className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow" />
         </Field>
         <PasswordField value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword((v) => !v)} />
+        <Field label="Setup token">
+          <input type="text" placeholder="ms_…" spellCheck={false} autoComplete="off"
+            value={setupToken} onChange={(e) => setSetupToken(e.target.value)}
+            className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow" />
+          <p className="text-[11px] text-muted-foreground/70 mt-1.5">
+            Printed once by the installer. This account will own the instance, so it is
+            required unless the server was set up without one.
+          </p>
+        </Field>
         {error && <ErrorBanner>{error}</ErrorBanner>}
         <SubmitButton pending={registerMutation.isPending}>Create account</SubmitButton>
       </form>

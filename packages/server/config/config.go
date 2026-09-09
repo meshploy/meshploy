@@ -40,6 +40,16 @@ type Config struct {
 	PublicIP        string // PUBLIC_IP        public internet IP of the gateway (for DNS instructions)
 	HostGatewayIP   string // HOST_GATEWAY_IP  Docker bridge gateway IP — used to reach node_exporter from within the API container
 
+	// SetupToken gates the very first registration. install.sh generates one and
+	// prints it once, so claiming a fresh gateway needs something only whoever
+	// ran the installer has seen.
+	//
+	// Empty disables the check, which keeps `go run main.go` and any pre-existing
+	// install working. That is deliberate rather than a hole: the token only ever
+	// guards the window when a server has no users at all, and an install that
+	// already has an owner refuses registration outright.
+	SetupToken string // SETUP_TOKEN
+
 	// Built-in registry — set when docker-compose includes the registry:2 service.
 	// Format: <host>:<port>, e.g. "100.64.0.1:5000" (mesh IP of gateway).
 	// When set, a registry_integrations row is auto-seeded for every org on startup.
@@ -94,6 +104,7 @@ func Load() (*Config, error) {
 			}
 			return "meshploy"
 		}(),
+		SetupToken:    os.Getenv("SETUP_TOKEN"),
 		JWTSecret:     require("JWT_SECRET"),
 		EncryptionKey: require("ENCRYPTION_KEY"),
 

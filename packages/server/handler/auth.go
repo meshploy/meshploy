@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -17,6 +18,9 @@ type RegisterInput struct {
 		Username string `json:"username" minLength:"3" maxLength:"50"`
 		Email    string `json:"email" format:"email"`
 		Password string `json:"password" minLength:"8"`
+		// SetupToken claims a server that has no owner yet. Required only for
+		// the first registration, and only when the installer issued one.
+		SetupToken string `json:"setup_token,omitempty"`
 	}
 }
 
@@ -122,16 +126,20 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Path:        "/api/v1/auth/status",
 		Summary:     "Check whether registration is open (no users exist yet)",
 		Tags:        []string{tag},
-	}, func(ctx context.Context, _ *struct{}) (*struct{ Body struct {
-		RegistrationOpen bool `json:"registration_open"`
-	} }, error) {
+	}, func(ctx context.Context, _ *struct{}) (*struct {
+		Body struct {
+			RegistrationOpen bool `json:"registration_open"`
+		}
+	}, error) {
 		open, err := h.svc.Auth.RegistrationOpen(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return &struct{ Body struct {
-			RegistrationOpen bool `json:"registration_open"`
-		} }{Body: struct {
+		return &struct {
+			Body struct {
+				RegistrationOpen bool `json:"registration_open"`
+			}
+		}{Body: struct {
 			RegistrationOpen bool `json:"registration_open"`
 		}{RegistrationOpen: open}}, nil
 	})
@@ -314,12 +322,23 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 
 func (h *Handler) RegisterUser(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
 	user, err := h.svc.Auth.Register(ctx, svc.RegisterInput{
-		Username: input.Body.Username,
-		Email:    input.Body.Email,
-		Password: input.Body.Password,
+		Username:   input.Body.Username,
+		Email:      input.Body.Email,
+		Password:   input.Body.Password,
+		SetupToken: input.Body.SetupToken,
 	})
 	if err != nil {
-		return nil, huma.Error409Conflict("username or email already exists")
+		// Distinguish the reasons. Reporting a rejected setup token as a
+		// duplicate email would send the operator looking for an account that
+		// does not exist.
+		switch {
+		case errors.Is(err, svc.ErrInvalidSetupToken):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.Is(err, svc.ErrRegistrationClosed):
+			return nil, huma.Error409Conflict(err.Error())
+		default:
+			return nil, huma.Error409Conflict("username or email already exists")
+		}
 	}
 	return &RegisterOutput{Body: user}, nil
 }
@@ -371,4 +390,3 @@ func truncate(s string, max int) string {
 	}
 	return s[:max]
 }
-

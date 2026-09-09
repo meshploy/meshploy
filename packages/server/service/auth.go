@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -18,15 +19,29 @@ import (
 	"gorm.io/gorm"
 )
 
+// Registration failures a caller must be able to tell apart. The handler used
+// to report every Register error as "username or email already exists", which
+// would have turned a wrong setup token into a message about a duplicate email.
+var (
+	ErrRegistrationClosed = errors.New("registration is disabled — this instance already has an owner")
+	ErrInvalidSetupToken  = errors.New("invalid or missing setup token — it was printed by the installer; run `meshploy setup-token rotate` on the gateway to issue a new one")
+)
+
 type AuthService struct {
 	db                  *gorm.DB
 	onFirstRegistration func(ctx context.Context, orgID uuid.UUID)
+
+	// setupToken, when set, must be presented to claim a server that has no
+	// users yet. Empty means no check — see config.SetupToken.
+	setupToken string
 }
 
 type RegisterInput struct {
 	Username string
 	Email    string
 	Password string
+	// SetupToken is checked only for the first registration on a server.
+	SetupToken string
 }
 
 type LoginInput struct {
@@ -64,7 +79,16 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User,
 		return nil, err
 	}
 	if !open {
-		return nil, fmt.Errorf("registration is disabled — this instance already has an owner")
+		return nil, ErrRegistrationClosed
+	}
+
+	// The first account on a server owns it, so claiming one must require
+	// something only the operator has: the token install.sh printed. Compared in
+	// constant time -- it is a bearer credential, and a comparison that returns
+	// early leaks its prefix to anyone who can time the request.
+	if s.setupToken != "" &&
+		subtle.ConstantTimeCompare([]byte(in.SetupToken), []byte(s.setupToken)) != 1 {
+		return nil, ErrInvalidSetupToken
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)

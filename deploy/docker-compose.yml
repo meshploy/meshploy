@@ -99,6 +99,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
       API_BASE_URL: ${API_BASE_URL:-https://api.${DOMAIN}}
       FRONTEND_URL: ${FRONTEND_URL:-https://console.${DOMAIN}}
       HEADSCALE_URL: http://headscale:8080
