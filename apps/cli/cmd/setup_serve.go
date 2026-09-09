@@ -58,11 +58,27 @@ plain HTTP, because no certificate exists yet.`,
 		if err != nil {
 			return err
 		}
-		// Seed the public IP so the operator confirms a detected value rather
-		// than typing one, and so the DNS checks have something to compare to.
-		if publicIP != "" && store.Get().Answers.PublicIP == "" {
-			_ = store.Update(func(st *setup.State) { st.Answers.PublicIP = publicIP })
-		}
+		// Seed from .env so a re-run edits the current configuration rather than
+		// starting blank. This is what makes "change the domain" work: there is
+		// no console-side form for it — the API container mounts two read-only
+		// files and has no Docker socket, so it cannot rewrite the CoreDNS and
+		// Headscale configs the domain is baked into, nor restart them. Serving
+		// setup again is the supported way to change it, and install.sh
+		// preserves the database and certificates on a re-run.
+		_ = store.Update(func(st *setup.State) {
+			if st.Answers.PublicIP == "" {
+				st.Answers.PublicIP = publicIP
+			}
+			if st.Answers.Domain == "" {
+				st.Answers.Domain = readEnvVar("DOMAIN")
+			}
+			if st.Answers.DNSMode == "" {
+				st.Answers.DNSMode = readEnvVar("DNS_MODE")
+			}
+			if st.Answers.MeshIP == "" {
+				st.Answers.MeshIP = readEnvVar("MESH_IP")
+			}
+		})
 
 		setupSrv := setup.NewServer(
 			store, token,

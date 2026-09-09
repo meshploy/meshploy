@@ -353,7 +353,46 @@ function PrimaryDomainSection() {
       ) : (
         <DomainCard domain={domain} />
       )}
+      <GatewayDomainNote />
     </Section>
+  )
+}
+
+/**
+ * The gateway's base domain, and how to change it.
+ *
+ * Distinct from the org domain records above: this is the value install.sh
+ * substitutes into the CoreDNS zone files and Headscale's `server_url`, which is
+ * why there is no form for it here. The API container mounts two read-only files
+ * from /opt/meshploy and has no Docker socket, so it cannot rewrite those
+ * configs or restart the services that read them. Giving it the access to do so
+ * would hand the API root on the host.
+ *
+ * The domain is read from the address this console is served on rather than
+ * from an endpoint — accurate by construction, and one less thing to expose.
+ */
+function GatewayDomainNote() {
+  const host = typeof window === "undefined" ? "" : window.location.hostname
+  const base = host.startsWith("console.") ? host.slice("console.".length) : host
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/10 p-3.5 space-y-2">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="text-xs text-muted-foreground">Gateway base domain</span>
+        <code className="text-sm font-mono text-foreground">{base || "unknown"}</code>
+      </div>
+      <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+        Set when this gateway was installed. It is baked into the DNS zone files and the
+        mesh control plane's URL, so changing it means regenerating those and restarting
+        them — run the installer again on the gateway:
+      </p>
+      <pre className="text-[11px] font-mono bg-muted/30 border border-border/40 rounded-md px-3 py-2 overflow-x-auto">
+sudo meshploy setup serve</pre>
+      <p className="text-[11px] text-muted-foreground/70">
+        It opens the same setup page with the current values filled in. Your database and
+        TLS certificates are preserved.
+      </p>
+    </div>
   )
 }
 

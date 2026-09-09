@@ -47,6 +47,7 @@
   }
   .check { display:flex; gap:8px; align-items:baseline; padding:6px 0;
            border-bottom:1px solid var(--line); font-size:13px }
+  .next #finalChecks { margin-top:6px }
   .check:last-child { border-bottom:0 }
   .ok { color:var(--accent) } .bad { color:var(--danger) } .wait { color:var(--warn) }
   .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
@@ -57,6 +58,26 @@
   }
   .err { color:var(--danger); font-size:13px; margin-top:10px }
   .hide { display:none }
+  .ready { display:flex; gap:12px; align-items:center; margin-bottom:16px }
+  .tick { width:32px; height:32px; border-radius:50%; background:#22c55e22;
+          border:1px solid var(--accent); color:var(--accent);
+          display:flex; align-items:center; justify-content:center; font-size:16px }
+  .ready-title { font-size:16px; font-weight:600 }
+  .ready-sub { font-size:13px; color:var(--muted) }
+  /* The link is the primary action, so it is sized like one rather than
+     hidden in a sentence. */
+  .domain-link {
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:14px 16px; border:1px solid var(--accent); border-radius:10px;
+    background:#22c55e12; color:var(--fg); text-decoration:none; font-size:15px;
+    margin-bottom:16px;
+  }
+  .domain-link:hover { background:#22c55e22 }
+  .domain-link .arrow { color:var(--accent); font-size:18px }
+  .next { border-top:1px solid var(--line); padding-top:12px; margin-top:4px;
+          font-size:13px; color:var(--muted) }
+  .next-title { color:var(--fg); font-weight:600; margin:0 0 4px; font-size:13px }
+  .next p { margin:0 }
 </style>
 </head>
 <body>
@@ -126,14 +147,47 @@
 
   <!-- Step 4 -->
   <div class="card hide" id="c4">
-    <div id="finalChecks"></div>
+    <div class="ready">
+      <div class="tick">✓</div>
+      <div>
+        <div class="ready-title">Meshploy is ready</div>
+        <div class="ready-sub">Your console is at</div>
+      </div>
+    </div>
+
+    <a class="domain-link" id="consoleBtn" href="#" target="_blank" rel="noopener">
+      <span class="mono" id="consoleHost">console.example.com</span>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </a>
+
+    <div class="next">
+      <p class="next-title">Next: create your account</p>
+      <p>
+        Opening the console lands on the registration form. You will need the
+        <strong>same setup token</strong> you used here — the first account
+        registered owns this instance.
+      </p>
+    </div>
+
+    <div class="next">
+      <p class="next-title">Then: close the setup port</p>
+      <p id="portNote">
+        Following the link stops this installer. Any firewall rule it opened for
+        port <span class="mono">9000</span> is removed with it — nothing to do.
+      </p>
+    </div>
+
+    <div class="next">
+      <p class="next-title">DNS</p>
+      <div id="finalChecks"></div>
+    </div>
     <div class="actions">
-      <button class="ghost" id="recheckBtn">Re-check</button>
-      <button id="consoleBtn">Open the console</button>
+      <button class="ghost" id="recheckBtn">Re-check DNS</button>
+      <button class="ghost" id="editBtn">Change the domain</button>
     </div>
     <div class="hint" style="margin-top:10px">
       A certificate is not required to continue. In self-managed DNS mode one is
-      issued per hostname on first request.
+      issued per hostname on first request, so the first visit may take a moment.
     </div>
   </div>
 </div>
@@ -282,20 +336,34 @@
   $("backBtn").onclick = function () { step(2); };
 
   function verify() {
+    var host = "console." + $("domain").value.trim();
+    $("consoleHost").textContent = host;
+    $("consoleBtn").href = "https://" + host;
     api("check-domain", answers()).then(function (st) {
       renderChecks($("finalChecks"), st);
-      $("consoleBtn").onclick = function () {
-        var url = "https://console." + $("domain").value.trim();
-        // Tell the installer to stand down before leaving. Best effort: if this
-        // fails the operator still gets to the console, and Ctrl+C still stops
-        // the installer — a failed shutdown must not trap them on this page.
-        api("complete", {}).catch(function () {}).then(function () {
-          location.href = url;
-        });
-      };
     });
   }
   $("recheckBtn").onclick = verify;
+
+  // The console opens in a new tab, so the operator keeps this page: if DNS is
+  // still propagating the first attempt may fail, and sending them away with no
+  // way back is the dead end this whole installer exists to remove.
+  //
+  // Standing the installer down is best effort. A failed shutdown must not stop
+  // them reaching the console, and Ctrl+C still works.
+  $("consoleBtn").addEventListener("click", function () {
+    $("portNote").textContent =
+      "Installer stopping. If port 9000 was opened for setup it has been closed; " +
+      "if this host had no active firewall, nothing was opened and nothing is listening once this process exits.";
+    api("complete", {}).catch(function () {});
+  });
+
+  // Changing the domain is re-entering step 2 and installing again. There is no
+  // console-side form for this: the API container mounts two read-only files and
+  // has no Docker socket, so it cannot rewrite the CoreDNS and Headscale configs
+  // the domain is baked into. install.sh preserves the database and certificates
+  // on a re-run.
+  $("editBtn").onclick = function () { step(2); };
 
   step(1);
   $("token").focus();
