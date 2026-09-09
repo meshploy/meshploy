@@ -5,99 +5,235 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Meshploy setup</title>
 <style>
-  :root {
-    --bg:#0b0d10; --panel:#12151a; --line:#232830; --fg:#e6e9ef;
-    --muted:#8b93a1; --accent:#22c55e; --danger:#ef4444; --warn:#f59e0b;
-  }
-  * { box-sizing:border-box }
-  body {
-    margin:0; background:var(--bg); color:var(--fg);
-    font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-  }
-  .wrap { max-width:760px; margin:0 auto; padding:48px 24px }
-  h1 { font-size:20px; margin:0 0 4px }
-  .sub { color:var(--muted); margin:0 0 32px }
-  /* Progress rail: the whole point of the separate layout is that the operator
-     can see where they are and that nothing else is reachable yet. */
-  .rail { display:flex; gap:8px; margin-bottom:28px }
-  .step { flex:1; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
-          background:var(--panel); font-size:12px; color:var(--muted) }
-  .step.active { border-color:var(--accent); color:var(--fg) }
-  .step.done { border-color:var(--accent); color:var(--accent) }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
-          padding:20px; margin-bottom:16px }
-  label { display:block; font-size:12px; color:var(--muted); margin:0 0 6px }
-  input, select {
-    width:100%; height:38px; padding:0 10px; border-radius:8px;
-    border:1px solid var(--line); background:#0e1116; color:var(--fg); font-size:14px;
-  }
-  input:focus, select:focus { outline:2px solid #22c55e55; border-color:var(--accent) }
-  .row { margin-bottom:14px }
-  .hint { font-size:12px; color:var(--muted); margin-top:6px }
-  button {
-    height:38px; padding:0 16px; border-radius:8px; border:1px solid var(--accent);
-    background:var(--accent); color:#06210f; font-weight:600; font-size:14px; cursor:pointer;
-  }
-  button.ghost { background:transparent; color:var(--fg); border-color:var(--line) }
-  button:disabled { opacity:.5; cursor:not-allowed }
-  .actions { display:flex; gap:8px; align-items:center; margin-top:8px }
-  pre.records {
-    background:#0e1116; border:1px solid var(--line); border-radius:8px;
-    padding:12px; overflow-x:auto; font-size:12.5px; margin:10px 0 0;
-  }
-  .check { display:flex; gap:8px; align-items:baseline; padding:6px 0;
-           border-bottom:1px solid var(--line); font-size:13px }
-  .next #finalChecks { margin-top:6px }
-  .check:last-child { border-bottom:0 }
-  .ok { color:var(--accent) } .bad { color:var(--danger) } .wait { color:var(--warn) }
-  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
-  #log {
-    background:#08090c; border:1px solid var(--line); border-radius:8px; padding:12px;
-    height:300px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-size:12.5px; white-space:pre-wrap; color:#c8cedb;
-  }
-  .err { color:var(--danger); font-size:13px; margin-top:10px }
-  .hide { display:none }
-  .ready { display:flex; gap:12px; align-items:center; margin-bottom:16px }
-  .tick { width:32px; height:32px; border-radius:50%; background:#22c55e22;
-          border:1px solid var(--accent); color:var(--accent);
-          display:flex; align-items:center; justify-content:center; font-size:16px }
-  .ready-title { font-size:16px; font-weight:600 }
-  .ready-sub { font-size:13px; color:var(--muted) }
-  /* The link is the primary action, so it is sized like one rather than
-     hidden in a sentence. */
-  .domain-link {
-    display:flex; align-items:center; justify-content:space-between; gap:12px;
-    padding:14px 16px; border:1px solid var(--accent); border-radius:10px;
-    background:#22c55e12; color:var(--fg); text-decoration:none; font-size:15px;
-    margin-bottom:16px;
-  }
-  .domain-link:hover { background:#22c55e22 }
-  .domain-link .arrow { color:var(--accent); font-size:18px }
-  .next { border-top:1px solid var(--line); padding-top:12px; margin-top:4px;
-          font-size:13px; color:var(--muted) }
-  .next-title { color:var(--fg); font-weight:600; margin:0 0 4px; font-size:13px }
-  .next p { margin:0 }
+/* Tokens lifted from meshploy-site's global.css so the installer and the
+   marketing site are visibly the same product. Values are OKLCH like the
+   original rather than converted, so a change there ports across directly.
+
+   No @font-face and no font import: this page is served by the installer on a
+   machine whose DNS may not work yet — that is frequently why the operator is
+   here. A webfont request would hang and the page would render late or unstyled
+   at the worst possible moment. The families are named first so a host that has
+   them uses them, with a system stack behind. */
+:root {
+  --accent-h: 165;
+  --bg:        oklch(0.09 0.006 90);
+  --bg-2:      oklch(0.11 0.005 90);
+  --surface:   oklch(0.14 0.005 90);
+  --muted:     oklch(0.17 0.005 90);
+  --border:    oklch(0.26 0.005 90);
+  --border-2:  oklch(0.32 0.006 90);
+  --fg:        oklch(0.97 0.005 90);
+  --fg-2:      oklch(0.78 0.008 90);
+  --fg-3:      oklch(0.58 0.008 90);
+  --fg-4:      oklch(0.42 0.008 90);
+  --primary:   oklch(0.74 0.16 var(--accent-h));
+  --primary-2: oklch(0.66 0.17 var(--accent-h));
+  --primary-soft:   color-mix(in oklab, var(--primary) 14%, transparent);
+  --primary-border: color-mix(in oklab, var(--primary) 35%, transparent);
+  --primary-fg: #0a120d;
+  --amber: oklch(0.82 0.16 75);
+  --red:   oklch(0.72 0.18 25);
+
+  --font-sans: "Onest", ui-sans-serif, -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box }
+html, body { margin:0; padding:0; background:var(--bg); color:var(--fg) }
+body {
+  font-family: var(--font-sans);
+  font-size:16px; line-height:1.55;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  min-height:100vh;
+}
+::selection { background:var(--primary-soft); color:var(--fg) }
+
+/* The site's cross-grid, masked so it fades away from the content. */
+body::before {
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(oklch(0.21 0.005 90 / 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.21 0.005 90 / 0.22) 1px, transparent 1px);
+  background-size:40px 40px;
+  mask-image: radial-gradient(ellipse at 50% 22%, black 28%, transparent 72%);
+}
+/* A single warm point of accent behind the panel — the site's hero glow, dimmed.
+   It is the only decoration on the page; everything else earns its place. */
+body::after {
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background: radial-gradient(ellipse 700px 420px at 50% 0%,
+    color-mix(in oklab, var(--primary) 7%, transparent) 0%, transparent 70%);
+}
+
+.page { position:relative; z-index:1; max-width:720px; margin:0 auto; padding:40px 24px 72px }
+
+/* ── Masthead ─────────────────────────────────────────────────────────────── */
+.mast { display:flex; align-items:center; gap:10px; margin-bottom:44px }
+.mark { color:var(--primary) }
+.wordmark { font-size:16px; font-weight:600; letter-spacing:-0.02em }
+/* Says which surface this is. An operator arriving on a bare IP has no other
+   way to tell the installer from the console. */
+.mast-tag {
+  font-family:var(--font-mono); font-size:11px; color:var(--fg-3);
+  border:1px solid var(--border); border-radius:5px; padding:2px 7px;
+}
+
+h1 { font-size:30px; font-weight:600; letter-spacing:-0.022em; line-height:1.1; margin:0 0 8px }
+.lede { margin:0 0 36px; font-size:15.5px; color:var(--fg-2); max-width:56ch }
+
+/* ── Progress rail ────────────────────────────────────────────────────────
+   The content genuinely is a sequence, so it is numbered. State is carried by
+   fill rather than colour alone: a done step is solid, the active one is ringed,
+   and the rest stay quiet. The previous version bordered all four in green,
+   which read as "all complete" while still on step one. */
+.rail { display:flex; align-items:flex-start; margin:0 0 32px }
+.rstep { display:flex; flex-direction:column; align-items:center; gap:8px; flex:0 0 auto; width:88px }
+.rline { flex:1 1 auto; height:1px; background:var(--border); margin-top:13px }
+.rdot {
+  width:26px; height:26px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-family:var(--font-mono);
+  border:1px solid var(--border-2); background:var(--bg-2); color:var(--fg-4);
+  transition:background .15s, border-color .15s, color .15s;
+}
+.rlabel { font-size:12.5px; color:var(--fg-4); transition:color .15s }
+.step.active .rdot { border-color:var(--primary); color:var(--primary); background:var(--primary-soft);
+                     box-shadow:0 0 0 4px color-mix(in oklab, var(--primary) 10%, transparent) }
+.step.active .rlabel { color:var(--fg) }
+.step.done .rdot { background:var(--primary); border-color:var(--primary); color:transparent; position:relative }
+.step.done .rdot::after { content:"✓"; position:absolute; inset:0;
+                          display:flex; align-items:center; justify-content:center;
+                          color:var(--primary-fg); font-family:var(--font-sans); font-size:13px }
+.step.done .rlabel { color:var(--fg-2) }
+
+/* ── Panel ────────────────────────────────────────────────────────────────── */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px }
+.row { margin-bottom:16px }
+label { display:block; font-size:12.5px; color:var(--fg-2); margin:0 0 6px; font-weight:500 }
+input, select {
+  width:100%; height:38px; padding:0 11px; border-radius:8px;
+  border:1px solid var(--border-2); background:var(--bg-2); color:var(--fg);
+  font-size:14px; font-family:var(--font-sans);
+}
+input.mono { font-family:var(--font-mono); font-size:13px }
+input:focus, select:focus {
+  outline:none; border-color:var(--primary);
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--primary) 16%, transparent);
+}
+input::placeholder { color:var(--fg-4) }
+.hint { font-size:12px; color:var(--fg-3); margin-top:7px; line-height:1.5 }
+
+button {
+  display:inline-flex; align-items:center; gap:7px;
+  height:38px; padding:0 16px; border-radius:8px; cursor:pointer;
+  font-family:var(--font-sans); font-size:14px; font-weight:500; line-height:1;
+  border:1px solid transparent; background:var(--primary); color:var(--primary-fg);
+  transition:background .12s, border-color .12s;
+}
+button:hover { background:var(--primary-2) }
+button.ghost { background:transparent; color:var(--fg); border-color:var(--border-2) }
+button.ghost:hover { background:var(--muted); border-color:var(--border-2) }
+button:disabled { opacity:.45; cursor:not-allowed }
+button:focus-visible, .domain-link:focus-visible, a:focus-visible {
+  outline:2px solid var(--primary); outline-offset:2px;
+}
+.actions { display:flex; gap:9px; align-items:center; margin-top:18px; flex-wrap:wrap }
+
+pre.records {
+  background:var(--bg); border:1px solid var(--border); border-radius:8px;
+  padding:12px 13px; overflow-x:auto; margin:10px 0 0;
+  font-family:var(--font-mono); font-size:12.5px; color:var(--fg-2); line-height:1.7;
+}
+
+.check { display:flex; gap:9px; align-items:baseline; padding:7px 0;
+         border-bottom:1px solid var(--border); font-size:13px }
+.check:last-child { border-bottom:0 }
+.ok { color:var(--primary) } .bad { color:var(--red) } .wait { color:var(--amber) }
+.mono { font-family:var(--font-mono) }
+
+#log {
+  background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:13px;
+  height:300px; overflow:auto; white-space:pre-wrap; color:var(--fg-2);
+  font-family:var(--font-mono); font-size:12.5px; line-height:1.65;
+}
+.err { color:var(--red); font-size:13px; margin-top:12px }
+.hide { display:none }
+
+/* ── Ready ────────────────────────────────────────────────────────────────── */
+.ready { display:flex; gap:13px; align-items:center; margin-bottom:18px }
+.tick { width:34px; height:34px; border-radius:50%; flex:0 0 auto;
+        background:var(--primary-soft); border:1px solid var(--primary-border);
+        color:var(--primary); display:flex; align-items:center; justify-content:center; font-size:16px }
+.ready-title { font-size:17px; font-weight:600; letter-spacing:-0.015em }
+.ready-sub { font-size:13.5px; color:var(--fg-3) }
+/* The link is the page's one job at this point, so it is sized like it. */
+.domain-link {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:15px 17px; border:1px solid var(--primary-border); border-radius:10px;
+  background:var(--primary-soft); color:var(--fg); text-decoration:none;
+  font-family:var(--font-mono); font-size:15px; margin-bottom:20px;
+  transition:background .12s, border-color .12s;
+}
+.domain-link:hover { background:color-mix(in oklab, var(--primary) 20%, transparent);
+                     border-color:var(--primary) }
+.domain-link .arrow { color:var(--primary); font-size:17px; font-family:var(--font-sans) }
+.next { border-top:1px solid var(--border); padding-top:14px; margin-top:14px;
+        font-size:13px; color:var(--fg-3); line-height:1.6 }
+.next-title { color:var(--fg); font-weight:600; margin:0 0 5px; font-size:13px }
+.next p { margin:0 }
+.next #finalChecks { margin-top:8px }
+
+@media (max-width:560px) {
+  .rstep { width:64px } .rlabel { font-size:11px } .page { padding:28px 16px 56px }
+}
+@media (prefers-reduced-motion:reduce) { * { transition:none !important } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Set up Meshploy</h1>
-  <p class="sub">This page installs the gateway. It stays reachable until the console is up.</p>
+<div class="page">
+
+  <div class="mast">
+    <svg class="mark" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7"
+         stroke-linecap="round" stroke-linejoin="round" width="22" height="22" aria-hidden="true">
+      <polyline points="18,78 18,22 50,58 82,22 82,78"/>
+      <line x1="18" y1="78" x2="50" y2="58" opacity="0.45"/>
+      <line x1="82" y1="78" x2="50" y2="58" opacity="0.45"/>
+      <circle cx="18" cy="78" r="7" fill="currentColor" stroke="none"/>
+      <circle cx="18" cy="22" r="7" fill="currentColor" stroke="none"/>
+      <circle cx="50" cy="58" r="7" fill="currentColor" stroke="none"/>
+      <circle cx="82" cy="22" r="7" fill="currentColor" stroke="none"/>
+      <circle cx="82" cy="78" r="7" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="wordmark">meshploy</span>
+    <span class="mast-tag">installer</span>
+  </div>
+
+  <h1>Set up your gateway</h1>
+  <p class="lede">
+    This page installs Meshploy and checks your DNS as it goes, so a wrong answer
+    shows up here rather than ten minutes from now. It stays reachable until your
+    console is up.
+  </p>
 
   <div class="rail">
-    <div class="step" id="s1">1 · Token</div>
-    <div class="step" id="s2">2 · Domain</div>
-    <div class="step" id="s3">3 · Install</div>
-    <div class="step" id="s4">4 · Verify</div>
+    <div class="step" id="s1"><div class="rdot">1</div><div class="rlabel">Token</div></div>
+    <div class="rline"></div>
+    <div class="step" id="s2"><div class="rdot">2</div><div class="rlabel">Domain</div></div>
+    <div class="rline"></div>
+    <div class="step" id="s3"><div class="rdot">3</div><div class="rlabel">Install</div></div>
+    <div class="rline"></div>
+    <div class="step" id="s4"><div class="rdot">4</div><div class="rlabel">Ready</div></div>
   </div>
 
   <!-- Step 1 -->
   <div class="card" id="c1">
     <div class="row">
-      <label>Setup token</label>
+      <label for="token">Setup token</label>
       <input id="token" class="mono" placeholder="ms_…" autocomplete="off" spellcheck="false">
-      <div class="hint">Printed by the installer. It is what proves you are the operator of this machine.</div>
+      <p class="hint">
+        The installer printed this on the machine you are setting up. It is how this page
+        knows you are the operator.
+      </p>
     </div>
     <div class="actions"><button id="tokenBtn">Continue</button></div>
     <div class="err hide" id="tokenErr"></div>
@@ -106,30 +242,31 @@
   <!-- Step 2 -->
   <div class="card hide" id="c2">
     <div class="row">
-      <label>Base domain</label>
+      <label for="domain">Base domain</label>
       <input id="domain" class="mono" placeholder="meshploy.example.com" spellcheck="false">
-      <div class="hint">Meshploy serves the console, API and every app as subdomains of this.</div>
+      <p class="hint">Your console, API and every app you deploy live on subdomains of this.</p>
     </div>
     <div class="row">
-      <label>DNS mode</label>
+      <label for="mode">How you want DNS handled</label>
       <select id="mode">
-        <option value="delegation">Delegate the domain (NS record) — one wildcard certificate</option>
-        <option value="ondemand">Manage DNS myself (A records) — a certificate per hostname</option>
+        <option value="delegation">Point the domain at this server — one certificate covers everything</option>
+        <option value="ondemand">Keep DNS with your provider — a certificate per hostname</option>
       </select>
-      <div class="hint" id="modeHint"></div>
+      <p class="hint" id="modeHint"></p>
       <pre class="records" id="records"></pre>
     </div>
     <div class="row">
-      <label>Public IP</label>
+      <label for="publicIP">Public IP</label>
       <input id="publicIP" class="mono" spellcheck="false">
     </div>
     <div class="row">
-      <label>Mesh IP <span style="opacity:.6">(advanced)</span></label>
+      <label for="meshIP">Mesh IP</label>
       <input id="meshIP" class="mono" value="100.64.0.1" spellcheck="false">
+      <p class="hint">Leave this unless you already use 100.64.0.1 for something else.</p>
     </div>
     <div class="actions">
       <button class="ghost" id="checkBtn">Check DNS</button>
-      <button id="installBtn">Start install</button>
+      <button id="installBtn">Install</button>
     </div>
     <div id="checks"></div>
     <div class="err hide" id="domainErr"></div>
@@ -141,7 +278,7 @@
     <div class="err hide" id="installErr"></div>
     <div class="actions hide" id="retryWrap">
       <button class="ghost" id="backBtn">Change answers</button>
-      <button id="retryBtn">Retry install</button>
+      <button id="retryBtn">Try again</button>
     </div>
   </div>
 
@@ -156,24 +293,23 @@
     </div>
 
     <a class="domain-link" id="consoleBtn" href="#" target="_blank" rel="noopener">
-      <span class="mono" id="consoleHost">console.example.com</span>
+      <span id="consoleHost">console.example.com</span>
       <span class="arrow" aria-hidden="true">↗</span>
     </a>
 
     <div class="next">
-      <p class="next-title">Next: create your account</p>
+      <p class="next-title">Create your account</p>
       <p>
-        Opening the console lands on the registration form. You will need the
-        <strong>same setup token</strong> you used here — the first account
-        registered owns this instance.
+        The console opens on a registration form. Use the same setup token you entered
+        here — the first account created owns this instance.
       </p>
     </div>
 
     <div class="next">
-      <p class="next-title">Then: close the setup port</p>
+      <p class="next-title">The setup port closes itself</p>
       <p id="portNote">
-        Following the link stops this installer. Any firewall rule it opened for
-        port <span class="mono">9000</span> is removed with it — nothing to do.
+        Opening your console stops this installer. Any firewall rule it added for port
+        <span class="mono">9000</span> goes with it.
       </p>
     </div>
 
@@ -181,17 +317,18 @@
       <p class="next-title">DNS</p>
       <div id="finalChecks"></div>
     </div>
+
     <div class="actions">
-      <button class="ghost" id="recheckBtn">Re-check DNS</button>
+      <button class="ghost" id="recheckBtn">Check again</button>
       <button class="ghost" id="editBtn">Change the domain</button>
     </div>
-    <div class="hint" style="margin-top:10px">
-      A certificate is not required to continue. In self-managed DNS mode one is
-      issued per hostname on first request, so the first visit may take a moment.
-    </div>
+    <p class="hint">
+      You do not need a certificate to continue. With DNS kept at your provider, one is
+      issued the first time each hostname is visited, so the first load can be slow.
+    </p>
   </div>
-</div>
 
+</div>
 <script>
 (function () {
   var token = "";
