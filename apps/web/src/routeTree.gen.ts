@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SetupRequiredRouteImport } from './routes/setup-required'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
@@ -70,6 +71,11 @@ import { Route as AppProjectsIdJobsJobIdConfigRouteImport } from './routes/_app/
 import { Route as AppProjectsIdServicesServiceIdDeploymentsIndexRouteImport } from './routes/_app/projects/$id/services/$serviceId/deployments/index'
 import { Route as AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRouteImport } from './routes/_app/projects/$id/services/$serviceId/deployments/$deploymentId'
 
+const SetupRequiredRoute = SetupRequiredRouteImport.update({
+  id: '/setup-required',
+  path: '/setup-required',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/_auth',
   getParentRoute: () => rootRouteImport,
@@ -403,6 +409,7 @@ const AppProjectsIdServicesServiceIdDeploymentsDeploymentIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/setup-required': typeof SetupRequiredRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
@@ -463,6 +470,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
+  '/setup-required': typeof SetupRequiredRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
@@ -520,6 +528,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/_auth': typeof AuthRouteWithChildren
+  '/setup-required': typeof SetupRequiredRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_app/': typeof AppIndexRoute
@@ -583,6 +592,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/setup-required'
     | '/login'
     | '/register'
     | '/projects/$id'
@@ -643,6 +653,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/setup-required'
     | '/login'
     | '/register'
     | '/agents/$agentId'
@@ -699,6 +710,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/_auth'
+    | '/setup-required'
     | '/_auth/login'
     | '/_auth/register'
     | '/_app/'
@@ -762,10 +774,18 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRouteWithChildren
+  SetupRequiredRoute: typeof SetupRequiredRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/setup-required': {
+      id: '/setup-required'
+      path: '/setup-required'
+      fullPath: '/setup-required'
+      preLoaderRoute: typeof SetupRequiredRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_auth': {
       id: '/_auth'
       path: ''
@@ -1396,6 +1416,7 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRouteWithChildren,
+  SetupRequiredRoute: SetupRequiredRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

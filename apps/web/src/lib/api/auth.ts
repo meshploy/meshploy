@@ -1,8 +1,15 @@
 import { apiFetch } from "./core"
 
 export const auth = {
+  /**
+   * Public, and called before login. `setup_required` reports a gateway that
+   * was installed but never given a domain — the console assumes one, so it is
+   * gated on this rather than left to fail feature by feature.
+   */
   status: () =>
-    apiFetch<{ registration_open: boolean }>("/api/v1/auth/status"),
+    apiFetch<{ registration_open: boolean; setup_required: boolean }>(
+      "/api/v1/auth/status"
+    ),
 
   login: (email: string, password: string) =>
     apiFetch<{ token?: string; totp_required?: boolean; mfa_token?: string }>(

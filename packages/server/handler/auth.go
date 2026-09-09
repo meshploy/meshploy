@@ -126,23 +126,7 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Path:        "/api/v1/auth/status",
 		Summary:     "Check whether registration is open (no users exist yet)",
 		Tags:        []string{tag},
-	}, func(ctx context.Context, _ *struct{}) (*struct {
-		Body struct {
-			RegistrationOpen bool `json:"registration_open"`
-		}
-	}, error) {
-		open, err := h.svc.Auth.RegistrationOpen(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &struct {
-			Body struct {
-				RegistrationOpen bool `json:"registration_open"`
-			}
-		}{Body: struct {
-			RegistrationOpen bool `json:"registration_open"`
-		}{RegistrationOpen: open}}, nil
-	})
+	}, h.AuthStatus)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "register",
@@ -319,6 +303,49 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 }
 
 // --- Handlers ---
+
+type AuthStatusOutput struct {
+	Body struct {
+		RegistrationOpen bool `json:"registration_open"`
+		// SetupRequired reports a gateway whose install never finished. The
+		// console assumes a domain -- every template needs one for its
+		// subdomain, and a worker cannot join without Headscale's server_url --
+		// so it is gated on this rather than left to error feature by feature.
+		SetupRequired bool `json:"setup_required"`
+	}
+}
+
+func (h *Handler) AuthStatus(ctx context.Context, _ *struct{}) (*AuthStatusOutput, error) {
+	open, err := h.svc.Auth.RegistrationOpen(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &AuthStatusOutput{}
+	out.Body.RegistrationOpen = open
+	if h.cfg != nil {
+		out.Body.SetupRequired = setupRequired(
+			h.cfg.Domain, h.cfg.PublicIP, h.cfg.GatewayIP, h.cfg.GatewayHostname)
+	}
+	return out, nil
+}
+
+// setupRequired reports a gateway that was installed but never given a domain.
+//
+// The test is deliberately not "DOMAIN is empty". DOMAIN is optional, absent
+// from .env.example, and unset on every developer's machine -- gating on it
+// alone would lock local development out of the console the gate is meant to
+// protect.
+//
+// What marks a gateway is the rest of the seeding install.sh writes: a public
+// IP, a mesh IP, a hostname. A machine carrying those but no domain is a
+// half-configured gateway, which is exactly the state browser-first setup
+// exists to recover. A machine carrying none of them is somebody's laptop.
+func setupRequired(domain, publicIP, gatewayIP, gatewayHostname string) bool {
+	if domain != "" {
+		return false
+	}
+	return publicIP != "" || gatewayIP != "" || gatewayHostname != ""
+}
 
 func (h *Handler) RegisterUser(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
 	user, err := h.svc.Auth.Register(ctx, svc.RegisterInput{

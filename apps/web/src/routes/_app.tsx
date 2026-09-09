@@ -11,12 +11,28 @@ import { useOrgStore } from "@/store/org-store"
 import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayload, type MetricsPayload, type ServiceTerminalPayload } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
-import { orgs as orgsApi } from "@/lib/api"
+import { orgs as orgsApi, auth } from "@/lib/api"
 
 export const Route = createFileRoute("/_app")({
-  beforeLoad: () => {
+  beforeLoad: async () => {
     const { token } = useAuthStore.getState()
     if (!token) throw redirect({ to: "/login" })
+
+    // A gateway with no domain cannot run most of the console: every template
+    // needs a subdomain, routes need a hostname, and workers join through
+    // headscale.<domain>. Gate once here rather than letting each feature fail
+    // on its own — a console whose main paths error is worse than one that says
+    // what is missing.
+    //
+    // Failure to reach the endpoint is deliberately not a gate. The console
+    // should not become unreachable because a status call timed out; the
+    // features that need a domain will report it themselves.
+    try {
+      const status = await auth.status()
+      if (status.setup_required) throw redirect({ to: "/setup-required" })
+    } catch (e) {
+      if (e && typeof e === "object" && "to" in e) throw e
+    }
   },
   component: AppLayout,
 })
