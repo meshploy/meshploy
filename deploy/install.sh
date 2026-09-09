@@ -15,6 +15,9 @@ set -euo pipefail
 REINSTALL=false
 WIPE_DATA=false
 AUTO_MODE=false
+# Installed by get.sh before this script runs. Absent when install.sh is invoked
+# directly, in which case the browser path is simply not offered.
+MESHPLOY_CLI="${MESHPLOY_CLI:-/usr/local/bin/meshploy}"
 # Empty = decide interactively. --dns-mode is the only way to reach the
 # self-managed path under --auto, where nothing can be asked.
 DNS_MODE_FLAG=""
@@ -436,6 +439,48 @@ if [[ "$NODE_TYPE" == "master" ]]; then
 
   # Auto-detect public IP
   DETECTED_IP="$(curl -4 -fsSL https://ifconfig.me 2>/dev/null || echo "")"
+
+  # ── Terminal, or browser? ───────────────────────────────────────────────────
+  # The two questions that follow are the ones most often answered wrongly, and
+  # a terminal cannot tell you that you got them wrong -- it finds out minutes
+  # later, after the answers are already baked into generated config.
+  #
+  # `meshploy setup serve` asks the same questions on a page that can check DNS
+  # live and re-check after a fix, then re-enters this script with --auto. So
+  # both paths run the same installer; only the asking differs.
+  #
+  # Defaults to staying here: pressing Enter must behave as it always has.
+  if ! $AUTO_MODE && [[ -x "$MESHPLOY_CLI" ]]; then
+    echo
+    echo -e "  ${BOLD}Where would you like to answer the setup questions?${RESET}"
+    echo -e "    • ${BOLD}Here${RESET} — the prompts you already know."
+    echo -e "    • ${BOLD}In a browser${RESET} — same questions, but it checks your DNS as"
+    echo -e "      you go and shows the exact records to add. Needs port"
+    echo -e "      ${CYAN}9000${RESET} reachable from wherever your browser is."
+    echo
+    if ask_yn "Continue setup in a browser?" "n"; then
+      # The token gates the installer page. Reuse an existing one so an operator
+      # part-way through setup is not handed a second token that invalidates the
+      # first. Appended, never written over: .env may already hold a previous
+      # install's configuration.
+      if [[ -f .env ]] && grep -q '^SETUP_TOKEN=' .env; then
+        SETUP_TOKEN="$(grep -E '^SETUP_TOKEN=' .env | tail -1 | cut -d= -f2-)"
+      else
+        SETUP_TOKEN="ms_$(openssl rand -hex 16)"
+        printf 'SETUP_TOKEN=%s\n' "$SETUP_TOKEN" >> .env
+      fi
+      grep -q '^PUBLIC_IP=' .env 2>/dev/null || printf 'PUBLIC_IP=%s\n' "$DETECTED_IP" >> .env
+
+      echo
+      hr
+      echo -e "  ${BOLD}Setup token${RESET} — needed to open the page:"
+      echo -e "       ${BOLD}${CYAN}${SETUP_TOKEN}${RESET}"
+      hr
+      # exec, not call: the page re-runs this script with --auto once it has the
+      # answers, and two installers in one process tree would be one too many.
+      exec "$MESHPLOY_CLI" setup serve --public-ip "$DETECTED_IP"
+    fi
+  fi
 
   ask DOMAIN       "Base domain (e.g. meshploy.example.com)"
   ask PUBLIC_IP    "Public IP of this server" "$DETECTED_IP"
