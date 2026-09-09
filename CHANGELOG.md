@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.9.0](https://github.com/meshploy/meshploy/compare/v0.8.0...v0.9.0) (2026-09-09)
+
+
+### Features
+
+* add a browser-driven installer served by the cli ([f1fad20](https://github.com/meshploy/meshploy/commit/f1fad201edf0bbb178e541bb735598474ed7f18c))
+* add config file tools to the MCP surface ([cb06a7c](https://github.com/meshploy/meshploy/commit/cb06a7c6f6f486816214dc37e826894d7402876f))
+* add config files that project a file into a service at a path ([8fa5106](https://github.com/meshploy/meshploy/commit/8fa5106441dca90ea79e127325697ac902c0f1a3))
+* ask for registry credentials only when an anonymous pull fails ([c773440](https://github.com/meshploy/meshploy/commit/c77344086da2fd26c0331ce6d46f65efa4797bee))
+* create config files on the new-resource page instead of a dialog ([38b99bb](https://github.com/meshploy/meshploy/commit/38b99bba44e265a13e69ed17078a8a88dbb083a4))
+* encrypt kubernetes secrets at rest on new gateway installs ([3396e24](https://github.com/meshploy/meshploy/commit/3396e24e970f2eb736eb9f417913119eb6deddc8))
+* finish setup on a ready screen and make the domain changeable by re-running it ([db78ac1](https://github.com/meshploy/meshploy/commit/db78ac1162156c9a8c419b80b2f02ee81e0cd603))
+* fix a service's kubernetes name at creation instead of deriving it from its name ([09b148b](https://github.com/meshploy/meshploy/commit/09b148bf4c727489d0522b352a616e130e6b36e5))
+* gate the console on a gateway that never finished setup ([8c9ff6e](https://github.com/meshploy/meshploy/commit/8c9ff6e6a9a7fb8f88f8f630bfe58524bc216a2d))
+* gate the first registration on a one-time setup token ([91eb0cb](https://github.com/meshploy/meshploy/commit/91eb0cb9114dc5c71aec34447a5887a1523ff8ee))
+* give a config file a detail page listing the services that mount it ([39530c9](https://github.com/meshploy/meshploy/commit/39530c9a8117ed0969162666152ca633beb253d3))
+* give the installer the site's visual language and a clearer progress rail ([76e5ad5](https://github.com/meshploy/meshploy/commit/76e5ad5f07761a7b72bc9fe474ccc804f660e675))
+* let a template write a credential's bcrypt hash into a config file ([db7d10b](https://github.com/meshploy/meshploy/commit/db7d10bb1b69a8162472f4b365ea347c998b0e2d))
+* let an orphaned workload be removed from the cluster page ([166fee5](https://github.com/meshploy/meshploy/commit/166fee5dc2a09565aa3cf5ace2570e4b8ccd33a3))
+* let the template catalog be refreshed on demand instead of only on a timer ([d3d0b82](https://github.com/meshploy/meshploy/commit/d3d0b82189b38e2c5006b12e3953ec80938ccbce))
+* list a stack's config files beside its volumes and routes ([ddd4f86](https://github.com/meshploy/meshploy/commit/ddd4f86ed2d703a30bce90081f2286f67449ea8d))
+* mark edge builds with their commit and channel instead of a bare release version ([6691d3c](https://github.com/meshploy/meshploy/commit/6691d3c15b81118d510b1a0cb3153967fb87aa53))
+* offer to finish setup in a browser and hand over to it ([9c381a3](https://github.com/meshploy/meshploy/commit/9c381a3761939163ddb23a2f736b700b3d0fa114))
+* open the setup port for the wizard's lifetime and stop serving when it finishes ([1a117cc](https://github.com/meshploy/meshploy/commit/1a117cce2ee19303bda08d4cfdf32dc645ceb22e))
+* prefill the config file parent path and share one editor between both forms ([0c109eb](https://github.com/meshploy/meshploy/commit/0c109ebd2e8e5ee898bd26fde5ff6ce8d5894cf4))
+* report cluster workloads that no service owns ([62ed54a](https://github.com/meshploy/meshploy/commit/62ed54aff5c454950a3592fa0914761bc91f1ecb))
+* serve a single config file scoped to its project ([0b4ea9c](https://github.com/meshploy/meshploy/commit/0b4ea9cb15660aac6616ff662c906f1d4c467a40))
+* show the config file count on the project tab bar ([1417848](https://github.com/meshploy/meshploy/commit/14178487979a5af8b664b60e6cc5a03c4a486cb0))
+* tell an edge install when main has moved, named as an edge update ([633e648](https://github.com/meshploy/meshploy/commit/633e648c66bf84edbbbfb4a538e35e00881630d8))
+* tell the operator what an unfirewalled host leaves reachable ([ba3e8e0](https://github.com/meshploy/meshploy/commit/ba3e8e06ed9c721cf5dddefaa74d739a693af1d0))
+
+
+### Bug Fixes
+
+* forward the install flags node install never declared ([4bd2e3b](https://github.com/meshploy/meshploy/commit/4bd2e3b49ed4580dc1bd5e2901ef6358b8897fe8))
+* keep compose interpolation out of a config file's contents ([f8aeb08](https://github.com/meshploy/meshploy/commit/f8aeb08eb7d7441f35a2c13e59f87535c7f91334))
+* let caddy reach the tls ask endpoints it cannot authenticate to ([fdc9914](https://github.com/meshploy/meshploy/commit/fdc99147aa2397aeab0a506b574351dba0e921f2))
+* make the self-managed dns mode selectable, reversible and correctly described ([e4b4594](https://github.com/meshploy/meshploy/commit/e4b4594ca730446dd76090f35e86bbfada7ebe7a))
+* number a repeated template's stack so it cannot adopt the first one's volume ([6fb94cf](https://github.com/meshploy/meshploy/commit/6fb94cf8ece5bdc053c5ac5f5f834fa7672b5d86))
+* read a missing node port from the cluster instead of refusing the route ([bb3b1f5](https://github.com/meshploy/meshploy/commit/bb3b1f59ec2c5161d5c5340b47a93555e39022e5))
+* replace the old workload when a service is renamed ([c3d9491](https://github.com/meshploy/meshploy/commit/c3d9491dba2c121b7e6751183eae76dc29681015))
+* resume a finished install on the ready step instead of parking on install ([7e64ad7](https://github.com/meshploy/meshploy/commit/7e64ad76f576eceacc81055624f1a871e28af37d))
+* show both delegation records, since an NS record cannot point at an IP ([9138acc](https://github.com/meshploy/meshploy/commit/9138accf09003ff295a32dc7c059c7bbda77c5ea))
+* stop huma dropping a config file's fields from the detail response ([2706a53](https://github.com/meshploy/meshploy/commit/2706a53497376d9332bbbf72c905713fd9f7fa68))
+* stop the status reconciler locking itself out of its own applying write ([dbc12d1](https://github.com/meshploy/meshploy/commit/dbc12d117055f54661219cbddf97f3f2416755f9))
+* stream a deployment's log live when there is no build pod to follow ([284de53](https://github.com/meshploy/meshploy/commit/284de5389920285d903cabf67315c0c367709962))
+* stream the install with fetch so the browser can actually read it ([5e88702](https://github.com/meshploy/meshploy/commit/5e8870223a5921ff7116670f162d2dabf03f0238))
+
 ## [0.8.0](https://github.com/meshploy/meshploy/compare/v0.7.0...v0.8.0) (2026-09-02)
 
 
