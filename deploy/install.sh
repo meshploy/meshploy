@@ -533,7 +533,11 @@ if [[ "$NODE_TYPE" == "master" ]]; then
       echo
       echo -e "  ${BOLD}1) Keep NS delegation${RESET}  (recommended where your provider supports it)"
       echo -e "       • One wildcard certificate for ${CYAN}*.${DOMAIN}${RESET} via DNS-01."
-      echo -e "       • Add an ${BOLD}NS record${RESET} delegating ${BOLD}${DOMAIN}${RESET} to ${BOLD}${PUBLIC_IP}${RESET}."
+      echo -e "       • Add ${BOLD}two records${RESET} where ${BOLD}${DOMAIN}${RESET}'s parent zone is hosted:"
+      echo -e "             ${CYAN}ns1.${DOMAIN}${RESET}   A    ${CYAN}${PUBLIC_IP}${RESET}"
+      echo -e "             ${CYAN}${DOMAIN}${RESET}       NS   ${CYAN}ns1.${DOMAIN}${RESET}"
+      echo -e "         The A record first: an NS record names a nameserver, so that"
+      echo -e "         name has to resolve before the delegation means anything."
       echo -e "       • Certificates complete automatically once NS propagates"
       echo -e "         (minutes to a few hours)."
       echo
@@ -1053,7 +1057,9 @@ NEUNIT
     echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
     echo -e "    4. Check mesh:  tailscale status"
   else
-    echo -e "    1. Point your domain's NS records to this server (${PUBLIC_IP})"
+    echo -e "    1. Delegate ${DOMAIN} at your DNS provider, if you have not yet:"
+    echo -e "         ${CYAN}ns1.${DOMAIN}${RESET}   A    ${CYAN}${PUBLIC_IP}${RESET}"
+    echo -e "         ${CYAN}${DOMAIN}${RESET}       NS   ${CYAN}ns1.${DOMAIN}${RESET}"
     echo -e "    2. Verify DNS:  dig @${PUBLIC_IP} ${DOMAIN} A"
     echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
     echo -e "    4. Check mesh:  tailscale status"

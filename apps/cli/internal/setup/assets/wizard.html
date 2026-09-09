@@ -157,11 +157,22 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
 }
 .actions { display:flex; gap:9px; align-items:center; margin-top:18px; flex-wrap:wrap }
 
-pre.records {
-  background:var(--bg); border:1px solid var(--border); border-radius:8px;
-  padding:12px 13px; overflow-x:auto; margin:10px 0 0;
-  font-family:var(--font-mono); font-size:12.5px; color:var(--fg-2); line-height:1.7;
+.records { margin:10px 0 0 }
+.rec {
+  display:grid; grid-template-columns:20px 1fr auto minmax(0,1fr);
+  gap:10px; align-items:baseline;
+  background:var(--bg); border:1px solid var(--border);
+  padding:10px 12px; font-family:var(--font-mono); font-size:12.5px;
 }
+.rec:first-of-type { border-radius:8px 8px 0 0 }
+.rec:last-of-type  { border-radius:0 0 8px 8px; border-top:0 }
+.rec-n    { color:var(--fg-4) }
+.rec-name { color:var(--fg); overflow-wrap:anywhere }
+.rec-type { color:var(--primary); font-weight:500 }
+.rec-val  { color:var(--fg-2); overflow-wrap:anywhere }
+.rec-why  { grid-column:2 / -1; font-family:var(--font-sans); font-size:11.5px;
+            color:var(--fg-3); margin-top:3px }
+.rec-head { font-size:12px; color:var(--fg-3); margin:0 0 7px }
 
 .check { display:flex; gap:9px; align-items:baseline; padding:7px 0;
          border-bottom:1px solid var(--border); font-size:13px }
@@ -265,17 +276,17 @@ pre.records {
       <p class="hint">Your console, API and every app you deploy live on subdomains of this.</p>
     </div>
     <div class="row">
+      <label for="publicIP">Public IP</label>
+      <input id="publicIP" class="mono" spellcheck="false">
+    </div>
+    <div class="row">
       <label for="mode">How you want DNS handled</label>
       <select id="mode">
         <option value="delegation">Point the domain at this server — one certificate covers everything</option>
         <option value="ondemand">Keep DNS with your provider — a certificate per hostname</option>
       </select>
       <p class="hint" id="modeHint"></p>
-      <pre class="records" id="records"></pre>
-    </div>
-    <div class="row">
-      <label for="publicIP">Public IP</label>
-      <input id="publicIP" class="mono" spellcheck="false">
+      <div class="records" id="records"></div>
     </div>
     <div class="row">
       <label for="meshIP">Mesh IP</label>
@@ -383,18 +394,61 @@ pre.records {
     };
   }
 
-  // The records to add differ entirely by mode, and getting them wrong is the
-  // single most common way an install stalls — so show them, do not describe them.
+  // Getting these records wrong is the single commonest way an install stalls,
+  // so show the exact rows to type rather than describing them.
+  //
+  // Delegation needs two, in order. The zone Meshploy serves declares
+  // ns1.<domain> as its nameserver, and an NS record points at a *name* — so
+  // that name needs an address record in the parent zone first, or the
+  // delegation points at something nothing can resolve. Showing only the NS
+  // record, as this did, produced a delegation that could never work.
   function renderRecords() {
     var d = $("domain").value.trim() || "example.com";
-    var ip = $("publicIP").value.trim() || "<public ip>";
+    var ip = $("publicIP").value.trim() || "your server's public IP";
+    var rows, head;
+
     if ($("mode").value === "delegation") {
-      $("modeHint").textContent = "Your registrar must support delegating a subdomain by NS record.";
-      $("records").textContent = d + ".    NS    <this server's hostname>";
+      $("modeHint").textContent =
+        "Your registrar has to support delegating a subdomain by NS record. Add these two at the provider that hosts " +
+        parentOf(d) + ", in this order.";
+      head = "Two records, at your DNS provider";
+      rows = [
+        { name: "ns1." + d, type: "A", val: ip,
+          why: "Gives this server a nameserver name. The NS record below points here, so it has to exist first." },
+        { name: d, type: "NS", val: "ns1." + d,
+          why: "Hands the whole subdomain to this server, which then answers for every hostname under it." }
+      ];
     } else {
-      $("modeHint").textContent = "Works with any provider, including those that cannot delegate.";
-      $("records").textContent = "*." + d + "    A    " + ip + "\n" + d + "      A    " + ip;
+      $("modeHint").textContent =
+        "Works with any provider, including those that cannot delegate. You keep control of DNS.";
+      head = "Two records, at your DNS provider";
+      rows = [
+        { name: "*." + d, type: "A", val: ip,
+          why: "Covers your console, API and every app you deploy." },
+        { name: d, type: "A", val: ip,
+          why: "The domain itself. Some providers call this the root or @ record." }
+      ];
     }
+
+    var html = '<p class="rec-head">' + esc(head) + "</p>";
+    rows.forEach(function (r, i) {
+      html += '<div class="rec">' +
+        '<span class="rec-n">' + (i + 1) + "</span>" +
+        '<span class="rec-name">' + esc(r.name) + "</span>" +
+        '<span class="rec-type">' + esc(r.type) + "</span>" +
+        '<span class="rec-val">' + esc(r.val) + "</span>" +
+        '<span class="rec-why">' + esc(r.why) + "</span>" +
+        "</div>";
+    });
+    $("records").innerHTML = html;
+  }
+
+  // The records go at the provider hosting the parent zone, which for
+  // meshploy.example.com is example.com — naming it avoids the commonest
+  // mistake, which is adding them inside a zone that does not exist yet.
+  function parentOf(d) {
+    var parts = d.split(".");
+    return parts.length > 2 ? parts.slice(1).join(".") : d;
   }
 
   function renderChecks(el, st) {
