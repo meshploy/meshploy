@@ -34,6 +34,57 @@ for arg in "$@"; do
   esac
 done
 
+# registry_needs_login reports whether the Meshploy images require credentials.
+#
+# Answered by asking the registry, not by a flag: the images are public now, so
+# the common case must ask the operator nothing, while a private Enterprise or
+# forked image set still gets the prompt. Cached because it is called twice.
+#
+# Anything other than a clear "yes, anonymous pull works" counts as needing
+# login. A probe that cannot reach the registry should surface as a credentials
+# question the operator can answer, not as a silent skip followed by an
+# image-pull failure several minutes later.
+_REGISTRY_LOGIN_NEEDED=""
+registry_needs_login() {
+  if [[ -n "$_REGISTRY_LOGIN_NEEDED" ]]; then
+    [[ "$_REGISTRY_LOGIN_NEEDED" == "yes" ]]
+    return
+  fi
+
+  local image="${MESHPLOY_API_IMAGE:-ghcr.io/meshploy/api}"
+  local tag="${MESHPLOY_CHANNEL:-latest}"
+
+  # Only ghcr.io can be probed this way. Any other registry falls through to
+  # asking, which is the safe direction.
+  if [[ "$image" == ghcr.io/* ]]; then
+    local repo="${image#ghcr.io/}" token code
+    token="$(curl -sf --max-time 10 \
+      "https://ghcr.io/token?scope=repository:${repo}:pull&service=ghcr.io" 2>/dev/null \
+      | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+    if [[ -n "$token" ]]; then
+      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        -H "Authorization: Bearer ${token}" \
+        -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json" \
+        "https://ghcr.io/v2/${repo}/manifests/${tag}" 2>/dev/null)"
+      if [[ "$code" == "200" ]]; then
+        _REGISTRY_LOGIN_NEEDED="no"
+        [[ "$_REGISTRY_LOGIN_NEEDED" == "yes" ]]
+        return
+      fi
+    fi
+  fi
+
+  # Already authenticated to this registry from an earlier run? Then nothing to ask.
+  if [[ -n "${GHCR_USER:-}" ]]; then
+    _REGISTRY_LOGIN_NEEDED="no"
+    [[ "$_REGISTRY_LOGIN_NEEDED" == "yes" ]]
+    return
+  fi
+
+  _REGISTRY_LOGIN_NEEDED="yes"
+  return 0
+}
+
 # ── Self-bootstrap ────────────────────────────────────────────────────────────
 # Config files (coredns/, headscale/, caddy/) are only needed for the master
 # path. Worker installs piped via 'meshploy node add' run without them.
@@ -702,11 +753,23 @@ ENVEOF
 
   # ── Private registry login ──────────────────────────────────────────────────
   header "Container registry"
-  echo -e "  Meshploy images are hosted on GitHub Container Registry (ghcr.io)."
-  echo -e "  You need a GitHub Personal Access Token with ${BOLD}read:packages${RESET} scope."
-  echo -e "  Create one at: https://github.com/settings/tokens/new?scopes=read:packages"
-  echo
-  if ask_yn "Log in to ghcr.io now?"; then
+  # Meshploy's images are public, so this normally asks nothing.
+  #
+  # The prompt is kept rather than deleted because it is still the path for a
+  # private registry -- an Enterprise image set via MESHPLOY_API_IMAGE, or a
+  # fork publishing privately -- and `server-upgrade --ee` reads GHCR_USER back
+  # out of .env to re-authenticate later. Probing first means neither case needs
+  # a flag anyone has to know about: public images skip it, private ones ask.
+  if registry_needs_login; then
+    echo -e "  The Meshploy images could not be pulled anonymously, so this"
+    echo -e "  registry needs credentials."
+    echo -e "  For ghcr.io, use a GitHub Personal Access Token with ${BOLD}read:packages${RESET}."
+    echo -e "  Create one at: https://github.com/settings/tokens/new?scopes=read:packages"
+    echo
+  else
+    success "Images are publicly pullable — no registry login needed"
+  fi
+  if registry_needs_login && ask_yn "Log in to the registry now?"; then
     ask GHCR_USER "GitHub username"
     ask_secret GHCR_TOKEN "GitHub PAT (read:packages)"
     echo "$GHCR_TOKEN" | $CONTAINER_RUNTIME login ghcr.io --username "$GHCR_USER" --password-stdin \
@@ -721,8 +784,8 @@ ENVEOF
     # token that outlives its usefulness.
     echo "GHCR_USER=${GHCR_USER}" >> .env
     unset GHCR_TOKEN
-  else
-    warn "Skipping registry login. '$COMPOSE_CMD pull' will fail if images are private."
+  elif registry_needs_login; then
+    warn "Skipping registry login. '$COMPOSE_CMD pull' will fail while the images are private."
   fi
 
   # ── Phase 1: Start core services (no mesh IP needed yet) ────────────────────
