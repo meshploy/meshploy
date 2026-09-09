@@ -70,10 +70,10 @@ func (s *Server) Handler() http.Handler {
 // rather than silently serving an unauthenticated installer.
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Header only. A query-string fallback existed for EventSource, which
+		// cannot set headers -- the page now reads the stream with fetch, so the
+		// token never has to travel somewhere access logs record it.
 		got := r.Header.Get("X-Setup-Token")
-		if got == "" {
-			got = r.URL.Query().Get("token") // EventSource cannot set headers
-		}
 		if s.token == "" ||
 			subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
 			writeJSON(w, http.StatusForbidden, map[string]string{

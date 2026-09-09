@@ -48,21 +48,39 @@ body {
 }
 ::selection { background:var(--primary-soft); color:var(--fg) }
 
-/* The site's cross-grid, masked so it fades away from the content. */
+/* The site's cross-grid, carried over but not at the site's alpha.
+   The site runs a dense page where 22% reads as texture; this one is mostly
+   empty dark space, where the same value disappears — it looked like no
+   background had been applied at all. Same idea, tuned for this canvas. */
 body::before {
   content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
   background-image:
-    linear-gradient(oklch(0.21 0.005 90 / 0.22) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.21 0.005 90 / 0.22) 1px, transparent 1px);
+    linear-gradient(oklch(0.30 0.006 90 / 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.30 0.006 90 / 0.55) 1px, transparent 1px);
   background-size:40px 40px;
-  mask-image: radial-gradient(ellipse at 50% 22%, black 28%, transparent 72%);
+  /* Reaches further down than the site's mask: the panel sits lower here, and a
+     grid that stops above it leaves the page looking half-painted. */
+  mask-image: radial-gradient(ellipse 900px 800px at 50% 26%, black 42%, transparent 88%);
+  -webkit-mask-image: radial-gradient(ellipse 900px 800px at 50% 26%, black 42%, transparent 88%);
 }
-/* A single warm point of accent behind the panel — the site's hero glow, dimmed.
-   It is the only decoration on the page; everything else earns its place. */
+/* The site's hero glow. The only decoration on the page; everything else earns
+   its place. */
 body::after {
   content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  background: radial-gradient(ellipse 700px 420px at 50% 0%,
-    color-mix(in oklab, var(--primary) 7%, transparent) 0%, transparent 70%);
+  background:
+    radial-gradient(ellipse 820px 520px at 50% -4%,
+      color-mix(in oklab, var(--primary) 13%, transparent) 0%, transparent 68%),
+    /* The site's structural column rules, framing the content column so the
+       empty space either side reads as deliberate rather than unused. */
+    linear-gradient(to right,
+      transparent calc(50% - 384px),
+      var(--border) calc(50% - 384px),
+      var(--border) calc(50% - 383px),
+      transparent calc(50% - 383px),
+      transparent calc(50% + 383px),
+      var(--border) calc(50% + 383px),
+      var(--border) calc(50% + 384px),
+      transparent calc(50% + 384px));
 }
 
 .page { position:relative; z-index:1; max-width:720px; margin:0 auto; padding:40px 24px 72px }
@@ -448,23 +466,56 @@ pre.records {
     api("answers", answers()).then(function () {
       step(3);
       $("log").textContent = "";
-      // EventSource cannot set headers, so the token goes in the query here.
-      var es = new EventSource("/api/install?token=" + encodeURIComponent(token));
-      es.addEventListener("log", function (e) {
-        $("log").textContent += e.data + "\n";
-        $("log").scrollTop = $("log").scrollHeight;
-      });
-      es.addEventListener("done", function () { es.close(); step(4); verify(); });
-      es.addEventListener("failed", function (e) {
-        es.close();
-        fail($("installErr"), e.data);
+      // Read the SSE stream with fetch rather than EventSource.
+      //
+      // EventSource can only issue a GET and cannot set headers, which would
+      // mean both loosening the route to GET and putting the setup token in a
+      // query string — where it lands in access logs. fetch keeps the install a
+      // POST and the token a header.
+      fetch("/api/install", {
+        method: "POST",
+        headers: { "X-Setup-Token": token }
+      }).then(function (res) {
+        if (!res.ok || !res.body) throw new Error("could not start the installer (" + res.status + ")");
+        var reader = res.body.getReader();
+        var dec = new TextDecoder();
+        var buf = "";
+
+        function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) return;
+            buf += dec.decode(r.value, { stream: true });
+            // SSE frames are separated by a blank line; keep the last partial.
+            var frames = buf.split("\n\n");
+            buf = frames.pop();
+            frames.forEach(handleFrame);
+            return pump();
+          });
+        }
+
+        function handleFrame(frame) {
+          var ev = "message", data = "";
+          frame.split("\n").forEach(function (line) {
+            if (line.indexOf("event:") === 0) ev = line.slice(6).trim();
+            else if (line.indexOf("data:") === 0) data = line.slice(5).replace(/^ /, "");
+          });
+          if (ev === "log") {
+            $("log").textContent += data + "\n";
+            $("log").scrollTop = $("log").scrollHeight;
+          } else if (ev === "done") {
+            step(4); verify();
+          } else if (ev === "failed") {
+            fail($("installErr"), data);
+            show($("retryWrap"), true);
+          }
+        }
+
+        return pump();
+      }).catch(function (e) {
+        fail($("installErr"),
+          e.message + " — reload this page to reattach; the install keeps running.");
         show($("retryWrap"), true);
       });
-      es.onerror = function () {
-        es.close();
-        fail($("installErr"), "Lost the connection to the installer. Reload this page to reattach — the install keeps running.");
-        show($("retryWrap"), true);
-      };
     }).catch(function (e) { fail($("domainErr"), e.message); });
   }
 
