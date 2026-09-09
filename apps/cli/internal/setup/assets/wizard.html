@@ -439,13 +439,22 @@ pre.records {
       if (a.mesh_ip) $("meshIP").value = a.mesh_ip;
       renderRecords();
 
+      // Phase is authoritative; a transcript only says an install has run at
+      // some point. Testing the log first parked a *finished* install on the
+      // Install step, staring at a completed log with no way forward.
+      if (st.phase === "verify" || st.phase === "complete") { step(4); verify(); return; }
+
       if (st.phase === "install" || (st.log || []).length) {
         $("log").textContent = (st.log || []).join("\n");
         step(3);
-        if (st.failed) { fail($("installErr"), st.failed); show($("retryWrap"), true); }
+        // Resuming means no stream is attached to this page, so always offer a
+        // way on. An install interrupted by a restart leaves the phase at
+        // "install" with no recorded failure — without these buttons that is a
+        // dead end, which is the thing this installer exists to avoid.
+        if (st.failed) fail($("installErr"), st.failed);
+        show($("retryWrap"), true);
         return;
       }
-      if (st.phase === "verify" || st.phase === "complete") { step(4); verify(); return; }
       step(2);
     }).catch(function (e) { fail($("tokenErr"), e.message); });
   };
