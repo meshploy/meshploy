@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meshploy setup</title>
+<style>
+  :root {
+    --bg:#0b0d10; --panel:#12151a; --line:#232830; --fg:#e6e9ef;
+    --muted:#8b93a1; --accent:#22c55e; --danger:#ef4444; --warn:#f59e0b;
+  }
+  * { box-sizing:border-box }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  .wrap { max-width:760px; margin:0 auto; padding:48px 24px }
+  h1 { font-size:20px; margin:0 0 4px }
+  .sub { color:var(--muted); margin:0 0 32px }
+  /* Progress rail: the whole point of the separate layout is that the operator
+     can see where they are and that nothing else is reachable yet. */
+  .rail { display:flex; gap:8px; margin-bottom:28px }
+  .step { flex:1; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+          background:var(--panel); font-size:12px; color:var(--muted) }
+  .step.active { border-color:var(--accent); color:var(--fg) }
+  .step.done { border-color:var(--accent); color:var(--accent) }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          padding:20px; margin-bottom:16px }
+  label { display:block; font-size:12px; color:var(--muted); margin:0 0 6px }
+  input, select {
+    width:100%; height:38px; padding:0 10px; border-radius:8px;
+    border:1px solid var(--line); background:#0e1116; color:var(--fg); font-size:14px;
+  }
+  input:focus, select:focus { outline:2px solid #22c55e55; border-color:var(--accent) }
+  .row { margin-bottom:14px }
+  .hint { font-size:12px; color:var(--muted); margin-top:6px }
+  button {
+    height:38px; padding:0 16px; border-radius:8px; border:1px solid var(--accent);
+    background:var(--accent); color:#06210f; font-weight:600; font-size:14px; cursor:pointer;
+  }
+  button.ghost { background:transparent; color:var(--fg); border-color:var(--line) }
+  button:disabled { opacity:.5; cursor:not-allowed }
+  .actions { display:flex; gap:8px; align-items:center; margin-top:8px }
+  pre.records {
+    background:#0e1116; border:1px solid var(--line); border-radius:8px;
+    padding:12px; overflow-x:auto; font-size:12.5px; margin:10px 0 0;
+  }
+  .check { display:flex; gap:8px; align-items:baseline; padding:6px 0;
+           border-bottom:1px solid var(--line); font-size:13px }
+  .check:last-child { border-bottom:0 }
+  .ok { color:var(--accent) } .bad { color:var(--danger) } .wait { color:var(--warn) }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
+  #log {
+    background:#08090c; border:1px solid var(--line); border-radius:8px; padding:12px;
+    height:300px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12.5px; white-space:pre-wrap; color:#c8cedb;
+  }
+  .err { color:var(--danger); font-size:13px; margin-top:10px }
+  .hide { display:none }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Set up Meshploy</h1>
+  <p class="sub">This page installs the gateway. It stays reachable until the console is up.</p>
+
+  <div class="rail">
+    <div class="step" id="s1">1 · Token</div>
+    <div class="step" id="s2">2 · Domain</div>
+    <div class="step" id="s3">3 · Install</div>
+    <div class="step" id="s4">4 · Verify</div>
+  </div>
+
+  <!-- Step 1 -->
+  <div class="card" id="c1">
+    <div class="row">
+      <label>Setup token</label>
+      <input id="token" class="mono" placeholder="ms_…" autocomplete="off" spellcheck="false">
+      <div class="hint">Printed by the installer. It is what proves you are the operator of this machine.</div>
+    </div>
+    <div class="actions"><button id="tokenBtn">Continue</button></div>
+    <div class="err hide" id="tokenErr"></div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="card hide" id="c2">
+    <div class="row">
+      <label>Base domain</label>
+      <input id="domain" class="mono" placeholder="meshploy.example.com" spellcheck="false">
+      <div class="hint">Meshploy serves the console, API and every app as subdomains of this.</div>
+    </div>
+    <div class="row">
+      <label>DNS mode</label>
+      <select id="mode">
+        <option value="delegation">Delegate the domain (NS record) — one wildcard certificate</option>
+        <option value="ondemand">Manage DNS myself (A records) — a certificate per hostname</option>
+      </select>
+      <div class="hint" id="modeHint"></div>
+      <pre class="records" id="records"></pre>
+    </div>
+    <div class="row">
+      <label>Public IP</label>
+      <input id="publicIP" class="mono" spellcheck="false">
+    </div>
+    <div class="row">
+      <label>Mesh IP <span style="opacity:.6">(advanced)</span></label>
+      <input id="meshIP" class="mono" value="100.64.0.1" spellcheck="false">
+    </div>
+    <div class="actions">
+      <button class="ghost" id="checkBtn">Check DNS</button>
+      <button id="installBtn">Start install</button>
+    </div>
+    <div id="checks"></div>
+    <div class="err hide" id="domainErr"></div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="card hide" id="c3">
+    <div id="log"></div>
+    <div class="err hide" id="installErr"></div>
+    <div class="actions hide" id="retryWrap">
+      <button class="ghost" id="backBtn">Change answers</button>
+      <button id="retryBtn">Retry install</button>
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="card hide" id="c4">
+    <div id="finalChecks"></div>
+    <div class="actions">
+      <button class="ghost" id="recheckBtn">Re-check</button>
+      <button id="consoleBtn">Open the console</button>
+    </div>
+    <div class="hint" style="margin-top:10px">
+      A certificate is not required to continue. In self-managed DNS mode one is
+      issued per hostname on first request.
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var token = "";
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (el, on) { el.classList.toggle("hide", !on); };
+
+  function step(n) {
+    [1,2,3,4].forEach(function (i) {
+      var s = $("s"+i), c = $("c"+i);
+      s.className = "step" + (i === n ? " active" : (i < n ? " done" : ""));
+      show(c, i === n);
+    });
+  }
+
+  function api(path, body) {
+    return fetch("/api/" + path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { "X-Setup-Token": token, "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ("request failed: " + r.status));
+        return j;
+      });
+    });
+  }
+
+  function answers() {
+    return {
+      domain: $("domain").value.trim(),
+      dns_mode: $("mode").value,
+      public_ip: $("publicIP").value.trim(),
+      mesh_ip: $("meshIP").value.trim()
+    };
+  }
+
+  // The records to add differ entirely by mode, and getting them wrong is the
+  // single most common way an install stalls — so show them, do not describe them.
+  function renderRecords() {
+    var d = $("domain").value.trim() || "example.com";
+    var ip = $("publicIP").value.trim() || "<public ip>";
+    if ($("mode").value === "delegation") {
+      $("modeHint").textContent = "Your registrar must support delegating a subdomain by NS record.";
+      $("records").textContent = d + ".    NS    <this server's hostname>";
+    } else {
+      $("modeHint").textContent = "Works with any provider, including those that cannot delegate.";
+      $("records").textContent = "*." + d + "    A    " + ip + "\n" + d + "      A    " + ip;
+    }
+  }
+
+  function renderChecks(el, st) {
+    var html = "";
+    if (st.mode === "delegation") {
+      html += row(st.delegated, "NS delegation",
+        st.delegated ? (st.name_servers || []).join(", ") : "not visible yet");
+    }
+    (st.hosts || []).forEach(function (h) {
+      html += row(h.matches, h.host,
+        h.error ? h.error : (h.addrs || []).join(", ") || "no answer");
+    });
+    if (!st.ready && st.reason) html += '<div class="check wait">· ' + esc(st.reason) + "</div>";
+    if (st.ready) html += '<div class="check ok">· Ready to continue</div>';
+    el.innerHTML = html;
+    return st.ready;
+  }
+
+  function row(ok, label, detail) {
+    return '<div class="check"><span class="' + (ok ? "ok" : "bad") + '">' +
+      (ok ? "✓" : "✗") + '</span><span class="mono">' + esc(label) +
+      '</span><span style="color:var(--muted)">' + esc(detail) + "</span></div>";
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c];
+    });
+  }
+
+  function fail(el, msg) { el.textContent = msg; show(el, true); }
+
+  // Step 1 — the token also fetches state, so a reload resumes where it left off.
+  $("tokenBtn").onclick = function () {
+    token = $("token").value.trim();
+    show($("tokenErr"), false);
+    api("state").then(function (st) {
+      var a = st.answers || {};
+      if (a.domain) $("domain").value = a.domain;
+      if (a.dns_mode) $("mode").value = a.dns_mode;
+      if (a.public_ip) $("publicIP").value = a.public_ip;
+      if (a.mesh_ip) $("meshIP").value = a.mesh_ip;
+      renderRecords();
+
+      if (st.phase === "install" || (st.log || []).length) {
+        $("log").textContent = (st.log || []).join("\n");
+        step(3);
+        if (st.failed) { fail($("installErr"), st.failed); show($("retryWrap"), true); }
+        return;
+      }
+      if (st.phase === "verify" || st.phase === "complete") { step(4); verify(); return; }
+      step(2);
+    }).catch(function (e) { fail($("tokenErr"), e.message); });
+  };
+
+  ["domain", "publicIP"].forEach(function (id) { $(id).oninput = renderRecords; });
+  $("mode").onchange = renderRecords;
+
+  $("checkBtn").onclick = function () {
+    show($("domainErr"), false);
+    api("check-domain", answers())
+      .then(function (st) { renderChecks($("checks"), st); })
+      .catch(function (e) { fail($("domainErr"), e.message); });
+  };
+
+  function startInstall() {
+    show($("installErr"), false);
+    show($("retryWrap"), false);
+    api("answers", answers()).then(function () {
+      step(3);
+      $("log").textContent = "";
+      // EventSource cannot set headers, so the token goes in the query here.
+      var es = new EventSource("/api/install?token=" + encodeURIComponent(token));
+      es.addEventListener("log", function (e) {
+        $("log").textContent += e.data + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      });
+      es.addEventListener("done", function () { es.close(); step(4); verify(); });
+      es.addEventListener("failed", function (e) {
+        es.close();
+        fail($("installErr"), e.data);
+        show($("retryWrap"), true);
+      });
+      es.onerror = function () {
+        es.close();
+        fail($("installErr"), "Lost the connection to the installer. Reload this page to reattach — the install keeps running.");
+        show($("retryWrap"), true);
+      };
+    }).catch(function (e) { fail($("domainErr"), e.message); });
+  }
+
+  $("installBtn").onclick = startInstall;
+  $("retryBtn").onclick = startInstall;
+  $("backBtn").onclick = function () { step(2); };
+
+  function verify() {
+    api("check-domain", answers()).then(function (st) {
+      renderChecks($("finalChecks"), st);
+      $("consoleBtn").onclick = function () {
+        location.href = "https://console." + $("domain").value.trim();
+      };
+    });
+  }
+  $("recheckBtn").onclick = verify;
+
+  step(1);
+  $("token").focus();
+})();
+</script>
+</body>
+</html>
