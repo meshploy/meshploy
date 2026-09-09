@@ -16,7 +16,13 @@ To install or update the CLI only (skips node setup):
 sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)" _ --cli-only
 ```
 
-The binary is installed to `/usr/local/bin/meshploy`.
+To install the edge build from `main` rather than the latest stable release:
+
+```bash
+sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)" _ --cli-only --edge
+```
+
+The binary is installed to `/usr/local/bin/meshploy`. Once installed, `meshploy update` and `meshploy update --edge` switch between the two channels.
 
 ---
 

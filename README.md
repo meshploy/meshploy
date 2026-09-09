@@ -190,10 +190,13 @@ All operations go through `get.sh` — no Docker Compose commands needed.
 | `sudo bash -c "$(curl -fsSL URL)" _ --uninstall` | Remove Meshploy (interactive) |
 | `sudo bash -c "$(curl -fsSL URL)" _ --cli-only` | Install or update the `meshploy` CLI binary only — safe on existing nodes |
 | `sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand` | Install without NS delegation — you add a wildcard A record and Caddy issues a certificate per hostname |
+| `sudo bash -c "$(curl -fsSL URL)" _ --edge` | Install edge builds from `main` instead of the latest stable release |
 
 > Replace `URL` with `https://meshploy.com/install.sh`
 
 > **DNS mode**: by default Meshploy asks you to delegate the domain with an **NS record**, which yields one wildcard certificate. If your provider cannot delegate a subdomain (Hostinger, for example), pass `--dns-mode=ondemand` and add `*.<domain>` and `<domain>` **A records** pointing at the server instead. The installer also offers this choice interactively when it cannot see an NS delegation. Re-runs keep whichever mode the server was installed with.
+
+> **Release channel**: by default the installer tracks the latest **stable** release — `:latest` images and the `deploy/` config from the newest release tag. Pass `--edge` to track `main` instead, which pulls `:main` images and branch config. Edge carries work that has not been released yet, so prefer stable unless you need something that has just landed. The choice is not remembered: a later re-run or `sudo meshploy server-upgrade` without `--edge` writes `MESHPLOY_CHANNEL=latest` and moves the install back to stable, so pass `--edge` every time if you mean to stay on it.
 
 > **TLS cert cache**: Caddy stores Let's Encrypt certificates in a Docker volume. `--reinstall` always preserves this volume to avoid hitting rate limits (5 certs per domain per week). Use `--wipe-data` only when you genuinely need a clean slate.
 
