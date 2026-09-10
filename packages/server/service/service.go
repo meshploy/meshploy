@@ -205,7 +205,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Projects:        &ProjectService{db: db},
 		ConfigFiles:     configFiles,
 		Orphans:         &OrphanService{db: db, k8s: k8sClient, workloads: workloads},
-		Stacks:          &StackService{db: db, workload: workloads, volumes: volumes, routes: routes, configFiles: configFiles, deployment: deployments},
+		Stacks:          &StackService{db: db, git: gitSvc, workload: workloads, volumes: volumes, routes: routes, configFiles: configFiles, deployment: deployments},
 		Nodes:           nodes,
 		Workloads:       workloads,
 		Volumes:         volumes,

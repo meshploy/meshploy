@@ -12,12 +12,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/meshploy/packages/server/version"
 )
 
 const (
-	// BuilderImage is the container image that performs git clone + build + push.
+	// builderImageRepo is the image that performs git clone + build + push.
 	// Contains: git, nixpacks, railpack, buildah.
-	BuilderImage = "ghcr.io/meshploy/builder:latest"
+	builderImageRepo = "ghcr.io/meshploy/builder"
 
 	// BuilderNodeLabel is the node label used to schedule build jobs.
 	BuilderNodeLabel = "meshploy.com/role"
@@ -26,11 +28,22 @@ const (
 	// buildCachePVC is the shared PVC for all build caches in a namespace.
 	// Subpaths partition it: "buildah" for buildah/nixpacks layers,
 	// "buildkit" for railpack's BuildKit layer cache.
-	buildCachePVC          = "build-cache"
-	buildCacheSize         = "20Gi"
-	buildahCacheMountAt    = "/var/lib/containers/storage"  // root buildah storage
-	buildkitCacheMountAt   = "/tmp/buildkit-root"           // buildkitd --root
+	buildCachePVC        = "build-cache"
+	buildCacheSize       = "20Gi"
+	buildahCacheMountAt  = "/var/lib/containers/storage" // root buildah storage
+	buildkitCacheMountAt = "/tmp/buildkit-root"          // buildkitd --root
 )
+
+// DefaultBuilderImage is the builder matching this API's release channel. An
+// edge API runs the builder built from main, so a change to the build script
+// reaches edge servers with the rest of an edge build instead of waiting for a
+// release.
+func DefaultBuilderImage() string {
+	if version.Channel == "edge" {
+		return builderImageRepo + ":main"
+	}
+	return builderImageRepo + ":latest"
+}
 
 // BuildJobParams holds everything the build job needs.
 type BuildJobParams struct {
@@ -38,10 +51,14 @@ type BuildJobParams struct {
 	JobName string
 	// K8s namespace to run in (= project slug).
 	Namespace string
+	// Builder image to run. Empty = DefaultBuilderImage().
+	Image string
 	// Git source
-	GitRepo   string // "owner/repo"
+	GitRepo   string // as stored: owner/repo, a GitLab group path, or a full URL; for log lines
+	GitURL    string // https clone URL, without credentials
+	GitUser   string // presented with GitToken: x-access-token (GitHub), oauth2 (GitLab, Gitea)
 	GitBranch string
-	GitToken  string // short-lived GitHub installation token
+	GitToken  string // empty for a public repository
 	// Build method: "nixpacks" | "railpack" | "dockerfile"
 	Builder string
 	// Full destination image ref, e.g. "registry.example.com/myapp:abc1234"
@@ -148,7 +165,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 					},
 					// If a specific node is requested, pin via NodeName (bypasses
 					// scheduler). Otherwise fall back to the role label selector.
-					NodeName:     p.BuilderNode,
+					NodeName: p.BuilderNode,
 					NodeSelector: func() map[string]string {
 						if p.BuilderNode != "" {
 							return nil
@@ -177,7 +194,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 					Containers: []corev1.Container{
 						{
 							Name:            "builder",
-							Image:           BuilderImage,
+							Image:           builderImageOr(p.Image),
 							ImagePullPolicy: corev1.PullAlways,
 							Command:         []string{"/usr/local/bin/meshploy-build"},
 							// Resource requests give the scheduler enough signal to prefer
@@ -191,6 +208,8 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							},
 							Env: []corev1.EnvVar{
 								{Name: "GIT_REPO", Value: p.GitRepo},
+								{Name: "GIT_URL", Value: p.GitURL},
+								{Name: "GIT_USER", Value: p.GitUser},
 								{Name: "GIT_BRANCH", Value: p.GitBranch},
 								{Name: "GIT_TOKEN", Value: p.GitToken},
 								{Name: "ROOT_DIR", Value: p.RootDir},
@@ -309,6 +328,13 @@ func FetchContainerLog(ctx context.Context, client kubernetes.Interface, namespa
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func builderImageOr(image string) string {
+	if image == "" {
+		return DefaultBuilderImage()
+	}
+	return image
+}
 
 func builderCPU(v string) string {
 	if v == "" {

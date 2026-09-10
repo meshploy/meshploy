@@ -25,6 +25,7 @@ import (
 
 type StackService struct {
 	db          *gorm.DB
+	git         *GitIntegrationService
 	workload    *WorkloadService
 	volumes     *VolumeService
 	routes      *RouteService
@@ -350,25 +351,18 @@ func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy 
 // fetchSpec retrieves the compose file content from the stack's git source.
 // Returns the spec content and the commit SHA (best-effort; empty string if unavailable).
 func (s *StackService) fetchSpec(ctx context.Context, stack *meshdb.Stack) (spec, sha string, err error) {
-	token := ""
-	if stack.GitIntegration != nil {
-		gi := stack.GitIntegration
-		if gi.GHAppID != "" && string(gi.InstallationID) != "" {
-			token, err = getInstallationToken(gi.GHAppID, string(gi.GHPrivateKey), string(gi.InstallationID))
-			if err != nil {
-				return "", "", fmt.Errorf("get github token: %w", err)
-			}
-		} else {
-			// PAT or OAuth access token stored in InstallationID field
-			token = string(gi.InstallationID)
-		}
+	// The same resolution a build uses, so an OAuth token is renewed before it
+	// expires rather than used stale.
+	creds, err := s.git.cloneCredentials(ctx, stack.GitIntegration, stack.GitRepo)
+	if err != nil {
+		return "", "", err
 	}
 
 	switch stack.GitMode {
 	case meshdb.StackGitModeFile:
-		spec, sha, err = fetchRawFile(ctx, stack.GitRepo, stack.GitBranch, stack.GitPath, token)
+		spec, sha, err = fetchRawFile(ctx, stack.GitRepo, stack.GitBranch, stack.GitPath, creds.Token)
 	case meshdb.StackGitModeRepo:
-		spec, sha, err = cloneAndReadFile(ctx, stack.GitRepo, stack.GitBranch, stack.GitPath, token)
+		spec, sha, err = cloneAndReadFile(ctx, creds, stack.GitBranch, stack.GitPath)
 	default:
 		err = fmt.Errorf("unsupported git mode: %q", stack.GitMode)
 	}
@@ -405,8 +399,8 @@ func fetchRawFile(ctx context.Context, repoURL, branch, filePath, token string) 
 }
 
 // cloneAndReadFile does a shallow clone and reads the target file from the working tree.
-func cloneAndReadFile(ctx context.Context, repoURL, branch, filePath, token string) (content, sha string, err error) {
-	dir, err := cloneRepo(ctx, repoURL, branch, token)
+func cloneAndReadFile(ctx context.Context, creds gitCredentials, branch, filePath string) (content, sha string, err error) {
+	dir, err := cloneRepo(ctx, creds, branch)
 	if err != nil {
 		return "", "", err
 	}
@@ -1113,17 +1107,17 @@ func toRawURL(repoURL, branch, filePath string) (string, error) {
 }
 
 // cloneRepo does a shallow clone into a temp directory and returns the path.
-func cloneRepo(ctx context.Context, repoURL, branch, token string) (string, error) {
+// The credentials go to git as a header on this one command (see gitEnv), not
+// into the URL, where git would keep them in .git/config and repeat them in
+// its error output. They also used to be sent as GitHub's user name to every
+// provider.
+func cloneRepo(ctx context.Context, creds gitCredentials, branch string) (string, error) {
 	dir, err := os.MkdirTemp("", "meshploy-stack-*")
 	if err != nil {
 		return "", err
 	}
-	cloneURL := repoURL
-	if token != "" {
-		// Embed token in URL for HTTPS auth.
-		cloneURL = strings.Replace(repoURL, "https://", "https://x-access-token:"+token+"@", 1)
-	}
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", branch, cloneURL, dir)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", branch, creds.URL, dir)
+	cmd.Env = append(os.Environ(), creds.gitEnv()...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("git clone: %w — %s", err, strings.TrimSpace(string(out)))

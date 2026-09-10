@@ -135,7 +135,7 @@ Required in `.env` at the monorepo root:
 | `API_BASE_URL` | Public base URL of the API (default: `http://localhost:4000`) |
 | `FRONTEND_URL` | Console URL (default: `http://localhost:5173`) |
 | `HEADSCALE_USER` | Headscale user pre-auth keys are created under (default: `meshploy`) |
-| `BUILDER_IMAGE` | Override the builder container image |
+| `BUILDER_IMAGE` | Override the builder container image (default: `ghcr.io/meshploy/builder:latest`, or `:main` on an edge API) |
 | `UPGRADE_DIR` | Where the console and the host-side updater meet (default: `/var/lib/meshploy/upgrade`). docker-compose mounts its `inbox/` read-write and `state/` read-only, so the API can queue an upgrade but never run one |
 
 ---

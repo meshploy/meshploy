@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Meshploy build script — runs inside the K8s builder Job container.
 # Environment variables are injected by the K8s Job spec:
-#   GIT_REPO       owner/repo
+#   GIT_URL        https clone URL, without credentials
+#   GIT_REPO       the repository as stored (owner/repo, a GitLab path, or a
+#                  URL): for log lines, and the clone source when an API from
+#                  before GIT_URL sends only this
 #   GIT_BRANCH     branch to build
-#   GIT_TOKEN      GitHub installation access token
+#   GIT_USER       user presented with GIT_TOKEN (x-access-token, oauth2)
+#   GIT_TOKEN      access token; empty for a public repository
 #   BUILDER        nixpacks | railpack | dockerfile
 #   IMAGE_DEST     registry/image:tag to push to
 #   REGISTRY_HOST  registry hostname (for buildah login)
@@ -15,14 +19,14 @@ set -euo pipefail
 log() { echo -e "\033[1;34m[meshploy-build]\033[0m $*"; }
 die() { echo -e "\033[1;31m[meshploy-build] ERROR:\033[0m $*" >&2; exit 1; }
 
-[[ -z "${GIT_REPO:-}"    ]] && die "GIT_REPO is not set"
+[[ -z "${GIT_URL:-}" && -z "${GIT_REPO:-}" ]] && die "GIT_URL is not set"
 [[ -z "${GIT_BRANCH:-}"  ]] && die "GIT_BRANCH is not set"
-[[ -z "${GIT_TOKEN:-}"   ]] && die "GIT_TOKEN is not set"
 [[ -z "${IMAGE_DEST:-}"  ]] && die "IMAGE_DEST is not set"
 [[ -z "${REGISTRY_HOST:-}" ]] && die "REGISTRY_HOST is not set"
 
 BUILDER="${BUILDER:-nixpacks}"
-WORKDIR="/tmp/workspace"
+# Overridable so the clone can be exercised outside a build pod.
+WORKDIR="${MESHPLOY_BUILD_WORKDIR:-/tmp/workspace}"
 
 # ── Parse build-time env vars ─────────────────────────────────────────────────
 # BUILD_ENV_VARS is a newline-separated list of KEY=VALUE pairs.
@@ -59,10 +63,30 @@ if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
 fi
 
 # ── Clone ─────────────────────────────────────────────────────────────────────
-log "Cloning ${GIT_REPO}@${GIT_BRANCH}…"
-git clone --depth=1 --branch "${GIT_BRANCH}" \
-    "https://x-access-token:${GIT_TOKEN}@github.com/${GIT_REPO}.git" \
-    "${WORKDIR}"
+# An API from before GIT_URL existed sends only GIT_REPO, which it always meant
+# as owner/repo on github.com.
+if [[ -z "${GIT_URL:-}" ]]; then
+    case "${GIT_REPO}" in
+        http://*|https://*) GIT_URL="${GIT_REPO}" ;;
+        *)                  GIT_URL="https://github.com/${GIT_REPO}.git" ;;
+    esac
+fi
+
+# The token goes to git as a header on this one command, through git's
+# environment config. It is never written into the URL: git records the remote
+# URL in .git/config, and a build that copies its context would carry the token
+# into the image.
+if [[ -n "${GIT_TOKEN:-}" ]]; then
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+    GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s:%s' "${GIT_USER:-x-access-token}" "${GIT_TOKEN}" | base64 -w0)"
+    export GIT_CONFIG_VALUE_0
+fi
+
+log "Cloning ${GIT_REPO:-${GIT_URL}}@${GIT_BRANCH}…"
+GIT_TERMINAL_PROMPT=0 git clone --depth=1 --branch "${GIT_BRANCH}" "${GIT_URL}" "${WORKDIR}"
+# Nothing after the clone needs them, and the build tools inherit this
+# environment.
+unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_TOKEN
 cd "${WORKDIR}"
 log "Cloned successfully ($(git rev-parse --short HEAD))"
 

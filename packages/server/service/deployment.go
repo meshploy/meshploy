@@ -153,24 +153,21 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		return nil, fmt.Errorf("create deployment record: %w", err)
 	}
 
-	// Resolve git token. Public repos (no GitIntegrationID) use an empty token.
-	gitToken := ""
+	// Resolve how the builder clones. A public repo has no integration and is
+	// cloned anonymously.
+	var gitIntegration *db.GitIntegration
 	if bc.GitIntegrationID != nil {
-		var gitIntegration db.GitIntegration
-		if err := s.db.WithContext(ctx).First(&gitIntegration, "id = ?", bc.GitIntegrationID).Error; err != nil {
-			s.failDeployment(deployment.ID, "git integration not found — it may have been deleted")
+		var gi db.GitIntegration
+		if err := s.db.WithContext(ctx).First(&gi, "id = ?", bc.GitIntegrationID).Error; err != nil {
+			s.failDeployment(deployment.ID, "git integration not found; it may have been deleted")
 			return &deployment, nil
 		}
-		if gitIntegration.GHAppID == "" || string(gitIntegration.InstallationID) == "" {
-			s.failDeployment(deployment.ID, "GitHub App not fully configured — complete setup and installation in Integrations")
-			return &deployment, nil
-		}
-		tok, err := getInstallationToken(gitIntegration.GHAppID, string(gitIntegration.GHPrivateKey), string(gitIntegration.InstallationID))
-		if err != nil {
-			s.failDeployment(deployment.ID, "failed to get GitHub token: "+err.Error())
-			return &deployment, nil
-		}
-		gitToken = tok
+		gitIntegration = &gi
+	}
+	gitCreds, err := s.git.cloneCredentials(ctx, gitIntegration, bc.GitRepo)
+	if err != nil {
+		s.failDeployment(deployment.ID, err.Error())
+		return &deployment, nil
 	}
 
 	// Same as the direct path: the service is deploying until the pipeline says
@@ -186,7 +183,7 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		namespace:    namespace,
 		jobName:      jobName,
 		imageName:    imageName,
-		gitToken:     gitToken,
+		git:          gitCreds,
 		registryHost: registryHost,
 		registryUser: registryUser,
 		registryPass: registryPass,
@@ -348,16 +345,19 @@ type runPipelineArgs struct {
 	namespace    string
 	jobName      string
 	imageName    string
-	gitToken     string
+	git          gitCredentials
 	registryHost string
 	registryUser string
 	registryPass string
 }
 
 func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) {
+	// BUILDER_IMAGE overrides; otherwise the builder matching this API's
+	// channel. This used to be worked out here and then never passed on, so
+	// the override did nothing and every job ran the stable builder.
 	builderImage := s.cfg.BuilderImage
 	if builderImage == "" {
-		builderImage = appk8s.BuilderImage
+		builderImage = appk8s.DefaultBuilderImage()
 	}
 
 	// Ensure the project namespace exists.
@@ -377,9 +377,12 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	err := appk8s.CreateBuildJob(ctx, s.k8s, appk8s.BuildJobParams{
 		JobName:       a.jobName,
 		Namespace:     a.namespace,
+		Image:         builderImage,
 		GitRepo:       a.bc.GitRepo,
+		GitURL:        a.git.URL,
+		GitUser:       a.git.User,
 		GitBranch:     a.bc.Branch,
-		GitToken:      a.gitToken,
+		GitToken:      a.git.Token,
 		RootDir:       a.bc.RootDir,
 		Builder:       string(a.bc.Builder),
 		ImageDest:     a.imageName,
