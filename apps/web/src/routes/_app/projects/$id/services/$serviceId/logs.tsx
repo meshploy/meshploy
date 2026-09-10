@@ -226,7 +226,7 @@ function LogsTab() {
               variant="ghost"
               size="icon-sm"
               onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute right-2 inset-y-0 my-auto text-muted-foreground hover:text-foreground"
             >
               <X className="h-3 w-3" />
             </Button>

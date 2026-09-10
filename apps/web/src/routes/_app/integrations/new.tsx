@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import React, { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Bell, Box, ChevronLeft, Eye, EyeOff, GitBranch, HardDrive, Mail,
+  Bell, Box, ChevronLeft, GitBranch, HardDrive, Mail,
   Loader2, Settings2, AlertCircle,
 } from "lucide-react"
 import { SiGithub, SiGitlab, SiGitea } from "@icons-pack/react-simple-icons"
@@ -28,6 +28,7 @@ import {
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Field, Section } from "@/components/services/form-primitives"
+import { PasswordInput } from "@/components/forms/password-input"
 import { cn } from "@/lib/utils"
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -185,10 +186,8 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
   const [baseURL,    setBaseURL]    = useState("")
   const [groups,     setGroups]     = useState("")
   const [pat,        setPAT]        = useState("")
-  const [showPAT,    setShowPAT]    = useState(false)
   const [clientID,   setClientID]   = useState("")
   const [clientSecret, setClientSecret] = useState("")
-  const [showSecret, setShowSecret] = useState(false)
   const [githubOrg,  setGithubOrg]  = useState("")
   const [error,      setError]      = useState<string | null>(null)
   const [actioning,  setActioning]  = useState(false)
@@ -400,18 +399,12 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
 
           {isPAT ? (
             <Field label="Personal access token" required>
-              <div className="flex items-center gap-1">
-                <input type={showPAT ? "text" : "password"}
-                  value={pat} onChange={(e) => setPAT(e.target.value)}
-                  autoComplete="new-password"
-                  placeholder={provider === "gitlab" ? "glpat-…" : ""}
-                  className={`flex-1 ${monoCls}`}
-                />
-                <Button variant="ghost" size="icon-sm" onClick={() => setShowPAT((v) => !v)}
-                  className="p-2 text-muted-foreground hover:text-foreground transition-colors">
-                  {showPAT ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
+              <PasswordInput
+                value={pat} onChange={(e) => setPAT(e.target.value)}
+                autoComplete="new-password"
+                placeholder={provider === "gitlab" ? "glpat-…" : ""}
+                className={monoCls}
+              />
               <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
             </Field>
           ) : (
@@ -422,16 +415,10 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                 />
               </Field>
               <Field label={provider === "gitlab" ? "Application Secret" : "Client Secret"} required>
-                <div className="flex items-center gap-1">
-                  <input type={showSecret ? "text" : "password"}
-                    value={clientSecret} onChange={(e) => setClientSecret(e.target.value)}
-                    autoComplete="new-password" className={`flex-1 ${monoCls}`}
-                  />
-                  <Button variant="ghost" size="icon-sm" onClick={() => setShowSecret((v) => !v)}
-                    className="p-2 text-muted-foreground hover:text-foreground transition-colors">
-                    {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
+                <PasswordInput
+                  value={clientSecret} onChange={(e) => setClientSecret(e.target.value)}
+                  autoComplete="new-password" className={monoCls}
+                />
                 <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
               </Field>
             </>
@@ -486,7 +473,6 @@ function StorageForm({ onSuccess }: { onSuccess: () => void }) {
   const [bucket,      setBucket]      = useState("")
   const [accessKeyId, setAccessKeyId] = useState("")
   const [secretKey,   setSecretKey]   = useState("")
-  const [showSecret,  setShowSecret]  = useState(false)
   const [error,       setError]       = useState<string | null>(null)
 
   const providerMeta = STORAGE_PROVIDERS.find((p) => p.value === provider)!
@@ -571,17 +557,11 @@ function StorageForm({ onSuccess }: { onSuccess: () => void }) {
         </Field>
 
         <Field label="Secret access key" required>
-          <div className="flex items-center gap-1">
-            <input type={showSecret ? "text" : "password"}
-              value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
-              autoComplete="new-password"
-              className={`flex-1 ${monoCls}`}
-            />
-            <Button variant="ghost" size="icon-sm" onClick={() => setShowSecret((v) => !v)}
-              className="p-2 text-muted-foreground hover:text-foreground transition-colors">
-              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-          </div>
+          <PasswordInput
+            value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
+            autoComplete="new-password"
+            className={monoCls}
+          />
           <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
         </Field>
 
@@ -628,7 +608,6 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
   const [namespace,  setNamespace]  = useState("")
   const [username,   setUsername]   = useState("")
   const [password,   setPassword]   = useState("")
-  const [showPass,   setShowPass]   = useState(false)
   const [error,      setError]      = useState<string | null>(null)
 
   const providerMeta = REGISTRY_PROVIDERS.find((p) => p.value === provider)!
@@ -696,17 +675,11 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
         </Field>
 
         <Field label={providerMeta.passLabel} required>
-          <div className="flex items-center gap-1">
-            <input type={showPass ? "text" : "password"}
-              value={password} onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              className={`flex-1 ${monoCls}`}
-            />
-            <Button variant="ghost" size="icon-sm" onClick={() => setShowPass((v) => !v)}
-              className="p-2 text-muted-foreground hover:text-foreground transition-colors">
-              {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-          </div>
+          <PasswordInput
+            value={password} onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            className={monoCls}
+          />
           <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
         </Field>
 
@@ -746,7 +719,6 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
   const [secret,  setSecret]  = useState("")
   const [address, setAddress] = useState("")
   const [events,  setEvents]  = useState<string[]>(["deploy.failed", "node.offline"])
-  const [showSecret, setShowSecret] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
   const toggleEvent = (ev: string) =>
@@ -825,23 +797,12 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
             </Field>
             {type === "webhook" && (
               <Field label="Secret (optional)">
-                <div className="relative">
-                  <input
-                    type={showSecret ? "text" : "password"}
-                    value={secret}
-                    onChange={(e) => setSecret(e.target.value)}
-                    placeholder="optional signing secret"
-                    className={cn(inputCls, "pr-9")}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setShowSecret((s) => !s)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
-                  >
-                    {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </Button>
-                </div>
+                <PasswordInput
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder="optional signing secret"
+                  className={inputCls}
+                />
               </Field>
             )}
           </>
@@ -896,7 +857,6 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
   const [fromAddress, setFromAddress] = useState("")
   const [fromName,    setFromName]    = useState("")
   const [useTLS,      setUseTLS]      = useState(true)
-  const [showPass,    setShowPass]    = useState(false)
   const [error,       setError]       = useState<string | null>(null)
 
   // Pre-fill from existing config if present.
@@ -973,20 +933,13 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
         </Field>
 
         <Field label={prefilled ? "Password (leave empty to keep current)" : "Password"} required={!prefilled}>
-          <div className="flex items-center gap-1">
-            <input
-              type={showPass ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              placeholder={prefilled ? "unchanged" : ""}
-              className={`flex-1 ${monoCls}`}
-            />
-            <Button variant="ghost" size="icon-sm" onClick={() => setShowPass((v) => !v)}
-              className="p-2 text-muted-foreground hover:text-foreground transition-colors">
-              {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-          </div>
+          <PasswordInput
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            placeholder={prefilled ? "unchanged" : ""}
+            className={monoCls}
+          />
           <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
         </Field>
 

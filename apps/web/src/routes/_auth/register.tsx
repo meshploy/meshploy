@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
-import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react"
+import { Loader2, Lock, Mail } from "lucide-react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { auth, orgs as orgsApi, ApiError, type ApiInvitationInfo } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { PasswordInput } from "@/components/forms/password-input"
 
 export const Route = createFileRoute("/_auth/register")({
   validateSearch: (search): { token?: string } => ({ token: (search.token as string) || undefined }),
@@ -76,7 +77,6 @@ function FirstBootRegisterForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [setupToken, setSetupToken] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const registerMutation = useMutation({
@@ -111,7 +111,7 @@ function FirstBootRegisterForm() {
             value={email} onChange={(e) => setEmail(e.target.value)}
             className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow" />
         </Field>
-        <PasswordField value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword((v) => !v)} />
+        <PasswordField value={password} onChange={setPassword} />
         <Field label="Setup token">
           <input type="text" placeholder="ms_…" spellCheck={false} autoComplete="off"
             value={setupToken} onChange={(e) => setSetupToken(e.target.value)}
@@ -140,7 +140,6 @@ function InviteRegisterForm({ info, inviteToken }: { info: ApiInvitationInfo; in
   const setOrgs = useOrgStore((s) => s.setOrgs)
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const acceptMutation = useMutation({
@@ -179,7 +178,7 @@ function InviteRegisterForm({ info, inviteToken }: { info: ApiInvitationInfo; in
             value={username} onChange={(e) => setUsername(e.target.value)}
             className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow" />
         </Field>
-        <PasswordField value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword((v) => !v)} />
+        <PasswordField value={password} onChange={setPassword} />
         {error && <ErrorBanner>{error}</ErrorBanner>}
         <SubmitButton pending={acceptMutation.isPending} disabled={!username || !password}>
           Create account &amp; join
@@ -194,20 +193,12 @@ function InviteRegisterForm({ info, inviteToken }: { info: ApiInvitationInfo; in
   )
 }
 
-function PasswordField({ value, onChange, show, onToggle }: {
-  value: string; onChange: (v: string) => void; show: boolean; onToggle: () => void
-}) {
+function PasswordField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <Field label="Password">
-      <div className="relative">
-        <input type={show ? "text" : "password"} autoComplete="new-password" required minLength={8}
-          placeholder="Min. 8 characters" value={value} onChange={(e) => onChange(e.target.value)}
-          className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 pr-9 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow" />
-        <Button type="button" variant="ghost" size="icon-sm" onClick={onToggle}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-          {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-        </Button>
-      </div>
+      <PasswordInput autoComplete="new-password" required minLength={8}
+        placeholder="Min. 8 characters" value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow" />
     </Field>
   )
 }

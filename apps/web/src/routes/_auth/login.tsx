@@ -1,11 +1,12 @@
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
-import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react"
+import { Loader2, ShieldCheck } from "lucide-react"
 import { useMutation } from "@tanstack/react-query"
 import { auth, orgs, ApiError } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { PasswordInput } from "@/components/forms/password-input"
 
 export const Route = createFileRoute("/_auth/login")({
   loader: async () => {
@@ -23,7 +24,6 @@ function LoginPage() {
   const isDemo = import.meta.env.VITE_DEMO_MODE === "true"
   const [email, setEmail] = useState(isDemo ? "demo@meshploy.com" : "")
   const [password, setPassword] = useState(isDemo ? "demo" : "")
-  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // TOTP step state
@@ -180,25 +180,14 @@ function LoginPage() {
           />
         </Field>
         <Field label="Password">
-          <div className="relative">
-            <input
-              type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
-              required
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 pr-9 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
-            />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
+          <PasswordInput
+            autoComplete="current-password"
+            required
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
+          />
         </Field>
 
         {error && (
