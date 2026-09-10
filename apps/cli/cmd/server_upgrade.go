@@ -3,9 +3,12 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,11 +25,53 @@ const meshployRepo = "meshploy/meshploy"
 // tests can point the .env helpers at a temporary directory.
 var meshployInstDir = "/opt/meshploy"
 
+// upgradeBackupDirName holds what the last upgrade replaced, inside the install
+// directory so uninstalling removes it with the rest. Mode 0700, because it
+// holds a copy of .env.
+const upgradeBackupDirName = ".upgrade-previous"
+
+// protectedUpgradePaths are never written by an upgrade: they hold values
+// rendered at install time, or runtime state. The tarball extraction already
+// excludes them; installStaged checks again so that guarantee does not rest on
+// tar alone.
+var protectedUpgradePaths = []string{".env", "coredns/zones", "headscale/config/config.yaml", "headscale/data"}
+
+// Seams replaced by tests.
+var (
+	upgradeRefFor = resolveUpgradeRef
+	fetchDeploy   = downloadDeployTarball
+	composeExec   = func(dir, runtime string, args ...string) error {
+		c := exec.Command(runtime, append([]string{"compose"}, args...)...)
+		c.Dir = dir
+		c.Stdout, c.Stderr = os.Stdout, os.Stderr
+		return c.Run()
+	}
+	runtimeOutput = func(dir, runtime string, args ...string) ([]byte, error) {
+		c := exec.Command(runtime, args...)
+		c.Dir = dir
+		return c.Output()
+	}
+	runtimeExec = func(runtime string, args ...string) error {
+		return sysCmd(runtime, args...)
+	}
+	verifyStack = func(ctx context.Context) error {
+		return waitForHealthyStack(ctx, stackChecks(), upgradeHealthTimeout)
+	}
+)
+
 var serverUpgradeCmd = &cobra.Command{
 	Use:   "server-upgrade",
 	Short: "Sync deploy configs and pull latest images on this gateway server",
-	Long: `Downloads the latest deploy/ configuration from GitHub, substitutes the
-Corefile with values from .env, then pulls new container images and restarts.
+	Long: `Upgrades this gateway: downloads the deploy/ configuration for the release
+and pulls its images, then installs the configuration, restarts the services
+and checks that they answer.
+
+Nothing changes until the download and the pull have both succeeded, so a
+failure there leaves the server as it was. If the restart or the check fails,
+the previous configuration and images are put back and the services restarted
+on them; --no-rollback leaves the failed state in place for inspection instead.
+The files an upgrade replaces are kept in /opt/meshploy/.upgrade-previous until
+the next one. Database migrations the new version ran are not undone.
 
 Must be run as root on the gateway server (sudo meshploy server-upgrade).
 
@@ -48,20 +93,41 @@ Enterprise
 	RunE: runServerUpgrade,
 }
 
-func runServerUpgrade(cmd *cobra.Command, _ []string) error {
-	pat, _ := cmd.Flags().GetString("token")
-	if pat == "" {
-		pat = os.Getenv("GITHUB_PAT")
-	}
-	edge, _ := cmd.Flags().GetBool("edge")
-	noSync, _ := cmd.Flags().GetBool("no-sync")
-	ee, _ := cmd.Flags().GetBool("ee")
-	eeImage, _ := cmd.Flags().GetString("ee-image")
+type serverUpgradeOptions struct {
+	pat        string
+	edge       bool
+	noSync     bool
+	noRollback bool
+	ee         bool
+	eeImage    string
+}
 
-	if !noSync && os.Getuid() != 0 {
+func runServerUpgrade(cmd *cobra.Command, _ []string) error {
+	var o serverUpgradeOptions
+	o.pat, _ = cmd.Flags().GetString("token")
+	if o.pat == "" {
+		o.pat = os.Getenv("GITHUB_PAT")
+	}
+	o.edge, _ = cmd.Flags().GetBool("edge")
+	o.noSync, _ = cmd.Flags().GetBool("no-sync")
+	o.noRollback, _ = cmd.Flags().GetBool("no-rollback")
+	o.ee, _ = cmd.Flags().GetBool("ee")
+	o.eeImage, _ = cmd.Flags().GetString("ee-image")
+
+	if !o.noSync && os.Getuid() != 0 {
 		return fmt.Errorf("must be run as root — try: sudo meshploy server-upgrade")
 	}
+	return serverUpgrade(cmd.Context(), o)
+}
 
+// serverUpgrade applies a release in an order that can be undone.
+//
+// Everything that can fail without touching the running stack goes first: the
+// download into a private staging directory and the image pull. Only then are
+// the live files replaced and the services restarted, with every replaced file
+// saved and every running image recorded, so a restart that fails or a stack
+// that does not come back can be put back as it was.
+func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	runtime := detectContainerRuntime()
 
 	// What Caddy is serving now, to tell afterwards whether it must be recreated.
@@ -69,68 +135,122 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	caddyfile := filepath.Join(meshployInstDir, "caddy", "Caddyfile")
 	caddyBefore, _ := os.ReadFile(caddyfile)
 
+	// Download into a private directory first. Nothing live has changed yet,
+	// so a failed download leaves the server exactly as it was.
+	var staged string
+	if !o.noSync {
+		ref, err := upgradeRefFor(o.pat, o.edge)
+		if err != nil {
+			return err
+		}
+		if o.edge {
+			fmt.Println("Upgrading from edge (main)…")
+		} else {
+			fmt.Printf("Upgrading to stable release %s…\n", ref)
+		}
+		// MkdirTemp creates it 0700: it gets a copy of .env for the pull.
+		staged, err = os.MkdirTemp("", "meshploy-upgrade-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(staged)
+
+		fmt.Println("Downloading deploy configs…")
+		if err := fetchDeploy(o.pat, ref, staged); err != nil {
+			return err
+		}
+	}
+
+	// From here on, every change is recorded so a failure can put it back.
+	snap, err := newConfigSnapshot(filepath.Join(meshployInstDir, upgradeBackupDirName))
+	if err != nil {
+		return fmt.Errorf("prepare %s: %w", upgradeBackupDirName, err)
+	}
+	if err := snap.save(meshployInstDir, ".env"); err != nil {
+		return fmt.Errorf("save .env: %w", err)
+	}
+	images, err := recordRunningImages(runtime)
+	if err != nil {
+		fmt.Printf("warning: could not record the running images, so a rollback would keep the new ones: %v\n", err)
+	}
+
 	// Sync MESHPLOY_CHANNEL in .env so image pulls match the chosen channel.
 	channel := "latest"
-	if edge {
+	if o.edge {
 		channel = "main"
 	}
 	if err := syncEnvChannel(channel); err != nil {
 		fmt.Printf("warning: could not update MESHPLOY_CHANNEL in .env: %v\n", err)
 	}
 
-	if !noSync {
-		ref, err := resolveUpgradeRef(pat, edge)
-		if err != nil {
-			return err
-		}
-		if edge {
-			fmt.Println("Upgrading from edge (main)…")
-		} else {
-			fmt.Printf("Upgrading to stable release %s…\n", ref)
-		}
-
-		fmt.Println("Syncing deploy configs…")
-		if err := downloadDeployTarball(pat, ref); err != nil {
-			return err
-		}
-		fmt.Println("✔  Deploy configs synced")
-	}
-
-	// Substitute ${DOMAIN}, ${PUBLIC_IP}, ${MESH_IP} in the Corefile using .env values.
-	fmt.Println("Configuring Corefile…")
-	if err := substituteCorefile(); err != nil {
-		return fmt.Errorf("corefile substitution: %w", err)
-	}
-	fmt.Println("✔  Corefile configured")
-
-	if err := applyDNSModeCaddyfile(readEnvVar("DNS_MODE")); err != nil {
-		return fmt.Errorf("caddyfile: %w", err)
-	}
-	caddyAfter, _ := os.ReadFile(caddyfile)
-
 	// Enterprise image selection. Explicit --ee switches; otherwise a licensed
 	// install running the stock image just gets told, because a routine upgrade
 	// should not silently change which product is running.
 	scope := entitledRegistryScope()
-	if ee {
+	if o.ee {
+		eeImage := o.eeImage
 		if eeImage == "" {
 			eeImage = scope
 		}
-		if err := applyEEImage(runtime, eeImage, pat); err != nil {
-			return err
+		if err := applyEEImage(runtime, eeImage, o.pat); err != nil {
+			return putBackBeforeRestart(snap, err)
 		}
 	} else {
 		eeNotice(currentAPIImage(), scope)
 	}
 
-	fmt.Println("Pulling images…")
-	if err := composeRun(runtime, "pull", "--quiet"); err != nil {
-		return fmt.Errorf("compose pull: %w", err)
+	// Pull before the live configuration changes. From the staging directory,
+	// with a copy of the .env just written, so the pull resolves the tags the
+	// restarted stack will use; --no-sync has its configuration in place
+	// already.
+	pullDir := meshployInstDir
+	if staged != "" {
+		if err := copyFileKeepMode(filepath.Join(meshployInstDir, ".env"), filepath.Join(staged, ".env")); err != nil {
+			return putBackBeforeRestart(snap, err)
+		}
+		pullDir = staged
 	}
+	fmt.Println("Pulling images…")
+	if err := composeExec(pullDir, runtime, "pull", "--quiet"); err != nil {
+		return putBackBeforeRestart(snap, fmt.Errorf("compose pull: %w", err))
+	}
+
+	fail := func(err error) error {
+		return rollBack(ctx, runtime, snap, images, err, o.noRollback)
+	}
+
+	if staged != "" {
+		fmt.Println("Installing deploy configs…")
+		if err := installStaged(staged, meshployInstDir, snap); err != nil {
+			return fail(fmt.Errorf("install deploy configs: %w", err))
+		}
+		fmt.Println("✔  Deploy configs synced")
+	}
+
+	// Rendered in place below. Saved first so a --no-sync upgrade, which
+	// installed nothing, can put them back too; a no-op when the release
+	// already replaced them.
+	for _, rel := range []string{"coredns/Corefile", "caddy/Caddyfile"} {
+		if err := snap.save(meshployInstDir, rel); err != nil {
+			return fail(err)
+		}
+	}
+
+	// Substitute ${DOMAIN}, ${PUBLIC_IP}, ${MESH_IP} in the Corefile using .env values.
+	fmt.Println("Configuring Corefile…")
+	if err := substituteCorefile(); err != nil {
+		return fail(fmt.Errorf("corefile substitution: %w", err))
+	}
+	fmt.Println("✔  Corefile configured")
+
+	if err := applyDNSModeCaddyfile(readEnvVar("DNS_MODE")); err != nil {
+		return fail(fmt.Errorf("caddyfile: %w", err))
+	}
+	caddyAfter, _ := os.ReadFile(caddyfile)
 
 	fmt.Println("Restarting services…")
 	if err := composeRun(runtime, "up", "-d", "--remove-orphans"); err != nil {
-		return fmt.Errorf("compose up: %w", err)
+		return fail(fmt.Errorf("compose up: %w", err))
 	}
 
 	// up -d recreates a container only when its compose definition changes, not
@@ -140,12 +260,305 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	if !bytes.Equal(caddyBefore, caddyAfter) {
 		fmt.Println("Recreating Caddy to load the new Caddyfile…")
 		if err := composeRun(runtime, "up", "-d", "--force-recreate", "caddy"); err != nil {
-			return fmt.Errorf("recreate caddy: %w", err)
+			return fail(fmt.Errorf("recreate caddy: %w", err))
 		}
+	}
+
+	fmt.Println("Checking that the services answer…")
+	if err := verifyStack(ctx); err != nil {
+		return fail(err)
 	}
 
 	fmt.Println("✔  Server upgraded successfully")
 	return nil
+}
+
+// putBackBeforeRestart undoes the configuration changes after a failure that
+// came before any service restarted, so the running stack never saw them.
+func putBackBeforeRestart(snap *configSnapshot, cause error) error {
+	if err := snap.restore(meshployInstDir); err != nil {
+		return fmt.Errorf("%w\nPutting the configuration back failed too: %v\nThe previous files are in %s", cause, err, snap.dir)
+	}
+	return fmt.Errorf("%w\nNothing was restarted, and the configuration is as it was", cause)
+}
+
+// rollBack returns the stack to the version it ran before the upgrade: the
+// saved files, the recorded images, and a restart on them.
+func rollBack(ctx context.Context, runtime string, snap *configSnapshot, images []imageRef, cause error, disabled bool) error {
+	if disabled {
+		return fmt.Errorf("%w\nLeft as it is (--no-rollback). The files the upgrade replaced are in %s", cause, snap.dir)
+	}
+	fmt.Printf("\n✘  %v\nRolling back to the previous version…\n", cause)
+
+	var errs []error
+	if err := snap.restore(meshployInstDir); err != nil {
+		errs = append(errs, err)
+	}
+	if images == nil {
+		fmt.Println("warning: the running images were not recorded, so the new ones stay")
+	}
+	for _, im := range images {
+		if err := runtimeExec(runtime, "tag", im.id, im.ref); err != nil {
+			errs = append(errs, fmt.Errorf("retag %s: %w", im.ref, err))
+		}
+	}
+	// Recreated in full rather than left to up -d: Caddy and CoreDNS mount
+	// single files, and only a new container sees the restored ones.
+	if err := composeRun(runtime, "up", "-d", "--remove-orphans", "--force-recreate"); err != nil {
+		errs = append(errs, fmt.Errorf("compose up: %w", err))
+	}
+	if len(errs) == 0 {
+		if err := verifyStack(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("still not healthy on the previous version: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("upgrade failed: %v\nThe rollback did not complete either: %v\nThe files the upgrade replaced are in %s", cause, errors.Join(errs...), snap.dir)
+	}
+	fmt.Println("✔  Rolled back: the server is running the previous version again")
+	fmt.Println("   Database migrations the new version ran are not undone.")
+	return fmt.Errorf("upgrade failed and was rolled back: %w", cause)
+}
+
+// configSnapshot records the live files an upgrade replaces, so they can be put
+// back. Copies go in dir; files the upgrade adds are remembered so a rollback
+// removes them.
+type configSnapshot struct {
+	dir     string
+	saved   []string
+	created []string
+	seen    map[string]bool
+}
+
+func newConfigSnapshot(dir string) (*configSnapshot, error) {
+	if err := os.RemoveAll(dir); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	return &configSnapshot{dir: dir, seen: map[string]bool{}}, nil
+}
+
+// save records the live file at rel before its first change. Later calls for
+// the same path keep the first copy, which is the pre-upgrade one.
+func (s *configSnapshot) save(live, rel string) error {
+	if s.seen[rel] {
+		return nil
+	}
+	src := filepath.Join(live, rel)
+	fi, err := os.Lstat(src)
+	if errors.Is(err, fs.ErrNotExist) {
+		s.seen[rel] = true
+		s.created = append(s.created, rel)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", src)
+	}
+	dst := filepath.Join(s.dir, rel)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	if err := copyFileKeepMode(src, dst); err != nil {
+		return err
+	}
+	s.seen[rel] = true
+	s.saved = append(s.saved, rel)
+	return nil
+}
+
+// restore puts every saved file back and removes the ones the upgrade added.
+// It carries on past a failure so one bad file does not strand the rest.
+func (s *configSnapshot) restore(live string) error {
+	var errs []error
+	for _, rel := range s.saved {
+		if err := copyFileKeepMode(filepath.Join(s.dir, rel), filepath.Join(live, rel)); err != nil {
+			errs = append(errs, fmt.Errorf("restore %s: %w", rel, err))
+		}
+	}
+	for _, rel := range s.created {
+		if err := os.Remove(filepath.Join(live, rel)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("remove %s: %w", rel, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// installStaged copies the release from staged over the live directory,
+// saving each file it replaces into snap first. Files are replaced, not
+// rewritten in place, which is what the tar extraction this replaces did.
+func installStaged(staged, live string, snap *configSnapshot) error {
+	return filepath.WalkDir(staged, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(staged, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." {
+			return nil
+		}
+		if isProtectedUpgradePath(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		dst := filepath.Join(live, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("the release contains %s, which is not a regular file", rel)
+		}
+		if err := snap.save(live, rel); err != nil {
+			return err
+		}
+		return copyFileKeepMode(path, dst)
+	})
+}
+
+func isProtectedUpgradePath(rel string) bool {
+	for _, p := range protectedUpgradePaths {
+		if rel == p || strings.HasPrefix(rel, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// copyFileKeepMode replaces dst with a copy of src, keeping src's permissions.
+func copyFileKeepMode(src, dst string) error {
+	fi, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(dst, data, fi.Mode().Perm())
+}
+
+// imageRef is an image a running service uses: the name compose asked for,
+// and the image that name pointed at when the upgrade started.
+type imageRef struct{ ref, id string }
+
+// recordRunningImages notes which image every running service uses, so a
+// rollback can point each name back at it after the pull has moved it on.
+func recordRunningImages(runtime string) ([]imageRef, error) {
+	out, err := runtimeOutput(meshployInstDir, runtime, "compose", "ps", "-q")
+	if err != nil {
+		return nil, fmt.Errorf("compose ps: %w", err)
+	}
+	ids := strings.Fields(string(out))
+	if len(ids) == 0 {
+		return []imageRef{}, nil
+	}
+	args := append([]string{"inspect", "--format", "{{.Config.Image}}|{{.Image}}"}, ids...)
+	out, err = runtimeOutput(meshployInstDir, runtime, args...)
+	if err != nil {
+		return nil, fmt.Errorf("inspect: %w", err)
+	}
+	images := []imageRef{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		ref, id, ok := strings.Cut(strings.TrimSpace(line), "|")
+		if ok && ref != "" && id != "" {
+			images = append(images, imageRef{ref: ref, id: id})
+		}
+	}
+	return images, nil
+}
+
+// stackCheck is one service to probe after a restart.
+type stackCheck struct {
+	name string
+	url  string
+	host string // Host header, for a service that routes on it
+	api  bool   // must report {"status":"ok"}; the others only have to answer
+}
+
+// stackChecks are the ports docker-compose publishes on the gateway itself. An
+// HTTP answer from the console, proxy or Caddy means the process is up with its
+// configuration loaded: the proxy answers 404 for a host it has no route for,
+// and Caddy 308 to HTTPS. A crashed container does not answer at all.
+func stackChecks() []stackCheck {
+	host := ""
+	if d := readEnvVar("DOMAIN"); d != "" {
+		host = "console." + d
+	}
+	return []stackCheck{
+		{name: "API", url: localAPI + "/health", api: true},
+		{name: "console", url: "http://127.0.0.1:5173/"},
+		{name: "proxy", url: "http://127.0.0.1:8081/"},
+		{name: "Caddy", url: "http://127.0.0.1:80/", host: host},
+	}
+}
+
+// waitForHealthyStack polls every check until all pass or timeout runs out.
+// Connection errors are expected while containers start, so only the state at
+// the deadline is reported.
+func waitForHealthyStack(ctx context.Context, checks []stackCheck, timeout time.Duration) error {
+	c := &http.Client{
+		Timeout: 5 * time.Second,
+		// A redirect is an answer; following Caddy's to HTTPS would test TLS,
+		// which is not what this is checking.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	deadline := time.Now().Add(timeout)
+	pending := checks
+	for {
+		var still []stackCheck
+		var why []string
+		for _, ch := range pending {
+			if reason := probeStackCheck(ctx, c, ch); reason != "" {
+				still = append(still, ch)
+				why = append(why, ch.name+": "+reason)
+			}
+		}
+		if len(still) == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("not answering %s after the restart: %s", timeout, strings.Join(why, "; "))
+		}
+		pending = still
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(upgradeHealthInterval):
+		}
+	}
+}
+
+// probeStackCheck returns "" when the check passes, and otherwise why not.
+func probeStackCheck(ctx context.Context, c *http.Client, ch stackCheck) string {
+	if ch.api {
+		return apiHealth(ctx, c, ch.url)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ch.url, nil)
+	if err != nil {
+		return err.Error()
+	}
+	if ch.host != "" {
+		req.Host = ch.host
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return err.Error()
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return ""
 }
 
 // substituteCorefile reads DOMAIN, PUBLIC_IP, MESH_IP from .env and replaces
@@ -239,7 +652,8 @@ func resolveUpgradeRef(pat string, edge bool) (string, error) {
 	return release.TagName, nil
 }
 
-func downloadDeployTarball(pat, ref string) error {
+// downloadDeployTarball extracts the release's deploy/ directory into dest.
+func downloadDeployTarball(pat, ref, dest string) error {
 	tarURL := fmt.Sprintf("https://api.github.com/repos/%s/tarball/%s", meshployRepo, ref)
 
 	// Files already rendered with real values on disk — never overwrite.
@@ -256,7 +670,7 @@ func downloadDeployTarball(pat, ref string) error {
 	}
 	curlArgs = append(curlArgs, tarURL)
 
-	tarArgs := []string{"-xz", "--strip-components=2", "-C", meshployInstDir, "--wildcards", "*/deploy"}
+	tarArgs := []string{"-xz", "--strip-components=2", "-C", dest, "--wildcards", "*/deploy"}
 	for _, p := range protected {
 		tarArgs = append(tarArgs, "--exclude="+p)
 	}
@@ -409,18 +823,14 @@ func detectContainerRuntime() string {
 }
 
 func composeRun(runtime string, args ...string) error {
-	composeArgs := append([]string{"compose"}, args...)
-	c := exec.Command(runtime, composeArgs...)
-	c.Dir = meshployInstDir
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	return c.Run()
+	return composeExec(meshployInstDir, runtime, args...)
 }
 
 func init() {
 	serverUpgradeCmd.Flags().String("token", "", "GitHub personal access token for private repo (or set GITHUB_PAT env var)")
 	serverUpgradeCmd.Flags().Bool("edge", false, "Sync from main branch and pull edge images instead of latest stable")
 	serverUpgradeCmd.Flags().Bool("no-sync", false, "Skip config download — only substitute Corefile, pull images, and restart")
+	serverUpgradeCmd.Flags().Bool("no-rollback", false, "On failure, leave the server as it is for inspection instead of putting the previous version back")
 	serverUpgradeCmd.Flags().Bool("ee", false, "Switch this install to the Enterprise API image (requires a licence)")
 	serverUpgradeCmd.Flags().String("ee-image", "", "Enterprise image to use; defaults to the one this licence grants")
 	rootCmd.AddCommand(serverUpgradeCmd)

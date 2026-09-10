@@ -95,7 +95,9 @@ sudo meshploy server-upgrade           # stable — latest release configs + ima
 sudo meshploy server-upgrade --edge    # edge — main branch configs + images
 ```
 
-Syncs the `deploy/` configuration directory from GitHub and pulls the latest container images, then restarts all services. Equivalent to what the CI deploy job does for your own server.
+Downloads the `deploy/` configuration for the release from GitHub and pulls its container images, then installs the configuration, restarts the services, and checks that the API, console, proxy and Caddy answer.
+
+Nothing on the server changes until the download and the pull have both succeeded, so a failure there leaves it as it was. If the restart or the check fails, the previous configuration and images are put back and the services restarted on them; `--no-rollback` leaves the failed state in place for inspection instead. The files an upgrade replaces are kept in `/opt/meshploy/.upgrade-previous` until the next one. Database migrations the new version already ran are not undone.
 
 Must be run as root on the **gateway server**.
 
@@ -106,6 +108,7 @@ The upgrade runs with the CLI you have installed, so run `sudo meshploy update` 
 | Flag | Description |
 |---|---|
 | `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
+| `--no-rollback` | On failure, leave the server as it is for inspection instead of putting the previous version back |
 | `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`) — required if the repo is private |
 
 ---
