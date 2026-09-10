@@ -7,6 +7,9 @@
 #    bash uninstall.sh           — interactive (asks before each destructive step)
 #    bash uninstall.sh --yes     — non-interactive (skips all confirmations)
 #    bash uninstall.sh --reinstall — uninstall then immediately re-run install.sh
+#
+#  On the gateway it also removes k3s, Tailscale, node_exporter, /opt/meshploy
+#  and the meshploy CLI, each after asking. --reinstall keeps all of those.
 # =============================================================================
 set -euo pipefail
 
@@ -31,6 +34,11 @@ for arg in "$@"; do
   esac
 done
 
+# Where install.sh put things. Overridable so the uninstaller can be exercised
+# against a scratch directory instead of a real install.
+MESHPLOY_DIR="${MESHPLOY_DIR:-/opt/meshploy}"
+MESHPLOY_CLI="${MESHPLOY_CLI:-/usr/local/bin/meshploy}"
+
 # Auto-detect worker: no docker-compose.yml in deploy dir and k3s-agent is present
 if ! $WORKER && ! [[ -f "/opt/meshploy/deploy/docker-compose.yml" ]] && command -v k3s &>/dev/null && systemctl is-enabled k3s-agent &>/dev/null 2>&1; then
   WORKER=true
@@ -42,6 +50,15 @@ confirm() {
   echo -e -n "  ${BOLD}$1${RESET} [y/N]: "
   read -r yn
   [[ "$yn" =~ ^[Yy]$ ]]
+}
+
+# remove_tailscale_package: the package and its state. Shared by both roles.
+remove_tailscale_package() {
+  sudo apt-get remove --purge -y tailscale 2>/dev/null \
+    || sudo dnf remove -y tailscale 2>/dev/null \
+    || sudo yum remove -y tailscale 2>/dev/null \
+    || true
+  sudo rm -rf /var/lib/tailscale /etc/tailscale
 }
 
 # Resolve deploy dir — works whether run from /tmp, the repo, or /opt/meshploy/deploy
@@ -167,10 +184,7 @@ if $WORKER; then
   header "Tailscale binaries"
   if command -v tailscale &>/dev/null; then
     if confirm "Remove Tailscale package?"; then
-      sudo apt-get remove --purge -y tailscale 2>/dev/null \
-        || sudo yum remove -y tailscale 2>/dev/null \
-        || true
-      sudo rm -rf /var/lib/tailscale /etc/tailscale
+      remove_tailscale_package
       success "Tailscale removed"
     else
       info "Tailscale kept (you can reconnect to a different mesh later)"
@@ -198,11 +212,15 @@ else
   # and database data are preserved so reinstall continues from a clean state.
   if ! $REINSTALL; then
     header "Removing volumes"
-    if confirm "Delete all volumes? (${BOLD}this deletes the database and TLS certificates${RESET})"; then
+    if confirm "Delete all volumes? (${BOLD}this deletes the database, TLS certificates and images pushed to the built-in registry${RESET})"; then
+      # postgres and registry are project-scoped, so they carry the compose
+      # directory's name; the Caddy volumes are declared external with fixed
+      # names, which a directory-derived name would miss when run elsewhere.
       $CONTAINER_RUNTIME volume rm \
-        "$(basename "$SCRIPT_DIR")_postgres_data" \
-        "$(basename "$SCRIPT_DIR")_caddy_data" \
-        "$(basename "$SCRIPT_DIR")_caddy_config" \
+        "$(basename "$(pwd)")_postgres_data" \
+        "$(basename "$(pwd)")_registry_data" \
+        meshploy_caddy_data \
+        meshploy_caddy_config \
         2>/dev/null || true
       success "Volumes removed"
     else
@@ -229,6 +247,27 @@ else
     warn "Headscale data kept"
   fi
 
+  # ── Remove k3s (server) ─────────────────────────────────────────────────────
+  # The gateway runs the k3s server, and everything deployed on this node lives
+  # in it: stopping the containers above leaves the cluster, its workloads and
+  # its ports (6443, 10250) running. Skipped on --reinstall, which has to keep
+  # every workload and its volume data.
+  if ! $REINSTALL; then
+    header "Removing k3s"
+    if command -v k3s-uninstall.sh &>/dev/null; then
+      info "Worker nodes joined to this gateway lose their control plane. Remove them first:"
+      info "  meshploy node remove <name> <user@host>"
+      if confirm "Run k3s-uninstall.sh? (${BOLD}deletes the cluster and every workload and volume on this node${RESET})"; then
+        sudo k3s-uninstall.sh || true
+        success "k3s removed"
+      else
+        warn "k3s kept"
+      fi
+    else
+      info "k3s not installed; skipping"
+    fi
+  fi
+
   # ── Disconnect from mesh ────────────────────────────────────────────────────
   header "Disconnecting from WireGuard mesh"
   if command -v tailscale &>/dev/null; then
@@ -240,21 +279,81 @@ else
     info "Tailscale not installed — skipping"
   fi
 
+  # ── Remove Tailscale ────────────────────────────────────────────────────────
+  # No `tailscale logout` here: this node's control server is the Headscale
+  # stopped and deleted above, so there is nothing left to log out of, and the
+  # call would only wait on a server that is gone.
+  if ! $REINSTALL && command -v tailscale &>/dev/null; then
+    header "Tailscale"
+    if confirm "Remove the Tailscale package and its state?"; then
+      remove_tailscale_package
+      success "Tailscale removed"
+    else
+      info "Tailscale kept"
+    fi
+  fi
+
   # ── Remove images (optional) ────────────────────────────────────────────────
   header "Container images"
   if confirm "Remove pulled Meshploy images? (saves disk space)"; then
-    $CONTAINER_RUNTIME rmi \
-      ghcr.io/meshploy/api:latest \
-      ghcr.io/meshploy/web:latest \
-      ghcr.io/meshploy/proxy:latest \
-      ghcr.io/meshploy/caddy:latest \
-      ghcr.io/meshploy/builder:latest \
-      2>/dev/null || true
+    # Every tag of every Meshploy image, not just :latest: an edge install runs
+    # :main, and upgrades leave older tags behind.
+    _IMAGES="$($CONTAINER_RUNTIME images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+      | grep '^ghcr.io/meshploy/' | grep -v ':<none>$' || true)"
+    if [[ -n "$_IMAGES" ]]; then
+      # shellcheck disable=SC2086 # one image reference per word, by design
+      $CONTAINER_RUNTIME rmi $_IMAGES 2>/dev/null || true
+    fi
     success "Images removed"
   else
     info "Images kept"
   fi
 
+fi
+
+# ── node_exporter (both roles) ────────────────────────────────────────────────
+# install.sh installs it on every node as a systemd service on port 9100.
+if ! $REINSTALL && { command -v node_exporter &>/dev/null || [[ -f /etc/systemd/system/node_exporter.service ]]; }; then
+  header "node_exporter"
+  if confirm "Remove node_exporter (the metrics service on port 9100)?"; then
+    sudo systemctl disable --now node_exporter 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/node_exporter.service /usr/local/bin/node_exporter
+    sudo systemctl daemon-reload 2>/dev/null || true
+    success "node_exporter removed"
+  else
+    info "node_exporter kept"
+  fi
+fi
+
+# ── Installation directory and CLI (gateway) ──────────────────────────────────
+# Last, because this script and the CLI that launched it live there. Only the
+# install location is ever removed, never the directory the script was run
+# from: run from a repo checkout, that would be the checkout itself.
+REMOVED_DIR=false
+REMOVED_CLI=false
+if ! $WORKER && ! $REINSTALL; then
+  if [[ -d "$MESHPLOY_DIR" ]]; then
+    header "Installation directory"
+    if confirm "Delete ${MESHPLOY_DIR} (compose files, Caddy and CoreDNS configuration)?"; then
+      cd /
+      rm -rf "$MESHPLOY_DIR"
+      REMOVED_DIR=true
+      success "${MESHPLOY_DIR} removed"
+    else
+      info "${MESHPLOY_DIR} kept"
+    fi
+  fi
+  if [[ -e "$MESHPLOY_CLI" ]]; then
+    header "meshploy CLI"
+    if confirm "Remove the meshploy CLI (${MESHPLOY_CLI}) and its aliases?"; then
+      find "$(dirname "$MESHPLOY_CLI")" -maxdepth 1 -type l -lname "$MESHPLOY_CLI" -delete 2>/dev/null || true
+      rm -f "$MESHPLOY_CLI"
+      REMOVED_CLI=true
+      success "meshploy CLI removed"
+    else
+      info "CLI kept"
+    fi
+  fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -272,9 +371,19 @@ fi
 echo
 if $WORKER; then
   echo -e "  To re-join as a worker:  ${BOLD}bash install.sh${RESET}"
+elif $REMOVED_DIR; then
+  echo -e "  To install again:"
+  echo -e "  ${BOLD}sudo bash -c \"\$(curl -fsSL https://meshploy.com/install.sh)\"${RESET}"
 else
   echo -e "  To reinstall:  ${BOLD}bash install.sh${RESET}"
   echo -e "  To reinstall in one command:"
   echo -e "  ${BOLD}bash uninstall.sh --reinstall${RESET}"
+fi
+if $REMOVED_CLI; then
+  echo
+  echo -e "  Each user's CLI login is kept in ~/.meshploy; remove it with:  ${BOLD}rm -rf ~/.meshploy${RESET}"
+fi
+if ! $WORKER && ! $REINSTALL; then
+  echo -e "  Firewall rules the installer opened (80, 443, 53) are left in place."
 fi
 hr

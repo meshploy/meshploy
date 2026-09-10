@@ -267,10 +267,12 @@ var (
 var nodeUninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Uninstall this node and deregister from the cluster",
-	Long: `Runs /opt/meshploy/uninstall.sh interactively.
+	Long: `Runs /opt/meshploy/uninstall.sh, which asks before each step.
 
-Deregisters the node from Meshploy (via API), removes k3s agent,
-and disconnects from the Headscale mesh.`,
+On a worker it deregisters the node from Meshploy, removes the k3s agent,
+and leaves the Headscale mesh. On the gateway it removes the Compose stack
+and its data, k3s, Tailscale, node_exporter, /opt/meshploy and this CLI.
+Pass --yes to skip the confirmations.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if os.Getuid() != 0 {
 			return fmt.Errorf("node uninstall requires root — re-run with sudo")
