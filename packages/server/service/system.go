@@ -16,7 +16,6 @@ import (
 
 const (
 	githubReleaseURL = "https://api.github.com/repos/meshploy/meshploy/releases/latest"
-	githubMainURL    = "https://api.github.com/repos/meshploy/meshploy/commits/main"
 	githubCompareURL = "https://github.com/meshploy/meshploy/compare"
 	updateCacheTTL   = time.Hour
 
@@ -24,12 +23,18 @@ const (
 	channelEdge = "edge"
 )
 
+// githubBuildRunsURL asks for the newest successful run of the workflow that
+// builds the images. Its commit is the newest one an edge server can pull: a
+// commit on main that changed no image never runs that workflow, and one still
+// building has no images yet. A var so tests can point it at a local server.
+var githubBuildRunsURL = "https://api.github.com/repos/meshploy/meshploy/actions/workflows/build.yml/runs?branch=main&status=success&per_page=1"
+
 type VersionInfo struct {
 	Current string `json:"current"`
 	Channel string `json:"channel"`
-	// Latest is the newest release for a stable build, and the short commit at
-	// the head of main for an edge one — in both cases, the thing this build
-	// would move to.
+	// Latest is the newest release for a stable build, and the short commit of
+	// the newest successful build of main for an edge one. In both cases, the
+	// thing this build would move to.
 	Latest          string `json:"latest"`
 	UpdateAvailable bool   `json:"update_available"`
 	ReleaseURL      string `json:"release_url"`
@@ -91,7 +96,7 @@ func (s *SystemService) fetchVersionInfo(ctx context.Context) VersionInfo {
 		Latest:  current,
 	}
 
-	// An edge build tracks main, so main is what it is measured against. Asking
+	// An edge build tracks main, so it is measured against main's newest build. Asking
 	// whether a release is newer would be answering a question it did not ask:
 	// the moment a release lands the comparison reads as parity, and at the next
 	// one as "please upgrade" -- to code the build may already contain.
@@ -172,7 +177,14 @@ func isNewer(latest, current string) bool {
 	return lPat > cPat
 }
 
-// edgeVersionInfo compares an edge build against the head of main.
+// edgeVersionInfo compares an edge build against the newest successful build
+// of main.
+//
+// Not against the head of main: that moves on every push, including ones that
+// change no image (docs, the CLI) and ones whose images are still building, so
+// it offered upgrades that pulled nothing new. The build workflow rebuilds the
+// API image on every run, so once an upgrade lands, the running commit equals
+// the built one and the offer goes away.
 //
 // Reported as an EDGE update, distinctly from a release: it is unreviewed code
 // that has not been cut into a version, and an operator choosing to take it
@@ -185,7 +197,7 @@ func (s *SystemService) edgeVersionInfo(ctx context.Context, info VersionInfo) V
 		return info
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubMainURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubBuildRunsURL, nil)
 	if err != nil {
 		return info
 	}
@@ -200,16 +212,19 @@ func (s *SystemService) edgeVersionInfo(ctx context.Context, info VersionInfo) V
 		return info
 	}
 
-	var commit struct {
-		SHA string `json:"sha"`
+	var runs struct {
+		WorkflowRuns []struct {
+			HeadSHA string `json:"head_sha"`
+		} `json:"workflow_runs"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&commit); err != nil || len(commit.SHA) < 7 {
+	if err := json.NewDecoder(resp.Body).Decode(&runs); err != nil ||
+		len(runs.WorkflowRuns) == 0 || len(runs.WorkflowRuns[0].HeadSHA) < 7 {
 		return info
 	}
 
-	head := commit.SHA[:7]
-	info.Latest = head
-	info.ReleaseURL = fmt.Sprintf("%s/%s...%s", githubCompareURL, running, head)
-	info.UpdateAvailable = head != running
+	built := runs.WorkflowRuns[0].HeadSHA[:7]
+	info.Latest = built
+	info.ReleaseURL = fmt.Sprintf("%s/%s...%s", githubCompareURL, running, built)
+	info.UpdateAvailable = built != running
 	return info
 }

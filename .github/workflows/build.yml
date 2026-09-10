@@ -74,9 +74,12 @@ jobs:
 
 
   # ── API ───────────────────────────────────────────────────────────────────────
+  # Built on every run, not only when its own code changed. Its version carries
+  # the commit it was built from, and the console's edge update check compares
+  # that with the newest successful run of this workflow. Skipped after a
+  # web-only change, the API would keep its older commit and the console would
+  # offer that change again after every upgrade.
   api:
-    needs: changes
-    if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     name: API
     runs-on: ubuntu-latest
     permissions:
