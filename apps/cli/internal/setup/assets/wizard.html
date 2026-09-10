@@ -177,6 +177,11 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
 .check { display:flex; gap:9px; align-items:baseline; padding:7px 0;
          border-bottom:1px solid var(--border); font-size:13px }
 .check:last-child { border-bottom:0 }
+/* A resolver error is long ("lookup x on 127.0.0.53:53: no such host") and has
+   no spaces to break on, so without these it overflows the row and paints over
+   the hostnames beside it. */
+.chk-l { flex:0 0 auto }
+.chk-d { flex:1; min-width:0; color:var(--muted); overflow-wrap:anywhere }
 .ok { color:var(--primary) } .bad { color:var(--red) } .wait { color:var(--amber) }
 .mono { font-family:var(--font-mono) }
 
@@ -298,6 +303,10 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
       <button id="installBtn">Install</button>
     </div>
     <div id="checks"></div>
+    <p class="hint hide" id="checkedAt"></p>
+    <p class="hint hide" id="dnsNote">DNS is not resolving to this server yet. You
+      can still install now - the certificate is issued automatically once the
+      records propagate.</p>
     <div class="err hide" id="domainErr"></div>
   </div>
 
@@ -469,8 +478,8 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
 
   function row(ok, label, detail) {
     return '<div class="check"><span class="' + (ok ? "ok" : "bad") + '">' +
-      (ok ? "✓" : "✗") + '</span><span class="mono">' + esc(label) +
-      '</span><span style="color:var(--muted)">' + esc(detail) + "</span></div>";
+      (ok ? "✓" : "✗") + '</span><span class="mono chk-l">' + esc(label) +
+      '</span><span class="chk-d">' + esc(detail) + "</span></div>";
   }
 
   function esc(s) {
@@ -517,10 +526,27 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
   $("mode").onchange = renderRecords;
 
   $("checkBtn").onclick = function () {
+    var btn = this, label = btn.textContent;
     show($("domainErr"), false);
+    // Re-checking a domain that still does not resolve renders byte-identical
+    // rows, so with no pending state and no timestamp the button looks dead --
+    // and this is the one button an operator clicks repeatedly while waiting for
+    // propagation. The stamp is what proves the click did something.
+    btn.disabled = true;
+    btn.textContent = "Checking…";
     api("check-domain", answers())
-      .then(function (st) { renderChecks($("checks"), st); })
-      .catch(function (e) { fail($("domainErr"), e.message); });
+      .then(function (st) {
+        var ready = renderChecks($("checks"), st);
+        $("checkedAt").textContent = "Last checked at " + new Date().toLocaleTimeString();
+        show($("checkedAt"), true);
+        // Failing checks must not read as "cannot install". Propagation can take
+        // hours, the install itself does not need DNS, and install.sh already
+        // warns and carries on when a certificate cannot be issued yet. Blocking
+        // here would rebuild the dead end this installer exists to remove.
+        show($("dnsNote"), !ready);
+      })
+      .catch(function (e) { fail($("domainErr"), e.message); })
+      .then(function () { btn.disabled = false; btn.textContent = label; });
   };
 
   function startInstall() {

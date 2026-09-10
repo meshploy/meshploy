@@ -110,6 +110,19 @@ warn()    { echo -e "${YELLOW}  ⚠${RESET}  $*"; }
 error()   { echo -e "${RED}  ✘${RESET}  $*" >&2; }
 die()     { error "$*"; exit 1; }
 header()  { echo -e "\n${BOLD}${BLUE}▸ $*${RESET}"; }
+
+# Progress inside a wait loop. A terminal keeps the dots or the redrawn counter
+# it always had. Anything reading through a pipe -- the browser installer, a CI
+# log, `| tee` -- gets a whole line every few seconds instead: output with no
+# newline only reaches a line-reading consumer when the wait ends, so the
+# browser installer sat silent through the TLS wait (up to 60s on-demand, 300s
+# delegation) and looked hung.
+if [[ -t 1 ]]; then IS_TTY=true; else IS_TTY=false; fi
+wait_dot() {  # wait_dot <label> <seconds waited>
+  if $IS_TTY; then printf "."
+  elif (( $2 > 0 && $2 % 10 == 0 )); then info "$1 (${2}s)"
+  fi
+}
 hr()      { echo -e "${BLUE}────────────────────────────────────────────────────────${RESET}"; }
 
 ask() {
@@ -735,7 +748,7 @@ REGEOF
   until [[ -f "$K3S_TOKEN_FILE" ]]; do
     sleep 2; K3S_WAITED=$((K3S_WAITED+2))
     [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && die "k3s node token not found after ${MAX_K3S_WAIT}s. Check: journalctl -u k3s"
-    printf "."
+    wait_dot "Waiting for the k3s node token" "$K3S_WAITED"
   done
   K3S_TOKEN="$(cat "$K3S_TOKEN_FILE")"
   success "k3s node token retrieved"
@@ -876,7 +889,7 @@ ENVEOF
   until $COMPOSE_CMD exec -T headscale headscale version &>/dev/null; do
     sleep 2; WAITED=$((WAITED+2))
     [[ $WAITED -ge $MAX_WAIT ]] && die "Headscale did not start within ${MAX_WAIT}s. Check: $COMPOSE_CMD logs headscale"
-    printf "."
+    wait_dot "Waiting for Headscale" "$WAITED"
   done
   echo; success "Headscale is ready"
 
@@ -1157,7 +1170,11 @@ NEUNIT
     sleep $TLS_INTERVAL
     TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
     MINS=$((TLS_WAITED / 60)); SECS=$((TLS_WAITED % 60))
-    printf "\r  ${CYAN}→${RESET}  Waiting for TLS… %02d:%02d elapsed" "$MINS" "$SECS"
+    if $IS_TTY; then
+      printf "\r  ${CYAN}→${RESET}  Waiting for TLS… %02d:%02d elapsed" "$MINS" "$SECS"
+    elif (( TLS_WAITED % 15 == 0 )); then
+      info "$(printf 'Waiting for TLS… %02d:%02d elapsed' "$MINS" "$SECS")"
+    fi
   done
   echo
 
@@ -1379,7 +1396,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       until sudo systemctl is-active --quiet k3s-agent 2>/dev/null; do
         sleep 2; K3S_WAITED=$((K3S_WAITED+2))
         [[ $K3S_WAITED -ge $MAX_K3S_WAIT ]] && { warn "k3s-agent not active yet — check: journalctl -u k3s-agent"; break; }
-        printf "."
+        wait_dot "Waiting for the k3s agent" "$K3S_WAITED"
       done
       echo
       sudo systemctl is-active --quiet k3s-agent \
