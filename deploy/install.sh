@@ -123,6 +123,76 @@ wait_dot() {  # wait_dot <label> <seconds waited>
   elif (( $2 > 0 && $2 % 10 == 0 )); then info "$1 (${2}s)"
   fi
 }
+
+# ns_lookup <domain>: the NS hosts public DNS returns for <domain>, one per
+# line, lowercased and without the trailing dot; nothing when there is none.
+# Asks a public resolver, so the answer is what Let's Encrypt will see.
+ns_lookup() {
+  local out=""
+  if command -v dig &>/dev/null; then
+    out="$(dig +short NS "$1" @8.8.8.8 2>/dev/null || true)"
+  elif command -v host &>/dev/null; then
+    out="$(host -t NS "$1" 8.8.8.8 2>/dev/null | awk '/name server/{print $NF}' || true)"
+  else
+    out="$(curl -sfL "https://dns.google/resolve?name=$1&type=NS" 2>/dev/null \
+      | python3 -c "import sys,json; [print(a['data']) for a in json.load(sys.stdin).get('Answer',[]) if a.get('type')==2]" 2>/dev/null || true)"
+  fi
+  printf '%s\n' "$out" | tr 'A-Z' 'a-z' | sed 's/\.$//' | sed '/^$/d'
+}
+
+# a_lookup <name>: the IPv4 addresses public DNS returns for <name>.
+a_lookup() {
+  if command -v dig &>/dev/null; then
+    dig +short A "$1" @8.8.8.8 2>/dev/null | grep -E '^[0-9.]+$' || true
+  elif command -v host &>/dev/null; then
+    host -t A "$1" 8.8.8.8 2>/dev/null | awk '/has address/{print $NF}' || true
+  else
+    curl -sfL "https://dns.google/resolve?name=$1&type=A" 2>/dev/null \
+      | python3 -c "import sys,json; [print(a['data']) for a in json.load(sys.stdin).get('Answer',[]) if a.get('type')==1]" 2>/dev/null || true
+  fi
+}
+
+# ns_points_here <domain> <ip>: whether public DNS delegates <domain> to a
+# nameserver at <ip>. Sets TLS_NS_SEEN to the NS hosts it found, for messages.
+# Checks where the NS hosts resolve rather than what they are called: a
+# delegation to a differently named nameserver on this IP still works, and an
+# apex domain still pointing at its registrar's nameservers does not.
+ns_points_here() {
+  local ns ip
+  TLS_NS_SEEN="$(ns_lookup "$1" | tr '\n' ' ' | sed 's/ $//')"
+  for ns in $TLS_NS_SEEN; do
+    for ip in $(a_lookup "$ns"); do
+      [[ "$ip" == "$2" ]] && return 0
+    done
+  done
+  return 1
+}
+
+# caddy_cert_stage <identifier>: two lines, the stage Caddy has reached for that
+# certificate and the error from its latest failed attempt (empty if none).
+# Matches the exact "identifier" field and a fixed set of issuance messages:
+# Caddy also logs a steady stream of renewal-info (ARI) retries and errors that
+# have nothing to do with issuance, and "show the last error" would surface
+# those as the problem.
+caddy_cert_stage() {
+  local line stage="" err=""
+  while IFS= read -r line; do
+    case "$line" in
+      *'"msg":"obtaining certificate"'*|*'"msg":"renewing certificate"'*)
+        stage="requesting certificate"; err="" ;;
+      *'"msg":"trying to solve challenge"'*)
+        stage="solving DNS challenge"; err="" ;;
+      *'"msg":"validations succeeded; finalizing order"'*|*'"msg":"authorization finalized"'*)
+        stage="challenge passed, finalizing" ;;
+      *'"msg":"certificate obtained successfully"'*|*'"msg":"certificate renewed successfully"'*|*'"msg":"certificate already exists in storage"'*)
+        stage="certificate issued"; err="" ;;
+      *'"level":"error"'*)
+        stage="attempt failed, Caddy will retry"
+        err="$(grep -oE '"error":"([^"\\]|\\.)*' <<<"$line" | head -1 | cut -c10- | cut -c1-200 || true)" ;;
+    esac
+  done < <($COMPOSE_CMD logs caddy 2>/dev/null | grep -F "\"identifier\":\"$1\"" || true)
+  printf '%s\n%s\n' "$stage" "$err"
+}
 hr()      { echo -e "${BLUE}────────────────────────────────────────────────────────${RESET}"; }
 
 ask() {
@@ -538,14 +608,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   elif ! $AUTO_MODE; then
     info "Checking NS delegation for ${DOMAIN}…"
     _NS_RESULT=""
-    if command -v dig &>/dev/null; then
-      _NS_RESULT="$(dig +short NS "${DOMAIN}" @8.8.8.8 2>/dev/null | head -1 || true)"
-    elif command -v host &>/dev/null; then
-      _NS_RESULT="$(host -t NS "${DOMAIN}" 8.8.8.8 2>/dev/null | awk '/name server/{print $NF}' | head -1 || true)"
-    else
-      _NS_RESULT="$(curl -sfL "https://dns.google/resolve?name=${DOMAIN}&type=NS" 2>/dev/null \
-        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['Answer'][0]['data'] if d.get('Answer') else '')" 2>/dev/null || true)"
-    fi
+    _NS_RESULT="$(ns_lookup "${DOMAIN}" | head -1 || true)"
 
     if [[ -n "$_NS_RESULT" ]]; then
       success "NS delegation found for ${DOMAIN} → ${_NS_RESULT}"
@@ -1152,45 +1215,88 @@ NEUNIT
   # ── Wait for TLS certificates ─────────────────────────────────────────────────
   # Shown after the summary so keys are always visible even if you Ctrl+C.
   # The wait differs by DNS mode:
-  #   delegation — DNS-01 wildcard cert; CoreDNS must propagate the
-  #                _acme-challenge TXT records first (typically 1–3 minutes).
+  #   delegation — DNS-01 wildcard cert; needs the NS delegation to point here.
   #   ondemand   — no propagation to wait on; Caddy issues a cert per hostname
   #                on first request, so the probe itself warms console's cert.
   echo
+  TLS_OK=0
+  TLS_SKIPPED=0
+  TLS_LAST_ERR=""
   if [[ "$DNS_MODE" == "ondemand" ]]; then
     echo -e "  ${YELLOW}On-demand TLS: Caddy issues a certificate per hostname on first request.${RESET}"
     echo -e "  ${YELLOW}Make sure the wildcard A record is live:  *.${DOMAIN} → ${PUBLIC_IP}${RESET}"
     echo
     TLS_MAX_WAIT=60    # no propagation delay — the first request triggers issuance
     TLS_INTERVAL=5
-  else
-    echo -e "  ${YELLOW}Waiting for Caddy to obtain wildcard TLS certificates (DNS-01 ACME).${RESET}"
-    echo -e "  ${YELLOW}This typically takes 1–3 minutes. Press Ctrl+C to skip — certs will${RESET}"
-    echo -e "  ${YELLOW}finish in the background and the dashboard will be available shortly.${RESET}"
+    TLS_WAITED=0
+    while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
+      # A strict (cert-validating) request both probes readiness and triggers
+      # issuance for console.${DOMAIN}.
+      if curl -sf --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
+        TLS_OK=1
+        break
+      fi
+      sleep $TLS_INTERVAL
+      TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
+      MINS=$((TLS_WAITED / 60)); SECS=$((TLS_WAITED % 60))
+      if $IS_TTY; then
+        printf "\r  ${CYAN}→${RESET}  Waiting for TLS… %02d:%02d elapsed" "$MINS" "$SECS"
+      elif (( TLS_WAITED % 15 == 0 )); then
+        info "$(printf 'Waiting for TLS… %02d:%02d elapsed' "$MINS" "$SECS")"
+      fi
+    done
     echo
-    TLS_MAX_WAIT=300   # 5 minutes — allow for DNS-01 TXT propagation
-    TLS_INTERVAL=5
+  else
+    # DNS-01 only succeeds once Let's Encrypt can reach the challenge record,
+    # so the NS delegation has to point at this server first. When it did not,
+    # the old five-minute wait could only fail, and the browser installer runs
+    # with --auto, which skips the pre-install NS check, so nothing had checked
+    # it. Check it here and skip the wait when it is not in place: Caddy keeps
+    # retrying on its own, so the certificate still arrives once DNS catches up.
+    if ns_points_here "$DOMAIN" "$PUBLIC_IP"; then
+      info "NS delegation for ${DOMAIN} points here. Requesting the wildcard certificate (usually about a minute)."
+      info "Press Ctrl+C to skip; the certificate finishes in the background."
+      TLS_MAX_WAIT=300
+      TLS_INTERVAL=5
+      TLS_WAITED=0
+      TLS_STAGE=""
+      TLS_BEAT=0
+      while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
+        if curl -sf --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
+          TLS_OK=1
+          break
+        fi
+        # Caddy's actual progress on the wildcard rather than a counter: where
+        # it is in the ACME exchange, and its error if an attempt fails. A
+        # failure does not end the wait; Caddy retries, and with the delegation
+        # confirmed above a failed attempt is usually propagation catching up.
+        mapfile -t TLS_EV < <(caddy_cert_stage "*.${DOMAIN}")
+        if [[ -n "${TLS_EV[0]:-}" && "${TLS_EV[0]}" != "$TLS_STAGE" ]]; then
+          TLS_STAGE="${TLS_EV[0]}"
+          TLS_BEAT=$TLS_WAITED
+          info "*.${DOMAIN}: ${TLS_STAGE}"
+        fi
+        if [[ -n "${TLS_EV[1]:-}" && "${TLS_EV[1]}" != "$TLS_LAST_ERR" ]]; then
+          TLS_LAST_ERR="${TLS_EV[1]}"
+          warn "Caddy: ${TLS_LAST_ERR}"
+        fi
+        if (( TLS_WAITED - TLS_BEAT >= 30 )); then
+          TLS_BEAT=$TLS_WAITED
+          info "still ${TLS_STAGE:-waiting for Caddy to start the request} ($(printf '%02d:%02d' $((TLS_WAITED / 60)) $((TLS_WAITED % 60))) elapsed)"
+        fi
+        sleep "$TLS_INTERVAL"
+        TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
+      done
+    else
+      TLS_SKIPPED=1
+      warn "The NS delegation for ${DOMAIN} does not point at this server yet, so its"
+      warn "certificate cannot be issued. Public DNS returns: ${TLS_NS_SEEN:-no NS records}"
+      warn "Add these where the parent zone of ${DOMAIN} is hosted, the A record first:"
+      echo -e "         ${CYAN}ns1.${DOMAIN}${RESET}   A    ${CYAN}${PUBLIC_IP}${RESET}"
+      echo -e "         ${CYAN}${DOMAIN}${RESET}       NS   ${CYAN}ns1.${DOMAIN}${RESET}"
+      warn "Caddy keeps retrying, so the certificate is issued once they propagate."
+    fi
   fi
-
-  TLS_WAITED=0
-  TLS_OK=0
-  while [[ $TLS_WAITED -lt $TLS_MAX_WAIT ]]; do
-    # A strict (cert-validating) request both probes readiness and, in ondemand
-    # mode, triggers issuance for console.${DOMAIN}.
-    if curl -sf --max-time 5 "https://console.${DOMAIN}" -o /dev/null 2>/dev/null; then
-      TLS_OK=1
-      break
-    fi
-    sleep $TLS_INTERVAL
-    TLS_WAITED=$((TLS_WAITED + TLS_INTERVAL))
-    MINS=$((TLS_WAITED / 60)); SECS=$((TLS_WAITED % 60))
-    if $IS_TTY; then
-      printf "\r  ${CYAN}→${RESET}  Waiting for TLS… %02d:%02d elapsed" "$MINS" "$SECS"
-    elif (( TLS_WAITED % 15 == 0 )); then
-      info "$(printf 'Waiting for TLS… %02d:%02d elapsed' "$MINS" "$SECS")"
-    fi
-  done
-  echo
 
   if [[ $TLS_OK -eq 1 ]]; then
     success "TLS certificate issued — ${CYAN}https://console.${DOMAIN}${RESET} is live!"
@@ -1198,8 +1304,13 @@ NEUNIT
     warn "Certificate not confirmed yet — it will be issued on first visit once the"
     warn "wildcard A record (*.${DOMAIN} → ${PUBLIC_IP}) has propagated."
     warn "Monitor: $COMPOSE_CMD logs -f caddy"
+  elif [[ $TLS_SKIPPED -eq 1 ]]; then
+    warn "Skipped the certificate wait. Monitor: $COMPOSE_CMD logs -f caddy"
   else
     warn "TLS not confirmed after ${TLS_MAX_WAIT}s — still provisioning in background."
+    if [[ -n "$TLS_LAST_ERR" ]]; then
+      warn "Caddy's last error for *.${DOMAIN}: ${TLS_LAST_ERR}"
+    fi
     warn "Monitor: $COMPOSE_CMD logs -f caddy"
   fi
 
