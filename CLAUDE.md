@@ -136,6 +136,7 @@ Required in `.env` at the monorepo root:
 | `FRONTEND_URL` | Console URL (default: `http://localhost:5173`) |
 | `HEADSCALE_USER` | Headscale user pre-auth keys are created under (default: `meshploy`) |
 | `BUILDER_IMAGE` | Override the builder container image |
+| `UPGRADE_DIR` | Where the console and the host-side updater meet (default: `/var/lib/meshploy/upgrade`). docker-compose mounts its `inbox/` read-write and `state/` read-only, so the API can queue an upgrade but never run one |
 
 ---
 
@@ -205,7 +206,7 @@ packages/server/
 │   ├── terminal.go         # WebSocket: node terminal + pod terminal
 │   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
 │   ├── domain.go           # Domain CRUD + DNS verification
-│   ├── system.go           # Version, exposure notice, install/uninstall scripts
+│   ├── system.go           # Version, exposure notice, upgrade requests, install/uninstall scripts
 │   ├── config_file.go      # Config file CRUD + attach/detach
 │   ├── template.go         # One-click template catalog + deploy
 │   ├── entitlement.go      # Licence status + activation
@@ -239,6 +240,7 @@ packages/server/
 │   ├── db_explorer.go      # Live DB query + schema via K8s exec
 │   ├── system.go           # Version info, install/uninstall script serving
 │   ├── exposure.go         # Host-firewall exposure notice + dismissed notices
+│   ├── upgrade.go          # Console upgrades: queue a request, read the host updater's progress
 │   ├── config_file.go      # Config files projected into workloads via Secrets
 │   ├── template.go         # One-click template deploy: resolve, stack, routes
 │   ├── entitlement.go      # Licence verification + entitlements

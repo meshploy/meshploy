@@ -20,7 +20,8 @@ type upgradeFixture struct {
 	live       string
 	compose    []composeCall
 	tags       [][]string
-	pullEnv    string // the .env the image pull saw
+	ctl        [][]string // systemctl calls
+	pullEnv    string     // the .env the image pull saw
 	composeErr func(n int, args []string) error
 	verify     []error // results of successive verifyStack calls, then nil
 	verified   int
@@ -63,13 +64,21 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 	origDir, origCfg := meshployInstDir, loadedCfg
 	origRef, origFetch, origCompose := upgradeRefFor, fetchDeploy, composeExec
 	origOut, origExec, origVerify := runtimeOutput, runtimeExec, verifyStack
+	origUpgrade, origUnits, origCtl := upgradeDir, systemdUnitDir, systemctl
 	t.Cleanup(func() {
 		meshployInstDir, loadedCfg = origDir, origCfg
 		upgradeRefFor, fetchDeploy, composeExec = origRef, origFetch, origCompose
 		runtimeOutput, runtimeExec, verifyStack = origOut, origExec, origVerify
+		upgradeDir, systemdUnitDir, systemctl = origUpgrade, origUnits, origCtl
 	})
 	meshployInstDir = fx.live
 	loadedCfg = nil // no licence lookup against a real API
+	upgradeDir = filepath.Join(t.TempDir(), "upgrade")
+	systemdUnitDir = t.TempDir()
+	systemctl = func(args ...string) error {
+		fx.ctl = append(fx.ctl, args)
+		return nil
+	}
 
 	writeTestFile(t, filepath.Join(fx.live, ".env"), upgradeEnv)
 	if err := os.Chmod(filepath.Join(fx.live, ".env"), 0o600); err != nil {
@@ -368,6 +377,35 @@ func TestRecordRunningImagesWithNothingRunning(t *testing.T) {
 	images, err := recordRunningImages("docker")
 	if err != nil || images == nil || len(images) != 0 {
 		t.Fatalf("got %v, %v", images, err)
+	}
+}
+
+// The API's compose mounts need the updater's folders to exist, since podman
+// will not create them, and an updater that is on must end up running the
+// unit files of the CLI that just upgraded the server.
+func TestServerUpgradePreparesTheUpdater(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{upgradeInboxDir(), upgradeStateDir()} {
+		if !fileExists(d) {
+			t.Errorf("%s not created", d)
+		}
+	}
+	if fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) || len(fx.ctl) != 0 {
+		t.Errorf("touched systemd although the updater is off: %v", fx.ctl)
+	}
+
+	writeTestFile(t, filepath.Join(upgradeStateDir(), upgradeEnabledFile), "on\n")
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if !fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) {
+		t.Error("units not refreshed although the updater is on")
+	}
+	if !reflect.DeepEqual(fx.ctl, [][]string{{"daemon-reload"}}) {
+		t.Errorf("systemctl calls = %v, want only a reload", fx.ctl)
 	}
 }
 

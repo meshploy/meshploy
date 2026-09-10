@@ -434,6 +434,8 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 |---|---|---|---|
 | GET | `/system/exposure` | ✓ | Report whether this gateway runs without a host firewall |
 | POST | `/system/notices/{key}/dismiss` | ✓ | Dismiss a console advisory for the current user |
+| GET | `/system/upgrade` | ✓ | Report whether this server can be upgraded from the console, and the last upgrade |
+| POST | `/system/upgrade` | ✓ | Queue an upgrade of this server to the latest build on its channel |
 | GET | `/system/version` | ✓ | Get current and latest platform version |
 
 ### Outside /api/v1

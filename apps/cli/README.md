@@ -126,7 +126,7 @@ Upgrades the server on request from the console. The API cannot touch the host, 
 
 `updater run` also works by hand, as a one-command upgrade. It stays on the channel the server is on now; pass `--edge` or `--stable` to switch. Unlike `server-upgrade`, leaving out `--edge` does not move an edge server to stable.
 
-Run it on the **gateway server**. `start`, `stop` and `run` need root.
+Run it on the **gateway server**. `start`, `stop` and `run` need root. New installs turn the updater on; on a server installed before it existed, run `sudo meshploy updater start` once, after the upgrade that brings it. In the console, **Update available** in the sidebar then opens an **Upgrade now** button for the server's owner.
 
 | Flag (`run`) | Description |
 |---|---|

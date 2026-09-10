@@ -128,6 +128,11 @@ services:
       - /opt/meshploy/install.sh:/opt/meshploy/install.sh:ro
       - /opt/meshploy/uninstall.sh:/opt/meshploy/uninstall.sh:ro
       - /var/lib/rancher/k3s/server/node-token:/var/lib/rancher/k3s/server/node-token:ro
+      # Upgrades from the console. The API may only queue a request in inbox/;
+      # a systemd unit on the host runs the upgrade and reports back in state/,
+      # which is read-only here. See `meshploy updater`.
+      - /var/lib/meshploy/upgrade/inbox:/var/lib/meshploy/upgrade/inbox:z
+      - /var/lib/meshploy/upgrade/state:/var/lib/meshploy/upgrade/state:ro,z
     depends_on:
       postgres:
         condition: service_healthy

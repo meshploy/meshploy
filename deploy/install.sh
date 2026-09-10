@@ -951,6 +951,9 @@ ENVEOF
   header "Starting core services"
   info "Pulling images…"
   $COMPOSE_CMD pull
+  # The API mounts these for upgrades from the console, and podman will not
+  # start a container whose bind-mount source is missing.
+  sudo mkdir -p /var/lib/meshploy/upgrade/inbox /var/lib/meshploy/upgrade/state
   info "Starting postgres, headscale, api, web, proxy…"
   DOMAIN="$DOMAIN" $COMPOSE_CMD up -d postgres headscale api web proxy
   success "Core services started"
@@ -1092,6 +1095,21 @@ for u in json.load(sys.stdin):
   # running and this is a plain start.
   DOMAIN="$DOMAIN" $COMPOSE_CMD up -d --force-recreate coredns caddy
   success "CoreDNS and Caddy started"
+
+  # ── Upgrades from the console ───────────────────────────────────────────────
+  # Installs the systemd unit that runs an upgrade when the console asks for
+  # one; the API itself only ever queues the request. Idempotent, so a re-run
+  # refreshes it.
+  header "Enabling upgrades from the console"
+  if [[ -x "$MESHPLOY_CLI" ]] && "$MESHPLOY_CLI" updater --help &>/dev/null; then
+    if sudo "$MESHPLOY_CLI" updater start >/dev/null; then
+      success "The console can upgrade this server (turn it off with: sudo meshploy updater stop)"
+    else
+      warn "Could not enable upgrades from the console; retry with: sudo meshploy updater start"
+    fi
+  else
+    info "This meshploy CLI predates console upgrades. Run 'sudo meshploy update', then 'sudo meshploy updater start'."
+  fi
 
   # ── Install node_exporter (metrics) ─────────────────────────────────────────
   header "Installing node_exporter"

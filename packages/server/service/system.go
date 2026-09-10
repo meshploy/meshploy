@@ -56,6 +56,10 @@ type SystemService struct {
 	// state the exposure advisory reads. Nil in tests and wherever New() was
 	// called without a config.
 	cfg *config.Config
+
+	// upgradeMu serialises upgrade requests, so two clicks cannot both pass the
+	// "nothing queued" check.
+	upgradeMu sync.Mutex
 }
 
 func (s *SystemService) Ping(ctx context.Context) error {

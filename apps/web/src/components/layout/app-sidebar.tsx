@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
 import {
@@ -23,6 +24,7 @@ import { system } from "@/lib/api/system"
 import { entitlements as entitlementsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { eeNavItems } from "@/ee"
+import { UpgradeDialog } from "@/components/system/upgrade-dialog"
 
 type NavItem = {
   href: string
@@ -79,6 +81,7 @@ export function AppSidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const token = useAuthStore((s) => s.token)
   const isAdmin = useIsAdmin()
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
   const { data: ver } = useQuery({
     queryKey: ["system-version"],
     queryFn: () => system.versionInfo(token!),
@@ -204,10 +207,9 @@ export function AppSidebar() {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <a
-                    href={ver.release_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => setUpgradeOpen(true)}
                     className="flex items-center justify-center h-8 w-9 mx-auto rounded-md text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors relative"
                   />
                 }
@@ -222,10 +224,9 @@ export function AppSidebar() {
               </TooltipContent>
             </Tooltip>
           ) : (
-            <a
-              href={ver.release_url}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => setUpgradeOpen(true)}
               className="flex items-center gap-2 h-8 w-full px-3 rounded-md text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
             >
               <Download className="h-3.5 w-3.5 shrink-0" />
@@ -234,7 +235,7 @@ export function AppSidebar() {
                   decision, so it should not read the same. */}
               <span>{ver.channel === "edge" ? "Edge update" : "Update available"}</span>
               <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            </a>
+            </button>
           )
         )}
 
@@ -271,6 +272,8 @@ export function AppSidebar() {
           )}
         </Tooltip>
       </div>
+
+      {ver && <UpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} version={ver} />}
     </aside>
   )
 }

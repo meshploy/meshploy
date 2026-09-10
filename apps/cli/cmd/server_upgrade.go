@@ -248,6 +248,11 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	}
 	caddyAfter, _ := os.ReadFile(caddyfile)
 
+	// docker-compose mounts the updater's folders into the API.
+	if err := ensureUpgradeDirs(); err != nil {
+		fmt.Printf("warning: could not create %s: %v\n", upgradeDir, err)
+	}
+
 	fmt.Println("Restarting services…")
 	if err := composeRun(runtime, "up", "-d", "--remove-orphans"); err != nil {
 		return fail(fmt.Errorf("compose up: %w", err))
@@ -267,6 +272,12 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	fmt.Println("Checking that the services answer…")
 	if err := verifyStack(ctx); err != nil {
 		return fail(err)
+	}
+
+	// An updater that is on runs whichever unit files it was given; bring them
+	// in line with the CLI that just did this upgrade.
+	if err := refreshUpgradeUnits(); err != nil {
+		fmt.Printf("warning: could not refresh the upgrade service: %v\n", err)
 	}
 
 	fmt.Println("✔  Server upgraded successfully")

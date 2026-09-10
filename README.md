@@ -235,7 +235,7 @@ Installing, reinstalling and removing all go through the install script:
 
 > **TLS cert cache**: Caddy stores Let's Encrypt certificates in a Docker volume. `--reinstall` always preserves this volume to avoid hitting rate limits (5 certs per domain per week). Use `--wipe-data` only when you genuinely need a clean slate.
 
-> **Upgrading**: `sudo meshploy server-upgrade` on the gateway downloads the configuration and images for the latest release, then installs them and restarts the services, keeping your data. If the services do not come back, it puts the previous version back. Add `--edge` to upgrade to `main`. Run `sudo meshploy update` first, so the upgrade runs with the latest CLI. See the [CLI reference](./apps/cli/README.md#meshploy-server-upgrade).
+> **Upgrading**: `sudo meshploy server-upgrade` on the gateway downloads the configuration and images for the latest release, then installs them and restarts the services, keeping your data. If the services do not come back, it puts the previous version back. The server's owner can also upgrade from the console: **Update available** in the sidebar opens an **Upgrade now** button. New installs are set up for that; on an older server, run `sudo meshploy updater start` once after upgrading. Add `--edge` to upgrade to `main`. Run `sudo meshploy update` first, so the upgrade runs with the latest CLI. See the [CLI reference](./apps/cli/README.md#meshploy-server-upgrade).
 
 ---
 

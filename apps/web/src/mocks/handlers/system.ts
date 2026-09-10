@@ -10,6 +10,28 @@ export const systemHandlers = [
     })
   ),
 
+  // The demo has no server to upgrade, so the dialog shows its read-only state.
+  http.get("/api/v1/system/upgrade", () =>
+    HttpResponse.json({
+      enabled: true,
+      can_upgrade: false,
+      pending: false,
+      id: "",
+      state: "",
+      step: "",
+      channel: "stable",
+      cli_from: "",
+      cli_to: "",
+      started_at: "",
+      finished_at: "",
+      error: "",
+      log_tail: [],
+    })
+  ),
+  http.post("/api/v1/system/upgrade", () =>
+    HttpResponse.json({ detail: "The demo has no server to upgrade." }, { status: 409 })
+  ),
+
   http.get("/api/v1/health", () => HttpResponse.json({ status: "ok" })),
 
   // Serve install/uninstall scripts as text

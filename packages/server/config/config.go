@@ -52,6 +52,13 @@ type Config struct {
 	FirewallState     string // FIREWALL_STATE       none | ufw | firewalld
 	FirewallCheckedAt string // FIREWALL_CHECKED_AT  RFC3339 UTC
 
+	// UpgradeDir is where the console and the host-side updater meet (see
+	// `meshploy updater`). docker-compose mounts its inbox/ read-write and its
+	// state/ read-only: the API can queue an upgrade but never run one. A
+	// directory that does not exist means the updater is not set up, which is
+	// what a local API sees.
+	UpgradeDir string // UPGRADE_DIR  (default: /var/lib/meshploy/upgrade)
+
 	// SetupToken gates the very first registration. install.sh generates one and
 	// prints it once, so claiming a fresh gateway needs something only whoever
 	// ran the installer has seen.
@@ -139,6 +146,13 @@ func Load() (*Config, error) {
 
 		FirewallState:     os.Getenv("FIREWALL_STATE"),
 		FirewallCheckedAt: os.Getenv("FIREWALL_CHECKED_AT"),
+
+		UpgradeDir: func() string {
+			if v := os.Getenv("UPGRADE_DIR"); v != "" {
+				return v
+			}
+			return "/var/lib/meshploy/upgrade"
+		}(),
 
 		BuiltinRegistryEndpoint: os.Getenv("BUILTIN_REGISTRY_ENDPOINT"),
 		TemplateDir:             os.Getenv("TEMPLATE_DIR"),

@@ -245,18 +245,11 @@ func updaterStart(out io.Writer) error {
 	if _, err := os.Stat(updaterCLIPath); err != nil {
 		return fmt.Errorf("the upgrade service runs %s, which is missing: %w", updaterCLIPath, err)
 	}
-	for _, dir := range []string{upgradeInboxDir(), upgradeStateDir()} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
-		}
+	if err := ensureUpgradeDirs(); err != nil {
+		return err
 	}
-	for name, body := range upgradeUnitFiles(updaterCLIPath) {
-		if err := writeFileAtomic(filepath.Join(systemdUnitDir, name), []byte(body), 0644); err != nil {
-			return fmt.Errorf("write %s: %w", name, err)
-		}
-	}
-	if err := systemctl("daemon-reload"); err != nil {
-		return fmt.Errorf("systemctl daemon-reload: %w", err)
+	if err := writeUpgradeUnits(); err != nil {
+		return err
 	}
 	if err := systemctl("enable", "--now", upgradePathUnit); err != nil {
 		return fmt.Errorf("enable %s: %w", upgradePathUnit, err)
@@ -271,6 +264,41 @@ func updaterStart(out io.Writer) error {
 	fmt.Fprintln(out, "   Check on it with:  meshploy updater status")
 	fmt.Fprintln(out, "   Turn it off with:  sudo meshploy updater stop")
 	return nil
+}
+
+// ensureUpgradeDirs creates the folders docker-compose mounts into the API.
+// Podman refuses to start a container whose bind-mount source is missing, so
+// they must exist before the stack starts, whether or not the updater is on.
+func ensureUpgradeDirs() error {
+	for _, dir := range []string{upgradeInboxDir(), upgradeStateDir()} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeUpgradeUnits writes both units and has systemd reload them.
+func writeUpgradeUnits() error {
+	for name, body := range upgradeUnitFiles(updaterCLIPath) {
+		if err := writeFileAtomic(filepath.Join(systemdUnitDir, name), []byte(body), 0644); err != nil {
+			return fmt.Errorf("write %s: %w", name, err)
+		}
+	}
+	if err := systemctl("daemon-reload"); err != nil {
+		return fmt.Errorf("systemctl daemon-reload: %w", err)
+	}
+	return nil
+}
+
+// refreshUpgradeUnits rewrites the units when the updater is on, so they
+// follow the CLI installed now. server-upgrade calls it; with the updater off
+// it does nothing.
+func refreshUpgradeUnits() error {
+	if !fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile)) {
+		return nil
+	}
+	return writeUpgradeUnits()
 }
 
 // updaterStop turns the watcher off. It never stops the service itself:
