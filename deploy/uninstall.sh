@@ -8,8 +8,9 @@
 #    bash uninstall.sh --yes     — non-interactive (skips all confirmations)
 #    bash uninstall.sh --reinstall — uninstall then immediately re-run install.sh
 #
-#  On the gateway it also removes k3s, Tailscale, node_exporter, /opt/meshploy
-#  and the meshploy CLI, each after asking. --reinstall keeps all of those.
+#  On the gateway it also removes k3s, Tailscale, node_exporter, the upgrade
+#  service, /opt/meshploy and the meshploy CLI, each after asking. --reinstall
+#  keeps all of those.
 # =============================================================================
 set -euo pipefail
 
@@ -322,6 +323,23 @@ if ! $REINSTALL && { command -v node_exporter &>/dev/null || [[ -f /etc/systemd/
     success "node_exporter removed"
   else
     info "node_exporter kept"
+  fi
+fi
+
+# ── Upgrade service (gateway) ─────────────────────────────────────────────────
+# `meshploy updater start` installs it so the console can upgrade the server.
+# Disabling the watcher leaves an upgrade already running to finish.
+if ! $REINSTALL && { [[ -f /etc/systemd/system/meshploy-upgrade.path ]] || [[ -d /var/lib/meshploy/upgrade ]]; }; then
+  header "Upgrade service"
+  if confirm "Remove the upgrade service (lets the console upgrade this server)?"; then
+    sudo systemctl disable --now meshploy-upgrade.path 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/meshploy-upgrade.path /etc/systemd/system/meshploy-upgrade.service
+    sudo systemctl daemon-reload 2>/dev/null || true
+    sudo rm -rf /var/lib/meshploy/upgrade
+    sudo rmdir /var/lib/meshploy 2>/dev/null || true
+    success "Upgrade service removed"
+  else
+    info "Upgrade service kept"
   fi
 fi
 

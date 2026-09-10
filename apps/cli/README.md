@@ -7,7 +7,7 @@ Commands are grouped by what they act on:
 | Group | Commands |
 |---|---|
 | [First-time setup](#first-time-setup) | `auth`, `link` |
-| [Server management](#server-management) | `node install`, `node uninstall`, `node status`, `server-upgrade`, `setup serve`, `setup-token`, `install node-exporter`, `license` |
+| [Server management](#server-management) | `node install`, `node uninstall`, `node status`, `server-upgrade`, `updater`, `setup serve`, `setup-token`, `install node-exporter`, `license` |
 | [Cluster and nodes](#cluster-and-nodes) | `node list`, `node add`, `node init`, `node remove`, `node delete`, `node token` |
 | [Projects and workloads](#projects-and-workloads) | `project`, `service`, `stack`, `apply`, `job`, `secret`, `volume`, `route` |
 | [Integrations](#integrations) | `integration git`, `integration registry`, `integration storage` |
@@ -107,6 +107,28 @@ The upgrade runs with the CLI you have installed, so run `sudo meshploy update` 
 |---|---|
 | `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
 | `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`) — required if the repo is private |
+
+---
+
+### `meshploy updater`
+
+```bash
+sudo meshploy updater start     # install the upgrade service and start watching for requests
+sudo meshploy updater stop      # stop watching; an upgrade already running finishes
+meshploy updater status         # whether it is on, and the last upgrade with its log
+sudo meshploy updater run       # upgrade now: update, server-upgrade, health check
+```
+
+Upgrades the server on request from the console. The API cannot touch the host, so it only queues a request; a systemd path unit on the gateway notices it and runs `meshploy updater run` as root. That updates the CLI, runs `server-upgrade` with the new binary, and waits for the API to answer healthy. Progress and the log are kept in `/var/lib/meshploy/upgrade/state`, where the console and `updater status` read them.
+
+`updater run` also works by hand, as a one-command upgrade. It stays on the channel the server is on now; pass `--edge` or `--stable` to switch. Unlike `server-upgrade`, leaving out `--edge` does not move an edge server to stable.
+
+Run it on the **gateway server**. `start`, `stop` and `run` need root.
+
+| Flag (`run`) | Description |
+|---|---|
+| `--edge` | Upgrade to the edge channel (builds from `main`) |
+| `--stable` | Upgrade to the latest stable release |
 
 ---
 
