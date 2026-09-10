@@ -69,6 +69,15 @@ jobs:
           path: dist/
           merge-multiple: true
 
+      # Published beside the binaries so `meshploy update` and get.sh can check
+      # a download against it. It comes from the same release, so it catches a
+      # corrupted or truncated download, not a compromised release.
+      - name: Write checksums
+        run: |
+          cd dist
+          sha256sum meshploy-* > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Detect if this is a version bump
         id: detect
         run: |

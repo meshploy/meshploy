@@ -130,16 +130,53 @@ if [[ -z "${ASSET_URL:-}" ]]; then
 Is this a development branch? Set MESHPLOY_BRANCH or use --edge."
 fi
 
-if [[ -n "$AUTH_HEADER" ]]; then
-  curl -fsSL --connect-timeout 15 --max-time 120 \
-    -H "$AUTH_HEADER" -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL" \
-    || die "CLI download failed. Check your connection and retry."
-else
-  curl -fsSL --connect-timeout 15 \
-    -H "Accept: application/octet-stream" -L -o "$CLI_BIN" "$ASSET_URL" \
-    || die "CLI download failed. Check your connection and retry."
+fetch_asset() {  # fetch_asset <url> <output file>
+  if [[ -n "$AUTH_HEADER" ]]; then
+    curl -fsSL --connect-timeout 15 --max-time 120 \
+      -H "$AUTH_HEADER" -H "Accept: application/octet-stream" -L -o "$2" "$1"
+  else
+    curl -fsSL --connect-timeout 15 --max-time 120 \
+      -H "Accept: application/octet-stream" -L -o "$2" "$1"
+  fi
+}
+
+# Downloaded beside the binary and moved into place only once it checks out,
+# so a bad download never replaces a working CLI.
+CLI_TMP="$(mktemp "${CLI_BIN}.XXXXXX")"
+fetch_asset "$ASSET_URL" "$CLI_TMP" \
+  || { rm -f "$CLI_TMP"; die "CLI download failed. Check your connection and retry."; }
+
+# Checked against the release's SHA256SUMS when it publishes one. The file
+# comes from the same release, so this catches a corrupted or truncated
+# download, not a compromised release.
+SUMS_URL=""
+if command -v python3 &>/dev/null; then
+  SUMS_URL=$(printf '%s' "$RELEASE_JSON" | python3 -c "
+import json, sys
+assets = json.load(sys.stdin).get('assets', [])
+match = next((a for a in assets if a['name'] == 'SHA256SUMS'), None)
+if match:
+    print(match.get('url') or match.get('browser_download_url', ''))
+" 2>/dev/null || true)
 fi
-chmod +x "$CLI_BIN"
+if [[ -n "$SUMS_URL" ]] && command -v sha256sum &>/dev/null; then
+  SUMS_TMP="$(mktemp)"
+  fetch_asset "$SUMS_URL" "$SUMS_TMP" \
+    || { rm -f "$CLI_TMP" "$SUMS_TMP"; die "Could not download the release's SHA256SUMS. Check your connection and retry."; }
+  WANT=$(awk -v f="$TARGET_ASSET" '$2 == f || $2 == "*" f { print $1 }' "$SUMS_TMP")
+  rm -f "$SUMS_TMP"
+  GOT=$(sha256sum "$CLI_TMP" | awk '{ print $1 }')
+  if [[ -z "$WANT" || "$WANT" != "$GOT" ]]; then
+    rm -f "$CLI_TMP"
+    die "The downloaded CLI does not match the release's SHA256SUMS. Nothing was installed; retry the download."
+  fi
+  success "CLI download verified against SHA256SUMS"
+else
+  warn "This release publishes no SHA256SUMS, so the CLI download was not verified."
+fi
+
+chmod +x "$CLI_TMP"
+mv -f "$CLI_TMP" "$CLI_BIN"
 success "meshploy CLI installed at ${CLI_BIN}"
 
 # ── CLI-only mode — stop here ─────────────────────────────────────────────────

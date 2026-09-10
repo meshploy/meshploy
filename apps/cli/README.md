@@ -382,6 +382,8 @@ meshploy update --edge    # edge build from main
 
 Downloads the latest CLI binary from GitHub and replaces the running binary in-place. Defaults to the latest stable release. Pass `--token <pat>` or set `GITHUB_PAT` if the repo is private.
 
+The download is checked against the release's `SHA256SUMS` before it replaces anything, and a mismatch leaves the installed CLI as it was. A release published before checksums existed is installed with a warning.
+
 On the gateway, run it before [`server-upgrade`](#meshploy-server-upgrade), which upgrades the server with whichever CLI is installed.
 
 ---
