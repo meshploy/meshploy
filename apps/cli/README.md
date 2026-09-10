@@ -2,6 +2,18 @@
 
 The `meshploy` CLI manages your Meshploy installation from the terminal — nodes, services, deployments, stacks, volumes, secrets, integrations, and more.
 
+Commands are grouped by what they act on:
+
+| Group | Commands |
+|---|---|
+| [First-time setup](#first-time-setup) | `auth`, `link` |
+| [Server management](#server-management) | `node install`, `node uninstall`, `node status`, `server-upgrade`, `setup serve`, `setup-token`, `install node-exporter`, `license` |
+| [Cluster and nodes](#cluster-and-nodes) | `node list`, `node add`, `node init`, `node remove`, `node delete`, `node token` |
+| [Projects and workloads](#projects-and-workloads) | `project`, `service`, `stack`, `apply`, `job`, `secret`, `volume`, `route` |
+| [Integrations](#integrations) | `integration git`, `integration registry`, `integration storage` |
+| [The CLI itself](#the-cli-itself) | `version`, `update`, `alias` |
+| [AI agents](#ai-agents) | `mcp` |
+
 ---
 
 ## Installation
@@ -28,40 +40,15 @@ The binary is installed to `/usr/local/bin/meshploy`. Once installed, `meshploy 
 
 ## First-time setup
 
+Log in once, then link the directories you work in to a project.
+
+### `meshploy auth`
+
 ```bash
 meshploy auth login --api-url https://api.your-domain.com
 ```
 
 Prompts for email and password, saves credentials to `~/.meshploy/config.json`. The org ID is resolved automatically — no `--org` flag needed on subsequent commands.
-
----
-
-## Project context
-
-Commands that operate on a project accept `-p <id|slug>`. To avoid passing it every time, link your working directory once:
-
-```bash
-cd ~/myapp
-meshploy link myproject     # writes .meshploy in the current directory
-```
-
-After that, all commands in that directory pick up the project automatically. Use `meshploy link --unlink` to remove it.
-
----
-
-## Commands
-
-### `meshploy version`
-
-```bash
-meshploy version
-# meshploy 0.9.0          ← stable build
-# meshploy 0.9.0+abc1234 (edge)  ← edge build
-```
-
----
-
-### `meshploy auth`
 
 | Command | Description |
 |---|---|
@@ -71,26 +58,133 @@ meshploy version
 
 If your account has 2FA enabled, `auth login` prompts for a 6-digit TOTP code after the password step. Use a recovery code instead if you've lost access to your authenticator app.
 
+### `meshploy link`
+
+Commands that operate on a project accept `-p <id|slug>`. To avoid passing it every time, link your working directory once:
+
+```bash
+cd ~/myapp
+meshploy link myproject     # writes .meshploy in the current directory
+meshploy link --unlink      # removes it
+```
+
+After that, all commands in that directory pick up the project automatically.
+
 ---
+
+## Server management
+
+These install, upgrade and recover Meshploy on the machine you run them on, so run them there, as root. Most only make sense on the **gateway server**; `node install`, `node uninstall`, `node status` and `install node-exporter` apply to a worker too. `license` is the exception: it goes through the API, so it works from any machine you are logged in on.
+
+### `meshploy node` on this machine
+
+| Command | Description |
+|---|---|
+| `node install` | Run `install.sh` on this machine — requires root |
+| `node uninstall` | Run `uninstall.sh` on this machine — requires root |
+| `node status` | Show this machine's node identity (`/etc/meshploy/node.conf`) |
+
+To add, remove or list nodes across the cluster, see [Cluster and nodes](#cluster-and-nodes).
+
+---
+
+### `meshploy server-upgrade`
+
+```bash
+sudo meshploy server-upgrade           # stable — latest release configs + images
+sudo meshploy server-upgrade --edge    # edge — main branch configs + images
+```
+
+Syncs the `deploy/` configuration directory from GitHub and pulls the latest container images, then restarts all services. Equivalent to what the CI deploy job does for your own server.
+
+Must be run as root on the **gateway server**.
+
+Protected files are never overwritten: `.env`, DNS zone files, and Headscale config keep their runtime-rendered values. `coredns/Corefile` is replaced and re-rendered from `.env`. On a gateway using self-managed DNS (`DNS_MODE=ondemand`), the on-demand Caddyfile is put back after the sync, and Caddy is recreated whenever its configuration changed.
+
+The upgrade runs with the CLI you have installed, so run `sudo meshploy update` (or `update --edge`) first.
+
+| Flag | Description |
+|---|---|
+| `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
+| `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`) — required if the repo is private |
+
+---
+
+### `meshploy setup serve`
+
+```bash
+sudo meshploy setup serve
+```
+
+Serves the browser installer: a page on port 9000 that collects the domain and DNS mode, runs the installer, and streams its output. `install.sh` starts it for you when you choose to continue setup in a browser. Run it yourself to reopen setup, for example to change the domain; it starts from the current configuration in `.env`. Requires root, and access is gated on the setup token from `/opt/meshploy/.env`. It serves plain HTTP, because no certificate exists yet.
+
+| Flag | Description |
+|---|---|
+| `--addr` | Address to serve on (default: `0.0.0.0:9000`) |
+| `--public-ip` | Public IP to pre-fill and to check DNS against (default: `PUBLIC_IP` from `.env`) |
+
+---
+
+### `meshploy setup-token`
+
+```bash
+sudo meshploy setup-token show      # print the token for creating the first account
+sudo meshploy setup-token rotate    # issue a new one, invalidating the old
+```
+
+The first account registered on a Meshploy server owns it, so until that account exists, registration asks for a one-time setup token. The installer prints it once; these commands recover it. Both must be run as root on the **gateway server**, where the token is stored in `/opt/meshploy/.env`.
+
+| Subcommand | Description |
+|---|---|
+| `show` | Prints the current token while the instance has no owner. Once an owner exists, registration is closed and the token is no longer accepted, so it says that instead of printing it. |
+| `rotate` | Issues a new token and invalidates the previous one, for when it may have been seen by someone else. Restart the API afterwards: `cd /opt/meshploy && docker compose up -d api`. |
+
+---
+
+### `meshploy install`
+
+| Command | Description |
+|---|---|
+| `install node-exporter` | Install Prometheus node_exporter as a systemd service |
+
+---
+
+### `meshploy license`
+
+| Command | Description |
+|---|---|
+| `license status` | Show the licence status and entitlements of this install |
+| `license activate <token>` | Install a licence token. The server verifies its signature, expiry and domain binding before storing it |
+
+Only the Enterprise image can verify a licence; on a Community install, `activate` reports what to run instead.
+
+---
+
+## Cluster and nodes
+
+Adding and removing worker machines. These go through the API, so they work from any machine you are logged in on; `init`, `add` and `remove` also reach the target machine over SSH.
 
 ### `meshploy node`
 
 | Command | Description |
 |---|---|
 | `node list` | List all nodes in the cluster |
-| `node status` | Show this machine's node identity (`/etc/meshploy/node.conf`) |
-| `node delete <id>` | Remove a node from Headscale, k3s, and the DB |
-| `node remove <host>` | Cleanly uninstall a remote node over SSH |
 | `node init <host>` | Prepare a remote machine over SSH (installs prerequisites) |
 | `node add <host>` | Bootstrap a remote machine as a worker node over SSH |
-| `node install` | Run `install.sh` on this machine — requires root |
-| `node uninstall` | Run `uninstall.sh` on this machine — requires root |
+| `node remove <host>` | Cleanly uninstall a remote node over SSH |
+| `node delete <id>` | Remove a node from Headscale, k3s, and the DB |
 | `node token get` | Print the current node registration token |
 | `node token rotate` | Generate a new registration token (invalidates the old one) |
 
 SSH commands (`remove`, `init`, `add`) accept `--identity-file` and `--port`.
 
+For `install`, `uninstall` and `status`, which act on the machine you run them on, see [Server management](#server-management).
+
 ---
+
+## Projects and workloads
+
+These act on a project: pass it with `-p` (or `--project`), or [link the directory](#meshploy-link) once.
 
 ### `meshploy project`
 
@@ -210,6 +304,10 @@ Applies a Docker Compose manifest, with `x-meshploy` extensions, to a project in
 
 ---
 
+## Integrations
+
+Credentials the organisation shares across projects: git providers to build from, registries to push to and pull from, and S3-compatible storage for backups.
+
 ### `meshploy integration`
 
 **Git**
@@ -238,19 +336,14 @@ Applies a Docker Compose manifest, with `x-meshploy` extensions, to a project in
 
 ---
 
-### `meshploy install`
+## The CLI itself
 
-| Command | Description |
-|---|---|
-| `install node-exporter` | Install Prometheus node_exporter as a systemd service |
-
----
-
-### `meshploy link`
+### `meshploy version`
 
 ```bash
-meshploy link <project-id|slug>   # link current directory to a project
-meshploy link --unlink            # remove the .meshploy file
+meshploy version
+# meshploy 0.9.0          ← stable build
+# meshploy 0.9.0+abc1234 (edge)  ← edge build
 ```
 
 ---
@@ -264,69 +357,7 @@ meshploy update --edge    # edge build from main
 
 Downloads the latest CLI binary from GitHub and replaces the running binary in-place. Defaults to the latest stable release. Pass `--token <pat>` or set `GITHUB_PAT` if the repo is private.
 
----
-
-### `meshploy server-upgrade`
-
-```bash
-sudo meshploy server-upgrade           # stable — latest release configs + images
-sudo meshploy server-upgrade --edge    # edge — main branch configs + images
-```
-
-Syncs the `deploy/` configuration directory from GitHub and pulls the latest container images, then restarts all services. Equivalent to what the CI deploy job does for your own server.
-
-Must be run as root on the **gateway server**.
-
-Protected files are never overwritten: `.env`, DNS zone files, and Headscale config keep their runtime-rendered values. `coredns/Corefile` is replaced and re-rendered from `.env`. On a gateway using self-managed DNS (`DNS_MODE=ondemand`), the on-demand Caddyfile is put back after the sync, and Caddy is recreated whenever its configuration changed.
-
-The upgrade runs with the CLI you have installed, so run `sudo meshploy update` (or `update --edge`) first.
-
-| Flag | Description |
-|---|---|
-| `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
-| `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`) — required if the repo is private |
-
----
-
-### `meshploy setup serve`
-
-```bash
-sudo meshploy setup serve
-```
-
-Serves the browser installer: a page on port 9000 that collects the domain and DNS mode, runs the installer, and streams its output. `install.sh` starts it for you when you choose to continue setup in a browser. Run it yourself to reopen setup, for example to change the domain; it starts from the current configuration in `.env`. Requires root, and access is gated on the setup token from `/opt/meshploy/.env`. It serves plain HTTP, because no certificate exists yet.
-
-| Flag | Description |
-|---|---|
-| `--addr` | Address to serve on (default: `0.0.0.0:9000`) |
-| `--public-ip` | Public IP to pre-fill and to check DNS against (default: `PUBLIC_IP` from `.env`) |
-
----
-
-### `meshploy setup-token`
-
-```bash
-sudo meshploy setup-token show      # print the token for creating the first account
-sudo meshploy setup-token rotate    # issue a new one, invalidating the old
-```
-
-The first account registered on a Meshploy server owns it, so until that account exists, registration asks for a one-time setup token. The installer prints it once; these commands recover it. Both must be run as root on the **gateway server**, where the token is stored in `/opt/meshploy/.env`.
-
-| Subcommand | Description |
-|---|---|
-| `show` | Prints the current token while the instance has no owner. Once an owner exists, registration is closed and the token is no longer accepted, so it says that instead of printing it. |
-| `rotate` | Issues a new token and invalidates the previous one, for when it may have been seen by someone else. Restart the API afterwards: `cd /opt/meshploy && docker compose up -d api`. |
-
----
-
-### `meshploy license`
-
-| Command | Description |
-|---|---|
-| `license status` | Show the licence status and entitlements of this install |
-| `license activate <token>` | Install a licence token. The server verifies its signature, expiry and domain binding before storing it |
-
-Only the Enterprise image can verify a licence; on a Community install, `activate` reports what to run instead.
+On the gateway, run it before [`server-upgrade`](#meshploy-server-upgrade), which upgrades the server with whichever CLI is installed.
 
 ---
 
@@ -338,6 +369,8 @@ Only the Enterprise image can verify a licence; on a Community install, `activat
 | `alias remove` | Remove alias symlinks |
 
 ---
+
+## AI agents
 
 ### `meshploy mcp`
 
