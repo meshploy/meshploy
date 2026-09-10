@@ -1,8 +1,11 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, Check, Loader2 } from "lucide-react"
+import { ArrowLeft, Check, Copy, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { BuildLogLine } from "@/components/logs/build-log-line"
+import { classifyLogLine, stripAnsi } from "@/lib/log-level"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -64,6 +67,34 @@ function DeploymentLogsPage() {
     const el = logRef.current
     if (el && followRef.current) el.scrollTop = el.scrollHeight
   }, [logLines])
+
+  // Colour codes stripped, and each line tagged by level for display.
+  const lines = useMemo(
+    () =>
+      logLines.map((raw) => {
+        const text = stripAnsi(raw)
+        return { text, level: classifyLogLine(text) }
+      }),
+    [logLines],
+  )
+  const errorCount = useMemo(() => lines.filter((l) => l.level === "error").length, [lines])
+  const [copied, setCopied] = useState(false)
+
+  function copyLog() {
+    navigator.clipboard.writeText(lines.map((l) => l.text).join("\n"))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  // Scroll the log box to the first error, and stop following new lines so the
+  // next one does not pull the view away from it.
+  function jumpToFirstError() {
+    const box = logRef.current
+    const first = box?.querySelector<HTMLElement>('[data-level="error"]')
+    if (!box || !first) return
+    followRef.current = false
+    box.scrollTop = first.offsetTop - 8
+  }
 
   // Stream logs via SSE
   useEffect(() => {
@@ -214,17 +245,39 @@ function DeploymentLogsPage() {
           <code className="text-[11px] font-mono text-muted-foreground/50 ml-1">
             deployment/{deploymentId.slice(0, 8)} · build log
           </code>
-          {streamDone && (
-            <span className="ml-auto text-[10px] text-emerald-400/70 font-mono">
-              stream complete
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-2.5">
+            {lines.length > 0 && (
+              <span className="text-[10px] font-mono text-muted-foreground/50">
+                {lines.length} lines
+              </span>
+            )}
+            {errorCount > 0 && (
+              <button
+                type="button"
+                onClick={jumpToFirstError}
+                title="Jump to the first error"
+                className="rounded-full border border-destructive/30 bg-destructive/10 px-1.5 text-[10px] font-mono text-destructive hover:bg-destructive/20"
+              >
+                {errorCount} {errorCount === 1 ? "error" : "errors"}
+              </button>
+            )}
+            {streamDone && (
+              <span className="text-[10px] text-emerald-400/70 font-mono">
+                stream complete
+              </span>
+            )}
+            {lines.length > 0 && (
+              <Button variant="ghost" size="icon-xs" onClick={copyLog} title="Copy the log">
+                {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Log content */}
         <div
           ref={logRef}
-          className="flex-1 overflow-y-auto px-4 py-3"
+          className="relative flex-1 overflow-y-auto px-4 py-3"
           onScroll={(e) => {
             const el = e.currentTarget
             followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
@@ -239,16 +292,14 @@ function DeploymentLogsPage() {
               Waiting for log output…
             </p>
           ) : (
-            <pre className="text-[12px] font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-all">
-              {logLines.map((line, i) => (
-                <span key={i} className="block">
-                  {line}
-                </span>
+            <div className="space-y-0.5 text-[12px] font-mono leading-relaxed">
+              {lines.map((line, i) => (
+                <BuildLogLine key={i} text={line.text} level={line.level} />
               ))}
               {streaming && (
                 <span className="inline-block w-2 h-3.5 bg-muted-foreground/60 animate-pulse align-middle ml-0.5" />
               )}
-            </pre>
+            </div>
           )}
         </div>
       </div>
