@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.11.0](https://github.com/meshploy/meshploy/compare/v0.10.0...v0.11.0) (2026-09-10)
+
+
+### Features
+
+* add meshploy updater to run server upgrades from a systemd service ([628f49d](https://github.com/meshploy/meshploy/commit/628f49d08d89adac1924c4a7476c04103abc857d))
+* let the server's owner upgrade it from the console ([6c0a0d1](https://github.com/meshploy/meshploy/commit/6c0a0d18e8a4b159f9cf9a082f468e597e19179d))
+* verify CLI downloads against a SHA256SUMS published with each release ([a0fcaa7](https://github.com/meshploy/meshploy/commit/a0fcaa7af514d3ebde7e334a3f7f0a5c652079c4))
+
+
+### Bug Fixes
+
+* build from GitLab and Gitea repositories, and keep git tokens out of clone URLs ([8dbb0f0](https://github.com/meshploy/meshploy/commit/8dbb0f096c73f3eaa695a9248757a67882211ca9))
+* fail builds that no node can run, and make the gateway a build node by default ([7a02f3c](https://github.com/meshploy/meshploy/commit/7a02f3cacdf30cb0559487f7f2a666bd1f90aa6f))
+* keep build and runtime logs in a fixed-height pane that scrolls on its own ([1fe5ec7](https://github.com/meshploy/meshploy/commit/1fe5ec7095f5197742f91ef4935459cebbb4fa74))
+* keep in-field toggle buttons in place when pressed, via a shared PasswordInput ([dc82d3d](https://github.com/meshploy/meshploy/commit/dc82d3dba9a60c66cabd5591edd4b9cfc331d027))
+* make server-upgrade pull before changing anything and roll back if the services do not return ([2437cee](https://github.com/meshploy/meshploy/commit/2437cee4f40c4df114973a652530c5970b12e3c3))
+* make the gateway uninstall remove everything the installer put on the machine ([a54d907](https://github.com/meshploy/meshploy/commit/a54d90779ebed8e829403b7faeddf4b6afc789f9))
+* notice a new build or release within minutes instead of an hour ([ba9adc4](https://github.com/meshploy/meshploy/commit/ba9adc47b8119c03e946e208fab446aa8c439a3c))
+* offer an edge update only once a newer build exists, and rebuild the API on every build ([38a0227](https://github.com/meshploy/meshploy/commit/38a02278f49834420eaf71382c3e2b8e4b4b5563))
+
 ## [0.10.0](https://github.com/meshploy/meshploy/compare/v0.9.0...v0.10.0) (2026-09-10)
 
 
