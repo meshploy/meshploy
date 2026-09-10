@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -63,6 +64,11 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 
 	runtime := detectContainerRuntime()
 
+	// What Caddy is serving now, to tell afterwards whether it must be recreated.
+	// Absent on a broken install; only ever compared, never required.
+	caddyfile := filepath.Join(meshployInstDir, "caddy", "Caddyfile")
+	caddyBefore, _ := os.ReadFile(caddyfile)
+
 	// Sync MESHPLOY_CHANNEL in .env so image pulls match the chosen channel.
 	channel := "latest"
 	if edge {
@@ -97,6 +103,11 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Println("✔  Corefile configured")
 
+	if err := applyDNSModeCaddyfile(readEnvVar("DNS_MODE")); err != nil {
+		return fmt.Errorf("caddyfile: %w", err)
+	}
+	caddyAfter, _ := os.ReadFile(caddyfile)
+
 	// Enterprise image selection. Explicit --ee switches; otherwise a licensed
 	// install running the stock image just gets told, because a routine upgrade
 	// should not silently change which product is running.
@@ -120,6 +131,17 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	fmt.Println("Restarting services…")
 	if err := composeRun(runtime, "up", "-d", "--remove-orphans"); err != nil {
 		return fmt.Errorf("compose up: %w", err)
+	}
+
+	// up -d recreates a container only when its compose definition changes, not
+	// when a file it mounts does, so a new Caddyfile would sit on disk unserved
+	// until Caddy next happened to restart. Certificates live in the caddy_data
+	// volume and survive the recreate.
+	if !bytes.Equal(caddyBefore, caddyAfter) {
+		fmt.Println("Recreating Caddy to load the new Caddyfile…")
+		if err := composeRun(runtime, "up", "-d", "--force-recreate", "caddy"); err != nil {
+			return fmt.Errorf("recreate caddy: %w", err)
+		}
 	}
 
 	fmt.Println("✔  Server upgraded successfully")
@@ -267,6 +289,67 @@ func downloadDeployTarball(pat, ref string) error {
 		return fmt.Errorf("extract tarball: %w", tarErr)
 	}
 	return nil
+}
+
+// applyDNSModeCaddyfile puts the Caddyfile for the gateway's DNS mode at
+// caddy/Caddyfile, the fixed path docker-compose mounts.
+//
+// The deploy tarball ships the NS-delegation config at that path and the
+// on-demand one beside it. install.sh copies the on-demand one over when
+// DNS_MODE=ondemand, but an upgrade unpacked the tarball and stopped there, so
+// an on-demand gateway came back on the delegation config the next time Caddy
+// started: DNS-01 through an NS delegation it does not have, so no new
+// certificate and no renewal. DNS_MODE is read from .env because that is the
+// one file an upgrade keeps.
+//
+// The rule mirrors install.sh, which runs in the same two situations: when
+// caddy/Caddyfile is a freshly unpacked delegation template, and when it is
+// the on-demand copy from a previous run. Writes go in place so the file keeps
+// the inode a running container's bind mount points at.
+func applyDNSModeCaddyfile(mode string) error {
+	dir := filepath.Join(meshployInstDir, "caddy")
+	live := filepath.Join(dir, "Caddyfile")
+	ondemandPath := filepath.Join(dir, "Caddyfile.ondemand")
+	backup := filepath.Join(dir, "Caddyfile.delegation.bak")
+
+	current, err := os.ReadFile(live)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", live, err)
+	}
+	ondemand, err := os.ReadFile(ondemandPath)
+	if err != nil && mode == "ondemand" {
+		return fmt.Errorf("DNS_MODE=ondemand but %s is missing: %w", ondemandPath, err)
+	}
+	isOndemandCopy := err == nil && bytes.Equal(current, ondemand)
+
+	if mode == "ondemand" {
+		if isOndemandCopy {
+			return nil
+		}
+		// current is the delegation template the tarball just unpacked. Keep it
+		// as the backup, so switching back restores this release's template and
+		// not whichever one the first install happened to have.
+		if err := os.WriteFile(backup, current, 0o644); err != nil {
+			return fmt.Errorf("save delegation Caddyfile: %w", err)
+		}
+		fmt.Println("✔  Caddyfile set to the on-demand TLS variant")
+		return os.WriteFile(live, ondemand, 0o644)
+	}
+
+	// Delegation, or unset, which is what every install before DNS modes was.
+	if !isOndemandCopy {
+		return nil
+	}
+	saved, err := os.ReadFile(backup)
+	if err != nil {
+		// Only reachable with --no-sync; a sync always unpacks the delegation
+		// template. The on-demand config works with a delegation too, so keep
+		// serving it rather than fail the upgrade.
+		fmt.Println("warning: Caddyfile is the on-demand variant and no delegation copy is saved; keeping it")
+		return nil
+	}
+	fmt.Println("✔  Caddyfile restored to the NS-delegation variant")
+	return os.WriteFile(live, saved, 0o644)
 }
 
 // syncEnvChannel sets MESHPLOY_CHANNEL in /opt/meshploy/.env, updating the

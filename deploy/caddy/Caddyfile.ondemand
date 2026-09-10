@@ -6,6 +6,13 @@
 # TLS strategy (no DNS-01, no CoreDNS dependency):
 #   - Named subdomains (headscale, api, console) are explicit site blocks and
 #     get certs automatically via HTTP-01 / TLS-ALPN — no ask endpoint needed.
+#     Each needs `tls force_automate`: the *.{DOMAIN} block below also covers
+#     them, and Caddy's default is to prefer a covering wildcard over individual
+#     certs. Here that wildcard is on-demand, so it is never obtained up front,
+#     and without force_automate the named sites fall into a gap where nothing
+#     issues their cert -- the console is unreachable over HTTPS on every fresh
+#     install. The delegation Caddyfile does not need this: its wildcard gets a
+#     real DNS-01 certificate that genuinely covers them.
 #   - *.{DOMAIN} workload subdomains and custom user domains use On-Demand TLS.
 #     Caddy asks the API before issuing, so only active routes / verified
 #     custom domains receive a cert.
@@ -28,11 +35,13 @@
 
 # ── Headscale control plane (named → automatic HTTP-01) ──────────────────────
 headscale.{$DOMAIN} {
+    tls force_automate
     reverse_proxy localhost:8085
 }
 
 # ── Meshploy API (named → automatic HTTP-01) ─────────────────────────────────
 api.{$DOMAIN} {
+    tls force_automate
     reverse_proxy localhost:4000 {
         flush_interval -1
     }
@@ -40,6 +49,7 @@ api.{$DOMAIN} {
 
 # ── Meshploy Web UI + API (named → automatic HTTP-01) ────────────────────────
 console.{$DOMAIN} {
+    tls force_automate
     handle /api/* {
         reverse_proxy localhost:4000 {
             flush_interval -1

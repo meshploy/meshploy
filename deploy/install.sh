@@ -816,24 +816,33 @@ ENVEOF
   # On-demand mode uses a separate Caddyfile (HTTP-01 + on_demand, no DNS-01).
   #
   # docker-compose mounts caddy/Caddyfile by a fixed path, so the selected
-  # variant is copied over it. The delegation config is kept aside first: it is
-  # the file tracked in git, and without a copy the switch was one-way -- once
-  # on-demand had overwritten it, re-running and choosing delegation left the
-  # on-demand config in place, recoverable only with `git checkout`.
+  # variant is copied over it, and the delegation config is kept aside so the
+  # switch can be undone.
+  #
+  # What caddy/Caddyfile holds right now decides what to do, because this runs
+  # in two situations: straight after get.sh has unpacked a fresh deploy/, when
+  # it is the current delegation template, and on a re-run with no unpack --
+  # the browser installer's retry, a DNS mode switch -- when it is last run's
+  # on-demand copy. The backup is refreshed every time a fresh template is
+  # present; saving it only once meant switching back to delegation restored
+  # the first install's template over a newer one. `meshploy server-upgrade`
+  # applies the same rule after it unpacks a release.
   if [[ "$DNS_MODE" == "ondemand" ]]; then
-    if [[ ! -f caddy/Caddyfile.delegation.bak ]]; then
-      cp caddy/Caddyfile caddy/Caddyfile.delegation.bak
-      info "Saved the delegation Caddyfile to caddy/Caddyfile.delegation.bak"
+    if ! cmp -s caddy/Caddyfile caddy/Caddyfile.ondemand; then
+      cp -f caddy/Caddyfile caddy/Caddyfile.delegation.bak
+      cp -f caddy/Caddyfile.ondemand caddy/Caddyfile
     fi
-    cp -f caddy/Caddyfile.ondemand caddy/Caddyfile
     success "caddy/Caddyfile set to on-demand TLS variant (self-managed DNS)"
-  else
+  elif cmp -s caddy/Caddyfile caddy/Caddyfile.ondemand; then
     if [[ -f caddy/Caddyfile.delegation.bak ]]; then
       cp -f caddy/Caddyfile.delegation.bak caddy/Caddyfile
       success "caddy/Caddyfile restored to the NS-delegation variant"
     else
-      success "caddy/Caddyfile ready (uses \${DOMAIN} env var at runtime)"
+      warn "caddy/Caddyfile is the on-demand variant and no delegation copy is saved; keeping it."
+      warn "It works with NS delegation too. Re-run through get.sh to restore the delegation config."
     fi
+  else
+    success "caddy/Caddyfile ready (uses \${DOMAIN} env var at runtime)"
   fi
 
   # ── Private registry login ──────────────────────────────────────────────────
@@ -1013,7 +1022,12 @@ for u in json.load(sys.stdin):
   # "volume already exists but was not created by Docker Compose" warning).
   $CONTAINER_RUNTIME volume create meshploy_caddy_data  &>/dev/null || true
   $CONTAINER_RUNTIME volume create meshploy_caddy_config &>/dev/null || true
-  DOMAIN="$DOMAIN" $COMPOSE_CMD up -d coredns caddy
+  # --force-recreate: a running Caddy or CoreDNS keeps the config it loaded, and
+  # `up -d` only recreates a container whose compose definition changed, never
+  # one whose mounted Caddyfile or Corefile did. So on a re-run a new DNS mode or
+  # domain was written to disk and never served. On a first install neither is
+  # running and this is a plain start.
+  DOMAIN="$DOMAIN" $COMPOSE_CMD up -d --force-recreate coredns caddy
   success "CoreDNS and Caddy started"
 
   # ── Install node_exporter (metrics) ─────────────────────────────────────────
