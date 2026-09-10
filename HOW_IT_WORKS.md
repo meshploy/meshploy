@@ -4,7 +4,7 @@ Answers to the technical questions that come up when you first run Meshploy or w
 
 ---
 
-## Why do I have to delegate NS records to my own server?
+## Why does Meshploy ask me to delegate NS records?
 
 Because Meshploy issues **wildcard TLS certificates** (`*.yourdomain.com`), and the only ACME challenge type that supports wildcards is DNS-01.
 
@@ -19,11 +19,13 @@ That's why NS delegation is required: you're telling the world "DNS queries for 
 
 **Practical note:** use a dedicated subdomain (`meshploy.example.com`, not `example.com`). Delegating NS for a subdomain is safe and doesn't affect your root domain's email or other services.
 
+**If your DNS provider cannot delegate a subdomain**, install with `--dns-mode=ondemand` instead. You add a wildcard A record at your provider, and rather than one wildcard certificate, Caddy issues a certificate for each hostname the first time it is requested, over HTTP-01. The trade-off is a short delay on the first visit to each new hostname. The records for both modes are in the README's DNS setup.
+
 ---
 
 ## Why are worker nodes dark to the internet?
 
-Workers have **no open inbound ports**. They join the mesh by making an outbound connection to Headscale (the WireGuard control plane running on the gateway). Once connected, the gateway can reach them over the encrypted WireGuard mesh, but nothing on the public internet can reach them directly.
+Meshploy needs **no inbound ports** on workers. They join the mesh by making an outbound connection to Headscale (the WireGuard control plane running on the gateway). Once connected, the gateway can reach them over the encrypted WireGuard mesh, but nothing on the public internet can reach them directly.
 
 This means:
 
@@ -31,7 +33,9 @@ This means:
 - Containers can't accidentally bind a public port — there's no public interface to bind to
 - A compromised application can't receive inbound connections from attackers
 
-The gateway is the only public surface. Three ports: 80, 443, 53.
+One caveat: k3s's kubelet listens on port 10250 on every interface, so a worker with a public IP is reachable there unless a host or provider firewall blocks it.
+
+The gateway is the only public surface Meshploy needs: ports 80 and 443, plus 53 in NS-delegation mode. Its other services (the API on 4000, the built-in registry on 5000, k3s on 6443, node_exporter on 9100) listen on every interface so mesh nodes can reach them, so they rely on a firewall to stay off the internet. The dashboard warns you when the installer found no host firewall.
 
 ---
 
@@ -43,7 +47,7 @@ WireGuard is a VPN protocol — it creates encrypted tunnels between machines. B
 
 **Headscale** is the self-hosted version of the Tailscale control plane. Instead of depending on Tailscale's cloud, your gateway runs Headscale. Workers register with `tailscale up --login-server=https://headscale.yourdomain.com`, get a mesh IP, and are immediately reachable from the gateway over WireGuard.
 
-The mesh is entirely under your control. Nothing leaves your infrastructure.
+The control plane is yours: Headscale runs on the gateway and decides who joins. Nodes connect to each other directly when they can. When NAT prevents that, their traffic is relayed through Tailscale's public DERP servers. It stays end-to-end encrypted with WireGuard, so the relay cannot read it, but it does pass through infrastructure you don't run.
 
 ---
 
@@ -93,12 +97,12 @@ Your app never has a public IP or an exposed port.
 
 ## How does TLS work for custom domains (myapp.com)?
 
-For `*.yourdomain.com` subdomains, the wildcard cert Caddy already holds covers everything.
+For `*.yourdomain.com` subdomains in NS-delegation mode, the wildcard certificate Caddy already holds covers everything. In self-managed DNS mode, each subdomain gets its own certificate the first time it is requested, once a route for it exists.
 
 For a completely separate domain (`myapp.com`):
 
 1. You add `myapp.com` as a custom domain in the dashboard
-2. Meshploy asks you to set a DNS TXT record to prove you own it
+2. Meshploy asks you to set a TXT record at `_meshploy-verify.myapp.com` to prove you own it
 3. Once verified, Caddy issues a certificate on the **first request** using On-Demand TLS (HTTP-01)
 
 Before issuing any On-Demand cert, Caddy calls the Meshploy API to check if the domain is verified. If it isn't, no cert is issued — this prevents someone from pointing a domain they don't own at your gateway and stealing a certificate.
@@ -116,7 +120,7 @@ When you trigger a deployment from source:
 5. The API updates your K8s Deployment to pull the new image from the built-in registry
 6. K3s performs a rolling update — old pods stay up until new pods pass health checks
 
-The built-in registry is only reachable from within the WireGuard mesh. Worker nodes pull images directly from `mesh_ip:5000` — no image ever touches a public registry unless you configure one.
+Worker nodes pull images from the gateway at `mesh_ip:5000`, and no image touches a public registry unless you configure one. The registry has no authentication of its own and is published on every interface, so it depends on a firewall to keep port 5000 off the public internet.
 
 ---
 
@@ -165,7 +169,7 @@ Passwords (user accounts) are hashed with bcrypt and never stored as plaintext o
 
 Two separate processes read the database simultaneously: the API and the proxy. Because both run as separate containers and could run on separate machines, they need a database that handles concurrent connections across processes. SQLite doesn't support this reliably.
 
-PostgreSQL also handles the partial unique indexes (`idx_one_owner_per_org`, `idx_unique_domain_per_org`) and BRIN indexes used for time-series metrics data, neither of which SQLite supports.
+PostgreSQL also enforces the partial unique indexes the data model relies on, such as `idx_one_owner_per_org`, which allows exactly one owner per organization.
 
 ---
 
@@ -181,7 +185,7 @@ Two reasons:
 
 ## When should I use the CLI instead of the dashboard?
 
-The dashboard and the CLI both talk to the same API. The CLI doesn't yet cover every operation available in the dashboard — things like variable groups, notification channels, registry integrations, and backup management are dashboard-only for now. For full coverage from the terminal, the MCP server (used via Claude Code) exposes all API operations.
+The dashboard and the CLI both talk to the same API. The CLI doesn't yet cover every operation available in the dashboard — things like variable groups, notification channels, and backup management are dashboard-only for now. For wider coverage from the terminal, the MCP server exposes most API operations.
 
 For what the CLI does cover, use whichever fits your workflow:
 
@@ -196,10 +200,10 @@ The CLI is especially useful for:
 # Authenticate once
 meshploy auth login --api-url https://api.yourdomain.com
 
-# Deploy a service, tail logs, trigger a job
+# Deploy a service, follow its logs, run a job now
 meshploy service deploy my-api
-meshploy deployment logs --follow
-meshploy job trigger nightly-cleanup
+meshploy service logs my-api
+meshploy job run nightly-cleanup
 ```
 
 ---
@@ -219,27 +223,19 @@ The command fetches a registration token from the API, generates a fresh Headsca
 
 ## What is the MCP server and how do I use it?
 
-Meshploy ships an MCP (Model Context Protocol) server that lets Claude Code operate your platform natively — reading state, triggering deployments, managing services, running queries, and more, all without leaving your editor.
+Meshploy ships an MCP (Model Context Protocol) server that lets Claude Code and other AI agents operate your platform: reading state, triggering deployments, managing services, running queries, and more, without leaving your editor. It comes in two forms.
 
-**How to connect:**
-
-Add this to your Claude Code MCP config (`~/.claude/mcp.json` or project-level `.mcp.json`):
+**Local, through the CLI.** `meshploy mcp` serves the tools over stdio using the credentials saved by `meshploy auth login`, so it acts as you. Add it to a project's `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "meshploy": {
-      "command": "meshploy",
-      "args": ["mcp"],
-      "env": {
-        "MESHPLOY_API_URL": "https://api.yourdomain.com",
-        "MESHPLOY_TOKEN": "your-api-token",
-        "MESHPLOY_ORG_ID": "your-org-id"
-      }
-    }
+    "meshploy": { "command": "meshploy", "args": ["mcp"] }
   }
 }
 ```
+
+**Remote, served by the gateway.** `https://console.yourdomain.com/mcp` speaks MCP over HTTP and authenticates with an agent token. Create an agent in the dashboard under **Agents**, grant it access to the projects or resources it should touch, and mint a `magt-` token. The agent's page shows the exact configuration for Claude Code, Cursor, VS Code and other clients. Operator-only tools (node registration, system backups, member management, raw database queries) are not offered remotely.
 
 Once connected, Claude can answer questions like "which services are down?", "show me the last deployment logs for my-api", or "deploy the latest build of my-api to production" — and act on them.
 
@@ -247,7 +243,7 @@ Once connected, Claude can answer questions like "which services are down?", "sh
 
 ## What can Claude actually do through the MCP server?
 
-The MCP server exposes over 90 tools covering every API operation. A few examples of what you can ask Claude:
+The MCP server exposes over 100 tools covering most of the API. A few examples of what you can ask Claude:
 
 - *"List all services in the production project and show me which ones haven't been deployed in the last 7 days"*
 - *"Check the logs for the last failed deployment of my-api"*
@@ -268,6 +264,6 @@ A few things to keep in mind:
 
 **Destructive operations require explicit confirmation.** Tools like `delete_service`, `restore_backup`, and `cancel_deployment` are labelled as destructive. Claude will ask you in chat before calling them, in addition to the permission prompt.
 
-**The MCP server uses a regular API token.** It has the same access as the user who generated the token. You can create a dedicated read-only user in Meshploy and use that token for Claude if you want to limit what it can do.
+**Access is scoped to whoever the tools run as.** Locally, `meshploy mcp` acts as the logged-in user. Remotely, it acts as an agent, which has only the permissions you grant it, so an agent is how you give Claude a narrower slice than your own account.
 
-**DB Explorer is scoped to your org.** The `db_query` tool runs queries through the Meshploy API, which enforces RBAC. Claude cannot access databases in other orgs.
+**DB Explorer is scoped to your org.** The `db_query` tool runs queries through the Meshploy API, which enforces RBAC. Claude cannot access databases in other orgs. It is only available through the local server, not the remote one.

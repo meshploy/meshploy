@@ -8,7 +8,7 @@ Thanks for your interest. This guide gets you from zero to a working dev environ
 
 | Tool | Version |
 |---|---|
-| Go | 1.22+ |
+| Go | 1.25+ |
 | Node.js | 20+ |
 | PostgreSQL | 15+ |
 | Docker or Podman | any recent version |
@@ -32,7 +32,7 @@ Minimum env vars to start locally:
 ```
 DATABASE_URL=postgres://meshploy:meshploy@localhost:5432/meshploy?sslmode=disable
 JWT_SECRET=any-long-random-string
-ENCRYPTION_KEY=exactly-32-characters-here!!!!!
+ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 ```
 
 ### Start PostgreSQL
@@ -111,7 +111,7 @@ packages/mcpserver/  MCP tool definitions. Imported by cli (stdio) and by packag
 
 - **Never put business logic in handlers.** Handlers call the service layer and return results. Logic belongs in `packages/server/service/`.
 - **Use GORM for all DB access.** No raw SQL — use `applyConstraints()` in `packages/db/db.go` for DDL.
-- **Register DB migrations** via `db.RegisterMigration()` — don't add columns directly to `AutoMigrate`.
+- **Schema changes go on the models.** Add fields to the structs in `packages/db/models.go` and new models to the `AutoMigrate` list in `db.go`; indexes GORM can't express go in `applyConstraints()`. `db.RegisterMigration()` is only for schema that lives outside `packages/db`, such as the Enterprise module.
 - **Secrets stay encrypted.** Use `db.EncryptedString` for any sensitive column. Never store plaintext.
 - **Error responses** use `huma.Error4xx()` helpers — don't write raw JSON.
 
@@ -145,7 +145,7 @@ perf:     performance improvement
 ci:       CI/CD changes
 ```
 
-One subject line, no trailing period. Keep it under 72 characters.
+One subject line, no trailing period. Keep it short: around 100 characters is a good ceiling, but a clear subject matters more than hitting a count.
 
 ---
 
@@ -170,18 +170,20 @@ Configure your firewall or cloud security group to allow inbound traffic on:
 
 | Port | Protocol | Purpose |
 |---|---|---|
-| 80 | TCP | Caddy — ACME challenge + HTTP→HTTPS redirect |
-| 443 | TCP | Caddy — dashboard, API, proxy routing, Headscale control plane |
-| 53 | TCP + UDP | CoreDNS — wildcard DNS (`*.yourdomain.com → gateway IP`) |
-| 3478 | UDP | STUN — WireGuard NAT traversal for connecting worker nodes |
+| 80 | TCP | Caddy: ACME HTTP-01 challenges + HTTP→HTTPS redirect |
+| 443 | TCP | Caddy: dashboard, API, proxy routing, Headscale control plane |
+| 53 | TCP + UDP | CoreDNS: authoritative DNS for the domain. NS-delegation mode only |
+| 41641 | UDP | Optional. Lets nodes reach the gateway directly instead of through a relay |
 
 > **Worker nodes do not need open ports.** They only make outbound connections
-> to the gateway. If your test environment blocks outbound UDP or has strict
-> egress rules, WireGuard will fall back to the STUN relay on port 3478.
+> to the gateway. When two nodes cannot connect directly, WireGuard traffic is
+> relayed through Tailscale's public DERP servers; Meshploy's Headscale does not
+> run its own relay.
 
-All other services (Headscale API, the traffic proxy, the built-in registry)
-run behind Caddy and are only reachable through port 443. Exposing any
-additional ports is not required and not recommended.
+Keep everything else closed. The API (4000), the built-in registry (5000), the
+k3s API (6443), node_exporter (9100) and the kubelet (10250) listen on every
+interface so the mesh can reach them, and the registry has no authentication,
+so they rely on the firewall to stay off the internet.
 
 ### Gateway setup
 
@@ -190,43 +192,46 @@ additional ports is not required and not recommended.
 sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)"
 ```
 
-Point a wildcard DNS record at the gateway's public IP before installing,
-or configure it afterwards in your registrar:
-
-```
-*.yourdomain.com  →  <gateway public IP>   (A record)
-yourdomain.com    →  <gateway public IP>   (A record)
-```
+Set up DNS for the domain you will give the installer. The default mode
+delegates it to the gateway with an NS record; if your provider can't do that,
+install with `--dns-mode=ondemand` and add wildcard A records instead. The exact
+records for both modes are in the README's [DNS setup](./README.md#dns-setup).
 
 CoreDNS handles internal mesh DNS (`*.internal.yourdomain.com`) automatically
 once it's running — you don't need to configure those records manually.
 
 ### Adding a worker node
 
-From the dashboard go to **Cluster → Nodes → Add Node**, copy the install
-command, and run it on the worker server:
+In the dashboard, open **Cluster** and choose **Add a worker node**. It creates a
+single-use provisioning token and shows the command to run on the worker. Or,
+from any machine where the CLI is logged in, let Meshploy do it over SSH:
 
 ```bash
-sudo meshploy node install --gateway <gateway-ip> --key <preauth-key>
+meshploy node add ubuntu@<worker-ip>
 ```
 
-The worker registers with Headscale, joins the WireGuard mesh, and appears
-in the dashboard within a few seconds. Worker nodes don't need a domain or
-any open firewall ports.
+The worker registers with Headscale, joins the WireGuard mesh and the k3s
+cluster, and appears in the dashboard within a few seconds. Worker nodes don't
+need a domain or any open firewall ports.
 
 ### Iterating without a full reinstall
 
-Once the gateway is up, you can redeploy individual components as you work:
+The gateway runs prebuilt images from GHCR, and `/opt/meshploy` is an unpacked
+copy of `deploy/`, not a git checkout, so there is nothing to `git pull` or
+rebuild there. Once a change is on `main`, CI publishes `:main` images; move the
+gateway onto them with:
 
 ```bash
-# On the gateway — rebuild and restart only what changed
-cd /opt/meshploy && git pull
-docker compose up -d --build api      # API changes
-docker compose up -d --build proxy    # proxy changes
-docker compose up -d --build web      # frontend changes
+sudo meshploy update --edge
+sudo meshploy server-upgrade --edge
 ```
 
-The database and Headscale state are preserved across restarts.
+To try an API change before merging, push your own image and set
+`MESHPLOY_API_IMAGE` in `/opt/meshploy/.env` to its repository (the tag still
+comes from `MESHPLOY_CHANNEL`), then run `docker compose up -d api` in
+`/opt/meshploy`.
+
+The database, certificates and Headscale state are preserved across upgrades.
 
 ---
 

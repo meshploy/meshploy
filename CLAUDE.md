@@ -12,11 +12,14 @@ meshploy/
 │   ├── api/          # Chi + Huma REST API (Go, OpenAPI 3.1)
 │   ├── proxy/        # Edge reverse proxy — "Ask & Resolve" L7 routing
 │   ├── cli/          # Static Go binary — node & cluster management CLI
-│   └── web/          # Vite + React 19 + TanStack Router frontend
+│   ├── web/          # Vite + React 19 + TanStack Router frontend
+│   ├── builder/      # Builder image (meshploy-build): git clone + Nixpacks / Railpack / Dockerfile
+│   └── docs/         # Astro Starlight docs site, generated from the repo's READMEs by sync-docs.mjs
 ├── packages/
 │   ├── db/           # Shared GORM + PostgreSQL models (imported by api and proxy)
 │   ├── client/       # Typed Go REST client for the API (imported by cli and mcpserver)
 │   ├── mcpserver/    # MCP tool definitions (imported by cli for stdio, api for remote /mcp)
+│   ├── license/      # Enterprise licence verification: claims, keys, features
 │   └── server/       # API core — config, service, handler, middleware, k8s (imported by apps/api)
 ├── deploy/           # Headscale, CoreDNS, Docker Compose infra
 ├── go.work           # Go Workspaces: ties apps/* + packages/*
@@ -128,16 +131,21 @@ Required in `.env` at the monorepo root:
 | `TEMPLATE_REPO` | GitHub `owner/repo` the catalog is fetched from when `TEMPLATE_DIR` is unset (default: `meshploy/meshploy-templates`) |
 | `TEMPLATE_REPO_REF` | Git ref for the catalog repo (default: `main`) |
 | `TEMPLATE_REFRESH_INTERVAL` | How often the in-memory catalog cache refreshes (Go duration, default: `1h`) |
+| `SETUP_TOKEN` | Gates the first registration; set by `install.sh`. Empty disables the check |
+| `API_BASE_URL` | Public base URL of the API (default: `http://localhost:4000`) |
+| `FRONTEND_URL` | Console URL (default: `http://localhost:5173`) |
+| `HEADSCALE_USER` | Headscale user pre-auth keys are created under (default: `meshploy`) |
+| `BUILDER_IMAGE` | Override the builder container image |
 
 ---
 
-## packages/db — schema (40 CE tables)
+## packages/db — schema (41 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Workloads | `stacks`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
 | Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups` |
@@ -150,8 +158,10 @@ Full schema documented in `packages/db/README.md`. Key groups:
 
 **Partial unique indexes** (in `applyConstraints`):
 - `idx_one_owner_per_org` — exactly one owner per org
-- `idx_unique_domain_per_org` — domain names unique within an org
+- `idx_variable_group_service`: `variable_groups(service_id) WHERE service_id IS NOT NULL`, at most one system-managed group per service
 - `idx_users_email_unique` — `users(email) WHERE email <> ''` — email unique among humans only; agents (`users.kind = 'agent'`) carry an empty email so many can coexist
+
+`applyConstraints` also creates plain unique indexes (variable group item keys, job names per project, route target paths, permission grants) and runs idempotent data migrations. Domain names are unique across all orgs through the `uniqueIndex` tag on `domains.base_domain`, so one org cannot claim another's domain.
 
 **Agent principals**: an agent is a `users` row with `kind = 'agent'` (empty email, no password/TOTP) that reuses `organization_members` + `resource_permissions` unchanged — it differs from a human only in auth (a `magt-` token in `agent_tokens`, SHA-256 hashed, shown once). `requireUser`/`checkAccess` are untouched. Remote MCP is served at `/mcp` (Streamable HTTP) under an agent token and is permission-scoped by construction; operator tools (node registration token, system backups, member/permission enumeration, `db_query`/`db_schema`) are stripped from the remote surface. The MCP tool code lives in `packages/{client,mcpserver}` — shared modules imported by both `apps/cli` (stdio) and `packages/server` (remote `/mcp`), so no app depends on another app.
 
@@ -168,7 +178,7 @@ packages/server/
 ├── server.go     # Router assembly, middleware chain, Huma config
 ├── entrypoint.go # Main() — shared by the CE and EE binaries
 ├── config/       # Config struct + Load() from env
-├── middleware/   # Auth() — soft principal middleware: resolves a JWT (human) OR a magt- agent token to the same user-id in ctx
+├── middleware/   # Auth() — soft principal middleware: resolves a JWT (human) OR a magt- agent token to the same user-id in ctx; RequireAuth() is fail-closed and 401s anything off the publicRules allowlist
 ├── handler/      # HTTP layer only — thin, delegates to service layer
 │   ├── handler.go          # Handler struct + Register() + RegisterRaw()
 │   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess()
@@ -195,7 +205,12 @@ packages/server/
 │   ├── terminal.go         # WebSocket: node terminal + pod terminal
 │   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
 │   ├── domain.go           # Domain CRUD + DNS verification
-│   ├── system.go           # Version, install/uninstall scripts
+│   ├── system.go           # Version, exposure notice, install/uninstall scripts
+│   ├── config_file.go      # Config file CRUD + attach/detach
+│   ├── template.go         # One-click template catalog + deploy
+│   ├── entitlement.go      # Licence status + activation
+│   ├── ondemand_tls.go     # Caddy ask endpoint for on-demand TLS
+│   ├── extension.go        # Extension point: extra routes (EE)
 │   └── health.go           # GET /health
 ├── service/      # Business logic
 │   ├── service.go          # Services aggregate struct + New()
@@ -223,6 +238,15 @@ packages/server/
 │   ├── storage.go          # Storage integration CRUD
 │   ├── db_explorer.go      # Live DB query + schema via K8s exec
 │   ├── system.go           # Version info, install/uninstall script serving
+│   ├── exposure.go         # Host-firewall exposure notice + dismissed notices
+│   ├── config_file.go      # Config files projected into workloads via Secrets
+│   ├── template.go         # One-click template deploy: resolve, stack, routes
+│   ├── entitlement.go      # Licence verification + entitlements
+│   ├── extension.go        # Extension point: per-org quotas (EE)
+│   ├── orphans.go          # Cluster workloads that no service owns
+│   ├── workload_status.go  # Reconciles stored service status with the cluster
+│   ├── volume_status.go    # Reconciles stored volume status with its claim
+│   ├── wsticket.go         # Single-use tickets for WebSocket auth
 │   └── headscale.go        # Headscale API client: list, get, delete, rename nodes
 ├── k8s/          # Kubernetes client, exec, terminal helpers
 ├── templates/    # One-click template catalog (embedded + remote)

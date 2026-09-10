@@ -8,11 +8,11 @@ The Meshploy REST API. Built with Go, Chi router, and [Huma](https://huma.rocks/
 
 | | |
 |---|---|
-| Language | Go 1.22+ |
+| Language | Go 1.25+ |
 | Router | Chi |
 | OpenAPI | Huma v2 (OpenAPI 3.1, automatic schema + docs) |
 | Database | GORM + PostgreSQL (via `packages/db`) |
-| Auth | JWT (HS256, 24h expiry) + TOTP 2FA |
+| Auth | JWT (HS256, 24h expiry) + TOTP 2FA; `magt-` agent tokens for automation |
 
 ---
 
@@ -31,7 +31,7 @@ packages/server/
 ├── server.go       # HTTP server setup, route registration
 ├── entrypoint.go   # Main() — config load, DB connect, server start
 ├── config/         # Typed env config — Load() from environment
-├── middleware/      # Auth() — soft principal middleware, sets user in ctx
+├── middleware/     # Auth() resolves a JWT or magt- agent token; RequireAuth() 401s anything off the public allowlist
 ├── handler/        # HTTP layer only — thin, delegates to service
 │   ├── handler.go          # Handler struct, Register(), RegisterRaw()
 │   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess() helpers
@@ -59,7 +59,11 @@ packages/server/
 │   ├── terminal.go         # WebSocket: node terminal + pod terminal
 │   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
 │   ├── template.go         # One-click template catalog
-│   ├── system.go           # System version, install/uninstall scripts
+│   ├── config_file.go      # Config file CRUD + attach/detach
+│   ├── entitlement.go      # Licence status + activation
+│   ├── ondemand_tls.go     # Caddy ask endpoint for on-demand TLS
+│   ├── extension.go        # Extension point: extra routes (EE)
+│   ├── system.go           # Version, exposure notice, install/uninstall scripts
 │   └── health.go           # GET /health
 ├── service/        # Business logic — one file per domain
 │   ├── service.go          # Services aggregate struct + New()
@@ -87,7 +91,15 @@ packages/server/
 │   ├── storage.go          # Storage integration CRUD
 │   ├── db_explorer.go      # Live DB query + schema via K8s exec
 │   ├── system.go           # Version info, install/uninstall script serving
-│   ├── template.go         # Template catalog fetch/cache
+│   ├── template.go         # Template catalog fetch/cache + deploy
+│   ├── config_file.go      # Config files projected into workloads via Secrets
+│   ├── exposure.go         # Host-firewall exposure notice + dismissed notices
+│   ├── entitlement.go      # Licence verification + entitlements
+│   ├── extension.go        # Extension point: per-org quotas (EE)
+│   ├── orphans.go          # Cluster workloads that no service owns
+│   ├── workload_status.go  # Reconciles stored service status with the cluster
+│   ├── volume_status.go    # Reconciles stored volume status with its claim
+│   ├── wsticket.go         # Single-use tickets for WebSocket auth
 │   └── headscale.go        # Headscale API client (list, get, delete, rename nodes)
 ├── k8s/            # Kubernetes client helpers
 ├── templates/      # Built-in template assets
@@ -98,214 +110,346 @@ packages/server/
 
 ## API routes
 
-All routes are under `/api/v1`. Authenticated routes require `Authorization: Bearer <jwt>`. The interactive OpenAPI docs are at `GET /docs`.
+Routes are under `/api/v1` unless listed under **Outside /api/v1**. Most need `Authorization: Bearer <token>`, where the token is a user's JWT (24h) or an agent's `magt-` token. The server is fail-closed: a route that is not on its public allowlist returns `401` without a token.
+
+This lists every route registered in `packages/server/handler`. Auth: ✓ needs a bearer token, `public` needs none, otherwise the credential the route checks instead.
+
+The OpenAPI spec is at `/openapi.json` and Huma's docs page at `/docs`. Both need the same `Authorization` header, so fetch the spec with a token:
+
+```bash
+curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
+```
 
 ### Auth & identity
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/auth/register` | — | Create user + default org |
-| POST | `/auth/login` | — | Return signed JWT (prompts TOTP if enabled) |
-| POST | `/auth/totp` | — | Complete TOTP step during login |
-| POST | `/auth/recovery` | — | Login with a recovery code |
-| GET | `/auth/status` | — | Check if any users exist (onboarding gate) |
-| GET | `/me` | ✓ | Current user profile |
-| PUT | `/me/password` | ✓ | Change password |
-| GET/POST | `/me/totp/setup` | ✓ | Begin TOTP enrollment (returns QR seed) |
-| POST | `/me/totp/enable` | ✓ | Confirm and activate TOTP |
-| DELETE | `/me/totp` | ✓ | Disable TOTP |
-| POST | `/me/recovery-codes/regenerate` | ✓ | Regenerate recovery codes |
+| POST | `/auth/login` | public | Login and receive a JWT |
+| POST | `/auth/recovery` | public | Complete login with a one-time recovery code |
+| POST | `/auth/register` | public | Register a new user |
+| GET | `/auth/status` | public | Check whether registration is open (no users exist yet) |
+| POST | `/auth/totp` | public | Complete login with TOTP code |
+| GET | `/me` | ✓ | Get current user |
+| PATCH | `/me/password` | ✓ | Change current user password |
+| POST | `/me/recovery-codes/regenerate` | ✓ | Regenerate 2FA recovery codes (requires current TOTP code) |
+| DELETE | `/me/totp` | ✓ | Disable 2FA (requires current TOTP code) |
+| POST | `/me/totp/enable` | ✓ | Verify TOTP code and enable 2FA |
+| POST | `/me/totp/setup` | ✓ | Generate a new TOTP secret (not yet enabled) |
 
-### Orgs & members
+### Orgs, members & invitations
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs` | ✓ | List / create orgs |
-| GET/PATCH/DELETE | `/orgs/{orgId}` | ✓ | Get / update / delete org |
-| GET/POST | `/orgs/{orgId}/members` | ✓ | List / add members |
-| PATCH/DELETE | `/orgs/{orgId}/members/{userId}` | ✓ | Update role / remove member |
-| POST | `/orgs/{orgId}/invitations` | ✓ | Send email invitation |
+| GET | `/invitations/{token}` | invite token | Get invitation info by token (public) |
+| POST | `/invitations/{token}/accept` | invite token | Accept an invitation and create an account (public) |
+| GET | `/orgs` | ✓ | List organizations for the authenticated user |
+| POST | `/orgs` | ✓ | Create an organization |
+| GET | `/orgs/{orgId}` | ✓ | Get an organization |
+| PATCH | `/orgs/{orgId}` | ✓ | Update an organization |
+| DELETE | `/orgs/{orgId}` | ✓ | Delete an organization (owner only) |
 | GET | `/orgs/{orgId}/invitations` | ✓ | List pending invitations |
-| GET | `/invitations/{token}` | — | Look up invitation by token |
-| POST | `/invitations/{token}/accept` | ✓ | Accept an invitation |
-| GET/POST/DELETE | `/orgs/{orgId}/members/{userId}/permissions` | ✓ | List / grant / revoke resource permissions |
+| POST | `/orgs/{orgId}/invitations` | ✓ | Create an invite link for a new member |
+| GET | `/orgs/{orgId}/members` | ✓ | List organization members |
+| POST | `/orgs/{orgId}/members` | ✓ | Add a member to an organization |
+| PATCH | `/orgs/{orgId}/members/{userId}` | ✓ | Update a member's role |
+| DELETE | `/orgs/{orgId}/members/{userId}` | ✓ | Remove a member from an organization |
+
+### Permissions
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/orgs/{orgId}/jobs/{resourceId}/permissions` | ✓ | List permissions on a job |
+| GET | `/orgs/{orgId}/members/{userId}/permissions` | ✓ | List all permission grants for a member |
+| POST | `/orgs/{orgId}/members/{userId}/permissions` | ✓ | Grant a permission to a member |
+| DELETE | `/orgs/{orgId}/members/{userId}/permissions` | ✓ | Revoke a permission from a member |
+| GET | `/orgs/{orgId}/projects/{resourceId}/permissions` | ✓ | List permissions on a project |
+| GET | `/orgs/{orgId}/services/{resourceId}/permissions` | ✓ | List permissions on a service |
+| GET | `/orgs/{orgId}/stacks/{resourceId}/permissions` | ✓ | List permissions on a stack |
+
+### Agents
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/orgs/{orgId}/agents` | ✓ | List agent principals in an org |
+| POST | `/orgs/{orgId}/agents` | ✓ | Create an agent principal and mint its first token |
+| DELETE | `/orgs/{orgId}/agents/{agentId}` | ✓ | Delete an agent principal and all its tokens/grants |
+| POST | `/orgs/{orgId}/agents/{agentId}/tokens` | ✓ | Mint an additional token for an agent (rotation) |
+| DELETE | `/orgs/{orgId}/agents/{agentId}/tokens/{tokenId}` | ✓ | Revoke an agent token |
+
+### Licence & entitlements
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/entitlements` | ✓ | Current license entitlements for this install |
+| POST | `/entitlements/license` | ✓ | Install a license token |
 
 ### Projects
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects` | ✓ | List / create projects |
-| GET/PUT/DELETE | `/orgs/{orgId}/projects/{projectId}` | ✓ | Project CRUD |
-| DELETE | `/orgs/{orgId}/projects/{projectId}/build-cache` | ✓ | Purge build cache for project |
-| GET | `/orgs/{orgId}/projects/{resourceId}/permissions` | ✓ | Project-level permissions |
+| GET | `/orgs/{orgId}/projects` | ✓ | List projects in an organization |
+| POST | `/orgs/{orgId}/projects` | ✓ | Create a project |
+| GET | `/orgs/{orgId}/projects/{projectId}` | ✓ | Get a project |
+| PATCH | `/orgs/{orgId}/projects/{projectId}` | ✓ | Update a project |
+| DELETE | `/orgs/{orgId}/projects/{projectId}` | ✓ | Delete a project |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/build-cache` | ✓ | Clear the buildah layer cache PVC for a project |
 
-### Nodes
+### Nodes & cluster
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/nodes` | ✓ | List / register nodes |
-| GET/PUT/DELETE | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Node CRUD |
-| GET | `/orgs/{orgId}/nodes/{nodeId}/metrics` | ✓ | Live CPU / memory / disk metrics |
-| POST | `/nodes/self-register` | — | Worker self-registration (`mreg-` or `mprov-` token) |
-| DELETE | `/nodes/self-deregister` | — | Worker self-removal |
-| GET/POST | `/orgs/{orgId}/node-registration-token` | ✓ | Get / rotate registration token |
-| GET/POST | `/orgs/{orgId}/node-provisioning-tokens` | ✓ | List / create provisioning tokens |
-| GET | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ admin | Get Headscale pre-auth key |
-| POST | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ admin | Generate Headscale pre-auth key |
-| GET | `/orgs/{orgId}/cluster/join-token` | ✓ admin | Get K3s join token |
+| DELETE | `/nodes/self-deregister` | node token | Self-deregister a node using its registration token and node ID |
+| POST | `/nodes/self-register` | registration token | Self-register a node using a registration token |
+| GET | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Get the most recent active Headscale preauth key |
+| POST | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Generate a new Headscale preauth key for joining the WireGuard mesh |
+| GET | `/orgs/{orgId}/cluster/join-token` | ✓ | Get the k3s node token for joining the cluster |
+| GET | `/orgs/{orgId}/cluster/mesh-health` | ✓ | Report whether the control plane can reach Headscale |
+| GET | `/orgs/{orgId}/cluster/orphans` | ✓ | List cluster workloads that no service owns |
+| DELETE | `/orgs/{orgId}/cluster/orphans/{namespace}/{name}` | ✓ | Remove a cluster workload that no service owns |
+| POST | `/orgs/{orgId}/node-provisioning-tokens` | ✓ | Create a single-use node provisioning token |
+| GET | `/orgs/{orgId}/node-registration-token` | ✓ | Get the node registration token |
+| POST | `/orgs/{orgId}/node-registration-token` | ✓ | Generate (or rotate) the node registration token |
+| GET | `/orgs/{orgId}/nodes` | ✓ | List nodes in an organization |
+| POST | `/orgs/{orgId}/nodes` | ✓ | Register a new node |
+| GET | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Get a node |
+| PATCH | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Update a node |
+| DELETE | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Remove a node |
+| GET | `/orgs/{orgId}/nodes/{nodeId}/metrics` | ✓ | Get live resource metrics for a node (requires node_exporter) |
 
 ### Services
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/services` | ✓ | List / create services |
-| GET/PUT/DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}` | ✓ | Service CRUD |
-| GET/PUT | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/env-vars` | ✓ | Get / update env vars |
-| GET/PUT | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config` | ✓ | Build config |
-| PATCH | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/env-vars` | ✓ | Build-time env vars |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/deploy-token` | ✓ | Regenerate deploy webhook token |
-| GET/PUT | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/database-config` | ✓ | Database config |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/start` | ✓ | Scale up |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/stop` | ✓ | Scale to zero |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/reset` | ✓ | Reset database (destructive) |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods` | ✓ | List running pods |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/metrics` | ✓ | Pod CPU/memory |
-| GET | `/orgs/{orgId}/services/{resourceId}/permissions` | ✓ | Service-level permissions |
+| GET | `/orgs/{orgId}/projects/{projectId}/services` | ✓ | List services in a project |
+| POST | `/orgs/{orgId}/projects/{projectId}/services` | ✓ | Create a service |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}` | ✓ | Get a service |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}` | ✓ | Update a service |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}` | ✓ | Delete a service |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config` | ✓ | Get build config for a service |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config` | ✓ | Create or update build config for a service |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/deploy-token` | ✓ | Regenerate the per-service webhook deploy token |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/env-vars` | ✓ | Get build-time environment variables for a service |
+| PUT | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/env-vars` | ✓ | Set build-time environment variables for a service |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/database-config` | ✓ | Get database config for a database service |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/query` | ✓ | Execute a database query |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/schema` | ✓ | Introspect database schema |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/env-vars` | ✓ | Get decrypted env vars for a service |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods` | ✓ | List running pods for a service |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/metrics` | ✓ | Live CPU and memory usage per pod (requires metrics-server) |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/reset` | ✓ | Wipe and re-provision a database (destructive) |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/start` | ✓ | Start a service |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/stop` | ✓ | Stop a service |
 
-### Deployments
+### Deployments & logs
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments` | ✓ | List / trigger deployment |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}` | ✓ | Get deployment |
-| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}` | ✓ | Delete record |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/rollback` | ✓ | Roll back |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs` | ✓ | Container log snapshot |
-| GET | `…/deployments/{deploymentId}/logs/stream` | ✓ | SSE build log stream |
-| GET | `…/services/{serviceId}/logs/stream` | ✓ | SSE live container log stream |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments` | ✓ | List deployments for a service |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments` | ✓ | Trigger a new deployment |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}` | ✓ | Get a deployment |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}` | ✓ | Cancel an active deployment |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream` | ✓ | Stream a deployment's build log (SSE) |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/record` | ✓ | Delete a deployment record |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/rollback` | ✓ | Roll back to a previous successful deployment |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs` | ✓ | Snapshot of a service's container logs |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream` | ✓ | Stream a service's container logs (SSE) |
 
 ### Stacks
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/stacks` | ✓ | List / create stacks |
-| GET/PUT/DELETE | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Stack CRUD |
-| POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/apply` | ✓ | Apply — create/update services from spec |
-| POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/sync` | ✓ | Sync spec from git |
-| GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/services` | ✓ | List stack-owned services |
-| GET | `/orgs/{orgId}/stacks/{resourceId}/permissions` | ✓ | Stack-level permissions |
+| POST | `/orgs/{orgId}/projects/{projectId}/apply` | ✓ | Upsert a stack from an inline compose manifest and reconcile it |
+| GET | `/orgs/{orgId}/projects/{projectId}/stacks` | ✓ | List stacks for a project |
+| POST | `/orgs/{orgId}/projects/{projectId}/stacks` | ✓ | Create a new stack |
+| GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Get a stack |
+| PUT | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Update a stack's spec and variables |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Delete a stack |
+| POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/apply` | ✓ | Apply the stack spec - reconcile services |
+| POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/destroy` | ✓ | Destroy the services this stack created, keeping the stack |
+| GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/services` | ✓ | List services belonging to a stack |
+| POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/sync` | ✓ | Fetch spec from git source and re-apply |
+
+### Templates
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/orgs/{orgId}/projects/{projectId}/templates/{templateId}/deploy` | ✓ | Deploy a template into a project as a stack |
+| GET | `/templates` | ✓ | List one-click templates |
+| POST | `/templates/refresh` | ✓ | Re-read the template catalog from its source |
+| GET | `/templates/{templateId}` | ✓ | Get a template (manifest + compose) |
+| GET | `/templates/{templateId}/icon` | public | Template icon image |
 
 ### Jobs
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/jobs` | ✓ | List / create jobs |
-| GET/PUT/DELETE | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}` | ✓ | Job CRUD |
-| POST | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/trigger` | ✓ | Trigger a run |
-| GET | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/runs` | ✓ | Run history |
-| DELETE | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/runs/{runId}` | ✓ | Delete run record |
-| GET | `/orgs/{orgId}/jobs/{resourceId}/permissions` | ✓ | Job-level permissions |
+| GET | `/orgs/{orgId}/projects/{projectId}/jobs` | ✓ | List jobs in a project |
+| POST | `/orgs/{orgId}/projects/{projectId}/jobs` | ✓ | Create a job or cron job |
+| GET | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}` | ✓ | Get a job |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}` | ✓ | Update a job |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}` | ✓ | Delete a job |
+| GET | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/runs` | ✓ | List run history for a job |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/runs/{runId}` | ✓ | Delete a job run record |
+| POST | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/trigger` | ✓ | Manually trigger a job run |
 
 ### Volumes
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/volumes` | ✓ | List / create volumes |
-| GET/DELETE | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}` | ✓ | Get / delete volume |
-| POST | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/mounts` | ✓ | Attach to service |
-| DELETE | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/mounts/{mountId}` | ✓ | Detach mount |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/mounts` | ✓ | List mounts for service |
-| GET/PUT/DELETE | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/backup` | ✓ | Volume backup config |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/mounts` | ✓ | List a service's volume mounts |
+| GET | `/orgs/{orgId}/projects/{projectId}/volumes` | ✓ | List volumes |
+| POST | `/orgs/{orgId}/projects/{projectId}/volumes` | ✓ | Create a volume |
+| GET | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}` | ✓ | Get a volume |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}` | ✓ | Delete a volume (must be unattached) |
+| GET | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/backup` | ✓ | Get a volume's backup config |
+| PUT | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/backup` | ✓ | Set a volume's backup config |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/backup` | ✓ | Remove a volume's backup config |
+| POST | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/mounts` | ✓ | Attach a volume to a service |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/mounts/{mountId}` | ✓ | Detach a volume mount |
+| PUT | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/node` | ✓ | Pin a volume to a node, or clear the pin to auto-schedule |
+| GET | `/orgs/{orgId}/projects/{projectId}/volumes/{volumeId}/placement` | ✓ | Where the volume's claim is actually bound or pinned |
 
 ### Variable groups
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/variable-groups` | ✓ | List / create groups |
-| GET/PATCH/DELETE | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}` | ✓ | Group CRUD |
-| PUT | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items` | ✓ | Upsert item |
-| DELETE | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items/{itemId}` | ✓ | Delete item |
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups` | ✓ | List / attach group |
-| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups/{groupId}` | ✓ | Detach group |
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/config-files` | ✓ | List / create config files |
-| GET | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}` | ✓ | Get one, with the services mounting it |
-| PATCH/DELETE | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}` | ✓ | Update / delete a config file |
-| POST/DELETE | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}/attach/{serviceId}` | ✓ | Attach / detach on a service |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups` | ✓ | List variable groups attached to service |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups` | ✓ | Attach variable group to service |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups/{groupId}` | ✓ | Detach variable group from service |
+| GET | `/orgs/{orgId}/projects/{projectId}/variable-groups` | ✓ | List variable groups |
+| POST | `/orgs/{orgId}/projects/{projectId}/variable-groups` | ✓ | Create variable group |
+| GET | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}` | ✓ | Get variable group |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}` | ✓ | Update variable group |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}` | ✓ | Delete variable group |
+| PUT | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items` | ✓ | Upsert variable group item |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items/{itemId}` | ✓ | Delete variable group item |
 
-### Routes & domains
+### Config files
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/orgs/{orgId}/routes` | ✓ | List all routes across projects |
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/routes` | ✓ | List / create routes |
-| GET/DELETE | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}` | ✓ | Get / delete route |
-| POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname` | ✓ | Verify DNS record |
-| POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets` | ✓ | Add route target |
-| PATCH/DELETE | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Update / remove target |
-| GET | `/orgs/{orgId}/domains` | ✓ | List org domains |
-| GET | `/orgs/{orgId}/domains/{domainId}` | ✓ | Get domain |
+| GET | `/orgs/{orgId}/projects/{projectId}/config-files` | ✓ | List the project's config files |
+| POST | `/orgs/{orgId}/projects/{projectId}/config-files` | ✓ | Create a config file |
+| GET | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}` | ✓ | Get a config file and the services mounting it |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}` | ✓ | Replace a config file's content, re-applying every service using it |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}` | ✓ | Delete a config file that no service mounts |
+| POST | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}/attach/{serviceId}` | ✓ | Mount a config file into a service |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/config-files/{fileId}/attach/{serviceId}` | ✓ | Unmount a config file from a service |
+
+### Routes
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/orgs/{orgId}/projects/{projectId}/routes` | ✓ | List routes in a project |
+| POST | `/orgs/{orgId}/projects/{projectId}/routes` | ✓ | Create a route |
+| GET | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}` | ✓ | Get a route |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}` | ✓ | Delete a route |
+| POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets` | ✓ | Add a path target to a route |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Update a route target |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Delete a route target |
+| POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname` | ✓ | Verify DNS ownership of a custom-domain route via TXT record |
+| GET | `/orgs/{orgId}/routes` | ✓ | List all routes in an organization |
+
+### Domains & TLS
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/internal/domain-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS |
+| GET | `/internal/ondemand-tls-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS (self-managed DNS mode) |
+| GET | `/orgs/{orgId}/domains` | ✓ | List domains for an organization |
+| GET | `/orgs/{orgId}/domains/{domainId}` | ✓ | Get a domain |
 
 ### Backups
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups` | ✓ | List / create backup config |
-| PATCH/DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}` | ✓ | Update / delete config |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/trigger` | ✓ | Trigger now |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/objects` | ✓ | List backup objects in storage |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/restore` | ✓ | Restore from object |
-| GET/PUT/DELETE | `/orgs/{orgId}/system-backup` | ✓ | System backup config |
-| POST | `/orgs/{orgId}/system-backup/trigger` | ✓ | Trigger system backup |
-| GET | `/orgs/{orgId}/system-backup/objects` | ✓ | List system backup objects |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups` | ✓ | List backup configs for a service |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups` | ✓ | Add a backup config for a service |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}` | ✓ | Update a backup config |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}` | ✓ | Delete a backup config |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/objects` | ✓ | List restore points for a backup config |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/restore` | ✓ | Restore a database from a backup object |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/backups/{id}/trigger` | ✓ | Manually trigger a backup |
+| GET | `/orgs/{orgId}/system-backup` | ✓ | Get system backup config for an org |
+| PUT | `/orgs/{orgId}/system-backup` | ✓ | Create or update system backup config |
+| DELETE | `/orgs/{orgId}/system-backup` | ✓ | Delete system backup config |
+| GET | `/orgs/{orgId}/system-backup/objects` | ✓ | List restore points for the system backup |
+| POST | `/orgs/{orgId}/system-backup/restore` | ✓ | Restore system database from a backup object |
+| POST | `/orgs/{orgId}/system-backup/trigger` | ✓ | Manually trigger the system backup |
 
 ### Notifications & email
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET/POST | `/orgs/{orgId}/notification-channels` | ✓ | List / create channels |
-| PUT/DELETE | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Update / delete channel |
-| GET/PUT/DELETE | `/orgs/{orgId}/email-config` | ✓ | Org SMTP config |
+| GET | `/orgs/{orgId}/email-config` | ✓ | Get the org SMTP configuration |
+| PUT | `/orgs/{orgId}/email-config` | ✓ | Create or update the org SMTP configuration |
+| DELETE | `/orgs/{orgId}/email-config` | ✓ | Remove the org SMTP configuration |
+| GET | `/orgs/{orgId}/notification-channels` | ✓ | List notification channels |
+| POST | `/orgs/{orgId}/notification-channels` | ✓ | Create a notification channel |
+| PUT | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Update a notification channel |
+| DELETE | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Delete a notification channel |
 
 ### Integrations
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
+| GET | `/gitea/callback` | OAuth state | Gitea OAuth callback |
+| GET | `/github/app-callback` | OAuth state | GitHub App installation callback |
+| GET | `/github/callback` | OAuth state | GitHub OAuth callback |
+| GET | `/gitlab/callback` | OAuth state | GitLab OAuth callback |
 | GET | `/orgs/{orgId}/git-integrations` | ✓ | List git integrations |
-| POST | `/orgs/{orgId}/git-integrations/github` | ✓ | Connect GitHub App |
-| POST | `/orgs/{orgId}/git-integrations/oauth` | ✓ | Connect GitLab / Gitea via OAuth |
-| GET/DELETE | `/orgs/{orgId}/git-integrations/{id}` | ✓ | Get / delete integration |
-| GET | `/orgs/{orgId}/git-integrations/{id}/repos` | ✓ | List accessible repos |
-| GET | `/orgs/{orgId}/git-integrations/{id}/branches` | ✓ | List branches for a repo |
-| GET/POST | `/orgs/{orgId}/registry-integrations` | ✓ | List / add registry |
-| DELETE | `/orgs/{orgId}/registry-integrations/{id}` | ✓ | Remove registry |
-| GET/POST | `/orgs/{orgId}/storage-integrations` | ✓ | List / add storage |
-| DELETE | `/orgs/{orgId}/storage-integrations/{id}` | ✓ | Remove storage |
+| POST | `/orgs/{orgId}/git-integrations` | ✓ | Create a GitLab or Gitea integration via personal access token |
+| POST | `/orgs/{orgId}/git-integrations/github` | ✓ | Start a GitHub App integration (manifest flow) |
+| POST | `/orgs/{orgId}/git-integrations/oauth` | ✓ | Start a GitLab or Gitea OAuth App connection |
+| DELETE | `/orgs/{orgId}/git-integrations/{id}` | ✓ | Delete a git integration |
+| GET | `/orgs/{orgId}/git-integrations/{id}/branches` | ✓ | List branches for a repository |
+| GET | `/orgs/{orgId}/git-integrations/{id}/install-url` | ✓ | Get GitHub App install URL for a specific integration |
+| GET | `/orgs/{orgId}/git-integrations/{id}/oauth-reconnect` | ✓ | Re-generate OAuth authorization URL for a pending integration |
+| GET | `/orgs/{orgId}/git-integrations/{id}/repos` | ✓ | List repositories for a git integration |
+| GET | `/orgs/{orgId}/registry-integrations` | ✓ | List container registry integrations |
+| POST | `/orgs/{orgId}/registry-integrations` | ✓ | Add a container registry integration |
+| DELETE | `/orgs/{orgId}/registry-integrations/{id}` | ✓ | Remove a container registry integration |
+| GET | `/orgs/{orgId}/storage-integrations` | ✓ | List object storage integrations |
+| POST | `/orgs/{orgId}/storage-integrations` | ✓ | Add an object storage integration |
+| DELETE | `/orgs/{orgId}/storage-integrations/{id}` | ✓ | Remove an object storage integration |
 
-### DB Explorer
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/schema` | ✓ | Live schema |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/query` | ✓ | Execute SQL query |
-
-### WebSocket & system
+### Terminals
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/orgs/{orgId}/nodes/{nodeId}/terminal` | ✓ | WebSocket — node shell |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/{podName}/terminal` | ✓ | WebSocket — pod shell |
+| GET | `/orgs/{orgId}/nodes/{nodeId}/terminal` | ticket | WebSocket: shell on a node |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/{podName}/terminal` | ticket | WebSocket: shell in a pod |
+| POST | `/terminal/ticket` | ✓ | Mint a single-use ticket for a terminal WebSocket |
+
+### Webhooks
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/webhooks/deploy/{serviceId}` | deploy token | Inbound deploy webhook |
 | POST | `/webhooks/github/{integrationId}` | HMAC | Inbound GitHub push webhook |
-| POST | `/webhooks/deploy/{serviceId}` | token | Inbound deploy webhook |
-| GET | `/system/version` | — | API version |
-| GET | `/system/exposure` | — | Whether this gateway runs without a host firewall, and what it publishes |
-| POST | `/system/notices/{key}/dismiss` | — | Dismiss a console advisory for the current user |
-| GET | `/health` | — | Health check |
+
+### System
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/system/exposure` | ✓ | Report whether this gateway runs without a host firewall |
+| POST | `/system/notices/{key}/dismiss` | ✓ | Dismiss a console advisory for the current user |
+| GET | `/system/version` | ✓ | Get current and latest platform version |
+
+### Outside /api/v1
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/health` | public | Health check |
+| GET | `/install.sh` | ✓ | Install script |
+| GET/POST | `/mcp` | agent token | Remote MCP (Streamable HTTP), permission-scoped |
+| GET | `/uninstall.sh` | ✓ | Uninstall script |
 
 ---
 
 ## Node enrichment
 
-`GET /nodes` enriches each node with live Headscale peer data (online status, last seen, FQDN). When a node has a stored `headscale_id` the lookup is O(1). Nodes without an ID fall back to an IP scan and store the ID as a side-effect for future calls.
+`GET /orgs/{orgId}/nodes` enriches each node with live Headscale peer data (online status, last seen, FQDN). When a node has a stored `headscale_id` the lookup is O(1). Nodes without an ID fall back to an IP scan and store the ID as a side-effect for future calls.
 
 ## Self-register / self-deregister
 
@@ -322,18 +466,32 @@ Worker nodes authenticate with a registration or provisioning token rather than 
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL DSN |
 | `JWT_SECRET` | Yes | Secret for signing JWTs |
-| `ENCRYPTION_KEY` | Yes | Exactly 32 characters — AES-256-GCM field encryption |
+| `ENCRYPTION_KEY` | Yes | Exactly 32 characters: AES-256-GCM field encryption |
 | `API_PORT` | No | Listen port (default: `4000`) |
+| `API_BASE_URL` | No | Public base URL of the API (default: `http://localhost:4000`) |
+| `FRONTEND_URL` | No | Console URL (default: `http://localhost:5173`) |
+| `SETUP_TOKEN` | No | Gates the first registration; set by install.sh. Empty disables the check |
 | `HEADSCALE_URL` | No | Headscale API URL |
 | `HEADSCALE_API_KEY` | No | Headscale API key |
-| `GATEWAY_IP` | No | Gateway mesh IP — seeds the gateway node on first boot |
-| `GATEWAY_HOSTNAME` | No | Gateway hostname — used for gateway node seeding |
-| `HOST_GATEWAY_IP` | No | Docker bridge IP — used when API runs in Docker to reach gateway node_exporter |
-| `PUBLIC_IP` | No | Gateway public IP — backfilled on the gateway node record |
-| `DOMAIN` | No | Root domain — seeds the domain record on first org |
-| `K3S_SERVER_URL` | No | K3s API URL (default: in-cluster) |
-| `KUBECONFIG` | No | Path to kubeconfig (for out-of-cluster dev) |
-| `BUILTIN_REGISTRY_ENDPOINT` | No | Seed a built-in registry row on org creation |
+| `HEADSCALE_USER` | No | Headscale user pre-auth keys are created under (default: `meshploy`) |
+| `KUBECONFIG` | No | Path to kubeconfig; empty = in-cluster |
+| `K3S_SERVER_URL` | No | Override the k3s API URL (needed when the API runs in Docker) |
+| `K3S_TLS_SERVER_NAME` | No | Name the cluster certificate is verified against when `K3S_SERVER_URL` rewrites the address |
+| `K3S_SKIP_TLS_VERIFY` | No | Escape hatch: disables authentication of the cluster connection. Leave unset |
+| `K3S_TOKEN` | No | Node token for workers joining the cluster |
+| `BUILDER_IMAGE` | No | Override the builder container image |
+| `DOMAIN` | No | Base domain; seeds the org domain record |
+| `MESH_IP` | No | Gateway's WireGuard mesh IP; seeds the gateway node |
+| `GATEWAY_HOSTNAME` | No | Gateway hostname, used for gateway node seeding |
+| `PUBLIC_IP` | No | Gateway public IP, backfilled on the gateway node record |
+| `HOST_GATEWAY_IP` | No | Docker bridge IP, used when the API runs in Docker to reach the gateway's node_exporter |
+| `FIREWALL_STATE` | No | What install.sh saw on the host: `none`, `ufw` or `firewalld`. Drives the console's exposure notice |
+| `FIREWALL_CHECKED_AT` | No | When install.sh checked the firewall (RFC3339) |
+| `BUILTIN_REGISTRY_ENDPOINT` | No | Seed a built-in registry row per org (`<host>:<port>`) |
+| `TEMPLATE_DIR` | No | Local template catalog directory; overrides the remote repo |
+| `TEMPLATE_REPO` | No | GitHub `owner/repo` the catalog is fetched from (default: `meshploy/meshploy-templates`) |
+| `TEMPLATE_REPO_REF` | No | Git ref for the catalog repo (default: `main`) |
+| `TEMPLATE_REFRESH_INTERVAL` | No | How often the catalog cache refreshes (default: `1h`) |
 
 ---
 
@@ -344,6 +502,6 @@ cd apps/api
 go run main.go
 ```
 
-API at `http://localhost:4000` · Docs at `http://localhost:4000/docs`
+API at `http://localhost:4000`. The OpenAPI spec is at `/openapi.json` and needs a bearer token, like every non-public route.
 
 Database migrations run automatically on startup via `db.Migrate()`.

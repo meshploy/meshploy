@@ -19,7 +19,7 @@ Internet
         ├── Headscale      — WireGuard control plane
         ├── CoreDNS        — authoritative DNS + internal mesh DNS
         ├── PostgreSQL     — source of truth for API and proxy
-        └── Built-in registry — image store (mesh-only, no public access)
+        └── Built-in registry — image store (every interface, no auth: firewall 5000)
 
   └── Worker nodes (no public IP, WireGuard mesh IP: 100.64.x.x)
         ├── k3s agent      — joins the K3s cluster via mesh
@@ -35,7 +35,7 @@ The K3s control plane runs on the gateway; workers join as agents. The proxy rou
 
 WireGuard is a kernel-level VPN protocol. Each peer has a public/private key pair and a static IP within the tunnel network. Encrypted packets travel over UDP — WireGuard handles NAT traversal, but not key distribution or peer discovery.
 
-Headscale is the self-hosted implementation of the Tailscale control plane. It distributes WireGuard public keys to all peers, assigns each node a stable IP in `100.64.0.0/10` (CGNAT range, routable only inside the mesh), and handles the DERP relay fallback for nodes that can't reach each other directly via NAT.
+Headscale is the self-hosted implementation of the Tailscale control plane. It distributes WireGuard public keys to all peers, assigns each node a stable IP in `100.64.0.0/10` (CGNAT range, routable only inside the mesh), and hands every node a DERP map for relaying traffic between nodes that can't reach each other directly through NAT. Meshploy's Headscale points at Tailscale's public DERP servers; its own embedded relay is disabled.
 
 **Conventional approach:** cloud platforms tie all nodes to a VPC within one provider. Adding nodes from a different provider requires site-to-site VPNs, provider-specific peering, and manually managed firewall rules on both ends. Multi-cloud is an advanced networking project.
 
@@ -68,27 +68,45 @@ Load balancing across pods is handled by kube-proxy on the receiving node via th
 
 ## TLS automation
 
-Caddy handles TLS using its built-in CertMagic library, which negotiates ACME challenges, stores certificates, and renews them automatically. Meshploy uses three certificate strategies to cover all traffic types:
+Caddy handles TLS using its built-in CertMagic library, which negotiates ACME challenges, stores certificates, and renews them automatically. The strategy depends on the DNS mode the gateway was installed with.
+
+**NS delegation (default)**, where CoreDNS on the gateway is authoritative for the domain:
 
 ```
-Named subdomains (api, console, headscale, registry)
+Named subdomains (api, console, headscale)
   → DNS-01 via CNAME to _acme-challenge.{domain}
   → resolved by CoreDNS
 
-*.internal.{domain}  (mesh-only, bound to WireGuard IP)
-  → DNS-01 via NS delegation so Let's Encrypt queries
-    CoreDNS directly, bypassing recursive resolver caching
+*.{domain} and *.internal.{domain}
+  → DNS-01 wildcard certificates; _acme-challenge.internal is
+    NS-delegated so Let's Encrypt queries CoreDNS directly,
+    bypassing recursive resolver caching
 
 Custom user domains (myapp.com)
-  → On-Demand TLS (HTTP-01): Caddy calls the Meshploy
-    API to verify the domain before issuing any cert
+  → On-Demand TLS (HTTP-01): Caddy asks the Meshploy API
+    whether the domain is verified before issuing any cert
+```
+
+**Self-managed DNS (`DNS_MODE=ondemand`)**, where the operator's provider serves a wildcard A record and there is no DNS-01:
+
+```
+Named subdomains (api, console, headscale)
+  → HTTP-01, each with its own certificate (`tls force_automate`,
+    so Caddy does not wait on the on-demand wildcard instead)
+
+*.{domain} and custom user domains
+  → On-Demand TLS: Caddy asks the API before issuing, so only
+    active routes and verified custom domains get a certificate
+
+*.internal.{domain}  (mesh-only)
+  → Caddy's internal CA, since a public wildcard needs DNS-01
 ```
 
 A custom Caddy DNS plugin (`github.com/meshploy/caddy-dns-meshploy`) writes DNS-01 challenge TXT records directly to CoreDNS zone files on disk, and deletes them after the challenge completes. No external DNS API is involved.
 
 **Conventional approach:** cert-manager is the standard Kubernetes TLS operator. It introduces CRDs (`Certificate`, `ClusterIssuer`, `CertificateRequest`), requires a DNS provider plugin for each registrar, and is tied to the cluster lifecycle. External DNS providers (Cloudflare, Route53) need API keys and impose rate limits.
 
-**Meshploy's decision:** Caddy + CoreDNS eliminates the operator entirely. CertMagic handles ACME storage and renewal; CoreDNS handles TXT record writes without any external DNS API. The three-strategy approach covers named subdomains, wildcard mesh-internal hostnames, and user-supplied custom domains with a single Caddy process. No CRDs, no cluster dependency, no external provider.
+**Meshploy's decision:** Caddy + CoreDNS eliminates the operator entirely. CertMagic handles ACME storage and renewal; CoreDNS handles TXT record writes without any external DNS API. Between them, the two modes cover named subdomains, wildcard hostnames, and user-supplied custom domains with a single Caddy process. No CRDs, no cluster dependency, no external provider.
 
 ---
 
@@ -108,7 +126,7 @@ deployment trigger
   → API updates K8s Deployment to pull new image → rolling update
 ```
 
-The built-in registry runs on the gateway as a Docker container, bound to the gateway's mesh IP (`mesh_ip:5000`). It is only reachable from within the WireGuard mesh — worker nodes pull images directly, no image ever touches a public registry unless you configure one.
+The built-in registry runs on the gateway as a Docker container, published on port 5000 on every interface so worker nodes can pull from `mesh_ip:5000` over the mesh. It cannot bind the mesh IP directly, because it starts before the gateway has joined the mesh. It has no authentication of its own, so keeping it off the public internet is the host firewall's job. No image touches a public registry unless you configure one.
 
 Builder node roles:
 
@@ -148,7 +166,7 @@ A node is any machine that has joined the WireGuard mesh and the K3s cluster. It
 Nodes join via two token types:
 
 - **Registration token** (`mreg-<hex>`) — an org-wide token stored unhashed. Any machine that presents it can join. Used for legacy/manual installs where you paste a token into the install script.
-- **Provisioning token** (`mprov-<hex>`) — a single-use token created by an admin per node, stored as a bcrypt hash with an expiry time. When used, the API destroys the token and issues the node a `node_secret` for future calls. Used by `meshploy node add` and the dashboard's "Add Node" flow.
+- **Provisioning token** (`mprov-<hex>`) — a single-use token created by an admin per node, stored as a SHA-256 hash with an expiry time. When used, the API destroys the token and issues the node a `node_secret` for future calls. Used by `meshploy node add` and the dashboard's "Add Node" flow.
 
 On first use, the node saves its assigned ID and secret to `/etc/meshploy/node.conf`. Subsequent calls (self-deregister, metrics ping) present this ID + secret rather than the one-time token. Self-deregistration removes the node from Headscale, drains and removes it from the K3s cluster, and deletes the database row.
 
@@ -161,7 +179,7 @@ On first use, the node saves its assigned ID and secret to `/etc/meshploy/node.c
 The API layer (`packages/server`) uses two libraries on top of Go's `net/http`:
 
 - **Chi** — a lightweight router. Handles URL parameter extraction, middleware chaining, and grouping. No reflection, no magic.
-- **Huma** — generates OpenAPI 3.1 schemas from Go function signatures. Each handler is a function with typed input and output structs; Huma validates the request, deserializes it, calls the function, and serializes the response. Interactive docs are served at `GET /docs`.
+- **Huma** — generates OpenAPI 3.1 schemas from Go function signatures. Each handler is a function with typed input and output structs; Huma validates the request, deserializes it, calls the function, and serializes the response. The spec is served at `/openapi.json` and a docs page at `/docs`, both behind the same authentication as the rest of the API.
 
 The handler layer is strictly thin: no business logic, no direct DB access. Handlers call services, return results. The service layer (`packages/server/service/`) owns all business logic and talks to PostgreSQL via GORM. This boundary is enforced by convention rather than Go's type system — `Handler` holds a `*service.Services` aggregate, not individual DB connections.
 
@@ -228,7 +246,7 @@ The isolation boundary that actually matters at runtime is the **project**. Each
 
 `resource_permissions` allows finer-grained access below the org-member role: a member can be granted explicit access to a specific service, stack, or project without being promoted to admin. `checkAccess` in `handler/access.go` checks the org-member role first, then falls back to the per-resource grant table.
 
-**Current state:** each Meshploy install is effectively single-org — the installer creates one default organization, and there's no UI for creating or switching between multiple organizations. The schema and all API code are org-scoped from the ground up, so the data model is already correct; multi-org support (multiple independent teams sharing one install) is a planned extension.
+**Current state:** each Meshploy install is effectively single-org — registering the first account creates one default organization, and there's no UI for creating or switching between multiple organizations. The schema and all API code are org-scoped from the ground up, so the data model is already correct; multi-org support (multiple independent teams sharing one install) is a planned extension.
 
 **Why the org layer exists now:** nodes and integrations are inherently shared infrastructure. Putting them at the project level would mean duplicating node registration and registry credentials across every project — which is wrong even in a single-team setup. The org layer gives shared resources a home without making the project model do double duty.
 
@@ -236,9 +254,13 @@ The isolation boundary that actually matters at runtime is the **project**. Each
 
 ## Auth model
 
-`packages/server/middleware/auth.go` runs on every route. It attempts to parse the JWT from the `Authorization` header; if valid, it stores the user in the request context. If the token is missing or invalid, it does nothing — the request continues to the handler unauthenticated.
+Two middlewares run on every route, in order.
 
-Each handler that requires a logged-in user calls `requireUser(ctx)` explicitly:
+`middleware.Auth` is a soft principal resolver. It reads the `Authorization: Bearer` header and accepts either a user's JWT or an agent's `magt-` token, resolving both to the same user ID in the request context. If the header is missing or invalid it does nothing.
+
+`middleware.RequireAuth` is fail-closed. A request without a principal gets `401`, unless its route matches `publicRules` in `middleware/auth.go`: an anchored, method-scoped allowlist of the routes that cannot carry a bearer token. That covers login and registration, the health check, node self-registration, inbound webhooks, OAuth callbacks, template icons, Caddy's TLS ask endpoints, and WebSocket terminals, which redeem a single-use ticket instead.
+
+Handlers still check who the caller is and what they may touch:
 
 ```go
 func (h *Handler) GetService(ctx context.Context, input *GetServiceInput) (*GetServiceOutput, error) {
@@ -253,11 +275,9 @@ func (h *Handler) GetService(ctx context.Context, input *GetServiceInput) (*GetS
 }
 ```
 
-Public endpoints (node self-register, health check, install script, inbound webhooks) omit `requireUser` — they have their own token or signature verification inline.
-
 **Conventional approach:** split handlers into public and protected router groups, with auth middleware only on the protected group. The group a handler is in determines whether it's protected.
 
-**Meshploy's decision:** one middleware on all routes, explicit `requireUser` in every handler that needs it. The group-based model has a silent failure mode: accidentally registering a handler in the wrong group either silently exposes a protected endpoint or silently blocks a public one. With the soft middleware approach, auth intent is visible in the handler body — you can read any handler and know exactly what it checks, without tracing router group membership.
+**Meshploy's decision:** protection is the default, and being public is an explicit entry in one reviewable list. A new handler is protected wherever it is registered, so forgetting a check fails as a `401`, not as an exposed endpoint. An earlier version relied on a soft middleware plus `requireUser` in each handler, with a blanket rule exempting every `GET` under `/api/`; a handler that omitted its check served unauthenticated, which is why `publicRules` replaced it.
 
 ---
 

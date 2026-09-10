@@ -29,7 +29,7 @@ The binary is installed to `/usr/local/bin/meshploy`. Once installed, `meshploy 
 ## First-time setup
 
 ```bash
-meshploy auth login --api-url https://app.your-domain.com
+meshploy auth login --api-url https://api.your-domain.com
 ```
 
 Prompts for email and password, saves credentials to `~/.meshploy/config.json`. The org ID is resolved automatically — no `--org` flag needed on subsequent commands.
@@ -55,8 +55,8 @@ After that, all commands in that directory pick up the project automatically. Us
 
 ```bash
 meshploy version
-# meshploy 0.2.6          ← stable build
-# meshploy 0.2.6+abc1234 (edge)  ← edge build
+# meshploy 0.9.0          ← stable build
+# meshploy 0.9.0+abc1234 (edge)  ← edge build
 ```
 
 ---
@@ -142,6 +142,22 @@ All service commands accept `-p <project>` or use the linked project from `.mesh
 | `stack services <name\|id>` | List services managed by a stack |
 | `stack apply <name\|id>` | Apply the stack spec — create or update services |
 | `stack delete <name\|id>` | Delete a stack |
+
+---
+
+### `meshploy apply`
+
+```bash
+meshploy apply -f compose.yml --project my-project
+```
+
+Applies a Docker Compose manifest, with `x-meshploy` extensions, to a project in one call: it is upserted as a stack and reconciled into live services. Idempotent: run it again to converge on the same spec.
+
+| Flag | Description |
+|---|---|
+| `-f, --file` | Path to the compose manifest (required) |
+| `--name` | Stack name (default: the manifest file's base name) |
+| `--project` | Project name or ID |
 
 ---
 
@@ -261,12 +277,29 @@ Syncs the `deploy/` configuration directory from GitHub and pulls the latest con
 
 Must be run as root on the **gateway server**.
 
-Protected files are never overwritten: `.env`, `coredns/Corefile`, DNS zone files, and Headscale config retain their runtime-rendered values.
+Protected files are never overwritten: `.env`, DNS zone files, and Headscale config keep their runtime-rendered values. `coredns/Corefile` is replaced and re-rendered from `.env`. On a gateway using self-managed DNS (`DNS_MODE=ondemand`), the on-demand Caddyfile is put back after the sync, and Caddy is recreated whenever its configuration changed.
+
+The upgrade runs with the CLI you have installed, so run `sudo meshploy update` (or `update --edge`) first.
 
 | Flag | Description |
 |---|---|
 | `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
 | `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`) — required if the repo is private |
+
+---
+
+### `meshploy setup serve`
+
+```bash
+sudo meshploy setup serve
+```
+
+Serves the browser installer: a page on port 9000 that collects the domain and DNS mode, runs the installer, and streams its output. `install.sh` starts it for you when you choose to continue setup in a browser. Run it yourself to reopen setup, for example to change the domain; it starts from the current configuration in `.env`. Requires root, and access is gated on the setup token from `/opt/meshploy/.env`. It serves plain HTTP, because no certificate exists yet.
+
+| Flag | Description |
+|---|---|
+| `--addr` | Address to serve on (default: `0.0.0.0:9000`) |
+| `--public-ip` | Public IP to pre-fill and to check DNS against (default: `PUBLIC_IP` from `.env`) |
 
 ---
 
@@ -286,6 +319,17 @@ The first account registered on a Meshploy server owns it, so until that account
 
 ---
 
+### `meshploy license`
+
+| Command | Description |
+|---|---|
+| `license status` | Show the licence status and entitlements of this install |
+| `license activate <token>` | Install a licence token. The server verifies its signature, expiry and domain binding before storing it |
+
+Only the Enterprise image can verify a licence; on a Community install, `activate` reports what to run instead.
+
+---
+
 ### `meshploy alias`
 
 | Command | Description |
@@ -301,9 +345,9 @@ The first account registered on a Meshploy server owns it, so until that account
 meshploy mcp
 ```
 
-Starts an MCP (Model Context Protocol) server over stdio, exposing all Meshploy operations as structured tools for Claude Code or any MCP-compatible AI agent. Reads credentials from `~/.meshploy/config.json` — no extra setup beyond `meshploy auth login`.
+Starts an MCP (Model Context Protocol) server over stdio, exposing Meshploy operations as tools for Claude Code or any MCP-compatible agent. It uses the credentials saved by `meshploy auth login` and acts as that user.
 
-**Claude Code setup** — add to `.claude/settings.json`:
+**Claude Code setup**: add it to the project's `.mcp.json`:
 
 ```json
 {
@@ -316,6 +360,8 @@ Starts an MCP (Model Context Protocol) server over stdio, exposing all Meshploy 
 }
 ```
 
+For an agent that shouldn't act as you, use the gateway's remote MCP endpoint at `https://console.<your-domain>/mcp` with an agent token instead. Create the agent in the dashboard under **Agents**, which shows the configuration for each client.
+
 ---
 
 ## Config file
@@ -324,7 +370,7 @@ Credentials are stored at `~/.meshploy/config.json` (mode `0600`):
 
 ```json
 {
-  "api_url": "https://app.your-domain.com",
+  "api_url": "https://api.your-domain.com",
   "token": "<jwt>",
   "org_id": "<uuid>"
 }

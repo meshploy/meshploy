@@ -9,7 +9,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | File | Purpose |
 |---|---|
 | `db.go` | `Open()`, `Migrate()`, `FromEnv()`, `RegisterMigration()` |
-| `models.go` | All 36 table definitions |
+| `models.go` | All 41 CE table definitions |
 | `types.go` | Custom JSONB types: `EnvVarsMap`, `JSONObject`, `StringArray` |
 | `crypto.go` | `EncryptedString` — AES-256-GCM GORM type |
 
@@ -25,6 +25,8 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `trusted_devices` | Remembered devices — skips 2FA prompt on re-login |
 | `recovery_codes` | One-time 2FA recovery codes (hashed) |
 | `dismissed_notices` | Console advisories a user has dismissed — per-user, keyed by a stable slug |
+| `agent_tokens` | `magt-` tokens for agent principals (SHA-256 hashed, shown once) |
+| `installed_licenses` | Enterprise licence tokens activated on this install |
 | `organizations` | Tenancy root |
 | `organization_members` | User ↔ Org join (roles: owner / admin / member) |
 | `resource_permissions` | Per-resource ACL grants (service, stack, job, project) |
@@ -110,14 +112,22 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 ## Migrations
 
-`db.Migrate()` runs GORM `AutoMigrate` for all models followed by `applyConstraints()` which creates partial unique indexes that GORM cannot express as struct tags:
+`db.Migrate()` runs GORM `AutoMigrate` for all models, then `applyConstraints()`, which creates the unique indexes GORM cannot express as struct tags and runs a few idempotent data migrations (column cleanups and backfills):
 
 | Index | Constraint |
 |---|---|
-| `idx_one_owner_per_org` | Exactly one owner per organisation |
-| `idx_unique_domain_per_org` | Domain names unique within an org |
+| `idx_one_owner_per_org` | Exactly one owner per organisation (partial: `WHERE role = 'owner'`) |
+| `idx_users_email_unique` | Email unique among humans only (partial: `WHERE email <> ''`); agents carry an empty email |
+| `idx_variable_group_service` | At most one system-managed variable group per service (partial) |
+| `idx_variable_group_item_key` | Item keys unique within a variable group |
+| `idx_service_variable_group` | A service attaches a given group at most once |
+| `idx_jobs_project_name` | Job names unique within a project |
+| `idx_route_target_path` | One path rule per route |
+| `idx_resource_permission_grant` | No duplicate permission grants |
 
-Migrations run automatically on API startup — no migration CLI needed.
+Domain names are unique across all organisations through the `uniqueIndex` tag on `domains.base_domain`, so one org cannot claim another's domain.
+
+Migrations run automatically on API startup; no migration CLI is needed.
 
 ---
 
