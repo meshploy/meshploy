@@ -42,7 +42,10 @@ function DeploymentLogsPage() {
     const id = setInterval(() => setTick((t) => t + 1), 1000)
     return () => clearInterval(id)
   }, [])
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const logRef = useRef<HTMLDivElement>(null)
+  // Follow new lines only while the reader is at the bottom, so scrolling up
+  // to read an earlier line is not undone by the next one arriving.
+  const followRef = useRef(true)
   const abortRef = useRef<AbortController | null>(null)
 
   const { data: deployment, isLoading } = useQuery({
@@ -55,9 +58,11 @@ function DeploymentLogsPage() {
     },
   })
 
-  // Auto-scroll to bottom as new lines arrive
+  // Keep the newest line in view. Scrolls the log box itself: scrollIntoView
+  // moved every scrollable ancestor with it, the page included.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    const el = logRef.current
+    if (el && followRef.current) el.scrollTop = el.scrollHeight
   }, [logLines])
 
   // Stream logs via SSE
@@ -196,8 +201,9 @@ function DeploymentLogsPage() {
       {/* Progress stepper */}
       {deployment && <DeploymentStepper status={deployment.status} />}
 
-      {/* Log terminal */}
-      <div className="flex-1 rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden flex flex-col min-h-0">
+      {/* Log terminal. A fixed height, so a long build scrolls inside it
+          instead of growing the page; it ends at the bottom of the window. */}
+      <div className="h-[calc(100dvh-28rem)] min-h-72 shrink-0 rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden flex flex-col">
         {/* Terminal bar */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
           <div className="flex gap-1.5">
@@ -216,7 +222,14 @@ function DeploymentLogsPage() {
         </div>
 
         {/* Log content */}
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div
+          ref={logRef}
+          className="flex-1 overflow-y-auto px-4 py-3"
+          onScroll={(e) => {
+            const el = e.currentTarget
+            followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          }}
+        >
           {isLoading && logLines.length === 0 ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -237,7 +250,6 @@ function DeploymentLogsPage() {
               )}
             </pre>
           )}
-          <div ref={bottomRef} />
         </div>
       </div>
     </div>

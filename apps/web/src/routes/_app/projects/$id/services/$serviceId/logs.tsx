@@ -53,7 +53,7 @@ function LogsTab() {
   const [follow, setFollow] = useState(true)
   const [search, setSearch] = useState("")
 
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const logRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const autoScrollRef = useRef(true)
 
@@ -162,11 +162,11 @@ function LogsTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, projectId, serviceId, token, tail, since, follow])
 
-  // Auto-scroll only when user hasn't scrolled up
+  // Auto-scroll only when user hasn't scrolled up. Scrolls the log box itself:
+  // scrollIntoView moved every scrollable ancestor with it, the page included.
   useEffect(() => {
-    if (autoScrollRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-    }
+    const el = logRef.current
+    if (el && autoScrollRef.current) el.scrollTop = el.scrollHeight
   }, [logLines])
 
   const filteredLines =
@@ -275,8 +275,9 @@ function LogsTab() {
         </div>
       )}
 
-      {/* Terminal */}
-      <div className="flex-1 rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden flex flex-col min-h-0">
+      {/* Terminal. A fixed height, so output scrolls inside it instead of
+          growing the page; it ends at the bottom of the window. */}
+      <div className="h-[calc(100dvh-23rem)] min-h-72 shrink-0 rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden flex flex-col">
         {/* Terminal bar */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
           <div className="flex gap-1.5">
@@ -309,6 +310,7 @@ function LogsTab() {
 
         {/* Log output */}
         <div
+          ref={logRef}
           className="flex-1 overflow-y-auto px-4 py-3"
           onScroll={(e) => {
             const el = e.currentTarget
@@ -345,7 +347,6 @@ function LogsTab() {
               )}
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
       </div>
     </div>
