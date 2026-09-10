@@ -86,7 +86,10 @@ export function AppSidebar() {
     queryKey: ["system-version"],
     queryFn: () => system.versionInfo(token!),
     enabled: !!token,
-    staleTime: 60 * 60 * 1000,
+    // The API caches the check for two minutes, so asking it this often never
+    // reaches GitHub; it is what lets a new build appear without a reload.
+    staleTime: 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
     retry: false,
   })
 

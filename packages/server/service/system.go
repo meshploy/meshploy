@@ -17,7 +17,12 @@ import (
 const (
 	githubReleaseURL = "https://api.github.com/repos/meshploy/meshploy/releases/latest"
 	githubCompareURL = "https://github.com/meshploy/meshploy/compare"
-	updateCacheTTL   = time.Hour
+
+	// updateCacheTTL bounds how long a new build or release goes unnoticed. Each
+	// refresh is one unauthenticated GitHub request, and GitHub allows 60 an hour
+	// per IP: two minutes is at most 30 an hour, and only while someone has the
+	// console open, which leaves room for the gateway's other GitHub calls.
+	updateCacheTTL = 2 * time.Minute
 
 	// channelEdge is a build cut from main rather than from a release tag.
 	channelEdge = "edge"
