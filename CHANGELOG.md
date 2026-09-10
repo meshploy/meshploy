@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.0](https://github.com/meshploy/meshploy/compare/v0.9.0...v0.10.0) (2026-09-10)
+
+
+### Features
+
+* let the setup token be printed again with meshploy setup-token show ([b1a311f](https://github.com/meshploy/meshploy/commit/b1a311f5adaab1b43c19f5f8a1a26606515d5406))
+
+
+### Bug Fixes
+
+* check the NS delegation before the TLS wait and report Caddy's progress instead of a counter ([e7827d4](https://github.com/meshploy/meshploy/commit/e7827d4e24399be63c9086382b2e96bd802135d7))
+* install k3s before the mesh exists, then bind flannel to it ([82c5950](https://github.com/meshploy/meshploy/commit/82c59502a71826c43b4d18d0f78d6be080c6eca6))
+* keep caddy on the right config for the dns mode, and give on-demand named sites their own certificates ([53be0c2](https://github.com/meshploy/meshploy/commit/53be0c2f3588e15593aa2e64a10fa9ba15a93685))
+* stop the browser installer looking stuck during long waits and repeated DNS checks ([538e3ba](https://github.com/meshploy/meshploy/commit/538e3ba6bf51e1ee1daa6fcb725e8fc62eff448e))
+
 ## [0.9.0](https://github.com/meshploy/meshploy/compare/v0.8.0...v0.9.0) (2026-09-09)
 
 
