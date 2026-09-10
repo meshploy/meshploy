@@ -1113,9 +1113,9 @@ NEUNIT
   echo -e "  ${BOLD}First-time setup${RESET}"
   echo -e "    Creating the owner account needs this one-time token:"
   echo -e "       ${BOLD}${CYAN}${SETUP_TOKEN}${RESET}"
-  echo -e "    ${YELLOW}Keep it until you have registered. It is not shown again${RESET}"
-  echo -e "    ${YELLOW}and is only accepted while the instance has no owner.${RESET}"
-  echo -e "    Lost it?  ${BOLD}meshploy setup-token rotate${RESET}  on this server."
+  echo -e "    ${YELLOW}Keep it until you have registered. It is only accepted${RESET}"
+  echo -e "    ${YELLOW}while the instance has no owner.${RESET}"
+  echo -e "    Lost it?  ${BOLD}sudo meshploy setup-token show${RESET}  on this server."
   echo
   echo -e "  ${BOLD}To add a worker node${RESET}"
   echo -e "    1. Headscale pre-auth key (valid 1h, reusable):"

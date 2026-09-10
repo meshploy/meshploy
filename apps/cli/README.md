@@ -270,6 +270,22 @@ Protected files are never overwritten: `.env`, `coredns/Corefile`, DNS zone file
 
 ---
 
+### `meshploy setup-token`
+
+```bash
+sudo meshploy setup-token show      # print the token for creating the first account
+sudo meshploy setup-token rotate    # issue a new one, invalidating the old
+```
+
+The first account registered on a Meshploy server owns it, so until that account exists, registration asks for a one-time setup token. The installer prints it once; these commands recover it. Both must be run as root on the **gateway server**, where the token is stored in `/opt/meshploy/.env`.
+
+| Subcommand | Description |
+|---|---|
+| `show` | Prints the current token while the instance has no owner. Once an owner exists, registration is closed and the token is no longer accepted, so it says that instead of printing it. |
+| `rotate` | Issues a new token and invalidates the previous one, for when it may have been seen by someone else. Restart the API afterwards: `cd /opt/meshploy && docker compose up -d api`. |
+
+---
+
 ### `meshploy alias`
 
 | Command | Description |

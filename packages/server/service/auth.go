@@ -24,7 +24,7 @@ import (
 // would have turned a wrong setup token into a message about a duplicate email.
 var (
 	ErrRegistrationClosed = errors.New("registration is disabled — this instance already has an owner")
-	ErrInvalidSetupToken  = errors.New("invalid or missing setup token — it was printed by the installer; run `meshploy setup-token rotate` on the gateway to issue a new one")
+	ErrInvalidSetupToken  = errors.New("invalid or missing setup token; the installer printed it, and `sudo meshploy setup-token show` on the gateway prints it again")
 )
 
 type AuthService struct {

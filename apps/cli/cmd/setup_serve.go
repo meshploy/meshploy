@@ -46,7 +46,9 @@ plain HTTP, because no certificate exists yet.`,
 		if token == "" {
 			// Refuse rather than serve an unauthenticated installer. Anything
 			// that can reach this can claim the machine.
-			return errors.New("no SETUP_TOKEN in " + meshployInstDir + "/.env — run install.sh first, or `meshploy setup-token rotate`")
+			// Not `setup-token rotate`: it refuses when no token exists, which is
+			// exactly this case. The installer is what creates one.
+			return errors.New("no SETUP_TOKEN in " + meshployInstDir + "/.env; start setup through the installer, which creates one: sudo bash -c \"$(curl -fsSL https://meshploy.com/install.sh)\"")
 		}
 
 		publicIP := setupServePublicIP

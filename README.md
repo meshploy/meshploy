@@ -66,6 +66,9 @@ meshploy node token get
 sudo meshploy node install
 sudo meshploy node uninstall
 
+# Print the setup token for creating the first account (on the gateway)
+sudo meshploy setup-token show
+
 # Update the CLI binary (preferred)
 meshploy update
 
@@ -177,6 +180,16 @@ After install, verify:
 ```bash
 dig @<gateway-public-ip> app.meshploy.example.com A
 ```
+
+### Creating the owner account
+
+When the install finishes, open `https://console.<your-domain>` and register. The first account owns the instance, so the form asks for the one-time **setup token** the installer printed. If you no longer have it, print it again on the gateway:
+
+```bash
+sudo meshploy setup-token show
+```
+
+The token is only accepted until that first account exists. If someone else may have seen it before then, issue a new one with `sudo meshploy setup-token rotate` and restart the API (`cd /opt/meshploy && docker compose up -d api`).
 
 ### Managing your installation
 

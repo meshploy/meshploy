@@ -118,7 +118,8 @@ function FirstBootRegisterForm() {
             className="w-full h-9 rounded-md border border-border/60 bg-muted/20 px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow" />
           <p className="text-[11px] text-muted-foreground/70 mt-1.5">
             Printed once by the installer. This account will own the instance, so it is
-            required unless the server was set up without one.
+            required unless the server was set up without one. Lost it? Run{" "}
+            <code className="font-mono">sudo meshploy setup-token show</code> on the server.
           </p>
         </Field>
         {error && <ErrorBanner>{error}</ErrorBanner>}
