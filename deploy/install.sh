@@ -677,7 +677,15 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     # On some k3s versions the flag alone leaves "identity" as the write provider
     # and the switch has to be flipped with `k3s secrets-encrypt enable`, which is
     # worth checking on an existing cluster: `k3s secrets-encrypt status`.
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP} --flannel-iface=tailscale0 --secrets-encryption" sh -
+    #
+    # --flannel-iface is deliberately NOT passed here, even though the MTU
+    # reasoning above is why it exists. tailscale0 does not exist yet and cannot:
+    # k3s has to run before phase 1, because the API container bind-mounts
+    # k3s.yaml and the node token; phase 1 has to run before the mesh join,
+    # because it brings up the Headscale that issues the pre-auth key. Passing it
+    # here makes k3s exit with "unable to find interface tailscale0" and the whole
+    # install stops. It is set once the mesh is up, further down.
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP} --secrets-encryption" sh -
     success "k3s server installed and started"
   fi
 
@@ -949,6 +957,39 @@ for u in json.load(sys.stdin):
     --accept-routes \
     || warn "tailscale up returned non-zero — it may already be connected, check: tailscale status"
   success "This node joined the mesh as 'gateway'"
+
+  # ── Pin flannel to the mesh interface ───────────────────────────────────────
+  # Deferred from the k3s install above, where tailscale0 could not exist. A
+  # drop-in rather than config.yaml so an operator's own config is left intact.
+  FLANNEL_DROPIN="/etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml"
+  if ! grep -qs "flannel-iface: tailscale0" "$FLANNEL_DROPIN"; then
+    info "Binding flannel to the mesh interface…"
+    mkdir -p "$(dirname "$FLANNEL_DROPIN")"
+    printf 'flannel-iface: tailscale0\n' > "$FLANNEL_DROPIN"
+    systemctl restart k3s
+
+    # Wait for the API server before touching pods; a restart takes a few seconds.
+    FLANNEL_WAITED=0
+    until k3s kubectl get --raw='/readyz' &>/dev/null; do
+      sleep 3; FLANNEL_WAITED=$((FLANNEL_WAITED+3))
+      if [[ $FLANNEL_WAITED -ge 90 ]]; then
+        warn "k3s did not come back within 90s after the flannel change."
+        warn "Check: journalctl -xeu k3s.service"
+        break
+      fi
+    done
+
+    # Pods that started while flannel sized its MTU from the default route carry
+    # a 1450-byte veth, which silently blackholes once traffic crosses the
+    # 1280-byte mesh. Recreate them so they pick up the corrected MTU. Safe here:
+    # only k3s's own system pods exist this early in an install.
+    if k3s kubectl get --raw='/readyz' &>/dev/null; then
+      k3s kubectl delete pods --all -n kube-system --wait=false &>/dev/null || true
+      success "flannel bound to tailscale0 (mesh MTU)"
+    fi
+  else
+    success "flannel already bound to the mesh interface"
+  fi
 
   # ── Phase 2: Start mesh-IP-dependent services ────────────────────────────────
   # CoreDNS binds to PUBLIC_IP:53 and MESH_IP:53.
