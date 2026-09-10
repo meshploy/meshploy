@@ -51,7 +51,7 @@ Internet → Caddy (TLS) → apps/proxy (:8081) → WireGuard mesh → K3s worke
 `apps/proxy` reads the `Host` header → route cache lookup → `httputil.ReverseProxy` to `http://<mesh_ip>:<port>`. Caddy's `handle /api/*` block routes API traffic to port 4000; `*.internal.<domain>` goes to port 8081.
 
 ### K3s cluster
-Single K3s cluster spanning all mesh nodes. Control plane on gateway (`k3s_role=server`), workers join as agents. Builds run as ephemeral K8s Jobs with `meshploy.com/role=builder` node selector.
+Single K3s cluster spanning all mesh nodes. Control plane on gateway (`k3s_role=server`), workers join as agents. Builds run as ephemeral K8s Jobs with `meshploy.com/role=builder` node selector. The gateway is a build node by default (`mesh_role` defaults to `workload_builder` when unset); turning "Act as build node" off stores `workload`, which is kept. A deploy fails at once when no online node can build, and after a few minutes when the scheduler cannot place the pod.
 
 ### Node lifecycle
 Workers self-register via `POST /api/v1/nodes/self-register` using an `mreg-<hex>` registration token or a single-use `mprov-<hex>` provisioning token. The node ID is saved to `/etc/meshploy/node.conf`. On uninstall, `DELETE /api/v1/nodes/self-deregister` removes the node from Headscale, the k3s cluster, and the database.

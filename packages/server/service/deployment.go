@@ -142,9 +142,10 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 	namespace := svc.Project.Slug
 
 	deployment := db.Deployment{
-		Base:         db.Base{ID: deploymentID},
-		ServiceID:    in.ServiceID,
-		Status:       db.DeploymentBuilding,
+		Base:      db.Base{ID: deploymentID},
+		ServiceID: in.ServiceID,
+		// Queued until a node takes the build pod; runPipeline moves it on.
+		Status:       db.DeploymentPending,
 		Image:        imageName,
 		BuildJobName: jobName,
 		Log:          fmt.Sprintf("Build triggered by user %s\n", in.TriggeredBy),
@@ -373,6 +374,13 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		return
 	}
 
+	// Fail now, with directions, when no node can take the build; the job
+	// would otherwise sit Pending until the build timeout.
+	if problem := s.buildNodeProblem(ctx, a.bc.BuilderNode); problem != "" {
+		s.failDeployment(a.deployment.ID, problem)
+		return
+	}
+
 	// Create the build Job.
 	err := appk8s.CreateBuildJob(ctx, s.k8s, appk8s.BuildJobParams{
 		JobName:       a.jobName,
@@ -399,13 +407,29 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		return
 	}
 
-	s.setStatus(a.deployment.ID, db.DeploymentBuilding, "Build job created: "+a.jobName)
+	// Queued until a node takes the pod; only then is it building. It used to
+	// be marked building here, so the console ticked "Queued" while the pod
+	// still had nowhere to run.
+	s.setStatus(a.deployment.ID, db.DeploymentPending, "Build job created: "+a.jobName+"\nWaiting for a build node…")
 
 	// Wait for the job to finish (up to 60 minutes).
 	// First-time builds without layer cache (railpack native snapshotter, large
 	// repos) can easily exceed 30 minutes.
-	result := appk8s.WaitForJob(ctx, s.k8s, a.namespace, a.jobName, 60*time.Minute)
+	result := appk8s.WaitForJobWith(ctx, s.k8s, a.namespace, a.jobName, appk8s.JobWaitOptions{
+		Timeout:       60 * time.Minute,
+		Unschedulable: buildUnschedulableGrace,
+		OnStarted: func(node string) {
+			s.setStatus(a.deployment.ID, db.DeploymentBuilding, "Build job created: "+a.jobName+"\nBuilding on node "+node)
+		},
+	})
 
+	if result.Unschedulable {
+		// Deleted so it cannot start later, after the deploy was reported failed.
+		fg := metav1.DeletePropagationForeground
+		_ = s.k8s.BatchV1().Jobs(a.namespace).Delete(context.Background(), a.jobName, metav1.DeleteOptions{PropagationPolicy: &fg})
+		s.failDeployment(a.deployment.ID, noBuildNodeMessage(result.Log))
+		return
+	}
 	if !result.Success {
 		s.failDeployment(a.deployment.ID, result.Log)
 		return

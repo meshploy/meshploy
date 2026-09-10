@@ -68,6 +68,11 @@ func GetClusterNodes(ctx context.Context, client kubernetes.Interface) ([]Cluste
 	return out, nil
 }
 
+// IsBuildNode reports whether a node's labels let build jobs schedule on it.
+func IsBuildNode(labels map[string]string) bool {
+	return labels[meshRoleLabelKey] == meshRoleBuilderValue
+}
+
 // SetNodeMeshRole applies the correct k8s label and taint to a node based on its
 // MeshRole. Safe to call repeatedly — it reconciles to the desired state each time.
 //
@@ -133,10 +138,10 @@ func DeleteNode(ctx context.Context, client kubernetes.Interface, nodeName strin
 
 // systemNamespaces are excluded from the active-projects list shown in the UI.
 var systemNamespaces = map[string]bool{
-	"kube-system":      true,
-	"kube-public":      true,
-	"kube-node-lease":  true,
-	"default":          true,
+	"kube-system":     true,
+	"kube-public":     true,
+	"kube-node-lease": true,
+	"default":         true,
 }
 
 // GetNamespacesOnNode returns distinct non-system namespaces that have running

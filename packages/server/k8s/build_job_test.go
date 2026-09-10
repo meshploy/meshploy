@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -161,5 +163,96 @@ func TestBuilderScriptStillAcceptsWhatAnOlderAPISends(t *testing.T) {
 		if h != basicAuth("x-access-token", "installation-token") {
 			t.Errorf("request %d sent Authorization %q", i, h)
 		}
+	}
+}
+
+// ── WaitForJobWith ───────────────────────────────────────────────────────────
+
+// buildJobWithPod submits a build job to a fake cluster and gives it a pod in
+// the state set up by pod.
+func buildJobWithPod(t *testing.T, pod func(*corev1.Pod)) *fake.Clientset {
+	t.Helper()
+	client := fake.NewSimpleClientset()
+	if err := CreateBuildJob(t.Context(), client, BuildJobParams{JobName: "build-app-1", Namespace: "demo"}); err != nil {
+		t.Fatal(err)
+	}
+	p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "build-app-1-abcde", Namespace: "demo", Labels: map[string]string{"job-name": "build-app-1"},
+	}}
+	pod(p)
+	if _, err := client.CoreV1().Pods("demo").Create(t.Context(), p, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	return client
+}
+
+func unschedulable(message string) func(*corev1.Pod) {
+	return func(p *corev1.Pod) {
+		p.Status.Phase = corev1.PodPending
+		p.Status.Conditions = []corev1.PodCondition{{
+			Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+			Reason: corev1.PodReasonUnschedulable, Message: message,
+		}}
+	}
+}
+
+// The case this exists for: with no node marked for builds, the pod stayed
+// Pending and the deploy showed "Building" for the whole hour-long timeout.
+func TestWaitForJobGivesUpWhenNoNodeMatches(t *testing.T) {
+	client := buildJobWithPod(t, unschedulable("0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector."))
+
+	res := WaitForJobWith(t.Context(), client, "demo", "build-app-1", JobWaitOptions{
+		Timeout: 5 * time.Second, Unschedulable: 50 * time.Millisecond, Poll: 10 * time.Millisecond,
+	})
+	if !res.Unschedulable || res.Success || !strings.Contains(res.Log, "didn't match") {
+		t.Fatalf("got %+v, want an unschedulable result carrying the scheduler's reason", res)
+	}
+}
+
+// A pod short of CPU or memory is queued behind other builds, not stranded.
+func TestWaitForJobKeepsWaitingForCapacity(t *testing.T) {
+	client := buildJobWithPod(t, unschedulable("0/1 nodes are available: 1 Insufficient cpu."))
+
+	res := WaitForJobWith(t.Context(), client, "demo", "build-app-1", JobWaitOptions{
+		Timeout: 200 * time.Millisecond, Unschedulable: 20 * time.Millisecond, Poll: 10 * time.Millisecond,
+	})
+	if res.Unschedulable || !strings.Contains(res.Log, "timed out") {
+		t.Fatalf("got %+v, want it to keep waiting until the timeout", res)
+	}
+}
+
+func TestWaitForJobReportsWhereTheBuildStarted(t *testing.T) {
+	client := buildJobWithPod(t, func(p *corev1.Pod) {
+		p.Spec.NodeName = "srv1854405"
+		p.Status.Phase = corev1.PodRunning
+	})
+	job, err := client.BatchV1().Jobs("demo").Get(t.Context(), "build-app-1", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.Status.Succeeded = 1
+	if _, err := client.BatchV1().Jobs("demo").UpdateStatus(t.Context(), job, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var started []string
+	res := WaitForJobWith(t.Context(), client, "demo", "build-app-1", JobWaitOptions{
+		Timeout: 5 * time.Second, Unschedulable: time.Minute, Poll: 10 * time.Millisecond,
+		OnStarted: func(node string) { started = append(started, node) },
+	})
+	if !res.Success {
+		t.Fatalf("got %+v, want success", res)
+	}
+	if len(started) != 1 || started[0] != "srv1854405" {
+		t.Errorf("OnStarted calls = %v, want one for srv1854405", started)
+	}
+}
+
+func TestIsBuildNode(t *testing.T) {
+	if !IsBuildNode(map[string]string{"meshploy.com/role": "builder"}) {
+		t.Error("the builder label was not recognised")
+	}
+	if IsBuildNode(map[string]string{"kubernetes.io/hostname": "srv"}) || IsBuildNode(nil) {
+		t.Error("a node without the label counted as a build node")
 	}
 }

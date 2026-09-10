@@ -134,6 +134,14 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 				}
 			}
 		}
+		// The gateway builds by default, so a single-server install can deploy
+		// from git with nothing to configure. Only an unset role is filled in:
+		// turning "Act as build node" off stores workload, which stays as it is.
+		if err := db.WithContext(ctx).Model(&meshdb.Node{}).
+			Where("organization_id = ? AND tailscale_ip = ? AND mesh_role = ?", orgID, c.GatewayIP, "").
+			Update("mesh_role", meshdb.MeshRoleWorkloadBuilder).Error; err != nil {
+			log.Printf("warning: default the gateway to a build node: %v", err)
+		}
 		if err := domains.CreateSeeded(ctx, orgID, c.Domain); err != nil {
 			log.Printf("warning: seed domain: %v", err)
 		}

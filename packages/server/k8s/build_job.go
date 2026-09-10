@@ -260,15 +260,46 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 type JobResult struct {
 	Success bool
 	Log     string
+	// Unschedulable is set when the wait gave up because no node could take
+	// the pod. Log then holds the scheduler's reason.
+	Unschedulable bool
+}
+
+// JobWaitOptions tunes WaitForJobWith.
+type JobWaitOptions struct {
+	// Timeout bounds the whole wait.
+	Timeout time.Duration
+	// Unschedulable is how long the pod may go unplaced because no node
+	// matches its selector or taints before the wait gives up, so a build with
+	// nowhere to run fails in minutes rather than at Timeout. A pod only short
+	// of CPU or memory is queued behind other builds and keeps waiting. Zero
+	// never gives up early.
+	Unschedulable time.Duration
+	// OnStarted runs once, when the pod has been placed on a node.
+	OnStarted func(node string)
+	// Poll is the interval between checks. Zero means five seconds.
+	Poll time.Duration
 }
 
 // WaitForJob polls the job until it succeeds, fails, or the context is cancelled.
 // Returns the job log regardless of outcome.
 func WaitForJob(ctx context.Context, client kubernetes.Interface, namespace, jobName string, timeout time.Duration) JobResult {
-	deadline := time.Now().Add(timeout)
+	return WaitForJobWith(ctx, client, namespace, jobName, JobWaitOptions{Timeout: timeout})
+}
+
+// WaitForJobWith is WaitForJob with the options above: it also reports when the
+// pod starts, and gives up on a pod no node can take.
+func WaitForJobWith(ctx context.Context, client kubernetes.Interface, namespace, jobName string, opts JobWaitOptions) JobResult {
+	poll := opts.Poll
+	if poll == 0 {
+		poll = 5 * time.Second
+	}
+	deadline := time.Now().Add(opts.Timeout)
+	started := false
+	var unplacedSince time.Time
 	for {
 		if time.Now().After(deadline) {
-			return JobResult{Success: false, Log: "build timed out after " + timeout.String()}
+			return JobResult{Success: false, Log: "build timed out after " + opts.Timeout.String()}
 		}
 		select {
 		case <-ctx.Done():
@@ -279,10 +310,32 @@ func WaitForJob(ctx context.Context, client kubernetes.Interface, namespace, job
 		job, err := client.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
-				time.Sleep(3 * time.Second)
+				time.Sleep(min(3*time.Second, poll))
 				continue
 			}
 			return JobResult{Success: false, Log: "failed to get job: " + err.Error()}
+		}
+
+		if pod := jobPod(ctx, client, namespace, jobName); pod != nil {
+			switch reason := noNodeMatches(pod); {
+			case pod.Spec.NodeName != "":
+				unplacedSince = time.Time{}
+				if !started {
+					started = true
+					if opts.OnStarted != nil {
+						opts.OnStarted(pod.Spec.NodeName)
+					}
+				}
+			case reason != "" && opts.Unschedulable > 0:
+				if unplacedSince.IsZero() {
+					unplacedSince = time.Now()
+				}
+				if time.Since(unplacedSince) >= opts.Unschedulable {
+					return JobResult{Success: false, Unschedulable: true, Log: reason}
+				}
+			default:
+				unplacedSince = time.Time{}
+			}
 		}
 
 		log := FetchContainerLog(ctx, client, namespace, jobName, "builder")
@@ -293,8 +346,34 @@ func WaitForJob(ctx context.Context, client kubernetes.Interface, namespace, job
 		if job.Status.Failed > 0 {
 			return JobResult{Success: false, Log: log}
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(poll)
 	}
+}
+
+// jobPod returns the job's pod, or nil before it exists.
+func jobPod(ctx context.Context, client kubernetes.Interface, namespace, jobName string) *corev1.Pod {
+	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("job-name=%s", jobName),
+	})
+	if err != nil || len(pods.Items) == 0 {
+		return nil
+	}
+	return &pods.Items[0]
+}
+
+// noNodeMatches returns the scheduler's reason when the pod cannot be placed
+// because no node fits its selector or taints, and "" otherwise, including when
+// it is only waiting for CPU or memory to free up.
+func noNodeMatches(pod *corev1.Pod) string {
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason == corev1.PodReasonUnschedulable {
+			if strings.Contains(c.Message, "Insufficient") {
+				return ""
+			}
+			return c.Message
+		}
+	}
+	return ""
 }
 
 // FetchContainerLog returns stdout+stderr from the first pod of a K8s Job.

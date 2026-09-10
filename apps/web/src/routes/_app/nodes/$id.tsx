@@ -464,7 +464,10 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
     <section className="space-y-3">
       <div>
         <h2 className="text-sm font-medium text-foreground">Build node</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Allow build jobs to schedule on this gateway node.</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Allow build jobs to schedule on this gateway node. On by default, so a single server can build;
+          turn it off to keep builds on your other nodes.
+        </p>
       </div>
       <Card>
         <CardContent className="flex items-center justify-between py-3">
