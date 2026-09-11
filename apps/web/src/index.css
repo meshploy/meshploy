@@ -163,6 +163,16 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Dialogs lay their content out on a grid with one implicit column, which
+     grows to the widest child's content: a long command, token or log line
+     pushed the content past the dialog's own edge. A column that may shrink,
+     plus wrapping for unbroken names and hosts, keeps every dialog's content
+     inside it; code blocks scroll within themselves instead. Lives here rather
+     than in components/ui/dialog.tsx so regenerating that file keeps it. */
+  [data-slot="dialog-content"] {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-wrap: break-word;
+  }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02";

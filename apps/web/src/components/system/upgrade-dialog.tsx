@@ -140,7 +140,9 @@ export function UpgradeDialog({
   const flag = (switchTo?.channel ?? version.channel) === "edge" ? " --edge" : ""
   const inProgress = phase === "queued" || phase === "running" || phase === "restarting"
   const noun = switchTo || toEnterprise ? "switch" : "upgrade"
-  const changesUrl = switchTo ? switchTo.url : version.release_url
+  // An edition switch installs the same version's Enterprise images, so there
+  // are no code changes to link to.
+  const changesUrl = toEnterprise ? undefined : switchTo ? switchTo.url : version.release_url
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

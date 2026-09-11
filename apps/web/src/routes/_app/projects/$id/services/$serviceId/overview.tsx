@@ -37,7 +37,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 gap-3">
       <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider shrink-0">{label}</span>
-      <code className="text-[11px] font-mono text-foreground truncate flex-1 text-right">{value}</code>
+      <code className="text-[11px] font-mono text-foreground truncate flex-1 min-w-0 text-right">{value}</code>
       <Button
         variant="ghost"
         size="icon-sm"

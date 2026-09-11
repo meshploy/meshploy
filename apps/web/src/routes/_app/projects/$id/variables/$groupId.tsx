@@ -49,7 +49,7 @@ function ItemRow({ item, onDelete, isDeleting }: { item: ApiVariableGroupItem; o
           </Button>
         </div>
       ) : (
-        <code className="text-xs font-mono text-muted-foreground truncate flex-1">{item.value}</code>
+        <code className="text-xs font-mono text-muted-foreground truncate flex-1 min-w-0">{item.value}</code>
       )}
       {item.is_secret && (
         <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">secret</span>
@@ -117,7 +117,7 @@ function ServiceRow({ svc, onDetach, isDetaching }: { svc: ApiService; onDetach:
   return (
     <div className="rounded-md border border-border/60 bg-muted/5 px-3 py-2.5 flex items-center gap-3">
       <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", svc.status === "running" ? "bg-emerald-400" : "bg-muted-foreground/30")} />
-      <span className="text-xs font-medium flex-1 truncate">{svc.name}</span>
+      <span className="text-xs font-medium flex-1 min-w-0 truncate">{svc.name}</span>
       {svc.status !== "running" && (
         <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">not deployed</span>
       )}

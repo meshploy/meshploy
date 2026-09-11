@@ -387,7 +387,7 @@ function ProvisioningTokensPanel() {
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium">Provisioning token</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                <code className="flex-1 min-w-0 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
                   {visible ? provToken : "mprov-" + "•".repeat(64)}
                 </code>
                 <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
@@ -506,7 +506,7 @@ function HeadscalePreAuthKeyPanel() {
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium">Headscale server URL</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                <code className="flex-1 min-w-0 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
                   {headscaleUrl}
                 </code>
                 <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => copy(headscaleUrl, "url")}>
@@ -521,7 +521,7 @@ function HeadscalePreAuthKeyPanel() {
                 <div className="space-y-1.5">
                   <p className="text-xs text-muted-foreground font-medium">Preauth key</p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                    <code className="flex-1 min-w-0 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
                       {visible ? activeKey : "•".repeat(32)}
                     </code>
                     <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>
@@ -618,7 +618,7 @@ function K3sJoinTokenPanel() {
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium">Node token</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                <code className="flex-1 min-w-0 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
                   {visible ? k3sToken : "K1" + "•".repeat(62)}
                 </code>
                 <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setVisible((v) => !v)}>

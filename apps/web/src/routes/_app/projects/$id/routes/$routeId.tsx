@@ -610,7 +610,7 @@ function TargetItem({
         {isRedirect && (
           <CornerDownRight className="h-3 w-3 text-amber-400/70 shrink-0" />
         )}
-        <span className="text-xs text-foreground flex-1 truncate font-mono">{targetLabel}</span>
+        <span className="text-xs text-foreground flex-1 min-w-0 truncate font-mono">{targetLabel}</span>
         {isRedirect && (
           <Badge className="text-[9px] px-1 py-0 h-4 border bg-amber-500/10 text-amber-400 border-amber-500/20 shrink-0">
             {target.redirect_code}

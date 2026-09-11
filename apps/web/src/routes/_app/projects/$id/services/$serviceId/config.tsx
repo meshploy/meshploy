@@ -960,7 +960,7 @@ function AutoDeploySection({
             Add this as a webhook in your git provider — any POST triggers a build. Works with GitHub, GitLab, Gitea, Bitbucket, or any provider.
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+            <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
               POST {webhookPath}
             </code>
             <Button size="icon-sm" variant="outline" onClick={copyWebhook} title="Copy full webhook URL">

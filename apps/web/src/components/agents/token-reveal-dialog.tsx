@@ -61,7 +61,7 @@ export function TokenRevealDialog({
         <div className="space-y-1.5">
           <p className="text-xs text-muted-foreground font-medium">Token</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+            <code className="flex-1 min-w-0 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
               {token ?? ""}
             </code>
             <Button
@@ -80,7 +80,7 @@ export function TokenRevealDialog({
           <div className="space-y-1.5">
             <p className="text-xs text-muted-foreground font-medium">Remote MCP endpoint</p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+              <code className="flex-1 min-w-0 text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">
                 {mcpUrl}
               </code>
               <Button
