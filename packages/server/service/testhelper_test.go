@@ -53,16 +53,19 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "testcontainers: %v — set DATABASE_URL to use a local Postgres instead\n", err)
 		os.Exit(1)
 	}
-	defer ctr.Terminate(ctx) //nolint:errcheck
-
+	// Terminated explicitly rather than deferred: os.Exit skips deferred calls,
+	// so a defer here left one Postgres container running after every run.
 	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "connection string: %v\n", err)
+		_ = ctr.Terminate(ctx)
 		os.Exit(1)
 	}
 	pgDSN = dsn
 
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = ctr.Terminate(ctx)
+	os.Exit(code)
 }
 
 // newTestDB creates an isolated database per test — each gets its own schema.
