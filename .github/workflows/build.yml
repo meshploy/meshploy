@@ -38,8 +38,28 @@ jobs:
       proxy:   ${{ steps.filter.outputs.proxy }}
       builder: ${{ steps.filter.outputs.builder }}
       caddy:   ${{ steps.filter.outputs.caddy }}
+      release: ${{ steps.release.outputs.release }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+
+      # A release lands as the push of release-please's merge commit. Its tag is
+      # created with GITHUB_TOKEN, which starts no workflow, so this push is the
+      # only build a release gets, and every image is built as the release in
+      # it: the release PR touches no image's paths, so the change filters
+      # alone would skip all but the API. A tag pushed by hand counts too.
+      - name: Is this a release?
+        id: release
+        env:
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* || "$HEAD_MESSAGE" == *release-please* ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -80,6 +100,7 @@ jobs:
   # web-only change, the API would keep its older commit and the console would
   # offer that change again after every upgrade.
   api:
+    needs: changes
     name: API
     runs-on: ubuntu-latest
     permissions:
@@ -95,7 +116,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker meta
+      # Every run builds the edge image: main and the commit's own tag, reporting
+      # VERSION+SHA on the edge channel, because it sits somewhere AHEAD of the
+      # version in the file. Without the distinction an edge image is
+      # indistinguishable from the release it was cut after, so the update check
+      # compares it against that release, finds parity, and tells the operator
+      # they are current when they are running unreleased code.
+      #
+      # A release builds a second image, reporting the bare version on the stable
+      # channel, for latest and the version tags. One image cannot be both: the
+      # console upgrades on the channel the running build reports, so a stable
+      # server running an edge-reporting image would be moved onto edge, and an
+      # edge server running a stable-reporting one onto stable.
+      - name: Docker meta (edge)
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -103,32 +136,33 @@ jobs:
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, 'release-please') }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
-      # A tag build is a release: it reports the bare version. A build from main
-      # is an edge build and reports VERSION+SHA on the edge channel, because it
-      # sits somewhere AHEAD of the version in the file. Without the distinction
-      # an edge image is indistinguishable from the release it was cut after, so
-      # the update check compares it against that release, finds parity, and
-      # tells the operator they are current when they are running unreleased code.
+      - name: Docker meta (release)
+        id: meta_release
+        if: needs.changes.outputs.release == 'true'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.ORG }}/api
+          tags: |
+            type=raw,value=latest
+            type=semver,pattern={{version}},value=v${{ needs.changes.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.changes.outputs.version }}
+
       - name: Read version
         id: ver
+        env:
+          VERSION: ${{ needs.changes.outputs.version }}
         run: |
-          VERSION=$(cat VERSION)
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "value=${VERSION}" >> $GITHUB_OUTPUT
-            echo "channel=stable" >> $GITHUB_OUTPUT
-          else
-            echo "value=${VERSION}+${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-            echo "channel=edge" >> $GITHUB_OUTPUT
-          fi
+          echo "release=${VERSION}" >> $GITHUB_OUTPUT
+          echo "edge=${VERSION}+${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      # A variable, not a secret: public keys are public. They must match the
+      # keys meshploy-ee builds with, or a licence activated here stops
+      # verifying after the switch.
+      - name: Build and push (edge)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -136,12 +170,25 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # A variable, not a secret: public keys are public. They must match
-          # the keys meshploy-ee builds with, or a licence activated here stops
-          # verifying after the switch.
           build-args: |
-            VERSION=${{ steps.ver.outputs.value }}
-            CHANNEL=${{ steps.ver.outputs.channel }}
+            VERSION=${{ steps.ver.outputs.edge }}
+            CHANNEL=edge
+            LICENSE_PUBLIC_KEYS=${{ vars.LICENSE_PUBLIC_KEYS }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push (release)
+        if: needs.changes.outputs.release == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta_release.outputs.tags }}
+          labels: ${{ steps.meta_release.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.ver.outputs.release }}
+            CHANNEL=stable
             LICENSE_PUBLIC_KEYS=${{ vars.LICENSE_PUBLIC_KEYS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -149,7 +196,7 @@ jobs:
   # ── Web ───────────────────────────────────────────────────────────────────────
   web:
     needs: changes
-    if: needs.changes.outputs.web == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: needs.changes.outputs.web == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Web
     runs-on: ubuntu-latest
     permissions:
@@ -173,9 +220,9 @@ jobs:
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, 'release-please') }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{version}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -194,7 +241,7 @@ jobs:
   # ── Caddy (custom build with meshploy DNS provider) ──────────────────────────
   caddy:
     needs: changes
-    if: needs.changes.outputs.caddy == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: needs.changes.outputs.caddy == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Caddy
     runs-on: ubuntu-latest
     permissions:
@@ -218,9 +265,9 @@ jobs:
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, 'release-please') }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{version}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -239,7 +286,7 @@ jobs:
   # ── Proxy ────────────────────────────────────────────────────────────────────
   proxy:
     needs: changes
-    if: needs.changes.outputs.proxy == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: needs.changes.outputs.proxy == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Proxy
     runs-on: ubuntu-latest
     permissions:
@@ -263,9 +310,9 @@ jobs:
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, 'release-please') }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{version}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -284,7 +331,7 @@ jobs:
   # ── Builder ───────────────────────────────────────────────────────────────────
   builder:
     needs: changes
-    if: needs.changes.outputs.builder == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: needs.changes.outputs.builder == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Builder
     runs-on: ubuntu-latest
     permissions:
@@ -308,9 +355,9 @@ jobs:
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=main,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, 'release-please') }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{version}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.changes.outputs.version }},enable=${{ needs.changes.outputs.release == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

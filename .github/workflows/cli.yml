@@ -34,16 +34,19 @@ jobs:
           cache-dependency-path: apps/cli/go.sum
 
       - name: Build
+        # The commit message goes through env, never into the script itself: a
+        # merged pull request's title can end up in it, and inlined it would run.
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           cd apps/cli
           VERSION=$(cat ../../VERSION)
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           # Stable release: VERSION only, channel=stable. Rolling: VERSION+SHA, channel=edge.
-          if echo "${{ github.event.head_commit.message }}" | grep -q "release-please"; then
+          if [[ "$HEAD_MESSAGE" == *release-please* ]]; then
             LDFLAGS="-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}' -X 'github.com/meshploy/apps/cli/cmd.Channel=stable'"
           else
             LDFLAGS="-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}+${SHORT_SHA}' -X 'github.com/meshploy/apps/cli/cmd.Channel=edge'"
@@ -80,11 +83,13 @@ jobs:
 
       - name: Detect if this is a version bump
         id: detect
+        env:
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           VERSION=$(cat VERSION)
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           # A version bump commit comes from release-please
-          if echo "${{ github.event.head_commit.message }}" | grep -q "release-please"; then
+          if [[ "$HEAD_MESSAGE" == *release-please* ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
             echo "is_release=false" >> $GITHUB_OUTPUT
