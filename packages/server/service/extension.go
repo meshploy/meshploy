@@ -39,6 +39,10 @@ func RegisterQuotaChecker(qc QuotaChecker) {
 	quotaCheckers = append(quotaCheckers, qc)
 }
 
+// QuotaCheckersRegistered reports how many quota checkers are registered. Zero
+// in a Community build.
+func QuotaCheckersRegistered() int { return len(quotaCheckers) }
+
 // checkQuota runs every registered checker, failing on the first rejection.
 // A no-op in CE builds, where nothing is registered.
 func checkQuota(ctx context.Context, orgID uuid.UUID, kind QuotaKind) error {

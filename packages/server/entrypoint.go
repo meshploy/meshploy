@@ -7,6 +7,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
+	"github.com/meshploy/packages/server/version"
 	"gorm.io/gorm"
 )
 
@@ -15,6 +16,9 @@ import (
 // caller, registering their extensions before this runs.
 func Main() {
 	_ = godotenv.Load("../../.env")
+
+	version.Edition = detectEdition()
+	log.Printf("edition: %s", version.Edition)
 
 	cfg, err := config.Load()
 	if err != nil {

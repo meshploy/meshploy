@@ -46,6 +46,10 @@ func RegisterMigration(fn func(*gorm.DB) error) {
 	eeHooks = append(eeHooks, fn)
 }
 
+// MigrationsRegistered reports how many extension migrations are registered.
+// Zero in a Community build.
+func MigrationsRegistered() int { return len(eeHooks) }
+
 // ---------------------------------------------------------------------------
 // Migrate
 // ---------------------------------------------------------------------------

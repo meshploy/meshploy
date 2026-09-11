@@ -11,6 +11,7 @@ import (
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/license"
 	"github.com/meshploy/packages/server/config"
+	"github.com/meshploy/packages/server/version"
 	"gorm.io/gorm"
 )
 
@@ -48,14 +49,18 @@ type Status struct {
 	// knowing the name grants nothing without registry credentials.
 	RegistryScope string `json:"registry_scope,omitempty"`
 
-	// CanActivate reports whether this build trusts any signing key. False in a
-	// stock CE build, where activation always fails.
+	// CanActivate reports whether this build trusts any signing key, so a
+	// pasted licence can be verified and stored at all.
 	//
-	// The UI needs this to explain the upgrade path instead of surfacing a bare
-	// "this build trusts no license signing key" after someone pastes a licence
-	// they just paid for. The order is switch image, then activate — a CE binary
-	// cannot store a licence at all.
+	// The UI used to read this as the edition too (keys meant Enterprise). That
+	// stops holding once Community verifies licences, which is what Edition is
+	// for; the console keeps the old reading only for APIs older than Edition.
 	CanActivate bool `json:"can_activate"`
+
+	// Edition is "community" or "enterprise": which binary is answering,
+	// whatever licence it holds. A Community binary holding a valid licence
+	// still has no Enterprise features compiled in.
+	Edition string `json:"edition"`
 }
 
 // Entitlements answers "may this org use feature X".
@@ -188,6 +193,7 @@ func (s *EntitlementService) Describe(ctx context.Context, _ uuid.UUID) (Status,
 		Features:    claims.Features,
 		Problem:     reason,
 		CanActivate: len(trustedKeys()) > 0,
+		Edition:     version.Edition,
 	}
 	if st.Features == nil {
 		st.Features = []string{}

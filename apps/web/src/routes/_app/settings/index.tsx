@@ -13,6 +13,7 @@ import {
   storage as storageApi,
   backups as backupsApi,
   entitlements as entitlementsApi,
+  editionOf,
   ApiError,
   type ApiDomain,
   type ApiStorageIntegration,
@@ -177,7 +178,7 @@ function LicenseSection() {
           here at all — the image has to be swapped first. Explaining that up
           front beats letting someone paste a licence they just paid for and
           receive a bare "this build trusts no license signing key". */}
-      {ent && !ent.can_activate ? (
+      {ent && editionOf(ent) === "community" && !ent.can_activate ? (
         <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
           <p className="text-xs text-muted-foreground">
             This is the Community image. It cannot verify a licence, so activation

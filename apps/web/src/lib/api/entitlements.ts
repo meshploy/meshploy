@@ -15,11 +15,24 @@ export interface ApiEntitlements {
   /** The private image this licence grants, e.g. "ghcr.io/meshploy/api-ee". */
   registry_scope?: string
   /**
-   * False in a stock Community build, which trusts no signing key and so cannot
-   * store a licence at all. The upgrade order is: switch to the Enterprise
-   * image first, then activate.
+   * Whether this build trusts a signing key, so a pasted licence can be
+   * verified and stored at all.
    */
   can_activate: boolean
+  /**
+   * Which binary is answering, whatever licence it holds. Absent from APIs
+   * older than the field; use {@link editionOf} rather than reading it directly.
+   */
+  edition?: "community" | "enterprise"
+}
+
+/**
+ * The edition of the API answering. An API older than the `edition` field could
+ * only activate a licence on the Enterprise image, so for those, being able to
+ * activate is what Enterprise meant.
+ */
+export function editionOf(ent: ApiEntitlements): "community" | "enterprise" {
+  return ent.edition ?? (ent.can_activate ? "enterprise" : "community")
 }
 
 export const entitlements = {

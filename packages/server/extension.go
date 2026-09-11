@@ -3,7 +3,31 @@ package server
 import (
 	"net/http"
 	"sort"
+
+	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/handler"
+	"github.com/meshploy/packages/server/k8s"
+	"github.com/meshploy/packages/server/service"
+	"github.com/meshploy/packages/server/version"
 )
+
+// detectEdition reports which edition this binary is: Enterprise when anything
+// is registered in any of the five extension hooks, Community otherwise.
+//
+// Every Enterprise build registers something from init(), and the Community
+// binary never imports a package that does. Main calls this once, after every
+// init() has run.
+func detectEdition() string {
+	registered := len(middlewareHooks) +
+		handler.RoutesRegistered() +
+		service.QuotaCheckersRegistered() +
+		k8s.JobMutatorsRegistered() +
+		db.MigrationsRegistered()
+	if registered > 0 {
+		return version.EditionEnterprise
+	}
+	return version.EditionCommunity
+}
 
 // Extension point: additional HTTP middleware.
 //

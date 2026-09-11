@@ -48,6 +48,10 @@ func RegisterJobMutator(jm JobMutator) {
 	jobMutators = append(jobMutators, jm)
 }
 
+// JobMutatorsRegistered reports how many Job mutators are registered. Zero in a
+// Community build.
+func JobMutatorsRegistered() int { return len(jobMutators) }
+
 // applyJobMutators runs every registered mutator in order. A no-op in CE builds.
 func applyJobMutators(ctx context.Context, kind JobKind, job *batchv1.Job) error {
 	for _, jm := range jobMutators {

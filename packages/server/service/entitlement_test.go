@@ -60,6 +60,11 @@ func TestEntitlementCEHasNothing(t *testing.T) {
 	if st.Licensed || len(st.Features) != 0 {
 		t.Fatalf("want an unlicensed, featureless status, got %+v", st)
 	}
+	// The binary answering is reported whatever the licence says; a test
+	// binary registers no extension, so it is Community.
+	if st.Edition != "community" {
+		t.Fatalf("want the community edition reported, got %q", st.Edition)
+	}
 }
 
 func TestEntitlementActivatesAndGrants(t *testing.T) {

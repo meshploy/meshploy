@@ -15,3 +15,19 @@ var Current = "dev"
 // operator tracking main is told they are up to date while running code the
 // release does not contain — and told to upgrade to code they already have.
 var Channel = "dev"
+
+// The two editions a binary can be.
+const (
+	EditionCommunity  = "community"
+	EditionEnterprise = "enterprise"
+)
+
+// Edition is EditionCommunity for the public build and EditionEnterprise for a
+// binary with Enterprise code linked in.
+//
+// server.Main sets it from the extension hooks rather than from a build flag:
+// Enterprise registers into them from init() and Community never does, so a
+// build cannot claim the wrong edition and Enterprise has nothing to remember to
+// set. It used to be inferred from whether the build trusted a licence key, which
+// stops meaning anything once Community verifies licences too.
+var Edition = EditionCommunity

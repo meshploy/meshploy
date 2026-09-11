@@ -23,6 +23,10 @@ func RegisterRoutes(fn func(huma.API, *Handler)) {
 	routeHooks = append(routeHooks, fn)
 }
 
+// RoutesRegistered reports how many route callbacks are registered. Zero in a
+// Community build.
+func RoutesRegistered() int { return len(routeHooks) }
+
 // Services exposes the service aggregate to registered extensions. Extensions
 // live in a separate module and cannot reach the unexported field.
 func (h *Handler) Services() *service.Services { return h.svc }
