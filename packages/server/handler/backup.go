@@ -65,7 +65,7 @@ type UpsertSystemBackupInput struct {
 		Schedule             string `json:"schedule"               minLength:"1"`
 		RetentionDays        int    `json:"retention_days,omitempty"`
 		PathPrefix           string `json:"path_prefix,omitempty"`
-		Enabled              bool   `json:"enabled"`
+		Enabled              *bool  `json:"enabled,omitempty" default:"true"`
 	}
 }
 
@@ -297,7 +297,7 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 			Schedule:             in.Body.Schedule,
 			RetentionDays:        in.Body.RetentionDays,
 			PathPrefix:           in.Body.PathPrefix,
-			Enabled:              in.Body.Enabled,
+			Enabled:              in.Body.Enabled == nil || *in.Body.Enabled,
 		})
 		if err != nil {
 			return nil, err

@@ -25,7 +25,7 @@ type SaveEmailConfigInput struct {
 		Password    string `json:"password"`     // empty = keep existing on update
 		FromAddress string `json:"from_address" minLength:"3"`
 		FromName    string `json:"from_name"`
-		UseTLS      bool   `json:"use_tls"`
+		UseTLS      *bool  `json:"use_tls,omitempty" default:"true"`
 	}
 }
 
@@ -82,7 +82,7 @@ func (h *Handler) SaveEmailConfig(ctx context.Context, input *SaveEmailConfigInp
 		Password:    input.Body.Password,
 		FromAddress: input.Body.FromAddress,
 		FromName:    input.Body.FromName,
-		UseTLS:      input.Body.UseTLS,
+		UseTLS:      input.Body.UseTLS == nil || *input.Body.UseTLS,
 	})
 	if err != nil {
 		return nil, err

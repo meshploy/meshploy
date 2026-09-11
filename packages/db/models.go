@@ -1059,7 +1059,7 @@ type VolumeBackupConfig struct {
 	Schedule             string        `gorm:"not null"                       json:"schedule"`
 	RetentionDays        int           `gorm:"not null;default:30"            json:"retention_days"`
 	PathPrefix           string        `json:"path_prefix"`
-	Enabled              bool          `gorm:"default:true"                   json:"enabled"`
+	Enabled              bool          `gorm:"not null"                       json:"enabled"` // no gorm default, see ServicePort
 	LastBackupAt         *time.Time    `json:"last_backup_at"`
 	LastBackupStatus     *BackupStatus `json:"last_backup_status"`
 }
@@ -1075,7 +1075,7 @@ type SystemBackupConfig struct {
 	Schedule             string        `gorm:"not null"                       json:"schedule"`
 	RetentionDays        int           `gorm:"not null;default:30"            json:"retention_days"`
 	PathPrefix           string        `json:"path_prefix"`
-	Enabled              bool          `gorm:"default:true"                   json:"enabled"`
+	Enabled              bool          `gorm:"not null"                       json:"enabled"` // no gorm default, see ServicePort
 	LastBackupAt         *time.Time    `json:"last_backup_at"`
 	LastBackupStatus     *BackupStatus `json:"last_backup_status"`
 
@@ -1122,7 +1122,7 @@ type OrgEmailConfig struct {
 	Password       EncryptedString `gorm:"type:text"                      json:"-"`
 	FromAddress    string          `gorm:"not null"                       json:"from_address"`
 	FromName       string          `gorm:"not null;default:''"            json:"from_name"`
-	UseTLS         bool            `gorm:"default:true"                   json:"use_tls"`
+	UseTLS         bool            `gorm:"not null"                       json:"use_tls"` // no gorm default, see ServicePort
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }

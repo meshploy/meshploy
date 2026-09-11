@@ -112,7 +112,7 @@ type UpsertVolumeBackupBody struct {
 	Schedule             string `json:"schedule"`
 	RetentionDays        int    `json:"retention_days"`
 	PathPrefix           string `json:"path_prefix,omitempty"`
-	Enabled              bool   `json:"enabled"`
+	Enabled              *bool  `json:"enabled,omitempty" default:"true"`
 }
 
 type UpsertVolumeBackupInput struct {
@@ -414,7 +414,7 @@ func (h *Handler) UpsertVolumeBackup(ctx context.Context, input *UpsertVolumeBac
 		Schedule:             input.Body.Schedule,
 		RetentionDays:        retention,
 		PathPrefix:           input.Body.PathPrefix,
-		Enabled:              input.Body.Enabled,
+		Enabled:              input.Body.Enabled == nil || *input.Body.Enabled,
 	})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
