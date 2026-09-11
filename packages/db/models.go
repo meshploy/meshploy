@@ -568,14 +568,19 @@ type Service struct {
 // ServicePort represents one exposed port on a service.
 // Every port gets a ClusterIP entry (all pods can reach it);
 // only is_public ports get a K8s NodePort (for proxy/external access).
+//
+// IsHTTP and IsPublic carry no gorm default on purpose. GORM leaves a field
+// with a default out of the INSERT when its value is Go's zero, so with
+// `default:true` an explicit false was stored as true: every database port,
+// and any port a caller asked to keep internal, became HTTP and public.
 type ServicePort struct {
 	Base
 	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
 	Name      string    `gorm:"not null"                 json:"name"`       // e.g. "http", "grpc", "metrics"
 	Port      int       `gorm:"not null"                 json:"port"`       // container port
-	IsHTTP    bool      `gorm:"not null;default:true"    json:"is_http"`    // speaks HTTP/1.1 — routable via proxy
+	IsHTTP    bool      `gorm:"not null"                 json:"is_http"`    // speaks HTTP/1.1, routable via proxy
 	IsPrimary bool      `gorm:"not null;default:false"   json:"is_primary"` // health check target; exactly one per service
-	IsPublic  bool      `gorm:"not null;default:true"    json:"is_public"`  // gets a K8s NodePort
+	IsPublic  bool      `gorm:"not null"                 json:"is_public"`  // gets a K8s NodePort
 	NodePort  int       `gorm:"default:0"                json:"node_port"`  // assigned NodePort; 0 = not yet deployed
 }
 

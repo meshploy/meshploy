@@ -215,6 +215,17 @@ func applyConstraints(db *gorm.DB) error {
 		 ) sub
 		 WHERE r.id = sub.route_id AND r.stack_id IS NULL`,
 
+		// A database's port is internal and not HTTP, but the service_ports model
+		// used to carry `default:true` on both flags, so GORM stored the false
+		// the code passed as true. The discovery variables then advertised the
+		// database as an http:// URL. Only databases are repaired: for an
+		// application, whether a port was meant to be public cannot be told
+		// from the row.
+		`UPDATE service_ports sp SET is_http = false, is_public = false
+		 FROM services s
+		 WHERE sp.service_id = s.id AND s.type = 'database'
+		   AND (sp.is_http OR sp.is_public)`,
+
 		// Drop old single-port columns from services (idempotent — no-op when already absent)
 		`ALTER TABLE services DROP COLUMN IF EXISTS port`,
 		`ALTER TABLE services DROP COLUMN IF EXISTS node_port`,
