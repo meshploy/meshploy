@@ -65,7 +65,7 @@ func TestProjectCountsSchemaCarriesEveryCount(t *testing.T) {
 	props := schemaProperties(t, svc.ProjectWithCounts{}, "ProjectWithCounts")
 
 	for _, want := range []string{
-		"services_count", "databases_count", "routes_count", "secrets_count",
+		"services_count", "databases_count", "routes_count", "variables_count",
 		"jobs_count", "stacks_count", "volumes_count", "config_files_count",
 	} {
 		if _, ok := props[want]; !ok {

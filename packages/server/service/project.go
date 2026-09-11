@@ -20,7 +20,7 @@ type ProjectCounts struct {
 	ServicesCount    int       `gorm:"column:services_count"  json:"services_count"`
 	DatabasesCount   int       `gorm:"column:databases_count" json:"databases_count"`
 	RoutesCount      int       `gorm:"column:routes_count"    json:"routes_count"`
-	SecretsCount     int       `gorm:"column:secrets_count"   json:"secrets_count"`
+	VariablesCount   int       `gorm:"column:variables_count" json:"variables_count"` // variable groups, as the Variables tab lists them
 	JobsCount        int       `gorm:"column:jobs_count"      json:"jobs_count"`
 	StacksCount      int       `gorm:"column:stacks_count"    json:"stacks_count"`
 	VolumesCount     int       `gorm:"column:volumes_count"   json:"volumes_count"`
@@ -58,13 +58,13 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 	// Single aggregation query across services and routes.
 	// Extend by adding more COALESCE(sub.xxx_count, 0) columns here.
 	var counts []ProjectCounts
-	s.db.WithContext(ctx).Raw(`
+	if err := s.db.WithContext(ctx).Raw(`
 		SELECT
 			p.id AS project_id,
 			COALESCE(s.services_count,  0) AS services_count,
 			COALESCE(s.databases_count, 0) AS databases_count,
 			COALESCE(r.routes_count,    0) AS routes_count,
-			COALESCE(sec.secrets_count, 0) AS secrets_count,
+			COALESCE(vg.variables_count, 0) AS variables_count,
 			COALESCE(j.jobs_count,      0) AS jobs_count,
 			COALESCE(st.stacks_count,   0) AS stacks_count,
 			COALESCE(v.volumes_count,   0) AS volumes_count,
@@ -85,11 +85,11 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			GROUP BY project_id
 		) r ON r.project_id = p.id
 		LEFT JOIN (
-			SELECT project_id, COUNT(*) AS secrets_count
-			FROM secrets
+			SELECT project_id, COUNT(*) AS variables_count
+			FROM variable_groups
 			WHERE project_id IN ?
 			GROUP BY project_id
-		) sec ON sec.project_id = p.id
+		) vg ON vg.project_id = p.id
 		LEFT JOIN (
 			SELECT project_id, COUNT(*) AS jobs_count
 			FROM jobs
@@ -115,7 +115,11 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([
 			GROUP BY project_id
 		) cf ON cf.project_id = p.id
 		WHERE p.id IN ?
-	`, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts)
+	`, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts).Error; err != nil {
+		// Returned, not dropped: an ignored error here once showed every
+		// project as empty after the secrets table was retired.
+		return nil, err
+	}
 
 	// Index counts by project ID for O(1) lookup.
 	countMap := make(map[uuid.UUID]ProjectCounts, len(counts))
@@ -145,18 +149,20 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 		return nil, err
 	}
 	var counts []ProjectCounts
-	s.db.WithContext(ctx).Raw(`
+	if err := s.db.WithContext(ctx).Raw(`
 		SELECT
 			? AS project_id,
 			(SELECT COUNT(*) FROM services s WHERE s.project_id = ? AND s.type = 'application') AS services_count,
 			(SELECT COUNT(*) FROM services s WHERE s.project_id = ? AND s.type = 'database')    AS databases_count,
 			(SELECT COUNT(*) FROM routes r   WHERE r.project_id   = ?) AS routes_count,
-			(SELECT COUNT(*) FROM secrets sec WHERE sec.project_id = ?) AS secrets_count,
+			(SELECT COUNT(*) FROM variable_groups vg WHERE vg.project_id = ?) AS variables_count,
 			(SELECT COUNT(*) FROM jobs j     WHERE j.project_id   = ?) AS jobs_count,
 			(SELECT COUNT(*) FROM stacks st  WHERE st.project_id  = ?) AS stacks_count,
 			(SELECT COUNT(*) FROM volumes v  WHERE v.project_id   = ?) AS volumes_count,
 			(SELECT COUNT(*) FROM config_files cf WHERE cf.project_id = ?) AS config_files_count
-	`, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID).Scan(&counts)
+	`, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID).Scan(&counts).Error; err != nil {
+		return nil, err
+	}
 	result := &ProjectWithCounts{Project: *project}
 	if len(counts) > 0 {
 		result.ProjectCounts = counts[0]

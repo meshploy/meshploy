@@ -52,7 +52,7 @@ export const demoProject = {
   services_count: 3,
   databases_count: 1,
   routes_count: 2,
-  secrets_count: 0,
+  variables_count: 0,
   jobs_count: 1,
   stacks_count: 0,
   volumes_count: 1,

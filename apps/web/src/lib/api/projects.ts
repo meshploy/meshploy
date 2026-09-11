@@ -12,7 +12,8 @@ export interface ApiProject {
   services_count: number
   databases_count: number
   routes_count: number
-  secrets_count: number
+  /** Variable groups, as the Variables tab lists them. */
+  variables_count: number
   jobs_count: number
   stacks_count: number
   volumes_count: number
@@ -35,7 +36,7 @@ export function toProject(p: ApiProject): Project {
     servicesCount: p.services_count ?? 0,
     databasesCount: p.databases_count ?? 0,
     routesCount: p.routes_count ?? 0,
-    secretsCount: p.secrets_count ?? 0,
+    variablesCount: p.variables_count ?? 0,
     jobsCount: p.jobs_count ?? 0,
     stacksCount: p.stacks_count ?? 0,
     volumesCount: p.volumes_count ?? 0,

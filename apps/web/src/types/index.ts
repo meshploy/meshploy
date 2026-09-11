@@ -60,7 +60,7 @@ export interface Project {
   servicesCount: number
   databasesCount: number
   routesCount: number
-  secretsCount: number
+  variablesCount: number
   jobsCount: number
   stacksCount: number
   volumesCount: number
