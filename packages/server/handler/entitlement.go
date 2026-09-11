@@ -61,18 +61,21 @@ func (h *Handler) GetEntitlements(ctx context.Context, _ *struct{}) (*Entitlemen
 	return &EntitlementsOutput{Body: st}, nil
 }
 
-// ActivateLicense installs a token. Restricted to org admins — it changes what
-// the whole install is entitled to.
+// ActivateLicense installs a token. Restricted to admins of the server's first
+// organization, since it changes what the whole install is entitled to: an
+// admin of any organization the user happens to belong to would not do, on a
+// server that ever held a second one. Switching to the Enterprise images
+// afterwards is the owner's alone (RequestUpgrade).
 func (h *Handler) ActivateLicense(ctx context.Context, input *ActivateLicenseInput) (*EntitlementsOutput, error) {
 	userID, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	orgs, err := h.svc.Orgs.ListForUser(ctx, userID)
-	if err != nil || len(orgs) == 0 {
+	first, err := h.svc.Orgs.First(ctx)
+	if err != nil {
 		return nil, huma.Error403Forbidden("no organization found")
 	}
-	if err := h.enforceAdminRole(ctx, orgs[0].ID, userID); err != nil {
+	if err := h.enforceAdminRole(ctx, first.ID, userID); err != nil {
 		return nil, err
 	}
 

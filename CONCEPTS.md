@@ -246,7 +246,7 @@ The isolation boundary that actually matters at runtime is the **project**. Each
 
 `resource_permissions` allows finer-grained access below the org-member role: a member can be granted explicit access to a specific service, stack, or project without being promoted to admin. `checkAccess` in `handler/access.go` checks the org-member role first, then falls back to the per-resource grant table.
 
-**Current state:** each Meshploy install is effectively single-org — registering the first account creates one default organization, and there's no UI for creating or switching between multiple organizations. The schema and all API code are org-scoped from the ground up, so the data model is already correct; multi-org support (multiple independent teams sharing one install) is a planned extension.
+**Current state:** Community runs one organization per server. Registering the first account creates it, everyone else joins it by invitation, and the API refuses a second one. Its owner owns the server: upgrades and switching channel or edition are theirs alone, and its admins may activate a licence. The schema and all API code are org-scoped from the ground up, so the data model is already correct; several independent teams sharing one server is left to a paid edition, which can lift the limit without a migration.
 
 **Why the org layer exists now:** nodes and integrations are inherently shared infrastructure. Putting them at the project level would mean duplicating node registration and registry credentials across every project — which is wrong even in a single-team setup. The org layer gives shared resources a home without making the project model do double duty.
 

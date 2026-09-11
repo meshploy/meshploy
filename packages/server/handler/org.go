@@ -303,6 +303,9 @@ func (h *Handler) CreateOrg(ctx context.Context, input *CreateOrgInput) (*Create
 		Name: input.Body.Name,
 		Slug: input.Body.Slug,
 	})
+	if errors.Is(err, svc.ErrSingleOrganization) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error409Conflict("slug already taken")
 	}

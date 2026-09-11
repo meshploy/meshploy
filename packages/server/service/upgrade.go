@@ -327,8 +327,8 @@ func (s *SystemService) IsInstanceOwner(ctx context.Context, userID uuid.UUID) (
 		return false, nil
 	}
 
-	var first meshdb.Organization
-	if err := db.Select("id").Order("created_at ASC, id ASC").First(&first).Error; err != nil {
+	first, err := firstOrganization(ctx, s.db)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
@@ -336,7 +336,7 @@ func (s *SystemService) IsInstanceOwner(ctx context.Context, userID uuid.UUID) (
 	}
 
 	var n int64
-	err := db.Model(&meshdb.OrganizationMember{}).
+	err = db.Model(&meshdb.OrganizationMember{}).
 		Where("organization_id = ? AND user_id = ? AND role = ?", first.ID, userID, meshdb.RoleOwner).
 		Count(&n).Error
 	return n > 0, err

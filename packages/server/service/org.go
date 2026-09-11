@@ -14,6 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrSingleOrganization refuses a second organization. Community runs one per
+// server: the first registration creates it and everyone else joins it by
+// invitation.
+var ErrSingleOrganization = errors.New("this server already has its organization; Community runs one organization per server")
+
 type OrgService struct {
 	db *gorm.DB
 }
@@ -41,15 +46,46 @@ func (s *OrgService) ListForUser(ctx context.Context, userID uuid.UUID) ([]db.Or
 	return orgs, err
 }
 
+// First returns the server's first organization, the one the first
+// registration created: the organization whose owner owns the server, and
+// whose admins may act for it. gorm.ErrRecordNotFound when there is none.
+func (s *OrgService) First(ctx context.Context) (*db.Organization, error) {
+	return firstOrganization(ctx, s.db)
+}
+
+func firstOrganization(ctx context.Context, conn *gorm.DB) (*db.Organization, error) {
+	var org db.Organization
+	if err := conn.WithContext(ctx).Order("created_at ASC, id ASC").First(&org).Error; err != nil {
+		return nil, err
+	}
+	return &org, nil
+}
+
 func (s *OrgService) Get(ctx context.Context, orgID uuid.UUID) (*db.Organization, error) {
 	var org db.Organization
 	err := s.db.WithContext(ctx).First(&org, "id = ?", orgID).Error
 	return &org, err
 }
 
+// Create makes an organization owned by userID, only on a server that has none.
+//
+// Community runs one organization per server, by product decision. The schema
+// and the API are org-scoped throughout, so a paid edition can lift this
+// without a migration; until one does, a second organization would only split
+// the server between owners: its owner would hold nothing on the server
+// (IsInstanceOwner is the first organization's owner) while looking like an
+// owner everywhere else. A server with none, after its organization was
+// deleted, may make one again.
 func (s *OrgService) Create(ctx context.Context, userID uuid.UUID, in CreateOrgInput) (*db.Organization, error) {
 	var org *db.Organization
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var n int64
+		if err := tx.Model(&db.Organization{}).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrSingleOrganization
+		}
 		org = &db.Organization{Name: in.Name, Slug: in.Slug}
 		if err := tx.Create(org).Error; err != nil {
 			return err

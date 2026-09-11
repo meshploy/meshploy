@@ -80,10 +80,12 @@ func setupTerminalAuthz(t *testing.T) terminalFixture {
 	}
 
 	// ── Attacker: owner of an unrelated org ──────────────────────────────────
-	// Register() is single-owner per instance, and the invitation flow would put
-	// this principal inside org A — the very thing under test. So the row is
-	// created directly and given its own org. The attacker never authenticates
-	// by password here; the test mints a ticket for the user ID directly.
+	// Register() is single-owner per instance, the invitation flow would put
+	// this principal inside org A (the very thing under test), and Community
+	// refuses a second organization. So the rows are created directly: the
+	// isolation must hold whenever a server does hold two, as a paid edition
+	// will. The attacker never authenticates by password here; the test mints
+	// a ticket for the user ID directly.
 	attacker := &db.User{
 		Username: "attacker", Email: "attacker@example.com",
 		Password: "unused", Kind: db.UserHuman,
@@ -91,11 +93,12 @@ func setupTerminalAuthz(t *testing.T) terminalFixture {
 	if err := database.Create(attacker).Error; err != nil {
 		t.Fatalf("create attacker: %v", err)
 	}
-	orgB, err := svc.Orgs.Create(ctx, attacker.ID, service.CreateOrgInput{
-		Name: "attacker-org", Slug: "attacker-org",
-	})
-	if err != nil {
+	orgB := &db.Organization{Name: "attacker-org", Slug: "attacker-org"}
+	if err := database.Create(orgB).Error; err != nil {
 		t.Fatalf("create attacker org: %v", err)
+	}
+	if err := database.Create(&db.OrganizationMember{OrganizationID: orgB.ID, UserID: attacker.ID, Role: db.RoleOwner}).Error; err != nil {
+		t.Fatalf("make the attacker its owner: %v", err)
 	}
 
 	return terminalFixture{

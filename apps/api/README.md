@@ -143,7 +143,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | GET | `/invitations/{token}` | invite token | Get invitation info by token (public) |
 | POST | `/invitations/{token}/accept` | invite token | Accept an invitation and create an account (public) |
 | GET | `/orgs` | ✓ | List organizations for the authenticated user |
-| POST | `/orgs` | ✓ | Create an organization |
+| POST | `/orgs` | ✓ | Create an organization, only on a server that has none: Community runs one per server (409 otherwise) |
 | GET | `/orgs/{orgId}` | ✓ | Get an organization |
 | PATCH | `/orgs/{orgId}` | ✓ | Update an organization |
 | DELETE | `/orgs/{orgId}` | ✓ | Delete an organization (owner only) |
