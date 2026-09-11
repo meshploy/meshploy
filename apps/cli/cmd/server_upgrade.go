@@ -860,7 +860,7 @@ func init() {
 	serverUpgradeCmd.Flags().Bool("edge", false, "Sync from main branch and pull edge images instead of latest stable")
 	serverUpgradeCmd.Flags().Bool("no-sync", false, "Skip config download — only substitute Corefile, pull images, and restart")
 	serverUpgradeCmd.Flags().Bool("no-rollback", false, "On failure, leave the server as it is for inspection instead of putting the previous version back")
-	serverUpgradeCmd.Flags().Bool("ee", false, "Switch this install to the Enterprise API image (requires a licence)")
-	serverUpgradeCmd.Flags().String("ee-image", "", "Enterprise image to use; defaults to the one this licence grants")
+	serverUpgradeCmd.Flags().Bool("ee", false, "Switch this install to the Enterprise images, API and console (requires an active licence)")
+	serverUpgradeCmd.Flags().String("ee-image", "", "Enterprise API image to use; defaults to the one the licence grants. The console image pairs with it by name")
 	rootCmd.AddCommand(serverUpgradeCmd)
 }

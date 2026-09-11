@@ -239,6 +239,23 @@ Installing, reinstalling and removing all go through the install script:
 
 ---
 
+## Enterprise
+
+Community is complete and stays free: everything above is MIT, with one organization per server. Enterprise adds organizational features under a licence (the console's **Settings → Licence → Compare editions** lists them) and runs as a separate pair of private images, `ghcr.io/meshploy/api-ee` and `ghcr.io/meshploy/web-ee`, built from the same source and version as each Community release.
+
+Moving a server to Enterprise keeps its data and settings:
+
+1. **Get a licence** at [meshploy.com/enterprise](https://meshploy.com/enterprise). It is bound to your domain and names the image it grants.
+2. **Activate it** on the Community server: an admin pastes it into **Settings → Licence**, or runs `meshploy license activate <token>`. It is verified and stored, and grants nothing until the switch, since Community has no Enterprise features built in.
+3. **Give the gateway registry access** once, as root, with a GitHub token that can read packages, for the account the licence was granted to: `echo <token> | sudo docker login ghcr.io -u <github-user> --password-stdin` (or `podman`). Credentials never pass through the console.
+4. **Switch.** The server's owner presses **Switch to Enterprise** in the licence section, which runs through the same updater as an upgrade, or runs `sudo meshploy server-upgrade --ee` on the gateway. Either points the API and the console at the Enterprise images and restarts them; if the images cannot be pulled, nothing changes.
+
+Upgrades then work as before, on either channel. The Enterprise images for a release appear a few minutes after it, and an upgrade started before they do stops without changing anything. `meshploy license status` shows the edition and the licence.
+
+To go back to Community, remove `MESHPLOY_API_IMAGE` and `MESHPLOY_WEB_IMAGE` from `/opt/meshploy/.env` and run `sudo meshploy server-upgrade`. The licence and any Enterprise data stay in the database, unused.
+
+---
+
 ## Local Development
 
 ### Prerequisites

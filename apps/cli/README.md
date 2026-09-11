@@ -111,7 +111,9 @@ The upgrade runs with the CLI you have installed, so run `sudo meshploy update` 
 |---|---|
 | `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
 | `--no-rollback` | On failure, leave the server as it is for inspection instead of putting the previous version back |
-| `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`) — required if the repo is private |
+| `--ee` | Switch to the Enterprise images, API and console, named by the activated licence |
+| `--ee-image <image>` | The Enterprise API image to switch to, instead of the licence's (`ghcr.io/meshploy/api-ee` or a vendor build of it). The console image pairs with it by name: `api-ee-acme` with `web-ee-acme` |
+| `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`), required if the repo is private. With `--ee`, also used to log in to `ghcr.io` when the gateway cannot pull the Enterprise images yet (needs `read:packages`) |
 
 ---
 
