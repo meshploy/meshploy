@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/meshploy/packages/license"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +57,9 @@ const (
 
 	channelStable = "stable"
 	channelEdge   = "edge"
+
+	// editionEnterprise asks the run to switch to the Enterprise images.
+	editionEnterprise = "enterprise"
 )
 
 // Seams replaced by tests.
@@ -98,13 +102,19 @@ var (
 )
 
 // upgradeRequest is what the API writes into inbox/. Everything in it is
-// untrusted: the channel is checked against the two known values, and the
-// other fields are only ever recorded.
+// untrusted: the channel is checked against the two known values, the edition
+// against the one it may name, the image against the rule a licence's registry
+// scope follows, and the other fields are only ever recorded.
 type upgradeRequest struct {
 	ID          string `json:"id"`
 	Channel     string `json:"channel"`
 	RequestedBy string `json:"requested_by"`
 	RequestedAt string `json:"requested_at"`
+	// Edition is "enterprise" to switch to the Enterprise images, or empty.
+	Edition string `json:"edition,omitempty"`
+	// Image is the Enterprise API image, from the verified licence. Only with
+	// Edition; the console image is derived from it by name.
+	Image string `json:"image,omitempty"`
 }
 
 // upgradeStatus is state/status.json, which the API and `updater status` read.
@@ -114,6 +124,8 @@ type upgradeStatus struct {
 	Step        string `json:"step"`
 	Channel     string `json:"channel"`
 	RequestedBy string `json:"requested_by"`
+	Edition     string `json:"edition,omitempty"`
+	Image       string `json:"image,omitempty"`
 	CLIFrom     string `json:"cli_from"`
 	CLITo       string `json:"cli_to"`
 	StartedAt   string `json:"started_at"`
@@ -387,6 +399,7 @@ func runUpgrade(ctx context.Context, out io.Writer, opts upgradeOptions) error {
 		return run.end(fmt.Errorf("rejected the queued request: %w", reqErr))
 	case req != nil:
 		run.st.ID, run.st.Channel, run.st.RequestedBy = req.ID, req.Channel, req.RequestedBy
+		run.st.Edition, run.st.Image = req.Edition, req.Image
 	default:
 		run.st.ID = newUpgradeID()
 		run.st.Channel = opts.channel
@@ -406,6 +419,9 @@ func runUpgrade(ctx context.Context, out io.Writer, opts upgradeOptions) error {
 		fmt.Fprintf(run.log, "Switching Meshploy from the %s channel to %s (requested by %s)\n", from, run.st.Channel, run.st.RequestedBy)
 	} else {
 		fmt.Fprintf(run.log, "Upgrading Meshploy on the %s channel (requested by %s)\n", run.st.Channel, run.st.RequestedBy)
+	}
+	if run.st.Edition == editionEnterprise {
+		fmt.Fprintf(run.log, "Switching to the Enterprise images (%s)\n", run.st.Image)
 	}
 
 	exe, err := os.Executable()
@@ -430,7 +446,11 @@ func runUpgrade(ctx context.Context, out io.Writer, opts upgradeOptions) error {
 	}
 
 	run.step("Upgrading the server")
-	if err := upgradeStep(ctx, run.log, exe, withChannel("server-upgrade")...); err != nil {
+	serverArgs := withChannel("server-upgrade")
+	if run.st.Edition == editionEnterprise {
+		serverArgs = append(serverArgs, "--ee", "--ee-image", run.st.Image)
+	}
+	if err := upgradeStep(ctx, run.log, exe, serverArgs...); err != nil {
 		return run.end(fmt.Errorf("meshploy server-upgrade: %w", err))
 	}
 
@@ -556,8 +576,34 @@ func consumeUpgradeRequest(inboxDir string) (*upgradeRequest, error) {
 	if req.Channel != channelStable && req.Channel != channelEdge {
 		return nil, fmt.Errorf("unknown channel %q", clip(req.Channel))
 	}
+	// The image becomes an argument to server-upgrade and, through it, the
+	// image the host pulls and runs as the API. So it is held to the issuer's
+	// rule here, whatever the API checked: at most one of Meshploy's
+	// Enterprise API builds, which still need registry credentials the host
+	// holds.
+	switch req.Edition {
+	case "":
+		if req.Image != "" {
+			return nil, errors.New("an image was named without switching edition")
+		}
+	case editionEnterprise:
+		if license.ValidRegistryScope(req.Image) != nil {
+			return nil, fmt.Errorf("image %q is not an Enterprise image", clipImage(req.Image))
+		}
+	default:
+		return nil, fmt.Errorf("unknown edition %q", clip(req.Edition))
+	}
 	req.ID, req.RequestedBy = clip(req.ID), clip(req.RequestedBy)
 	return &req, nil
+}
+
+// clipImage shortens a rejected image for the log. %q already escapes what a
+// terminal would interpret; this only bounds the length.
+func clipImage(s string) string {
+	if len(s) > 100 {
+		return s[:100] + "…"
+	}
+	return s
 }
 
 // clip keeps an untrusted field short and free of anything a terminal would
@@ -823,6 +869,9 @@ func printUpdaterStatus(w io.Writer, in updaterInfo, now time.Time) {
 		st := *in.status
 		fmt.Fprintf(w, "Last run:  %s, %s channel, requested by %s\n",
 			effectiveUpgradeState(st, in.serviceActive, now), orDash(st.Channel), orDash(st.RequestedBy))
+		if st.Edition == editionEnterprise {
+			fmt.Fprintf(w, "Switch:    to the Enterprise images (%s)\n", orDash(st.Image))
+		}
 		fmt.Fprintf(w, "Started:   %s\n", orDash(st.StartedAt))
 		if st.FinishedAt != "" {
 			fmt.Fprintf(w, "Finished:  %s\n", st.FinishedAt)

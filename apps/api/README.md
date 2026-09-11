@@ -436,7 +436,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | POST | `/system/notices/{key}/dismiss` | ✓ | Dismiss a console advisory for the current user |
 | GET | `/system/channels` | ✓ | Describe the stable and edge channels, where this server is, and whether it may switch |
 | GET | `/system/upgrade` | ✓ | Report whether this server can be upgraded from the console, and the last upgrade |
-| POST | `/system/upgrade` | ✓ | Queue an upgrade of this server to the latest build on its channel, or a switch to the other channel (`{"channel": "edge"}`) |
+| POST | `/system/upgrade` | ✓ | Queue an upgrade of this server to the latest build on its channel, a switch to the other channel (`{"channel": "edge"}`), or a switch to the Enterprise images the active licence grants (`{"edition": "enterprise"}`). Instance owner only |
 | GET | `/system/version` | ✓ | Get current and latest platform version |
 
 ### Outside /api/v1

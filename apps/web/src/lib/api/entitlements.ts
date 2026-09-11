@@ -35,6 +35,9 @@ export function editionOf(ent: ApiEntitlements): "community" | "enterprise" {
   return ent.edition ?? (ent.can_activate ? "enterprise" : "community")
 }
 
+/** The Enterprise API image a licence naming none grants. */
+export const DEFAULT_ENTERPRISE_IMAGE = "ghcr.io/meshploy/api-ee"
+
 export const entitlements = {
   /**
    * Readable by any authenticated user — the UI needs it to decide what to

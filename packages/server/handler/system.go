@@ -136,31 +136,34 @@ type RequestUpgradeInput struct {
 	// Optional: a bare POST upgrades on the server's own channel.
 	Body *struct {
 		Channel string `json:"channel,omitempty" enum:"stable,edge" doc:"Switch to this channel. Omit to stay on the server's own."`
+		Edition string `json:"edition,omitempty" enum:"enterprise" doc:"Switch to the Enterprise images the active licence grants. Omit to keep the images the server runs."`
 	}
 }
 
-// RequestUpgrade upgrades on the server's own channel, or switches to the one
-// named. The only thing the client sends that reaches the host is that
-// channel, which the runner checks again; a switch is only allowed forward.
+// RequestUpgrade upgrades on the server's own channel, or switches channel or
+// edition. What reaches the host is the channel, which the runner checks again,
+// and for a switch to Enterprise the image the verified licence names, never
+// one the client sent.
 func (h *Handler) RequestUpgrade(ctx context.Context, input *RequestUpgradeInput) (*UpgradeStatusOutput, error) {
 	userID, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var channel string
+	var opts service.UpgradeOptions
 	if input.Body != nil {
-		channel = input.Body.Channel
+		opts.Channel, opts.Edition = input.Body.Channel, input.Body.Edition
 	}
-	st, err := h.svc.System.RequestUpgrade(ctx, userID, channel)
+	st, err := h.svc.System.RequestUpgrade(ctx, userID, opts)
 	switch {
 	case errors.Is(err, service.ErrNotInstanceOwner):
 		return nil, huma.Error403Forbidden(err.Error())
-	case errors.Is(err, service.ErrUnknownChannel):
+	case errors.Is(err, service.ErrUnknownChannel), errors.Is(err, service.ErrUnknownEdition):
 		return nil, huma.Error400BadRequest(err.Error())
 	case errors.Is(err, service.ErrUpgradeNotEnabled),
 		errors.Is(err, service.ErrUpgradeRunning),
 		errors.Is(err, service.ErrUpgradeDevBuild),
-		errors.Is(err, service.ErrChannelSwitchRefused):
+		errors.Is(err, service.ErrChannelSwitchRefused),
+		errors.Is(err, service.ErrEditionSwitchRefused):
 		return nil, huma.Error409Conflict(err.Error())
 	case err != nil:
 		return nil, huma.Error500InternalServerError("failed to queue the upgrade", err)

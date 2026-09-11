@@ -47,9 +47,16 @@ export interface ChannelSwitchTarget {
   url?: string
 }
 
+/** A switch from the Community images to the Enterprise ones. */
+export interface EnterpriseSwitchTarget {
+  /** The Enterprise API image the licence grants; its console image pairs by name. */
+  image: string
+}
+
 /**
  * Upgrades this server from the console, or switches it to the other release
- * channel, which is the same upgrade run on that channel.
+ * channel or to the Enterprise images, each of which is the same upgrade run
+ * with that change.
  *
  * The console never upgrades anything itself. It asks the API to queue a
  * request; a systemd unit on the gateway runs the upgrade as root and reports
@@ -61,11 +68,13 @@ export function UpgradeDialog({
   onOpenChange,
   version,
   switchTo,
+  toEnterprise,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   version: VersionInfo
   switchTo?: ChannelSwitchTarget
+  toEnterprise?: EnterpriseSwitchTarget
 }) {
   const token = useAuthStore((s) => s.token)
   const qc = useQueryClient()
@@ -106,10 +115,15 @@ export function UpgradeDialog({
     if (phase !== "done") return
     qc.invalidateQueries({ queryKey: ["system-version"] })
     qc.invalidateQueries({ queryKey: ["system-channels"] })
+    qc.invalidateQueries({ queryKey: ["entitlements"] })
   }, [phase, qc])
 
   const start = useMutation({
-    mutationFn: () => systemApi.requestUpgrade(token!, switchTo?.channel),
+    mutationFn: () =>
+      systemApi.requestUpgrade(token!, {
+        channel: switchTo?.channel,
+        edition: toEnterprise ? "enterprise" : undefined,
+      }),
     onSuccess: (st) => {
       qc.setQueryData(["system-upgrade"], st)
       setTracked(st.pending_id ?? null)
@@ -125,7 +139,7 @@ export function UpgradeDialog({
 
   const flag = (switchTo?.channel ?? version.channel) === "edge" ? " --edge" : ""
   const inProgress = phase === "queued" || phase === "running" || phase === "restarting"
-  const noun = switchTo ? "switch" : "upgrade"
+  const noun = switchTo || toEnterprise ? "switch" : "upgrade"
   const changesUrl = switchTo ? switchTo.url : version.release_url
 
   return (
@@ -133,10 +147,19 @@ export function UpgradeDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {switchTo ? `Switch to the ${switchTo.channel} channel` : "Upgrade this server"}
+            {toEnterprise
+              ? "Switch to Enterprise"
+              : switchTo
+                ? `Switch to the ${switchTo.channel} channel`
+                : "Upgrade this server"}
           </DialogTitle>
           <DialogDescription>
-            {switchTo ? (
+            {toEnterprise ? (
+              <>
+                From the Community images to{" "}
+                <code className="font-mono text-xs">{toEnterprise.image}</code> and its console
+              </>
+            ) : switchTo ? (
               <>
                 From <code className="font-mono text-xs">{version.current}</code> to{" "}
                 <code className="font-mono text-xs">{switchTo.target}</code>
@@ -162,6 +185,7 @@ export function UpgradeDialog({
             flag={flag}
             startError={start.error}
             switchTo={switchTo}
+            toEnterprise={toEnterprise}
           />
         )}
 
@@ -194,7 +218,11 @@ export function UpgradeDialog({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs text-emerald-400">
               <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-              {switchTo ? `Now on the ${switchTo.channel} channel` : "Upgrade finished"}
+              {toEnterprise
+                ? "Now running the Enterprise images"
+                : switchTo
+                  ? `Now on the ${switchTo.channel} channel`
+                  : "Upgrade finished"}
             </div>
             {s?.cli_to && s.cli_to !== s.cli_from && (
               <p className="text-[11px] text-muted-foreground">
@@ -218,6 +246,7 @@ export function UpgradeDialog({
                 ? "The server stopped reporting progress, most likely because it restarted."
                 : s?.error}
             </p>
+            {toEnterprise && <RegistryLoginHint />}
             <p className="text-[11px] text-muted-foreground">
               If the services did not come back, the previous version was put back. The full log is
               on the gateway: <code className="font-mono">meshploy updater status</code>.
@@ -261,7 +290,7 @@ export function UpgradeDialog({
                 disabled={!s?.can_upgrade || s.pending || start.isPending}
               >
                 {start.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {switchTo ? "Switch now" : "Upgrade now"}
+                {switchTo || toEnterprise ? "Switch now" : "Upgrade now"}
               </Button>
             </>
           )}
@@ -277,12 +306,14 @@ function IdleBody({
   flag,
   startError,
   switchTo,
+  toEnterprise,
 }: {
   status: UpgradeStatus | undefined
   loading: boolean
   flag: string
   startError: Error | null
   switchTo?: ChannelSwitchTarget
+  toEnterprise?: EnterpriseSwitchTarget
 }) {
   if (loading || !s) {
     return <p className="text-xs text-muted-foreground">Checking this server…</p>
@@ -293,10 +324,12 @@ function IdleBody({
       <div className="space-y-2 text-xs text-muted-foreground">
         <p>Upgrades from the console are not turned on for this server yet. On the gateway, run:</p>
         <pre className="overflow-x-auto rounded-md bg-muted/50 p-2.5 font-mono text-[11px] text-foreground">
-          {`sudo meshploy update${flag}\nsudo meshploy server-upgrade${flag}\nsudo meshploy updater start`}
+          {`sudo meshploy update${flag}\nsudo meshploy server-upgrade${flag}${toEnterprise ? " --ee" : ""}\nsudo meshploy updater start`}
         </pre>
         <p>
-          {switchTo
+          {toEnterprise
+            ? "The first two commands switch the server to Enterprise now; the last lets this console upgrade it from then on."
+            : switchTo
             ? `The first two commands switch the server to ${switchTo.channel} now; the last lets this button do it next time.`
             : "After that, this button upgrades the server for you. New installs are set up this way."}
         </p>
@@ -311,6 +344,13 @@ function IdleBody({
         <p className="text-amber-400">
           Edge is unreleased code from main, rebuilt on every push. Later upgrades follow main until
           you switch back, which is possible once a release includes the build you are on.
+        </p>
+      )}
+      {toEnterprise && (
+        <p>
+          The API and console move to the Enterprise images; your data, settings and licence stay.
+          The gateway needs read access to both images on the registry. If it has none, nothing
+          changes and this tells you how to give it.
         </p>
       )}
       {switchTo?.channel === "stable" && (
@@ -328,7 +368,10 @@ function IdleBody({
         new version already ran are not undone.
       </p>
       {!s.can_upgrade && (
-        <p className="text-amber-400">Only the owner of this server can {switchTo ? "switch its channel" : "start an upgrade"}.</p>
+        <p className="text-amber-400">
+          Only the owner of this server can{" "}
+          {toEnterprise ? "switch it to Enterprise" : switchTo ? "switch its channel" : "start an upgrade"}.
+        </p>
       )}
       {last && (
         <p className="text-[11px] text-muted-foreground/70">
@@ -352,5 +395,26 @@ function LogTail({ lines }: { lines?: string[] }) {
     <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted/50 p-2.5 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
       {lines.join("\n")}
     </pre>
+  )
+}
+
+/**
+ * Registry credentials never pass through the console: they are the gateway's,
+ * held by its container runtime as root. A switch that could not pull stops
+ * before changing anything, and this is how to let the next one through.
+ */
+export function RegistryLoginHint() {
+  return (
+    <div className="space-y-1.5 text-[11px] text-muted-foreground">
+      <p>
+        If the log says an image could not be pulled, the gateway has no access to the Enterprise
+        images yet, and nothing was changed. Log it in once, as root, with a GitHub token that can
+        read packages (use <code className="font-mono">podman</code> if the gateway runs Podman):
+      </p>
+      <pre className="overflow-x-auto rounded-md bg-muted/50 p-2.5 font-mono text-[11px] text-foreground">
+        {"echo <token> | sudo docker login ghcr.io -u <github-user> --password-stdin"}
+      </pre>
+      <p>Then switch again.</p>
+    </div>
   )
 }

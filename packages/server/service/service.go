@@ -204,9 +204,11 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	// is built from workloads' dependencies.
 	workloads.deployment = deployments
 
+	entitlements := &EntitlementService{db: db, domain: entitlementDomain(c)}
+
 	svc := &Services{
 		Auth:            auth,
-		Entitlements:    &EntitlementService{db: db, domain: entitlementDomain(c)},
+		Entitlements:    entitlements,
 		Agents:          &AgentService{db: db},
 		Orgs:            &OrgService{db: db},
 		Permissions:     &PermissionService{db: db},
@@ -224,7 +226,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
 		Backups:         backups,
-		System:          &SystemService{db: db, cfg: c},
+		System:          &SystemService{db: db, cfg: c, ent: entitlements},
 		Notifications:   notif,
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,

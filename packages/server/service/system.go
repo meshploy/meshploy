@@ -73,6 +73,10 @@ type SystemService struct {
 
 	// channels caches what the channel view fetched from GitHub.
 	channels channelsCache
+
+	// ent reports the licence, which a switch to Enterprise requires and takes
+	// the image from.
+	ent Entitlements
 }
 
 func (s *SystemService) Ping(ctx context.Context) error {

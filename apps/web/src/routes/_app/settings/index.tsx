@@ -24,6 +24,12 @@ import { useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
 import { UpgradeDialog } from "@/components/licence/upgrade-dialog"
 import { ServerSection } from "@/components/system/server-section"
+import {
+  RegistryLoginHint,
+  UpgradeDialog as ServerUpgradeDialog,
+} from "@/components/system/upgrade-dialog"
+import { system as systemApi } from "@/lib/api/system"
+import { DEFAULT_ENTERPRISE_IMAGE } from "@/lib/api/entitlements"
 import { BackupCard } from "@/components/backups/backup-card"
 import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
@@ -90,10 +96,22 @@ function LicenseSection() {
   const [licenseToken, setLicenseToken] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [comparing, setComparing] = useState(false)
+  const [switching, setSwitching] = useState(false)
 
   const { data: ent, isLoading } = useQuery({
     queryKey: ["entitlements"],
     queryFn: () => entitlementsApi.get(token),
+  })
+  // Whether this user can switch the server from here: its owner, with the
+  // updater on. Everyone else is shown the command instead.
+  const { data: upgrade } = useQuery({
+    queryKey: ["system-upgrade"],
+    queryFn: () => systemApi.upgradeStatus(token),
+  })
+  const { data: version } = useQuery({
+    queryKey: ["system-version"],
+    queryFn: () => systemApi.versionInfo(token),
+    staleTime: 60_000,
   })
 
   const { mutate: activate, isPending } = useMutation({
@@ -190,28 +208,50 @@ function LicenseSection() {
       {/* Licensed, but the binary answering has no Enterprise feature compiled
           in. Without this the card above reads as a working Enterprise
           install. Hidden while there is a problem: a licence naming an image
-          this server will not pull would only send the command into a failure. */}
+          this server will not pull would only send the switch into a failure. */}
       {active && ent && community && !ent.problem && (
         <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
           <p className="text-xs text-muted-foreground">
-            The licence is active, but this server runs the Community image, which
-            has no Enterprise features built in. They take effect after switching
-            to the Enterprise image.
+            The licence is active, but this server runs the Community images, which
+            have no Enterprise features built in. They take effect after switching
+            to the Enterprise images:{" "}
+            <span className="font-mono text-foreground">{ent.registry_scope || DEFAULT_ENTERPRISE_IMAGE}</span>{" "}
+            and its console. Your data and settings stay.
           </p>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">
-              Run on the gateway, then reload this page:
-            </p>
-            <code className="block rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] text-foreground overflow-x-auto">
-              sudo meshploy server-upgrade --ee
-            </code>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            The gateway needs registry access to{" "}
-            <span className="font-mono text-foreground">{ent.registry_scope || "ghcr.io/meshploy/api-ee"}</span>.
-            The command pulls it and restarts the stack; your data and settings
-            are untouched.
-          </p>
+          {/* The last switch to Enterprise failed, most often for want of
+              registry access, which only the gateway's root can grant. */}
+          {upgrade?.edition === "enterprise" && upgrade.state === "failed" && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1.5">
+              <p className="text-xs text-destructive">The last switch to Enterprise failed.</p>
+              <RegistryLoginHint />
+            </div>
+          )}
+          {upgrade?.can_upgrade && version ? (
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setSwitching(true)}>
+                Switch to Enterprise
+              </Button>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">
+                {upgrade?.enabled
+                  ? "The server's owner can switch it from here. Or run on the gateway, then reload this page:"
+                  : "Run on the gateway, then reload this page:"}
+              </p>
+              <code className="block rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] text-foreground overflow-x-auto">
+                sudo meshploy server-upgrade --ee
+              </code>
+            </div>
+          )}
+          {version && (
+            <ServerUpgradeDialog
+              open={switching}
+              onOpenChange={setSwitching}
+              version={version}
+              toEnterprise={{ image: ent.registry_scope || DEFAULT_ENTERPRISE_IMAGE }}
+            />
+          )}
         </div>
       )}
 

@@ -2,6 +2,8 @@ package service_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/license"
 	"github.com/meshploy/packages/server/config"
 	"github.com/meshploy/packages/server/service"
 	"github.com/meshploy/packages/server/version"
@@ -152,7 +155,7 @@ func TestUpgradeStatusReportsAnInterruptedRun(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "interrupted", st.State)
 
-	_, err = e.svc.System.RequestUpgrade(context.Background(), e.owner, "")
+	_, err = e.svc.System.RequestUpgrade(context.Background(), e.owner, service.UpgradeOptions{})
 	require.NoError(t, err, "an interrupted run must not block the next upgrade")
 }
 
@@ -170,7 +173,7 @@ func TestUpgradeStatusSurvivesAnUnreadableStatusFile(t *testing.T) {
 func TestRequestUpgradeQueuesTheServersChannel(t *testing.T) {
 	e := newUpgradeEnv(t, "stable", true)
 
-	st, err := e.svc.System.RequestUpgrade(context.Background(), e.owner, "")
+	st, err := e.svc.System.RequestUpgrade(context.Background(), e.owner, service.UpgradeOptions{})
 	require.NoError(t, err)
 	require.True(t, st.Pending)
 	require.NotEmpty(t, st.PendingID)
@@ -198,7 +201,7 @@ func TestRequestUpgradeQueuesTheServersChannel(t *testing.T) {
 func TestRequestUpgradeSwitchesToEdge(t *testing.T) {
 	e := newUpgradeEnv(t, "stable", true)
 
-	_, err := e.svc.System.RequestUpgrade(context.Background(), e.owner, "edge")
+	_, err := e.svc.System.RequestUpgrade(context.Background(), e.owner, service.UpgradeOptions{Channel: "edge"})
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(e.dir, "inbox", "request.json"))
@@ -213,7 +216,7 @@ func TestRequestUpgradeSwitchRefusals(t *testing.T) {
 
 	t.Run("unknown channel", func(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "nightly")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{Channel: "nightly"})
 		require.ErrorIs(t, err, service.ErrUnknownChannel)
 	})
 
@@ -221,7 +224,7 @@ func TestRequestUpgradeSwitchRefusals(t *testing.T) {
 	// and moving back without that could install older code.
 	t.Run("edge to stable, unverifiable", func(t *testing.T) {
 		e := newUpgradeEnv(t, "edge", true)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "stable")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{Channel: "stable"})
 		require.ErrorIs(t, err, service.ErrChannelSwitchRefused)
 		_, statErr := os.Stat(filepath.Join(e.dir, "inbox", "request.json"))
 		require.True(t, os.IsNotExist(statErr), "a refused switch must not reach the inbox")
@@ -231,8 +234,110 @@ func TestRequestUpgradeSwitchRefusals(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
 		admin := upgradeUser(t, e.db, "admin", meshdb.UserHuman)
 		upgradeMember(t, e.db, e.first, admin, meshdb.RoleAdmin)
-		_, err := e.svc.System.RequestUpgrade(ctx, admin, "edge")
+		_, err := e.svc.System.RequestUpgrade(ctx, admin, service.UpgradeOptions{Channel: "edge"})
 		require.ErrorIs(t, err, service.ErrNotInstanceOwner)
+	})
+}
+
+// activateLicence installs a licence naming scope (empty for none), signed by a
+// key this build is made to trust for the test.
+func (e upgradeEnv) activateLicence(t *testing.T, scope string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	saved := service.LicensePublicKeys
+	service.LicensePublicKeys = license.EncodePublicKey(pub)
+	t.Cleanup(func() { service.LicensePublicKeys = saved })
+
+	payload, err := json.Marshal(license.License{
+		Version: license.SchemaVersion, LicenseID: "lic-1", Customer: "acme", Tier: "enterprise",
+		Features: []string{"sso"}, RegistryScope: scope,
+		IssuedAt: time.Now().Add(-time.Hour), ExpiresAt: time.Now().Add(24 * time.Hour),
+	})
+	require.NoError(t, err)
+	enc := base64.RawURLEncoding
+	token := license.TokenPrefix + "." + enc.EncodeToString(payload) + "." + enc.EncodeToString(ed25519.Sign(priv, payload))
+	_, err = e.svc.Entitlements.Activate(context.Background(), token, e.owner)
+	require.NoError(t, err)
+}
+
+func (e upgradeEnv) queuedRequest(t *testing.T) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(e.dir, "inbox", "request.json"))
+	require.NoError(t, err)
+	var req map[string]string
+	require.NoError(t, json.Unmarshal(data, &req))
+	return req
+}
+
+// The switch to Enterprise names the image the licence grants, taken from the
+// verified licence, never from the client.
+func TestRequestUpgradeSwitchesToEnterprise(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a vendor build", func(t *testing.T) {
+		e := newUpgradeEnv(t, "stable", true)
+		e.activateLicence(t, "ghcr.io/meshploy/api-ee-acme")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{Edition: "enterprise"})
+		require.NoError(t, err)
+		req := e.queuedRequest(t)
+		require.Equal(t, "enterprise", req["edition"])
+		require.Equal(t, "ghcr.io/meshploy/api-ee-acme", req["image"])
+		require.Equal(t, "stable", req["channel"])
+	})
+
+	t.Run("a licence naming no image", func(t *testing.T) {
+		e := newUpgradeEnv(t, "edge", true)
+		e.activateLicence(t, "")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{Edition: "enterprise"})
+		require.NoError(t, err)
+		require.Equal(t, license.DefaultRegistryScope, e.queuedRequest(t)["image"])
+	})
+}
+
+func TestRequestUpgradeEnterpriseRefusals(t *testing.T) {
+	ctx := context.Background()
+	noRequest := func(t *testing.T, e upgradeEnv) {
+		t.Helper()
+		_, err := os.Stat(filepath.Join(e.dir, "inbox", "request.json"))
+		require.True(t, os.IsNotExist(err), "a refused switch must not reach the inbox")
+	}
+
+	t.Run("no licence", func(t *testing.T) {
+		e := newUpgradeEnv(t, "stable", true)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{Edition: "enterprise"})
+		require.ErrorIs(t, err, service.ErrEditionSwitchRefused)
+		noRequest(t, e)
+	})
+
+	t.Run("already Enterprise", func(t *testing.T) {
+		e := newUpgradeEnv(t, "stable", true)
+		e.activateLicence(t, "")
+		saved := version.Edition
+		version.Edition = version.EditionEnterprise
+		t.Cleanup(func() { version.Edition = saved })
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{Edition: "enterprise"})
+		require.ErrorIs(t, err, service.ErrEditionSwitchRefused)
+		noRequest(t, e)
+	})
+
+	t.Run("unknown edition", func(t *testing.T) {
+		e := newUpgradeEnv(t, "stable", true)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{Edition: "platinum"})
+		require.ErrorIs(t, err, service.ErrUnknownEdition)
+		noRequest(t, e)
+	})
+
+	// An organization admin may activate a licence, but only the server's
+	// owner may change what runs on it.
+	t.Run("an admin who is not the owner", func(t *testing.T) {
+		e := newUpgradeEnv(t, "stable", true)
+		e.activateLicence(t, "")
+		admin := upgradeUser(t, e.db, "admin", meshdb.UserHuman)
+		upgradeMember(t, e.db, e.first, admin, meshdb.RoleAdmin)
+		_, err := e.svc.System.RequestUpgrade(ctx, admin, service.UpgradeOptions{Edition: "enterprise"})
+		require.ErrorIs(t, err, service.ErrNotInstanceOwner)
+		noRequest(t, e)
 	})
 }
 
@@ -243,34 +348,34 @@ func TestRequestUpgradeRefusals(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
 		later := upgradeUser(t, e.db, "later", meshdb.UserHuman)
 		upgradeMember(t, e.db, upgradeOrg(t, e.db, "later", time.Now()), later, meshdb.RoleOwner)
-		_, err := e.svc.System.RequestUpgrade(ctx, later, "")
+		_, err := e.svc.System.RequestUpgrade(ctx, later, service.UpgradeOptions{})
 		require.ErrorIs(t, err, service.ErrNotInstanceOwner)
 	})
 
 	t.Run("updater off", func(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", false)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{})
 		require.ErrorIs(t, err, service.ErrUpgradeNotEnabled)
 	})
 
 	t.Run("development build", func(t *testing.T) {
 		e := newUpgradeEnv(t, "dev", true)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{})
 		require.ErrorIs(t, err, service.ErrUpgradeDevBuild)
 	})
 
 	t.Run("already queued", func(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{})
 		require.NoError(t, err)
-		_, err = e.svc.System.RequestUpgrade(ctx, e.owner, "")
+		_, err = e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{})
 		require.ErrorIs(t, err, service.ErrUpgradeRunning)
 	})
 
 	t.Run("already running", func(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
 		e.writeRun(t, "running", time.Now())
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, service.UpgradeOptions{})
 		require.ErrorIs(t, err, service.ErrUpgradeRunning)
 		_, statErr := os.Stat(filepath.Join(e.dir, "inbox", "request.json"))
 		require.True(t, os.IsNotExist(statErr), "a refused request must not reach the inbox")

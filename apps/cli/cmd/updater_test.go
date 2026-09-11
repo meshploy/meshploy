@@ -157,7 +157,16 @@ func TestConsumeUpgradeRequestRejectsBadInput(t *testing.T) {
 		"unknown channel": `{"channel":"nightly"}`,
 		"no channel":      `{"id":"r1"}`,
 		"not json":        `channel=edge`,
-		"too large":       `{"channel":"edge","id":"` + strings.Repeat("x", maxUpgradeRequestBytes) + `"}`,
+		// The image reaches server-upgrade, so the runner holds it to the
+		// issuer's rule itself, whatever the API sent.
+		"unknown edition":        `{"channel":"stable","edition":"platinum","image":"ghcr.io/meshploy/api-ee"}`,
+		"image without edition":  `{"channel":"stable","image":"ghcr.io/meshploy/api-ee"}`,
+		"enterprise, no image":   `{"channel":"stable","edition":"enterprise"}`,
+		"another registry":       `{"channel":"stable","edition":"enterprise","image":"docker.io/evil/api-ee"}`,
+		"another meshploy image": `{"channel":"stable","edition":"enterprise","image":"ghcr.io/meshploy/admin"}`,
+		"a tag":                  `{"channel":"stable","edition":"enterprise","image":"ghcr.io/meshploy/api-ee:latest"}`,
+		"an argument":            `{"channel":"stable","edition":"enterprise","image":"--no-rollback"}`,
+		"too large":              `{"channel":"edge","id":"` + strings.Repeat("x", maxUpgradeRequestBytes) + `"}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -223,6 +232,31 @@ func TestRunUpgradeQueuedRequest(t *testing.T) {
 		if !strings.Contains(string(log), s) {
 			t.Errorf("log is missing %q:\n%s", s, log)
 		}
+	}
+}
+
+// A switch to Enterprise is the upgrade with the Enterprise image named, so
+// server-upgrade does the switch, its pull check and its rollback.
+func TestRunUpgradeSwitchesToEnterprise(t *testing.T) {
+	fx := newUpdaterFixture(t)
+	queueUpgradeRequest(t, `{"id":"r2","channel":"stable","requested_by":"u1","edition":"enterprise","image":"ghcr.io/meshploy/api-ee-acme"}`)
+
+	var out bytes.Buffer
+	if err := runUpgrade(context.Background(), &out, upgradeOptions{queued: true}); err != nil {
+		t.Fatalf("runUpgrade: %v\n%s", err, out.String())
+	}
+
+	want := [][]string{{"update"}, {"server-upgrade", "--ee", "--ee-image", "ghcr.io/meshploy/api-ee-acme"}}
+	if !reflect.DeepEqual(fx.steps, want) {
+		t.Errorf("steps = %v, want %v", fx.steps, want)
+	}
+	st := mustStatus(t)
+	if st.State != "succeeded" || st.Edition != editionEnterprise || st.Image != "ghcr.io/meshploy/api-ee-acme" {
+		t.Errorf("status = %+v", st)
+	}
+	log, _ := os.ReadFile(filepath.Join(upgradeStateDir(), upgradeLogFile))
+	if !strings.Contains(string(log), "Switching to the Enterprise images (ghcr.io/meshploy/api-ee-acme)") {
+		t.Errorf("log does not say it is switching:\n%s", log)
 	}
 }
 

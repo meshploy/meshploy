@@ -52,6 +52,8 @@ export interface UpgradeStatus {
   started_at: string
   finished_at: string
   error: string
+  /** "enterprise" when the run switches to the Enterprise images. */
+  edition?: string
   /** The end of the run's log. Only the server's owner receives it. */
   log_tail: string[]
 }
@@ -114,11 +116,17 @@ export const system = {
   upgradeStatus: (token: string) =>
     apiFetch<UpgradeStatus>("/api/v1/system/upgrade", {}, token),
 
-  /** Upgrade on the server's own channel, or switch to `channel`. */
-  requestUpgrade: (token: string, channel?: ReleaseChannel) =>
+  /**
+   * Upgrade on the server's own channel and edition, or switch channel, or
+   * switch to the Enterprise images the active licence grants. The image comes
+   * from the licence on the server, never from here.
+   */
+  requestUpgrade: (token: string, opts?: { channel?: ReleaseChannel; edition?: "enterprise" }) =>
     apiFetch<UpgradeStatus>(
       "/api/v1/system/upgrade",
-      channel ? { method: "POST", body: JSON.stringify({ channel }) } : { method: "POST" },
+      opts && (opts.channel || opts.edition)
+        ? { method: "POST", body: JSON.stringify(opts) }
+        : { method: "POST" },
       token
     ),
 
