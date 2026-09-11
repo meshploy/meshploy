@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -63,16 +64,18 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 
 	origDir, origCfg := meshployInstDir, loadedCfg
 	origRef, origFetch, origCompose := upgradeRefFor, fetchDeploy, composeExec
-	origOut, origExec, origVerify := runtimeOutput, runtimeExec, verifyStack
+	origOut, origExec, origVerify, origLook := runtimeOutput, runtimeExec, verifyStack, lookPath
 	origUpgrade, origUnits, origCtl := upgradeDir, systemdUnitDir, systemctl
 	t.Cleanup(func() {
 		meshployInstDir, loadedCfg = origDir, origCfg
 		upgradeRefFor, fetchDeploy, composeExec = origRef, origFetch, origCompose
-		runtimeOutput, runtimeExec, verifyStack = origOut, origExec, origVerify
+		runtimeOutput, runtimeExec, verifyStack, lookPath = origOut, origExec, origVerify, origLook
 		upgradeDir, systemdUnitDir, systemctl = origUpgrade, origUnits, origCtl
 	})
 	meshployInstDir = fx.live
 	loadedCfg = nil // no licence lookup against a real API
+	// Docker unless a test says otherwise, whatever this machine has on PATH.
+	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	upgradeDir = filepath.Join(t.TempDir(), "upgrade")
 	systemdUnitDir = t.TempDir()
 	systemctl = func(args ...string) error {
@@ -542,5 +545,103 @@ func TestWaitForHealthyStackFailsOnServerErrors(t *testing.T) {
 	err := waitForHealthyStack(context.Background(), []stackCheck{{name: "console", url: srv.URL}}, 0)
 	if err == nil || !strings.Contains(err.Error(), "console: HTTP 502") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// podmanRelease makes the fixture a Podman install whose release names images
+// the way the real compose file does.
+func (fx *upgradeFixture) podmanRelease(t *testing.T) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(fx.live, ".env"), upgradeEnv+"CONTAINER_RUNTIME=podman\nMESHPLOY_API_IMAGE=ghcr.io/meshploy/api-ee\n")
+	// The Enterprise image was built from the release being installed.
+	out := runtimeOutput
+	runtimeOutput = func(dir, runtime string, args ...string) ([]byte, error) {
+		if args[0] == "image" {
+			return []byte("v9.9.9\n"), nil
+		}
+		return out(dir, runtime, args...)
+	}
+	stock := fetchDeploy
+	fetchDeploy = func(pat, ref, dest string) error {
+		if err := stock(pat, ref, dest); err != nil {
+			return err
+		}
+		writeTestFile(t, filepath.Join(dest, "docker-compose.yml"),
+			"services:\n  postgres:\n    image: docker.io/library/postgres:17-alpine\n"+
+				"  api:\n    image: ${MESHPLOY_API_IMAGE:-ghcr.io/meshploy/api}:${MESHPLOY_CHANNEL:-latest}\n"+
+				"  web:\n    image: ${MESHPLOY_WEB_IMAGE:-ghcr.io/meshploy/web}:${MESHPLOY_CHANNEL:-latest}\n")
+		return nil
+	}
+}
+
+// podman-compose's pull takes no --quiet and reports success when it fails,
+// and its up keeps containers on their old images. So on Podman each image is
+// pulled with podman, resolved as compose resolves it, and every container is
+// recreated.
+func TestServerUpgradeOnPodmanPullsEachImageAndRecreates(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	fx.podmanRelease(t)
+
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	wantPulls := [][]string{
+		{"pull", "--quiet", "docker.io/library/postgres:17-alpine"},
+		{"pull", "--quiet", "ghcr.io/meshploy/api-ee:latest"},
+		{"pull", "--quiet", "ghcr.io/meshploy/web:latest"},
+	}
+	if !reflect.DeepEqual(fx.tags, wantPulls) {
+		t.Errorf("podman ran %v, want %v", fx.tags, wantPulls)
+	}
+	if fx.calls("pull --quiet") != 0 {
+		t.Error("pulled through compose on Podman")
+	}
+	if fx.calls("up -d --remove-orphans --force-recreate") != 1 {
+		t.Errorf("compose calls = %+v, want a forced recreate", fx.compose)
+	}
+}
+
+func TestServerUpgradeOnPodmanStopsWhenAPullFails(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	fx.podmanRelease(t)
+	runtimeExec = func(_ string, args ...string) error {
+		if args[0] == "pull" && strings.Contains(args[len(args)-1], "api-ee") {
+			return errors.New("unauthorized")
+		}
+		return nil
+	}
+
+	err := serverUpgrade(context.Background(), serverUpgradeOptions{})
+	if err == nil || !strings.Contains(err.Error(), "pull ghcr.io/meshploy/api-ee:latest") {
+		t.Fatalf("got %v, want the failed pull named", err)
+	}
+	if len(fx.compose) != 0 {
+		t.Errorf("ran compose after a failed pull: %+v", fx.compose)
+	}
+	if got := fx.file(t, "docker-compose.yml"); got != liveFiles["docker-compose.yml"] {
+		t.Errorf("compose file = %q, want it as it was", got)
+	}
+}
+
+// Podman will not resolve a short name like postgres:17-alpine without a
+// terminal on Fedora, nor at all on Debian and Ubuntu, so every image the stack
+// runs names its registry.
+func TestComposeImagesAreFullyQualified(t *testing.T) {
+	withEnvFile(t, "MESHPLOY_CHANNEL=main\n")
+	images, err := composeImages(filepath.Join("..", "..", "..", "deploy", "docker-compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) < 8 {
+		t.Fatalf("found %d images: %v", len(images), images)
+	}
+	for _, image := range images {
+		host, _, _ := strings.Cut(image, "/")
+		if !strings.Contains(host, ".") {
+			t.Errorf("%s does not name its registry", image)
+		}
+		if strings.Contains(image, "${") {
+			t.Errorf("%s was not resolved", image)
+		}
 	}
 }

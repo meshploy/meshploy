@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -54,6 +55,7 @@ var (
 	runtimeExec = func(runtime string, args ...string) error {
 		return sysCmd(runtime, args...)
 	}
+	lookPath    = exec.LookPath
 	verifyStack = func(ctx context.Context) error {
 		return waitForHealthyStack(ctx, stackChecks(), upgradeHealthTimeout)
 	}
@@ -221,8 +223,8 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 		pullDir = staged
 	}
 	fmt.Println("Pulling images…")
-	if err := composeExec(pullDir, runtime, "pull", "--quiet"); err != nil {
-		return putBackBeforeRestart(snap, fmt.Errorf("compose pull: %w", err))
+	if err := pullStackImages(pullDir, runtime); err != nil {
+		return putBackBeforeRestart(snap, err)
 	}
 
 	// Only with a known release: --no-sync installs nothing, so there is no
@@ -272,7 +274,7 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	}
 
 	fmt.Println("Restarting services…")
-	if err := composeRun(runtime, "up", "-d", "--remove-orphans"); err != nil {
+	if err := composeRun(runtime, restartArgs(runtime)...); err != nil {
 		return fail(fmt.Errorf("compose up: %w", err))
 	}
 
@@ -837,18 +839,92 @@ func readEnvVar(key string) string {
 	return vars[key]
 }
 
+// detectContainerRuntime is the runtime install.sh recorded in .env, or podman
+// when it is on PATH and nothing was recorded.
 func detectContainerRuntime() string {
-	out, err := exec.Command("bash", "-c",
-		`grep '^CONTAINER_RUNTIME=' /opt/meshploy/.env 2>/dev/null | cut -d= -f2 | head -1`).Output()
-	if err == nil {
-		if rt := strings.TrimSpace(string(out)); rt != "" {
-			return rt
-		}
+	if rt := readEnvVar("CONTAINER_RUNTIME"); rt != "" {
+		return rt
 	}
-	if _, err := exec.LookPath("podman"); err == nil {
+	if _, err := lookPath("podman"); err == nil {
 		return "podman"
 	}
 	return "docker"
+}
+
+// pullStackImages pulls every image the stack runs, before anything restarts.
+//
+// With Docker, compose does it and reports a failed pull as a failure. With
+// Podman it cannot be trusted to: podman-compose's pull takes no --quiet, and
+// reports success when a pull fails, which would carry an upgrade on to a
+// restart onto the old images and a health check that passes on them. So on
+// Podman each image in the compose file is pulled with podman itself.
+func pullStackImages(dir, runtime string) error {
+	if runtime != "podman" {
+		if err := composeExec(dir, runtime, "pull", "--quiet"); err != nil {
+			return fmt.Errorf("compose pull: %w", err)
+		}
+		return nil
+	}
+	images, err := composeImages(filepath.Join(dir, "docker-compose.yml"))
+	if err != nil {
+		return err
+	}
+	for _, image := range images {
+		if err := runtimeExec(runtime, "pull", "--quiet", image); err != nil {
+			return fmt.Errorf("pull %s: %w", image, err)
+		}
+	}
+	return nil
+}
+
+// restartArgs brings the stack up on the images just pulled. Docker Compose
+// recreates a container whose image changed; podman-compose keeps it, so on
+// Podman every container is recreated, or the upgrade would keep running the
+// old images.
+func restartArgs(runtime string) []string {
+	args := []string{"up", "-d", "--remove-orphans"}
+	if runtime == "podman" {
+		args = append(args, "--force-recreate")
+	}
+	return args
+}
+
+// composeImages lists the images a compose file names, with ${VAR} and
+// ${VAR:-default} resolved from .env the way compose resolves them. A line
+// scan rather than a YAML parser: the file is Meshploy's own, one `image:` per
+// service.
+func composeImages(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	var images []string
+	for _, line := range strings.Split(string(data), "\n") {
+		v, ok := strings.CutPrefix(strings.TrimSpace(line), "image:")
+		if !ok {
+			continue
+		}
+		if image := expandComposeVars(strings.Trim(strings.TrimSpace(v), `"'`)); image != "" {
+			images = append(images, image)
+		}
+	}
+	if len(images) == 0 {
+		return nil, fmt.Errorf("%s names no images", path)
+	}
+	return images, nil
+}
+
+// composeVar matches ${NAME} and ${NAME:-default}.
+var composeVar = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}`)
+
+func expandComposeVars(s string) string {
+	return composeVar.ReplaceAllStringFunc(s, func(m string) string {
+		parts := composeVar.FindStringSubmatch(m)
+		if v := readEnvVar(parts[1]); v != "" {
+			return v
+		}
+		return parts[2]
+	})
 }
 
 func composeRun(runtime string, args ...string) error {
