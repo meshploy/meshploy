@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/meshploy/packages/client"
+	"github.com/meshploy/packages/license"
 )
 
 // ceImage is the stock API image. MESHPLOY_API_IMAGE overrides the repository
@@ -14,7 +15,23 @@ import (
 const ceImage = "ghcr.io/meshploy/api"
 
 // defaultEEImage is used when a licence carries no explicit registry scope.
-const defaultEEImage = "ghcr.io/meshploy/api-ee"
+const defaultEEImage = license.DefaultRegistryScope
+
+// eeImageFromScope returns the image a licence's registry scope points at, or
+// the default Enterprise image when the licence names none.
+//
+// The scope is checked with the rule the issuer applies, so a malformed one
+// stops here with a clear message instead of being written to
+// MESHPLOY_API_IMAGE and surfacing later as a failed pull.
+func eeImageFromScope(scope string) (string, error) {
+	if scope == "" {
+		return defaultEEImage, nil
+	}
+	if err := license.ValidRegistryScope(scope); err != nil {
+		return "", fmt.Errorf("%w\nPass the image with --ee-image, or ask for a reissued licence", err)
+	}
+	return scope, nil
+}
 
 // applyEEImage points MESHPLOY_API_IMAGE at the Enterprise image and makes sure
 // the host can pull it.

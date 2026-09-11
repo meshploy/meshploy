@@ -201,6 +201,15 @@ func (s *EntitlementService) Describe(ctx context.Context, _ uuid.UUID) (Status,
 		st.RegistryScope = claims.RegistryScope
 	}
 
+	// A licence naming an image this server will not pull stops the switch to
+	// Enterprise with a reason, instead of reaching the host as a failed pull.
+	// The rest of the licence stands, so a problem already reported wins.
+	if claims.RegistryScope != "" && st.Problem == "" {
+		if err := license.ValidRegistryScope(claims.RegistryScope); err != nil {
+			st.Problem = "this licence names an image this server will not use (" + claims.RegistryScope + "); ask for a reissued licence"
+		}
+	}
+
 	// Soft node metering: worker nodes only. The gateway is fixed overhead, so
 	// counting it would make the HA-gateway feature consume the allowance.
 	// Over-limit is reported, never enforced — blocking node registration would

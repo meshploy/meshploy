@@ -21,11 +21,14 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mark3labs/mcp-go v0.52.0
 	github.com/meshploy/packages/client v0.0.0
+	github.com/meshploy/packages/license v0.0.0
 	github.com/meshploy/packages/mcpserver v0.0.0
 	github.com/spf13/pflag v1.0.10 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 )
 
 replace github.com/meshploy/packages/client => ../../packages/client
+
+replace github.com/meshploy/packages/license => ../../packages/license
 
 replace github.com/meshploy/packages/mcpserver => ../../packages/mcpserver

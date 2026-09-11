@@ -134,6 +134,22 @@ func TestPullChannelFollowsTheConfiguredChannel(t *testing.T) {
 	}
 }
 
+// The licence's scope becomes MESHPLOY_API_IMAGE, so one that is not an
+// Enterprise image must stop here rather than turn into a failed pull.
+func TestEEImageFromScope(t *testing.T) {
+	if got, err := eeImageFromScope(""); err != nil || got != defaultEEImage {
+		t.Fatalf("no scope: got %q, %v; want the default image", got, err)
+	}
+	if got, err := eeImageFromScope("ghcr.io/meshploy/api-ee-acme"); err != nil || got != "ghcr.io/meshploy/api-ee-acme" {
+		t.Fatalf("vendor scope: got %q, %v", got, err)
+	}
+	for _, bad := range []string{"ee-acme", "ghcr.io/meshploy/api-ee:latest", "docker.io/library/nginx"} {
+		if got, err := eeImageFromScope(bad); err == nil || !strings.Contains(err.Error(), "--ee-image") {
+			t.Errorf("%q: got %q, %v; want a refusal that names --ee-image", bad, got, err)
+		}
+	}
+}
+
 // An install with no override is a CE install; that is what decides whether the
 // upgrade notice is shown.
 func TestCurrentAPIImageFallsBackToCE(t *testing.T) {

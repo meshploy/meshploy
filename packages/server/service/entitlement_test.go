@@ -83,6 +83,36 @@ func TestEntitlementActivatesAndGrants(t *testing.T) {
 	}
 }
 
+// A licence issued before the registry scope was checked may name something
+// that is not an Enterprise image. It still grants its features, but says why
+// the switch to Enterprise would fail, rather than letting the host find out by
+// failing to pull.
+func TestEntitlementReportsAnUnusableRegistryScope(t *testing.T) {
+	database := newExtTestDB(t)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	withTrustedKey(t, pub)
+
+	l := entLicense()
+	l.RegistryScope = "ee-acme"
+	svc := &EntitlementService{db: database}
+	st, err := svc.Activate(context.Background(), mintToken(t, priv, l), uuid.New())
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	if !st.Licensed {
+		t.Fatalf("the licence itself is valid and must stay licensed, got %+v", st)
+	}
+	if st.Problem == "" || st.RegistryScope != "ee-acme" {
+		t.Fatalf("want the unusable scope reported, got %+v", st)
+	}
+
+	l.RegistryScope = "ghcr.io/meshploy/api-ee-acme"
+	st, err = svc.Activate(context.Background(), mintToken(t, priv, l), uuid.New())
+	if err != nil || st.Problem != "" {
+		t.Fatalf("a valid vendor scope must raise no problem, got %+v, %v", st, err)
+	}
+}
+
 // Degrade, don't brick: an expired license disables features but the install
 // keeps running and can explain itself.
 func TestEntitlementExpiredDegradesCleanly(t *testing.T) {

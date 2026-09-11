@@ -190,7 +190,11 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	if o.ee {
 		eeImage := o.eeImage
 		if eeImage == "" {
-			eeImage = scope
+			img, err := eeImageFromScope(scope)
+			if err != nil {
+				return putBackBeforeRestart(snap, err)
+			}
+			eeImage = img
 		}
 		if err := applyEEImage(runtime, eeImage, o.pat); err != nil {
 			return putBackBeforeRestart(snap, err)
