@@ -400,7 +400,13 @@ func runUpgrade(ctx context.Context, out io.Writer, opts upgradeOptions) error {
 	}
 	run.update(nil)
 	run.startHeartbeat(upgradeHeartbeat)
-	fmt.Fprintf(run.log, "Upgrading Meshploy on the %s channel (requested by %s)\n", run.st.Channel, run.st.RequestedBy)
+	// A switch changes the version as well as the channel; saying so up front
+	// is what makes the rest of the log read right.
+	if from := currentUpgradeChannel(); from != run.st.Channel {
+		fmt.Fprintf(run.log, "Switching Meshploy from the %s channel to %s (requested by %s)\n", from, run.st.Channel, run.st.RequestedBy)
+	} else {
+		fmt.Fprintf(run.log, "Upgrading Meshploy on the %s channel (requested by %s)\n", run.st.Channel, run.st.RequestedBy)
+	}
 
 	exe, err := os.Executable()
 	if err != nil {

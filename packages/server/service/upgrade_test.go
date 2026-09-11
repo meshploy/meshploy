@@ -152,7 +152,7 @@ func TestUpgradeStatusReportsAnInterruptedRun(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "interrupted", st.State)
 
-	_, err = e.svc.System.RequestUpgrade(context.Background(), e.owner)
+	_, err = e.svc.System.RequestUpgrade(context.Background(), e.owner, "")
 	require.NoError(t, err, "an interrupted run must not block the next upgrade")
 }
 
@@ -166,11 +166,11 @@ func TestUpgradeStatusSurvivesAnUnreadableStatusFile(t *testing.T) {
 	require.True(t, st.CanUpgrade)
 }
 
-// The channel is the running build's, whatever the client wanted.
+// Without a channel asked for, the upgrade stays on the running build's.
 func TestRequestUpgradeQueuesTheServersChannel(t *testing.T) {
 	e := newUpgradeEnv(t, "stable", true)
 
-	st, err := e.svc.System.RequestUpgrade(context.Background(), e.owner)
+	st, err := e.svc.System.RequestUpgrade(context.Background(), e.owner, "")
 	require.NoError(t, err)
 	require.True(t, st.Pending)
 	require.NotEmpty(t, st.PendingID)
@@ -193,6 +193,49 @@ func TestRequestUpgradeQueuesTheServersChannel(t *testing.T) {
 	require.Equal(t, st.PendingID, again.PendingID)
 }
 
+// Switching is an upgrade on the other channel: the request carries the
+// channel asked for. Stable to edge is always forward, so it needs no check.
+func TestRequestUpgradeSwitchesToEdge(t *testing.T) {
+	e := newUpgradeEnv(t, "stable", true)
+
+	_, err := e.svc.System.RequestUpgrade(context.Background(), e.owner, "edge")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(e.dir, "inbox", "request.json"))
+	require.NoError(t, err)
+	var req map[string]string
+	require.NoError(t, json.Unmarshal(data, &req))
+	require.Equal(t, "edge", req["channel"])
+}
+
+func TestRequestUpgradeSwitchRefusals(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("unknown channel", func(t *testing.T) {
+		e := newUpgradeEnv(t, "stable", true)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "nightly")
+		require.ErrorIs(t, err, service.ErrUnknownChannel)
+	})
+
+	// An edge build that recorded no commit cannot show a release includes it,
+	// and moving back without that could install older code.
+	t.Run("edge to stable, unverifiable", func(t *testing.T) {
+		e := newUpgradeEnv(t, "edge", true)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "stable")
+		require.ErrorIs(t, err, service.ErrChannelSwitchRefused)
+		_, statErr := os.Stat(filepath.Join(e.dir, "inbox", "request.json"))
+		require.True(t, os.IsNotExist(statErr), "a refused switch must not reach the inbox")
+	})
+
+	t.Run("not the instance owner", func(t *testing.T) {
+		e := newUpgradeEnv(t, "stable", true)
+		admin := upgradeUser(t, e.db, "admin", meshdb.UserHuman)
+		upgradeMember(t, e.db, e.first, admin, meshdb.RoleAdmin)
+		_, err := e.svc.System.RequestUpgrade(ctx, admin, "edge")
+		require.ErrorIs(t, err, service.ErrNotInstanceOwner)
+	})
+}
+
 func TestRequestUpgradeRefusals(t *testing.T) {
 	ctx := context.Background()
 
@@ -200,34 +243,34 @@ func TestRequestUpgradeRefusals(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
 		later := upgradeUser(t, e.db, "later", meshdb.UserHuman)
 		upgradeMember(t, e.db, upgradeOrg(t, e.db, "later", time.Now()), later, meshdb.RoleOwner)
-		_, err := e.svc.System.RequestUpgrade(ctx, later)
+		_, err := e.svc.System.RequestUpgrade(ctx, later, "")
 		require.ErrorIs(t, err, service.ErrNotInstanceOwner)
 	})
 
 	t.Run("updater off", func(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", false)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
 		require.ErrorIs(t, err, service.ErrUpgradeNotEnabled)
 	})
 
 	t.Run("development build", func(t *testing.T) {
 		e := newUpgradeEnv(t, "dev", true)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
 		require.ErrorIs(t, err, service.ErrUpgradeDevBuild)
 	})
 
 	t.Run("already queued", func(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
 		require.NoError(t, err)
-		_, err = e.svc.System.RequestUpgrade(ctx, e.owner)
+		_, err = e.svc.System.RequestUpgrade(ctx, e.owner, "")
 		require.ErrorIs(t, err, service.ErrUpgradeRunning)
 	})
 
 	t.Run("already running", func(t *testing.T) {
 		e := newUpgradeEnv(t, "stable", true)
 		e.writeRun(t, "running", time.Now())
-		_, err := e.svc.System.RequestUpgrade(ctx, e.owner)
+		_, err := e.svc.System.RequestUpgrade(ctx, e.owner, "")
 		require.ErrorIs(t, err, service.ErrUpgradeRunning)
 		_, statErr := os.Stat(filepath.Join(e.dir, "inbox", "request.json"))
 		require.True(t, os.IsNotExist(statErr), "a refused request must not reach the inbox")

@@ -54,11 +54,20 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 		OperationID:   "request-upgrade",
 		Method:        "POST",
 		Path:          "/api/v1/system/upgrade",
-		Summary:       "Queue an upgrade of this server to the latest build on its channel",
+		Summary:       "Queue an upgrade of this server to the latest build on its channel, or a switch to the other channel",
 		Tags:          []string{"System"},
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusAccepted,
 	}, h.RequestUpgrade)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-channels",
+		Method:      "GET",
+		Path:        "/api/v1/system/channels",
+		Summary:     "Describe the stable and edge channels, where this server is, and whether it may switch",
+		Tags:        []string{"System"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetChannels)
 }
 
 type ExposureOutput struct {
@@ -123,24 +132,52 @@ func (h *Handler) GetUpgrade(ctx context.Context, _ *struct{}) (*UpgradeStatusOu
 	return &UpgradeStatusOutput{Body: &st}, nil
 }
 
-// RequestUpgrade takes no body. The channel is the running build's, so a
-// request cannot move a stable server onto edge, and nothing the client sends
-// reaches the host.
-func (h *Handler) RequestUpgrade(ctx context.Context, _ *struct{}) (*UpgradeStatusOutput, error) {
+type RequestUpgradeInput struct {
+	// Optional: a bare POST upgrades on the server's own channel.
+	Body *struct {
+		Channel string `json:"channel,omitempty" enum:"stable,edge" doc:"Switch to this channel. Omit to stay on the server's own."`
+	}
+}
+
+// RequestUpgrade upgrades on the server's own channel, or switches to the one
+// named. The only thing the client sends that reaches the host is that
+// channel, which the runner checks again; a switch is only allowed forward.
+func (h *Handler) RequestUpgrade(ctx context.Context, input *RequestUpgradeInput) (*UpgradeStatusOutput, error) {
 	userID, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	st, err := h.svc.System.RequestUpgrade(ctx, userID)
+	var channel string
+	if input.Body != nil {
+		channel = input.Body.Channel
+	}
+	st, err := h.svc.System.RequestUpgrade(ctx, userID, channel)
 	switch {
 	case errors.Is(err, service.ErrNotInstanceOwner):
 		return nil, huma.Error403Forbidden(err.Error())
+	case errors.Is(err, service.ErrUnknownChannel):
+		return nil, huma.Error400BadRequest(err.Error())
 	case errors.Is(err, service.ErrUpgradeNotEnabled),
 		errors.Is(err, service.ErrUpgradeRunning),
-		errors.Is(err, service.ErrUpgradeDevBuild):
+		errors.Is(err, service.ErrUpgradeDevBuild),
+		errors.Is(err, service.ErrChannelSwitchRefused):
 		return nil, huma.Error409Conflict(err.Error())
 	case err != nil:
 		return nil, huma.Error500InternalServerError("failed to queue the upgrade", err)
 	}
 	return &UpgradeStatusOutput{Body: &st}, nil
+}
+
+type ChannelsOutput struct {
+	Body *service.Channels
+}
+
+// GetChannels is readable by any member, like the version; switching is the
+// instance owner's, and RequestUpgrade checks that.
+func (h *Handler) GetChannels(ctx context.Context, _ *struct{}) (*ChannelsOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	out := h.svc.System.GetChannels(ctx)
+	return &ChannelsOutput{Body: &out}, nil
 }

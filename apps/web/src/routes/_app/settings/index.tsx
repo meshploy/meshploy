@@ -23,6 +23,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
 import { UpgradeDialog } from "@/components/licence/upgrade-dialog"
+import { ServerSection } from "@/components/system/server-section"
 import { BackupCard } from "@/components/backups/backup-card"
 import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
@@ -67,6 +68,11 @@ function SettingsPage() {
       <PrimaryDomainSection />
 
       <SystemBackupSection />
+
+      {/* An anchor for the sidebar's version line. */}
+      <div id="server" className="scroll-mt-6">
+        <ServerSection />
+      </div>
 
       <LicenseSection />
     </div>

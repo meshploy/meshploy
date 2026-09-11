@@ -2,7 +2,12 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, ExternalLink, Loader2, XCircle } from "lucide-react"
 import { ApiError } from "@/lib/api/core"
-import { system as systemApi, type UpgradeStatus, type VersionInfo } from "@/lib/api/system"
+import {
+  system as systemApi,
+  type ReleaseChannel,
+  type UpgradeStatus,
+  type VersionInfo,
+} from "@/lib/api/system"
 import { useAuthStore } from "@/store/auth-store"
 import { Button } from "@/components/ui/button"
 import {
@@ -33,8 +38,18 @@ function phaseOf(s: UpgradeStatus | undefined, tracked: string | null, unreachab
   return "queued"
 }
 
+/** A move to the other release channel, instead of an upgrade on this one. */
+export interface ChannelSwitchTarget {
+  channel: ReleaseChannel
+  /** What the server lands on: a release tag, or main's newest commit. */
+  target: string
+  /** Where to read what the switch changes. */
+  url?: string
+}
+
 /**
- * Upgrades this server from the console.
+ * Upgrades this server from the console, or switches it to the other release
+ * channel, which is the same upgrade run on that channel.
  *
  * The console never upgrades anything itself. It asks the API to queue a
  * request; a systemd unit on the gateway runs the upgrade as root and reports
@@ -45,10 +60,12 @@ export function UpgradeDialog({
   open,
   onOpenChange,
   version,
+  switchTo,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   version: VersionInfo
+  switchTo?: ChannelSwitchTarget
 }) {
   const token = useAuthStore((s) => s.token)
   const qc = useQueryClient()
@@ -86,11 +103,13 @@ export function UpgradeDialog({
   }, [phase])
 
   useEffect(() => {
-    if (phase === "done") qc.invalidateQueries({ queryKey: ["system-version"] })
+    if (phase !== "done") return
+    qc.invalidateQueries({ queryKey: ["system-version"] })
+    qc.invalidateQueries({ queryKey: ["system-channels"] })
   }, [phase, qc])
 
   const start = useMutation({
-    mutationFn: () => systemApi.requestUpgrade(token!),
+    mutationFn: () => systemApi.requestUpgrade(token!, switchTo?.channel),
     onSuccess: (st) => {
       qc.setQueryData(["system-upgrade"], st)
       setTracked(st.pending_id ?? null)
@@ -104,16 +123,26 @@ export function UpgradeDialog({
     start.reset()
   }
 
-  const flag = version.channel === "edge" ? " --edge" : ""
+  const flag = (switchTo?.channel ?? version.channel) === "edge" ? " --edge" : ""
   const inProgress = phase === "queued" || phase === "running" || phase === "restarting"
+  const noun = switchTo ? "switch" : "upgrade"
+  const changesUrl = switchTo ? switchTo.url : version.release_url
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Upgrade this server</DialogTitle>
+          <DialogTitle>
+            {switchTo ? `Switch to the ${switchTo.channel} channel` : "Upgrade this server"}
+          </DialogTitle>
           <DialogDescription>
-            {version.channel === "edge" ? (
+            {switchTo ? (
+              <>
+                From <code className="font-mono text-xs">{version.current}</code> to{" "}
+                <code className="font-mono text-xs">{switchTo.target}</code>
+                {switchTo.channel === "edge" ? ", from main" : ""}
+              </>
+            ) : version.channel === "edge" ? (
               <>
                 Edge build <code className="font-mono text-xs">{version.current}</code> to{" "}
                 <code className="font-mono text-xs">{version.latest}</code>, from main
@@ -127,7 +156,13 @@ export function UpgradeDialog({
         </DialogHeader>
 
         {phase === "idle" && (
-          <IdleBody status={s} loading={status.isLoading} flag={flag} startError={start.error} />
+          <IdleBody
+            status={s}
+            loading={status.isLoading}
+            flag={flag}
+            startError={start.error}
+            switchTo={switchTo}
+          />
         )}
 
         {inProgress && (
@@ -136,7 +171,7 @@ export function UpgradeDialog({
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
               <span>
                 {phase === "queued"
-                  ? "Waiting for the server to start the upgrade…"
+                  ? `Waiting for the server to start the ${noun}…`
                   : phase === "restarting"
                     ? "Restarting services. The console is unavailable for a moment; this keeps checking."
                     : s?.step || "Upgrading…"}
@@ -150,7 +185,7 @@ export function UpgradeDialog({
             )}
             {phase !== "queued" && <LogTail lines={s?.log_tail} />}
             <p className="text-[11px] text-muted-foreground/70">
-              You can close this; the upgrade carries on without it.
+              You can close this; the {noun} carries on without it.
             </p>
           </div>
         )}
@@ -159,7 +194,7 @@ export function UpgradeDialog({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs text-emerald-400">
               <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-              Upgrade finished
+              {switchTo ? `Now on the ${switchTo.channel} channel` : "Upgrade finished"}
             </div>
             {s?.cli_to && s.cli_to !== s.cli_from && (
               <p className="text-[11px] text-muted-foreground">
@@ -176,7 +211,7 @@ export function UpgradeDialog({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs text-destructive">
               <XCircle className="h-3.5 w-3.5 shrink-0" />
-              {s?.state === "interrupted" ? "The upgrade was interrupted" : "The upgrade failed"}
+              {s?.state === "interrupted" ? `The ${noun} was interrupted` : `The ${noun} failed`}
             </div>
             <p className="text-[11px] text-muted-foreground break-words">
               {s?.state === "interrupted"
@@ -192,9 +227,9 @@ export function UpgradeDialog({
         )}
 
         <DialogFooter>
-          {version.release_url && (
+          {changesUrl && (
             <a
-              href={version.release_url}
+              href={changesUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 self-center text-xs text-muted-foreground hover:text-foreground sm:mr-auto"
@@ -226,7 +261,7 @@ export function UpgradeDialog({
                 disabled={!s?.can_upgrade || s.pending || start.isPending}
               >
                 {start.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Upgrade now
+                {switchTo ? "Switch now" : "Upgrade now"}
               </Button>
             </>
           )}
@@ -241,11 +276,13 @@ function IdleBody({
   loading,
   flag,
   startError,
+  switchTo,
 }: {
   status: UpgradeStatus | undefined
   loading: boolean
   flag: string
   startError: Error | null
+  switchTo?: ChannelSwitchTarget
 }) {
   if (loading || !s) {
     return <p className="text-xs text-muted-foreground">Checking this server…</p>
@@ -258,7 +295,11 @@ function IdleBody({
         <pre className="overflow-x-auto rounded-md bg-muted/50 p-2.5 font-mono text-[11px] text-foreground">
           {`sudo meshploy update${flag}\nsudo meshploy server-upgrade${flag}\nsudo meshploy updater start`}
         </pre>
-        <p>After that, this button upgrades the server for you. New installs are set up this way.</p>
+        <p>
+          {switchTo
+            ? `The first two commands switch the server to ${switchTo.channel} now; the last lets this button do it next time.`
+            : "After that, this button upgrades the server for you. New installs are set up this way."}
+        </p>
       </div>
     )
   }
@@ -266,6 +307,18 @@ function IdleBody({
   const last = s.state && s.state !== "running" ? s : null
   return (
     <div className="space-y-2 text-xs text-muted-foreground">
+      {switchTo?.channel === "edge" && (
+        <p className="text-amber-400">
+          Edge is unreleased code from main, rebuilt on every push. Later upgrades follow main until
+          you switch back, which is possible once a release includes the build you are on.
+        </p>
+      )}
+      {switchTo?.channel === "stable" && (
+        <p>
+          The server moves to the latest release, which already includes the build it runs now, and
+          later upgrades follow releases.
+        </p>
+      )}
       <p>
         The console, API, proxy and Caddy restart while the server upgrades. Workloads on your nodes
         keep running, but traffic to them pauses for about a minute.
@@ -275,7 +328,7 @@ function IdleBody({
         new version already ran are not undone.
       </p>
       {!s.can_upgrade && (
-        <p className="text-amber-400">Only the owner of this server can start an upgrade.</p>
+        <p className="text-amber-400">Only the owner of this server can {switchTo ? "switch its channel" : "start an upgrade"}.</p>
       )}
       {last && (
         <p className="text-[11px] text-muted-foreground/70">

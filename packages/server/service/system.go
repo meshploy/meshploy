@@ -70,6 +70,9 @@ type SystemService struct {
 	// upgradeMu serialises upgrade requests, so two clicks cannot both pass the
 	// "nothing queued" check.
 	upgradeMu sync.Mutex
+
+	// channels caches what the channel view fetched from GitHub.
+	channels channelsCache
 }
 
 func (s *SystemService) Ping(ctx context.Context) error {

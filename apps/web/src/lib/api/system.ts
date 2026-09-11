@@ -56,6 +56,51 @@ export interface UpgradeStatus {
   log_tail: string[]
 }
 
+export type ReleaseChannel = "stable" | "edge"
+
+export interface ChannelCommit {
+  /** Short commit. */
+  sha: string
+  /** First line of the commit message. Absent when only the commit is known. */
+  subject: string
+  date: string
+}
+
+/**
+ * Both release channels, where this server is on them, and whether it may move
+ * to the other one. Built from GitHub; `unavailable` says what is missing when
+ * it could not be reached.
+ */
+export interface Channels {
+  current: {
+    version: string
+    /** stable, edge, or empty for a development build. */
+    channel: string
+    /** The commit an edge build was cut from. */
+    commit: string
+  }
+  stable: { releases: { tag: string; published_at: string; url: string }[] }
+  edge: {
+    /** The newest commit an edge server can pull. */
+    head?: ChannelCommit
+    /** Commits on main since the latest release. */
+    ahead_by: number
+    /** Those commits, newest first, at most 30. */
+    commits: ChannelCommit[]
+  }
+  /** Absent on a development build. */
+  switch?: {
+    to: ReleaseChannel
+    /** Only forward: edge to stable waits until a release includes the build. */
+    allowed: boolean
+    reason?: string
+    /** What the switch brings, newest first, at most 30 of `total`. */
+    changes: ChannelCommit[]
+    total: number
+  }
+  unavailable?: string
+}
+
 export const system = {
   versionInfo: (token: string) =>
     apiFetch<VersionInfo>("/api/v1/system/version", {}, token),
@@ -69,6 +114,14 @@ export const system = {
   upgradeStatus: (token: string) =>
     apiFetch<UpgradeStatus>("/api/v1/system/upgrade", {}, token),
 
-  requestUpgrade: (token: string) =>
-    apiFetch<UpgradeStatus>("/api/v1/system/upgrade", { method: "POST" }, token),
+  /** Upgrade on the server's own channel, or switch to `channel`. */
+  requestUpgrade: (token: string, channel?: ReleaseChannel) =>
+    apiFetch<UpgradeStatus>(
+      "/api/v1/system/upgrade",
+      channel ? { method: "POST", body: JSON.stringify({ channel }) } : { method: "POST" },
+      token
+    ),
+
+  channels: (token: string) =>
+    apiFetch<Channels>("/api/v1/system/channels", {}, token),
 }

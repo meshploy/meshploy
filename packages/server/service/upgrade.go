@@ -98,7 +98,7 @@ type runnerStatus struct {
 }
 
 // upgradeRequest is inbox/request.json. The runner treats it as untrusted and
-// acts only on the channel.
+// acts only on the channel, which it checks is stable or edge.
 type upgradeRequest struct {
 	ID          string `json:"id"`
 	Channel     string `json:"channel"`
@@ -106,9 +106,9 @@ type upgradeRequest struct {
 	RequestedAt string `json:"requested_at"`
 }
 
-// upgradeChannel is the channel this build upgrades on, or "" for a local
-// build. It comes from the running build, never from the client, so a request
-// cannot move a stable server onto edge.
+// upgradeChannel is the channel this build runs on, or "" for a local build.
+// It comes from the running build, so an upgrade stays on it unless the owner
+// asks for the other one, and that move is checked (checkChannelSwitch).
 func upgradeChannel() string {
 	switch version.Channel {
 	case "stable", "edge":
@@ -171,12 +171,11 @@ func (s *SystemService) upgradeStatus(ctx context.Context, userID uuid.UUID, now
 	return out, nil
 }
 
-// RequestUpgrade queues an upgrade to the latest build on this server's
-// channel. It returns the status with the new request's id as PendingID.
-func (s *SystemService) RequestUpgrade(ctx context.Context, userID uuid.UUID) (UpgradeStatus, error) {
-	s.upgradeMu.Lock()
-	defer s.upgradeMu.Unlock()
-
+// RequestUpgrade queues an upgrade to the latest build on channel, or on this
+// server's own channel when channel is empty. Moving to the other channel is
+// only allowed forward (see channelSwitch). It returns the status with the new
+// request's id as PendingID.
+func (s *SystemService) RequestUpgrade(ctx context.Context, userID uuid.UUID, channel string) (UpgradeStatus, error) {
 	owner, err := s.IsInstanceOwner(ctx, userID)
 	if err != nil {
 		return UpgradeStatus{}, err
@@ -184,10 +183,21 @@ func (s *SystemService) RequestUpgrade(ctx context.Context, userID uuid.UUID) (U
 	if !owner {
 		return UpgradeStatus{}, ErrNotInstanceOwner
 	}
-	channel := upgradeChannel()
-	if channel == "" {
+	current := upgradeChannel()
+	if current == "" {
 		return UpgradeStatus{}, ErrUpgradeDevBuild
 	}
+	if channel == "" {
+		channel = current
+	}
+	// Before the lock: it may ask GitHub, which can take seconds.
+	if err := s.checkChannelSwitch(ctx, channel); err != nil {
+		return UpgradeStatus{}, err
+	}
+
+	s.upgradeMu.Lock()
+	defer s.upgradeMu.Unlock()
+
 	st, err := s.GetUpgradeStatus(ctx, userID)
 	if err != nil {
 		return st, err
@@ -208,7 +218,11 @@ func (s *SystemService) RequestUpgrade(ctx context.Context, userID uuid.UUID) (U
 	if err := writeUpgradeRequest(s.upgradePath("inbox"), req); err != nil {
 		return st, fmt.Errorf("queue the upgrade: %w", err)
 	}
-	log.Printf("upgrade: user %s queued an upgrade on the %s channel (request %s)", userID, channel, req.ID)
+	if channel != current {
+		log.Printf("upgrade: user %s queued a switch from %s to %s (request %s)", userID, current, channel, req.ID)
+	} else {
+		log.Printf("upgrade: user %s queued an upgrade on the %s channel (request %s)", userID, channel, req.ID)
+	}
 	st.Pending, st.PendingID = true, req.ID
 	return st, nil
 }

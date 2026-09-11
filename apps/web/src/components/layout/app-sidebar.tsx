@@ -242,17 +242,33 @@ export function AppSidebar() {
           )
         )}
 
-        {!sidebarCollapsed && ver && (
-          <p className="px-3 text-[10px] text-sidebar-foreground/30">
-            v{ver.current}
-            {/* An edge build is not the release it names — it was cut after it,
-                from main. Saying so is what distinguishes it from a stable build
-                of the same version, and explains why no update is offered. */}
-            {ver.channel === "edge" && (
-              <span className="ml-1.5 text-sidebar-foreground/40">· edge</span>
-            )}
-          </p>
-        )}
+        {!sidebarCollapsed && ver && (() => {
+          const label = (
+            <>
+              v{ver.current}
+              {/* An edge build is not the release it names: it was cut after it,
+                  from main. Saying so is what distinguishes it from a stable build
+                  of the same version, and explains why no update is offered. */}
+              {ver.channel === "edge" && (
+                <span className="ml-1.5 text-sidebar-foreground/40">· edge</span>
+              )}
+            </>
+          )
+          // Settings is in the admins' part of the sidebar, so only they get
+          // the way to the channels from here.
+          return isAdmin ? (
+            <Link
+              to="/settings"
+              hash="server"
+              title="Version and release channel"
+              className="block px-3 text-[10px] text-sidebar-foreground/30 hover:text-sidebar-foreground/70 transition-colors"
+            >
+              {label}
+            </Link>
+          ) : (
+            <p className="px-3 text-[10px] text-sidebar-foreground/30">{label}</p>
+          )
+        })()}
         <Tooltip>
           <TooltipTrigger
             onClick={toggleSidebar}
