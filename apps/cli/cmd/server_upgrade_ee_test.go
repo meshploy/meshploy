@@ -150,6 +150,26 @@ func TestEEImageFromScope(t *testing.T) {
 	}
 }
 
+// A licence names only the API image; the console image is found by name.
+func TestPairedWebImage(t *testing.T) {
+	for api, web := range map[string]string{
+		"ghcr.io/meshploy/api-ee":         "ghcr.io/meshploy/web-ee",
+		"ghcr.io/meshploy/api-ee-acme":    "ghcr.io/meshploy/web-ee-acme",
+		"registry.local:5000/team/api-ee": "registry.local:5000/team/web-ee",
+		"ghcr.io/meshploy/api":            "ghcr.io/meshploy/web",
+	} {
+		if got, err := pairedWebImage(api); err != nil || got != web {
+			t.Errorf("%s: got %q, %v; want %s", api, got, err, web)
+		}
+	}
+	// A name the convention does not cover must not be guessed at.
+	for _, api := range []string{"ghcr.io/meshploy/ee-acme", "ghcr.io/api/custom", "custom"} {
+		if got, err := pairedWebImage(api); err == nil {
+			t.Errorf("%s: got %q, want a refusal", api, got)
+		}
+	}
+}
+
 // An install with no override is a CE install; that is what decides whether the
 // upgrade notice is shown.
 func TestCurrentAPIImageFallsBackToCE(t *testing.T) {

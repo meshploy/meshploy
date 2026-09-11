@@ -143,7 +143,10 @@ services:
 
   # ── Meshploy Web UI ────────────────────────────────────────────────────────
   web:
-    image: ghcr.io/meshploy/web:${MESHPLOY_CHANNEL:-latest}
+    # Overridable like the API's: an Enterprise install runs the Enterprise
+    # console (web-ee), a separate bundle carrying the EE pages. Set
+    # MESHPLOY_WEB_IMAGE in .env; `server-upgrade --ee` sets it with the API's.
+    image: ${MESHPLOY_WEB_IMAGE:-ghcr.io/meshploy/web}:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
     dns:
       - 1.1.1.1

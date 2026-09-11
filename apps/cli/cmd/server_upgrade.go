@@ -79,13 +79,18 @@ By default pulls the latest stable release. Use --edge to follow the main branch
 Use --no-sync to skip the config download (e.g. when CI has already rsync'd configs).
 
 Enterprise
-  --ee switches this install to the Enterprise API image. Activate the licence
-  in the console first (Settings → Licence); this command then reads which
-  image that licence grants and points the stack at it.
+  --ee switches this install to the Enterprise images, API and console.
+  Activate the licence in the console first (Settings → Licence); this command
+  then reads which image that licence grants and points the stack at it and
+  its console image.
 
   Nothing else changes: the licence is already stored server-side and every
-  feature gate reads it at runtime, so the image is the whole difference
+  feature gate reads it at runtime, so the images are the whole difference
   between a Community and an Enterprise install.
+
+  The Enterprise images are built from each Community release shortly after
+  it. Until the ones for the release being installed are published, an
+  Enterprise upgrade or switch stops before changing anything.
 
   Without --ee, a licensed install running the stock image is told about it and
   left alone — a routine upgrade should not silently change which product is
@@ -137,9 +142,10 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 
 	// Download into a private directory first. Nothing live has changed yet,
 	// so a failed download leaves the server exactly as it was.
-	var staged string
+	var staged, ref string
 	if !o.noSync {
-		ref, err := upgradeRefFor(o.pat, o.edge)
+		var err error
+		ref, err = upgradeRefFor(o.pat, o.edge)
 		if err != nil {
 			return err
 		}
@@ -217,6 +223,14 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	fmt.Println("Pulling images…")
 	if err := composeExec(pullDir, runtime, "pull", "--quiet"); err != nil {
 		return putBackBeforeRestart(snap, fmt.Errorf("compose pull: %w", err))
+	}
+
+	// Only with a known release: --no-sync installs nothing, so there is no
+	// release to hold the Enterprise images to.
+	if ref != "" {
+		if err := checkEnterpriseImages(pullDir, runtime, ref, channel); err != nil {
+			return putBackBeforeRestart(snap, err)
+		}
 	}
 
 	fail := func(err error) error {

@@ -31,6 +31,10 @@ func TestValidRegistryScope(t *testing.T) {
 		"ghcr.io/meshploy/api-ee-",             // or end so
 		"ghcr.io/meshploy/api--ee",             // no doubled separator
 		"ghcr.io.evil.example/meshploy/api-ee", // a look-alike host
+		"ghcr.io/meshploy/api",                 // the Community image
+		"ghcr.io/meshploy/admin",               // another of Meshploy's images
+		"ghcr.io/meshploy/web-ee",              // the console, not the API
+		"ghcr.io/meshploy/api-eex",             // a different repository
 	}
 	for _, s := range invalid {
 		if err := ValidRegistryScope(s); err == nil {

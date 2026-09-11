@@ -371,6 +371,85 @@ func TestServerUpgradeNoSyncRollsBackRenderedFiles(t *testing.T) {
 	fx.assertProtectedUntouched(t)
 }
 
+// withEnterpriseImages makes the fixture an Enterprise install whose pulled
+// images were built from builtFrom, and counts the label lookups.
+func (fx *upgradeFixture) withEnterpriseImages(t *testing.T, builtFrom string) (env string, inspected *int) {
+	t.Helper()
+	env = upgradeEnv + "MESHPLOY_API_IMAGE=ghcr.io/meshploy/api-ee\nMESHPLOY_WEB_IMAGE=ghcr.io/meshploy/web-ee\n"
+	writeTestFile(t, filepath.Join(fx.live, ".env"), env)
+	n := 0
+	stock := runtimeOutput
+	runtimeOutput = func(dir, runtime string, args ...string) ([]byte, error) {
+		if args[0] == "image" && args[1] == "inspect" {
+			n++
+			return []byte(builtFrom + "\n"), nil
+		}
+		return stock(dir, runtime, args...)
+	}
+	return env, &n
+}
+
+// The Enterprise build follows a Community release by minutes. Upgrading an
+// Enterprise server inside that gap would run the previous Enterprise image
+// under the new release, so it stops after the pull, with nothing restarted.
+func TestServerUpgradeStopsForEnterpriseImagesFromAnotherRelease(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	env, _ := fx.withEnterpriseImages(t, "v9.9.8")
+
+	err := serverUpgrade(context.Background(), serverUpgradeOptions{})
+	if err == nil || !strings.Contains(err.Error(), "Enterprise build for v9.9.9 is not published yet") {
+		t.Fatalf("got %v", err)
+	}
+	if fx.calls("up -d --remove-orphans") != 0 {
+		t.Error("restarted services on a mismatched Enterprise image")
+	}
+	if got := fx.file(t, ".env"); got != env {
+		t.Errorf(".env = %q, want it as it was", got)
+	}
+	if got := fx.file(t, "docker-compose.yml"); got != liveFiles["docker-compose.yml"] {
+		t.Errorf("compose file = %q, want it as it was", got)
+	}
+}
+
+func TestServerUpgradeAcceptsEnterpriseImagesFromTheRelease(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	_, inspected := fx.withEnterpriseImages(t, "v9.9.9")
+
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if *inspected != 2 {
+		t.Errorf("checked %d images, want the API and the console", *inspected)
+	}
+
+	// On edge the images are built from main.
+	fx = newUpgradeFixture(t)
+	fx.withEnterpriseImages(t, "main")
+	upgradeRefFor = func(string, bool) (string, error) { return "main", nil }
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{edge: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A Community install has no Enterprise image to hold to a release.
+func TestServerUpgradeLeavesCommunityImagesUnchecked(t *testing.T) {
+	newUpgradeFixture(t)
+	n := 0
+	stock := runtimeOutput
+	runtimeOutput = func(dir, runtime string, args ...string) ([]byte, error) {
+		if args[0] == "image" {
+			n++
+		}
+		return stock(dir, runtime, args...)
+	}
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("inspected %d images on a Community install", n)
+	}
+}
+
 func TestRecordRunningImagesWithNothingRunning(t *testing.T) {
 	newUpgradeFixture(t)
 	runtimeOutput = func(_, _ string, _ ...string) ([]byte, error) { return []byte("\n"), nil }

@@ -372,3 +372,36 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ── Enterprise ────────────────────────────────────────────────────────────────
+  # meshploy-ee builds its images from this repository's source, and must follow
+  # every release and every push to main: an Enterprise server upgrades to the
+  # same release as a Community one, and refuses Enterprise images built from
+  # another. This asks it to build this commit.
+  #
+  # EE_DISPATCH_TOKEN may do one thing: dispatch to meshploy-ee (a fine-grained
+  # token with Contents: read and write on that repository only). Without it,
+  # as in a fork, nothing is dispatched.
+  enterprise:
+    needs: [changes, api]
+    if: github.repository == 'meshploy/meshploy' && github.ref == 'refs/heads/main'
+    name: Dispatch the Enterprise build
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Dispatch to meshploy-ee
+        env:
+          GH_TOKEN: ${{ secrets.EE_DISPATCH_TOKEN }}
+          RELEASE: ${{ needs.changes.outputs.release }}
+          VERSION: ${{ needs.changes.outputs.version }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::EE_DISPATCH_TOKEN is not set, so the Enterprise images were not rebuilt"
+            exit 0
+          fi
+          gh api "repos/${ORG}/meshploy-ee/dispatches" \
+            -f event_type=product-build \
+            -f "client_payload[ref]=${GITHUB_SHA}" \
+            -F "client_payload[release]=${RELEASE}" \
+            -f "client_payload[version]=${VERSION}"
+          echo "::notice::Dispatched the Enterprise build of ${GITHUB_SHA::7} (release: ${RELEASE})"
