@@ -278,6 +278,14 @@ Applies a Docker Compose manifest, with `x-meshploy` extensions, to a project in
 
 Compose substitutes `${VAR}` from the stack's variables when the stack is applied. A service's env can also reference another variable at deploy time, such as a managed database's connection URL from an attached group; write that one as `$${PRIMARY_PG_DB_URL}` in the manifest, so it reaches the service as `${PRIMARY_PG_DB_URL}` and is resolved when it deploys.
 
+Each compose service becomes a Meshploy service, read the way compose reads it:
+
+- **Ports follow compose.** A port under `ports:` is published, so it is public: it gets a NodePort and a route can target it. One bound to a loopback address (`127.0.0.1:6379:6379`) is internal, and so is a port under `expose:`; an internal port is reachable from other services by name, not from outside. `x-meshploy.deploy.port` names the primary port, and is public when compose does not list it. A service that declares no port gets an internal port 3000.
+- **HTTP or not.** A route can only target an HTTP port. Every port counts as HTTP except well-known non-HTTP ones (Postgres, pgbouncer, MySQL, Redis, MongoDB, SMTP, AMQP, Kafka and similar); the long syntax's `app_protocol` decides it explicitly, `http` or `ws` for HTTP and anything else for plain TCP.
+- **TCP only.** UDP ports are left out, with a warning in the apply result.
+- **`entrypoint:` and `command:`** replace the image's ENTRYPOINT and CMD, and reach the container exactly as written.
+- **Re-applying** updates a service's ports only when its compose definition declares some, so ports edited in the console are otherwise kept, and a public port that stays keeps its NodePort. A running service picks up changed ports or command on its next deploy.
+
 | Flag | Description |
 |---|---|
 | `-f, --file` | Path to the compose manifest (required) |

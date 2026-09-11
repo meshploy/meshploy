@@ -9,11 +9,12 @@ type Stack struct {
 }
 
 type ApplyResult struct {
-	Stack   *Stack   `json:"stack"`
-	Created []string `json:"created"`
-	Updated []string `json:"updated"`
-	Deleted []string `json:"deleted"`
-	Errors  []string `json:"errors"`
+	Stack    *Stack   `json:"stack"`
+	Created  []string `json:"created"`
+	Updated  []string `json:"updated"`
+	Deleted  []string `json:"deleted"`
+	Errors   []string `json:"errors"`
+	Warnings []string `json:"warnings"`
 }
 
 type CreateStackBody struct {

@@ -29,6 +29,7 @@ export interface ApplyStackResult {
   updated: string[]
   deleted: string[]
   errors: string[]
+  warnings?: string[]
 }
 
 export interface DestroyStackResult {

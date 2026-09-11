@@ -278,6 +278,8 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			LivenessProbe:       probe,
 			ReadinessProbe:      probe,
 			ImagePullSecretName: pullSecretName,
+			Command:             svc.Command,
+			Args:                svc.Args,
 		}
 		if err := appk8s.ApplyDeployment(bgCtx, s.k8s, wp); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s deployment: "+err.Error())
@@ -483,6 +485,8 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		LivenessProbe:       probe,
 		ReadinessProbe:      probe,
 		ImagePullSecretName: pullSecretName,
+		Command:             a.svc.Command,
+		Args:                a.svc.Args,
 	}
 	if err := appk8s.ApplyDeployment(ctx, s.k8s, wp); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
@@ -638,6 +642,8 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 		LivenessProbe:       probe,
 		ReadinessProbe:      probe,
 		ImagePullSecretName: pullSecretName,
+		Command:             svc.Command,
+		Args:                svc.Args,
 	})
 }
 
@@ -818,6 +824,8 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			MemoryRequest: svc.MemoryRequest,
 			MemoryLimit:   svc.MemoryLimit,
 			NodeName:      nodeName,
+			Command:       svc.Command,
+			Args:          svc.Args,
 		}
 		if err := appk8s.ApplyDeployment(context.Background(), s.k8s, wp); err != nil {
 			s.failDeployment(dep.ID, "rollback failed: "+err.Error())

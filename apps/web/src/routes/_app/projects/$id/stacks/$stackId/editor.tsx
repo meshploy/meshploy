@@ -235,6 +235,7 @@ function StackEditorTab() {
             const updated = data.updated ?? []
             const deleted = data.deleted ?? []
             const errors = data.errors ?? []
+            const warnings = data.warnings ?? []
             return (
               <p className="text-xs text-muted-foreground">
                 {syncMutation.isSuccess ? "Sync" : "Apply"} complete —
@@ -243,6 +244,9 @@ function StackEditorTab() {
                 {deleted.length > 0 && ` unlinked: ${deleted.join(", ")}`}
                 {errors.length > 0 && (
                   <span className="text-destructive"> errors: {errors.join("; ")}</span>
+                )}
+                {warnings.length > 0 && (
+                  <span className="text-amber-500"> warnings: {warnings.join("; ")}</span>
                 )}
                 {created.length === 0 &&
                   updated.length === 0 &&

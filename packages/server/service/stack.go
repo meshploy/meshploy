@@ -522,11 +522,12 @@ type meshployRollback struct {
 // ---------------------------------------------------------------------------
 
 type ApplyResult struct {
-	Stack   *meshdb.Stack
-	Created []string
-	Updated []string
-	Deleted []string
-	Errors  []string
+	Stack    *meshdb.Stack
+	Created  []string
+	Updated  []string
+	Deleted  []string
+	Errors   []string
+	Warnings []string // what could not be carried over exactly, such as a UDP port
 }
 
 // ---------------------------------------------------------------------------
@@ -551,11 +552,12 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	var createdIDs []uuid.UUID
 
 	result := &ApplyResult{
-		Stack:   &stack,
-		Created: []string{},
-		Updated: []string{},
-		Deleted: []string{},
-		Errors:  []string{},
+		Stack:    &stack,
+		Created:  []string{},
+		Updated:  []string{},
+		Deleted:  []string{},
+		Errors:   []string{},
+		Warnings: []string{},
 	}
 
 	// Build environment map: stored variables + one-shot overrides.
@@ -609,15 +611,13 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		envVarsStr := envFromMapping(svcDef.Environment)
 		hcCmd, hcInterval, hcTimeout, hcRetries, hcStartPeriod := healthcheckFromCompose(svcDef.HealthCheck)
 
-		port := 0
-		if ext != nil && ext.Deploy != nil && ext.Deploy.Port > 0 {
-			port = ext.Deploy.Port
+		deployPort := 0
+		if ext != nil && ext.Deploy != nil {
+			deployPort = ext.Deploy.Port
 		}
-		if port == 0 && len(svcDef.Ports) > 0 {
-			port = int(svcDef.Ports[0].Target)
-		}
-		if port == 0 {
-			port = 3000
+		ports, portsDeclared, portNotes := stackPorts(svcDef, deployPort)
+		for _, note := range portNotes {
+			result.Warnings = append(result.Warnings, svcName+": "+note)
 		}
 
 		replicas := 1
@@ -676,17 +676,13 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
 			} else {
 				input := CreateWorkloadInput{
-					StackID: &stackID,
-					Name:    svcName,
-					Type:    meshdb.ServiceTypeApplication,
-					Image:   svcDef.Image,
-					Ports: []PortInput{{
-						Name:      "http",
-						Port:      port,
-						IsHTTP:    true,
-						IsPrimary: true,
-						IsPublic:  true,
-					}},
+					StackID:                    &stackID,
+					Name:                       svcName,
+					Type:                       meshdb.ServiceTypeApplication,
+					Image:                      svcDef.Image,
+					Ports:                      ports,
+					Command:                    svcDef.Entrypoint,
+					Args:                       svcDef.Command,
 					Replicas:                   replicas,
 					CPURequest:                 cpuRequest,
 					CPULimit:                   cpuLimit,
@@ -732,6 +728,8 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				"healthcheck_timeout_secs":      hcTimeout,
 				"healthcheck_retries":           hcRetries,
 				"healthcheck_start_period_secs": hcStartPeriod,
+				"command":                       meshdb.StringArray(append([]string{}, svcDef.Entrypoint...)),
+				"args":                          meshdb.StringArray(append([]string{}, svcDef.Command...)),
 			}
 			// Claim a service this stack owns but is not linked to. A database
 			// created before the link was carried through, or any service whose
@@ -744,6 +742,11 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			if err := s.db.WithContext(ctx).Model(&existingSvc).Updates(updates).Error; err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: update failed: %v", svcName, err))
 				continue
+			}
+			if !isDatabase && portsDeclared {
+				if err := s.syncStackPorts(ctx, existingSvc.ID, ports); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("%s: ports: %v", svcName, err))
+				}
 			}
 			s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName)
 			s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, rawFiles[svcName], result)

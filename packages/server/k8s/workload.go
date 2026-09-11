@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -63,6 +64,25 @@ type WorkloadParams struct {
 	// ImagePullSecretName is the name of a docker-registry Secret in the same
 	// namespace to use as an imagePullSecret. Empty = public image (no auth needed).
 	ImagePullSecretName string
+
+	// Command and Args replace the image's ENTRYPOINT and CMD; empty keeps
+	// the image's own. They reach the container as written (see literalArgs).
+	Command []string
+	Args    []string
+}
+
+// literalArgs doubles every $, so Kubernetes passes the arguments through as
+// written: it would otherwise expand $(VAR) and turn $$ into $, which compose,
+// where these usually come from, does not do.
+func literalArgs(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = strings.ReplaceAll(a, "$", "$$")
+	}
+	return out
 }
 
 // VolumeAttachment wires a standalone PVC into a container at a given path.
@@ -121,6 +141,8 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 		ImagePullPolicy: corev1.PullAlways,
 		Ports:           cPorts,
 		Env:             p.Env,
+		Command:         literalArgs(p.Command),
+		Args:            literalArgs(p.Args),
 		Resources:       resources,
 		LivenessProbe:   p.LivenessProbe,
 		ReadinessProbe:  p.ReadinessProbe,

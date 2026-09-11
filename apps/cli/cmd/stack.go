@@ -116,6 +116,9 @@ var stackApplyCmd = &cobra.Command{
 		if len(result.Deleted) > 0 {
 			fmt.Printf("   Deleted: %v\n", result.Deleted)
 		}
+		if len(result.Warnings) > 0 {
+			fmt.Printf("   Warnings: %v\n", result.Warnings)
+		}
 		if len(result.Errors) > 0 {
 			fmt.Printf("   Errors:  %v\n", result.Errors)
 		}

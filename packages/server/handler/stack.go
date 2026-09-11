@@ -74,6 +74,7 @@ type syncResultBody struct {
 	Updated       []string  `json:"updated"`
 	Deleted       []string  `json:"deleted"`
 	Errors        []string  `json:"errors"`
+	Warnings      []string  `json:"warnings"`
 	SuggestedMode string    `json:"suggested_mode,omitempty"`
 	Warning       string    `json:"warning,omitempty"`
 }
@@ -105,11 +106,12 @@ type ApplyResultOutput struct {
 }
 
 type applyResultBody struct {
-	Stack   *db.Stack `json:"stack"`
-	Created []string  `json:"created"`
-	Updated []string  `json:"updated"`
-	Deleted []string  `json:"deleted"`
-	Errors  []string  `json:"errors"`
+	Stack    *db.Stack `json:"stack"`
+	Created  []string  `json:"created"`
+	Updated  []string  `json:"updated"`
+	Deleted  []string  `json:"deleted"`
+	Errors   []string  `json:"errors"`
+	Warnings []string  `json:"warnings"`
 }
 
 // DestroyStackBody selects how far the destroy goes. Both default to false, so
@@ -353,6 +355,7 @@ func (h *Handler) SyncStack(ctx context.Context, input *SyncStackInput) (*SyncRe
 		Updated:       result.Updated,
 		Deleted:       result.Deleted,
 		Errors:        result.Errors,
+		Warnings:      result.Warnings,
 		SuggestedMode: string(result.SuggestedMode),
 		Warning:       result.Warning,
 	}}, nil
@@ -417,11 +420,12 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &ApplyResultOutput{Body: &applyResultBody{
-		Stack:   result.Stack,
-		Created: result.Created,
-		Updated: result.Updated,
-		Deleted: result.Deleted,
-		Errors:  result.Errors,
+		Stack:    result.Stack,
+		Created:  result.Created,
+		Updated:  result.Updated,
+		Deleted:  result.Deleted,
+		Errors:   result.Errors,
+		Warnings: result.Warnings,
 	}}, nil
 }
 
@@ -456,10 +460,11 @@ func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*Appl
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &ApplyResultOutput{Body: &applyResultBody{
-		Stack:   result.Stack,
-		Created: result.Created,
-		Updated: result.Updated,
-		Deleted: result.Deleted,
-		Errors:  result.Errors,
+		Stack:    result.Stack,
+		Created:  result.Created,
+		Updated:  result.Updated,
+		Deleted:  result.Deleted,
+		Errors:   result.Errors,
+		Warnings: result.Warnings,
 	}}, nil
 }

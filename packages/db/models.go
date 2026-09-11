@@ -556,6 +556,12 @@ type Service struct {
 	HealthcheckRetries         int32  `gorm:"default:0"             json:"healthcheck_retries,omitempty"`
 	HealthcheckStartPeriodSecs int32  `gorm:"default:0"             json:"healthcheck_start_period_secs,omitempty"`
 
+	// Command and Args replace the image's ENTRYPOINT and CMD, as compose's
+	// entrypoint: and command: do; empty keeps the image's own. They reach the
+	// container as written.
+	Command StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"command,omitempty"`
+	Args    StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"args,omitempty"`
+
 	Project                 Project              `gorm:"foreignKey:ProjectID"                                         json:"-"`
 	Node                    *Node                `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"               json:"-"`
 	PullRegistryIntegration *RegistryIntegration `gorm:"foreignKey:PullRegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`

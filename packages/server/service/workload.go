@@ -42,6 +42,8 @@ type CreateWorkloadInput struct {
 	StackID *uuid.UUID  // nil = not part of a stack
 	EnvVars string      // raw .env block, stored as EncryptedString
 	Ports   []PortInput // at least one required; first is used as primary if none flagged
+	Command []string    // replaces the image's ENTRYPOINT; empty keeps it
+	Args    []string    // replaces the image's CMD; empty keeps it
 
 	// PullRegistryIntegrationID — credentials for pulling a private runtime image.
 	// Set at create time for image-source services; nil = public image.
@@ -194,6 +196,8 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		HealthcheckTimeoutSecs:     in.HealthcheckTimeoutSecs,
 		HealthcheckRetries:         in.HealthcheckRetries,
 		HealthcheckStartPeriodSecs: in.HealthcheckStartPeriodSecs,
+		Command:                    in.Command,
+		Args:                       in.Args,
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

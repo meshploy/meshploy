@@ -65,6 +65,12 @@ func printApplyResult(r *client.ApplyResult) {
 	if len(r.Deleted) > 0 {
 		fmt.Printf("  Deleted: %s\n", strings.Join(r.Deleted, ", "))
 	}
+	if len(r.Warnings) > 0 {
+		fmt.Println("  Warnings:")
+		for _, w := range r.Warnings {
+			fmt.Printf("    - %s\n", w)
+		}
+	}
 	if len(r.Errors) > 0 {
 		fmt.Println("  Errors:")
 		for _, e := range r.Errors {
