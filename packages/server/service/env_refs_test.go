@@ -24,27 +24,65 @@ func TestResolveEnvRefs(t *testing.T) {
 		{Name: "ESCAPED", Value: "$${PRIMARY_PG_DB_URL}"},
 		{Name: "TYPO", Value: "${PRIMARY_PG_DB_ULR} and ${MISSING} and ${MISSING}"},
 		{Name: "CHAIN", Value: "${DATABASE_URL}"},
+		{Name: "LONGER_CHAIN", Value: "${CHAIN}?sslmode=disable"},
+		{Name: "ESCAPED_VIA", Value: "${ESCAPED}"},
+		{Name: "TYPO_VIA", Value: "${TYPO}"},
 		{Name: "PLAIN", Value: "$HOME and $ and ${lower-case}"},
 	}
-	got, unresolved := resolveEnvRefs(envs)
+	got, unknown, looped := resolveEnvRefs(envs)
 	m := envMap(got)
 
+	const url = "postgresql://u:p@db:5432/app"
 	want := map[string]string{
-		"DATABASE_URL": "postgresql://u:p@db:5432/app",
-		"MIXED":        "host=postgresql://u:p@db:5432/app;x",
+		"DATABASE_URL": url,
+		"MIXED":        "host=" + url + ";x",
 		"ESCAPED":      "${PRIMARY_PG_DB_URL}",
 		"TYPO":         "${PRIMARY_PG_DB_ULR} and ${MISSING} and ${MISSING}",
-		// One level: DATABASE_URL's own value is the reference as written.
-		"CHAIN": "${PRIMARY_PG_DB_URL}",
-		"PLAIN": "$HOME and $ and ${lower-case}",
+		// References are followed to a value.
+		"CHAIN":        url,
+		"LONGER_CHAIN": url + "?sslmode=disable",
+		// An escaped ${ stays literal however it is reached.
+		"ESCAPED_VIA": "${PRIMARY_PG_DB_URL}",
+		"TYPO_VIA":    "${PRIMARY_PG_DB_ULR} and ${MISSING} and ${MISSING}",
+		"PLAIN":       "$HOME and $ and ${lower-case}",
 	}
 	for k, v := range want {
 		if m[k] != v {
 			t.Errorf("%s = %q, want %q", k, m[k], v)
 		}
 	}
-	if !reflect.DeepEqual(unresolved, []string{"MISSING", "PRIMARY_PG_DB_ULR"}) {
-		t.Errorf("unresolved = %v", unresolved)
+	if !reflect.DeepEqual(unknown, []string{"MISSING", "PRIMARY_PG_DB_ULR"}) {
+		t.Errorf("unknown = %v", unknown)
+	}
+	if len(looped) != 0 {
+		t.Errorf("looped = %v", looped)
+	}
+}
+
+// A loop of references is left as written, with whatever leads into it, and
+// named; the rest of the env still resolves.
+func TestResolveEnvRefsLoops(t *testing.T) {
+	envs := []corev1.EnvVar{
+		{Name: "A", Value: "${B}"},
+		{Name: "B", Value: "${A}"},
+		{Name: "SELF", Value: "x${SELF}"},
+		{Name: "INTO", Value: "pre-${A}"},
+		{Name: "OK", Value: "fine"},
+		{Name: "FINE", Value: "${OK}"},
+	}
+	got, unknown, looped := resolveEnvRefs(envs)
+	m := envMap(got)
+
+	for k, v := range map[string]string{"A": "${B}", "B": "${A}", "SELF": "x${SELF}", "INTO": "pre-${A}", "FINE": "fine"} {
+		if m[k] != v {
+			t.Errorf("%s = %q, want %q", k, m[k], v)
+		}
+	}
+	if !reflect.DeepEqual(looped, []string{"A", "B", "INTO", "SELF"}) {
+		t.Errorf("looped = %v", looped)
+	}
+	if len(unknown) != 0 {
+		t.Errorf("unknown = %v", unknown)
 	}
 }
 

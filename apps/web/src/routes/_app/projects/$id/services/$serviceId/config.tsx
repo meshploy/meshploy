@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, Check, ChevronDown, Copy, ExternalLink, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select"
 import CodeMirror from "@uiw/react-codemirror"
 import { envLanguage, envTheme } from "@/lib/env-lang"
+import { envRefAutocomplete } from "@/lib/env-refs"
 import {
   services as servicesApi,
   buildConfigs as buildConfigsApi,
@@ -66,10 +67,24 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
     },
   })
 
+  // Names a ${…} reference can use besides the service's own: its attached
+  // groups' variables. The same query as the variable groups section below.
+  const { data: attached } = useQuery<ApiVariableGroup[]>({
+    queryKey: ["service-variable-groups", orgId, projectId, serviceId],
+    queryFn: () => groupsApi.listForService(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+  const extensions = useMemo(() => {
+    const groupNames = (attached ?? []).flatMap((g) =>
+      g.items.map((i) => ({ name: i.key, source: g.name, secret: i.is_secret })),
+    )
+    return [envLanguage, envTheme, envRefAutocomplete(groupNames)]
+  }, [attached])
+
   return (
     <Section
       title="Environment variables"
-      subtitle="One KEY=VALUE pair per line. ${NAME} uses another variable, e.g. DATABASE_URL=${PRIMARY_PG_DB_URL} from an attached group. Values are AES-256 encrypted at rest."
+      subtitle="One KEY=VALUE pair per line. ${NAME} uses another variable, e.g. DATABASE_URL=${PRIMARY_PG_DB_URL} from an attached group; type ${ to pick one. Values are AES-256 encrypted at rest."
     >
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground py-4">
@@ -82,7 +97,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
             value={envVars}
             height="160px"
             theme="dark"
-            extensions={[envLanguage, envTheme]}
+            extensions={extensions}
             onChange={(val) => setEnvVars(val)}
             placeholder={"DATABASE_URL=postgres://...\nSECRET_KEY=..."}
             style={{ fontSize: 12 }}

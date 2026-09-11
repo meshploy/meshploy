@@ -1397,14 +1397,21 @@ func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
 // attached groups' (its own win on a clash), with ${NAME} references resolved
 // against the result (see resolveEnvRefs).
 //
-// A reference to a name the service does not have is left as written and noted
-// in the deployment's log, so a typo shows up instead of becoming an empty
-// value. deploymentID is uuid.Nil where there is no deployment to note it in.
+// A reference to a name the service does not have, or one that goes round in a
+// loop, is left as written and noted in the deployment's log, so a typo shows
+// up instead of becoming an empty value. deploymentID is uuid.Nil where there
+// is no deployment to note it in.
 func (s *DeploymentService) serviceEnv(ctx context.Context, svc *db.Service, port int32, deploymentID uuid.UUID) []corev1.EnvVar {
 	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, svc.ID)
-	envs, unresolved := resolveEnvRefs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs))
-	if len(unresolved) > 0 {
-		msg := "Left as written, not defined for this service: ${" + strings.Join(unresolved, "}, ${") + "}"
+	envs, unknown, looped := resolveEnvRefs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs))
+	var notes []string
+	if len(unknown) > 0 {
+		notes = append(notes, "Left as written, not defined for this service: ${"+strings.Join(unknown, "}, ${")+"}")
+	}
+	if len(looped) > 0 {
+		notes = append(notes, "Left as written, their references go round in a loop: "+strings.Join(looped, ", "))
+	}
+	for _, msg := range notes {
 		log.Printf("service %s: %s", svc.Name, msg)
 		if deploymentID != uuid.Nil {
 			s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).
