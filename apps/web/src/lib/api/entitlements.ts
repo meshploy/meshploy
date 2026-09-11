@@ -46,9 +46,9 @@ export const entitlements = {
   /**
    * Install a licence token. Admin only.
    *
-   * The open-source build trusts no signing key, so this fails there by design
-   * with "this build trusts no license signing key" — upgrading means running
-   * the EE image, not entering a key into a CE install.
+   * Works on the Community image too: the licence is verified and stored, and
+   * its features take effect once the server runs the Enterprise image. A build
+   * that trusts no signing key (`can_activate` false) rejects every token.
    */
   activate: (licenseToken: string, token: string) =>
     apiFetch<ApiEntitlements>(

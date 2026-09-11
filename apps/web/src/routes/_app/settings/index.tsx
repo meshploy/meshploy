@@ -74,10 +74,10 @@ function SettingsPage() {
 }
 
 // LicenseSection is present in the open-source build on purpose: it is how an
-// operator moves from CE to EE. On a CE binary activation fails with "this
-// build trusts no license signing key" — that message is the upgrade
-// instruction, since the trusted key is compiled into the EE image rather than
-// configured at runtime.
+// operator moves from CE to EE. The licence is activated first, on the
+// Community image, and the switch to the Enterprise image follows. A licence
+// stored on a Community binary unlocks nothing, because no Enterprise feature
+// is compiled into it, so taking it early gives nothing away.
 function LicenseSection() {
   const token = useAuthStore((s) => s.token)!
   const qc = useQueryClient()
@@ -115,11 +115,18 @@ function LicenseSection() {
   }
 
   const active = ent?.licensed && !ent.expired
+  const community = ent ? editionOf(ent) === "community" : true
 
   return (
     <Section
       title="Licence"
-      subtitle={active ? "This install is licensed for Enterprise features" : "Community Edition"}
+      subtitle={
+        !active
+          ? "Community Edition"
+          : community
+            ? "Licensed, running the Community image"
+            : "This install is licensed for Enterprise features"
+      }
       // Only offered when there is something to upgrade to. On a licensed
       // install this would be pure noise.
       action={
@@ -174,16 +181,16 @@ function LicenseSection() {
         </div>
       )}
 
-      {/* A Community build trusts no signing key, so activation cannot succeed
-          here at all — the image has to be swapped first. Explaining that up
-          front beats letting someone paste a licence they just paid for and
-          receive a bare "this build trusts no license signing key". */}
-      {ent && editionOf(ent) === "community" && !ent.can_activate ? (
+      {/* Licensed, but the binary answering has no Enterprise feature compiled
+          in. Without this the card above reads as a working Enterprise
+          install. Hidden while there is a problem: a licence naming an image
+          this server will not pull would only send the command into a failure. */}
+      {active && ent && community && !ent.problem && (
         <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
           <p className="text-xs text-muted-foreground">
-            This is the Community image. It cannot verify a licence, so activation
-            happens <span className="text-foreground">after</span> switching to the
-            Enterprise image — not before.
+            The licence is active, but this server runs the Community image, which
+            has no Enterprise features built in. They take effect after switching
+            to the Enterprise image.
           </p>
           <div>
             <p className="text-xs text-muted-foreground mb-1">
@@ -194,10 +201,33 @@ function LicenseSection() {
             </code>
           </div>
           <p className="text-xs text-muted-foreground">
-            You will need a licence and registry access first. The command pulls
-            the Enterprise image and restarts the stack; your data and settings
+            The gateway needs registry access to{" "}
+            <span className="font-mono text-foreground">{ent.registry_scope || "ghcr.io/meshploy/api-ee"}</span>.
+            The command pulls it and restarts the stack; your data and settings
             are untouched.
           </p>
+        </div>
+      )}
+
+      {/* A build that trusts no signing key cannot verify a licence at all: a
+          Community image older than licence verification, or one built without
+          the key. Explaining that up front beats letting someone paste a
+          licence they just paid for and receive a bare "this build trusts no
+          license signing key". */}
+      {ent && !ent.can_activate ? (
+        <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            This build cannot verify a licence. Current images can, so update the
+            server first, then paste the licence here.
+          </p>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">
+              Run on the gateway, then reload this page:
+            </p>
+            <code className="block rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] text-foreground overflow-x-auto">
+              sudo meshploy server-upgrade
+            </code>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-1">

@@ -42,22 +42,25 @@ var licenseActivateCmd = &cobra.Command{
 	Long: `Installs a licence token. The server verifies the signature, expiry, and
 domain binding before storing it, so an invalid token is rejected immediately.
 
-Only the Enterprise image can verify a licence — the Community image trusts no
-signing key. On a Community install this reports what to run instead.`,
+A Community install can activate a licence before switching: it is verified
+and stored there, and its features take effect once the server runs the
+Enterprise image (sudo meshploy server-upgrade --ee).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token := strings.TrimSpace(args[0])
 		c := apiClient()
 
-		// Check first so the failure explains itself. Without this, a Community
-		// install returns a bare verification error and the operator is left
-		// thinking the token is bad when the image is the problem.
+		// Check first so the failure explains itself. Without this, a build
+		// that trusts no signing key (a Community image older than licence
+		// verification, or one built without the key) returns a bare
+		// verification error, and the operator is left thinking the token is
+		// bad when the build is the problem.
 		if ent, err := c.GetEntitlements(); err == nil && !ent.CanActivate {
-			fmt.Fprintln(os.Stderr, "This is the Community image. It cannot verify a licence, so")
-			fmt.Fprintln(os.Stderr, "activation happens after switching to the Enterprise image.")
+			fmt.Fprintln(os.Stderr, "This build cannot verify a licence. Current images can, so")
+			fmt.Fprintln(os.Stderr, "update the server first.")
 			fmt.Fprintln(os.Stderr, "\nRun on the gateway, then activate again:")
-			fmt.Fprintln(os.Stderr, "\n  sudo meshploy server-upgrade --ee")
-			return fmt.Errorf("licence cannot be activated on this image")
+			fmt.Fprintln(os.Stderr, "\n  sudo meshploy server-upgrade")
+			return fmt.Errorf("licence cannot be activated on this build")
 		}
 
 		ent, err := c.ActivateLicense(token)
@@ -71,21 +74,27 @@ signing key. On a Community install this reports what to run instead.`,
 }
 
 func printEntitlements(e *client.Entitlements) {
-	if !e.Licensed {
+	enterprise := e.IsEnterprise()
+	if enterprise {
+		fmt.Println("Edition:   Enterprise")
+	} else {
 		fmt.Println("Edition:   Community")
+	}
+
+	if !e.Licensed {
 		if !e.CanActivate {
 			// The decisive detail: this build has no trust anchor, so no token
 			// will ever work here regardless of what the customer holds. The
 			// server reports the same thing in Problem when a licence row
-			// survives an EE-to-CE rollback; printing both would just say it
-			// twice, so the Problem line is reserved for anything else.
-			fmt.Println("Licensing: unavailable — this image trusts no signing key")
+			// survives a rollback to such a build; printing both would just say
+			// it twice, so the Problem line is reserved for anything else.
+			fmt.Println("Licensing: unavailable - this build trusts no signing key")
 			if e.Problem != "" && !strings.Contains(e.Problem, "signing key") {
 				fmt.Printf("Problem:   %s\n", e.Problem)
 			}
-			fmt.Println("\nSwitch with: sudo meshploy server-upgrade --ee")
+			fmt.Println("\nUpdate with: sudo meshploy server-upgrade")
 		} else {
-			fmt.Println("Licensing: available — activate with: meshploy license activate <token>")
+			fmt.Println("Licensing: available - activate with: meshploy license activate <token>")
 			if e.Problem != "" {
 				fmt.Printf("Problem:   %s\n", e.Problem)
 			}
@@ -93,7 +102,6 @@ func printEntitlements(e *client.Entitlements) {
 		return
 	}
 
-	fmt.Println("Edition:   Enterprise")
 	if e.Customer != "" {
 		fmt.Printf("Customer:  %s\n", e.Customer)
 	}
@@ -122,6 +130,15 @@ func printEntitlements(e *client.Entitlements) {
 	}
 	if e.Problem != "" {
 		fmt.Printf("Problem:   %s\n", e.Problem)
+		return
+	}
+
+	// Licensed but still Community: the licence is in force, yet none of its
+	// features exist in this binary. Without this the output reads as a
+	// working Enterprise install.
+	if !enterprise {
+		fmt.Println("\nThe licence is active, but its features are part of the Enterprise image.")
+		fmt.Println("Switch with: sudo meshploy server-upgrade --ee")
 	}
 }
 

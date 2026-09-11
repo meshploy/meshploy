@@ -136,9 +136,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # A variable, not a secret: public keys are public. They must match
+          # the keys meshploy-ee builds with, or a licence activated here stops
+          # verifying after the switch.
           build-args: |
             VERSION=${{ steps.ver.outputs.value }}
             CHANNEL=${{ steps.ver.outputs.channel }}
+            LICENSE_PUBLIC_KEYS=${{ vars.LICENSE_PUBLIC_KEYS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

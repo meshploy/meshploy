@@ -41,8 +41,13 @@ COPY packages/server ./packages/server
 WORKDIR /workspace/apps/api
 ARG VERSION=dev
 ARG CHANNEL=dev
+# The licence signing public keys (comma-separated, current first). Public by
+# definition: with them the Community image can verify a licence before the
+# switch to Enterprise, and a licence stored here still unlocks nothing, since
+# no Enterprise feature is compiled in. Empty makes a build that trusts no key.
+ARG LICENSE_PUBLIC_KEYS=""
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X github.com/meshploy/packages/server/version.Current=${VERSION} -X github.com/meshploy/packages/server/version.Channel=${CHANNEL}" \
+    -ldflags="-s -w -X github.com/meshploy/packages/server/version.Current=${VERSION} -X github.com/meshploy/packages/server/version.Channel=${CHANNEL} -X github.com/meshploy/packages/server/service.LicensePublicKeys=${LICENSE_PUBLIC_KEYS}" \
     -o /out/api \
     .
 

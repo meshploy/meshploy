@@ -168,9 +168,9 @@ export function UpgradeDialog({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Already have a licence? Close this and paste it below — activation
-          needs the Enterprise image, and the licence section explains how to
-          switch to it.
+          Already have a licence? Close this and paste it below. Once it is
+          active, the licence section shows how to switch to the Enterprise
+          image.
         </p>
       </DialogContent>
     </Dialog>

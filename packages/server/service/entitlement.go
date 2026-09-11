@@ -26,8 +26,11 @@ import (
 // previous key, reissue, then drop the old one. A single key would mean a
 // compromise invalidates every customer's license at once.
 //
-// Empty by default, so a stock CE build trusts nothing and no license can
-// activate — the safe default. Generate one with `meshploy-admin license keygen`.
+// Both editions' release images are built with the same keys, so a licence can
+// be activated on Community before switching; it grants nothing there, since no
+// Enterprise feature is compiled in. Empty by default, so a build made without
+// the argument trusts nothing and no license can activate, the safe default.
+// Generate one with `meshploy-admin license keygen`.
 var LicensePublicKeys = ""
 
 // Status is the entitlement snapshot the UI renders.

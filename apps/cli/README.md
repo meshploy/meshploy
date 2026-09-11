@@ -181,7 +181,7 @@ The first account registered on a Meshploy server owns it, so until that account
 | `license status` | Show the licence status and entitlements of this install |
 | `license activate <token>` | Install a licence token. The server verifies its signature, expiry and domain binding before storing it |
 
-Only the Enterprise image can verify a licence; on a Community install, `activate` reports what to run instead.
+A Community install can activate a licence before switching. Its features take effect once the server runs the Enterprise image (`sudo meshploy server-upgrade --ee`), and `license status` says so until then. On a build too old to verify a licence, `activate` reports what to run instead.
 
 ---
 

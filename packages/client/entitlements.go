@@ -21,9 +21,24 @@ type Entitlements struct {
 	// licence that grants no image beyond the stock one.
 	RegistryScope string `json:"registry_scope,omitempty"`
 
-	// CanActivate is false in a stock Community build, which trusts no signing
-	// key and therefore cannot store a licence at all.
+	// CanActivate is false in a build that trusts no signing key and therefore
+	// cannot store a licence at all.
 	CanActivate bool `json:"can_activate"`
+
+	// Edition is "community" or "enterprise": which binary is answering,
+	// whatever licence it holds. Empty from an API older than the field; use
+	// IsEnterprise rather than reading it directly.
+	Edition string `json:"edition,omitempty"`
+}
+
+// IsEnterprise reports whether the Enterprise binary is answering. An API older
+// than the Edition field could only verify a licence on the Enterprise image,
+// so for those, being able to activate is what Enterprise meant.
+func (e *Entitlements) IsEnterprise() bool {
+	if e.Edition != "" {
+		return e.Edition == "enterprise"
+	}
+	return e.CanActivate
 }
 
 // GetEntitlements reads the install's licence status. Readable by any
@@ -40,8 +55,8 @@ func (c *Client) GetEntitlements() (*Entitlements, error) {
 // entitlements. The server verifies the signature before storing, so a bad
 // token fails here rather than silently persisting.
 //
-// A stock Community build trusts no signing key and rejects every token; check
-// Entitlements.CanActivate first to tell "wrong token" from "wrong image".
+// A build that trusts no signing key rejects every token; check
+// Entitlements.CanActivate first to tell "wrong token" from "wrong build".
 func (c *Client) ActivateLicense(token string) (*Entitlements, error) {
 	resp, err := c.do("POST", "/api/v1/entitlements/license", map[string]string{"token": token})
 	if err != nil {
