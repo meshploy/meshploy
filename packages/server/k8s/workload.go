@@ -351,9 +351,10 @@ type DatabaseWorkloadParams struct {
 	Image     string
 	Port      int32
 	Env       []corev1.EnvVar
-	StorageGB int    // PVC size in GiB
-	DataPath  string // mount path inside container
-	NodeName  string // "" = auto-schedule
+	Args      []string // replaces the image's default arguments; nil keeps them
+	StorageGB int      // PVC size in GiB
+	DataPath  string   // mount path inside container
+	NodeName  string   // "" = auto-schedule
 
 	LivenessProbe  *corev1.Probe
 	ReadinessProbe *corev1.Probe
@@ -399,6 +400,7 @@ func ApplyDatabaseDeployment(ctx context.Context, client kubernetes.Interface, p
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Ports:           []corev1.ContainerPort{{ContainerPort: p.Port, Protocol: corev1.ProtocolTCP}},
 		Env:             p.Env,
+		Args:            p.Args,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "data", MountPath: p.DataPath},
 		},

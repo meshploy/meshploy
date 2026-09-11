@@ -257,8 +257,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			}
 		}
 
-		groupEnvs, _ := s.varGroups.CollectEnvVars(bgCtx, svc.ID)
-		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
+		envVars := s.serviceEnv(bgCtx, svc, port, deploymentID)
 		volMounts := resolveServiceVolumeMounts(bgCtx, s.db, svc.ID)
 		probe := buildProbeFromService(svc)
 
@@ -452,9 +451,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 
-	// Merge variable group items into env vars (explicit env wins on conflict).
-	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, a.svc.ID)
-	envVars := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), port), groupEnvs)
+	envVars := s.serviceEnv(ctx, &a.svc, port, a.deployment.ID)
 
 	// Ensure imagePullSecret when the built image is in a private registry.
 	pullSecretName := ""
@@ -612,8 +609,7 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 			nodeName = node.Name
 		}
 	}
-	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, svc.ID)
-	envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
+	envVars := s.serviceEnv(ctx, &svc, port, uuid.Nil)
 	volMounts := resolveServiceVolumeMounts(ctx, s.db, serviceID)
 	probe := buildProbeFromService(&svc)
 
@@ -808,8 +804,7 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 				nodeName = node.Name
 			}
 		}
-		groupEnvs, _ := s.varGroups.CollectEnvVars(context.Background(), svc.ID)
-		envVars := mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs)
+		envVars := s.serviceEnv(context.Background(), &svc, port, dep.ID)
 		wp := appk8s.WorkloadParams{
 			ConfigFiles:   s.configMountsFor(context.Background(), svc.ID, appK8sName(&svc), namespace),
 			Name:          appK8sName(&svc),
@@ -1398,6 +1393,27 @@ func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
 	return envs
 }
 
+// serviceEnv is a service's container environment: its own variables, then its
+// attached groups' (its own win on a clash), with ${NAME} references resolved
+// against the result (see resolveEnvRefs).
+//
+// A reference to a name the service does not have is left as written and noted
+// in the deployment's log, so a typo shows up instead of becoming an empty
+// value. deploymentID is uuid.Nil where there is no deployment to note it in.
+func (s *DeploymentService) serviceEnv(ctx context.Context, svc *db.Service, port int32, deploymentID uuid.UUID) []corev1.EnvVar {
+	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, svc.ID)
+	envs, unresolved := resolveEnvRefs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs))
+	if len(unresolved) > 0 {
+		msg := "Left as written, not defined for this service: ${" + strings.Join(unresolved, "}, ${") + "}"
+		log.Printf("service %s: %s", svc.Name, msg)
+		if deploymentID != uuid.Nil {
+			s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).
+				Update("log", gorm.Expr("log || ?", msg+"\n"))
+		}
+	}
+	return envs
+}
+
 // mergeSecretEnvs appends secret key-value pairs to the existing env slice,
 // skipping any key that the explicit env block already defines (explicit wins).
 func mergeSecretEnvs(envs []corev1.EnvVar, secrets map[string]string) []corev1.EnvVar {
@@ -1458,6 +1474,20 @@ func dbDataPath(engine db.DatabaseEngine) string {
 	}
 }
 
+// dbArgs are the container arguments a database needs, replacing the image's
+// default ones.
+//
+// Redis takes its password only as a flag. The official image ignores
+// REDIS_PASSWORD, so until this the password Meshploy generates was never
+// enforced. $(REDIS_PASSWORD) is expanded by Kubernetes from the container's
+// env, so the password is not written into the spec twice.
+func dbArgs(dc db.DatabaseConfig) []string {
+	if dc.Engine == db.DatabaseRedis && string(dc.DBPassword) != "" {
+		return []string{"--requirepass", "$(REDIS_PASSWORD)"}
+	}
+	return nil
+}
+
 // dbEnvVars returns the env vars required to initialise the database container.
 func dbEnvVars(dc db.DatabaseConfig) []corev1.EnvVar {
 	pass := string(dc.DBPassword)
@@ -1476,9 +1506,16 @@ func dbEnvVars(dc db.DatabaseConfig) []corev1.EnvVar {
 			{Name: "MYSQL_PASSWORD", Value: pass},
 			{Name: "MYSQL_ROOT_PASSWORD", Value: pass},
 		}
-	case db.DatabaseRedis, db.DatabaseDragonfly:
+	case db.DatabaseRedis:
+		// Only for dbArgs: the official image reads no password from its env.
 		if pass != "" {
 			return []corev1.EnvVar{{Name: "REDIS_PASSWORD", Value: pass}}
+		}
+		return nil
+	case db.DatabaseDragonfly:
+		// Dragonfly reads any of its flags from a DFLY_-prefixed variable.
+		if pass != "" {
+			return []corev1.EnvVar{{Name: "DFLY_requirepass", Value: pass}}
 		}
 		return nil
 	case db.DatabaseClickHouse:
@@ -1562,6 +1599,7 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 			Image:          svc.Image,
 			Port:           dbPort,
 			Env:            dbEnvVars(dc),
+			Args:           dbArgs(dc),
 			StorageGB:      dc.StorageGB,
 			DataPath:       dbDataPath(dc.Engine),
 			NodeName:       nodeName,
@@ -1599,6 +1637,15 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
 			"status": db.ServiceRunning,
 		})
+
+		// Regenerated on every deploy, not only at creation: the group carries
+		// the connection apps use, and redeploying the database is how an
+		// operator refreshes it.
+		fresh := *svc
+		fresh.Ports = dbPorts
+		if err := s.varGroups.UpsertSystemGroup(bgCtx, &fresh, namespace); err != nil {
+			log.Printf("warning: refresh variables for database %s: %v", svc.Name, err)
+		}
 	}()
 
 	return &deployment, nil

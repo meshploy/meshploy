@@ -286,6 +286,13 @@ function ServiceOverviewTab() {
                     </div>
                   )
                 }
+                <p className="py-2.5 text-xs text-muted-foreground leading-relaxed">
+                  To connect an app, attach the <span className="text-foreground">{service.name} (service)</span> variable
+                  group to it, then reference the connection URL in its env:{" "}
+                  <code className="font-mono text-foreground break-all">
+                    {`DATABASE_URL=\${${service.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_URL}`}
+                  </code>
+                </p>
               </div>
             )}
           </div>

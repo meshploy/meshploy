@@ -276,6 +276,8 @@ meshploy apply -f compose.yml --project my-project
 
 Applies a Docker Compose manifest, with `x-meshploy` extensions, to a project in one call: it is upserted as a stack and reconciled into live services. Idempotent: run it again to converge on the same spec.
 
+Compose substitutes `${VAR}` from the stack's variables when the stack is applied. A service's env can also reference another variable at deploy time, such as a managed database's connection URL from an attached group; write that one as `$${PRIMARY_PG_DB_URL}` in the manifest, so it reaches the service as `${PRIMARY_PG_DB_URL}` and is resolved when it deploys.
+
 | Flag | Description |
 |---|---|
 | `-f, --file` | Path to the compose manifest (required) |

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -206,8 +207,22 @@ func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Se
 		return err
 	}
 
-	// Build all items for this service's ports
-	items := buildServiceItems(prefix, host, svc.Ports)
+	// Build all items for this service's ports, and for a database what an app
+	// needs to connect to it. The database's own items replace any the ports
+	// produced under the same key.
+	ports := svc.Ports
+	if len(ports) == 0 {
+		if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).Find(&ports).Error; err != nil {
+			return err
+		}
+	}
+	items := buildServiceItems(prefix, host, ports)
+	if svc.Type == db.ServiceTypeDatabase {
+		var dc db.DatabaseConfig
+		if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err == nil {
+			items = mergeItems(items, buildDatabaseItems(prefix, host, primaryPort(ports), dc))
+		}
+	}
 
 	// Replace all items atomically.
 	//
@@ -275,6 +290,71 @@ func buildServiceItems(prefix, host string, ports []db.ServicePort) []db.Variabl
 		}
 	}
 	return items
+}
+
+// buildDatabaseItems publishes what an app needs to connect to a managed
+// database: its user, password and name, and a connection URL in the engine's
+// own scheme. The password, and the URL that carries it, are secret.
+func buildDatabaseItems(prefix, host string, port int32, dc db.DatabaseConfig) []db.VariableGroupItem {
+	item := func(key, value string, secret bool) db.VariableGroupItem {
+		return db.VariableGroupItem{Key: key, Value: db.EncryptedString(value), IsSecret: secret}
+	}
+	pass := string(dc.DBPassword)
+	var items []db.VariableGroupItem
+	if dc.Engine != db.DatabaseRedis && dc.Engine != db.DatabaseDragonfly {
+		items = append(items, item(prefix+"_USER", dc.DBUser, false), item(prefix+"_DB", dc.DBName, false))
+	}
+	if pass != "" {
+		items = append(items, item(prefix+"_PASSWORD", pass, true))
+	}
+	if u := databaseURL(dc.Engine, dc.DBUser, pass, host, port, dc.DBName); u != "" {
+		items = append(items, item(prefix+"_URL", u, pass != ""))
+	}
+	return items
+}
+
+// databaseURL is the connection URL for an engine, with the user and password
+// percent-encoded. MongoDB's root user lives in the admin database, and
+// ClickHouse is reached on its native port, the one Meshploy exposes.
+func databaseURL(engine db.DatabaseEngine, user, pass, host string, port int32, name string) string {
+	u := url.URL{Host: fmt.Sprintf("%s:%d", host, port)}
+	switch engine {
+	case db.DatabasePostgres:
+		u.Scheme = "postgresql"
+	case db.DatabaseMySQL:
+		u.Scheme = "mysql"
+	case db.DatabaseMongoDB:
+		u.Scheme, u.RawQuery = "mongodb", "authSource=admin"
+	case db.DatabaseClickHouse:
+		u.Scheme = "clickhouse"
+	case db.DatabaseRedis, db.DatabaseDragonfly:
+		u.Scheme = "redis"
+		if pass != "" {
+			u.User = url.UserPassword("", pass)
+		}
+		return u.String()
+	default:
+		return ""
+	}
+	u.User = url.UserPassword(user, pass)
+	u.Path = "/" + name
+	return u.String()
+}
+
+// mergeItems appends extra to base, an item in extra replacing one in base
+// under the same key.
+func mergeItems(base, extra []db.VariableGroupItem) []db.VariableGroupItem {
+	replaced := make(map[string]bool, len(extra))
+	for _, it := range extra {
+		replaced[it.Key] = true
+	}
+	out := make([]db.VariableGroupItem, 0, len(base)+len(extra))
+	for _, it := range base {
+		if !replaced[it.Key] {
+			out = append(out, it)
+		}
+	}
+	return append(out, extra...)
 }
 
 // CollectEnvVars loads all variable groups attached to a service and returns

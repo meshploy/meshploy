@@ -69,7 +69,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
   return (
     <Section
       title="Environment variables"
-      subtitle="One KEY=VALUE pair per line. Values are AES-256 encrypted at rest."
+      subtitle="One KEY=VALUE pair per line. ${NAME} uses another variable, e.g. DATABASE_URL=${PRIMARY_PG_DB_URL} from an attached group. Values are AES-256 encrypted at rest."
     >
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground py-4">
