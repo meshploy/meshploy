@@ -645,3 +645,23 @@ func TestComposeImagesAreFullyQualified(t *testing.T) {
 		}
 	}
 }
+
+// .env holds every secret of the install. Earlier installers left it readable
+// by every user on the host; an upgrade makes it private.
+func TestServerUpgradeMakesEnvPrivate(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	envPath := filepath.Join(fx.live, ".env")
+	if err := os.Chmod(envPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf(".env mode = %v, want 0600", fi.Mode().Perm())
+	}
+}

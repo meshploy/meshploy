@@ -135,6 +135,7 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 // saved and every running image recorded, so a restart that fails or a stack
 // that does not come back can be put back as it was.
 func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
+	restrictEnvFile()
 	runtime := detectContainerRuntime()
 
 	// What Caddy is serving now, to tell afterwards whether it must be recreated.
@@ -302,6 +303,22 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 
 	fmt.Println("✔  Server upgraded successfully")
 	return nil
+}
+
+// restrictEnvFile makes .env readable by its owner alone. It holds every secret
+// of the install, and earlier installers left it readable by every user on the
+// host; an upgrade is the moment every server passes through.
+func restrictEnvFile() {
+	path := filepath.Join(meshployInstDir, ".env")
+	fi, err := os.Stat(path)
+	if err != nil || fi.Mode().Perm()&0o077 == 0 {
+		return
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		fmt.Printf("warning: could not make %s private: %v\n", path, err)
+		return
+	}
+	fmt.Printf("✔  Made %s readable by its owner only; it was readable by every user\n", path)
 }
 
 // putBackBeforeRestart undoes the configuration changes after a failure that

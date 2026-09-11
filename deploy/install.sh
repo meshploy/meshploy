@@ -558,7 +558,9 @@ if [[ "$NODE_TYPE" == "master" ]]; then
       # The token gates the installer page. Reuse an existing one so an operator
       # part-way through setup is not handed a second token that invalidates the
       # first. Appended, never written over: .env may already hold a previous
-      # install's configuration.
+      # install's configuration. Created private: it holds the setup token now
+      # and every secret of the install later.
+      touch .env && chmod 600 .env
       if [[ -f .env ]] && grep -q '^SETUP_TOKEN=' .env; then
         SETUP_TOKEN="$(grep -E '^SETUP_TOKEN=' .env | tail -1 | cut -d= -f2-)"
       else
@@ -845,6 +847,9 @@ FIREWALL_CHECKED_AT=${FIREWALL_CHECKED_AT}
 # Fill in after first start: $COMPOSE_CMD exec headscale headscale apikeys create
 HEADSCALE_API_KEY=
 ENVEOF
+  # Every secret of the install is in here: the database password, the JWT
+  # and encryption keys, the setup token. Readable by root alone.
+  chmod 600 .env
   success ".env written"
 
   # Helper to substitute placeholders in a file
