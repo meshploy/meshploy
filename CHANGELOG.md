@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.12.0](https://github.com/meshploy/meshploy/compare/v0.11.0...v0.12.0) (2026-09-12)
+
+
+### Features
+
+* carry compose configs and secrets into stack services and warn about what a stack drops ([c936d75](https://github.com/meshploy/meshploy/commit/c936d752703fc2ee40c5ec0a0b7b3040959885f2))
+* confine a licence's registry scope to Meshploy's Enterprise images ([3a803fb](https://github.com/meshploy/meshploy/commit/3a803fb642e93de8750b44a905c22e36bae9a7b9))
+* detect whether the API is the Community or Enterprise build and report it ([a5f515c](https://github.com/meshploy/meshploy/commit/a5f515c7559982e40e7583f7f83a8d9e547501b1))
+* follow chained env references and suggest reference names in the env editor ([77261ea](https://github.com/meshploy/meshploy/commit/77261ea31e635d90cb60379066f74e7a6053dd5a))
+* follow Community releases with the Enterprise API and console images ([8e2d381](https://github.com/meshploy/meshploy/commit/8e2d38161d62ed17405e9ece4da7825a10f35030))
+* follow compose ports, command and entrypoint when applying a stack ([e62c966](https://github.com/meshploy/meshploy/commit/e62c96616439f0733491cf42c19cf7872955f434))
+* let the Community image verify a licence so it can be activated before switching ([74551a1](https://github.com/meshploy/meshploy/commit/74551a1507f5ef781a212b4e6c8c7cc65f251689))
+* publish database connection variables and resolve ${VAR} references in service env ([f471b29](https://github.com/meshploy/meshploy/commit/f471b29e8d2762cef45afa5f3eb20a53ff1033a3))
+* switch a licensed Community server to Enterprise from the console ([4541138](https://github.com/meshploy/meshploy/commit/4541138378b91e07c50d2f9f3c60a187b5e54427))
+* switch the release channel from the console, forward only ([f97e6c6](https://github.com/meshploy/meshploy/commit/f97e6c61ccc60460b465386d07469b8d8175f590))
+* tag build log lines by level and strip terminal colour codes ([c215698](https://github.com/meshploy/meshploy/commit/c215698557d1f4d79f4a0d69fac6f044ecb5fdce))
+
+
+### Bug Fixes
+
+* **ci:** build every image on a release and report the stable channel from its API ([968db65](https://github.com/meshploy/meshploy/commit/968db65ddb9d10d52c54ed982ce81d3553b71f71))
+* count variable groups for the project tabs instead of the retired secrets table ([b2186c7](https://github.com/meshploy/meshploy/commit/b2186c72996443481c779bf5627fd3f421f0972e))
+* keep a git stack's compose path inside its checkout ([c07f970](https://github.com/meshploy/meshploy/commit/c07f97046c5b72db92bdd2b25edc991add8b7a8b))
+* keep backup schedules and SMTP TLS off when first saved off ([9da81a7](https://github.com/meshploy/meshploy/commit/9da81a7e3db2bdc4df5081eaa7bb07d6962e2900))
+* keep dialog content inside the dialog and let long values truncate ([fbd69f0](https://github.com/meshploy/meshploy/commit/fbd69f0cf049a9c041e7a7c6e76d96140249372c))
+* make .env readable by its owner only ([666f4f8](https://github.com/meshploy/meshploy/commit/666f4f810cd97059f7fc6c6d00c65ffaf9aa9525))
+* make server-upgrade pull and restart correctly on Podman gateways ([f0d2056](https://github.com/meshploy/meshploy/commit/f0d20561e406b164cc6363b1a98299da8876b8d9))
+* run one organization per Community server and gate licence activation on it ([0f7b777](https://github.com/meshploy/meshploy/commit/0f7b77736e4fde41634080269edede5a77e69afe))
+* store a service port's HTTP and public flags as given, and repair database ports ([8725ba8](https://github.com/meshploy/meshploy/commit/8725ba8d4174522de97f83a3174b41bab578b8a8))
+
 ## [0.11.0](https://github.com/meshploy/meshploy/compare/v0.10.0...v0.11.0) (2026-09-10)
 
 
