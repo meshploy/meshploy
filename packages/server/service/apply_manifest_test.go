@@ -20,7 +20,7 @@ func TestApplyManifestUpsert(t *testing.T) {
 	uid := parseUUID(t, userID)
 
 	// First apply — stack does not exist yet → created.
-	r1, err := svcs.Stacks.ApplyManifest(ctx, pid, "app", validStackSpec, uid)
+	r1, err := svcs.Stacks.ApplyManifest(ctx, pid, "app", validStackSpec, uid, nil)
 	require.NoError(t, err)
 	require.NotNil(t, r1.Stack)
 	assert.Equal(t, "app", r1.Stack.Name)
@@ -33,7 +33,7 @@ func TestApplyManifestUpsert(t *testing.T) {
 	require.Len(t, stacks, 1)
 
 	// Second apply of the same manifest+name → upsert in place, same stack id.
-	r2, err := svcs.Stacks.ApplyManifest(ctx, pid, "app", validStackSpec, uid)
+	r2, err := svcs.Stacks.ApplyManifest(ctx, pid, "app", validStackSpec, uid, nil)
 	require.NoError(t, err)
 	assert.Equal(t, firstStackID, r2.Stack.ID, "re-apply must reuse the same stack, not create a new one")
 
@@ -49,10 +49,10 @@ func TestApplyManifestValidation(t *testing.T) {
 	pid := parseUUID(t, projID)
 	uid := parseUUID(t, userID)
 
-	_, err := svcs.Stacks.ApplyManifest(ctx, pid, "", validStackSpec, uid)
+	_, err := svcs.Stacks.ApplyManifest(ctx, pid, "", validStackSpec, uid, nil)
 	require.Error(t, err, "name is required")
 
-	_, err = svcs.Stacks.ApplyManifest(ctx, pid, "app", "", uid)
+	_, err = svcs.Stacks.ApplyManifest(ctx, pid, "app", "", uid, nil)
 	require.Error(t, err, "spec is required")
 
 	// A git-backed stack owning the name must not be clobbered by an inline apply.
@@ -64,6 +64,6 @@ func TestApplyManifestValidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = svcs.Stacks.ApplyManifest(ctx, pid, "gitstack", validStackSpec, uid)
+	_, err = svcs.Stacks.ApplyManifest(ctx, pid, "gitstack", validStackSpec, uid, nil)
 	require.Error(t, err, "inline apply must refuse to overwrite a git-backed stack")
 }

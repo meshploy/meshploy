@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -165,7 +166,10 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 // (inline-spec) stack keyed by (project, name) and reconciles it, so re-applying
 // the same manifest converges in place. Errors if a git-backed stack already
 // owns the name (those are reconciled via Sync, not an inline push).
-func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, name, spec string, triggerBy uuid.UUID) (*ApplyResult, error) {
+//
+// files carries what the manifest's configs and secrets name by file:, keyed by
+// the path as written, since the server cannot read the client's directory.
+func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, name, spec string, triggerBy uuid.UUID, files map[string]string) (*ApplyResult, error) {
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
@@ -203,7 +207,7 @@ func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, n
 		return nil, err
 	}
 
-	return s.Apply(ctx, stack.ID, triggerBy, nil)
+	return s.apply(ctx, stack.ID, triggerBy, nil, mapFileSource(files))
 }
 
 func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
@@ -337,7 +341,9 @@ func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy 
 	}
 	stack.Spec = spec
 
-	applyResult, err := s.Apply(ctx, stackID, triggeredBy, nil)
+	files, cleanup := s.gitFileSource(ctx, &stack)
+	defer cleanup()
+	applyResult, err := s.apply(ctx, stackID, triggeredBy, nil, files)
 	if err != nil {
 		return nil, err
 	}
@@ -536,6 +542,12 @@ type ApplyResult struct {
 // ---------------------------------------------------------------------------
 
 func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string) (*ApplyResult, error) {
+	return s.apply(ctx, stackID, triggerBy, envOverrides, nil)
+}
+
+// apply reconciles a stack's spec. files reads what its configs and secrets
+// name by file:; nil when nothing is available to this apply.
+func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string, files stackFileSource) (*ApplyResult, error) {
 	var stack meshdb.Stack
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
@@ -588,7 +600,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	//
 	// Interpolation stays on everywhere else, because service environment
 	// blocks are how stack variables reach a container.
-	rawFiles := s.uninterpolatedFiles(ctx, stack.Spec)
+	rawFiles, rawPaths := s.uninterpolatedFiles(ctx, stack.Spec)
 
 	// Resolve top-level named volumes → PVC records.
 	volumesByName := s.resolveNamedVolumes(ctx, stack.ProjectID, stack.ID, stack.Name, project.Volumes, result)
@@ -617,7 +629,9 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			deployPort = ext.Deploy.Port
 		}
 		ports, portsDeclared, portNotes := stackPorts(svcDef, deployPort)
-		for _, note := range portNotes {
+		svcFiles, fileNotes := s.composeFiles(ctx, stack, project, svcDef, envMap, rawPaths, files)
+		svcFiles = append(append([]meshployFile{}, rawFiles[svcName]...), svcFiles...)
+		for _, note := range slices.Concat(portNotes, droppedByStack(svcDef), fileNotes) {
 			result.Warnings = append(result.Warnings, svcName+": "+note)
 		}
 
@@ -712,7 +726,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			}
 
 			s.attachVolumeMounts(ctx, svc.ID, svcDef.Volumes, volumesByName)
-			s.syncConfigFiles(ctx, stack, svc.ID, svcName, rawFiles[svcName], result)
+			s.syncConfigFiles(ctx, stack, svc.ID, svcName, svcFiles, result)
 			result.Created = append(result.Created, svcName)
 			createdIDs = append(createdIDs, svc.ID)
 		} else {
@@ -750,7 +764,7 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				}
 			}
 			s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName)
-			s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, rawFiles[svcName], result)
+			s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, svcFiles, result)
 			result.Updated = append(result.Updated, svcName)
 		}
 	}
@@ -1172,27 +1186,43 @@ func jsonObjToStrMap(obj meshdb.JSONObject) map[string]string {
 // append. Ownership is recorded so the stack page can show them and destroy can
 // find them, the same as services, volumes and routes.
 // uninterpolatedFiles parses the spec with interpolation disabled and returns
-// each service's declared files, keyed by service name.
+// each service's declared files, keyed by service name, and the file: of each
+// config and secret exactly as written, keyed "configs/<name>" and
+// "secrets/<name>", so it is read relative to the compose file.
 //
 // The parse is deliberately best-effort: the interpolated parse has already
 // succeeded by the time this runs, so a failure here means something specific
 // to skipping interpolation. Returning no files then leaves existing config
 // files untouched, which beats writing corrupted ones.
-func (s *StackService) uninterpolatedFiles(ctx context.Context, spec string) map[string][]meshployFile {
+func (s *StackService) uninterpolatedFiles(ctx context.Context, spec string) (map[string][]meshployFile, map[string]string) {
 	out := map[string][]meshployFile{}
+	paths := map[string]string{}
 	project, err := loader.LoadWithContext(ctx, composetypes.ConfigDetails{
 		WorkingDir:  "/",
 		ConfigFiles: []composetypes.ConfigFile{{Filename: "docker-compose.yml", Content: []byte(spec)}},
-	}, loader.WithSkipValidation, func(o *loader.Options) { o.SkipInterpolation = true })
+	}, loader.WithSkipValidation, func(o *loader.Options) {
+		o.SkipInterpolation = true
+		o.ResolvePaths = false
+	})
 	if err != nil {
-		return out
+		return out, paths
 	}
 	for name, svcDef := range project.Services {
 		if ext := decodeExt(svcDef.Extensions); ext != nil && len(ext.Files) > 0 {
 			out[name] = ext.Files
 		}
 	}
-	return out
+	for name, c := range project.Configs {
+		if c.File != "" {
+			paths["configs/"+name] = c.File
+		}
+	}
+	for name, c := range project.Secrets {
+		if c.File != "" {
+			paths["secrets/"+name] = c.File
+		}
+	}
+	return out, paths
 }
 
 func (s *StackService) syncConfigFiles(

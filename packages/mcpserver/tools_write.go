@@ -515,7 +515,7 @@ func (s *srv) handleApplyManifest(_ context.Context, req mcp.CallToolRequest) (*
 	name := mcp.ParseString(req, "name", "")
 	spec := mcp.ParseString(req, "spec", "")
 
-	result, err := s.c.ApplyManifest(s.orgID, projectID, name, spec)
+	result, err := s.c.ApplyManifest(s.orgID, projectID, name, spec, nil)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

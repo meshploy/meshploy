@@ -222,6 +222,7 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "apply-manifest",
+		MaxBodyBytes:  8 << 20, // the manifest's files ride along, up to 1 MiB each
 		Method:        "POST",
 		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/apply",
 		Summary:       "Upsert a stack from an inline compose manifest and reconcile it",
@@ -406,7 +407,8 @@ type ApplyManifestInput struct {
 	ProjectID string `path:"projectId"`
 	Body      struct {
 		Name string `json:"name" minLength:"1" maxLength:"100" doc:"Stack name — the manifest is upserted under this name"`
-		Spec string `json:"spec" minLength:"1" doc:"Docker Compose–style YAML with x-meshploy extensions"`
+		Spec  string            `json:"spec" minLength:"1" doc:"Docker Compose–style YAML with x-meshploy extensions"`
+		Files map[string]string `json:"files,omitempty" doc:"Files the manifest's configs and secrets name by file:, keyed by the path as written"`
 	}
 }
 
@@ -415,7 +417,7 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.svc.Stacks.ApplyManifest(ctx, projectID, input.Body.Name, input.Body.Spec, userID)
+	result, err := h.svc.Stacks.ApplyManifest(ctx, projectID, input.Body.Name, input.Body.Spec, userID, input.Body.Files)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

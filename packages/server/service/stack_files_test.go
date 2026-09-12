@@ -116,7 +116,8 @@ func TestConfigFileContentSurvivesComposeInterpolation(t *testing.T) {
 `
 
 	svc := &StackService{}
-	files := svc.uninterpolatedFiles(context.Background(), spec)["app"]
+	all, _ := svc.uninterpolatedFiles(context.Background(), spec)
+	files := all["app"]
 	if len(files) != 2 {
 		t.Fatalf("want 2 files, got %d", len(files))
 	}

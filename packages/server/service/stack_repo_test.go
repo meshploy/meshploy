@@ -6,6 +6,29 @@ import (
 	"testing"
 )
 
+// A path in a compose file is read relative to the compose file, and nothing
+// outside the repository is reachable.
+func TestRepoPath(t *testing.T) {
+	cases := []struct {
+		compose, rel, want string
+		ok                 bool
+	}{
+		{"docker-compose.yml", "./keycloak/realm.json", "keycloak/realm.json", true},
+		{"infra/docker-compose.yml", "./keycloak/realm.json", "infra/keycloak/realm.json", true},
+		{"infra/docker-compose.yml", "../shared/realm.json", "shared/realm.json", true},
+		{"/infra/docker-compose.yml", "realm.json", "infra/realm.json", true},
+		{"docker-compose.yml", "../outside.json", "", false},
+		{"infra/docker-compose.yml", "../../outside.json", "", false},
+		{"docker-compose.yml", "/etc/passwd", "", false},
+	}
+	for _, c := range cases {
+		got, err := repoPath(c.compose, c.rel)
+		if (err == nil) != c.ok || got != c.want {
+			t.Errorf("repoPath(%q, %q) = %q, %v", c.compose, c.rel, got, err)
+		}
+	}
+}
+
 // A stack's compose path, or a symlink in its repository, cannot read a file
 // outside the checkout: it would land in the stack's spec for its editor to
 // read, and the API's own environment is one such file.

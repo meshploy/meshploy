@@ -81,8 +81,13 @@ func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, err
 
 // ApplyManifest upserts a raw stack named name from an inline compose spec and
 // reconciles it in one call. Idempotent — re-applying converges in place.
-func (c *Client) ApplyManifest(orgID, projectID, name, spec string) (*ApplyResult, error) {
-	body := map[string]string{"name": name, "spec": spec}
+// files carries what its configs and secrets name by file:, keyed by the path
+// as written; nil when there are none.
+func (c *Client) ApplyManifest(orgID, projectID, name, spec string, files map[string]string) (*ApplyResult, error) {
+	body := map[string]any{"name": name, "spec": spec}
+	if len(files) > 0 {
+		body["files"] = files
+	}
 	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/apply", body)
 	if err != nil {
 		return nil, err

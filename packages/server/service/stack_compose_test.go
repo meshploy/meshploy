@@ -46,7 +46,7 @@ services:
     image: alpine
     entrypoint: ["/bin/sh", "-c"]
     command: ["echo $$HOME"]
-`, user.ID)
+`, user.ID, nil)
 	require.NoError(t, err)
 	require.Empty(t, r.Errors)
 
@@ -83,7 +83,7 @@ services:
     ports: ["127.0.0.1:6379:6379"]
   worker:
     image: alpine
-`, user.ID)
+`, user.ID, nil)
 	require.NoError(t, err)
 	require.Empty(t, r.Errors)
 

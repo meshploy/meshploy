@@ -284,6 +284,7 @@ Each compose service becomes a Meshploy service, read the way compose reads it:
 - **HTTP or not.** A route can only target an HTTP port. Every port counts as HTTP except well-known non-HTTP ones (Postgres, pgbouncer, MySQL, Redis, MongoDB, SMTP, AMQP, Kafka and similar); the long syntax's `app_protocol` decides it explicitly, `http` or `ws` for HTTP and anything else for plain TCP.
 - **TCP only.** UDP ports are left out, with a warning in the apply result.
 - **`entrypoint:` and `command:`** replace the image's ENTRYPOINT and CMD, and reach the container exactly as written.
+- **Files go in through `configs:` and `secrets:`.** A config lands at its `target`, `/<name>` by default, and a secret at `/run/secrets/<name>`; both are stored encrypted. `content:` and `environment:` work however the stack is applied. `file:` is read relative to the compose file: `meshploy apply` sends it along, a git stack reads it from the repository, and an apply that cannot read it keeps the copy an earlier one stored. Bind mounts, `extra_hosts` and values pointing at `host.docker.internal` are left out, with a warning.
 - **Re-applying** updates a service's ports only when its compose definition declares some, so ports edited in the console are otherwise kept, and a public port that stays keeps its NodePort. A running service picks up changed ports or command on its next deploy.
 
 | Flag | Description |
