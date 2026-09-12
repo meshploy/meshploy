@@ -404,6 +404,7 @@ func cloneAndReadFile(ctx context.Context, creds gitCredentials, branch, filePat
 	if err != nil {
 		return "", "", err
 	}
+	defer os.RemoveAll(dir)
 	data, err := readFileFromClone(dir, filePath)
 	if err != nil {
 		return "", "", fmt.Errorf("read %s from clone: %w", filePath, err)
@@ -1128,9 +1129,12 @@ func cloneRepo(ctx context.Context, creds gitCredentials, branch string) (string
 	return dir, nil
 }
 
-// readFileFromClone reads a file from a cloned repo directory.
+// readFileFromClone reads a file from a cloned repo directory. The path is the
+// stack's own setting, so it goes through os.Root: a path or a symlink leading
+// out of the checkout, to the API's own files, is refused rather than read into
+// the stack's spec.
 func readFileFromClone(dir, filePath string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(dir, filepath.Clean(filePath)))
+	return readRepoFile(dir, filepath.ToSlash(filepath.Clean(filePath)))
 }
 
 // headSHA returns the HEAD commit SHA from a cloned repo directory.
