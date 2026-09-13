@@ -9,7 +9,9 @@ import (
 )
 
 type ListProjectsInput struct {
-	OrgID string `path:"orgId"`
+	OrgID  string `path:"orgId"`
+	Search string `query:"search" maxLength:"100" doc:"Only projects whose name or slug contains this, ignoring case"`
+	Sort   string `query:"sort" enum:"recent,name" default:"recent" doc:"recent: newest first; name: A to Z"`
 }
 
 type ListProjectsOutput struct {
@@ -111,7 +113,7 @@ func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*
 	if err != nil {
 		return nil, err
 	}
-	projects, err := h.svc.Projects.ListWithCounts(ctx, orgID)
+	projects, err := h.svc.Projects.ListWithCounts(ctx, orgID, svc.ProjectListOptions{Search: input.Search, Sort: input.Sort})
 	if err != nil {
 		return nil, err
 	}

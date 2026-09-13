@@ -1,8 +1,8 @@
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/layout/option-select"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { FolderKanban, Globe, Loader2, Plus, Server, ServerCrash, Search, LayoutGrid, List, ArrowUpRight } from "lucide-react"
 import { projects as projectsApi, toProject } from "@/lib/api"
 import type { Project } from "@/types"
@@ -18,16 +18,24 @@ export const Route = createFileRoute("/_app/projects/")({
 function ProjectsPage() {
   const [search, setSearch] = useState("")
   const [view, setView] = useState<"grid" | "list">("grid")
-  const [sort, setSort] = useState("recent")
+  const [sort, setSort] = useState<"recent" | "name">("recent")
+  // The server searches and sorts; wait for a pause in typing before asking it.
+  const [query, setQuery] = useState("")
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 250)
+    return () => clearTimeout(t)
+  }, [search])
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const isAdmin = useIsAdmin()
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["projects", orgId],
-    queryFn: () => projectsApi.list(orgId!, token),
+    queryKey: ["projects", orgId, { search: query, sort }],
+    queryFn: () => projectsApi.list(orgId!, token, { search: query, sort }),
     enabled: !!orgId,
     select: (raw) => raw.map(toProject),
+    // Keep the current list on screen while the next search loads.
+    placeholderData: keepPreviousData,
   })
 
   if (isLoading) {
@@ -49,8 +57,7 @@ function ProjectsPage() {
     )
   }
 
-  const projectList = data ?? []
-  const visible = projectList.filter(p => `${p.name} ${p.slug}`.toLowerCase().includes(search.toLowerCase())).sort((a,b) => sort === "name" ? a.name.localeCompare(b.name) : b.createdAt.getTime() - a.createdAt.getTime())
+  const visible = data ?? []
 
   return (
     <div className="console-page p-6 space-y-6">
@@ -71,11 +78,11 @@ function ProjectsPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-48 max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input aria-label="Search projects" placeholder="Search projects…" value={search} onChange={e => setSearch(e.target.value)} className="h-10 w-full pl-10 pr-3" /></div>
-        <OptionSelect label="Sort projects" value={sort} onChange={setSort} options={[{"value": "recent", "label": "Newest first"}, {"value": "name", "label": "Name A\u2013Z"}]} />
+        <OptionSelect label="Sort projects" value={sort} onChange={(v) => setSort(v as "recent" | "name")} options={[{"value": "recent", "label": "Newest first"}, {"value": "name", "label": "Name A\u2013Z"}]} />
         <span className="ml-auto text-sm text-muted-foreground">{visible.length} projects</span>
         <div className="flex gap-1 rounded-lg border border-border p-1"><Button size="icon" variant={view === "grid" ? "secondary" : "ghost"} aria-label="Card view" aria-pressed={view === "grid"} onClick={() => setView("grid")}><LayoutGrid className="size-4" /></Button><Button size="icon" variant={view === "list" ? "secondary" : "ghost"} aria-label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}><List className="size-4" /></Button></div>
       </div>
-      {projectList.length === 0 ? (
+      {visible.length === 0 && !query ? (
         <div className="rounded-lg border border-dashed border-border/60 py-16 flex flex-col items-center gap-3">
           <FolderKanban className="h-8 w-8 text-muted-foreground/30" />
           <div className="text-center">

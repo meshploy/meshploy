@@ -45,7 +45,7 @@ func TestProjectCountsCoverEveryResourceKind(t *testing.T) {
 	require.Equal(t, 1, got.DatabasesCount)
 	require.Equal(t, int(groups), got.VariablesCount)
 
-	list, err := svcs.Projects.ListWithCounts(ctx, org.ID)
+	list, err := svcs.Projects.ListWithCounts(ctx, org.ID, service.ProjectListOptions{})
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	require.Equal(t, got.ProjectCounts, list[0].ProjectCounts)

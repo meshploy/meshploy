@@ -46,8 +46,13 @@ export function toProject(p: ApiProject): Project {
 }
 
 export const projects = {
-  list: (orgId: string, token: string) =>
-    apiFetch<ApiProject[]>(`/api/v1/orgs/${orgId}/projects`, {}, token),
+  list: (orgId: string, token: string, opts: { search?: string; sort?: "recent" | "name" } = {}) => {
+    const params = new URLSearchParams()
+    if (opts.search) params.set("search", opts.search)
+    if (opts.sort) params.set("sort", opts.sort)
+    const query = params.toString()
+    return apiFetch<ApiProject[]>(`/api/v1/orgs/${orgId}/projects${query ? `?${query}` : ""}`, {}, token)
+  },
 
   get: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiProject>(`/api/v1/orgs/${orgId}/projects/${projectId}`, {}, token),

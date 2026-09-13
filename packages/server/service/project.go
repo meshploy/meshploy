@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
@@ -33,17 +34,38 @@ type ProjectWithCounts struct {
 	ProjectCounts
 }
 
+// ProjectListOptions narrows and orders a project list.
+type ProjectListOptions struct {
+	Search string // matched against name and slug, ignoring case
+	Sort   string // "name" for A to Z; anything else, newest first
+}
+
+// likeEscaper escapes LIKE's wildcards, so a search for "a_b" matches only that.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 func (s *ProjectService) List(ctx context.Context, orgID uuid.UUID) ([]db.Project, error) {
 	projects := make([]db.Project, 0)
 	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&projects).Error
 	return projects, err
 }
 
-// ListWithCounts returns all projects for an org with resource counts embedded.
-// A single SQL aggregation query fetches counts for all projects at once — no N+1.
-func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID) ([]ProjectWithCounts, error) {
+// ListWithCounts returns an org's projects with resource counts embedded,
+// filtered and ordered by opts. A single SQL aggregation query fetches counts for
+// all projects at once, with no N+1.
+func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID, opts ProjectListOptions) ([]ProjectWithCounts, error) {
+	q := s.db.WithContext(ctx).Where("organization_id = ?", orgID)
+	if term := strings.TrimSpace(opts.Search); term != "" {
+		pattern := "%" + likeEscaper.Replace(term) + "%"
+		q = q.Where("(name ILIKE ? OR slug ILIKE ?)", pattern, pattern)
+	}
+	// id breaks ties, so projects created in the same instant keep one order.
+	if opts.Sort == "name" {
+		q = q.Order("LOWER(name)").Order("id")
+	} else {
+		q = q.Order("created_at DESC").Order("id")
+	}
 	projects := make([]db.Project, 0)
-	if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&projects).Error; err != nil {
+	if err := q.Find(&projects).Error; err != nil {
 		return nil, err
 	}
 	if len(projects) == 0 {

@@ -2,9 +2,12 @@ import { http, HttpResponse } from "msw"
 import { demoProject, DEMO_ORG_ID, DEMO_PROJECT_ID } from "../data"
 
 export const projectsHandlers = [
-  http.get("/api/v1/orgs/:orgId/projects", () =>
-    HttpResponse.json([demoProject])
-  ),
+  // Searches as the API does: name or slug, ignoring case.
+  http.get("/api/v1/orgs/:orgId/projects", ({ request }) => {
+    const search = (new URL(request.url).searchParams.get("search") ?? "").trim().toLowerCase()
+    const matches = `${demoProject.name} ${demoProject.slug}`.toLowerCase().includes(search)
+    return HttpResponse.json(search && !matches ? [] : [demoProject])
+  }),
 
   http.get("/api/v1/orgs/:orgId/projects/:projectId", () =>
     HttpResponse.json(demoProject)
