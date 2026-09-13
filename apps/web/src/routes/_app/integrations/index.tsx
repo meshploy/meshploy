@@ -73,7 +73,7 @@ function IntegrationsPage() {
     { queryKey: ["notification-channels", orgId], queryFn: () => notificationsApi.list(orgId, token), enabled: !!orgId },
   ] })
   const emailCount = useQuery({ queryKey: ["email-config", orgId], queryFn: () => emailConfigApi.get(orgId, token), enabled: !!orgId })
-  const counts = [gitLoading ? "…" : gitList.length, ...countQueries.map(q => q.isPending ? "…" : q.isError ? "—" : (q.data?.length ?? 0)), emailCount.isPending ? "…" : emailCount.data ? 1 : 0]
+  const counts = [gitLoading ? "…" : gitList.length, ...countQueries.map(q => q.isPending ? "…" : q.isError ? "-" : (q.data?.length ?? 0)), emailCount.isPending ? "…" : emailCount.data ? 1 : 0]
 
   const gitDeleteMutation = useMutation({
     mutationFn: (id: string) => gitApi.delete(orgId, id, token),

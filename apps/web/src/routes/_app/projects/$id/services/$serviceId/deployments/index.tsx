@@ -108,8 +108,8 @@ function DeploymentsTab() {
     <div className="console-page space-y-6">
       <ResourceIntro title="Deployment history" description="Follow builds and rollouts, inspect output, and manage previous deployments." />
       <div className="resource-metrics">
-        <MetricTile icon={Rocket} label="Deployments" value={isLoading ? "—" : deploymentList.length} detail="Recorded history" />
-        <MetricTile icon={Loader2} label="In progress" value={isLoading ? "—" : deploymentList.filter(d => ACTIVE_STATUSES.has(d.status)).length} detail="Queued, building or rolling out" />
+        <MetricTile icon={Rocket} label="Deployments" value={isLoading ? "…" : deploymentList.length} detail="Recorded history" />
+        <MetricTile icon={Loader2} label="In progress" value={isLoading ? "…" : deploymentList.filter(d => ACTIVE_STATUSES.has(d.status)).length} detail="Queued, building or rolling out" />
         <MetricTile icon={RotateCcw} label="Rollback" value={<span className="text-xl">{rollbackEnabled ? "Enabled" : "Disabled"}</span>} detail="Configured in build settings" />
       </div>
       <div className="flex items-center justify-between">

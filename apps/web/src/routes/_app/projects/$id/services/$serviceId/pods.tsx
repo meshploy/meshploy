@@ -120,9 +120,9 @@ function PodsTab() {
     <div className="console-page space-y-6">
       <ResourceIntro title="Runtime pods" description="Inspect readiness, resource usage and placement. Open a terminal for a running container." />
       <div className="resource-metrics">
-        <MetricTile icon={Box} label="Ready pods" value={isLoading ? "—" : pods.filter(p => p.ready).length} unit={`/ ${pods.length}`} detail="Current readiness" />
-        <MetricTile icon={RefreshCw} label="Restarts" value={isLoading ? "—" : pods.reduce((n,p) => n+p.restarts,0)} detail="Across current pods" />
-        <MetricTile icon={Server} label="Placement" value={isLoading ? "—" : new Set(pods.map(p => p.node_name).filter(Boolean)).size} unit="nodes" detail="Assigned by the scheduler" />
+        <MetricTile icon={Box} label="Ready pods" value={isLoading ? "…" : pods.filter(p => p.ready).length} unit={`/ ${pods.length}`} detail="Current readiness" />
+        <MetricTile icon={RefreshCw} label="Restarts" value={isLoading ? "…" : pods.reduce((n,p) => n+p.restarts,0)} detail="Across current pods" />
+        <MetricTile icon={Server} label="Placement" value={isLoading ? "…" : new Set(pods.map(p => p.node_name).filter(Boolean)).size} unit="nodes" detail="Assigned by the scheduler" />
       </div>
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">

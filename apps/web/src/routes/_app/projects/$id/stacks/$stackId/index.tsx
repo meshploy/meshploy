@@ -16,8 +16,8 @@ function StackOverview() {
   if (!stack) return null
   return <div className="console-page space-y-6">
     <div className="resource-metrics">
-      <MetricTile icon={Box} label="Services" value={services?.length ?? "—"} detail="Managed by this stack" />
-      <MetricTile icon={Layers} label="Running" value={services?.filter(s => s.status === "running").length ?? "—"} detail="Current service state" />
+      <MetricTile icon={Box} label="Services" value={services?.length ?? "-"} detail="Managed by this stack" />
+      <MetricTile icon={Layers} label="Running" value={services?.filter(s => s.status === "running").length ?? "-"} detail="Current service state" />
       <MetricTile icon={Variable} label="Variables" value={Object.keys(stack.variables ?? {}).length} detail="Stack-level configuration" />
     </div>
     <div className="resource-overview-columns"><div className="space-y-6 min-w-0">

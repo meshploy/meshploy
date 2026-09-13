@@ -17,8 +17,8 @@ function JobOverview() {
   const latest = runs?.slice().sort((a,b) => Date.parse(b.created_at)-Date.parse(a.created_at))[0]
   return <div className="console-page space-y-6">
     <div className="resource-metrics">
-      <MetricTile icon={Play} label="Recorded runs" value={runs?.length ?? "—"} detail="Retained execution history" />
-      <MetricTile icon={Check} label="Successful runs" value={runs?.filter(r => r.status === "success").length ?? "—"} detail="Within retained history" />
+      <MetricTile icon={Play} label="Recorded runs" value={runs?.length ?? "-"} detail="Retained execution history" />
+      <MetricTile icon={Check} label="Successful runs" value={runs?.filter(r => r.status === "success").length ?? "-"} detail="Within retained history" />
       <MetricTile icon={Clock} label="Trigger" value={<span className="text-xl">{job.is_cron ? "Scheduled" : "On demand"}</span>} detail={job.is_cron ? job.schedule : "Use Run now to start an execution"} />
     </div>
     <div className="resource-overview-columns"><div className="space-y-6 min-w-0">

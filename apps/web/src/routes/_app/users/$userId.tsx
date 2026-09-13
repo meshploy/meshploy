@@ -57,7 +57,7 @@ function UserDetailPage() {
       </div>
 
       <ResourceIntro title="Workspace access" description="Review the resources this member can access and manage explicit permissions." />
-      <div className="resource-overview-columns"><div className="min-w-0"><PrincipalPermissions orgId={orgId} principalId={userId} token={token} /></div><aside><ResourcePanel title="Member details"><ResourceFact label="Name">{member?.user_name || "Loading…"}</ResourceFact><ResourceFact label="Email">{member?.user_email || "—"}</ResourceFact><p className="mt-5 text-sm text-muted-foreground leading-relaxed">Resource grants control access to individual projects and services.</p></ResourcePanel></aside></div>
+      <div className="resource-overview-columns"><div className="min-w-0"><PrincipalPermissions orgId={orgId} principalId={userId} token={token} /></div><aside><ResourcePanel title="Member details"><ResourceFact label="Name">{member?.user_name || "Loading…"}</ResourceFact><ResourceFact label="Email">{member?.user_email || "-"}</ResourceFact><p className="mt-5 text-sm text-muted-foreground leading-relaxed">Resource grants control access to individual projects and services.</p></ResourcePanel></aside></div>
     </div>
   )
 }

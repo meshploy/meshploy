@@ -129,9 +129,9 @@ function ServiceOverviewTab() {
   return (
     <div className="console-page resource-overview space-y-6">
       <div className="resource-metrics">
-        <MetricTile icon={Activity} label="CPU" value={cpu ?? "—"} unit={cpu ? "cores" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.cpu_limit || "Not set"}`} />
-        <MetricTile icon={MemoryStick} label="Memory" value={memory ?? "—"} unit={memory !== null ? "MiB" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.memory_limit || "Not set"}`} />
-        <MetricTile icon={Box} label="Replicas" value={podsError || !pods ? "—" : readyPods} unit={`/ ${service.replicas} ready`} detail={podsError ? "Pod readiness unavailable" : observedNodeNames.length ? `On ${observedNodeNames.join(", ")}` : "No placement reported"} />
+        <MetricTile icon={Activity} label="CPU" value={cpu ?? "-"} unit={cpu ? "cores" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.cpu_limit || "Not set"}`} />
+        <MetricTile icon={MemoryStick} label="Memory" value={memory ?? "-"} unit={memory !== null ? "MiB" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.memory_limit || "Not set"}`} />
+        <MetricTile icon={Box} label="Replicas" value={podsError || !pods ? "-" : readyPods} unit={`/ ${service.replicas} ready`} detail={podsError ? "Pod readiness unavailable" : observedNodeNames.length ? `On ${observedNodeNames.join(", ")}` : "No placement reported"} />
       </div>
       <div className="resource-overview-columns">
         <div className="space-y-6 min-w-0">
