@@ -34,6 +34,7 @@ function StackLayout() {
   })
 
   const tabs = [
+    { label: "Overview", to: "/projects/$id/stacks/$stackId" as const },
     { label: "Services",     to: "/projects/$id/stacks/$stackId/services"     as const },
     { label: "Variables",    to: "/projects/$id/stacks/$stackId/variables"    as const },
     { label: "Editor",       to: "/projects/$id/stacks/$stackId/editor"       as const },
@@ -49,7 +50,7 @@ function StackLayout() {
         icon={<Layers className="h-4 w-4 text-muted-foreground" />}
         name={isLoading ? "…" : (stack?.name ?? "")}
         badge={stack && (
-          <Badge className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[stack.status]}`}>
+          <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[stack.status]}`}>
             {stack.status}
           </Badge>
         )}
@@ -59,7 +60,7 @@ function StackLayout() {
             key={label}
             to={to}
             params={{ id: projectId, stackId }}
-            className={tabLinkCls}
+            activeOptions={{ exact: label === "Overview" }} className={tabLinkCls}
           >
             {label}
           </Link>

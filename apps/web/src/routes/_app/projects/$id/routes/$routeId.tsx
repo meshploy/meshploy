@@ -1,3 +1,4 @@
+import { MetricTile, ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CornerDownRight, ExternalLink, Globe, Loader2, Pencil, Plus, ServerCrash, Trash2, X } from "lucide-react"
@@ -184,7 +185,7 @@ function RouteDetailPage() {
         nameClassName="font-mono"
         badge={
           <>
-            <Badge className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${ZONE_STYLES[route.zone] ?? ""}`}>
+            <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${ZONE_STYLES[route.zone] ?? ""}`}>
               {route.zone}
             </Badge>
             <a
@@ -199,16 +200,9 @@ function RouteDetailPage() {
         }
         subtitle={`${targetCount} path rule${targetCount !== 1 ? "s" : ""}`}
       />
-      <div className="p-6 space-y-6 max-w-2xl">
-
-        {/* Details */}
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          <DetailRow label="Hostname" value={route.hostname} mono />
-          <DetailRow label="Zone" value={route.zone} />
-          {route.subdomain && <DetailRow label="Subdomain" value={route.subdomain} mono />}
-          <DetailRow label="Created" value={new Date(route.created_at).toLocaleString()} />
-        </div>
-
+      <div className="console-page space-y-6">
+        <div className="routing-flow"><Globe className="size-6 text-primary" /><div><p className="text-sm font-semibold break-all">{route.hostname}</p><p className="text-xs text-muted-foreground mt-1">{route.zone === "internal" ? "Internal traffic" : "Public traffic"}</p></div><span className="routing-flow-line"/><div><p className="text-sm font-semibold">{targetCount} path rules</p><p className="text-xs text-muted-foreground mt-1">Longest matching path first</p></div></div>
+        <div className="resource-overview-columns"><div className="min-w-0 space-y-6">
         {/* Targets */}
         <Section title="Targets" subtitle="Path rules for this hostname, matched longest-first.">
           <div className="space-y-2">
@@ -267,6 +261,10 @@ function RouteDetailPage() {
           </div>
         </Section>
 
+        </div><aside className="space-y-6">
+          <ResourcePanel title="Route details"><ResourceFact label="Hostname"><code>{route.hostname}</code></ResourceFact><ResourceFact label="Zone">{route.zone}</ResourceFact>{route.subdomain && <ResourceFact label="Subdomain">{route.subdomain}</ResourceFact>}<ResourceFact label="Created">{new Date(route.created_at).toLocaleDateString()}</ResourceFact></ResourcePanel>
+          <ResourcePanel title="Path matching"><p className="text-sm text-muted-foreground leading-relaxed">Requests use the most specific matching path. Each target defines where that traffic goes, including its destination and forwarding settings.</p></ResourcePanel>
+        </aside></div>
         {/* Danger zone */}
         <Section title="Danger zone" subtitle="Permanent actions that cannot be undone." danger>
           <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between gap-4">
@@ -421,7 +419,7 @@ function TargetForm({
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                       <span className="ml-2 text-muted-foreground text-xs">:{p.port}</span>
-                      {p.is_primary && <span className="ml-1 text-[10px] text-primary">primary</span>}
+                      {p.is_primary && <span className="ml-1 text-[11px] text-primary">primary</span>}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -612,12 +610,12 @@ function TargetItem({
         )}
         <span className="text-xs text-foreground flex-1 min-w-0 truncate font-mono">{targetLabel}</span>
         {isRedirect && (
-          <Badge className="text-[9px] px-1 py-0 h-4 border bg-amber-500/10 text-amber-400 border-amber-500/20 shrink-0">
+          <Badge className="text-[11px] px-1 py-0 h-4 border bg-amber-500/10 text-amber-400 border-amber-500/20 shrink-0">
             {target.redirect_code}
           </Badge>
         )}
         {target.strip_path && !isRedirect && (
-          <Badge className="text-[9px] px-1 py-0 h-4 border bg-muted/50 text-muted-foreground border-border/40 shrink-0">
+          <Badge className="text-[11px] px-1 py-0 h-4 border bg-muted/50 text-muted-foreground border-border/40 shrink-0">
             strip
           </Badge>
         )}
@@ -651,7 +649,7 @@ function TargetItem({
       </div>
       {!isRedirect && target.target_ip && (
         <div className="flex items-center gap-1.5 pl-0.5">
-          <code className="text-[10px] font-mono text-muted-foreground/50">
+          <code className="text-[11px] font-mono text-muted-foreground/50">
             {target.target_ip}:{target.target_port}
           </code>
         </div>

@@ -1,3 +1,4 @@
+import { ResourcePanel, ResourceFact, ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, User } from "lucide-react"
@@ -36,12 +37,12 @@ function UserDetailPage() {
 
   if (!member && members.length > 0) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">Member not found.</div>
+      <div className="console-page p-6 text-sm text-muted-foreground">Member not found.</div>
     )
   }
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page space-y-6">
       {/* Header */}
       <div className="space-y-4">
         <Link
@@ -55,7 +56,8 @@ function UserDetailPage() {
         {member && <MemberHeader member={member} />}
       </div>
 
-      <PrincipalPermissions orgId={orgId} principalId={userId} token={token} />
+      <ResourceIntro title="Workspace access" description="Review the resources this member can access and manage explicit permissions." />
+      <div className="resource-overview-columns"><div className="min-w-0"><PrincipalPermissions orgId={orgId} principalId={userId} token={token} /></div><aside><ResourcePanel title="Member details"><ResourceFact label="Name">{member?.user_name || "Loading…"}</ResourceFact><ResourceFact label="Email">{member?.user_email || "—"}</ResourceFact><p className="mt-5 text-sm text-muted-foreground leading-relaxed">Resource grants control access to individual projects and services.</p></ResourcePanel></aside></div>
     </div>
   )
 }
@@ -74,8 +76,8 @@ function MemberHeader({ member }: { member: ApiOrgMember }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-base font-semibold">{member.user_name}</p>
-          <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5">
+          <h1>{member.user_name}</h1>
+          <Badge variant="secondary" className="gap-1 text-[11px] px-1.5 py-0 h-5">
             <User className="h-2.5 w-2.5" />member
           </Badge>
         </div>

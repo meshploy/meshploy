@@ -61,9 +61,9 @@ function NewIntegrationPage() {
   const { category } = Route.useSearch()
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="new-resource-page integration-create bg-background flex flex-col">
       {/* Top bar */}
-      <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
+      <div className="resource-create-top sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="h-14 flex items-center gap-3 px-6">
           <Button
             variant="ghost"
@@ -74,13 +74,13 @@ function NewIntegrationPage() {
             Integrations
           </Button>
           <span className="text-muted-foreground/40">/</span>
-          <span className="text-sm font-medium">Add integration</span>
+          <h1 className="text-2xl font-semibold tracking-tight">Add integration</h1>
         </div>
       </div>
 
-      <div className="flex flex-1">
+      <div className="resource-create-layout flex flex-1">
         {/* Sidebar */}
-        <aside className="w-52 shrink-0 border-r border-border/40 py-6 px-3 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
+        <aside className="resource-type-picker w-52 shrink-0 border-r border-border/40 py-6 px-3 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
           <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider px-2 mb-2">
             Type
           </p>
@@ -90,6 +90,7 @@ function NewIntegrationPage() {
                 key={id}
                 variant="ghost"
                 onClick={() => !soon && navigate({ to: "/integrations/new", search: { category: id }, replace: true })}
+                aria-pressed={category === id}
                 disabled={soon}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
@@ -103,7 +104,7 @@ function NewIntegrationPage() {
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="flex-1">{label}</span>
                 {soon && (
-                  <span className="text-[9px] font-mono border border-border/40 px-1 py-px rounded text-muted-foreground/40">
+                  <span className="text-[11px] font-mono border border-border/40 px-1 py-px rounded text-muted-foreground/40">
                     soon
                   </span>
                 )}
@@ -113,7 +114,7 @@ function NewIntegrationPage() {
         </aside>
 
         {/* Form */}
-        <main className="flex-1 py-8 px-8 max-w-2xl">
+        <main className="resource-form flex-1 py-8 px-8 max-w-2xl">
           {category === "git" && (
             <GitForm onSuccess={() => navigate({ to: "/integrations" })} />
           )}
@@ -822,7 +823,7 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
                 <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
                   {label}
                 </span>
-                <code className="text-[10px] font-mono text-muted-foreground/50">{value}</code>
+                <code className="text-[11px] font-mono text-muted-foreground/50">{value}</code>
               </label>
             ))}
           </div>

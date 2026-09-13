@@ -1,3 +1,4 @@
+import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
 import { Download, Loader2, ScrollText, Search, X } from "lucide-react"
@@ -181,7 +182,8 @@ function LogsTab() {
     SINCE_OPTIONS.find((o) => o.value === since)?.label ?? since
 
   return (
-    <div className="flex flex-col h-full p-6 space-y-3">
+    <div className="console-page flex flex-col h-full space-y-4">
+      <ResourceIntro title="Service logs" description="Search container output, adjust the time range, and follow new events as they arrive." />
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Tail */}
@@ -291,17 +293,17 @@ function LogsTab() {
             {search ? ` · filter: ${search}` : ""}
           </code>
           {search && filteredLines.length !== logLines.length && (
-            <span className="ml-auto text-[10px] text-amber-400/70 font-mono">
+            <span className="ml-auto text-[11px] text-amber-400/70 font-mono">
               {filteredLines.length} / {logLines.length} lines
             </span>
           )}
           {!search && streamDone && (
-            <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono">
+            <span className="ml-auto text-[11px] text-muted-foreground/50 font-mono">
               stream ended
             </span>
           )}
           {!search && streaming && (
-            <span className="ml-auto flex items-center gap-1 text-[10px] text-emerald-400/70 font-mono">
+            <span className="ml-auto flex items-center gap-1 text-[11px] text-emerald-400/70 font-mono">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
               live
             </span>

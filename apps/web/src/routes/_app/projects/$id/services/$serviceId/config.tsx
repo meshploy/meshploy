@@ -1,3 +1,6 @@
+import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
+import { ResourceIntro } from "@/components/layout/resource-workbench"
+import { FormLayout } from "@/components/layout/form-layout"
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect, useMemo } from "react"
@@ -48,7 +51,8 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
-  const [envVars, setEnvVars] = useState("")
+  const draft = useConfigDraft("")
+  const { value: envVars, setValue: setEnvVars } = draft
 
   const { data, isLoading } = useQuery({
     queryKey: ["service-env-vars", orgId, projectId, serviceId],
@@ -57,7 +61,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
   })
 
   useEffect(() => {
-    if (data !== undefined) setEnvVars(data.env_vars)
+    if (data !== undefined) draft.sync(data.env_vars)
   }, [data])
 
   const mutation = useMutation({
@@ -66,6 +70,8 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
       queryClient.invalidateQueries({ queryKey: ["service-env-vars", orgId, projectId, serviceId] })
     },
   })
+
+  useConfigSave("Environment variables", draft, () => mutation.mutateAsync(), !isLoading)
 
   // Names a ${…} reference can use besides the service's own: its attached
   // groups' variables. The same query as the variable groups section below.
@@ -108,12 +114,6 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
       {mutation.isError && (
         <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
       )}
-      <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending || isLoading}>
-          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Save
-        </Button>
-      </div>
     </Section>
   )
 }
@@ -141,7 +141,7 @@ function GroupAttachmentRow({
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-medium text-foreground truncate">{group.name}</span>
           {group.system_managed && (
-            <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60 shrink-0">auto</span>
+            <span className="text-[11px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60 shrink-0">auto</span>
           )}
         </div>
         <p className="text-[11px] text-muted-foreground/60 mt-0.5">
@@ -581,7 +581,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
   )
 
   // ── Form state ────────────────────────────────────────────────────────────
-  const [form, setForm] = useState({
+  const draft = useConfigDraft({
     source: "git" as "git" | "image",
     // git visibility: "public" = no auth needed; "private" = requires git integration
     gitVisibility: "private" as "public" | "private",
@@ -605,14 +605,15 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     cpuLimit: "500m",
     memoryRequest: "128Mi",
     memoryLimit: "512Mi",
-    showResources: false,
   })
+  const { value: form, setValue: setForm } = draft
+  const [showResources, setShowResources] = useState(false)
   const patch = (p: Partial<typeof form>) => setForm((f) => ({ ...f, ...p }))
 
   useEffect(() => {
     if (!service) return
     const isGit = !!bc?.git_repo
-    patch({
+    draft.sync({
       source: isGit ? "git" : "image",
       gitVisibility: bc?.git_integration_id ? "private" : "public",
       image: service.image ?? "",
@@ -693,6 +694,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       queryClient.invalidateQueries({ queryKey: ["build-config", orgId, projectId, serviceId] })
     },
   })
+
+  useConfigSave("Source and deployment", draft, () => mutation.mutateAsync(), !svcLoading && !bcLoading)
 
   if (svcLoading || bcLoading) return (
     <div className="flex items-center gap-2 text-muted-foreground py-8">
@@ -800,17 +803,19 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       </Section>
 
       {/* ── Resource limits (collapsible) ─────────────────────── */}
-      <div className="rounded-lg border border-border/40">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         <Button
           variant="ghost"
-          onClick={() => patch({ showResources: !form.showResources })}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setShowResources(!showResources)}
+          aria-expanded={showResources}
+          aria-controls="service-resource-limits"
+          className="h-auto w-full flex items-center justify-between rounded-none px-5 py-4 sm:px-6 text-sm text-foreground transition-colors"
         >
           <span className="font-medium">Resource limits</span>
-          <ChevronDown className={cn("h-4 w-4 transition-transform", form.showResources ? "rotate-180" : "")} />
+          <ChevronDown className={cn("h-4 w-4 transition-transform", showResources ? "rotate-180" : "")} />
         </Button>
-        {form.showResources && (
-          <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
+        {showResources && (
+          <div id="service-resource-limits" className="grid grid-cols-1 gap-x-6 gap-y-5 border-t border-border px-5 py-5 sm:grid-cols-2 sm:px-6 sm:py-6">
             <Field label="CPU request"><input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} /></Field>
             <Field label="CPU limit"><input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} /></Field>
             <Field label="Memory request"><input value={form.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} /></Field>
@@ -822,15 +827,9 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       {mutation.isError && (
         <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
       )}
-      {mutation.isSuccess && (
+      {mutation.isSuccess && !draft.dirty && (
         <p className="text-xs text-emerald-400">Saved.</p>
       )}
-      <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Save changes
-        </Button>
-      </div>
     </div>
   )
 }
@@ -841,7 +840,8 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
-  const [envVars, setEnvVars] = useState("")
+  const draft = useConfigDraft("")
+  const { value: envVars, setValue: setEnvVars } = draft
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["build-env-vars", orgId, projectId, serviceId],
@@ -851,7 +851,7 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
   })
 
   useEffect(() => {
-    if (data !== undefined) setEnvVars(data.build_env_vars)
+    if (data !== undefined) draft.sync(data.build_env_vars)
   }, [data])
 
   const mutation = useMutation({
@@ -861,6 +861,8 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
       queryClient.invalidateQueries({ queryKey: ["build-env-vars", orgId, projectId, serviceId] })
     },
   })
+
+  useConfigSave("Build environment variables", draft, () => mutation.mutateAsync(), !isLoading && !isError)
 
   if (isError) return null // no build config yet
 
@@ -890,15 +892,9 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
       {mutation.isError && (
         <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
       )}
-      {mutation.isSuccess && (
+      {mutation.isSuccess && !draft.dirty && (
         <p className="text-xs text-emerald-400">Saved.</p>
       )}
-      <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending || isLoading}>
-          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Save
-        </Button>
-      </div>
     </Section>
   )
 }
@@ -1022,13 +1018,14 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
     retry: false,
   })
 
-  const [enabled, setEnabled] = useState(false)
-  const [retention, setRetention] = useState("5")
+  const draft = useConfigDraft({ enabled: false, retention: "5" })
+  const { enabled, retention } = draft.value
+  const setEnabled = (enabled: boolean) => draft.setValue(v => ({ ...v, enabled }))
+  const setRetention = (retention: string) => draft.setValue(v => ({ ...v, retention }))
 
   useEffect(() => {
     if (bc) {
-      setEnabled(bc.rollback_enabled ?? false)
-      setRetention(String(bc.image_retention ?? 5))
+      draft.sync({ enabled: bc.rollback_enabled ?? false, retention: String(bc.image_retention ?? 5) })
     }
   }, [bc])
 
@@ -1040,6 +1037,8 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
       }, token),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["build-config", orgId, projectId, serviceId] }),
   })
+
+  useConfigSave("Rollback", draft, () => mutation.mutateAsync(), service?.type === "application" && !!bc && !isLoading)
 
   // Only show for application services that have a build config
   if (service?.type !== "application" || (!isLoading && !bc)) return null
@@ -1072,12 +1071,6 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
           </Field>
         )}
 
-        <div className="flex justify-end">
-          <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending || isLoading}>
-            {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Save
-          </Button>
-        </div>
       </div>
     </Section>
   )
@@ -1115,11 +1108,12 @@ function PortsSection({ projectId, serviceId }: { projectId: string; serviceId: 
     enabled: !!orgId,
   })
 
-  const [rows, setRows] = useState<PortRow[]>([])
+  const draft = useConfigDraft<PortRow[]>([])
+  const { value: rows, setValue: setRows } = draft
 
   useEffect(() => {
-    if (service?.ports?.length) {
-      setRows(service.ports.map(mkPortRow))
+    if (service) {
+      draft.sync((service.ports ?? []).map(mkPortRow))
     }
   }, [service])
 
@@ -1156,6 +1150,8 @@ function PortsSection({ projectId, serviceId }: { projectId: string; serviceId: 
       qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
     },
   })
+
+  useConfigSave("Ports", draft, () => mutation.mutateAsync(), service?.type === "application")
 
   if (service?.type !== "application") return null
 
@@ -1237,13 +1233,7 @@ function PortsSection({ projectId, serviceId }: { projectId: string; serviceId: 
       {mutation.isError && (
         <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>
       )}
-      {mutation.isSuccess && <p className="text-xs text-emerald-400">Saved.</p>}
-      <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-          {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Save ports
-        </Button>
-      </div>
+      {mutation.isSuccess && !draft.dirty && <p className="text-xs text-emerald-400">Saved.</p>}
     </Section>
   )
 }
@@ -1256,7 +1246,7 @@ function ConfigTab() {
   })
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <ConfigSaveBar key={serviceId}><div className="console-page space-y-6"><ResourceIntro title="Service configuration" description="Configure the build source, environment, networking and mounted resources." /><FormLayout><div className="space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
 <VariableGroupsSection projectId={projectId} serviceId={serviceId} />
             <ConfigFilesSection projectId={projectId} serviceId={serviceId} />
@@ -1265,6 +1255,6 @@ function ConfigTab() {
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SourceDeploySection projectId={projectId} serviceId={serviceId} />
       <RollbackSection projectId={projectId} serviceId={serviceId} />
-    </div>
+    </div></FormLayout></div></ConfigSaveBar>
   )
 }

@@ -18,7 +18,7 @@ export function ComingSoonTab({
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="text-xs text-muted-foreground mt-1 max-w-xs">{description}</p>
       </div>
-      <span className="text-[10px] font-mono text-muted-foreground/50 border border-border/40 px-2 py-0.5 rounded-full mt-1">
+      <span className="text-[11px] font-mono text-muted-foreground/50 border border-border/40 px-2 py-0.5 rounded-full mt-1">
         coming soon
       </span>
     </div>

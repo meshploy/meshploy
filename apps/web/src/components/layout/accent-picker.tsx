@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useId } from "react"
 import { Check } from "lucide-react"
 import { ACCENT_GROUPS, getAccent } from "@/lib/accents"
 import { useAccentStore } from "@/store/accent-store"
@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
 export function AccentPicker() {
+  const panelId = useId()
   const { accentId, setAccent } = useAccentStore()
   const current = getAccent(accentId)
   const [open, setOpen] = useState(false)
@@ -18,8 +19,10 @@ export function AccentPicker() {
         setOpen(false)
       }
     }
+    function onKeyDown(e: KeyboardEvent) { if (e.key === "Escape") { setOpen(false); containerRef.current?.querySelector("button")?.focus() } }
+    document.addEventListener("keydown", onKeyDown)
     document.addEventListener("pointerdown", onPointerDown)
-    return () => document.removeEventListener("pointerdown", onPointerDown)
+    return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown) }
   }, [open])
 
   function handleSelect(id: string) {
@@ -35,6 +38,9 @@ export function AccentPicker() {
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 h-8 px-2 rounded-md border border-border/60 bg-muted/20 hover:bg-muted/40 transition-colors"
         title="Accent theme"
+        aria-label="Accent theme"
+        aria-expanded={open}
+        aria-controls={panelId}
       >
         <span
           className="h-4 w-4 rounded-sm shrink-0"
@@ -47,7 +53,7 @@ export function AccentPicker() {
 
       {/* Dropdown panel */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-lg border border-border/60 bg-popover shadow-lg shadow-black/30 overflow-hidden">
+        <div id={panelId} role="region" aria-label="Accent colors" className="absolute right-0 top-full mt-2 z-50 w-72 rounded-lg border border-border/60 bg-popover shadow-lg shadow-black/30 overflow-hidden">
           <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Accent theme</p>
@@ -73,6 +79,7 @@ export function AccentPicker() {
                       <Button
                         key={color.id}
                         variant="ghost"
+                        aria-pressed={isSelected}
                         onClick={() => handleSelect(color.id)}
                         className={cn(
                           "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm transition-colors text-left",

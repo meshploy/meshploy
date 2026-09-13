@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useTabStore } from "@/store/tab-store"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
 import {
@@ -78,7 +79,11 @@ function MeshMark({ className }: { className?: string }) {
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const { sidebarCollapsed: preferredCollapsed, toggleSidebar, mobileNavOpen, setMobileNavOpen } = useUIStore()
+  const projectContext = /^\/projects\/[^/]+/.test(pathname) && !pathname.startsWith("/projects/new")
+  const [expandProjectRail, setExpandProjectRail] = useState(false)
+  const sidebarCollapsed = (projectContext ? !expandProjectRail : preferredCollapsed) && !mobileNavOpen
+  useEffect(() => { setMobileNavOpen(false) }, [pathname, setMobileNavOpen])
   const token = useAuthStore((s) => s.token)
   const isAdmin = useIsAdmin()
   const [upgradeOpen, setUpgradeOpen] = useState(false)
@@ -125,14 +130,15 @@ export function AppSidebar() {
     : NAV_GROUPS
 
   return (
-    <aside
+    <aside aria-label="Main navigation"
       className={cn(
-        "flex flex-col h-screen border-r border-sidebar-border bg-sidebar shrink-0 transition-[width] duration-200 ease-in-out",
-        sidebarCollapsed ? "w-[60px]" : "w-[220px]"
+        "global-sidebar flex flex-col h-dvh border-r border-sidebar-border bg-sidebar shrink-0 transition-[width] duration-200 ease-in-out",
+        sidebarCollapsed ? "w-[68px]" : "w-[236px]",
+        mobileNavOpen && "mobile-open"
       )}
     >
       {/* Logo */}
-      <div className={cn("flex items-center h-14 px-4 border-b border-sidebar-border shrink-0", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
+      <div className={cn("sidebar-brand flex items-center h-14 px-4 border-b border-sidebar-border shrink-0", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
         <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary/15 shrink-0">
           <MeshMark className="w-4 h-4 text-primary" />
         </div>
@@ -142,12 +148,12 @@ export function AppSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col p-2 flex-1 gap-4">
+      <nav onClick={e => { if (!e.metaKey && !e.ctrlKey && (e.target as Element).closest("a")) useTabStore.getState().setActiveTab(null) }} className="flex flex-col p-2 flex-1 gap-4">
         {navGroups.filter((g) => !g.adminOnly || isAdmin).map((group, gi) => (
           <div key={gi} className="flex flex-col gap-0.5">
             {/* Group label — only in expanded mode */}
             {group.label && !sidebarCollapsed && (
-              <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/30">
+              <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 {group.label}
               </p>
             )}
@@ -165,11 +171,12 @@ export function AppSidebar() {
                       render={
                         <Link
                           to={item.href}
+                          aria-label={item.label}
                           className={cn(
-                            "flex items-center justify-center h-9 w-9 rounded-md mx-auto transition-colors",
+                            "flex items-center justify-center h-10 w-10 rounded-lg mx-auto transition-colors",
                             isActive
-                              ? "bg-sidebar-accent text-sidebar-foreground"
-                              : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                              ? "active-navigation"
+                              : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent"
                           )}
                         />
                       }
@@ -185,11 +192,12 @@ export function AppSidebar() {
                 <Link
                   key={item.href}
                   to={item.href}
+                          aria-label={item.label}
                   className={cn(
-                    "relative flex items-center gap-2.5 h-9 px-3 rounded-md text-sm transition-colors",
+                    "relative flex items-center gap-2.5 h-10 px-3 rounded-md text-sm transition-colors",
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-foreground before:absolute before:-left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-primary before:rounded-r-sm"
-                      : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                      ? "active-navigation before:absolute before:-left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-primary before:rounded-r-sm"
+                      : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent"
                   )}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
@@ -245,12 +253,12 @@ export function AppSidebar() {
         {!sidebarCollapsed && ver && (() => {
           const label = (
             <>
-              v{ver.current}
+              v{ver.current.replace(/^v/, "")}
               {/* An edge build is not the release it names: it was cut after it,
                   from main. Saying so is what distinguishes it from a stable build
                   of the same version, and explains why no update is offered. */}
               {ver.channel === "edge" && (
-                <span className="ml-1.5 text-sidebar-foreground/40">· edge</span>
+                <span className="ml-1.5 text-muted-foreground">· edge</span>
               )}
             </>
           )
@@ -261,19 +269,20 @@ export function AppSidebar() {
               to="/settings"
               hash="server"
               title="Version and release channel"
-              className="block px-3 text-[10px] text-sidebar-foreground/30 hover:text-sidebar-foreground/70 transition-colors"
+              className="block px-3 text-[10px] text-muted-foreground hover:text-sidebar-foreground/70 transition-colors"
             >
               {label}
             </Link>
           ) : (
-            <p className="px-3 text-[10px] text-sidebar-foreground/30">{label}</p>
+            <p className="px-3 text-[10px] text-muted-foreground">{label}</p>
           )
         })()}
         <Tooltip>
           <TooltipTrigger
-            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => projectContext ? setExpandProjectRail(!expandProjectRail) : toggleSidebar()}
             className={cn(
-              "flex items-center h-8 w-full rounded-md text-xs text-sidebar-foreground/40 hover:text-sidebar-foreground/70 hover:bg-sidebar-accent transition-colors",
+              "desktop-collapse flex items-center h-8 w-full rounded-md text-xs text-muted-foreground hover:text-sidebar-foreground/70 hover:bg-sidebar-accent transition-colors",
               sidebarCollapsed ? "justify-center" : "gap-2 px-3"
             )}
           >

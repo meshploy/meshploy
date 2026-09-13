@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, FolderKanban, Loader2 } from "lucide-react"
+import { ChevronLeft, Loader2 } from "lucide-react"
 import { projects as projectsApi, ApiError } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -60,44 +60,17 @@ function NewProjectPage() {
   const isValid = name.trim() && derivedSlug && !slugError
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Top bar */}
-      <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
-        <div className="h-14 flex items-center gap-3 px-6">
-          <Button
-            variant="ghost"
-            onClick={() => navigate({ to: "/projects" })}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Projects
-          </Button>
-          <span className="text-muted-foreground/40">/</span>
-          <span className="text-sm font-medium">New project</span>
-        </div>
-      </div>
-
-      <div className="flex-1 flex items-start justify-center py-12 px-6">
-        <div className="w-full max-w-md space-y-8">
-          {/* Header */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 shrink-0">
-              <FolderKanban className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-base font-semibold">New project</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Each project maps to a Kubernetes namespace
-              </p>
-            </div>
-          </div>
-
+    <div className="console-page new-project-workspace space-y-7">
+      <Button variant="ghost" onClick={() => navigate({ to: "/projects" })} className="text-muted-foreground -ml-3"><ChevronLeft className="size-4"/>Projects</Button>
+      <div><h1>New project</h1><p className="mt-2 text-sm text-muted-foreground">Give your applications and resources a shared home.</p></div>
+      <div className="creation-workspace">
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="quiet-surface creation-form"><div className="creation-form-fields space-y-6">
             {/* Name */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Project name</label>
+              <label htmlFor="project-name" className="text-sm font-medium">Project name</label>
               <input
+                id="project-name"
                 type="text"
                 autoFocus
                 autoComplete="off"
@@ -114,7 +87,7 @@ function NewProjectPage() {
             {/* Slug */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Namespace slug</label>
+                <label htmlFor="project-slug" className="text-sm font-medium">Namespace slug</label>
                 <span className="text-xs text-muted-foreground/50 font-mono">k8s namespace</span>
               </div>
               <div className="flex items-stretch rounded-md border border-border/60 bg-input/30 overflow-hidden focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 transition-all">
@@ -122,6 +95,7 @@ function NewProjectPage() {
                   ns/
                 </span>
                 <input
+                  id="project-slug"
                   type="text"
                   autoComplete="off"
                   placeholder="my-api"
@@ -149,16 +123,17 @@ function NewProjectPage() {
               </p>
             )}
 
+            </div><footer className="creation-form-footer"><Button type="button" variant="outline" onClick={() => navigate({ to: "/projects" })} disabled={mutation.isPending}>Cancel</Button>
             <Button
               type="submit"
               disabled={!isValid || mutation.isPending}
-              className="w-full gap-2"
+              className="gap-2"
             >
               {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {mutation.isPending ? "Creating…" : "Create project"}
-            </Button>
+            </Button></footer>
           </form>
-        </div>
+          <aside className="creation-guidance"><h2 className="text-base font-semibold">Start with a project.</h2><p className="mt-4 text-sm text-muted-foreground leading-7">Then add a service, deploy a stack, or connect a database. Keep shared configuration and persistent storage alongside your workloads.</p><div className="mt-7 pt-6 border-t border-border"><h3 className="text-sm font-medium">Choose a name your team recognizes</h3><p className="mt-2 text-xs text-muted-foreground leading-6">The namespace slug identifies this project in the cluster. It is generated from your name, and you can adjust it before creating the project.</p></div></aside>
       </div>
     </div>
   )

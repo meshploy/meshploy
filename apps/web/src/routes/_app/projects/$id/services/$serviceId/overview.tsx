@@ -1,8 +1,11 @@
-import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router"
+import { MetricTile, ResourcePanel, ResourceFact, StatusPill } from "@/components/layout/resource-workbench"
+import { livePoll } from "@/lib/live-poll"
+import { createFileRoute, useParams, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, Server, Box, Database, ExternalLink, Copy, Check, Table2, ArrowRight } from "lucide-react"
+import { Globe, Server, Box, Database, ExternalLink, Copy, Check, Table2, ArrowRight, Activity, MemoryStick, Clock, Layers, Variable, ArrowUpRight } from "lucide-react"
 import {
   services as servicesApi,
+  deployments, variableGroups, stacks,
   routes as routesApi,
   nodes as nodesApi,
   projects as projectsApi,
@@ -23,20 +26,11 @@ export const Route = createFileRoute(
   component: ServiceOverviewTab,
 })
 
-function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
-      <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">{label}</span>
-      <span className="text-xs text-foreground">{children}</span>
-    </div>
-  )
-}
-
 function CopyRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 gap-3">
-      <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider shrink-0">{label}</span>
+      <span className="text-xs text-muted-foreground shrink-0">{label}</span>
       <code className="text-[11px] font-mono text-foreground truncate flex-1 min-w-0 text-right">{value}</code>
       <Button
         variant="ghost"
@@ -74,7 +68,6 @@ function ServiceOverviewTab() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const openTab = useTabStore((s) => s.openTab)
-  const navigate = useNavigate()
 
   const { data: service } = useQuery({
     queryKey: ["service", orgId, projectId, serviceId],
@@ -107,14 +100,20 @@ function ServiceOverviewTab() {
     enabled: !!orgId && service?.type === "database",
   })
 
+  const { data: pods, isError: podsError } = useQuery({ queryKey: ["pods", orgId, projectId, serviceId], queryFn: () => servicesApi.listPods(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: 15000 })
+  const { data: metrics, isError: metricsError } = useQuery({ queryKey: ["pod-metrics", orgId, projectId, serviceId], queryFn: () => servicesApi.getPodMetrics(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: 15000, retry: false })
+  const { data: history, isError: historyError } = useQuery({ queryKey: ["deployments", orgId, projectId, serviceId], queryFn: () => deployments.list(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: livePoll(list => list.some(d => ["pending", "building", "deploying"].includes(d.status))) })
+  const { data: groups = [] } = useQuery({ queryKey: ["service-variable-groups", orgId, projectId, serviceId], queryFn: () => variableGroups.listForService(orgId!, projectId, serviceId, token), enabled: !!orgId })
+  const { data: stack } = useQuery({ queryKey: ["stack", orgId, projectId, service?.stack_id], queryFn: () => stacks.get(orgId!, projectId, service!.stack_id!, token), enabled: !!orgId && !!service?.stack_id })
   if (!service) return null
 
   const isDatabase = service.type === "database"
-  const node = service.node_id
-    ? nodes.find((n) => n.id === service.node_id)
-    : rawNodes.find((n) => n.status === "online" && n.k8s_member)
-      ? toNode(rawNodes.find((n) => n.status === "online" && n.k8s_member)!)
-      : null
+  const observedNodeNames = [...new Set((pods ?? []).map(p => p.node_name).filter(Boolean))]
+  const node = service.node_id ? nodes.find(n => n.id === service.node_id) : observedNodeNames.length === 1 ? nodes.find(n => n.k8sNodeName === observedNodeNames[0]) : undefined
+  const latest = history?.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+  const cpu = metrics?.length ? (metrics.reduce((sum, m) => sum + m.cpu_millis, 0) / 1000).toFixed(2) : null
+  const memory = metrics?.length ? Math.round(metrics.reduce((sum, m) => sum + m.memory_mib, 0)) : null
+  const readyPods = pods?.filter(p => p.ready).length
   const attachedRoutes = projectRoutes.filter((r) =>
     r.targets.some((t) => t.service_id === service.id)
   )
@@ -128,144 +127,45 @@ function ServiceOverviewTab() {
     : null
 
   return (
-    <div className="p-6 space-y-4">
-      {/* Stat tiles */}
-      <div className="grid gap-3 grid-cols-3">
-        {isDatabase ? (
-          <>
-            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Database className="h-3 w-3" /> Engine
-              </p>
-              <p className="text-xl font-semibold tabular-nums leading-tight">
-                {dc ? ENGINE_LABELS[dc.engine] ?? dc.engine : "—"}
-              </p>
-              <p className="text-xs text-muted-foreground">{dc?.version ?? ""}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Box className="h-3 w-3" /> Storage
-              </p>
-              <p className="text-2xl font-semibold tabular-nums">{dc?.storage_gb ?? "—"}</p>
-              <p className="text-xs text-muted-foreground">GiB allocated</p>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Box className="h-3 w-3" /> Replicas
-              </p>
-              <p className="text-2xl font-semibold tabular-nums">{service.replicas}</p>
-              <p className="text-xs text-muted-foreground">
-                {service.status === "running" ? "all healthy" : service.status}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Globe className="h-3 w-3" /> Routes
-              </p>
-              <p className="text-2xl font-semibold tabular-nums">{attachedRoutes.length}</p>
-              <p className="text-xs text-muted-foreground">attached</p>
-            </div>
-          </>
-        )}
-        <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1.5">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <Server className="h-3 w-3" /> {isDatabase ? "Port" : service.ports?.length === 1 ? "Port" : "Ports"}
-          </p>
-          {isDatabase ? (
-            <p className="text-2xl font-semibold tabular-nums">:{(service.ports?.find((p) => p.is_primary) ?? service.ports?.[0])?.port || "—"}</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5 pt-0.5">
-              {(service.ports ?? []).length === 0
-                ? <span className="text-2xl font-semibold tabular-nums text-muted-foreground/40">—</span>
-                : (service.ports ?? []).map((p) => (
-                    <span key={p.id} className="flex items-center gap-1">
-                      {p.is_primary && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
-                      <code className="text-sm font-mono font-semibold tabular-nums">:{p.port}</code>
-                    </span>
-                  ))
-              }
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {service.node_id ? "node pinned" : "auto-scheduled"}
-          </p>
-        </div>
+    <div className="console-page resource-overview space-y-6">
+      <div className="resource-metrics">
+        <MetricTile icon={Activity} label="CPU" value={cpu ?? "—"} unit={cpu ? "cores" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.cpu_limit || "Not set"}`} />
+        <MetricTile icon={MemoryStick} label="Memory" value={memory ?? "—"} unit={memory !== null ? "MiB" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.memory_limit || "Not set"}`} />
+        <MetricTile icon={Box} label="Replicas" value={podsError || !pods ? "—" : readyPods} unit={`/ ${service.replicas} ready`} detail={podsError ? "Pod readiness unavailable" : observedNodeNames.length ? `On ${observedNodeNames.join(", ")}` : "No placement reported"} />
       </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Current deployment — shared */}
-        <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border/40">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Current deployment</p>
-          </div>
-          <div className="px-4 py-1">
-            <InfoRow label="Image">
-              {service.image
-                ? <code className="text-[11px] font-mono truncate max-w-[220px] block text-right">{service.image}</code>
-                : <span className="text-muted-foreground/50">Not deployed yet</span>
-              }
-            </InfoRow>
-            <InfoRow label="Node">
-              {service.node_id && node
-                ? <span className="flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${node.status === "online" ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />{node.name}</span>
-                : <span className="text-muted-foreground/50">auto-scheduled</span>
-              }
-            </InfoRow>
-            {!isDatabase && (service.ports ?? []).map((p) => (
-              <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 gap-2">
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <code className="text-[11px] font-mono text-muted-foreground/70">:{p.port}</code>
-                  {p.node_port > 0 && (
-                    <>
-                      <span className="text-muted-foreground/30 text-[10px]">→</span>
-                      <code className="text-[11px] font-mono text-foreground">
-                        {node?.tailscaleIP ? `${node.tailscaleIP}:${p.node_port}` : `:${p.node_port}`}
-                      </code>
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {p.is_primary && <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary">primary</span>}
-                  {p.is_http    && <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400">http</span>}
-                  {p.is_public  && <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400">public</span>}
-                </div>
-              </div>
-            ))}
-            {!isDatabase && (
-              <InfoRow label="Replicas">
-                <span>{service.replicas} / {service.replicas}</span>
-              </InfoRow>
-            )}
-            <InfoRow label="Last updated">
-              <span>{formatRelativeTime(new Date(service.updated_at))}</span>
-            </InfoRow>
-          </div>
+      <div className="resource-overview-columns">
+        <div className="space-y-6 min-w-0">
+          <ResourcePanel title="Latest deployment" action={latest && <StatusPill status={latest.status} />}>
+            {historyError ? <p className="resource-empty">Deployment history is unavailable.</p> : !latest ? <div className="resource-empty"><Box className="size-7 mx-auto mb-4" /><p>No deployments yet</p><p className="mt-2 text-xs">Deploy this service to see its build and rollout here.</p></div> : <>
+              <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><Box className="size-5 text-muted-foreground" /><h3 className="text-sm font-semibold">{latest.status === "success" ? "Deployment completed" : latest.status === "failed" ? "Deployment failed" : `Deployment ${latest.status}`}</h3></div><Link to="/projects/$id/services/$serviceId/deployments/$deploymentId" params={{ id: projectId, serviceId, deploymentId: latest.id }} className="resource-id-link">{latest.id.slice(0, 8)}<ArrowUpRight className="size-3" /></Link></div>
+              <p className="mt-5 text-xs font-mono text-muted-foreground break-all">{latest.image || service.image || "Image not reported"}</p>
+              <div className="deployment-state-track"><div className="flex items-center justify-between gap-3"><span className="text-sm font-medium">Reported state</span><StatusPill status={latest.status} /></div><p className="mt-3 text-xs text-muted-foreground">Started {formatRelativeTime(new Date(latest.created_at))}{latest.deployed_at ? ` · Deployed ${formatRelativeTime(new Date(latest.deployed_at))}` : ""}</p></div>
+              <pre className="resource-log-preview">{latest.log?.trim() ? latest.log.split("\n").slice(-6).join("\n") : "No deployment log has been recorded yet."}</pre>
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Runtime readiness is shown separately above.</p><Link className="text-xs text-primary inline-flex gap-1 items-center" to="/projects/$id/services/$serviceId/deployments/$deploymentId" params={{ id: projectId, serviceId, deploymentId: latest.id }}>View deployment<ArrowRight className="size-3" /></Link></div>
+            </>}
+          </ResourcePanel>
+          <ResourcePanel title="Runtime" description="The image and networking configured for this service.">
+            <ResourceFact label="Image"><code className="break-all">{service.image || "Not configured"}</code></ResourceFact>
+            {(service.ports ?? []).map(port => <ResourceFact key={port.id} label={port.name || "Port"}><span className="flex flex-wrap justify-end gap-2"><code>{port.port}{port.node_port > 0 ? ` → ${node?.tailscaleIP || "mesh node"}:${port.node_port}` : ""}</code><span className="text-muted-foreground">{port.is_http ? "HTTP" : "TCP"}{port.is_primary ? " · Primary" : ""}{port.is_public ? " · Public" : ""}</span></span></ResourceFact>)}
+            {isDatabase && dc && <><ResourceFact label="Engine">{ENGINE_LABELS[dc.engine] || dc.engine} {dc.version}</ResourceFact><ResourceFact label="Storage">{dc.storage_gb} GiB allocated</ResourceFact></>}
+            <ResourceFact label="Updated">{formatRelativeTime(new Date(service.updated_at))}</ResourceFact>
+          </ResourcePanel>
         </div>
-
-        {/* Right panel: DB credentials+connections or attached routes */}
-        {isDatabase ? (
-          <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Connection</p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-6 gap-1.5 text-[11px] px-2"
-                disabled={service.status !== "running"}
-                onClick={() => openTab({
-                  id: serviceId,
-                  type: "explorer",
-                  label: service.name,
-                  payload: { serviceId, projectId, dbName: service.name },
-                })}
-              >
-                <Table2 className="h-3 w-3" />
-                Open Explorer
-              </Button>
-            </div>
+        <div className="space-y-6 min-w-0">
+          <ResourcePanel title="Connections">
+            {attachedRoutes.map(r => <ResourceFact key={r.id} label={r.zone === "internal" ? "Internal domain" : "Domain"}><Link to="/projects/$id/routes/$routeId" params={{ id: projectId, routeId: r.id }} className="text-primary break-all">{r.hostname}</Link><a className="inline-flex ml-2 text-muted-foreground" href={`https://${r.hostname}`} target="_blank" rel="noopener noreferrer" aria-label={`Open ${r.hostname}`}><ExternalLink className="size-3" /></a></ResourceFact>)}
+            {!attachedRoutes.length && <ResourceFact label="Domains"><span className="text-muted-foreground">No routes attached</span></ResourceFact>}
+            {(service.ports ?? []).map(port => <ResourceFact key={port.id} label={port.is_primary ? "Primary port" : "Port"}><code>{port.port} · {port.is_http ? "HTTP" : "TCP"}</code></ResourceFact>)}
+            {groups.map(group => <ResourceFact key={group.id} label="Variable group"><Link className="text-primary" to="/projects/$id/variables/$groupId" params={{ id: projectId, groupId: group.id }}>{group.name}</Link></ResourceFact>)}
+            <ResourceFact label="Stack">{stack ? <Link className="text-primary" to="/projects/$id/stacks/$stackId" params={{ id: projectId, stackId: stack.id }}>{stack.name}</Link> : service.stack_id ? "Loading stack…" : "Standalone service"}</ResourceFact>
+          </ResourcePanel>
+          <ResourcePanel title="Placement" action={<StatusPill status={service.status} />}>
+            {observedNodeNames.length ? observedNodeNames.map(name => <div key={name} className="placement-node"><Server className="size-5 text-muted-foreground" /><div><p className="text-sm font-medium">{name}</p><p className="mt-1 text-xs text-muted-foreground">{(pods || []).filter(p => p.node_name === name).length} pods assigned</p></div></div>) : <p className="text-sm text-muted-foreground">No pod placement has been reported.</p>}
+            <ResourceFact label="Scheduling">{service.node_id ? "Pinned to a node" : "Automatic"}</ResourceFact>
+            {node && <ResourceFact label="Node"><Link className="text-primary" to="/nodes/$id" params={{ id: node.id }}>{node.name} · {node.tailscaleIP}</Link></ResourceFact>}
+            <Link className="mt-4 inline-flex items-center gap-2 text-xs text-primary" to="/projects/$id/services/$serviceId/pods" params={{ id: projectId, serviceId }}>Inspect pods<ArrowRight className="size-3" /></Link>
+          </ResourcePanel>
+          {isDatabase && <ResourcePanel title="Database access" action={<Button size="sm" variant="outline" disabled={service.status !== "running"} onClick={() => openTab({ id: serviceId, type: "explorer", label: service.name, payload: { serviceId, projectId, dbName: service.name } })}><Table2 className="size-4" />Open Explorer</Button>}>
             {!dc ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground/50">Provision the database to see connection details</div>
             ) : (
@@ -279,7 +179,7 @@ function ServiceOverviewTab() {
                   ? <CopyRow label="Mesh" value={meshConnStr} />
                   : (
                     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
-                      <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">Mesh</span>
+                      <span className="text-xs text-muted-foreground">Mesh</span>
                       <span className="text-xs text-muted-foreground/40 italic">
                         {dc.node_port ? "resolving node…" : "not provisioned"}
                       </span>
@@ -295,52 +195,8 @@ function ServiceOverviewTab() {
                 </p>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-border/40">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Attached routes</p>
-            </div>
-            {attachedRoutes.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground/50">
-                No routes attached
-              </div>
-            ) : (
-              <div className="divide-y divide-border/30">
-                {attachedRoutes.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                    <div className="min-w-0">
-                      <code className="text-xs font-mono text-foreground truncate block">{r.hostname}</code>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {r.zone}{r.targets[0] ? ` · ${r.targets[0].target_ip}:${r.targets[0].target_port}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => navigate({ to: "/projects/$id/routes/$routeId", params: { id: projectId, routeId: r.id } })}
-                        title="Open route details"
-                        className="text-muted-foreground/40 hover:text-muted-foreground"
-                      >
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Button>
-                      <a
-                        href={`https://${r.hostname}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground transition-colors h-7 w-7"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          </ResourcePanel>}
+        </div>
       </div>
     </div>
   )

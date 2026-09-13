@@ -127,7 +127,7 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
           <p className="text-xs">No members have access to this {resourceType} yet</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+        <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
           {userGrants.map((user) => (
             <UserGrantRow
               key={user.userId}

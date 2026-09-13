@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
+import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
+import { createFileRoute, useNavigate, useParams, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ExternalLink, Globe, Loader2, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -21,13 +22,14 @@ const ZONE_STYLES: Record<string, string> = {
 }
 
 function RoutesTab() {
+  const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/routes/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const stackNames = useStackNames(orgId, projectId)
   const navigate = useNavigate()
 
-  const { data: routeList = [], isLoading } = useQuery({
+  const { data: routeList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["routes", orgId, projectId],
     queryFn: () => routesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
@@ -37,10 +39,10 @@ function RoutesTab() {
     navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "route" } })
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium">Routes</h2>
+          <h1>Routes</h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{routeList.length}</span>}
         </div>
@@ -50,6 +52,8 @@ function RoutesTab() {
         </Button>
       </div>
 
+      {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
+      <ResourceSearch value={search} onChange={setSearch} label="routes" empty={routeList.length > 0 && !routeList.some(matches)} />
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -67,18 +71,18 @@ function RoutesTab() {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden">
+        <div className="console-data-table rounded-xl border border-border overflow-hidden">
           <Table>
             <TableHeader className="bg-muted/20">
               <TableRow className="border-b border-border/40 hover:bg-transparent">
-                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[45%]">Hostname</TableHead>
-                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[12%]">Zone</TableHead>
-                <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Paths</TableHead>
-                <TableHead className="w-10" />
+                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[45%]">Hostname</TableHead>
+                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[12%]">Zone</TableHead>
+                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground">Paths</TableHead>
+                <TableHead aria-label="Actions" className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {routeList.map((route) => (
+              {routeList.filter(matches).map((route) => (
                 <RouteRow
                   key={route.id}
                   route={route}
@@ -108,16 +112,16 @@ function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
   const overflow = route.targets.length - MAX_PATHS
 
   return (
-    <TableRow className="border-b border-border/30 hover:bg-muted/20 cursor-pointer" onClick={onClick}>
+    <TableRow tabIndex={0} onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") onClick() }} className="border-b border-border/30 hover:bg-muted/20 cursor-pointer" onClick={e => { if (!(e.target as HTMLElement).closest("a,button")) onClick() }}>
       <TableCell className="px-4 py-3">
         <div className="flex items-center gap-2">
           <Globe className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-          <span className="font-medium text-foreground font-mono text-sm">{route.hostname}</span>
+          <Link to="/projects/$id/routes/$routeId" params={{ id: projectId, routeId: route.id }} className="font-medium text-foreground font-mono text-sm hover:text-primary">{route.hostname}</Link>
           <StackPill stackId={route.stack_id} stackNames={stackNames} orgId={orgId} projectId={projectId} />
         </div>
       </TableCell>
       <TableCell className="px-4 py-3">
-        <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border ${ZONE_STYLES[route.zone] ?? "bg-muted text-muted-foreground border-border"}`}>
+        <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${ZONE_STYLES[route.zone] ?? "bg-muted text-muted-foreground border-border"}`}>
           {route.zone}
         </Badge>
       </TableCell>
@@ -129,18 +133,18 @@ function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
             <>
               {shown.map((t) => (
                 <span key={t.id} className="flex items-center gap-0.5">
-                  <code className="text-[10px] font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground">
+                  <code className="text-[11px] font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground">
                     {t.path}
                   </code>
                   {t.redirect_route_id && (
-                    <span className="text-[9px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded">
+                    <span className="text-[11px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded">
                       ↪ {t.redirect_code || 301}
                     </span>
                   )}
                 </span>
               ))}
               {overflow > 0 && (
-                <span className="text-[10px] text-muted-foreground/50">+{overflow} more</span>
+                <span className="text-[11px] text-muted-foreground/50">+{overflow} more</span>
               )}
             </>
           )}
@@ -148,6 +152,7 @@ function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
       </TableCell>
       <TableCell className="px-3 py-3 text-right">
         <a
+          aria-label={`Open ${route.hostname} in a new tab`}
           href={`https://${route.hostname}`}
           target="_blank"
           rel="noopener noreferrer"

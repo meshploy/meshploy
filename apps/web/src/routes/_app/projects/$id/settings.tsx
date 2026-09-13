@@ -1,3 +1,4 @@
+import { SettingsWorkspace } from "@/components/layout/settings-workspace"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -49,9 +50,11 @@ function ProjectSettingsPage() {
   if (!project) return null
 
   return (
-    <div className="p-6 max-w-2xl space-y-8">
+    <div className="console-page settings-page space-y-6">
+      <div><h1>Project settings</h1><p className="mt-2 text-sm text-muted-foreground">Manage project identity and lifecycle.</p></div>
+      <SettingsWorkspace sections={[["project-general", "General"], ["project-danger", "Danger zone"]]}>
       {/* General */}
-      <section className="space-y-4">
+      <section id="project-general" className="console-section space-y-4">
         <div>
           <h2 className="text-sm font-medium">General</h2>
           <p className="text-xs text-muted-foreground mt-0.5">Basic project information.</p>
@@ -114,7 +117,7 @@ function ProjectSettingsPage() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Slug</p>
               <code className="text-xs font-mono text-foreground">{project.slug}</code>
             </div>
-            <span className="text-[10px] text-muted-foreground/40 border border-border/40 px-1.5 py-0.5 rounded">
+            <span className="text-[11px] text-muted-foreground/40 border border-border/40 px-1.5 py-0.5 rounded">
               K8s namespace
             </span>
           </div>
@@ -122,7 +125,7 @@ function ProjectSettingsPage() {
       </section>
 
       {/* Danger zone */}
-      <section className="space-y-4">
+      <section id="project-danger" className="console-section console-section-danger space-y-4">
         <div>
           <h2 className="text-sm font-medium text-destructive/80">Danger zone</h2>
           <p className="text-xs text-muted-foreground mt-0.5">Irreversible actions. Proceed with caution.</p>
@@ -162,6 +165,7 @@ function ProjectSettingsPage() {
           )}
         </div>
       </section>
+      </SettingsWorkspace>
     </div>
   )
 }

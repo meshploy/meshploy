@@ -1,3 +1,5 @@
+import { FormLayout } from "@/components/layout/form-layout"
+import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -34,9 +36,9 @@ function ConfigPage() {
   if (!job) return null
 
   return (
-    <div className="p-6 max-w-2xl space-y-8">
+    <div className="console-page"><ResourceIntro title="Execution configuration" description="Define what runs, when it runs, and the resources available to it." /><FormLayout><div className="space-y-6">
       <ConfigForm key={job.updated_at} job={job} orgId={orgId} projectId={projectId} token={token} />
-    </div>
+    </div></FormLayout></div>
   )
 }
 

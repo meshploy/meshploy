@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/layout/option-select"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -35,6 +36,8 @@ function UsersPage() {
     if (role === "member") navigate({ to: "/" })
   }, [role])
 
+  const [search, setSearch] = useState("")
+  const [roleFilter, setRoleFilter] = useState("all")
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
   const [showInvite, setShowInvite] = useState(false)
@@ -82,7 +85,7 @@ function UsersPage() {
   const total = members.length + invitations.length
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Users</h1>
@@ -123,7 +126,7 @@ function UsersPage() {
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   placeholder="Email address"
                   value={inviteEmail}
@@ -154,6 +157,7 @@ function UsersPage() {
         </div>
       )}
 
+      <div className="flex flex-wrap gap-3"><Input aria-label="Search users" placeholder="Search by name or email…" value={search} onChange={e=>setSearch(e.target.value)} className="h-10 max-w-md"/><OptionSelect label="Filter users by role" value={roleFilter} onChange={setRoleFilter} options={[{"value": "all", "label": "All roles"}, {"value": "owner", "label": "Owner"}, {"value": "admin", "label": "Admin"}, {"value": "member", "label": "Member"}]} /></div>
       {/* Member list */}
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
@@ -161,8 +165,8 @@ function UsersPage() {
           <span>Loading…</span>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          {members.map((member) => (
+        <div className="console-data-table quiet-surface rounded-xl border border-border overflow-x-auto"><table className="w-full min-w-[560px] text-left"><thead><tr className="border-b border-border text-xs text-muted-foreground"><th className="p-4 font-medium">Member</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium">Role</th><th className="p-4 font-medium">Access</th></tr></thead><tbody>
+          {members.filter(m => `${m.user_name} ${m.user_email}`.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || m.role === roleFilter)).map((member) => (
             <MemberRow
               key={member.id}
               member={member}
@@ -171,10 +175,10 @@ function UsersPage() {
               token={token}
             />
           ))}
-          {invitations.map((inv) => (
+          {invitations.filter(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)).map((inv) => (
             <PendingInviteRow key={inv.id} invitation={inv} />
           ))}
-        </div>
+        {!members.some(m => `${m.user_name} ${m.user_email}`.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || m.role === roleFilter)) && !invitations.some(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)) && <tr><td colSpan={4} className="p-8 text-center text-sm text-muted-foreground">No matching users or invitations.</td></tr>}</tbody></table></div>
       )}
     </div>
   )
@@ -230,45 +234,7 @@ function MemberRow({ member, canEdit, orgId, token }: {
     <RoleBadge role={member.role as OrgRole} />
   )
 
-  // The row links to the member's permissions page, but the role control is a
-  // button and must not sit inside that link.
-  //
-  // Nesting them put a button inside an anchor — invalid HTML, and it made the
-  // dropdown unopenable: stopping the click from reaching the Link also stopped
-  // the Link's own handler, which is what calls preventDefault, so the browser
-  // fell through to the anchor's default and did a full page load to the detail
-  // page. Linking the regions separately removes the conflict rather than
-  // suppressing it, and keeps each control doing one thing.
-  if (canManagePermissions) {
-    return (
-      <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors">
-        <Link
-          to="/users/$userId"
-          params={{ userId: member.user_id }}
-          className="flex items-center gap-3 flex-1 min-w-0"
-        >
-          {avatarAndName}
-        </Link>
-        {roleControl}
-        <Link
-          to="/users/$userId"
-          params={{ userId: member.user_id }}
-          aria-label={`Permissions for ${member.user_name}`}
-          className="shrink-0 ml-1"
-        >
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
-        </Link>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
-      {avatarAndName}
-      {roleControl}
-      <span className="w-5 shrink-0" />
-    </div>
-  )
+  return <tr className="border-b border-border last:border-0 hover:bg-muted/20"><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} className="flex items-center gap-3">{avatarAndName}</Link> : <div className="flex items-center gap-3">{avatarAndName}</div>}</td><td className="p-4 text-xs text-muted-foreground">Member</td><td className="p-4">{roleControl}</td><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Permissions for ${member.user_name}`} className="text-xs text-primary">Manage access</Link> : <span className="text-xs text-muted-foreground">Organization-wide</span>}</td></tr>
 }
 
 function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
@@ -280,38 +246,22 @@ function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
-      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted/40 shrink-0">
-        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-muted-foreground">{invitation.email}</p>
-        <p className="text-xs text-muted-foreground/60">Invite pending</p>
-      </div>
-      <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5 shrink-0">
-        <Clock className="h-2.5 w-2.5" />{invitation.role}
-      </Badge>
-      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" onClick={copyLink} title="Copy invite link">
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
-      </Button>
-    </div>
-  )
+  return <tr className="border-b border-border last:border-0"><td className="p-4 text-sm">{invitation.email}</td><td className="p-4"><span className="text-xs text-muted-foreground inline-flex items-center gap-2"><Clock className="size-3"/>Invite pending</span></td><td className="p-4"><RoleBadge role={invitation.role as OrgRole}/></td><td className="p-4"><Button size="sm" variant="ghost" onClick={copyLink} title="Copy invite link">{copied ? <Check className="size-3"/> : <Copy className="size-3"/>}{copied ? "Copied" : "Copy link"}</Button></td></tr>
 }
 
 function RoleBadge({ role }: { role: OrgRole }) {
   if (role === "owner") return (
-    <Badge className="gap-1 text-[10px] px-1.5 py-0 h-5 bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/10">
+    <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/10">
       <Crown className="h-2.5 w-2.5" />owner
     </Badge>
   )
   if (role === "admin") return (
-    <Badge className="gap-1 text-[10px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">
+    <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">
       <Shield className="h-2.5 w-2.5" />admin
     </Badge>
   )
   return (
-    <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5">
+    <Badge variant="secondary" className="gap-1 text-[11px] px-1.5 py-0 h-5">
       <User className="h-2.5 w-2.5" />member
     </Badge>
   )

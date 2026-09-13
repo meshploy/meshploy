@@ -1,6 +1,7 @@
+import { MetricTile, ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Terminal, RefreshCw } from "lucide-react"
+import { Terminal, RefreshCw, Box, Server } from "lucide-react"
 import { services as servicesApi, type ApiPodInfo, type ApiPodMetrics } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -59,7 +60,7 @@ function formatMem(mib: number): string {
   return `${mib}Mi`
 }
 
-const thCls = "px-4 py-2.5 font-medium text-muted-foreground/70 uppercase tracking-wider text-[10px]"
+const thCls = "px-4 py-2.5 font-medium text-muted-foreground/70 text-[11px]"
 const tdCls = "px-4 py-3"
 
 function PodsTab() {
@@ -116,7 +117,13 @@ function PodsTab() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page space-y-6">
+      <ResourceIntro title="Runtime pods" description="Inspect readiness, resource usage and placement. Open a terminal for a running container." />
+      <div className="resource-metrics">
+        <MetricTile icon={Box} label="Ready pods" value={isLoading ? "—" : pods.filter(p => p.ready).length} unit={`/ ${pods.length}`} detail="Current readiness" />
+        <MetricTile icon={RefreshCw} label="Restarts" value={isLoading ? "—" : pods.reduce((n,p) => n+p.restarts,0)} detail="Across current pods" />
+        <MetricTile icon={Server} label="Placement" value={isLoading ? "—" : new Set(pods.map(p => p.node_name).filter(Boolean)).size} unit="nodes" detail="Assigned by the scheduler" />
+      </div>
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           {pods.length} pod{pods.length !== 1 ? "s" : ""} · refreshes every 10 s
@@ -133,7 +140,7 @@ function PodsTab() {
         </Button>
       </div>
 
-      <div className="rounded-lg border border-border/60 overflow-hidden">
+      <div className="console-data-table rounded-xl border border-border overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-sm text-muted-foreground/50">Loading pods…</div>
         ) : pods.length === 0 ? (
@@ -156,7 +163,7 @@ function PodsTab() {
                 )}
                 <TableHead className={thCls}>Node</TableHead>
                 <TableHead className={thCls}>Age</TableHead>
-                <TableHead className={thCls} />
+                <TableHead aria-label="Actions" className={thCls} />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -168,7 +175,7 @@ function PodsTab() {
                       <code className="font-mono text-[11px] text-foreground">{pod.name}</code>
                     </TableCell>
                     <TableCell className={tdCls}>
-                      <Badge className={`text-[10px] px-1.5 py-0 h-4 border ${PHASE_STYLES[pod.phase] ?? PHASE_STYLES.Unknown}`}>
+                      <Badge className={`text-[11px] px-1.5 py-0 h-4 border ${PHASE_STYLES[pod.phase] ?? PHASE_STYLES.Unknown}`}>
                         {pod.phase}
                       </Badge>
                     </TableCell>

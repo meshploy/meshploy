@@ -19,7 +19,7 @@ export function TabBar() {
   if (tabs.length === 0) return null
 
   return (
-    <div className="flex items-end gap-0 border-b border-border/40 bg-background overflow-x-auto shrink-0 scrollbar-none">
+    <div role="group" aria-label="Open sessions" className="flex items-end gap-0 border-b border-border/40 bg-background overflow-x-auto shrink-0 scrollbar-none">
       {/* Main tab — always first */}
       <Tab
         label="Main"
@@ -63,33 +63,11 @@ function Tab({
   closeable: boolean
 }) {
   return (
-    <Button
-      variant="ghost"
-      onClick={onClick}
-      className={cn(
-        "group relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors shrink-0 border-b-2 border-r border-r-border/30 -mb-px",
-        active
-          ? "border-b-primary text-foreground"
-          : "border-b-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-      )}
-    >
-      {icon}
-      <span className="max-w-[120px] truncate">{label}</span>
-      {closeable && onClose && (
-        <span
-          role="button"
-          tabIndex={-1}
-          onClick={(e) => { e.stopPropagation(); onClose() }}
-          className={cn(
-            "ml-0.5 rounded p-0.5 transition-colors",
-            active
-              ? "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              : "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <X className="h-2.5 w-2.5" />
-        </span>
-      )}
-    </Button>
+    <div className={cn("group flex items-center shrink-0 border-b-2 border-r border-r-border/30 -mb-px", active ? "border-b-primary bg-secondary/40" : "border-b-transparent")}>
+      <Button variant="ghost" onClick={onClick} aria-pressed={active} className={cn("gap-2 px-3 py-2 text-xs font-medium rounded-none", active ? "text-foreground" : "text-muted-foreground")}>
+        {icon}<span className="max-w-[160px] truncate">{label}</span>
+      </Button>
+      {closeable && onClose && <button aria-label={`Close ${label}`} onClick={onClose} className="mr-2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3" /></button>}
+    </div>
   )
 }

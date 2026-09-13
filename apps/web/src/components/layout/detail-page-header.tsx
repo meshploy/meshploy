@@ -12,7 +12,7 @@ interface DetailPageHeaderProps {
   badge?: React.ReactNode
   subtitle?: React.ReactNode
   actions?: React.ReactNode
-  children?: React.ReactNode  // tab nav items
+  children?: React.ReactNode // tab nav items
 }
 
 export function DetailPageHeader({
@@ -28,8 +28,8 @@ export function DetailPageHeader({
   children,
 }: DetailPageHeaderProps) {
   return (
-    <div className="border-b border-border/40 bg-muted/10">
-      <div className="px-6 pt-4 pb-0">
+    <div className="detail-header border-b border-border">
+      <div className="detail-header-inner">
         {/* Back link */}
         <Link
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,32 +43,44 @@ export function DetailPageHeader({
         </Link>
 
         {/* Identity row */}
-        <div className={cn("flex items-start justify-between gap-4", children ? "mb-2.5" : "mb-4")}>
+        <div
+          className={cn(
+            "detail-identity-row flex items-start justify-between gap-4",
+            children ? "mb-2.5" : "mb-4"
+          )}
+        >
           <div className="flex items-center gap-3 min-w-0">
             {/* Icon box */}
-            <div className="w-9 h-9 rounded-md bg-muted/40 border border-border/40 flex items-center justify-center shrink-0">
-              {icon}
-            </div>
+            <div className="detail-resource-icon">{icon}</div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={cn("text-base font-semibold leading-tight", nameClassName)}>
+                <h1
+                  className={cn(
+                    "detail-title font-semibold leading-tight",
+                    nameClassName
+                  )}
+                >
                   {name}
-                </span>
+                </h1>
                 {badge}
               </div>
               {subtitle && (
-                <div className="text-xs text-muted-foreground font-mono mt-0.5">{subtitle}</div>
+                <div className="text-sm text-muted-foreground mt-2">
+                  {subtitle}
+                </div>
               )}
             </div>
           </div>
           {actions && (
-            <div className="flex items-center gap-2 shrink-0">{actions}</div>
+            <div className="detail-actions flex items-center gap-2 shrink-0">
+              {actions}
+            </div>
           )}
         </div>
 
         {/* Tab nav */}
         {children && (
-          <nav className="flex items-center -mb-px">{children}</nav>
+          <nav className="detail-tabs flex items-center -mb-px">{children}</nav>
         )}
       </div>
     </div>
@@ -79,14 +91,14 @@ export function DetailPageHeader({
 export const tabLinkCls =
   "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap " +
   "text-muted-foreground hover:text-foreground border-b-transparent hover:border-b-border/60 " +
-  "data-[status=active]:text-foreground data-[status=active]:border-b-foreground/25"
+  "data-[status=active]:text-foreground data-[status=active]:border-b-primary"
 
 /** Class string for a button/manual-active tab. */
 export function tabItemCls(isActive: boolean) {
   return cn(
     "px-3.5 py-2 text-xs border-b-2 transition-colors whitespace-nowrap",
     isActive
-      ? "text-foreground border-b-foreground/25"
+      ? "text-primary border-b-primary"
       : "text-muted-foreground hover:text-foreground border-b-transparent hover:border-b-border/60"
   )
 }

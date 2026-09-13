@@ -1,3 +1,4 @@
+import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { HardDrive, Loader2, Plus, ChevronRight } from "lucide-react"
@@ -33,11 +34,11 @@ function VolumeCard({ volume, projectId, stackNames, orgId }: {
     <Link
       to="/projects/$id/volumes/$volumeId"
       params={{ id: projectId, volumeId: volume.id }}
-      className="group flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4 hover:border-border transition-all"
+      className="listing-surface interactive-surface group flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4 hover:border-border transition-all"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted border border-border/60 shrink-0">
+          <div className="accent-icon-tile shrink-0">
             <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
           <div>
@@ -49,7 +50,7 @@ function VolumeCard({ volume, projectId, stackNames, orgId }: {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border shrink-0 ${STATUS_STYLES[volume.status]}`}>
+          <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border shrink-0 ${STATUS_STYLES[volume.status]}`}>
             {volume.status}
           </Badge>
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
@@ -58,17 +59,17 @@ function VolumeCard({ volume, projectId, stackNames, orgId }: {
 
       <div className="border-t border-border/40 pt-3 grid grid-cols-3 gap-x-4 gap-y-1.5">
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Size</p>
+          <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Size</p>
           <p className="text-[11px] text-foreground font-mono">{volume.storage_gb} GB</p>
         </div>
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Mount</p>
+          <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Mount</p>
           <p className="text-[11px] font-mono text-muted-foreground truncate">
             {mount ? mount.mount_path : "—"}
           </p>
         </div>
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Created</p>
+          <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Created</p>
           <p className="text-[11px] text-muted-foreground">{formatRelativeTime(new Date(volume.created_at))}</p>
         </div>
       </div>
@@ -77,13 +78,14 @@ function VolumeCard({ volume, projectId, stackNames, orgId }: {
 }
 
 function VolumesTab() {
+  const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/volumes/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const stackNames = useStackNames(orgId, projectId)
   const navigate = useNavigate()
 
-  const { data: volumeList = [], isLoading } = useQuery({
+  const { data: volumeList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["volumes", orgId, projectId],
     queryFn: () => volumesApi.list(orgId, projectId, token),
     enabled: !!orgId,
@@ -100,9 +102,9 @@ function VolumesTab() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Volumes</h2>
+        <h1>Volumes</h1>
         <Button
           size="sm"
           onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "volume" } })}
@@ -134,7 +136,7 @@ function VolumesTab() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {volumeList.map((v) => (
+          {volumeList.filter(matches).map((v) => (
             <VolumeCard key={v.id} volume={v} projectId={projectId} stackNames={stackNames} orgId={orgId} />
           ))}
         </div>

@@ -1,4 +1,6 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
+import { useEffect } from "react"
+import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router"
+import { useUIStore } from "@/store/ui-store"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { Topbar } from "@/components/layout/topbar"
 import { TabBar } from "@/components/layout/tab-bar"
@@ -38,7 +40,23 @@ export const Route = createFileRoute("/_app")({
 })
 
 function AppLayout() {
-  const { tabs, activeTabId } = useTabStore()
+  const { mobileNavOpen, setMobileNavOpen } = useUIStore()
+  const { tabs, activeTabId, setActiveTab } = useTabStore()
+  const pathname = useRouterState({ select: state => state.location.pathname })
+  useEffect(() => { setActiveTab(null) }, [pathname, setActiveTab])
+  useEffect(() => {
+    const wideScreen = window.matchMedia("(min-width: 761px)")
+    const closeOnDesktop = () => { if (wideScreen.matches) setMobileNavOpen(false) }
+    wideScreen.addEventListener("change", closeOnDesktop)
+    return () => wideScreen.removeEventListener("change", closeOnDesktop)
+  }, [setMobileNavOpen])
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    document.querySelector<HTMLAnchorElement>(".global-sidebar a")?.focus()
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setMobileNavOpen(false); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-label="Open navigation"]')?.focus()) } }
+    document.addEventListener("keydown", close)
+    return () => document.removeEventListener("keydown", close)
+  }, [mobileNavOpen, setMobileNavOpen])
   const token = useAuthStore((s) => s.token)!
   const userId = useAuthStore((s) => s.userId)!
   const { currentOrg, setCurrentRole } = useOrgStore()
@@ -60,13 +78,15 @@ function AppLayout() {
   })
 
   return (
-    <div className="flex h-full">
+    <div className="console-shell flex h-full">
+      {mobileNavOpen && <button className="fixed inset-0 z-60 bg-background/80 backdrop-blur-sm md:hidden" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <AppSidebar />
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <div inert={mobileNavOpen ? true : undefined} className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Topbar />
+        {import.meta.env.VITE_DEMO_MODE === "true" && <div className="console-demo-banner"><span><strong>Demo workspace</strong> · Changes stay in this browser session. No infrastructure is connected.</span><button onClick={() => window.location.reload()}>Reset demo</button></div>}
         <TabBar />
         <main className="flex-1 overflow-hidden flex flex-col min-h-0">
-          <div className={cn("flex-1 overflow-y-auto", activeTabId !== null && "hidden")}>
+          <div className={cn("console-route flex-1 overflow-y-auto", activeTabId !== null && "hidden")}>
             <Outlet />
           </div>
           {tabs.map((tab) => (

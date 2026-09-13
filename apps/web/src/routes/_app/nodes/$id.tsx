@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ResourcePanel, ResourceIntro, StatusPill } from "@/components/layout/resource-workbench"
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Activity,
@@ -197,14 +198,15 @@ function NodeDetailPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="console-page p-6 space-y-6">
+      <Link to="/nodes" className="inline-flex text-xs text-muted-foreground hover:text-primary">← Back to nodes</Link>
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <NodeStatusDot status={node.status} className="h-2.5 w-2.5" />
+          <span className="accent-icon-tile"><Server className="size-5"/></span>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight">{node.name}</h1>
+              <h1 className="text-xl font-semibold tracking-tight">{node.name}</h1><StatusPill status={node.status}/>
               <Badge variant={node.k3sRole === "server" ? "default" : "secondary"} className="text-xs">
                 {node.k3sRole}
               </Badge>
@@ -288,6 +290,7 @@ function NodeDetailPage() {
         </div>
       </div>
 
+      <ResourceIntro title="Capacity and utilization" description={computed ? "Live measurements from this node. Open Metrics for detailed monitoring." : "Reported hardware capacity. Live utilization is not available yet."}/>
       {/* Live metrics cards — only rendered when node_exporter is reachable */}
       {computed && (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -334,8 +337,9 @@ function NodeDetailPage() {
         </div>
       )}
 
+      <ResourceIntro title="Connectivity and role" description="Mesh membership, cluster readiness and workload scheduling for this node." />
       {/* Two-column info area */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="resource-overview-columns"><div className="space-y-6">
         {/* Headscale Peer */}
         <InfoCard title="Headscale Peer">
           {node.headscaleId ? (
@@ -373,7 +377,7 @@ function NodeDetailPage() {
                   <Tag className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
                   <div className="flex flex-wrap gap-1">
                     {node.headscaleTags.map((t) => (
-                      <Badge key={t} variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 font-mono">
+                      <Badge key={t} variant="outline" className="text-[11px] px-1.5 py-0 h-4.5 font-mono">
                         {t}
                       </Badge>
                     ))}
@@ -417,7 +421,7 @@ function NodeDetailPage() {
             <p className="text-sm text-muted-foreground">Not joined to the k3s cluster.</p>
           )}
         </InfoCard>
-      </div>
+      </div><aside className="space-y-6">
 
       {/* Role controls */}
       {node.k3sRole === "server"
@@ -425,6 +429,7 @@ function NodeDetailPage() {
         : <NodeRolePicker node={node} orgId={orgId!} token={token} />
       }
 
+      </aside></div>
       {/* Active Projects */}
       {node.activeProjects.length > 0 && (
         <section className="space-y-3">
@@ -475,7 +480,7 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
             <div className="flex items-center gap-2">
               <p className="text-xs font-medium text-foreground">Act as build node</p>
               {isBuilder && (
-                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
                   Active
                 </span>
               )}
@@ -613,7 +618,7 @@ function MetricCard({
   color: string
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-2">
+    <div className="quiet-surface rounded-xl border border-border bg-card p-5 space-y-3">
       <div className="flex items-center gap-1.5 text-muted-foreground">
         {icon}
         <span className="text-xs font-medium">{label}</span>
@@ -637,7 +642,7 @@ function NetworkCard({
   sparkData: number[]
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-2">
+    <div className="quiet-surface rounded-xl border border-border bg-card p-5 space-y-3">
       <div className="flex items-center gap-1.5 text-muted-foreground">
         <Network className="h-4 w-4" />
         <span className="text-xs font-medium">Network</span>
@@ -667,7 +672,7 @@ function SpecCard({
   mono?: boolean
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-1.5">
+    <div className="quiet-surface rounded-xl border border-border bg-card p-5 space-y-3">
       <div className="flex items-center gap-1.5 text-muted-foreground">
         {icon}
         <span className="text-xs font-medium">{label}</span>
@@ -679,10 +684,7 @@ function SpecCard({
 
 function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-3">
-      <h2 className="text-sm font-medium text-foreground">{title}</h2>
-      {children}
-    </div>
+    <ResourcePanel title={title}>{children}</ResourcePanel>
   )
 }
 

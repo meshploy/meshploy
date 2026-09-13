@@ -1,3 +1,4 @@
+import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/_app/projects/$id/config-files/")({
 })
 
 function ConfigFilesPage() {
+  const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/config-files/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
@@ -25,7 +27,7 @@ function ConfigFilesPage() {
   const navigate = useNavigate()
   const stackNames = useStackNames(orgId, projectId)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["config-files", orgId, projectId],
     queryFn: () => configFilesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
@@ -46,10 +48,10 @@ function ConfigFilesPage() {
   })
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page p-6 space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-medium">Config files</h2>
+          <h1>Config files</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Files mounted into a service at a path — for software configured by file rather than by
             environment variable. Stored encrypted; the contents are never shown again after saving.
@@ -65,6 +67,8 @@ function ConfigFilesPage() {
         </Button>
       </div>
 
+      {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
+      <ResourceSearch value={search} onChange={setSearch} label="config files" empty={files.length > 0 && !files.some(matches)} />
       {isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : files.length === 0 ? (
@@ -88,11 +92,13 @@ function ConfigFilesPage() {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          {files.map((f) => (
+        <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
+          {files.filter(matches).map((f) => (
             <div
               key={f.id}
               className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
+              role="link" tabIndex={0}
+              onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") navigate({ to: "/projects/$id/config-files/$fileId", params: { id: projectId, fileId: f.id } }) }}
               onClick={() => navigate({ to: "/projects/$id/config-files/$fileId", params: { id: projectId, fileId: f.id } })}
             >
               <FileCog className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
@@ -104,7 +110,7 @@ function ConfigFilesPage() {
                 <code className="text-[11px] font-mono text-muted-foreground/60 truncate block">{f.path}</code>
               </div>
               {f.services.length > 0 && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4 shrink-0">
                   {f.services.length === 1 ? f.services[0] : `${f.services.length} services`}
                 </Badge>
               )}

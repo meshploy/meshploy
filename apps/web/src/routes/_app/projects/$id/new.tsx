@@ -1,6 +1,8 @@
+import { FormLayout } from "@/components/layout/form-layout"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { SiPostgresql, SiMysql, SiRedis, SiMongodb, SiClickhouse } from "@icons-pack/react-simple-icons"
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
-import { useState, useEffect } from "react"
+import { createFileRoute, useNavigate, useParams, useBlocker } from "@tanstack/react-router"
+import { useState, useEffect, useRef, useContext, createContext } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
@@ -71,7 +73,7 @@ import { SourceFields, type SourceState } from "@/components/services/source-fie
 
 export const Route = createFileRoute("/_app/projects/$id/new")({
   validateSearch: (search: Record<string, unknown>): { type: ResourceType; template?: string } => {
-    const type = (search.type as ResourceType | undefined) ?? "service"
+    const type = RESOURCE_TYPES.some(r => r.type === search.type) ? search.type as ResourceType : "service"
     const template = (search.template as string | undefined) || undefined
     // Keep `template` optional so callers can navigate with just `{ type }`.
     return template ? { type, template } : { type }
@@ -168,7 +170,12 @@ const RESOURCE_TYPES: {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const ResourceDraftContext = createContext<() => void>(() => {})
+
 function NewResourcePage() {
+  const dirty = useRef(false)
+  const draftSaved = () => { dirty.current = false }
+  const blocker = useBlocker({ shouldBlockFn: ({ current, next }) => dirty.current && (current.pathname !== next.pathname || JSON.stringify(current.search) !== JSON.stringify(next.search)), enableBeforeUnload: () => dirty.current, withResolver: true })
   const { id: projectId } = useParams({ from: "/_app/projects/$id/new" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
@@ -230,6 +237,7 @@ function NewResourcePage() {
       return service
     },
     onSuccess: (service) => {
+      draftSaved()
       qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({
@@ -250,9 +258,9 @@ function NewResourcePage() {
         (form.gitVisibility === "public" || form.gitIntegrationId.length > 0))
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <ResourceDraftContext value={draftSaved}><div className="new-resource-page bg-background flex flex-col">
       {/* Top bar */}
-      <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
+      <div className="resource-create-top sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="h-14 flex items-center gap-3 px-6">
           <Button
             variant="ghost"
@@ -263,13 +271,13 @@ function NewResourcePage() {
             {project?.name ?? "Project"}
           </Button>
           <span className="text-muted-foreground/40">/</span>
-          <span className="text-sm font-medium">Create new</span>
+          <h1 className="text-2xl font-semibold tracking-tight">New resource</h1>
         </div>
       </div>
 
-      <div className="flex flex-1">
+      <div className="resource-create-layout flex flex-1">
         {/* ─── Sidebar ─────────────────────────────────────────────── */}
-        <aside className="w-52 shrink-0 border-r border-border/40 py-6 px-3 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
+        <aside aria-label="Resource type" className="resource-type-picker w-52 shrink-0 border-r border-border/40 py-6 px-3 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
           <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider px-2 mb-2">
             Resource type
           </p>
@@ -280,6 +288,7 @@ function NewResourcePage() {
                 <Button
                   variant="ghost"
                   onClick={() => !soon && navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type }, replace: true })}
+                  aria-pressed={resourceType === type}
                   disabled={soon}
                   className={cn(
                     "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors text-left",
@@ -293,7 +302,7 @@ function NewResourcePage() {
                   <Icon className="h-4 w-4 shrink-0" />
                   <span className="flex-1">{label}</span>
                   {soon && (
-                    <span className="text-[9px] font-mono border border-border/40 px-1 py-px rounded text-muted-foreground/40">
+                    <span className="text-[11px] font-mono border border-border/40 px-1 py-px rounded text-muted-foreground/40">
                       soon
                     </span>
                   )}
@@ -304,8 +313,8 @@ function NewResourcePage() {
         </aside>
 
         {/* ─── Form ────────────────────────────────────────────────── */}
-        <main className="flex-1 py-8 px-8 max-w-2xl">
-          {resourceType === "service" ? (
+        <div onChangeCapture={() => { dirty.current = true }} onInputCapture={() => { dirty.current = true }} className="resource-form flex-1 py-8 px-8 max-w-2xl">
+          <FormLayout>{resourceType === "service" ? (
             <ServiceForm
               form={form}
               patch={patch}
@@ -331,10 +340,11 @@ function NewResourcePage() {
             <ConfigFileForm projectId={projectId} />
           ) : (
             <ComingSoonForm type={resourceType} />
-          )}
-        </main>
+          )}</FormLayout>
+        </div>
       </div>
-    </div>
+      <Dialog open={blocker.status === "blocked"} onOpenChange={open => { if (!open) blocker.reset?.() }}><DialogContent><DialogHeader><DialogTitle>Leave this resource draft?</DialogTitle><DialogDescription>Your unsaved changes will be discarded.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => blocker.reset?.()}>Keep editing</Button><Button variant="destructive" onClick={() => { draftSaved(); setForm(INITIAL); blocker.proceed?.() }}>Discard changes</Button></DialogFooter></DialogContent></Dialog>
+    </div></ResourceDraftContext>
   )
 }
 
@@ -772,6 +782,7 @@ const DB_INITIAL: DbFormState = {
 }
 
 function DatabaseForm({ projectId }: { projectId: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
@@ -805,6 +816,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
         db_password: dbf.dbPassword || undefined,
       }, token),
     onSuccess: () => {
+      draftSaved()
       qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/databases", params: { id: projectId } })
@@ -1004,6 +1016,7 @@ const ROUTE_INITIAL: RouteFormState = {
 }
 
 function RouteForm({ projectId }: { projectId: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
@@ -1122,6 +1135,7 @@ function RouteForm({ projectId }: { projectId: string }) {
       return routesApi.create(orgId, projectId, body, token)
     },
     onSuccess: () => {
+      draftSaved()
       qc.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/routes", params: { id: projectId } })
@@ -1507,6 +1521,7 @@ const JOB_INITIAL: JobFormState = {
 }
 
 function JobForm({ projectId }: { projectId: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
@@ -1542,6 +1557,7 @@ function JobForm({ projectId }: { projectId: string }) {
         node_id: jf.nodeId ?? undefined,
       }, token),
     onSuccess: () => {
+      draftSaved()
       qc.invalidateQueries({ queryKey: ["jobs", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/jobs", params: { id: projectId } })
@@ -1707,6 +1723,7 @@ type StackGitVisibility = "public" | "private"
 type StackFetchMode = "file" | "repo"
 
 function StackForm({ projectId, initialTemplateId }: { projectId: string; initialTemplateId?: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
@@ -1808,6 +1825,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
         token
       ),
     onSuccess: (stack) => {
+      draftSaved()
       queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
       queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({
@@ -1820,6 +1838,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
   const createMutation = useMutation({
     mutationFn: () => stacksApi.create(orgId!, projectId, buildCreateBody(), token),
     onSuccess: (stack) => {
+      draftSaved()
       queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
       queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({
@@ -1840,6 +1859,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
       return stack
     },
     onSuccess: (stack) => {
+      draftSaved()
       queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
       queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({
@@ -2134,6 +2154,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
 // ─── Volume form ─────────────────────────────────────────────────────────────
 
 function VolumeForm({ projectId }: { projectId: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
@@ -2162,6 +2183,7 @@ function VolumeForm({ projectId }: { projectId: string }) {
         token
       ),
     onSuccess: () => {
+      draftSaved()
       qc.invalidateQueries({ queryKey: ["volumes", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/volumes", params: { id: projectId } })
@@ -2250,6 +2272,7 @@ function VolumeForm({ projectId }: { projectId: string }) {
 }
 
 function VariableGroupForm({ projectId }: { projectId: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
@@ -2261,6 +2284,7 @@ function VariableGroupForm({ projectId }: { projectId: string }) {
   const createMut = useMutation({
     mutationFn: () => groupsApi.create(orgId, projectId, { name: name.trim(), description: description.trim() }, token),
     onSuccess: (g) => {
+      draftSaved()
       qc.invalidateQueries({ queryKey: ["variable-groups", orgId, projectId] })
       navigate({ to: "/projects/$id/variables/$groupId", params: { id: projectId, groupId: g.id } })
     },
@@ -2306,6 +2330,7 @@ function VariableGroupForm({ projectId }: { projectId: string }) {
 // ─── Config file form ─────────────────────────────────────────────────────────
 
 function ConfigFileForm({ projectId }: { projectId: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const navigate = useNavigate()
@@ -2340,6 +2365,7 @@ function ConfigFileForm({ projectId }: { projectId: string }) {
     mutationFn: () =>
       configFilesApi.create(orgId, projectId, { name: name.trim(), path: trimmedPath, content }, token),
     onSuccess: () => {
+      draftSaved()
       qc.invalidateQueries({ queryKey: ["config-files", orgId, projectId] })
       navigate({ to: "/projects/$id/config-files", params: { id: projectId } })
     },
@@ -2416,7 +2442,7 @@ function ComingSoonForm({ type }: { type: ResourceType }) {
   return (
     <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
       <p className="text-sm text-muted-foreground">{label} creation is coming soon.</p>
-      <span className="text-[10px] font-mono text-muted-foreground/50 border border-border/40 px-2 py-0.5 rounded-full">
+      <span className="text-[11px] font-mono text-muted-foreground/50 border border-border/40 px-2 py-0.5 rounded-full">
         coming soon
       </span>
     </div>

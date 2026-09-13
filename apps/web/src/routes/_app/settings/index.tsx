@@ -1,3 +1,4 @@
+import { SettingsWorkspace } from "@/components/layout/settings-workspace"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertCircle, Check, Globe, HardDrive, Loader2, Pencil, Plus, X } from "lucide-react"
@@ -53,7 +54,7 @@ function SettingsPage() {
 
   if (isLoading || !org) {
     return (
-      <div className="p-6 flex items-center gap-2 text-muted-foreground text-sm">
+      <div className="console-page p-6 flex items-center gap-2 text-muted-foreground text-sm">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         <span>Loading…</span>
       </div>
@@ -61,26 +62,28 @@ function SettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page settings-page p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Manage your organization settings</p>
       </div>
 
-      <GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} />
+      <SettingsWorkspace sections={[["general", "General"], ["appearance", "Appearance"], ["domains", "Domains"], ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"]]}>
+      <div id="general"><GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} /></div>
 
-      <AppearanceSection />
+      <div id="appearance"><AppearanceSection /></div>
 
-      <PrimaryDomainSection />
+      <div id="domains"><PrimaryDomainSection /></div>
 
-      <SystemBackupSection />
+      <div id="backups"><SystemBackupSection /></div>
 
       {/* An anchor for the sidebar's version line. */}
       <div id="server" className="scroll-mt-6">
         <ServerSection />
       </div>
 
-      <LicenseSection />
+      <div id="licence"><LicenseSection /></div>
+      </SettingsWorkspace>
     </div>
   )
 }
@@ -315,7 +318,7 @@ function AppearanceSection() {
       <div className="space-y-4">
         {ACCENT_GROUPS.map((group) => (
           <div key={group.label}>
-            <p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">
+            <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">
               {group.label}
             </p>
             <div className="flex flex-wrap gap-2">
@@ -664,7 +667,7 @@ function DomainCard({ domain }: { domain: ApiDomain }) {
             <span className="text-sm font-medium font-mono">{domain.base_domain}</span>
             <span
               className={cn(
-                "text-[10px] font-medium px-1.5 py-0.5 rounded-full border",
+                "text-[11px] font-medium px-1.5 py-0.5 rounded-full border",
                 domain.verified
                   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                   : "bg-amber-500/10 text-amber-400 border-amber-500/20"

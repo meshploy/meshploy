@@ -35,3 +35,12 @@ deploy/caddy/Caddyfile.delegation.bak
 .claude/settings.local.json
 .claude/worktrees/
 .playwright-mcp/
+
+# Local snapshots before console redesigns
+.backups/
+
+# Local console design prototypes, notes, and validation scripts
+/design/
+/apps/web/CONSOLE-REFRESH.md
+/apps/web/scripts/check-console-demo.mjs
+/apps/web/scripts/check-config-save.mjs

@@ -133,7 +133,7 @@ function ClusterPage() {
   const latestVersion = versions[0] ?? ""
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="console-page cluster-workspace p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Cluster</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Single K3s cluster spanning all mesh nodes</p>
@@ -215,7 +215,7 @@ function ClusterPage() {
                   {o.namespace}/{o.name}
                 </code>
                 {o.has_pvc && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                  <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4 shrink-0">
                     has data
                   </Badge>
                 )}
@@ -249,12 +249,12 @@ function ClusterPage() {
         <StatCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={totalDiskGB ? `${totalDiskGB.toFixed(0)} GB` : "—"} sub={clusterNodes.length ? `${clusterNodes.length} nodes` : "no nodes"} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         {/* Mesh topology visualization */}
-        <div className="rounded-lg border border-border/60 overflow-hidden">
+        <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
           <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Mesh topology</p>
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4.5">WireGuard</Badge>
+            <p className="text-sm font-semibold text-foreground">Mesh topology</p>
+            <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4.5">WireGuard</Badge>
           </div>
           <div className="p-4">
             <MeshGraph nodes={clusterNodes} height={260} />
@@ -263,9 +263,9 @@ function ClusterPage() {
 
         <div className="space-y-4">
           {/* Role breakdown */}
-          <div className="rounded-lg border border-border/60 overflow-hidden">
+          <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
             <div className="px-4 py-3 border-b border-border/40 bg-muted/20">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Role breakdown</p>
+              <p className="text-sm font-semibold text-foreground">Role breakdown</p>
             </div>
             <div className="p-4 space-y-3">
               <RoleBar label="Control plane" count={servers.length} total={clusterNodes.length} color="bg-primary" />
@@ -275,9 +275,9 @@ function ClusterPage() {
 
           {/* K3s versions */}
           {versionMap.size > 0 && (
-            <div className="rounded-lg border border-border/60 overflow-hidden">
+            <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
               <div className="px-4 py-3 border-b border-border/40 bg-muted/20">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">K3s versions</p>
+                <p className="text-sm font-semibold text-foreground">K3s versions</p>
               </div>
               <div className="divide-y divide-border/30">
                 {Array.from(versionMap.entries()).map(([ver, count]) => (
@@ -286,7 +286,7 @@ function ClusterPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{count} {count === 1 ? "node" : "nodes"}</span>
                       {ver !== latestVersion && (
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4.5">outdated</Badge>
+                        <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4.5">outdated</Badge>
                       )}
                     </div>
                   </div>
@@ -344,9 +344,9 @@ function ProvisioningTokensPanel() {
     : ""
 
   return (
-    <div className="rounded-lg border border-border/60 overflow-hidden">
+    <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Add a worker node</p>
+        <p className="text-sm font-semibold text-foreground">Add a worker node</p>
         <Button
           size="sm"
           variant="outline"
@@ -474,9 +474,9 @@ function HeadscalePreAuthKeyPanel() {
     : ""
 
   return (
-    <div className="rounded-lg border border-border/60 overflow-hidden">
+    <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Headscale preauth key</p>
+        <p className="text-sm font-semibold text-foreground">Headscale preauth key</p>
         <Button
           size="sm"
           variant="outline"
@@ -597,9 +597,9 @@ function K3sJoinTokenPanel() {
     : ""
 
   return (
-    <div className="rounded-lg border border-border/60 overflow-hidden">
+    <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/40 bg-muted/20">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">K3s cluster join token</p>
+        <p className="text-sm font-semibold text-foreground">K3s cluster join token</p>
       </div>
 
       <div className="p-4 space-y-4">
@@ -670,7 +670,7 @@ function StatCard({ icon, label, value, sub, accent }: {
   accent?: "warn"
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-2">
+    <div className="cluster-metric quiet-surface rounded-xl border border-border/60 bg-card p-5 space-y-3">
       <div className="flex items-center gap-2 text-muted-foreground">{icon}<span className="text-xs font-medium">{label}</span></div>
       <p className={`text-2xl font-semibold tabular-nums ${accent === "warn" ? "text-amber-400" : "text-foreground"}`}>{value}</p>
       <p className="text-xs text-muted-foreground">{sub}</p>

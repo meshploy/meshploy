@@ -1,3 +1,11 @@
+import { useFormSection } from "@/components/layout/form-layout"
+import {
+  Children,
+  useId,
+  isValidElement,
+  cloneElement,
+  type ReactElement,
+} from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -17,11 +25,31 @@ export function Section({
   action?: React.ReactNode
   children: React.ReactNode
 }) {
+  const sectionId = useId()
+  useFormSection(sectionId, title)
   return (
-    <div className="space-y-4">
-      <div className={cn("border-b pb-2 flex items-start justify-between gap-2", danger ? "border-destructive/30" : "border-border/40")}>
+    <section
+      id={sectionId}
+      className={cn(
+        "console-section space-y-4",
+        danger && "console-section-danger"
+      )}
+    >
+      <div
+        className={cn(
+          "border-b pb-2 flex items-start justify-between gap-2",
+          danger ? "border-destructive/30" : "border-border/40"
+        )}
+      >
         <div>
-          <p className={cn("text-sm font-medium", danger ? "text-destructive" : "text-foreground")}>{title}</p>
+          <p
+            className={cn(
+              "text-sm font-medium",
+              danger ? "text-destructive" : "text-foreground"
+            )}
+          >
+            {title}
+          </p>
           {subtitle && (
             <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
           )}
@@ -29,7 +57,7 @@ export function Section({
         {action && <div className="shrink-0">{action}</div>}
       </div>
       {children}
-    </div>
+    </section>
   )
 }
 
@@ -42,13 +70,44 @@ export function Field({
   required?: boolean
   children: React.ReactNode
 }) {
+  const fieldId = useId()
+  const child = Children.toArray(children).find(
+    (c) =>
+      isValidElement(c) &&
+      (typeof c.type === "string"
+        ? ["input", "textarea", "select"].includes(c.type)
+        : !!(c.props as { onChange?: unknown }).onChange)
+  ) as
+    | ReactElement<{
+        id?: string
+        onChange?: unknown
+        "aria-labelledby"?: string
+      }>
+    | undefined
+  const isControl = !!child
+  const controlId = child?.props.id || fieldId
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-muted-foreground">
+    <div
+      className="flex flex-col gap-2"
+      role={isControl ? undefined : "group"}
+      aria-labelledby={isControl ? undefined : `${fieldId}-label`}
+    >
+      <label
+        id={`${fieldId}-label`}
+        htmlFor={isControl ? controlId : undefined}
+        className="text-xs font-medium text-muted-foreground"
+      >
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </label>
-      {children}
+      {Children.map(children, (c) =>
+        isValidElement(c) &&
+        child &&
+        c.type === child.type &&
+        c.props === child.props
+          ? cloneElement(c as typeof child, { id: controlId })
+          : c
+      )}
     </div>
   )
 }
@@ -69,6 +128,7 @@ export function NodeCard({
   return (
     <Button
       variant="ghost"
+      aria-pressed={selected}
       onClick={onClick}
       className={cn(
         "flex flex-col gap-0.5 rounded-lg border-2 px-3 py-2.5 text-left transition-all min-w-[120px]",
@@ -81,9 +141,13 @@ export function NodeCard({
         {online && (
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
         )}
-        <span className="text-xs font-medium text-foreground truncate">{label}</span>
+        <span className="text-xs font-medium text-foreground truncate">
+          {label}
+        </span>
       </div>
-      <span className="text-[11px] text-muted-foreground font-mono truncate">{sub}</span>
+      <span className="text-[11px] text-muted-foreground font-mono truncate">
+        {sub}
+      </span>
     </Button>
   )
 }

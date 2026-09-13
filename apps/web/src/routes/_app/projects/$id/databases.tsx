@@ -1,3 +1,4 @@
+import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Database, Loader2, Plus, Table2 } from "lucide-react"
@@ -51,12 +52,15 @@ function DatabaseCard({
 
   return (
     <div
+      role="link"
+      tabIndex={0}
+      onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") onClick() }}
       onClick={onClick}
-      className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4 hover:border-border transition-all cursor-pointer"
+      className="listing-surface interactive-surface flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-5 hover:border-primary/40 hover:bg-secondary/40 transition-all cursor-pointer"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted border border-border/60 shrink-0">
+          <div className="accent-icon-tile shrink-0">
             <Database className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
           <div>
@@ -80,7 +84,7 @@ function DatabaseCard({
             </TooltipTrigger>
             <TooltipContent>Open Explorer</TooltipContent>
           </Tooltip>
-          <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border ${statusStyle}`}>
+          <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${statusStyle}`}>
             {svc.status}
           </Badge>
         </div>
@@ -88,13 +92,13 @@ function DatabaseCard({
 
       <div className="border-t border-border/40 pt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Engine</p>
+          <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Engine</p>
           <p className="text-[11px] text-muted-foreground">
             {engineLabel} {version && <span className="font-mono">{version}</span>}
           </p>
         </div>
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Updated</p>
+          <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Updated</p>
           <p className="text-[11px] text-muted-foreground">{formatRelativeTime(new Date(svc.updated_at))}</p>
         </div>
       </div>
@@ -107,6 +111,7 @@ export const Route = createFileRoute("/_app/projects/$id/databases")({
 })
 
 function DatabasesTab() {
+  const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/databases" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
@@ -114,7 +119,7 @@ function DatabasesTab() {
 
   const ACTIVE_DB_STATUSES = new Set(["deploying"])
 
-  const { data: allServices = [], isLoading } = useQuery({
+  const { data: allServices = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["services", orgId, projectId],
     queryFn: () => servicesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
@@ -126,10 +131,10 @@ function DatabasesTab() {
   const dbList = allServices.filter((s) => s.type === "database")
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium">Databases</h2>
+          <h1>Databases</h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && (
             <span className="text-xs text-muted-foreground">{dbList.length}</span>
@@ -145,6 +150,8 @@ function DatabasesTab() {
         </Button>
       </div>
 
+      {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
+      <ResourceSearch value={search} onChange={setSearch} label="databases" empty={dbList.length > 0 && !dbList.some(matches)} />
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -169,7 +176,7 @@ function DatabasesTab() {
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
-          {dbList.map((svc) => (
+          {dbList.filter(matches).map((svc) => (
             <DatabaseCard
               key={svc.id}
               svc={svc}

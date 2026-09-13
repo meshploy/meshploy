@@ -1,3 +1,4 @@
+import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Layers, Plus, Trash2, AlertCircle } from "lucide-react"
@@ -36,12 +37,14 @@ function StackCard({ stack, projectId }: { stack: ApiStack; projectId: string })
 
   return (
     <div
-      className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4 hover:border-border transition-all cursor-pointer"
+      className="listing-surface interactive-surface flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-5 hover:border-primary/40 hover:bg-secondary/40 transition-all cursor-pointer"
+      role="link" tabIndex={0}
+      onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") navigate({ to: "/projects/$id/stacks/$stackId", params: { id: projectId, stackId: stack.id } }) }}
       onClick={() => navigate({ to: "/projects/$id/stacks/$stackId", params: { id: projectId, stackId: stack.id } })}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted border border-border/60 shrink-0">
+          <div className="accent-icon-tile shrink-0">
             <Layers className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
           <div>
@@ -54,7 +57,7 @@ function StackCard({ stack, projectId }: { stack: ApiStack; projectId: string })
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={`text-[10px] px-1.5 py-0 h-4.5 border shrink-0 ${STATUS_STYLES[stack.status]}`}>
+          <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border shrink-0 ${STATUS_STYLES[stack.status]}`}>
             {stack.status}
           </Badge>
           <Button
@@ -81,13 +84,14 @@ function StackCard({ stack, projectId }: { stack: ApiStack; projectId: string })
 }
 
 function StacksTab() {
+  const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/stacks/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
   const queryKey = ["stacks", orgId, projectId]
 
-  const { data: stackList = [], isLoading } = useQuery({
+  const { data: stackList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey,
     queryFn: () => stacksApi.list(orgId!, projectId, token),
     enabled: !!orgId,
@@ -98,10 +102,10 @@ function StacksTab() {
     navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "stack" } })
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium">Stacks</h2>
+          <h1>Stacks</h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && (
             <span className="text-xs text-muted-foreground">{stackList.length}</span>
@@ -117,6 +121,8 @@ function StacksTab() {
         </Button>
       </div>
 
+      {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
+      <ResourceSearch value={search} onChange={setSearch} label="stacks" empty={stackList.length > 0 && !stackList.some(matches)} />
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -141,7 +147,7 @@ function StacksTab() {
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
-          {stackList.map((stack) => (
+          {stackList.filter(matches).map((stack) => (
             <StackCard key={stack.id} stack={stack} projectId={projectId} />
           ))}
         </div>

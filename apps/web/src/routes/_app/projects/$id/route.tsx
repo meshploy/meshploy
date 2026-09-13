@@ -1,128 +1,51 @@
-import { createFileRoute, Link, Outlet, useParams, useRouterState } from "@tanstack/react-router"
+import { OptionSelect } from "@/components/layout/option-select"
+import { createFileRoute, Link, Outlet, useParams, useRouterState, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Loader2, ServerCrash } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Box, Database, Globe, Layers, HardDrive, Variable, FileCog, Clock, Settings, Home, Plus, ArrowLeft, Loader2 } from "lucide-react"
 import { projects as projectsApi, services as servicesApi, toProject } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { Button } from "@/components/ui/button"
+import { livePoll } from "@/lib/live-poll"
 
-export const Route = createFileRoute("/_app/projects/$id")({
-  component: ProjectLayout,
-})
-
+export const Route = createFileRoute("/_app/projects/$id")({ component: ProjectLayout })
 function ProjectLayout() {
-  const { id: projectId } = useParams({ from: "/_app/projects/$id" })
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
-
-  // Wizard is full-screen — bypass layout entirely
-  const isWizard = pathname.endsWith("/new")
-  if (isWizard) return <Outlet />
-
-  const { data: rawProject, isLoading, isError } = useQuery({
-    queryKey: ["project", orgId, projectId],
-    queryFn: () => projectsApi.get(orgId!, projectId, token),
-    enabled: !!orgId,
-  })
-  const project = rawProject ? toProject(rawProject) : undefined
-
-  // Detect when we're inside a service detail so we can highlight the correct
-  // project-level tab. A database service lives at /services/$serviceId but
-  // should activate the "Databases" tab, not "Services".
-  const serviceDetailMatch = pathname.match(/\/services\/([^/?#]+)/)
-  const detailServiceId = serviceDetailMatch?.[1]
-  const { data: detailService } = useQuery({
-    queryKey: ["service", orgId, projectId, detailServiceId],
-    queryFn: () => servicesApi.get(orgId!, projectId, detailServiceId!, token),
-    enabled: !!orgId && !!detailServiceId,
-  })
-  const inDatabaseDetail = detailService?.type === "database"
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64 gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-sm">Loading project…</span>
-      </div>
-    )
-  }
-
-  if (isError || !project) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3 text-muted-foreground">
-        <ServerCrash className="h-8 w-8 text-destructive/60" />
-        <p className="text-sm">Project not found</p>
-      </div>
-    )
-  }
-
+  const { id } = useParams({ from: "/_app/projects/$id" })
+  const token = useAuthStore(s => s.token)!
+  const orgId = useOrgStore(s => s.currentOrg?.id)
+  const pathname = useRouterState({ select: s => s.location.pathname })
+  const navigate = useNavigate()
+  const { data, isPending, error, refetch } = useQuery({ queryKey: ["project", orgId, id], queryFn: () => projectsApi.get(orgId!, id, token), enabled: !!orgId, refetchInterval: livePoll(() => false) })
+  const serviceId = pathname.match(/\/services\/([^/]+)/)?.[1]
+  const { data: service } = useQuery({ queryKey: ["service", orgId, id, serviceId], queryFn: () => servicesApi.get(orgId!, id, serviceId!, token), enabled: !!orgId && !!serviceId })
+  if (isPending) return <div className="console-page flex items-center gap-3 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading project…</div>
+  if (error || !data) return <div className="console-page space-y-4"><h1>Unable to load project</h1><p className="text-muted-foreground">{error?.message}</p><Button onClick={() => refetch()}>Try again</Button></div>
+  const project = toProject(data)
   const tabs = [
-    { label: "Services",  count: project.servicesCount,  to: "/projects/$id/services"  as const },
-    { label: "Databases", count: project.databasesCount, to: "/projects/$id/databases" as const },
-    { label: "Routes",    count: project.routesCount,    to: "/projects/$id/routes"    as const },
-    { label: "Stacks",    count: project.stacksCount,    to: "/projects/$id/stacks"    as const },
-    { label: "Volumes",   count: project.volumesCount,   to: "/projects/$id/volumes"   as const },
-    { label: "Variables", count: project.variablesCount, to: "/projects/$id/variables" as const },
-    { label: "Config",    count: project.configFilesCount, to: "/projects/$id/config-files" as const },
-    { label: "Jobs",      count: project.jobsCount,      to: "/projects/$id/jobs"      as const },
-    { label: "Settings",  count: null,                   to: "/projects/$id/settings"  as const },
+    { segment: "", label: "Overview", icon: Home, count: null },
+    { segment: "services", label: "Services", icon: Box, count: project.servicesCount },
+    { segment: "databases", label: "Databases", icon: Database, count: project.databasesCount },
+    { segment: "stacks", label: "Stacks", icon: Layers, count: project.stacksCount },
+    { segment: "routes", label: "Routes", icon: Globe, count: project.routesCount },
+    { segment: "volumes", label: "Volumes", icon: HardDrive, count: project.volumesCount },
+    { segment: "variables", label: "Variable groups", icon: Variable, count: project.variablesCount },
+    { segment: "config-files", label: "Config files", icon: FileCog, count: project.configFilesCount },
+    { segment: "jobs", label: "Jobs", icon: Clock, count: project.jobsCount },
+    { segment: "settings", label: "Settings", icon: Settings, count: null },
   ]
-
-  return (
-    <div className="flex flex-col min-h-full">
-      {/* Header */}
-      <div className="border-b border-border/60 bg-background">
-        <div className="px-6 pt-5 pb-0">
-          {/* Project name + slug */}
-          <div className="flex items-center gap-2.5 mb-4">
-            <h1 className="text-lg font-semibold tracking-tight">{project.name}</h1>
-            <code className="text-xs font-mono text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-              {project.slug}
-            </code>
-          </div>
-
-          {/* Tab strip with counts */}
-          {/* activeSegment: immediate child of /projects/:id/ in the current URL */}
-          {(() => {
-            const activeSegment = pathname.split(`/projects/${projectId}/`)[1]?.split("/")[0] ?? ""
-            return (
-          <nav className="flex items-center gap-0 -mb-px">
-            {tabs.map(({ label, count, to }) => {
-              const seg = to.split("/").at(-1)!
-              const isActive =
-                label === "Databases" && inDatabaseDetail ? true :
-                label === "Services"  && inDatabaseDetail ? false :
-                activeSegment === seg
-              return (
-              <Link
-                key={label}
-                to={to}
-                params={{ id: projectId }}
-                className={cn(
-                  "px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap",
-                  isActive
-                    ? "text-foreground border-foreground/25"
-                    : "text-muted-foreground border-transparent hover:text-foreground hover:border-border/60"
-                )}
-              >
-                {label}
-                {count != null && (
-                  <span className="ml-1.5 text-[11px] text-muted-foreground/60 tabular-nums">· {count}</span>
-                )}
-              </Link>
-              )
-            })}
-          </nav>
-            )
-          })()}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1">
-        <Outlet />
-      </div>
+  let active = pathname.split(`/projects/${id}`)[1]?.split("/").filter(Boolean)[0] ?? ""
+  if (service?.type === "database" && active === "services") active = "databases"
+  const destination = (segment: string) => `/projects/${id}${segment ? `/${segment}` : "/"}`
+  return <div className="project-layout">
+    <aside className="project-navigation" aria-label="Project navigation">
+      <Link to="/projects" className="flex items-center gap-2 px-2 text-xs text-muted-foreground"><ArrowLeft className="h-3.5 w-3.5" />Projects</Link>
+      <div className="project-identity"><p className="font-semibold text-sm">{project.name}</p><p className="text-xs text-muted-foreground mt-1 font-mono">{project.slug}</p></div>
+      <nav>{tabs.map(t => <Link key={t.segment} to={destination(t.segment)} activeOptions={{ exact: true }} className={active === t.segment ? "active" : ""} aria-current={active === t.segment ? "page" : undefined}><t.icon className="h-4 w-4" />{t.label}{t.count != null && <span className="project-count">{t.count}</span>}</Link>)}</nav>
+      <Button className="w-full mt-6 gap-2" variant="outline" render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="h-4 w-4" />New resource</Button>
+    </aside>
+    <div className="project-content">
+      <div className="project-mobile-navigation"><OptionSelect label="Project section" value={active} onChange={value => navigate({ to: destination(value) })} className="w-full" options={[...tabs.map(t => ({value: t.segment,label: `${project.name} / ${t.label}${t.count != null ? ` (${t.count})` : ""}`})),{value:"new",label:"New resource"}]} /></div>
+      <Outlet />
     </div>
-  )
+  </div>
 }

@@ -86,7 +86,7 @@ export function PrincipalPermissions({ orgId, principalId, token }: {
           <p className="text-xs">No projects yet</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+        <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
           {projects.map((project) => {
             const granted = projectGrantMap.get(project.id) ?? new Set<ResourceAction>()
             const overrides = overridesByProject.get(project.id) ?? []

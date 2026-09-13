@@ -209,7 +209,7 @@ function DeploymentLogsPage() {
                   {deployment.id.slice(0, 8)}
                 </code>
                 <Badge
-                  className={`text-[10px] px-1.5 py-0 h-4 border ${STATUS_STYLES[deployment.status]}`}
+                  className={`text-[11px] px-1.5 py-0 h-4 border ${STATUS_STYLES[deployment.status]}`}
                 >
                   {deployment.status}
                 </Badge>
@@ -247,7 +247,7 @@ function DeploymentLogsPage() {
           </code>
           <div className="ml-auto flex items-center gap-2.5">
             {lines.length > 0 && (
-              <span className="text-[10px] font-mono text-muted-foreground/50">
+              <span className="text-[11px] font-mono text-muted-foreground/50">
                 {lines.length} lines
               </span>
             )}
@@ -256,13 +256,13 @@ function DeploymentLogsPage() {
                 type="button"
                 onClick={jumpToFirstError}
                 title="Jump to the first error"
-                className="rounded-full border border-destructive/30 bg-destructive/10 px-1.5 text-[10px] font-mono text-destructive hover:bg-destructive/20"
+                className="rounded-full border border-destructive/30 bg-destructive/10 px-1.5 text-[11px] font-mono text-destructive hover:bg-destructive/20"
               >
                 {errorCount} {errorCount === 1 ? "error" : "errors"}
               </button>
             )}
             {streamDone && (
-              <span className="text-[10px] text-emerald-400/70 font-mono">
+              <span className="text-[11px] text-emerald-400/70 font-mono">
                 stream complete
               </span>
             )}
@@ -362,7 +362,7 @@ function DeploymentStepper({ status }: { status: ApiDeployment["status"] }) {
               </div>
               <div className="hidden sm:block">
                 <p className={`text-xs font-medium leading-tight ${labelCls}`}>{step.label}</p>
-                <p className="text-[10px] text-muted-foreground/40 mt-0.5">{step.sub}</p>
+                <p className="text-[11px] text-muted-foreground/40 mt-0.5">{step.sub}</p>
               </div>
             </div>
             {/* Connector — touches box borders */}

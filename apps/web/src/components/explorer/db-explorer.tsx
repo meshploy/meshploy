@@ -54,7 +54,7 @@ export function ResultsTable({ result }: { result: ApiQueryResult }) {
     <p className="text-xs text-muted-foreground/50 p-4">Query executed — no rows returned.</p>
   )
   return (
-    <div className="overflow-auto">
+    <div className="console-data-table console-data-table-compact overflow-auto">
       <Table className="text-xs">
         <TableHeader className="bg-muted/20">
           <TableRow className="border-b border-border/40 hover:bg-transparent">

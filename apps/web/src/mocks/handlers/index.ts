@@ -1,3 +1,6 @@
+import { http, HttpResponse } from "msw"
+import { workspaceHandlers } from "./workspace"
+import { streamHandlers } from "./streams"
 import { authHandlers } from "./auth"
 import { orgsHandlers } from "./orgs"
 import { nodesHandlers } from "./nodes"
@@ -12,6 +15,8 @@ import { clusterHandlers } from "./cluster"
 import { systemHandlers } from "./system"
 
 export const handlers = [
+  ...workspaceHandlers,
+  ...streamHandlers,
   ...authHandlers,
   ...orgsHandlers,
   ...nodesHandlers,
@@ -24,4 +29,5 @@ export const handlers = [
   ...routesHandlers,
   ...clusterHandlers,
   ...systemHandlers,
+  http.all("/api/*", ({ request }) => HttpResponse.json({ detail: `Demo endpoint not implemented: ${request.method} ${new URL(request.url).pathname}` }, { status: 501 })),
 ]

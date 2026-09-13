@@ -1,8 +1,10 @@
+import { useTabStore } from "@/store/tab-store"
+import { useUIStore } from "@/store/ui-store"
 import { useRouterState, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronRight, Home } from "lucide-react"
+import { ChevronRight, Home, Menu } from "lucide-react"
 import { UserMenu } from "./user-menu"
-import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi } from "@/lib/api"
+import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi, variableGroups, configFiles, agents } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -23,15 +25,25 @@ const SEGMENT_LABELS: Record<string, string> = {
   secrets:      "Secrets",
   pipelines:    "Pipelines",
   domains:      "Domains",
-  config:       "Config",
+  config:       "Configuration",
+  "config-files": "Config files",
+  variables: "Variables",
+  agents: "Agents",
   logs:         "Logs",
   account:      "Account",
   new:          "New",
+  overview: "Overview",
+  pods: "Pods",
+  backups: "Backups",
+  permissions: "Permissions",
+  editor: "Editor",
+  runs: "Runs",
+  templates: "Templates",
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "member" | "static" | "uuid"
+type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "member" | "variable-group" | "config-file" | "agent" | "static" | "uuid"
 
 interface BreadcrumbEntry {
   segment: string
@@ -74,6 +86,12 @@ function parsePath(segments: string[]): BreadcrumbEntry[] {
       entries.push({ segment, href, type: "job", projectId })
     } else if (prev === "stacks") {
       entries.push({ segment, href, type: "stack", projectId })
+    } else if (prev === "variables") {
+      entries.push({ segment, href, type: "variable-group", projectId })
+    } else if (prev === "config-files") {
+      entries.push({ segment, href, type: "config-file", projectId })
+    } else if (prev === "agents") {
+      entries.push({ segment, href, type: "agent" })
     } else if (prev === "users") {
       entries.push({ segment, href, type: "member" })
     } else {
@@ -147,6 +165,12 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
     select: (members) => members.find((m) => m.user_id === entry.segment),
   })
 
+  const groupQuery = useQuery({ queryKey: ["variable-group", orgId, entry.projectId, entry.segment], queryFn: () => variableGroups.get(orgId!, entry.projectId!, entry.segment, token!), enabled: !!orgId && !!token && entry.type === "variable-group" })
+  const fileQuery = useQuery({ queryKey: ["config-file", orgId, entry.projectId, entry.segment], queryFn: () => configFiles.get(orgId!, entry.projectId!, entry.segment, token!), enabled: !!orgId && !!token && entry.type === "config-file" })
+  const agentQuery = useQuery({ queryKey: ["agents", orgId], queryFn: () => agents.list(orgId!, token!), enabled: !!orgId && !!token && entry.type === "agent", select: list => list.find(a => a.id === entry.segment) })
+  if (entry.type === "variable-group") return <>{groupQuery.data?.name ?? "Variable group"}</>
+  if (entry.type === "config-file") return <>{fileQuery.data?.name ?? "Config file"}</>
+  if (entry.type === "agent") return <>{agentQuery.data?.name ?? "Agent"}</>
   if (entry.type === "static") return <>{SEGMENT_LABELS[entry.segment] ?? entry.segment}</>
   if (entry.type === "deployment") return <>{entry.segment.slice(0, 8)}</>
   if (entry.type === "project") return <>{projectQuery.data?.name ?? entry.segment.slice(0, 8)}</>
@@ -166,8 +190,8 @@ function Breadcrumb() {
   const entries = parsePath(segments)
 
   return (
-    <nav className="flex items-center gap-1 text-sm">
-      <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">
+    <nav onClick={e => { if (!e.metaKey && !e.ctrlKey && (e.target as Element).closest("a")) useTabStore.getState().setActiveTab(null) }} aria-label="Breadcrumb" className="flex items-center gap-1 text-xs overflow-x-auto whitespace-nowrap">
+      <Link to="/" aria-label="Overview" className="text-muted-foreground hover:text-foreground transition-colors">
         <Home className="h-3.5 w-3.5" />
       </Link>
       {entries.map((entry, i) => {
@@ -195,9 +219,11 @@ function Breadcrumb() {
 }
 
 export function Topbar() {
+  const { setMobileNavOpen } = useUIStore()
   return (
-    <header className="flex items-center h-14 px-6 border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0 sticky top-0 z-40">
-      <div className="flex-1">
+    <header className="flex items-center h-[58px] px-4 md:px-6 border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0 sticky top-0 z-40">
+      <button className="mr-3 md:hidden p-2 rounded-lg hover:bg-muted" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu className="h-5 w-5" /></button>
+      <div className="flex-1 min-w-0">
         <Breadcrumb />
       </div>
       <div className="flex items-center gap-3">

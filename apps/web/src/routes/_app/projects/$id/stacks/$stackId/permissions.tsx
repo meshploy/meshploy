@@ -17,7 +17,7 @@ function StackPermissionsTab() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page p-6 max-w-2xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Permissions</h1>
         <p className="text-sm text-muted-foreground mt-0.5">

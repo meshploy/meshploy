@@ -1,5 +1,7 @@
 import { http, HttpResponse } from "msw"
 import { demoStack } from "../data"
+import { db } from "../state"
+import { applyStack } from "./workspace"
 
 // Demo catalog — mirrors the shape the real API returns (manifest + compose).
 // Kept in-file since it's demo-only mock data specific to templates.
@@ -138,17 +140,18 @@ export const templatesHandlers = [
       const body = (await request.json()) as { spec?: string; prompt_values?: Record<string, string> }
       const tpl = demoTemplates.find((t) => t.manifest.id === params.templateId)
       if (!tpl) return new HttpResponse("template not found", { status: 404 })
-      return HttpResponse.json(
-        {
+      const stack = {
           ...demoStack,
+          project_id: String(params.projectId),
           id: crypto.randomUUID(),
           name: tpl.manifest.id,
           spec: body.spec || tpl.compose,
           template_id: tpl.manifest.id,
           template_version: tpl.manifest.version,
-        },
-        { status: 201 }
-      )
+        }
+      db.stacks.push(stack)
+      try { applyStack(stack) } catch (e) { return HttpResponse.json({ detail: (e as Error).message }, { status: 400 }) }
+      return HttpResponse.json(stack, { status: 201 })
     }
   ),
 ]

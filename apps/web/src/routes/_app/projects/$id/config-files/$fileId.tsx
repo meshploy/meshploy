@@ -1,3 +1,4 @@
+import { MetricTile, ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, useParams, Link } from "@tanstack/react-router"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -197,7 +198,7 @@ function ConfigFileDetailPage() {
     )
   }
   if (!file) {
-    return <div className="p-6 text-sm text-muted-foreground">Config file not found.</div>
+    return <div className="console-page p-6 text-sm text-muted-foreground">Config file not found.</div>
   }
 
   const attachedCount = file.attached_services.length
@@ -214,33 +215,13 @@ function ConfigFileDetailPage() {
         subtitle={file.path}
       />
 
-      <div className="p-6 max-w-2xl space-y-6">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 rounded-lg border border-border/60 bg-card px-4 py-3.5">
-          <div>
-            <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Size</p>
-            <p className="text-sm text-foreground font-mono">{file.size} B</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Mounted by</p>
-            <p className="text-sm text-foreground">
-              {attachedCount === 0 ? "No services" : `${attachedCount} service${attachedCount === 1 ? "" : "s"}`}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Updated</p>
-            <p className="text-sm text-foreground">{formatRelativeTime(new Date(file.updated_at))}</p>
-          </div>
+      <div className="console-page space-y-6">
+        <div className="resource-metrics">
+          <MetricTile icon={FileCog} label="File size" value={file.size} unit="B" detail="Stored configuration" />
+          <MetricTile icon={FileCog} label="Mounted by" value={attachedCount} unit="services" detail="Receive this file on deployment" />
+          <MetricTile icon={FileCog} label="Updated" value={<span className="text-xl">{formatRelativeTime(new Date(file.updated_at))}</span>} detail="Latest saved revision" />
         </div>
-
-        <AttachmentsSection
-          fileId={fileId}
-          projectId={projectId}
-          orgId={orgId}
-          token={token}
-          attached={file.attached_services}
-        />
-
+        <div className="resource-overview-columns"><div className="space-y-6 min-w-0">
         <Section
           title="File"
           subtitle="Contents are stored encrypted and never shown again, so saving replaces them rather than editing in place. Leave the editor empty to change only the name or path."
@@ -287,6 +268,10 @@ function ConfigFileDetailPage() {
           </div>
         </Section>
 
+        </div><aside className="space-y-6 min-w-0">
+          <ResourcePanel title="Mount details"><ResourceFact label="Path"><code>{file.path}</code></ResourceFact><ResourceFact label="Contents">Encrypted at rest</ResourceFact><p className="mt-5 text-xs leading-relaxed text-muted-foreground">Attach this file to a service to mount it in its containers. Replacing contents redeploys attached services.</p></ResourcePanel>
+          <AttachmentsSection fileId={fileId} projectId={projectId} orgId={orgId} token={token} attached={file.attached_services} />
+        </aside></div>
         <Section title="Danger zone" subtitle="Deleting a config file cannot be undone.">
           <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
             <div className="min-w-0">

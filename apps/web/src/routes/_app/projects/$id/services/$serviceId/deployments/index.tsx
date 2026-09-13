@@ -1,3 +1,4 @@
+import { MetricTile, ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { useEffect, useRef } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -104,7 +105,13 @@ function DeploymentsTab() {
   })
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page space-y-6">
+      <ResourceIntro title="Deployment history" description="Follow builds and rollouts, inspect output, and manage previous deployments." />
+      <div className="resource-metrics">
+        <MetricTile icon={Rocket} label="Deployments" value={isLoading ? "—" : deploymentList.length} detail="Recorded history" />
+        <MetricTile icon={Loader2} label="In progress" value={isLoading ? "—" : deploymentList.filter(d => ACTIVE_STATUSES.has(d.status)).length} detail="Queued, building or rolling out" />
+        <MetricTile icon={RotateCcw} label="Rollback" value={<span className="text-xl">{rollbackEnabled ? "Enabled" : "Disabled"}</span>} detail="Configured in build settings" />
+      </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium">Deployments</h2>
@@ -167,7 +174,7 @@ function DeploymentsTab() {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+        <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
           {deploymentList.map((dep) => (
             <DeploymentRow
               key={dep.id}

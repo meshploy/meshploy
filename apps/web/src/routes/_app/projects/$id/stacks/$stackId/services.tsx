@@ -114,7 +114,7 @@ function StackServicesTab() {
   const destroyResult = destroyMutation.data as DestroyStackResult | undefined
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium">Services</h2>
@@ -311,7 +311,7 @@ function StackServicesTab() {
               <Server className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="text-sm font-medium text-foreground">{svc.name}</span>
-                <Badge className={`text-[10px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[svc.status]}`}>
+                <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[svc.status]}`}>
                   {svc.status}
                 </Badge>
                 {svc.image && (
@@ -343,7 +343,7 @@ function StackServicesTab() {
               >
                 <Globe className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                 <span className="text-sm font-mono text-foreground flex-1 min-w-0 truncate">{r.hostname}</span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{r.zone}</Badge>
+                <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4 shrink-0">{r.zone}</Badge>
               </div>
             ))}
           </div>
@@ -369,7 +369,7 @@ function StackServicesTab() {
                   {f.path}
                 </code>
                 {f.services.length > 0 && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                  <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4 shrink-0">
                     {f.services.length === 1 ? f.services[0] : `${f.services.length} services`}
                   </Badge>
                 )}
@@ -395,7 +395,7 @@ function StackServicesTab() {
                 <HardDrive className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                 <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">{v.name}</span>
                 <span className="text-[11px] text-muted-foreground/60 shrink-0">{v.storage_gb} GB</span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{v.status}</Badge>
+                <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4 shrink-0">{v.status}</Badge>
               </div>
             ))}
           </div>

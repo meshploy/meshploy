@@ -98,7 +98,7 @@ function TemplateDetailPage() {
                 <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground capitalize">
                   {manifest.category}
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground/50">
+                <span className="text-[11px] font-mono text-muted-foreground/50">
                   v{manifest.version}
                 </span>
               </div>
@@ -157,7 +157,7 @@ function TemplateDetailPage() {
                     — {v.prompt || "you'll be asked"}
                   </span>
                   {v.required && (
-                    <span className="text-[10px] text-amber-400">required</span>
+                    <span className="text-[11px] text-amber-400">required</span>
                   )}
                 </div>
               ))}

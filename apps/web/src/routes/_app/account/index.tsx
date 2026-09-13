@@ -1,3 +1,4 @@
+import { SettingsWorkspace } from "@/components/layout/settings-workspace"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -15,15 +16,17 @@ export const Route = createFileRoute("/_app/account/")({
 
 function AccountPage() {
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page settings-page space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Account</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Manage your personal profile and security settings</p>
       </div>
 
-      <ProfileSection />
-      <PasswordSection />
-      <TwoFactorSection />
+      <SettingsWorkspace sections={[["account-profile", "Profile"], ["account-password", "Password"], ["account-security", "Two-factor authentication"]]}>
+        <div id="account-profile"><ProfileSection /></div>
+        <div id="account-password"><PasswordSection /></div>
+        <div id="account-security"><TwoFactorSection /></div>
+      </SettingsWorkspace>
     </div>
   )
 }
@@ -247,7 +250,7 @@ function TwoFactorSection() {
             )}
             <div className="space-y-2 flex-1 min-w-0">
               <div className="space-y-0.5">
-                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Manual entry key</p>
+                <p className="text-[11px] text-muted-foreground/60 uppercase tracking-wider">Manual entry key</p>
                 <code className="text-xs font-mono text-foreground/80 break-all">{secret}</code>
               </div>
               <div className="flex flex-col gap-1.5 pt-1">

@@ -1,3 +1,4 @@
+import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Clock, Loader2, Play, Trash2, Zap } from "lucide-react"
@@ -23,12 +24,13 @@ function statusDot(status: string) {
 }
 
 function JobsPage() {
+  const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/jobs/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const qc = useQueryClient()
 
-  const { data: list = [], isLoading } = useQuery({
+  const { data: list = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["jobs", orgId, projectId],
     queryFn: () => jobsApi.list(orgId, projectId, token),
     enabled: !!orgId,
@@ -54,10 +56,10 @@ function JobsPage() {
   })
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="console-page p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium">Jobs</h2>
+          <h1>Jobs</h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{list.length}</span>}
         </div>
@@ -68,6 +70,8 @@ function JobsPage() {
         </Link>
       </div>
 
+      {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
+      <ResourceSearch value={search} onChange={setSearch} label="jobs" empty={list.length > 0 && !list.some(matches)} />
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -89,7 +93,7 @@ function JobsPage() {
         </div>
       ) : (
         <JobSection
-          jobs={list}
+          jobs={list.filter(matches)}
           projectId={projectId}
           onDelete={(id) => deleteMut.mutate(id)}
           onTrigger={(id) => triggerMut.mutate(id)}
@@ -112,15 +116,15 @@ function JobSection({
   triggeringId?: string
 }) {
   return (
-    <div className="rounded-lg border border-border/60 overflow-hidden">
+    <div className="console-data-table rounded-xl border border-border overflow-hidden">
       <Table>
         <TableHeader className="bg-muted/20">
           <TableRow className="border-b border-border/40 hover:bg-transparent">
-            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Name</TableHead>
-            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Image</TableHead>
-            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[140px]">Schedule</TableHead>
-            <TableHead className="px-4 py-2.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider w-[100px]">Status</TableHead>
-            <TableHead className="px-4 py-2.5 w-[80px]" />
+            <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground">Name</TableHead>
+            <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground">Image</TableHead>
+            <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[140px]">Schedule</TableHead>
+            <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[100px]">Status</TableHead>
+            <TableHead aria-label="Actions" className="px-4 py-2.5 w-[80px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -158,7 +162,9 @@ function JobRow({
   return (
     <TableRow
       className={cn("hover:bg-muted/10 cursor-pointer", !last && "border-b border-border/30")}
-      onClick={() => navigate({ to: "/projects/$id/jobs/$jobId", params: { id: projectId, jobId: job.id } })}
+      tabIndex={0}
+      onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") navigate({ to: "/projects/$id/jobs/$jobId", params: { id: projectId, jobId: job.id } }) }}
+      onClick={e => { if (!(e.target as HTMLElement).closest("a,button")) navigate({ to: "/projects/$id/jobs/$jobId", params: { id: projectId, jobId: job.id } }) }}
     >
       <TableCell className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -166,7 +172,7 @@ function JobRow({
             ? <Clock className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
             : <Zap className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
           }
-          <span className="text-xs font-medium">{job.name}</span>
+          <Link to="/projects/$id/jobs/$jobId" params={{ id: projectId, jobId: job.id }} className="font-medium hover:text-primary">{job.name}</Link>
         </div>
       </TableCell>
       <TableCell className="px-4 py-3">

@@ -61,7 +61,7 @@ function RunsPage() {
           </div>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
+        <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
           {runs.map((run) => (
             <RunRow key={run.id} run={run} orgId={orgId} projectId={projectId} jobId={jobId} token={token} />
           ))}

@@ -1,3 +1,5 @@
+import { FormLayout } from "@/components/layout/form-layout"
+import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -77,7 +79,7 @@ function SettingsTab() {
   const canDelete = deleteConfirm === service?.name
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page"><ResourceIntro title="Service settings" description="Manage identity and the service lifecycle." /><FormLayout><div className="space-y-6">
       {/* ── Rename ─────────────────────────────────────────────── */}
       <Section title="Service name" subtitle="Changing the name does not affect the K8s workload name.">
         <Field label="Name">
@@ -208,6 +210,6 @@ function SettingsTab() {
           </Button>
         </div>
       </Section>
-    </div>
+    </div></FormLayout></div>
   )
 }

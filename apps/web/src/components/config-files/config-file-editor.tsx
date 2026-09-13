@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view"
 import CodeMirror from "@uiw/react-codemirror"
 import { configFileLanguage } from "@/lib/config-file-lang"
 
@@ -11,12 +12,14 @@ import { configFileLanguage } from "@/lib/config-file-lang"
  * Highlighting follows `path`, so it changes as the user types an extension.
  */
 export function ConfigFileEditor({
+  id,
   value,
   onChange,
   path,
   height = "320px",
   placeholder = '{\n  "http": { "address": "0.0.0.0", "port": "5000" }\n}',
 }: {
+  id?: string
   value: string
   onChange: (v: string) => void
   path: string
@@ -29,7 +32,7 @@ export function ConfigFileEditor({
         value={value}
         height={height}
         theme="dark"
-        extensions={configFileLanguage(path)}
+        extensions={[...configFileLanguage(path), EditorView.contentAttributes.of({ ...(id ? { id } : {}), "aria-label": "File contents" })]}
         onChange={onChange}
         placeholder={placeholder}
         style={{ fontSize: 13 }}

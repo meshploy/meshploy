@@ -71,7 +71,7 @@ function StackVariablesTab() {
   }
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page p-6 max-w-2xl space-y-6">
       <Section
         title="Stack Variables"
         subtitle="One KEY=VALUE pair per line. Substituted into ${KEY} placeholders in your spec."

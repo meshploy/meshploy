@@ -11,7 +11,7 @@ import "@xterm/xterm/css/xterm.css"
 type ConnState = "connecting" | "connected" | "error" | "closed"
 
 function terminalWsUrl(orgId: string, nodeId: string, ticket: string): string {
-  const apiBase =
+  const apiBase = import.meta.env.VITE_DEMO_MODE === "true" ? "" :
     (window as { __MESHPLOY_CONFIG__?: { apiUrl?: string } }).__MESHPLOY_CONFIG__?.apiUrl ??
     import.meta.env.VITE_API_URL ??
     ""

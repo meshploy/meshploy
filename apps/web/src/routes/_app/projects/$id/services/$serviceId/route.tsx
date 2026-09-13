@@ -1,10 +1,11 @@
-import { createFileRoute, Link, Outlet, useParams } from "@tanstack/react-router"
+import { StatusPill } from "@/components/layout/resource-workbench"
+import { createFileRoute, Link, Outlet, useParams, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Box, Database, Loader2, Play, ServerCrash, Square } from "lucide-react"
+import { Box, Database, Loader2, Play, ServerCrash, Square, Terminal, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { services as servicesApi } from "@/lib/api"
+import { services as servicesApi, deployments } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
@@ -46,6 +47,8 @@ function ServiceLayout() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const deployMutation = useMutation({ mutationFn: () => deployments.trigger(orgId!, projectId, serviceId, token), onSuccess: (deployment) => { queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] }); queryClient.invalidateQueries({ queryKey: ["service", orgId, projectId, serviceId] }); navigate({ to: "/projects/$id/services/$serviceId/deployments/$deploymentId", params: { id: projectId, serviceId, deploymentId: deployment.id } }) } })
 
   const queryKey = ["service", orgId, projectId, serviceId]
 
@@ -94,11 +97,8 @@ function ServiceLayout() {
           : <Box className="h-4 w-4 text-muted-foreground" />
         }
         name={service.name}
-        badge={
-          <Badge className={`text-[10px] px-1.5 py-0 h-4 border ${STATUS_STYLES[service.status] ?? STATUS_STYLES.stopped}`}>
-            {service.status}
-          </Badge>
-        }
+        subtitle={service.type === "database" ? "Database · Persistent data service" : service.stack_id ? "Application · Managed by a stack" : "Application · Standalone service"}
+        badge={<StatusPill status={service.status} />}
         actions={
           <>
             {(service.status === "stopped" || service.status === "failed") && !!service.image && (
@@ -115,6 +115,8 @@ function ServiceLayout() {
                 Stop
               </Button>
             )}
+            <Button variant="outline" size="sm" render={<Link to="/projects/$id/services/$serviceId/logs" params={{ id: projectId, serviceId }} />}><Terminal className="size-4" />Logs</Button>
+            <Button size="sm" onClick={() => deployMutation.mutate()} disabled={deployMutation.isPending || service.status === "deploying"}><Plus className="size-4" />{service.type === "database" ? "Provision" : "Deploy"}</Button>
           </>
         }
       >
@@ -133,6 +135,7 @@ function ServiceLayout() {
         ))}
       </DetailPageHeader>
 
+      {(deployMutation.error || startMutation.error || stopMutation.error) && <p role="alert" className="mx-8 mt-4 text-sm text-destructive">{(deployMutation.error || startMutation.error || stopMutation.error)?.message}</p>}
       <div className="flex-1">
         <Outlet />
       </div>

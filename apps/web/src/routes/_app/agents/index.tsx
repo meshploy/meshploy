@@ -45,6 +45,7 @@ function AgentsPage() {
     if (role === "member") navigate({ to: "/" })
   }, [role])
 
+  const [search, setSearch] = useState("")
   const [showCreate, setShowCreate] = useState(false)
   const [revealToken, setRevealToken] = useState<string | null>(null)
   const [revealName, setRevealName] = useState<string>("")
@@ -63,7 +64,7 @@ function AgentsPage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
@@ -84,6 +85,7 @@ function AgentsPage() {
         )}
       </div>
 
+      <Input aria-label="Search agents" placeholder="Search agents…" value={search} onChange={e => setSearch(e.target.value)} className="h-10 max-w-md" />
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -109,13 +111,14 @@ function AgentsPage() {
           )}
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
-          {agents.map((agent) => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {agents.filter(a => a.name.toLowerCase().includes(search.toLowerCase())).map((agent) => (
             <AgentRow key={agent.id} agent={agent} />
           ))}
         </div>
       )}
 
+      {!isLoading && agents.length > 0 && !agents.some(a => a.name.toLowerCase().includes(search.toLowerCase())) && <p className="text-sm text-muted-foreground">No matching agents.</p>}
       {agents.length > 0 && (
         <p className="text-[11px] text-muted-foreground/60">
           Remote MCP endpoint: <code className="font-mono text-muted-foreground">{mcpUrl}</code> — pair it with an agent token to connect.
@@ -149,46 +152,17 @@ function AgentRow({ agent }: { agent: AgentDTO }) {
     .map((t) => (t.last_used_at ? new Date(t.last_used_at).getTime() : 0))
     .reduce((a, b) => Math.max(a, b), 0)
 
-  return (
-    <Link
-      to="/agents/$agentId"
-      params={{ agentId: agent.id }}
-      className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors"
-    >
-      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 shrink-0">
-        <Bot className="h-4 w-4 text-primary" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{agent.name}</p>
-        <p className="text-xs text-muted-foreground">
-          Created {formatRelativeTime(new Date(agent.created_at))}
-        </p>
-      </div>
-
-      <RoleBadge role={agent.role} />
-
-      <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground shrink-0 w-24 justify-end">
-        <Key className="h-3 w-3" />
-        {activeTokens} active
-      </div>
-
-      <div className="hidden md:block text-xs text-muted-foreground shrink-0 w-24 text-right">
-        {lastUsedMs ? formatRelativeTime(new Date(lastUsedMs)) : "Never used"}
-      </div>
-
-      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 ml-1" />
-    </Link>
-  )
+  return <Link to="/agents/$agentId" params={{agentId:agent.id}} className="listing-surface interactive-surface rounded-xl border border-border p-5 flex flex-col gap-5 min-w-0"><div className="flex items-center justify-between"><span className="accent-icon-tile"><Bot className="size-5" /></span><RoleBadge role={agent.role}/></div><div><h2 className="font-semibold break-words">{agent.name}</h2><p className="text-xs text-muted-foreground mt-2">{agent.role === "admin" ? "Organization-wide administration" : "Access through assigned resource permissions"}</p></div><div className="border-t border-border pt-4 flex flex-wrap gap-3 justify-between text-xs text-muted-foreground"><span className="inline-flex gap-2 items-center"><Key className="size-3"/>{activeTokens} active tokens</span><span>{lastUsedMs ? `Used ${formatRelativeTime(new Date(lastUsedMs))}` : "Never used"}</span></div><span className="text-xs text-primary inline-flex justify-between items-center">Manage access & connection<ChevronRight className="size-4"/></span></Link>
 }
 
 function RoleBadge({ role }: { role: AgentRole }) {
   if (role === "admin") return (
-    <Badge className="gap-1 text-[10px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10 shrink-0">
+    <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10 shrink-0">
       <Shield className="h-2.5 w-2.5" />admin
     </Badge>
   )
   return (
-    <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5 shrink-0">
+    <Badge variant="secondary" className="gap-1 text-[11px] px-1.5 py-0 h-5 shrink-0">
       <User className="h-2.5 w-2.5" />member
     </Badge>
   )

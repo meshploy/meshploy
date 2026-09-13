@@ -70,7 +70,7 @@ function TemplatesPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="console-page p-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -142,7 +142,7 @@ function TemplatesPage() {
 
 function TemplateCard({ t }: { t: TemplateManifest }) {
   return (
-    <div className="group flex flex-col rounded-xl border border-border/60 bg-card transition-colors hover:border-border">
+    <div className="listing-surface group flex flex-col rounded-xl border border-border/60 bg-card transition-colors hover:border-border">
       <Link to="/templates/$id" params={{ id: t.id }} className="flex flex-col gap-3 p-4 flex-1">
         <div className="flex items-start gap-3">
           <TemplateLogo id={t.id} name={t.name} className="w-9 h-9" />
@@ -150,7 +150,7 @@ function TemplateCard({ t }: { t: TemplateManifest }) {
             <p className="text-sm font-medium truncate">{t.name}</p>
             <span className="text-[11px] text-muted-foreground capitalize">{t.category}</span>
           </div>
-          <span className="text-[10px] font-mono text-muted-foreground/50 shrink-0">v{t.version}</span>
+          <span className="text-[11px] font-mono text-muted-foreground/50 shrink-0">v{t.version}</span>
         </div>
         <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{t.description}</p>
       </Link>

@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { NodeStatusDot } from "./node-status-dot"
@@ -13,7 +13,7 @@ export function NodesTable({ nodes }: NodesTableProps) {
   const navigate = useNavigate()
 
   return (
-    <div className="rounded-lg border border-border/60 overflow-hidden">
+    <div className="console-data-table quiet-surface rounded-xl border border-border overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent border-border/60">
@@ -27,14 +27,18 @@ export function NodesTable({ nodes }: NodesTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
+          {nodes.length === 0 && <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">No nodes to display. Adjust your filters or connect a node.</TableCell></TableRow>}
           {nodes.map((node) => (
             <TableRow
               key={node.id}
+              tabIndex={0}
+              aria-label={`Open node ${node.name}`}
+              onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") navigate({ to: "/nodes/$id", params: { id: node.id } }) }}
               className="cursor-pointer hover:bg-muted/30 border-border/40 transition-colors"
-              onClick={() => navigate({ to: "/nodes/$id", params: { id: node.id } })}
+              onClick={e => { if (!(e.target as HTMLElement).closest("a,button")) navigate({ to: "/nodes/$id", params: { id: node.id } }) }}
             >
               <TableCell className="py-3.5">
-                <span className="text-sm font-medium text-foreground">{node.name}</span>
+                <Link to="/nodes/$id" params={{ id: node.id }} className="font-medium hover:text-primary">{node.name}</Link>
               </TableCell>
               <TableCell className="py-3.5">
                 <code className="text-xs font-mono text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">

@@ -1,3 +1,4 @@
+import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { KeyRound, Layers, Loader2, Lock, Plus, Server, Trash2 } from "lucide-react"
@@ -17,12 +18,14 @@ function GroupCard({ group, projectId, onDelete }: { group: ApiVariableGroup; pr
 
   return (
     <div
+      role="link" tabIndex={0}
+      onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") navigate({ to: "/projects/$id/variables/$groupId", params: { id: projectId, groupId: group.id } }) }}
       onClick={() => navigate({ to: "/projects/$id/variables/$groupId", params: { id: projectId, groupId: group.id } })}
-      className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4 hover:border-border transition-all cursor-pointer"
+      className="listing-surface interactive-surface flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-5 hover:border-primary/40 hover:bg-secondary/40 transition-all cursor-pointer"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted border border-border/60 shrink-0">
+          <div className="accent-icon-tile shrink-0">
             {group.system_managed
               ? <Server className="h-3.5 w-3.5 text-muted-foreground" />
               : <Layers className="h-3.5 w-3.5 text-muted-foreground" />
@@ -32,7 +35,7 @@ function GroupCard({ group, projectId, onDelete }: { group: ApiVariableGroup; pr
             <div className="flex items-center gap-1.5">
               <p className="text-sm font-semibold text-foreground leading-tight">{group.name}</p>
               {group.system_managed && (
-                <span className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60 shrink-0">
+                <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60 shrink-0">
                   <Lock className="h-2.5 w-2.5" /> auto
                 </span>
               )}
@@ -61,13 +64,14 @@ function GroupCard({ group, projectId, onDelete }: { group: ApiVariableGroup; pr
 }
 
 function VariablesPage() {
+  const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/variables/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const qc = useQueryClient()
   const navigate = useNavigate()
 
-  const { data: groups = [], isLoading } = useQuery({
+  const { data: groups = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["variable-groups", orgId, projectId],
     queryFn: () => groupsApi.list(orgId, projectId, token),
     enabled: !!orgId,
@@ -84,11 +88,11 @@ function VariablesPage() {
   const systemGroups = groups.filter((g) => g.system_managed)
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="console-page p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium">Variables</h2>
+          <h1>Variables</h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{userGroups.length}</span>}
         </div>
@@ -97,6 +101,8 @@ function VariablesPage() {
         </Button>
       </div>
 
+      {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
+      <ResourceSearch value={search} onChange={setSearch} label="variable groups" empty={groups.length > 0 && !groups.some(matches)} />
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -114,7 +120,7 @@ function VariablesPage() {
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
-          {userGroups.map((g) => (
+          {userGroups.filter(matches).map((g) => (
             <GroupCard key={g.id} group={g} projectId={projectId} onDelete={() => deleteMut.mutate(g.id)} />
           ))}
         </div>
@@ -123,9 +129,9 @@ function VariablesPage() {
       {/* System-managed groups */}
       {systemGroups.length > 0 && (
         <div className="space-y-3">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Service generated groups</p>
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Service generated groups</p>
           <div className="grid gap-3 md:grid-cols-2">
-            {systemGroups.map((g) => (
+            {systemGroups.filter(matches).map((g) => (
               <GroupCard key={g.id} group={g} projectId={projectId} onDelete={() => {}} />
             ))}
           </div>

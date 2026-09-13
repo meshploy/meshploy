@@ -83,6 +83,7 @@ function JobLayout() {
   }
 
   const tabs = [
+    { label: "Overview", to: "/projects/$id/jobs/$jobId" as const },
     { label: "Runs",          to: "/projects/$id/jobs/$jobId/runs"        as const },
     { label: "Configuration", to: "/projects/$id/jobs/$jobId/config"      as const },
     ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/jobs/$jobId/permissions" as const }] : []),
@@ -100,7 +101,7 @@ function JobLayout() {
         }
         name={job.name}
         badge={
-          <Badge className={cn("text-[10px] px-1.5 py-0 h-4 border gap-1", STATUS_STYLES[job.status] ?? STATUS_STYLES.idle)}>
+          <Badge className={cn("text-[11px] px-1.5 py-0 h-4 border gap-1", STATUS_STYLES[job.status] ?? STATUS_STYLES.idle)}>
             <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[job.status] ?? STATUS_DOT.idle)} />
             {job.status}
           </Badge>
@@ -120,7 +121,7 @@ function JobLayout() {
         }
       >
         {tabs.map(({ label, to }) => (
-          <Link key={label} to={to} params={{ id: projectId, jobId }} className={tabLinkCls}>
+          <Link key={label} to={to} params={{ id: projectId, jobId }} activeOptions={{ exact: label === "Overview" }} className={tabLinkCls}>
             {label}
           </Link>
         ))}

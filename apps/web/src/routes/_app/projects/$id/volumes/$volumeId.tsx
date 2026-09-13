@@ -1,3 +1,4 @@
+import { MetricTile, ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -666,7 +667,7 @@ function VolumeDetailPage() {
 
   if (!volume) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">Volume not found.</div>
+      <div className="console-page p-6 text-sm text-muted-foreground">Volume not found.</div>
     )
   }
 
@@ -682,37 +683,18 @@ function VolumeDetailPage() {
         icon={<HardDrive className="h-4 w-4 text-muted-foreground" />}
         name={volume.name}
         badge={
-          <Badge className={cn("text-[10px] px-1.5 py-0 h-4 border shrink-0", STATUS_STYLES[volume.status])}>
+          <Badge className={cn("text-[11px] px-1.5 py-0 h-4 border shrink-0", STATUS_STYLES[volume.status])}>
             {volume.status}
           </Badge>
         }
       />
-      <div className="p-6 max-w-2xl space-y-6">
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 rounded-lg border border-border/60 bg-card px-4 py-3.5">
-        <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Size</p>
-          <p className="text-sm text-foreground font-mono">{volume.storage_gb} GB</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Attached</p>
-          <p className="text-sm text-foreground">{hasMounts ? "Yes" : "No"}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-0.5">Created</p>
-          <p className="text-sm text-muted-foreground">{formatRelativeTime(new Date(volume.created_at))}</p>
-        </div>
+      <div className="console-page space-y-6">
+      <div className="resource-metrics">
+        <MetricTile icon={HardDrive} label="Allocated storage" value={volume.storage_gb} unit="GB" detail="Persistent volume capacity" />
+        <MetricTile icon={HardDrive} label="Attachments" value={volume.mounts?.length ?? 0} detail={hasMounts ? "Mounted by a service" : "Available to attach"} />
+        <MetricTile icon={HardDrive} label="Created" value={<span className="text-xl">{formatRelativeTime(new Date(volume.created_at))}</span>} detail="Persistent data lifecycle" />
       </div>
-
-      {/* Placement */}
-      <PlacementSection
-        volume={volume}
-        projectId={projectId}
-        orgId={orgId}
-        token={token}
-      />
-
+      <div className="resource-overview-columns"><div className="space-y-6 min-w-0">
       {/* Attachment */}
       <AttachmentSection
         volume={volume}
@@ -730,6 +712,10 @@ function VolumeDetailPage() {
         token={token}
       />
 
+      </div><aside className="space-y-6 min-w-0">
+        <PlacementSection volume={volume} projectId={projectId} orgId={orgId} token={token} />
+        <ResourcePanel title="Storage lifecycle"><p className="text-sm text-muted-foreground leading-relaxed">Volume data persists across service deployments. Manage attachments before moving or removing the volume, and configure backups for recovery.</p></ResourcePanel>
+      </aside></div>
       {/* Danger zone */}
       <Section
         title="Danger zone"

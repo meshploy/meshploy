@@ -1,7 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useEffect } from "react"
+import { OptionSelect } from "@/components/layout/option-select"
+import { MetricTile } from "@/components/layout/resource-workbench"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Loader2, ServerCrash } from "lucide-react"
+import { Loader2, ServerCrash, Server, Cpu, CheckCircle2, Plus } from "lucide-react"
 import { NodesTable } from "@/components/nodes/nodes-table"
 import { nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -12,6 +16,8 @@ export const Route = createFileRoute("/_app/nodes/")({
 })
 
 function NodesPage() {
+  const [search, setSearch] = useState("")
+  const [status, setStatus] = useState("all")
   const role = useOrgRole()
   const navigate = useNavigate()
   const token = useAuthStore((s) => s.token)!
@@ -52,7 +58,7 @@ function NodesPage() {
   const online = nodeList.filter((n) => n.status === "online").length
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="console-page p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Nodes</h1>
@@ -61,7 +67,13 @@ function NodesPage() {
           </p>
         </div>
       </div>
-      <NodesTable nodes={nodeList} />
+      <div className="resource-metrics">
+        <MetricTile icon={Server} label="Online" value={online} unit={`/ ${nodeList.length}`} detail="Mesh connectivity"/>
+        <MetricTile icon={CheckCircle2} label="Cluster ready" value={nodeList.filter(n=>n.k8sReady).length} detail="Nodes reporting Kubernetes readiness"/>
+        <MetricTile icon={Cpu} label="Online CPU capacity" value={nodeList.filter(n=>n.status === "online").reduce((sum,n)=>sum+(n.cpuCores || 0),0)} unit="cores" detail="Hardware capacity, not current utilization"/>
+      </div>
+      <div className="flex flex-wrap items-center gap-3"><Input aria-label="Search nodes" placeholder="Search by name or mesh IP…" value={search} onChange={e=>setSearch(e.target.value)} className="h-10 max-w-md"/><OptionSelect label="Filter node status" value={status} onChange={setStatus} options={[{"value": "all", "label": "All statuses"}, {"value": "online", "label": "Online"}, {"value": "offline", "label": "Not online"}]} /><Button variant="outline" className="sm:ml-auto" render={<Link to="/cluster"/>}><Plus className="size-4"/>Connect a node</Button></div>
+      <NodesTable nodes={nodeList.filter(n => `${n.name} ${n.tailscaleIP}`.toLowerCase().includes(search.toLowerCase()) && (status === "all" || (status === "online" ? n.status === "online" : n.status !== "online")))} />
     </div>
   )
 }

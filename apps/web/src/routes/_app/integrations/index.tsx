@@ -1,9 +1,13 @@
+import type { ReactNode } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { createFileRoute, useSearch, useNavigate, Link } from "@tanstack/react-router"
-import { useEffect, useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { createContext, useContext, useEffect, useState } from "react"
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Bell, Box, GitBranch, HardDrive, Loader2, Mail, Pencil, Plus, Trash2, Download, RefreshCw } from "lucide-react"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   gitIntegrations as gitApi,
   registries as registriesApi,
@@ -62,13 +66,22 @@ function IntegrationsPage() {
     enabled: !!orgId,
   })
 
+  const categories = [["git", "Git sources"], ["registries", "Registries"], ["storage", "Object storage"], ["notifications", "Notifications"], ["email", "Email provider"]]
+  const countQueries = useQueries({ queries: [
+    { queryKey: ["registry-integrations", orgId], queryFn: () => registriesApi.list(orgId, token), enabled: !!orgId },
+    { queryKey: ["storage-integrations", orgId], queryFn: () => storageApi.list(orgId, token), enabled: !!orgId },
+    { queryKey: ["notification-channels", orgId], queryFn: () => notificationsApi.list(orgId, token), enabled: !!orgId },
+  ] })
+  const emailCount = useQuery({ queryKey: ["email-config", orgId], queryFn: () => emailConfigApi.get(orgId, token), enabled: !!orgId })
+  const counts = [gitLoading ? "…" : gitList.length, ...countQueries.map(q => q.isPending ? "…" : q.isError ? "—" : (q.data?.length ?? 0)), emailCount.isPending ? "…" : emailCount.data ? 1 : 0]
+
   const gitDeleteMutation = useMutation({
     mutationFn: (id: string) => gitApi.delete(orgId, id, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["git-integrations", orgId] }),
   })
 
   return (
-    <div className="p-6 space-y-8">
+    <div className="console-page p-6 space-y-8">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -76,8 +89,15 @@ function IntegrationsPage() {
         </p>
       </div>
 
+      <Tabs defaultValue="git" className="gap-6 min-w-0">
+        <div className="overflow-x-auto border-b border-border">
+          <TabsList variant="line" aria-label="Integration categories" className="detail-tabs console-panel-tabs">
+            {categories.map(([id, label], index) => <TabsTrigger key={id} value={id} className="console-detail-tab">{label}<span className="text-xs text-muted-foreground tabular-nums">{counts[index]}</span></TabsTrigger>)}
+          </TabsList>
+        </div>
+        <TabsContent value="git">
       {/* ── Git Sources ────────────────────────────────────────────────────── */}
-      <section className="space-y-3">
+      <section id="integration-git" className="integration-category space-y-4">
         <div className="flex items-center justify-between">
           <SectionHeader
             icon={<GitBranch className="h-4 w-4" />}
@@ -87,9 +107,9 @@ function IntegrationsPage() {
           <Link
             to="/integrations/new"
             search={{ category: "git" }}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+            className={buttonVariants({ variant: "default", className: "h-9 px-3" })}
           >
-            <Plus className="h-3 w-3" />Add source
+            <Plus className="size-4" />Add source
           </Link>
         </div>
 
@@ -100,38 +120,33 @@ function IntegrationsPage() {
             <Link
               to="/integrations/new"
               search={{ category: "git" }}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+              className={buttonVariants({ variant: "default", className: "h-9 px-3" })}
             >
-              <Plus className="h-3 w-3" />Add source
+              <Plus className="size-4" />Add source
             </Link>
           </EmptyState>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <IntegrationTable>
             {gitList.map((g) => (
               <GitIntegrationCard
                 key={g.id}
                 integration={g}
                 orgId={orgId}
                 token={token}
-                onDelete={() => gitDeleteMutation.mutate(g.id)}
+                onDelete={() => gitDeleteMutation.mutateAsync(g.id)}
                 isDeleting={gitDeleteMutation.isPending && gitDeleteMutation.variables === g.id}
               />
             ))}
-          </div>
+          </IntegrationTable>
         )}
       </section>
 
-      {/* ── Container Registries ───────────────────────────────────────────── */}
-      <RegistrySection orgId={orgId} token={token} />
-
-      {/* ── Object Storage ─────────────────────────────────────────────────── */}
-      <StorageSection orgId={orgId} token={token} />
-
-      {/* ── Notification Channels ──────────────────────────────────────────── */}
-      <NotificationsSection orgId={orgId} token={token} />
-
-      {/* ── Email Provider ─────────────────────────────────────────────────── */}
-      <EmailProviderSection orgId={orgId} token={token} />
+      </TabsContent>
+      <TabsContent value="registries"><RegistrySection orgId={orgId} token={token} /></TabsContent>
+      <TabsContent value="storage"><StorageSection orgId={orgId} token={token} /></TabsContent>
+      <TabsContent value="notifications"><NotificationsSection orgId={orgId} token={token} /></TabsContent>
+      <TabsContent value="email"><EmailProviderSection orgId={orgId} token={token} /></TabsContent>
+      </Tabs>
     </div>
   )
 }
@@ -153,7 +168,7 @@ function RegistrySection({ orgId, token }: { orgId: string; token: string }) {
   })
 
   return (
-    <section className="space-y-3">
+    <section id="integration-registries" className="integration-category space-y-4">
       <div className="flex items-center justify-between">
         <SectionHeader
           icon={<Box className="h-4 w-4" />}
@@ -163,9 +178,9 @@ function RegistrySection({ orgId, token }: { orgId: string; token: string }) {
         <Link
           to="/integrations/new"
           search={{ category: "registry" }}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+          className={buttonVariants({ variant: "default", className: "h-9 px-3" })}
         >
-          <Plus className="h-3 w-3" />Add registry
+          <Plus className="size-4" />Add registry
         </Link>
       </div>
 
@@ -180,22 +195,22 @@ function RegistrySection({ orgId, token }: { orgId: string; token: string }) {
           <Link
             to="/integrations/new"
             search={{ category: "registry" }}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+            className={buttonVariants({ variant: "default", className: "h-9 px-3" })}
           >
-            <Plus className="h-3 w-3" />Add registry
+            <Plus className="size-4" />Add registry
           </Link>
         </EmptyState>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <IntegrationTable>
           {list.map((reg) => (
             <RegistryCard
               key={reg.id}
               registry={reg}
-              onDelete={() => deleteMutation.mutate(reg.id)}
+              onDelete={() => deleteMutation.mutateAsync(reg.id)}
               isDeleting={deleteMutation.isPending}
             />
           ))}
-        </div>
+        </IntegrationTable>
       )}
     </section>
   )
@@ -218,7 +233,7 @@ function StorageSection({ orgId, token }: { orgId: string; token: string }) {
   })
 
   return (
-    <section className="space-y-3">
+    <section id="integration-storage" className="integration-category space-y-4">
       <div className="flex items-center justify-between">
         <SectionHeader
           icon={<HardDrive className="h-4 w-4" />}
@@ -228,9 +243,9 @@ function StorageSection({ orgId, token }: { orgId: string; token: string }) {
         <Link
           to="/integrations/new"
           search={{ category: "storage" }}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+          className={buttonVariants({ variant: "default", className: "h-9 px-3" })}
         >
-          <Plus className="h-3 w-3" />Add storage
+          <Plus className="size-4" />Add storage
         </Link>
       </div>
 
@@ -245,22 +260,22 @@ function StorageSection({ orgId, token }: { orgId: string; token: string }) {
           <Link
             to="/integrations/new"
             search={{ category: "storage" }}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+            className={buttonVariants({ variant: "default", className: "h-9 px-3" })}
           >
-            <Plus className="h-3 w-3" />Add storage
+            <Plus className="size-4" />Add storage
           </Link>
         </EmptyState>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <IntegrationTable>
           {list.map((sto) => (
             <StorageCard
               key={sto.id}
               integration={sto}
-              onDelete={() => deleteMutation.mutate(sto.id)}
+              onDelete={() => deleteMutation.mutateAsync(sto.id)}
               isDeleting={deleteMutation.isPending && deleteMutation.variables === sto.id}
             />
           ))}
-        </div>
+        </IntegrationTable>
       )}
     </section>
   )
@@ -270,80 +285,24 @@ function StorageSection({ orgId, token }: { orgId: string; token: string }) {
 
 function StorageCard({ integration, onDelete, isDeleting }: {
   integration: ApiStorageIntegration
-  onDelete: () => void
+  onDelete: () => Promise<unknown>
   isDeleting: boolean
 }) {
   const meta = [integration.bucket, integration.region].filter(Boolean).join(" · ")
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
-      <ProviderIcon provider={integration.provider} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground truncate">{integration.name}</p>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
-            connected
-          </Badge>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">{PROVIDER_LABELS[integration.provider] ?? integration.provider}</p>
-        {meta && <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>}
-      </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={onDelete}
-        disabled={isDeleting}
-        className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-        title="Remove"
-      >
-        {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-      </Button>
-    </div>
-  )
+  return <IntegrationRow name={integration.name} provider={integration.provider} status="Configured" details={meta} actions={<DisconnectButton name={integration.name} onDelete={onDelete} pending={isDeleting} />} />
 }
 
 // ─── Registry card ────────────────────────────────────────────────────────────
 
 function RegistryCard({ registry, onDelete, isDeleting }: {
   registry: ApiRegistryIntegration
-  onDelete: () => void
+  onDelete: () => Promise<unknown>
   isDeleting: boolean
 }) {
   const label = PROVIDER_LABELS[registry.provider] ?? registry.provider
   const meta = registry.namespace || registry.endpoint || ""
 
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
-      <ProviderIcon provider={registry.provider} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground truncate">{registry.name}</p>
-          {registry.provider === "builtin" ? (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-blue-500/10 text-blue-400 border-0">
-              built-in
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
-              connected
-            </Badge>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-        {meta && <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>}
-      </div>
-      {registry.provider !== "builtin" && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onDelete}
-          disabled={isDeleting}
-          className="shrink-0 p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-          title="Remove"
-        >
-          {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-        </Button>
-      )}
-    </div>
-  )
+  return <IntegrationRow name={registry.name} provider={registry.provider} status={registry.provider === "builtin" ? "Built-in" : "Configured"} details={meta || label} actions={registry.provider !== "builtin" ? <DisconnectButton name={registry.name} onDelete={onDelete} pending={isDeleting} /> : <span className="text-xs text-muted-foreground">Managed by Meshploy</span>} />
 }
 
 // ─── Git integration card ─────────────────────────────────────────────────────
@@ -352,7 +311,7 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
   integration: ApiGitIntegration
   orgId: string
   token: string
-  onDelete: () => void
+  onDelete: () => Promise<unknown>
   isDeleting: boolean
 }) {
   const [installing, setInstalling] = useState(false)
@@ -406,94 +365,13 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
   const isGHApp = integration.auth_method === "app"
   const isOAuth = integration.auth_method === "oauth"
 
-  return (
-    <div className={`flex items-start gap-3 rounded-lg border bg-card p-4 ${isPending || needsReconnect ? "border-amber-500/30" : "border-border/60"}`}>
-      <ProviderIcon provider={integration.provider} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-medium text-foreground truncate">
-            {integration.provider === "github" ? (integration.gh_app_slug || integration.name) : integration.name}
-          </p>
-          {isPending ? (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-amber-500/10 text-amber-400 border-amber-500/20">
-              action required
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
-              connected
-            </Badge>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {PROVIDER_LABELS[integration.provider] ?? integration.provider}
-          {isPending && isGHApp && " · awaiting installation"}
-          {isPending && isOAuth && " · authorization incomplete"}
-          {needsReconnect && " · token expired"}
-        </p>
-        {integration.connected && repos !== undefined && (
-          <p className="text-[11px] font-mono text-muted-foreground/60 mt-1">
-            {repos.length} {repos.length === 1 ? "repo" : "repos"} accessible
-          </p>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-0.5 shrink-0">
-        {isPending && isGHApp && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={handleInstall}
-            disabled={installing || !integration.gh_app_slug}
-            className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
-            title={integration.gh_app_slug ? "Install GitHub App" : "Setup not yet complete"}
-          >
-            {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          </Button>
-        )}
-        {(isPending && isOAuth || needsReconnect) && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={handleReconnect}
-            disabled={reconnecting}
-            className="p-1 text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-30"
-            title={needsReconnect ? "Token expired — re-authorize" : "Re-authorize"}
-          >
-            {reconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onDelete}
-          disabled={isDeleting}
-          className="p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-          title="Disconnect"
-        >
-          {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Mock section cards ───────────────────────────────────────────────────────
-
-function IntegrationCard({ name, providerKey, meta }: { name: string; providerKey: string; meta: string }) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4">
-      <ProviderIcon provider={providerKey} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground truncate">{name}</p>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">connected</Badge>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">{PROVIDER_LABELS[providerKey] ?? providerKey}</p>
-        <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">{meta}</p>
-      </div>
-    </div>
-  )
+  return <IntegrationRow name={integration.name} provider={integration.provider} status={isPending || needsReconnect ? "Action required" : "Connected"}
+    details={<>{needsReconnect ? "Token expired" : isPending ? "Authorization incomplete" : repos !== undefined ? `${repos.length} repositories accessible` : reposError ? "Repository access unavailable" : "Checking repository access…"}</>}
+    actions={<>
+      {isPending && isGHApp && <Button variant="outline" size="sm" onClick={handleInstall} disabled={installing || !integration.gh_app_slug}>{installing ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}Install app</Button>}
+      {(isPending && isOAuth || needsReconnect) && <Button variant="outline" size="sm" onClick={handleReconnect} disabled={reconnecting}><RefreshCw className="size-3" />Re-authorize</Button>}
+      <DisconnectButton name={integration.name} onDelete={onDelete} pending={isDeleting} />
+    </>} />
 }
 
 // ─── Notifications section ────────────────────────────────────────────────────
@@ -520,7 +398,7 @@ function NotificationsSection({ orgId, token }: { orgId: string; token: string }
   })
 
   return (
-    <section className="space-y-3">
+    <section id="integration-notifications" className="integration-category space-y-4">
       <div className="flex items-center justify-between">
         <SectionHeader
           icon={<Bell className="h-4 w-4" />}
@@ -531,11 +409,11 @@ function NotificationsSection({ orgId, token }: { orgId: string; token: string }
           ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
           : (
             <Button
-              variant="ghost"
+              variant="default"
               onClick={() => navigate({ to: "/integrations/new", search: { category: "notifications" } })}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/60 hover:border-border px-2.5 py-1.5 rounded-md transition-colors"
+              className="h-9 px-3"
             >
-              <Plus className="h-3 w-3" />Add channel
+              <Plus className="size-4" />Add channel
             </Button>
           )
         }
@@ -547,18 +425,18 @@ function NotificationsSection({ orgId, token }: { orgId: string; token: string }
           description="Add an email address or webhook to get notified on deployments and failures"
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <IntegrationTable>
           {list.map((ch) => (
             <NotificationCard
               key={ch.id}
               channel={ch}
-              onDelete={() => deleteMutation.mutate(ch.id)}
+              onDelete={() => deleteMutation.mutateAsync(ch.id)}
               isDeleting={deleteMutation.isPending && deleteMutation.variables === ch.id}
               onToggle={(enabled) => toggleMutation.mutate({ id: ch.id, enabled })}
               isToggling={toggleMutation.isPending && (toggleMutation.variables as any)?.id === ch.id}
             />
           ))}
-        </div>
+        </IntegrationTable>
       )}
     </section>
   )
@@ -566,7 +444,7 @@ function NotificationsSection({ orgId, token }: { orgId: string; token: string }
 
 function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling }: {
   channel: ApiNotificationChannel
-  onDelete: () => void
+  onDelete: () => Promise<unknown>
   isDeleting: boolean
   onToggle: (enabled: boolean) => void
   isToggling: boolean
@@ -576,63 +454,10 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
     : channel.type === "slack" || channel.type === "discord" ? channel.config.webhook_url
     : channel.config.url
 
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card p-4">
-      <div className="flex items-center gap-3">
-        <ProviderIcon provider={channel.type} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-foreground truncate">{channel.name}</p>
-            <Badge
-              variant="secondary"
-              className={`text-[10px] px-1.5 py-0 h-4 shrink-0 border-0 ${
-                channel.enabled
-                  ? "bg-emerald-500/10 text-emerald-400"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              {channel.enabled ? "active" : "paused"}
-            </Badge>
-          </div>
-          <p className="text-xs text-muted-foreground truncate">{PROVIDER_LABELS[channel.type]}{destination ? ` · ${destination}` : ""}</p>
-        </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onToggle(!channel.enabled)}
-            disabled={isToggling}
-            title={channel.enabled ? "Pause" : "Resume"}
-            className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors disabled:opacity-30"
-          >
-            {isToggling
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              : channel.enabled
-                ? <span className="text-[10px] font-mono">II</span>
-                : <span className="text-[10px] font-mono">▶</span>
-            }
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onDelete}
-            disabled={isDeleting}
-            title="Delete"
-            className="p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-          >
-            {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          </Button>
-        </div>
-      </div>
-      {channel.events.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {channel.events.map((ev) => (
-            <code key={ev} className="text-[10px] font-mono bg-muted/60 px-1.5 py-0.5 rounded text-muted-foreground">{ev}</code>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+  return <IntegrationRow name={channel.name} provider={channel.type} status={channel.enabled ? "Enabled" : "Paused"} details={<><span className="block max-w-sm truncate">{destination}</span><span className="text-xs">{channel.events.length} subscribed events</span></>} actions={<>
+    <Button variant="outline" size="sm" onClick={() => onToggle(!channel.enabled)} disabled={isToggling}>{channel.enabled ? "Pause" : "Resume"}</Button>
+    <DisconnectButton name={channel.name} onDelete={onDelete} pending={isDeleting} />
+  </>} />
 }
 
 // ─── Email provider section ───────────────────────────────────────────────────
@@ -653,7 +478,7 @@ function EmailProviderSection({ orgId, token }: { orgId: string; token: string }
   })
 
   return (
-    <section className="space-y-3">
+    <section id="integration-email" className="integration-category space-y-4">
       <div className="flex items-center justify-between">
         <SectionHeader
           icon={<Mail className="h-4 w-4" />}
@@ -662,11 +487,11 @@ function EmailProviderSection({ orgId, token }: { orgId: string; token: string }
         />
         {!isLoading && !cfg && (
           <Button
-            variant="ghost"
+            variant="default"
             onClick={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-2.5 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors"
+            className="h-9 px-3"
           >
-            <Plus className="h-3 w-3" />Configure
+            <Plus className="size-4" />Configure
           </Button>
         )}
       </div>
@@ -680,18 +505,18 @@ function EmailProviderSection({ orgId, token }: { orgId: string; token: string }
           description="Set up SMTP so email notification channels can send alerts"
         >
           <Button
-            variant="ghost"
+            variant="default"
             onClick={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/60 px-3 py-1.5 rounded-md hover:text-foreground hover:border-border transition-colors mt-1"
+            className="h-9 px-3"
           >
-            <Plus className="h-3 w-3" />Configure
+            <Plus className="size-4" />Configure
           </Button>
         </EmptyState>
       ) : (
         <EmailProviderCard
           cfg={cfg}
           onEdit={() => navigate({ to: "/integrations/new", search: { category: "email" } })}
-          onDelete={() => deleteMutation.mutate()}
+          onDelete={() => deleteMutation.mutateAsync()}
           isDeleting={deleteMutation.isPending}
         />
       )}
@@ -702,59 +527,21 @@ function EmailProviderSection({ orgId, token }: { orgId: string; token: string }
 function EmailProviderCard({ cfg, onEdit, onDelete, isDeleting }: {
   cfg: ApiOrgEmailConfig
   onEdit: () => void
-  onDelete: () => void
+  onDelete: () => Promise<unknown>
   isDeleting: boolean
 }) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-card p-4 max-w-sm">
-      <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted shrink-0">
-        <Mail className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground truncate">{cfg.host}</p>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 bg-emerald-500/10 text-emerald-400 border-0">
-            configured
-          </Badge>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Port {cfg.port} · {cfg.use_tls ? "TLS" : "No TLS"}
-        </p>
-        <p className="text-[11px] font-mono text-muted-foreground/60 mt-1 truncate">
-          from: {cfg.from_name ? `${cfg.from_name} <${cfg.from_address}>` : cfg.from_address}
-        </p>
-      </div>
-      <div className="flex items-center gap-0.5 shrink-0">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onEdit}
-          className="p-1 text-muted-foreground/40 hover:text-foreground transition-colors"
-          title="Edit"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onDelete}
-          disabled={isDeleting}
-          className="p-1 text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-30"
-          title="Remove"
-        >
-          {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-        </Button>
-      </div>
-    </div>
-  )
+  return <IntegrationTable><IntegrationRow name={cfg.host} provider="email" status="Configured" details={<>{cfg.from_address}<span className="block text-xs">Port {cfg.port} · {cfg.use_tls ? "TLS" : "No TLS"}</span></>} actions={<>
+    <Button variant="outline" size="sm" onClick={onEdit}><Pencil className="size-3" />Edit</Button>
+    <DisconnectButton name={cfg.host} onDelete={onDelete} pending={isDeleting} />
+  </>} /></IntegrationTable>
 }
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
 function ProviderIcon({ provider }: { provider: string }) {
   return (
-    <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted shrink-0 text-xs font-bold text-muted-foreground uppercase">
-      {provider.slice(0, 2)}
+    <div className="flex items-center justify-center accent-icon-tile shrink-0 text-xs font-bold uppercase">
+      {({ github: "GH", gitlab: "GL", gitea: "GT" } as Record<string, string>)[provider] || provider.slice(0, 2)}
     </div>
   )
 }
@@ -796,4 +583,33 @@ function LoadingRow() {
       <span>Loading…</span>
     </div>
   )
+}
+
+function IntegrationTable({ children }: { children: ReactNode }) {
+  const [query, setQuery] = useState("")
+  // Filter the fetched connections locally.
+  return <div className="space-y-4 integration-table-area" data-search={query.trim().toLowerCase()}>
+    <Input aria-label="Search integrations" placeholder="Search by name, provider, or status…" value={query} onChange={e => setQuery(e.target.value)} className="h-10 max-w-md" />
+    <IntegrationSearchContext.Provider value={query.trim().toLowerCase()}>
+      <div className="console-data-table overflow-x-auto"><table className="min-w-[760px]" aria-label="Integrations"><thead><tr><th>Name</th><th>Provider</th><th>Status</th><th>Details</th><th aria-label="Actions">Actions</th></tr></thead><tbody>{children}<tr className="integration-no-results"><td colSpan={5} className="text-center text-muted-foreground">No matching integrations. Try another search.</td></tr></tbody></table></div>
+      {query && <p className="text-xs text-muted-foreground">Showing matches for “{query}”. <Button variant="link" size="sm" onClick={() => setQuery("")}>Clear search</Button></p>}
+    </IntegrationSearchContext.Provider>
+  </div>
+}
+
+const IntegrationSearchContext = createContext("")
+function IntegrationRow({name, provider, status, details, actions}: {name: string; provider: string; status: string; details: ReactNode; actions: ReactNode}) {
+  const query = useContext(IntegrationSearchContext)
+  if (query && !`${name} ${PROVIDER_LABELS[provider] || provider} ${status} ${typeof details === "string" ? details : ""}`.toLowerCase().includes(query)) return null
+  return <tr><td><div className="flex items-center gap-3"><ProviderIcon provider={provider}/><span className="font-medium">{name}</span></div></td><td className="text-muted-foreground">{PROVIDER_LABELS[provider] || provider}</td><td><Badge variant="secondary" className={status === "Action required" ? "text-amber-400" : ""}>{status}</Badge></td><td className="text-muted-foreground">{details}</td><td><div className="flex items-center justify-end gap-2">{actions}</div></td></tr>
+}
+
+function DisconnectButton({name, onDelete, pending}: {name: string; onDelete: () => Promise<unknown>; pending: boolean}) {
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState("")
+  return <><Button variant="ghost" size="sm" aria-label={`Disconnect ${name}`} onClick={() => { setError(""); setOpen(true) }} className="text-muted-foreground hover:text-destructive"><Trash2 className="size-3.5" />Disconnect</Button>
+    <Dialog open={open} onOpenChange={value => { if (!pending) setOpen(value) }}><DialogContent><DialogHeader><DialogTitle>Disconnect {name}?</DialogTitle><DialogDescription>This removes the connection from your workspace. Resources using it may need another integration for future operations.</DialogDescription></DialogHeader>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <div className="flex justify-end gap-2"><Button variant="outline" disabled={pending} onClick={() => setOpen(false)}>Cancel</Button><Button variant="destructive" disabled={pending} onClick={async () => { try { await onDelete(); setOpen(false) } catch (e) { setError(e instanceof Error ? e.message : "Could not disconnect. Try again.") } }}>{pending && <Loader2 className="size-3 animate-spin" />}Disconnect</Button></div>
+    </DialogContent></Dialog></>
 }

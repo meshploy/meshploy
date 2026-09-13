@@ -1,3 +1,4 @@
+import { ResourcePanel } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -61,11 +62,11 @@ function AgentDetailPage() {
   const [revealToken, setRevealToken] = useState<string | null>(null)
 
   if (!agent && agents.length > 0) {
-    return <div className="p-6 text-sm text-muted-foreground">Agent not found.</div>
+    return <div className="console-page p-6 text-sm text-muted-foreground">Agent not found.</div>
   }
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
+    <div className="console-page space-y-6">
       <div className="space-y-4">
         <Link
           to="/agents"
@@ -85,7 +86,7 @@ function AgentDetailPage() {
         </div>
       ) : (
         <>
-          <McpConnectPanel mcpUrl={mcpUrl} />
+          <div className="resource-overview-columns"><div className="space-y-6 min-w-0">
 
           <TokensSection
             agent={agent}
@@ -96,6 +97,10 @@ function AgentDetailPage() {
 
           <PrincipalPermissions orgId={orgId} principalId={agent.id} token={token} />
 
+          </div><aside className="space-y-6 min-w-0">
+          <McpConnectPanel mcpUrl={mcpUrl} />
+          <ResourcePanel title="Agent access"><p className="text-sm text-muted-foreground leading-relaxed">Connect tools using an agent token. Resource permissions determine which parts of the workspace this agent can access.</p></ResourcePanel>
+          </aside></div>
           <DangerZone agent={agent} orgId={orgId} token={token} />
 
           <AddTokenDialog
@@ -132,7 +137,7 @@ function AgentHeader({ agent }: { agent: AgentDTO }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-base font-semibold truncate">{agent.name}</p>
+          <h1 className="truncate">{agent.name}</h1>
           <RoleBadge role={agent.role} />
         </div>
         <p className="text-sm text-muted-foreground">
@@ -145,12 +150,12 @@ function AgentHeader({ agent }: { agent: AgentDTO }) {
 
 function RoleBadge({ role }: { role: AgentRole }) {
   if (role === "admin") return (
-    <Badge className="gap-1 text-[10px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">
+    <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">
       <Shield className="h-2.5 w-2.5" />admin
     </Badge>
   )
   return (
-    <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 h-5">
+    <Badge variant="secondary" className="gap-1 text-[11px] px-1.5 py-0 h-5">
       <User className="h-2.5 w-2.5" />member
     </Badge>
   )
@@ -328,15 +333,15 @@ function TokenRow({ tokenMeta, agentId, orgId, token }: {
 
 function TokenStateBadge({ state }: { state: ReturnType<typeof tokenState> }) {
   if (state === "active") return (
-    <Badge className="gap-1 text-[10px] px-1.5 py-0 h-5 bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10">
+    <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10">
       active
     </Badge>
   )
   if (state === "expired") return (
-    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 text-muted-foreground">expired</Badge>
+    <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-5 text-muted-foreground">expired</Badge>
   )
   return (
-    <Badge className="text-[10px] px-1.5 py-0 h-5 bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10">
+    <Badge className="text-[11px] px-1.5 py-0 h-5 bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/10">
       revoked
     </Badge>
   )
