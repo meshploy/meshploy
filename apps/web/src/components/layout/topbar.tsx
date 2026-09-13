@@ -221,7 +221,7 @@ function Breadcrumb() {
 export function Topbar() {
   const { setMobileNavOpen } = useUIStore()
   return (
-    <header className="flex items-center h-[58px] px-4 md:px-6 border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0 sticky top-0 z-40">
+    <header className="flex items-center h-(--console-topbar-height) px-4 md:px-6 border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0 sticky top-0 z-40">
       <button className="mr-3 md:hidden p-2 rounded-lg hover:bg-muted" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu className="h-5 w-5" /></button>
       <div className="flex-1 min-w-0">
         <Breadcrumb />

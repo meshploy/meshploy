@@ -138,7 +138,7 @@ export function AppSidebar() {
       )}
     >
       {/* Logo */}
-      <div className={cn("sidebar-brand flex items-center h-14 px-4 border-b border-sidebar-border shrink-0", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
+      <div className={cn("sidebar-brand flex items-center h-(--console-topbar-height) px-4 border-b border-sidebar-border shrink-0", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
         <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary/15 shrink-0">
           <MeshMark className="w-4 h-4 text-primary" />
         </div>

@@ -317,8 +317,13 @@ a {
   color: var(--primary);
   background: var(--sidebar-accent);
 }
+/* The sidebar's brand row and the top bar share one height, so their bottom
+   borders meet in a single line. */
+:root {
+  --console-topbar-height: 58px;
+}
 .global-sidebar .sidebar-brand {
-  height: 68px;
+  height: var(--console-topbar-height);
 }
 .project-layout {
   display: flex;
