@@ -114,6 +114,8 @@ function VolumesTab() {
         </Button>
       </div>
 
+      <ResourceSearch value={search} onChange={setSearch} label="volumes" count={volumeList.length} empty={volumeList.length > 0 && !volumeList.some(matches)} />
+
       {volumeList.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
           <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-muted/50">

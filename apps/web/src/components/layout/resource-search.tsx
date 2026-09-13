@@ -17,17 +17,25 @@ export function useResourceSearch() {
       .includes(search.toLowerCase().trim())
   return { search, setSearch, matches }
 }
+// A list this short is quicker to scan than to search, so the box stays
+// hidden until it grows, unless a search is already typed.
+const SEARCH_FROM = 9
+
 export function ResourceSearch({
   value,
   onChange,
   label,
   empty,
+  count,
 }: {
   value: string
   onChange: (value: string) => void
   label: string
   empty?: boolean
+  /** How many items the whole list has, before searching. */
+  count: number
 }) {
+  if (count < SEARCH_FROM && !value) return null
   return (
     <div className="space-y-4">
       <div className="relative max-w-md">

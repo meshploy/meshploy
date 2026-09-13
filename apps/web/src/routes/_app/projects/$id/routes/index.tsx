@@ -53,7 +53,7 @@ function RoutesTab() {
       </div>
 
       {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
-      <ResourceSearch value={search} onChange={setSearch} label="routes" empty={routeList.length > 0 && !routeList.some(matches)} />
+      <ResourceSearch value={search} onChange={setSearch} count={routeList.length} label="routes" empty={routeList.length > 0 && !routeList.some(matches)} />
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

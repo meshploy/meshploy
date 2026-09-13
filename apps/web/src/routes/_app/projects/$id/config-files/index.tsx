@@ -68,7 +68,7 @@ function ConfigFilesPage() {
       </div>
 
       {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
-      <ResourceSearch value={search} onChange={setSearch} label="config files" empty={files.length > 0 && !files.some(matches)} />
+      <ResourceSearch value={search} onChange={setSearch} count={files.length} label="config files" empty={files.length > 0 && !files.some(matches)} />
       {isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : files.length === 0 ? (
