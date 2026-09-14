@@ -46,15 +46,16 @@ type CreateStackInput struct {
 	Body      CreateStackBody
 }
 
+// UpdateStackBody changes only the fields it carries; one left out is kept.
 type UpdateStackBody struct {
 	Name      string            `json:"name,omitempty"`
-	Spec      string            `json:"spec"`
+	Spec      *string           `json:"spec,omitempty"`
 	Variables map[string]string `json:"variables,omitempty"`
 	// Git source
-	GitMode          string  `json:"git_mode,omitempty"`
-	GitRepo          string  `json:"git_repo,omitempty"`
-	GitBranch        string  `json:"git_branch,omitempty"`
-	GitPath          string  `json:"git_path,omitempty"`
+	GitMode          *string `json:"git_mode,omitempty"`
+	GitRepo          *string `json:"git_repo,omitempty"`
+	GitBranch        *string `json:"git_branch,omitempty"`
+	GitPath          *string `json:"git_path,omitempty"`
 	GitIntegrationID *string `json:"git_integration_id,omitempty"` // "" = clear, UUID = set
 }
 
@@ -342,10 +343,13 @@ func (h *Handler) UpdateStack(ctx context.Context, input *UpdateStackInput) (*Ge
 		Name:      input.Body.Name,
 		Spec:      input.Body.Spec,
 		Variables: input.Body.Variables,
-		GitMode:   db.StackGitMode(input.Body.GitMode),
 		GitRepo:   input.Body.GitRepo,
 		GitBranch: input.Body.GitBranch,
 		GitPath:   input.Body.GitPath,
+	}
+	if input.Body.GitMode != nil {
+		mode := db.StackGitMode(*input.Body.GitMode)
+		in.GitMode = &mode
 	}
 	if input.Body.GitIntegrationID != nil {
 		in.UpdateGitIntegration = true

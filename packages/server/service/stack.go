@@ -57,16 +57,18 @@ type CreateStackInput struct {
 	TemplateVersion string
 }
 
+// UpdateStackInput changes only what it sets: a nil field, an empty name and
+// nil variables keep what the stack has.
 type UpdateStackInput struct {
 	Name      string
-	Spec      string
+	Spec      *string
 	Variables map[string]string
 
 	// Git source
-	GitMode              meshdb.StackGitMode
-	GitRepo              string
-	GitBranch            string
-	GitPath              string
+	GitMode              *meshdb.StackGitMode
+	GitRepo              *string
+	GitBranch            *string
+	GitPath              *string
 	UpdateGitIntegration bool // true = apply GitIntegrationID (even if nil, to clear it)
 	GitIntegrationID     *uuid.UUID
 }
@@ -139,12 +141,26 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
 	}
-	updates := map[string]any{
-		"spec":       storedSpec(in.Spec, in.GitMode, in.GitRepo),
-		"git_mode":   in.GitMode,
-		"git_repo":   in.GitRepo,
-		"git_branch": in.GitBranch,
-		"git_path":   in.GitPath,
+	// Callers send only what changes: the variables page sends variables, the
+	// sync banner git_mode. Writing the rest as empty would clear the spec and
+	// the git source.
+	updates := map[string]any{}
+	if in.GitMode != nil {
+		stack.GitMode = *in.GitMode
+		updates["git_mode"] = *in.GitMode
+	}
+	if in.GitRepo != nil {
+		stack.GitRepo = *in.GitRepo
+		updates["git_repo"] = *in.GitRepo
+	}
+	if in.GitBranch != nil {
+		updates["git_branch"] = *in.GitBranch
+	}
+	if in.GitPath != nil {
+		updates["git_path"] = *in.GitPath
+	}
+	if in.Spec != nil {
+		updates["spec"] = storedSpec(*in.Spec, stack.GitMode, stack.GitRepo)
 	}
 	if in.Name != "" {
 		updates["name"] = in.Name
@@ -155,8 +171,10 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 	if in.UpdateGitIntegration {
 		updates["git_integration_id"] = in.GitIntegrationID
 	}
-	if err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error; err != nil {
-		return nil, err
+	if len(updates) > 0 {
+		if err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error; err != nil {
+			return nil, err
+		}
 	}
 	return s.getByID(ctx, stackID)
 }
@@ -186,11 +204,7 @@ func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, n
 		if stack.GitMode != meshdb.StackGitModeRaw || stack.GitRepo != "" {
 			return nil, fmt.Errorf("stack %q is git-backed; reconcile it with sync instead of an inline apply", name)
 		}
-		if _, e := s.Update(ctx, stack.ID, UpdateStackInput{
-			Name:    name,
-			Spec:    spec,
-			GitMode: meshdb.StackGitModeRaw,
-		}); e != nil {
+		if _, e := s.Update(ctx, stack.ID, UpdateStackInput{Name: name, Spec: &spec}); e != nil {
 			return nil, e
 		}
 	case errors.Is(err, gorm.ErrRecordNotFound):

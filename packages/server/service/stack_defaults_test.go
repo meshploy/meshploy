@@ -345,7 +345,7 @@ func TestPastedStacksAreStoredFilled(t *testing.T) {
 	raw2 := "services:\n  api:\n    image: alpine\n"
 	filled2, err := service.FillMeshployDefaults(raw2)
 	require.NoError(t, err)
-	updated, err := svcs.Stacks.Update(ctx, stack.ID, service.UpdateStackInput{Spec: raw2})
+	updated, err := svcs.Stacks.Update(ctx, stack.ID, service.UpdateStackInput{Spec: &raw2})
 	require.NoError(t, err)
 	assert.Equal(t, filled2, updated.Spec)
 
