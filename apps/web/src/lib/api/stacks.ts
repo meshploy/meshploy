@@ -80,6 +80,15 @@ export const stacks = {
       token
     ),
 
+  // The spec with every x-meshploy setting an apply would default written out,
+  // by the same code apply uses.
+  meshployConfig: (orgId: string, projectId: string, spec: string, token: string) =>
+    apiFetch<{ spec: string }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/stacks/meshploy-config`,
+      { method: "POST", body: JSON.stringify({ spec }) },
+      token
+    ),
+
   get: (orgId: string, projectId: string, stackId: string, token: string) =>
     apiFetch<ApiStack>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/stacks/${stackId}`,

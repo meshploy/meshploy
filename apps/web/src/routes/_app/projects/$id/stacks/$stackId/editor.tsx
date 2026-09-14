@@ -214,6 +214,7 @@ function StackEditorTab() {
       <div className="flex-1 overflow-auto p-4">
         <StackEditor
           value={spec}
+          projectId={projectId}
           onChange={isGitSourced ? undefined : (value) => {
             setSpec(value)
             setDirty(value !== (stack?.spec ?? ""))

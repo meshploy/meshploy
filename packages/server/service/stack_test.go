@@ -53,7 +53,9 @@ func TestStackCreate(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEmpty(t, stack.ID)
 		assert.Equal(t, "my-stack", stack.Name)
-		assert.Equal(t, validStackSpec, stack.Spec)
+		filled, err := service.FillMeshployDefaults(validStackSpec)
+		require.NoError(t, err)
+		assert.Equal(t, filled, stack.Spec, "a pasted stack is stored with its defaults written out")
 		assert.Equal(t, meshdb.StackIdle, stack.Status)
 	})
 

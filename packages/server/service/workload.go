@@ -108,23 +108,29 @@ func (s *WorkloadService) getByID(ctx context.Context, serviceID uuid.UUID) (*db
 	return &service, err
 }
 
+// defaultDBVersion is the version a managed database gets when none is given.
+func defaultDBVersion(engine db.DatabaseEngine) string {
+	switch engine {
+	case db.DatabasePostgres:
+		return "16"
+	case db.DatabaseMySQL:
+		return "8.0"
+	case db.DatabaseRedis:
+		return "7"
+	case db.DatabaseMongoDB:
+		return "7"
+	case db.DatabaseDragonfly:
+		return "latest"
+	case db.DatabaseClickHouse:
+		return "24"
+	}
+	return ""
+}
+
 // dbDefaults returns the default image, port, and storage for a managed-database engine.
 func dbDefaults(engine db.DatabaseEngine, version string) (image string, port int) {
 	if version == "" {
-		switch engine {
-		case db.DatabasePostgres:
-			version = "16"
-		case db.DatabaseMySQL:
-			version = "8.0"
-		case db.DatabaseRedis:
-			version = "7"
-		case db.DatabaseMongoDB:
-			version = "7"
-		case db.DatabaseDragonfly:
-			version = "latest"
-		case db.DatabaseClickHouse:
-			version = "24"
-		}
+		version = defaultDBVersion(engine)
 	}
 	switch engine {
 	case db.DatabasePostgres:
@@ -353,20 +359,11 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 	image, port := dbDefaults(in.Engine, in.Version)
 	version := in.Version
 	if version == "" {
-		switch in.Engine {
-		case db.DatabasePostgres:
-			version = "16"
-		case db.DatabaseMySQL:
-			version = "8.0"
-		case db.DatabaseRedis:
-			version = "7"
-		case db.DatabaseMongoDB:
-			version = "7"
-		}
+		version = defaultDBVersion(in.Engine)
 	}
 	storageGB := in.StorageGB
 	if storageGB == 0 {
-		storageGB = 10
+		storageGB = defaultDBStorageGB
 	}
 	dbName := in.DBName
 	if dbName == "" {

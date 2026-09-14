@@ -2117,14 +2117,14 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
                 )}
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Compose (editable)</p>
-                  <StackEditor value={spec} onChange={setSpec} minHeight="300px" />
+                  <StackEditor value={spec} onChange={setSpec} projectId={projectId} minHeight="300px" />
                 </div>
               </>
             )}
           </div>
         ) : (
           <div className="mt-4">
-            <StackEditor value={spec} onChange={setSpec} minHeight="360px" />
+            <StackEditor value={spec} onChange={setSpec} projectId={projectId} minHeight="360px" />
           </div>
         )}
       </Section>

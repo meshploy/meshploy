@@ -119,7 +119,7 @@ func (s *StackService) Create(ctx context.Context, projectID uuid.UUID, in Creat
 	stack := &meshdb.Stack{
 		ProjectID:        projectID,
 		Name:             in.Name,
-		Spec:             in.Spec,
+		Spec:             storedSpec(in.Spec, in.GitMode, in.GitRepo),
 		Variables:        vars,
 		Status:           meshdb.StackIdle,
 		GitMode:          in.GitMode,
@@ -140,7 +140,7 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 		return nil, err
 	}
 	updates := map[string]any{
-		"spec":       in.Spec,
+		"spec":       storedSpec(in.Spec, in.GitMode, in.GitRepo),
 		"git_mode":   in.GitMode,
 		"git_repo":   in.GitRepo,
 		"git_branch": in.GitBranch,
@@ -552,6 +552,13 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
 	}
+	// A pasted stack saved before its defaults were written out on save.
+	if spec := storedSpec(stack.Spec, stack.GitMode, stack.GitRepo); spec != stack.Spec {
+		if err := s.db.WithContext(ctx).Model(&stack).Update("spec", spec).Error; err != nil {
+			return nil, err
+		}
+		stack.Spec = spec
+	}
 	if err := s.db.WithContext(ctx).Model(&stack).Updates(map[string]any{"status": meshdb.StackApplying}).Error; err != nil {
 		return nil, err
 	}
@@ -635,7 +642,7 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			result.Warnings = append(result.Warnings, svcName+": "+note)
 		}
 
-		replicas := 1
+		replicas := defaultReplicas
 		cpuRequest, cpuLimit := appk8s.DefaultCPURequest, appk8s.DefaultCPULimit
 		memRequest, memLimit := appk8s.DefaultMemoryRequest, appk8s.DefaultMemoryLimit
 		var nodeID *uuid.UUID
@@ -686,7 +693,7 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					HealthcheckStartPeriodSecs: hcStartPeriod,
 				}
 				if dbInput.StorageGB == 0 {
-					dbInput.StorageGB = 10
+					dbInput.StorageGB = defaultDBStorageGB
 				}
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
 			} else {

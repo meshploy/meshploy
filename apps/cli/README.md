@@ -288,6 +288,7 @@ Each compose service becomes a Meshploy service, read the way compose reads it:
 - **`entrypoint:` and `command:`** replace the image's ENTRYPOINT and CMD, and reach the container exactly as written.
 - **Files go in through `configs:` and `secrets:`.** A config lands at its `target`, `/<name>` by default, and a secret at `/run/secrets/<name>`; both are stored encrypted. `content:` and `environment:` work however the stack is applied. `file:` is read relative to the compose file: `meshploy apply` sends it along, a git stack reads it from the repository, and an apply that cannot read it keeps the copy an earlier one stored. Bind mounts, `extra_hosts` and values pointing at `host.docker.internal` are left out, with a warning.
 - **Re-applying** updates a service's ports only when its compose definition declares some, so ports edited in the console are otherwise kept, and a public port that stays keeps its NodePort. A running service picks up changed ports or command on its next deploy.
+- **Settings are written out.** The stack is stored with every `x-meshploy` setting an apply would otherwise default written into each service: its primary port, replicas and resources, or a managed database's version and storage. The console then shows what runs. Your local file is not changed, and applying it again stores the same result.
 
 | Flag | Description |
 |---|---|

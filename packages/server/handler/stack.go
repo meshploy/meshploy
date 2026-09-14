@@ -86,6 +86,20 @@ type UpdateStackInput struct {
 	Body      UpdateStackBody
 }
 
+type MeshployConfigInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	Body      struct {
+		Spec string `json:"spec" doc:"A compose file"`
+	}
+}
+
+type MeshployConfigOutput struct {
+	Body struct {
+		Spec string `json:"spec" doc:"The same file with every x-meshploy setting an apply would default written out"`
+	}
+}
+
 type ListStackServicesOutput struct {
 	Body []db.Service
 }
@@ -160,6 +174,17 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: 201,
 	}, h.CreateStack)
+
+	// What the editor's Add Meshploy config writes: the defaults an apply would
+	// use, from the same code, so the two cannot disagree.
+	huma.Register(api, huma.Operation{
+		OperationID: "add-meshploy-config",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/stacks/meshploy-config",
+		Summary:     "Write out every x-meshploy setting an apply would default",
+		Tags:        []string{"Stacks"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.AddMeshployConfig)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-stack",
@@ -281,6 +306,19 @@ func (h *Handler) CreateStack(ctx context.Context, input *CreateStackInput) (*Ge
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &GetStackOutput{Body: stack}, nil
+}
+
+func (h *Handler) AddMeshployConfig(ctx context.Context, input *MeshployConfigInput) (*MeshployConfigOutput, error) {
+	if _, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, ""); err != nil {
+		return nil, err
+	}
+	spec, err := service.FillMeshployDefaults(input.Body.Spec)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	out := &MeshployConfigOutput{}
+	out.Body.Spec = spec
+	return out, nil
 }
 
 func (h *Handler) GetStack(ctx context.Context, input *StackPathInput) (*GetStackOutput, error) {

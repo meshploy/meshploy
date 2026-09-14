@@ -19,8 +19,8 @@ var ErrInvalidResources = errors.New("invalid resources")
 // request, which the cluster would refuse when the build starts.
 func validateBuilderResources(cpuReq, cpuLim, memReq, memLim string) error {
 	for _, r := range []struct{ what, req, lim, defReq, example string }{
-		{"CPU", cpuReq, cpuLim, "1000m", "1000m or 2"},
-		{"memory", memReq, memLim, "1Gi", "1Gi or 512Mi"},
+		{"CPU", cpuReq, cpuLim, appk8s.DefaultBuilderCPURequest, "1000m or 2"},
+		{"memory", memReq, memLim, appk8s.DefaultBuilderMemoryRequest, "1Gi or 512Mi"},
 	} {
 		req := resource.MustParse(r.defReq)
 		if r.req != "" {

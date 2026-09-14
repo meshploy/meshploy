@@ -421,12 +421,18 @@ func builderImageOr(image string) string {
 // Builds commonly peak at 2 to 3 GiB; a larger request raises the cap with it.
 const DefaultBuilderMemoryLimit = "4Gi"
 
+// A build's requests when its build config sets none.
+const (
+	DefaultBuilderCPURequest    = "1000m"
+	DefaultBuilderMemoryRequest = "1Gi"
+)
+
 // BuilderResources is the build pod's requests and limits. Values are checked
 // when a build config is saved; one that still does not parse falls back to
 // its default here, since a panic would take the API down with the build.
 func BuilderResources(p BuildJobParams) corev1.ResourceRequirements {
-	cpuReq := quantityOr(p.CPURequest, "1000m")
-	memReq := quantityOr(p.MemoryRequest, "1Gi")
+	cpuReq := quantityOr(p.CPURequest, DefaultBuilderCPURequest)
+	memReq := quantityOr(p.MemoryRequest, DefaultBuilderMemoryRequest)
 	memLim := quantityOr(p.MemoryLimit, DefaultBuilderMemoryLimit)
 	if p.MemoryLimit == "" && memLim.Cmp(memReq) < 0 {
 		memLim = memReq.DeepCopy()

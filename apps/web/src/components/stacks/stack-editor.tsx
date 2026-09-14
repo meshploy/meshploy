@@ -1,9 +1,9 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { parse as parseYaml, stringify as stringifyYaml, parseDocument, isMap } from "yaml"
+import { parse as parseYaml, parseDocument, isMap } from "yaml"
 import CodeMirror from "@uiw/react-codemirror"
 import { yaml } from "@codemirror/lang-yaml"
-import { Plus, Trash2, Code2, LayoutGrid, ChevronDown, Server, Wand2 } from "lucide-react"
+import { Plus, Trash2, Code2, LayoutGrid, ChevronDown, Server, Wand2, Loader2 } from "lucide-react"
 import {
   SiPostgresql, SiMysql, SiRedis, SiMongodb, SiClickhouse,
 } from "@icons-pack/react-simple-icons"
@@ -13,14 +13,14 @@ import {
 import { inputCls, Field, NodeCard } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Button } from "@/components/ui/button"
-import { gitIntegrations as gitApi, nodes as nodesApi, toNode, type ApiNode } from "@/lib/api"
+import { gitIntegrations as gitApi, nodes as nodesApi, stacks as stacksApi, toNode, type ApiNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { cn } from "@/lib/utils"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export type VisualBuilder = "railpack" | "dockerfile"
+export type VisualBuilder = "nixpacks" | "railpack" | "dockerfile"
 
 const DB_ENGINES = [
   { value: "postgres",   label: "PostgreSQL",  versions: ["17", "16", "15", "14", "13"], port: 5432,  icon: SiPostgresql },
@@ -50,7 +50,7 @@ export interface VisualService {
   gitRepo: string
   gitBranch: string
   // App — build (git only)
-  builder: VisualBuilder
+  builder: VisualBuilder | ""  // "" = not set: apply builds with Nixpacks
   builderNodeName: string   // k8s_node_name or "" for auto
   builderCPURequest: string
   builderMemoryRequest: string
@@ -115,26 +115,24 @@ function newService(): VisualService {
     gitBranch: "main",
     builder: "railpack",
     builderNodeName: "",
-    builderCPURequest: "1000m",
-    builderMemoryRequest: "1Gi",
+    // Settings left empty are written out by the server on save, as Meshploy's
+    // defaults, so the console keeps no copy of them to drift.
+    builderCPURequest: "",
+    builderMemoryRequest: "",
     env: [],
     volumes: [],
     unmodelled: [],
     port: 3000,
     replicas: 1,
     nodeId: "",
-    cpuRequest: "100m",
-    cpuLimit: "500m",
-    memoryRequest: "128Mi",
-    memoryLimit: "512Mi",
+    cpuRequest: "",
+    cpuLimit: "",
+    memoryRequest: "",
+    memoryLimit: "",
     dbEngine: "postgres",
     dbVersion: "16",
     dbStorageGB: 10,
   }
-}
-
-function dbDefaultPort(engine: string) {
-  return DB_ENGINES.find((e) => e.value === engine)?.port ?? 5432
 }
 
 function dbVersions(engine: string) {
@@ -162,24 +160,6 @@ function imageVersion(image: string): string | null {
   return tag && tag !== "latest" ? tag : null
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractPort(ports: any): number | null {
-  if (!Array.isArray(ports) || ports.length === 0) return null
-  const first = ports[0]
-  if (typeof first === "string") {
-    // "host:container" or "container" or "ip:host:container"
-    const parts = first.split(":")
-    const p = parseInt(parts[parts.length - 1])
-    return isNaN(p) ? null : p
-  }
-  if (typeof first === "object" && first !== null) {
-    // { target: 3000, published: 80 } — use target (container port)
-    const p = parseInt((first as Record<string, unknown>).target as string)
-    return isNaN(p) ? null : p
-  }
-  return null
-}
-
 // Returns true if any service in the spec is missing an x-meshploy block.
 export function specNeedsConversion(spec: string): boolean {
   try {
@@ -193,51 +173,13 @@ export function specNeedsConversion(spec: string): boolean {
   }
 }
 
-// Enrich a plain Docker Compose spec with x-meshploy defaults.
-// Services that already have x-meshploy are left untouched.
-export function convertCompose(spec: string): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const doc = parseYaml(spec) as any
-    if (!doc?.services || typeof doc.services !== "object") return spec
-
-    for (const svc of Object.values(doc.services) as Record<string, unknown>[]) {
-      if (!svc || svc["x-meshploy"]) continue
-
-      const image = (svc.image as string) ?? ""
-      const dbEngine = detectDbEngine(image)
-      const detectedPort = extractPort(svc.ports)
-
-      if (dbEngine) {
-        const defaultPort = dbDefaultPort(dbEngine)
-        const ver = imageVersion(image) ?? dbVersions(dbEngine)[0]
-        svc["x-meshploy"] = {
-          type: "database",
-          database: { engine: dbEngine, version: ver, storage_gb: 10 },
-          deploy: { port: detectedPort ?? defaultPort, replicas: 1 },
-        }
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const deploy: Record<string, any> = {
-          port: detectedPort ?? 3000,
-          replicas: 1,
-          cpu_request: "100m",
-          cpu_limit: "500m",
-          memory_request: "128Mi",
-          memory_limit: "512Mi",
-        }
-        svc["x-meshploy"] = { deploy }
-      }
-    }
-
-    return stringifyYaml(doc, { lineWidth: 120 })
-  } catch {
-    return spec
-  }
-}
-
 // ─── YAML ↔ Visual ────────────────────────────────────────────────────────────
 
+/**
+ * yamlToVisual reads each service's settings as written and invents none. The
+ * Visual tab opens on the spec with Meshploy's defaults written out, so an
+ * empty field is one apply derives, such as a port compose does not declare.
+ */
 export function yamlToVisual(spec: string): VisualService[] {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -264,10 +206,10 @@ export function yamlToVisual(spec: string): VisualService[] {
           volumes: Array.isArray(svc?.volumes) ? svc.volumes.map(String) : [],
           unmodelled: Object.keys(svc ?? {}).filter((k) => !MODELLED_KEYS.has(k)),
           dbEngine: engine,
-          dbVersion: db.version ?? dbVersions(engine)[0],
-          dbStorageGB: db.storage_gb ?? 10,
-          port: mp?.deploy?.port ?? dbDefaultPort(engine),
-          replicas: mp?.deploy?.replicas ?? 1,
+          dbVersion: db.version != null ? String(db.version) : "",
+          dbStorageGB: db.storage_gb ?? "",
+          port: mp?.deploy?.port ?? "",
+          replicas: mp?.deploy?.replicas ?? "",
           nodeId: mp?.deploy?.node ?? "",
         }
       }
@@ -293,13 +235,13 @@ export function yamlToVisual(spec: string): VisualService[] {
         image,
         integrationId,
         gitRepo,
-        gitBranch: src.branch ?? "main",
-        builder: build.builder ?? "railpack",
+        gitBranch: src.branch ?? "",
+        builder: build.builder ?? "",
         builderNodeName: build.builder_node ?? "",
-        builderCPURequest: build.builder_cpu_request ?? "1000m",
-        builderMemoryRequest: build.builder_memory_request ?? "1Gi",
-        port: deploy.port ?? 3000,
-        replicas: deploy.replicas ?? 1,
+        builderCPURequest: build.builder_cpu_request ?? "",
+        builderMemoryRequest: build.builder_memory_request ?? "",
+        port: deploy.port ?? "",
+        replicas: deploy.replicas ?? "",
         nodeId: deploy.node ?? "",
         // Absent means absent. Defaulting these on read materialises resource
         // limits the spec never had as soon as the user opens the visual tab.
@@ -368,9 +310,14 @@ function writeVolumes(doc: any, name: string, volumes: string[]) {
  * that no longer persisted anything.
  *
  * Editing the parsed document preserves untouched keys and comments, and only
- * the fields the visual editor owns are written.
+ * the fields the visual editor owns are written. A service the user did not
+ * change is skipped altogether, so it stays exactly as written.
  */
-export function visualToYaml(services: VisualService[], originalSpec = ""): string {
+export function visualToYaml(
+  services: VisualService[],
+  originalSpec = "",
+  unchanged: (s: VisualService) => boolean = () => false,
+): string {
   const doc = (() => {
     try {
       const d = parseDocument(originalSpec)
@@ -399,6 +346,7 @@ export function visualToYaml(services: VisualService[], originalSpec = ""): stri
   }
 
   for (const s of services) {
+    if (unchanged(s)) continue
     const name = s.name.trim() || s._origName || "service"
 
     // Rename in place, carrying the whole node across so unmodelled keys move
@@ -414,14 +362,14 @@ export function visualToYaml(services: VisualService[], originalSpec = ""): stri
 
     if (s.serviceType === "database") {
       const engine = s.dbEngine || "postgres"
-      const version = s.dbVersion || "latest"
-      setIn(["services", name, "image"], `${engine}:${version}`)
+      // The image follows the engine and version; with no version, apply picks one.
+      if (s.dbVersion) setIn(["services", name, "image"], `${engine}:${s.dbVersion}`)
       setIn(["services", name, "x-meshploy", "type"], "database")
       setIn(["services", name, "x-meshploy", "database", "engine"], engine)
-      setIn(["services", name, "x-meshploy", "database", "version"], version)
-      setIn(["services", name, "x-meshploy", "database", "storage_gb"], s.dbStorageGB || 10)
-      setIn(["services", name, "x-meshploy", "deploy", "port"], s.port || dbDefaultPort(engine))
-      setIn(["services", name, "x-meshploy", "deploy", "replicas"], s.replicas || 1)
+      setIn(["services", name, "x-meshploy", "database", "version"], s.dbVersion)
+      setIn(["services", name, "x-meshploy", "database", "storage_gb"], s.dbStorageGB)
+      setIn(["services", name, "x-meshploy", "deploy", "port"], s.port)
+      setIn(["services", name, "x-meshploy", "deploy", "replicas"], s.replicas)
       setIn(["services", name, "x-meshploy", "deploy", "node"], s.nodeId)
       continue
     }
@@ -443,8 +391,8 @@ export function visualToYaml(services: VisualService[], originalSpec = ""): stri
       setIn(["services", name, "x-meshploy", "build", "builder_memory_request"], s.builderMemoryRequest)
     }
 
-    setIn(["services", name, "x-meshploy", "deploy", "port"], s.port || 3000)
-    setIn(["services", name, "x-meshploy", "deploy", "replicas"], s.replicas || 1)
+    setIn(["services", name, "x-meshploy", "deploy", "port"], s.port)
+    setIn(["services", name, "x-meshploy", "deploy", "replicas"], s.replicas)
     setIn(["services", name, "x-meshploy", "deploy", "node"], s.nodeId)
     // Written only when set. Empty clears the key instead of pinning a default,
     // so a spec that never declared limits does not acquire them by being looked at.
@@ -465,44 +413,114 @@ export function visualToYaml(services: VisualService[], originalSpec = ""): stri
 interface StackEditorProps {
   value: string
   onChange?: (value: string) => void
+  /** The stack's project: the server writes out its Meshploy defaults. */
+  projectId: string
   minHeight?: string
   readOnly?: boolean
 }
 
-export function StackEditor({ value, onChange, minHeight = "360px", readOnly = false }: StackEditorProps) {
+/** What the Visual tab edits on top of. */
+interface VisualBase {
+  /** The spec as it was when the tab opened. */
+  original: string
+  /** The same spec with every Meshploy default written out. */
+  filled: string
+  /** Each service as it opened, to tell the ones the user changed. */
+  opened: Map<string, string>
+}
+
+export function StackEditor({ value, onChange, projectId, minHeight = "360px", readOnly = false }: StackEditorProps) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
   const [mode, setMode] = useState<"yaml" | "visual">("yaml")
   const [visual, setVisual] = useState<VisualService[]>([])
+  const [opening, setOpening] = useState(false)
+  const [converting, setConverting] = useState(false)
   const [justConverted, setJustConverted] = useState(false)
+  const [convertError, setConvertError] = useState("")
+  const base = useRef<VisualBase | null>(null)
+  const emitted = useRef<string | null>(null)
+  const openRequest = useRef(0)
 
-  const switchToVisual = useCallback(() => {
-    setVisual(yamlToVisual(value))
+  // The Visual tab shows what the stack runs with, so it opens on the spec with
+  // Meshploy's defaults written out, by the server that applies them. The YAML
+  // is not touched until something is edited.
+  const openVisual = useCallback(async (spec: string) => {
+    const request = ++openRequest.current
+    setOpening(true)
+    let filled = spec
+    try {
+      if (orgId) filled = (await stacksApi.meshployConfig(orgId, projectId, spec, token)).spec
+    } catch {
+      // Not YAML the server can read: show what parses, as written.
+    }
+    if (request !== openRequest.current) return
+    const services = yamlToVisual(filled)
+    base.current = { original: spec, filled, opened: new Map(services.map((s) => [s._key, JSON.stringify(s)])) }
+    emitted.current = null
+    setVisual(services)
     setMode("visual")
-  }, [value])
+    setOpening(false)
+  }, [orgId, projectId, token])
 
   const switchToYaml = useCallback(() => {
-    onChange?.(visualToYaml(visual, value))
+    openRequest.current++ // drop a Visual tab still opening
+    setOpening(false)
     setMode("yaml")
-  }, [visual, value, onChange])
+  }, [])
 
-  const handleConvert = useCallback(() => {
-    onChange?.(convertCompose(value))
-    setJustConverted(true)
-    setTimeout(() => setJustConverted(false), 2000)
-  }, [value, onChange])
+  // A spec replaced from outside while the Visual tab is open, such as the
+  // stored one after a save, is shown as it now is.
+  useEffect(() => {
+    const b = base.current
+    if (mode !== "visual" || !b || value === b.original || value === emitted.current) return
+    void openVisual(value)
+  }, [value, mode, openVisual])
+
+  useEffect(() => setConvertError(""), [value])
+
+  // Visual edits reach the spec as they are made, so Save works from either
+  // tab. The first edit writes out every service's defaults, as the button
+  // does; undoing every edit gives back the spec as it was.
+  const editVisual = (next: VisualService[]) => {
+    setVisual(next)
+    const b = base.current
+    if (!b || readOnly) return
+    const same = (s: VisualService) => b.opened.get(s._key) === JSON.stringify(s)
+    const spec = next.length === b.opened.size && next.every(same) ? b.original : visualToYaml(next, b.filled, same)
+    emitted.current = spec
+    onChange?.(spec)
+  }
 
   const patchService = (key: string, patch: Partial<VisualService>) =>
-    setVisual((prev) => prev.map((s) => (s._key === key ? { ...s, ...patch } : s)))
+    editVisual(visual.map((s) => (s._key === key ? { ...s, ...patch } : s)))
+  const addService = () => editVisual([...visual, newService()])
+  const removeService = (key: string) => editVisual(visual.filter((s) => s._key !== key))
 
-  const addService = () => setVisual((prev) => [...prev, newService()])
-  const removeService = (key: string) => setVisual((prev) => prev.filter((s) => s._key !== key))
+  // Writes out every setting an apply would default, by the same server code.
+  const handleConvert = useCallback(async () => {
+    if (!orgId) return
+    setConverting(true)
+    setConvertError("")
+    try {
+      const { spec } = await stacksApi.meshployConfig(orgId, projectId, value, token)
+      onChange?.(spec)
+      setJustConverted(true)
+      setTimeout(() => setJustConverted(false), 2000)
+    } catch (e) {
+      setConvertError((e as Error).message || "Could not add the Meshploy config")
+    } finally {
+      setConverting(false)
+    }
+  }, [orgId, projectId, value, token, onChange])
 
   const canConvert = !readOnly && mode === "yaml" && specNeedsConversion(value)
 
   return (
     <div className="flex flex-col rounded-md border border-border/60 overflow-hidden">
       {/* Mode toggle bar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-muted/20 shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border/60 bg-muted/20 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs text-muted-foreground font-medium">
             {mode === "yaml" ? "YAML" : "Visual"}
           </span>
@@ -510,29 +528,32 @@ export function StackEditor({ value, onChange, minHeight = "360px", readOnly = f
             <Button
               variant="ghost"
               onClick={handleConvert}
+              disabled={converting}
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
             >
-              <Wand2 className="h-3 w-3" />
+              {converting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
               {justConverted ? "Done!" : "Add Meshploy config"}
             </Button>
           )}
           {justConverted && !canConvert && (
             <span className="text-[11px] text-emerald-400/80 font-mono">converted</span>
           )}
+          {convertError && mode === "yaml" && (
+            <span className="text-[11px] text-destructive truncate">{convertError}</span>
+          )}
+          {opening && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         </div>
-        {!readOnly && (
-          <SegmentedControl
-            value={mode}
-            onValueChange={(v) => {
-              if (v === "yaml" && mode === "visual") switchToYaml()
-              else if (v === "visual" && mode === "yaml") switchToVisual()
-            }}
-            options={[
-              { value: "yaml", label: "YAML", icon: <Code2 className="h-3 w-3" /> },
-              { value: "visual", label: "Visual", icon: <LayoutGrid className="h-3 w-3" /> },
-            ]}
-          />
-        )}
+        <SegmentedControl
+          value={mode}
+          onValueChange={(v) => {
+            if (v === "yaml" && mode === "visual") switchToYaml()
+            else if (v === "visual" && mode === "yaml" && !opening) void openVisual(value)
+          }}
+          options={[
+            { value: "yaml", label: "YAML", icon: <Code2 className="h-3 w-3" /> },
+            { value: "visual", label: "Visual", icon: <LayoutGrid className="h-3 w-3" /> },
+          ]}
+        />
       </div>
 
       {mode === "yaml" ? (
@@ -548,25 +569,38 @@ export function StackEditor({ value, onChange, minHeight = "360px", readOnly = f
         />
       ) : (
         <div className="flex flex-col gap-3 p-4 overflow-y-auto" style={{ minHeight }}>
-          {visual.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-6">No services. Add one below.</p>
+          {readOnly && (
+            <p className="text-xs text-muted-foreground">
+              The settings this stack runs with, Meshploy's defaults included. The file lives in the repository, so
+              change it there.
+            </p>
           )}
-          {visual.map((svc) => (
-            <ServiceCard
-              key={svc._key}
-              svc={svc}
-              onChange={(patch) => patchService(svc._key, patch)}
-              onRemove={() => removeService(svc._key)}
-            />
-          ))}
-          <Button
-            variant="ghost"
-            onClick={addService}
-            className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add service
-          </Button>
+          <fieldset disabled={readOnly} className="flex flex-col gap-3 min-w-0">
+            {visual.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-6">
+                {readOnly ? "No services." : "No services. Add one below."}
+              </p>
+            )}
+            {visual.map((svc) => (
+              <ServiceCard
+                key={svc._key}
+                svc={svc}
+                readOnly={readOnly}
+                onChange={(patch) => patchService(svc._key, patch)}
+                onRemove={() => removeService(svc._key)}
+              />
+            ))}
+            {!readOnly && (
+              <Button
+                variant="ghost"
+                onClick={addService}
+                className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add service
+              </Button>
+            )}
+          </fieldset>
         </div>
       )}
     </div>
@@ -579,10 +613,12 @@ function ServiceCard({
   svc,
   onChange,
   onRemove,
+  readOnly = false,
 }: {
   svc: VisualService
   onChange: (p: Partial<VisualService>) => void
   onRemove: () => void
+  readOnly?: boolean
 }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
@@ -666,6 +702,7 @@ function ServiceCard({
             branchesFetching={branchesFetching}
             workerNodes={workerNodes}
             builderNodes={builderNodes}
+            readOnly={readOnly}
           />
         )}
 
@@ -687,6 +724,7 @@ function AppFields({
   branchesFetching,
   workerNodes,
   builderNodes,
+  readOnly = false,
 }: {
   svc: VisualService
   onChange: (p: Partial<VisualService>) => void
@@ -701,8 +739,10 @@ function AppFields({
   workerNodes: any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   builderNodes: any[]
+  readOnly?: boolean
 }) {
-  const [showResources, setShowResources] = useState(false)
+  // Open when read-only: its toggle is disabled with the rest of the form.
+  const [showResources, setShowResources] = useState(readOnly)
 
   return (
     <div className="space-y-5">
@@ -722,14 +762,17 @@ function AppFields({
         </Field>
 
         {svc.source === "image" ? (
-          <Field label="Image" required>
-            <input
-              value={svc.image}
-              onChange={(e) => onChange({ image: e.target.value })}
-              placeholder="nginx:alpine"
-              className={inputCls}
-            />
-          </Field>
+          <>
+            <Field label="Image" required>
+              <input
+                value={svc.image}
+                onChange={(e) => onChange({ image: e.target.value })}
+                placeholder="nginx:alpine"
+                className={inputCls}
+              />
+            </Field>
+            <DatabaseHint svc={svc} onChange={onChange} />
+          </>
         ) : (
           <>
             <Field label="Git integration" required>
@@ -800,12 +843,13 @@ function AppFields({
               <Field label="Builder">
                 <Select
                   value={svc.builder}
-                  onValueChange={(v) => onChange({ builder: (v ?? "railpack") as VisualBuilder })}
+                  onValueChange={(v) => onChange({ builder: (v ?? "") as VisualBuilder | "" })}
                 >
                   <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                    <SelectValue />
+                    <SelectValue placeholder="Nixpacks" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
                     <SelectItem value="railpack">Railpack</SelectItem>
                     <SelectItem value="dockerfile">Dockerfile</SelectItem>
                   </SelectContent>
@@ -850,7 +894,7 @@ function AppFields({
                 <input
                   value={svc.builderCPURequest}
                   onChange={(e) => onChange({ builderCPURequest: e.target.value })}
-                  placeholder="1000m"
+                  placeholder="Default"
                   className={inputCls}
                 />
               </Field>
@@ -858,7 +902,7 @@ function AppFields({
                 <input
                   value={svc.builderMemoryRequest}
                   onChange={(e) => onChange({ builderMemoryRequest: e.target.value })}
-                  placeholder="1Gi"
+                  placeholder="Default"
                   className={inputCls}
                 />
               </Field>
@@ -896,12 +940,12 @@ function AppFields({
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Port" required>
+          <Field label="Port">
             <input
               type="number"
               value={svc.port}
               onChange={(e) => onChange({ port: e.target.value === "" ? "" : Number(e.target.value) })}
-              placeholder="3000"
+              placeholder="3000, internal"
               className={inputCls}
             />
           </Field>
@@ -930,16 +974,16 @@ function AppFields({
           {showResources && (
             <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
               <Field label="CPU request">
-                <input value={svc.cpuRequest} onChange={(e) => onChange({ cpuRequest: e.target.value })} placeholder="100m" className={inputCls} />
+                <input value={svc.cpuRequest} onChange={(e) => onChange({ cpuRequest: e.target.value })} placeholder="Default" className={inputCls} />
               </Field>
               <Field label="CPU limit">
-                <input value={svc.cpuLimit} onChange={(e) => onChange({ cpuLimit: e.target.value })} placeholder="500m" className={inputCls} />
+                <input value={svc.cpuLimit} onChange={(e) => onChange({ cpuLimit: e.target.value })} placeholder="Default" className={inputCls} />
               </Field>
               <Field label="Memory request">
-                <input value={svc.memoryRequest} onChange={(e) => onChange({ memoryRequest: e.target.value })} placeholder="128Mi" className={inputCls} />
+                <input value={svc.memoryRequest} onChange={(e) => onChange({ memoryRequest: e.target.value })} placeholder="Default" className={inputCls} />
               </Field>
               <Field label="Memory limit">
-                <input value={svc.memoryLimit} onChange={(e) => onChange({ memoryLimit: e.target.value })} placeholder="512Mi" className={inputCls} />
+                <input value={svc.memoryLimit} onChange={(e) => onChange({ memoryLimit: e.target.value })} placeholder="Default" className={inputCls} />
               </Field>
             </div>
           )}
@@ -1087,7 +1131,7 @@ function DatabaseFields({
               <Button
                 key={eng.value}
                 variant="ghost"
-                onClick={() => onChange({ dbEngine: eng.value, dbVersion: eng.versions[0], port: eng.port })}
+                onClick={() => onChange({ dbEngine: eng.value, dbVersion: eng.versions[0] })}
                 className={cn(
                   "flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-colors",
                   svc.dbEngine === eng.value
@@ -1114,7 +1158,7 @@ function DatabaseFields({
             onValueChange={(v) => onChange({ dbVersion: v ?? dbVersions(svc.dbEngine)[0] })}
           >
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-              <SelectValue />
+              <SelectValue placeholder="Default" />
             </SelectTrigger>
             <SelectContent>
               {dbVersions(svc.dbEngine).map((v) => (
@@ -1128,7 +1172,7 @@ function DatabaseFields({
             type="number"
             value={svc.dbStorageGB}
             onChange={(e) => onChange({ dbStorageGB: e.target.value === "" ? "" : Number(e.target.value) })}
-            placeholder="10"
+            placeholder="Default"
             min={1}
             className={inputCls}
           />
@@ -1171,6 +1215,34 @@ function DatabaseFields({
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── DatabaseHint ─────────────────────────────────────────────────────────────
+
+/**
+ * An app whose image is a database Meshploy can run itself. Converting it is the
+ * user's call, never automatic: a managed database gets a generated password,
+ * which every service using it then has to send.
+ */
+function DatabaseHint({ svc, onChange }: { svc: VisualService; onChange: (p: Partial<VisualService>) => void }) {
+  const engine = detectDbEngine(svc.image)
+  const known = DB_ENGINES.find((e) => e.value === engine)
+  if (!engine || !known) return null
+  return (
+    <p className="text-xs text-muted-foreground">
+      This looks like {known.label}. Meshploy can run it as a managed database instead, with backups and a
+      generated password that the services using it then need.{" "}
+      <Button
+        variant="link"
+        className="h-auto p-0 text-xs"
+        onClick={() =>
+          onChange({ serviceType: "database", dbEngine: engine, dbVersion: imageVersion(svc.image) ?? known.versions[0] })
+        }
+      >
+        Make it a managed database
+      </Button>
+    </p>
   )
 }
 

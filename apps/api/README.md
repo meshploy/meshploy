@@ -262,6 +262,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | POST | `/orgs/{orgId}/projects/{projectId}/apply` | ✓ | Upsert a stack from an inline compose manifest and reconcile it |
 | GET | `/orgs/{orgId}/projects/{projectId}/stacks` | ✓ | List stacks for a project |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks` | ✓ | Create a new stack |
+| POST | `/orgs/{orgId}/projects/{projectId}/stacks/meshploy-config` | ✓ | Write out every x-meshploy setting an apply would default |
 | GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Get a stack |
 | PUT | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Update a stack's spec and variables |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Delete a stack |
