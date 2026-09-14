@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.1](https://github.com/meshploy/meshploy/compare/v0.13.0...v0.13.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* remove a node only once Headscale drops its peer, retrying until it does ([5def1e7](https://github.com/meshploy/meshploy/commit/5def1e7cf0eb621ad214d959e43fa15544d813d5))
+* **web:** confirm node removal in a dialog ([622d0b7](https://github.com/meshploy/meshploy/commit/622d0b7017610b337d95e5fe81aa520971ecb86a))
+* **web:** keep a running upgrade in view and its dialog from closing by accident ([1c00683](https://github.com/meshploy/meshploy/commit/1c006833ce8d6300a9197756b3b3abd46d2ca398))
+
 ## [0.13.0](https://github.com/meshploy/meshploy/compare/v0.12.0...v0.13.0) (2026-09-14)
 
 
