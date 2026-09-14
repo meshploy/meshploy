@@ -402,6 +402,8 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		BuilderNode:   a.bc.BuilderNode,
 		CPURequest:    a.bc.BuilderCPURequest,
 		MemoryRequest: a.bc.BuilderMemoryRequest,
+		CPULimit:      a.bc.BuilderCPULimit,
+		MemoryLimit:   a.bc.BuilderMemoryLimit,
 	})
 	if err != nil {
 		s.failDeployment(a.deployment.ID, "failed to create build job: "+err.Error())
@@ -432,7 +434,11 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		return
 	}
 	if !result.Success {
-		s.failDeployment(a.deployment.ID, result.Log)
+		msg := result.Log
+		if result.OutOfMemory {
+			msg += "\n\n" + buildOutOfMemoryMessage(a.bc.BuilderMemoryRequest, a.bc.BuilderMemoryLimit)
+		}
+		s.failDeployment(a.deployment.ID, msg)
 		return
 	}
 

@@ -77,6 +77,10 @@ type BuildJobParams struct {
 	// Resource requests for the build pod. Empty = defaults (1000m / 1Gi).
 	CPURequest    string
 	MemoryRequest string
+	// Resource limits. Empty memory = DefaultBuilderMemoryLimit, raised to the
+	// request when that is larger; empty CPU = no cap.
+	CPULimit    string
+	MemoryLimit string
 }
 
 // EnsureBuildCachePVC creates the buildah layer-cache PVC in the namespace if
@@ -197,15 +201,11 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							Image:           builderImageOr(p.Image),
 							ImagePullPolicy: corev1.PullAlways,
 							Command:         []string{"/usr/local/bin/meshploy-build"},
-							// Resource requests give the scheduler enough signal to prefer
-							// less-loaded builder nodes (LeastAllocated scoring).
-							// No limits so builds can burst freely on spare capacity.
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse(builderCPU(p.CPURequest)),
-									corev1.ResourceMemory: resource.MustParse(builderMemory(p.MemoryRequest)),
-								},
-							},
+							// Requests give the scheduler enough signal to prefer less-loaded
+							// builder nodes (LeastAllocated scoring). Memory is capped so a build
+							// cannot take its node down; CPU only when asked, so builds still
+							// burst on spare capacity.
+							Resources: BuilderResources(p),
 							Env: []corev1.EnvVar{
 								{Name: "GIT_REPO", Value: p.GitRepo},
 								{Name: "GIT_URL", Value: p.GitURL},
@@ -263,6 +263,8 @@ type JobResult struct {
 	// Unschedulable is set when the wait gave up because no node could take
 	// the pod. Log then holds the scheduler's reason.
 	Unschedulable bool
+	// OutOfMemory is set when the build was killed at its memory limit.
+	OutOfMemory bool
 }
 
 // JobWaitOptions tunes WaitForJobWith.
@@ -344,7 +346,7 @@ func WaitForJobWith(ctx context.Context, client kubernetes.Interface, namespace,
 			return JobResult{Success: true, Log: log}
 		}
 		if job.Status.Failed > 0 {
-			return JobResult{Success: false, Log: log}
+			return JobResult{Success: false, Log: log, OutOfMemory: oomKilled(jobPod(ctx, client, namespace, jobName))}
 		}
 		time.Sleep(poll)
 	}
@@ -415,16 +417,49 @@ func builderImageOr(image string) string {
 	return image
 }
 
-func builderCPU(v string) string {
-	if v == "" {
-		return "1000m"
+// DefaultBuilderMemoryLimit caps a build's memory when no limit is set.
+// Builds commonly peak at 2 to 3 GiB; a larger request raises the cap with it.
+const DefaultBuilderMemoryLimit = "4Gi"
+
+// BuilderResources is the build pod's requests and limits. Values are checked
+// when a build config is saved; one that still does not parse falls back to
+// its default here, since a panic would take the API down with the build.
+func BuilderResources(p BuildJobParams) corev1.ResourceRequirements {
+	cpuReq := quantityOr(p.CPURequest, "1000m")
+	memReq := quantityOr(p.MemoryRequest, "1Gi")
+	memLim := quantityOr(p.MemoryLimit, DefaultBuilderMemoryLimit)
+	if p.MemoryLimit == "" && memLim.Cmp(memReq) < 0 {
+		memLim = memReq.DeepCopy()
 	}
-	return v
+	r := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: cpuReq, corev1.ResourceMemory: memReq},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: memLim},
+	}
+	if q, err := resource.ParseQuantity(p.CPULimit); err == nil && p.CPULimit != "" {
+		r.Limits[corev1.ResourceCPU] = q
+	}
+	return r
 }
 
-func builderMemory(v string) string {
-	if v == "" {
-		return "1Gi"
+func quantityOr(v, def string) resource.Quantity {
+	if q, err := resource.ParseQuantity(v); err == nil && v != "" {
+		return q
 	}
-	return v
+	return resource.MustParse(def)
+}
+
+// oomKilled reports whether the build container was killed for exceeding its
+// memory limit.
+func oomKilled(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	for _, c := range pod.Status.ContainerStatuses {
+		for _, t := range []*corev1.ContainerStateTerminated{c.State.Terminated, c.LastTerminationState.Terminated} {
+			if t != nil && t.Reason == "OOMKilled" {
+				return true
+			}
+		}
+	}
+	return false
 }

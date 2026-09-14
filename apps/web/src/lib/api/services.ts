@@ -100,6 +100,8 @@ export interface ApiBuildConfig {
   builder_node: string
   builder_cpu_request: string
   builder_memory_request: string
+  builder_cpu_limit: string
+  builder_memory_limit: string
   last_built_image: string
   last_built_at: string | null
   rollback_enabled: boolean
@@ -139,6 +141,8 @@ export interface CreateServiceBody {
   builder_node?: string          // "" = auto-schedule
   builder_cpu_request?: string   // "" = default (1000m)
   builder_memory_request?: string // "" = default (1Gi)
+  builder_cpu_limit?: string      // "" = no cap
+  builder_memory_limit?: string   // "" = 4Gi, or the request when larger
   // Database-specific fields
   type?: "application" | "database"
   engine?: "postgres" | "mysql" | "redis" | "mongodb" | "dragonfly" | "clickhouse"
@@ -175,6 +179,8 @@ export interface UpdateBuildConfigBody {
   builder_node?: string             // "" = auto-schedule, node name = pin
   builder_cpu_request?: string      // "" = default (1000m)
   builder_memory_request?: string   // "" = default (1Gi)
+  builder_cpu_limit?: string        // "" = no cap
+  builder_memory_limit?: string     // "" = 4Gi, or the request when larger
   rollback_enabled?: boolean
   image_retention?: number
   auto_deploy?: boolean

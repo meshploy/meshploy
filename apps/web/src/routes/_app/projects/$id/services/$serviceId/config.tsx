@@ -597,6 +597,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     builderNodeName: "" as string,
     builderCPURequest: "1000m",
     builderMemoryRequest: "1Gi",
+    builderCPULimit: "",
+    builderMemoryLimit: "",
     autoDeploy: false,
     nodeId: "",
     replicas: 1,
@@ -627,6 +629,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       builderNodeName: bc?.builder_node ?? "",
       builderCPURequest: bc?.builder_cpu_request || "1000m",
       builderMemoryRequest: bc?.builder_memory_request || "1Gi",
+      builderCPULimit: bc?.builder_cpu_limit ?? "",
+      builderMemoryLimit: bc?.builder_memory_limit ?? "",
       autoDeploy: bc?.auto_deploy ?? false,
       nodeId: service.node_id ?? "",
       replicas: service.replicas,
@@ -682,6 +686,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           builder_node: form.builderNodeName,
           builder_cpu_request: form.builderCPURequest,
           builder_memory_request: form.builderMemoryRequest,
+          builder_cpu_limit: form.builderCPULimit,
+          builder_memory_limit: form.builderMemoryLimit,
           auto_deploy: form.autoDeploy,
         }, token)
       }
@@ -749,10 +755,19 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
             <Field label="Builder CPU request">
               <input value={form.builderCPURequest} onChange={(e) => patch({ builderCPURequest: e.target.value })} placeholder="1000m" className={inputCls} />
             </Field>
+            <Field label="Builder CPU limit">
+              <input value={form.builderCPULimit} onChange={(e) => patch({ builderCPULimit: e.target.value })} placeholder="No cap" className={inputCls} />
+            </Field>
             <Field label="Builder memory request">
               <input value={form.builderMemoryRequest} onChange={(e) => patch({ builderMemoryRequest: e.target.value })} placeholder="1Gi" className={inputCls} />
             </Field>
+            <Field label="Builder memory limit">
+              <input value={form.builderMemoryLimit} onChange={(e) => patch({ builderMemoryLimit: e.target.value })} placeholder="4Gi" className={inputCls} />
+            </Field>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Memory is capped so a build cannot take its node down: 4Gi when empty, or the request when that is larger. Leave the CPU limit empty to let builds use spare CPU.
+          </p>
         </Section>
       )}
 

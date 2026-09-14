@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -65,6 +66,8 @@ type CreateWorkloadInput struct {
 		BuilderNode          string `json:"builder_node,omitempty"`
 		BuilderCPURequest    string `json:"builder_cpu_request,omitempty"`
 		BuilderMemoryRequest string `json:"builder_memory_request,omitempty"`
+		BuilderCPULimit      string `json:"builder_cpu_limit,omitempty" doc:"Empty: no cap"`
+		BuilderMemoryLimit   string `json:"builder_memory_limit,omitempty" doc:"Empty: 4Gi, or the request when larger"`
 		// Database-specific fields — only used when type == "database"
 		Type       string `json:"type,omitempty"`        // "application" | "database"
 		Engine     string `json:"engine,omitempty"`      // "postgres" | "mysql" | "redis" | "mongodb"
@@ -352,6 +355,8 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		BuilderNode:               input.Body.BuilderNode,
 		BuilderCPURequest:         input.Body.BuilderCPURequest,
 		BuilderMemoryRequest:      input.Body.BuilderMemoryRequest,
+		BuilderCPULimit:           input.Body.BuilderCPULimit,
+		BuilderMemoryLimit:        input.Body.BuilderMemoryLimit,
 		Type:                      db.ServiceType(input.Body.Type),
 		Engine:                    db.DatabaseEngine(input.Body.Engine),
 		Version:                   input.Body.Version,
@@ -361,6 +366,9 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		DBPassword:                input.Body.DBPassword,
 	})
 	if err != nil {
+		if errors.Is(err, svc.ErrInvalidResources) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, err
 	}
 	return &CreateWorkloadOutput{Body: service}, nil
@@ -546,6 +554,8 @@ type PatchBuildConfigInput struct {
 		BuilderNode           *string `json:"builder_node,omitempty"`             // "" = auto-schedule
 		BuilderCPURequest     *string `json:"builder_cpu_request,omitempty"`
 		BuilderMemoryRequest  *string `json:"builder_memory_request,omitempty"`
+		BuilderCPULimit       *string `json:"builder_cpu_limit,omitempty"`    // "" = no cap
+		BuilderMemoryLimit    *string `json:"builder_memory_limit,omitempty"` // "" = 4Gi, or the request when larger
 		RollbackEnabled       *bool   `json:"rollback_enabled,omitempty"`
 		ImageRetention        *int    `json:"image_retention,omitempty"`
 		AutoDeploy            *bool   `json:"auto_deploy,omitempty"`
@@ -571,6 +581,8 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		BuilderNode:          input.Body.BuilderNode,
 		BuilderCPURequest:    input.Body.BuilderCPURequest,
 		BuilderMemoryRequest: input.Body.BuilderMemoryRequest,
+		BuilderCPULimit:      input.Body.BuilderCPULimit,
+		BuilderMemoryLimit:   input.Body.BuilderMemoryLimit,
 		RollbackEnabled:      input.Body.RollbackEnabled,
 		ImageRetention:       input.Body.ImageRetention,
 		AutoDeploy:           input.Body.AutoDeploy,
@@ -600,6 +612,9 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 
 	bc, err := h.svc.Workloads.UpsertBuildConfig(ctx, serviceID, in)
 	if err != nil {
+		if errors.Is(err, svc.ErrInvalidResources) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, err
 	}
 	return &GetBuildConfigOutput{Body: bc}, nil

@@ -626,6 +626,13 @@ type BuildConfig struct {
 	BuilderCPURequest    string `gorm:"not null;default:''" json:"builder_cpu_request"`
 	BuilderMemoryRequest string `gorm:"not null;default:''" json:"builder_memory_request"`
 
+	// Resource limits for the build job pod. An empty memory limit is 4Gi, or
+	// the request when that is larger; an empty CPU limit leaves builds free to
+	// use spare CPU. Memory is what must be bounded: a build without a cap can
+	// take the node's memory, and on the gateway the control plane with it.
+	BuilderCPULimit    string `gorm:"not null;default:''" json:"builder_cpu_limit"`
+	BuilderMemoryLimit string `gorm:"not null;default:''" json:"builder_memory_limit"`
+
 	// Registry to push the built image to.
 	// nil = use the internal mesh registry (default, zero-config CE experience).
 	RegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"registry_integration_id"`

@@ -67,6 +67,8 @@ type CreateWorkloadInput struct {
 	BuilderNode           string // "" = auto-schedule on any builder node
 	BuilderCPURequest     string // "" = default (1000m)
 	BuilderMemoryRequest  string // "" = default (1Gi)
+	BuilderCPULimit       string // "" = no cap
+	BuilderMemoryLimit    string // "" = 4Gi, or the request when larger
 
 	// Database-specific fields — used when Type == "database"
 	Type       db.ServiceType
@@ -200,6 +202,12 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		Args:                       in.Args,
 	}
 
+	if in.GitRepo != "" {
+		if err := validateBuilderResources(in.BuilderCPURequest, in.BuilderCPULimit, in.BuilderMemoryRequest, in.BuilderMemoryLimit); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(service).Error; err != nil {
 			return err
@@ -248,6 +256,8 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			BuilderNode:           in.BuilderNode,
 			BuilderCPURequest:     in.BuilderCPURequest,
 			BuilderMemoryRequest:  in.BuilderMemoryRequest,
+			BuilderCPULimit:       in.BuilderCPULimit,
+			BuilderMemoryLimit:    in.BuilderMemoryLimit,
 			DeployToken:           db.EncryptedString(deployToken),
 		}
 		return tx.Create(bc).Error
@@ -810,6 +820,8 @@ type UpdateBuildConfigInput struct {
 	BuilderNode           *string // nil = no change; "" = auto-schedule
 	BuilderCPURequest     *string // nil = no change; "" = use default (1000m)
 	BuilderMemoryRequest  *string // nil = no change; "" = use default (1Gi)
+	BuilderCPULimit       *string // nil = no change; "" = no cap
+	BuilderMemoryLimit    *string // nil = no change; "" = 4Gi, or the request when larger
 	RollbackEnabled       *bool
 	ImageRetention        *int
 	AutoDeploy            *bool
@@ -865,6 +877,12 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	if in.BuilderMemoryRequest != nil {
 		bc.BuilderMemoryRequest = *in.BuilderMemoryRequest
 	}
+	if in.BuilderCPULimit != nil {
+		bc.BuilderCPULimit = *in.BuilderCPULimit
+	}
+	if in.BuilderMemoryLimit != nil {
+		bc.BuilderMemoryLimit = *in.BuilderMemoryLimit
+	}
 	if in.RollbackEnabled != nil {
 		bc.RollbackEnabled = *in.RollbackEnabled
 	}
@@ -873,6 +891,9 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.AutoDeploy != nil {
 		bc.AutoDeploy = *in.AutoDeploy
+	}
+	if err := validateBuilderResources(bc.BuilderCPURequest, bc.BuilderCPULimit, bc.BuilderMemoryRequest, bc.BuilderMemoryLimit); err != nil {
+		return nil, err
 	}
 	if isNew {
 		// Generate a per-service deploy token so the user can set up a manual webhook

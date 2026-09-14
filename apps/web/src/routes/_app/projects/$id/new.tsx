@@ -113,6 +113,8 @@ interface FormState {
   builderNodeName: string | null  // k8s_node_name; null = auto-schedule
   builderCPURequest: string
   builderMemoryRequest: string
+  builderCPULimit: string
+  builderMemoryLimit: string
   ports: PortRow[]
   replicas: number
   cpuRequest: string
@@ -140,6 +142,8 @@ const INITIAL: FormState = {
   builderNodeName: null,
   builderCPURequest: "1000m",
   builderMemoryRequest: "1Gi",
+  builderCPULimit: "",
+  builderMemoryLimit: "",
   ports: [{ name: "http", port: 3000, isHTTP: true, isPrimary: true, isPublic: true }],
   replicas: 1,
   cpuRequest: "100m",
@@ -230,6 +234,8 @@ function NewResourcePage() {
         body.builder_node             = form.builderNodeName ?? ""
         body.builder_cpu_request      = form.builderCPURequest || undefined
         body.builder_memory_request   = form.builderMemoryRequest || undefined
+        body.builder_cpu_limit        = form.builderCPULimit || undefined
+        body.builder_memory_limit     = form.builderMemoryLimit || undefined
       }
       const service = await servicesApi.create(orgId!, projectId, body, token)
       if (form.volumeAttachment) {
@@ -458,6 +464,14 @@ function ServiceForm({
                 className={inputCls}
               />
             </Field>
+            <Field label="Builder CPU limit">
+              <input
+                value={form.builderCPULimit}
+                onChange={(e) => patch({ builderCPULimit: e.target.value })}
+                placeholder="No cap"
+                className={inputCls}
+              />
+            </Field>
             <Field label="Builder memory request">
               <input
                 value={form.builderMemoryRequest}
@@ -466,7 +480,18 @@ function ServiceForm({
                 className={inputCls}
               />
             </Field>
+            <Field label="Builder memory limit">
+              <input
+                value={form.builderMemoryLimit}
+                onChange={(e) => patch({ builderMemoryLimit: e.target.value })}
+                placeholder="4Gi"
+                className={inputCls}
+              />
+            </Field>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Memory is capped so a build cannot take its node down: 4Gi when empty, or the request when that is larger. Leave the CPU limit empty to let builds use spare CPU.
+          </p>
         </Section>
       )}
 
