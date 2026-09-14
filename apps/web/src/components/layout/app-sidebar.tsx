@@ -10,6 +10,7 @@ import {
   FolderKanban,
   Home,
   LayoutTemplate,
+  Loader2,
   Network,
   Plug,
   Server,
@@ -25,7 +26,7 @@ import { system } from "@/lib/api/system"
 import { entitlements as entitlementsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { eeNavItems } from "@/ee"
-import { UpgradeDialog } from "@/components/system/upgrade-dialog"
+import { UpgradeDialog, upgradeInProgress } from "@/components/system/upgrade-dialog"
 
 type NavItem = {
   href: string
@@ -97,6 +98,16 @@ export function AppSidebar() {
     refetchInterval: 2 * 60 * 1000,
     retry: false,
   })
+  // Any member may read this, so everyone sees an upgrade under way; it polls
+  // quickly only while one runs, and the upgrade dialog shares it.
+  const { data: upgradeStatus } = useQuery({
+    queryKey: ["system-upgrade"],
+    queryFn: () => system.upgradeStatus(token!),
+    enabled: !!token,
+    retry: false,
+    refetchInterval: (q) => (upgradeInProgress(q.state.data) ? 5000 : 2 * 60 * 1000),
+  })
+  const upgrading = upgradeInProgress(upgradeStatus)
 
   // Entitlements are only needed to decide which EE nav items to show, so this
   // costs a stock Community build nothing: eeNavItems is empty there and the
@@ -213,7 +224,7 @@ export function AppSidebar() {
       <div className="p-2 shrink-0 space-y-1">
         <Separator className="mb-2 bg-sidebar-border" />
 
-        {ver?.update_available && (
+        {(upgrading || ver?.update_available) && (
           sidebarCollapsed ? (
             <Tooltip>
               <TooltipTrigger
@@ -225,13 +236,15 @@ export function AppSidebar() {
                   />
                 }
               >
-                <Download className="h-3.5 w-3.5" />
-                <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                {!upgrading && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />}
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs">
-                {ver.channel === "edge"
-                  ? `Edge update available — ${ver.latest}`
-                  : `Update available — v${ver.latest}`}
+                {upgrading
+                  ? "Upgrade in progress"
+                  : ver?.channel === "edge"
+                    ? `Edge update available: ${ver.latest}`
+                    : `Update available: v${ver?.latest}`}
               </TooltipContent>
             </Tooltip>
           ) : (
@@ -240,12 +253,12 @@ export function AppSidebar() {
               onClick={() => setUpgradeOpen(true)}
               className="flex items-center gap-2 h-8 w-full px-3 rounded-md text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
             >
-              <Download className="h-3.5 w-3.5 shrink-0" />
+              {upgrading ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Download className="h-3.5 w-3.5 shrink-0" />}
               {/* Named distinctly: an edge update is unreleased code from main,
                   not a version someone cut and reviewed. Taking it is a different
                   decision, so it should not read the same. */}
-              <span>{ver.channel === "edge" ? "Edge update" : "Update available"}</span>
-              <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span>{upgrading ? "Upgrading…" : ver?.channel === "edge" ? "Edge update" : "Update available"}</span>
+              {!upgrading && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />}
             </button>
           )
         )}

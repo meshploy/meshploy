@@ -38,6 +38,11 @@ function phaseOf(s: UpgradeStatus | undefined, tracked: string | null, unreachab
   return "queued"
 }
 
+/** An upgrade is queued or running on the server. */
+export function upgradeInProgress(s: UpgradeStatus | undefined): boolean {
+  return !!s && (s.pending || s.state === "running")
+}
+
 /** A move to the other release channel, instead of an upgrade on this one. */
 export interface ChannelSwitchTarget {
   channel: ReleaseChannel
@@ -145,7 +150,15 @@ export function UpgradeDialog({
   const changesUrl = toEnterprise ? undefined : switchTo ? switchTo.url : version.release_url
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next, details) => {
+        // While an upgrade runs only Close closes this: a stray click or Escape
+        // would hide its progress, though the upgrade carries on either way.
+        if (!next && inProgress && (details.reason === "outside-press" || details.reason === "escape-key")) return
+        onOpenChange(next)
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
