@@ -57,6 +57,18 @@ function parseTimestamp(s: string | null | undefined): Date | null {
   return d
 }
 
+/** Nodes a service, database, job or volume can be pinned to: online cluster
+ * members that accept workloads. The gateway does, by default; a builder-only
+ * node is tainted so workloads never start there. */
+export function schedulableNodes(nodes: ApiNode[]): ApiNode[] {
+  return nodes.filter((n) => n.k8s_member && n.status === "online" && n.mesh_role !== "builder")
+}
+
+/** The second line of a node's card: its mesh IP, marked when it is the gateway. */
+export function nodeCardSub(node: Node): string {
+  return node.k3sRole === "server" ? `${node.tailscaleIP} · gateway` : node.tailscaleIP
+}
+
 export function toNode(n: ApiNode): Node {
   return {
     id: n.id,

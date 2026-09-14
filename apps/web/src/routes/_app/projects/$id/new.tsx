@@ -61,6 +61,7 @@ import {
   type ApiVolume,
   type ApiDbRoute,
 } from "@/lib/api"
+import { nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
@@ -380,9 +381,7 @@ function ServiceForm({
     enabled: !!orgId,
   })
 
-  const workerNodes = rawNodes
-    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
-    .map(toNode)
+  const workerNodes = schedulableNodes(rawNodes).map(toNode)
 
   const builderNodes = rawNodes.filter(
     (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
@@ -489,7 +488,7 @@ function ServiceForm({
               <NodeCard
                 key={node.id}
                 label={node.name}
-                sub={node.tailscaleIP}
+                sub={nodeCardSub(node)}
                 selected={form.nodeId === node.id}
                 onClick={() => patch({ nodeId: node.id })}
                 online
@@ -796,9 +795,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
   })
-  const workerNodes = rawNodes
-    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
-    .map(toNode)
+  const workerNodes = schedulableNodes(rawNodes).map(toNode)
 
   const selectedEngine = ENGINE_OPTIONS.find((e) => e.value === dbf.engine)!
 
@@ -928,7 +925,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
             <NodeCard
               key={node.id}
               label={node.name}
-              sub={node.tailscaleIP}
+              sub={nodeCardSub(node)}
               selected={dbf.nodeId === node.id}
               onClick={() => patchDbf({ nodeId: node.id })}
               online
@@ -1535,9 +1532,7 @@ function JobForm({ projectId }: { projectId: string }) {
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
   })
-  const workerNodes = rawNodes
-    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
-    .map(toNode)
+  const workerNodes = schedulableNodes(rawNodes).map(toNode)
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -1648,7 +1643,7 @@ function JobForm({ projectId }: { projectId: string }) {
             <NodeCard
               key={node.id}
               label={node.name}
-              sub={node.tailscaleIP}
+              sub={nodeCardSub(node)}
               selected={jf.nodeId === node.id}
               onClick={() => patch({ nodeId: node.id })}
               online
@@ -2170,9 +2165,7 @@ function VolumeForm({ projectId }: { projectId: string }) {
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
   })
-  const workerNodes = rawNodes.filter(
-    (n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent"
-  )
+  const workerNodes = schedulableNodes(rawNodes).map(toNode)
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -2229,7 +2222,7 @@ function VolumeForm({ projectId }: { projectId: string }) {
               <NodeCard
                 key={node.id}
                 label={node.name}
-                sub={node.tailscale_ip}
+                sub={nodeCardSub(node)}
                 selected={nodeId === node.id}
                 onClick={() => setNodeId(node.id)}
                 online

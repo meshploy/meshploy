@@ -33,6 +33,7 @@ import {
   type ApiVariableGroup,
   type UpdateServiceBody,
 } from "@/lib/api"
+import { nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
@@ -573,9 +574,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     queryFn: () => nodesApi.list(orgId!, token),
     enabled: !!orgId,
   })
-  const workerNodes = rawNodes
-    .filter((n) => n.k8s_member && n.status === "online" && n.k3s_role === "agent")
-    .map(toNode)
+  const workerNodes = schedulableNodes(rawNodes).map(toNode)
   const builderNodes = rawNodes.filter(
     (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
   )
@@ -778,7 +777,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           <div className="flex flex-wrap gap-2">
             <NodeCard label="Auto-schedule" sub="Let K3s decide" selected={form.nodeId === ""} onClick={() => patch({ nodeId: "" })} />
             {workerNodes.map((node) => (
-              <NodeCard key={node.id} label={node.name} sub={node.tailscaleIP}
+              <NodeCard key={node.id} label={node.name} sub={nodeCardSub(node)}
                 selected={form.nodeId === node.id}
                 onClick={() => patch({ nodeId: node.id })} online />
             ))}
