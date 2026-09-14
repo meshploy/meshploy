@@ -1,3 +1,4 @@
+import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -17,13 +18,8 @@ function ServicePermissionsTab() {
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
 
   return (
-    <div className="console-page p-6 max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Permissions</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Override project-level access for specific members on this service
-        </p>
-      </div>
+    <div className="console-page space-y-6">
+      <ResourceIntro title="Permissions" description="Override project-level access for specific members on this service" />
       <ResourcePermissionsSection
         orgId={orgId}
         projectId={projectId}

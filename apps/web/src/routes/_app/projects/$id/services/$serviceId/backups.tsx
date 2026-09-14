@@ -1,3 +1,4 @@
+import { MetricTile, ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -43,17 +44,12 @@ function ServiceBackupsPage() {
   })
 
   return (
-    <div className="console-page p-6 max-w-2xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-medium">Backups</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Scheduled database backups to object storage</p>
-        </div>
-        {!showForm && storageList.length > 0 && (
-          <Button size="sm" className="gap-1.5" onClick={() => setShowForm(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add backup
-          </Button>
-        )}
+    <div className="console-page space-y-6">
+      <ResourceIntro title="Backups" description="Schedule database backups to object storage and restore saved snapshots." action={!showForm && storageList.length > 0 ? <Button size="sm" onClick={() => setShowForm(true)}><Plus className="size-3.5" />Add backup</Button> : undefined} />
+      <div className="resource-metrics">
+        <MetricTile icon={HardDrive} label="Schedules" value={isLoading ? "…" : list.length} detail="Configured for this database" />
+        <MetricTile icon={Check} label="Enabled" value={isLoading ? "…" : list.filter(config => config.enabled).length} detail="Automatic backup schedules" />
+        <MetricTile icon={HardDrive} label="Storage destinations" value={isLoading ? "…" : new Set(list.map(config => config.storage_integration_id)).size} detail="Used by these schedules" />
       </div>
 
       {showForm && (
@@ -160,8 +156,8 @@ function BackupItem({ config, storageList, orgId, projectId, serviceId, token }:
 
   if (editing) {
     return (
-      <div className="rounded-lg border border-border/60 px-4 py-3.5 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+      <div className="resource-panel p-6 space-y-5">
+        <div className="grid sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground/60">Schedule (cron)</label>
             <input value={schedule} onChange={(e) => setSchedule(e.target.value)}
@@ -239,7 +235,7 @@ function BackupForm({ orgId, projectId, serviceId, token, storageList, onSuccess
   })
 
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/10 p-4 space-y-4">
+    <div className="resource-panel p-6 space-y-5">
       <p className="text-xs font-medium text-muted-foreground">New backup schedule</p>
 
       <div className="space-y-3">
@@ -257,7 +253,7 @@ function BackupForm({ orgId, projectId, serviceId, token, storageList, onSuccess
           </Select>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground/60">Schedule (cron)</label>
             <input value={schedule} onChange={(e) => setSchedule(e.target.value)}

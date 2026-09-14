@@ -1,12 +1,13 @@
+import { MetricTile, ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown, Loader2, RotateCcw, Trash2, Zap } from "lucide-react"
+import { ScrollText, Check, Loader2, RotateCcw, Trash2, Zap } from "lucide-react"
 import { jobs as jobsApi, type ApiJobRun } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, formatRelativeTime } from "@/lib/utils"
 import { LIVE_ACTIVE_MS, LIVE_SETTLED_MS } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/$jobId/runs")({
@@ -51,7 +52,14 @@ function RunsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="console-page space-y-6">
+      <ResourceIntro title="Run history" description="Follow job executions, inspect output, and manage previous runs." />
+      <div className="resource-metrics">
+        <MetricTile icon={Zap} label="Runs" value={runs.length} detail="Recorded history" />
+        <MetricTile icon={Loader2} label="In progress" value={runs.filter(run => run.status === "running" || run.status === "pending").length} detail="Queued or running" />
+        <MetricTile icon={Check} label="Successful" value={runs.filter(run => run.status === "success").length} detail="Completed successfully" />
+      </div>
+      <div className="flex items-center gap-2"><h2 className="text-sm font-medium">Runs</h2><span className="text-xs text-muted-foreground">{runs.length}</span></div>
       {runs.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/60 py-14 flex flex-col items-center gap-3">
           <Zap className="h-7 w-7 text-muted-foreground/30" />
@@ -109,16 +117,16 @@ function RunRow({
 
   return (
     <div>
-      <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+      <div className="execution-history-row">
         <span className={dot} />
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 flex-1">
           <span className={cn("text-xs font-medium capitalize shrink-0", RUN_STATUS_TEXT[run.status] ?? "text-muted-foreground")}>
             {run.status}
           </span>
           <span className="text-xs text-muted-foreground shrink-0">
             {run.started_at
-              ? new Date(run.started_at).toLocaleString()
-              : new Date(run.created_at).toLocaleString()
+              ? formatRelativeTime(new Date(run.started_at))
+              : formatRelativeTime(new Date(run.created_at))
             }
           </span>
           {duration !== null && (
@@ -126,6 +134,7 @@ function RunRow({
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(v => !v)} aria-expanded={open} aria-controls={`run-log-${run.id}`} className="text-muted-foreground/70 hover:text-foreground gap-1.5"><ScrollText />Logs</Button>
           <Button variant="ghost" size="icon-sm" onClick={() => rerunMut.mutate()} disabled={rerunMut.isPending}
             title="Re-run" className="text-muted-foreground/50 hover:text-foreground">
             {rerunMut.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
@@ -134,14 +143,11 @@ function RunRow({
             title="Delete record" className="text-muted-foreground/50 hover:text-destructive">
             {deleteMut.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => setOpen((v) => !v)}
-            title="View log" className="text-muted-foreground/50 hover:text-foreground">
-            <ChevronDown className={cn("transition-transform", open && "rotate-180")} />
-          </Button>
+
         </div>
       </div>
       {open && (
-        <div className="px-4 pb-3 border-t border-border/30">
+        <div id={`run-log-${run.id}`} className="px-4 pb-3 border-t border-border/30">
           {run.log ? (
             <pre className="text-xs font-mono text-muted-foreground/70 bg-muted/20 rounded-md px-3 py-2.5 mt-2 overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">
               {run.log}

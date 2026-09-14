@@ -224,12 +224,12 @@ function DeploymentRow({
 
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+    <div className="execution-history-row">
       {/* Status dot */}
       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOT[deployment.status]}`} />
 
       {/* Status text + time + image */}
-      <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 flex-1">
         <span className={`text-xs font-medium capitalize shrink-0 ${STATUS_TEXT[deployment.status]}`}>
           {deployment.status}
         </span>

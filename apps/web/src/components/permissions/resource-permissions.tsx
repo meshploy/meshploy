@@ -115,10 +115,10 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-medium">Member Access</h2>
+        <h2 className="text-sm font-medium">Member access</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
           <Lock className="inline h-3 w-3 mr-0.5 mb-0.5" />
-          locked = from project · toggleable = resource-level override
+          Locked permissions are inherited from the project. Use the other controls to change access for this resource.
         </p>
       </div>
 
@@ -152,7 +152,7 @@ function UserGrantRow({ user, pending, onToggle }: {
   const initials = user.userName.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <div className="flex flex-wrap items-center gap-3 px-4 py-4">
       <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 shrink-0">
         <span className="text-xs font-semibold text-primary">{initials || "?"}</span>
       </div>
@@ -160,7 +160,7 @@ function UserGrantRow({ user, pending, onToggle }: {
         <p className="text-sm font-medium">{user.userName}</p>
         <p className="text-xs text-muted-foreground">{user.userEmail}</p>
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex flex-wrap items-center gap-1.5">
         {RESOURCE_ACTIONS.map((action) => {
           const fromProject = user.projectActions.has(action)
           const fromResource = user.resourceActions.has(action)

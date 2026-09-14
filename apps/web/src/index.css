@@ -1102,3 +1102,7 @@ a {
 .detail-tabs .console-detail-tab[data-active] { color:var(--primary); border-bottom-color:var(--primary); background:transparent; }
 
 .console-option-select[data-slot="select-trigger"] { height:40px; min-height:40px; }
+
+.execution-history-row { display:flex; align-items:center; gap:12px; padding:14px 16px; min-height:56px; transition:background-color 140ms; }
+.execution-history-row:hover { background:color-mix(in oklch,var(--foreground) 3%,transparent); }
+@media(max-width:600px) { .execution-history-row { flex-wrap:wrap; } .execution-history-row > div:last-child { margin-left:auto; } }
