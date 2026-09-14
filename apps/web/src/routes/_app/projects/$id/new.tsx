@@ -629,13 +629,14 @@ function ServiceForm({
           <Button
             variant="ghost"
             onClick={() => patch({ showResources: !form.showResources })}
+            aria-expanded={form.showResources}
             className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <span className="font-medium">Resource limits</span>
             <ChevronDown className={cn("h-4 w-4 transition-transform", form.showResources ? "rotate-180" : "")} />
           </Button>
           {form.showResources && (
-            <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
+            <div className="grid grid-cols-2 gap-4 border-t border-border/40 p-4">
               <Field label="CPU request">
                 <input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} />
               </Field>
@@ -1681,13 +1682,14 @@ function JobForm({ projectId }: { projectId: string }) {
         <Button
           variant="ghost"
           onClick={() => patch({ showResources: !jf.showResources })}
+          aria-expanded={jf.showResources}
           className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <span className="font-medium">Resource limits</span>
           <ChevronDown className={cn("h-4 w-4 transition-transform", jf.showResources ? "rotate-180" : "")} />
         </Button>
         {jf.showResources && (
-          <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
+          <div className="grid grid-cols-2 gap-4 border-t border-border/40 p-4">
             <Field label="CPU request">
               <input value={jf.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} />
             </Field>
