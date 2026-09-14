@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.13.0](https://github.com/meshploy/meshploy/compare/v0.12.0...v0.13.0) (2026-09-14)
+
+
+### Features
+
+* search and sort projects on the server ([4038614](https://github.com/meshploy/meshploy/commit/40386143121055c0dfdaae86106eb4579a350411))
+
+
+### Bug Fixes
+
+* **web:** align resource detail tabs and execution history layouts ([714e543](https://github.com/meshploy/meshploy/commit/714e54302711b243c5d1f7e2eea134e57559eff8))
+* **web:** align the sidebar brand row with the top bar ([6e8ea1b](https://github.com/meshploy/meshploy/commit/6e8ea1bcf8239120b712deb17f35a3f5a455ae3d))
+* **web:** hide list search until a list is long enough to need it ([f8aa0e8](https://github.com/meshploy/meshploy/commit/f8aa0e86877b80ffc894f524f4629a7441625298))
+
 ## [0.12.0](https://github.com/meshploy/meshploy/compare/v0.11.0...v0.12.0) (2026-09-13)
 
 
