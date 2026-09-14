@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { SegmentedControl } from "@/components/ui/segmented-control"
@@ -256,7 +257,7 @@ function NodeDetailPage() {
             Metrics
           </Button>
 
-          {node.k3sRole !== "server" && !confirmDelete && (
+          {node.k3sRole !== "server" && (
             <>
               <Button
                 variant="outline"
@@ -278,7 +279,7 @@ function NodeDetailPage() {
                   variant="ghost"
                   size="sm"
                   className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
-                  onClick={() => setConfirmDelete(true)}
+                  onClick={() => { deleteMutation.reset(); setConfirmDelete(true) }}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Remove
@@ -287,26 +288,48 @@ function NodeDetailPage() {
             </>
           )}
 
-          {node.k3sRole !== "server" && confirmDelete && (
-            <>
-              <span className="text-xs text-muted-foreground max-w-xs">Remove it from the mesh, the cluster and Meshploy? Software on the machine stays.</span>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={deleteMutation.isPending}
-                onClick={() => deleteMutation.mutate()}
-              >
-                {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
-                Cancel
-              </Button>
-            </>
-          )}
         </div>
       </div>
 
-      {deleteMutation.isError && (
+      <Dialog open={confirmDelete} onOpenChange={(open) => { if (!deleteMutation.isPending) setConfirmDelete(open) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {node.name}?</DialogTitle>
+            <DialogDescription>It leaves the mesh, the cluster and Meshploy.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div>
+              <p className="font-medium">Removed</p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>Its Headscale peer, so the machine loses its mesh access.</li>
+                <li>Its Kubernetes node, so services running there move to other nodes.</li>
+                <li>Its Meshploy record. Services and volumes pinned to it are unpinned.</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium">Stays on the machine</p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>Tailscale, the K3s agent and the Meshploy CLI. Run <code className="font-mono text-foreground">sudo meshploy node uninstall</code> there to remove them.</li>
+                <li>Data on volumes stored on it.</li>
+              </ul>
+            </div>
+            <p className="text-xs text-muted-foreground">If Headscale can&apos;t be reached, the node waits and is removed once it can.</p>
+          </div>
+          {deleteMutation.isError && (
+            <p role="alert" className="text-sm text-destructive">Could not remove the node: {(deleteMutation.error as Error).message}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={deleteMutation.isPending} onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}>
+              {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Remove node
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {deleteMutation.isError && !confirmDelete && (
         <p role="alert" className="text-sm text-destructive">Could not remove the node: {(deleteMutation.error as Error).message}</p>
       )}
       {node.removalRequestedAt && (
