@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -312,6 +313,12 @@ func (h *Handler) CreateJob(ctx context.Context, input *CreateJobInput) (*Create
 		NodeID:            nodeID,
 	})
 	if err != nil {
+		// A refusal from the service, such as a pin to a mesh-only node, keeps
+		// its own status and message.
+		var se huma.StatusError
+		if errors.As(err, &se) {
+			return nil, err
+		}
 		return nil, huma.Error409Conflict("a job with that name already exists in this project")
 	}
 	return &CreateJobOutput{Body: toJobDTO(*row)}, nil

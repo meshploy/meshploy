@@ -23,6 +23,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
 import type { MeshHealth, OrphanWorkload } from "@/lib/api/cluster"
 import { formatRelativeTime } from "@/lib/utils"
@@ -319,9 +320,11 @@ function ProvisioningTokensPanel() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const [error, setError] = useState<string | null>(null)
+  // Mesh only: the machine joins the mesh but not the cluster.
+  const [kind, setKind] = useState<"cluster" | "mesh">("cluster")
 
   const { mutate: generate, isPending: generating } = useMutation({
-    mutationFn: () => nodesApi.createProvisioningToken(orgId!, "worker", null, token),
+    mutationFn: () => nodesApi.createProvisioningToken(orgId!, kind === "mesh" ? "mesh" : "worker", null, token),
     onSuccess: (res) => {
       setProvToken(res.token)
       setVisible(true)
@@ -340,13 +343,13 @@ function ProvisioningTokensPanel() {
   }
 
   const curlCommand = provToken
-    ? `curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh | \\\n  MESHPLOY_API_URL="${MESH_API_URL}" MESHPLOY_TOKEN="${provToken}" bash`
+    ? `curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh | \\\n  MESHPLOY_API_URL="${MESH_API_URL}" MESHPLOY_TOKEN="${provToken}"${kind === "mesh" ? ' MESHPLOY_NODE_ROLE="mesh"' : ""} bash`
     : ""
 
   return (
     <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/40 bg-muted/20 flex items-center justify-between">
-        <p className="text-sm font-semibold text-foreground">Add a worker node</p>
+        <p className="text-sm font-semibold text-foreground">Add a node</p>
         <Button
           size="sm"
           variant="outline"
@@ -363,6 +366,18 @@ function ProvisioningTokensPanel() {
       </div>
 
       <div className="p-4 space-y-4">
+        <div className="space-y-2">
+          <SegmentedControl
+            value={kind}
+            onValueChange={setKind}
+            options={[{ value: "cluster", label: "Cluster worker" }, { value: "mesh", label: "Mesh only" }]}
+          />
+          <p className="text-xs text-muted-foreground">
+            {kind === "mesh"
+              ? "Joins the mesh but not the cluster. Nothing runs on it; routes can reach its ports."
+              : "Joins the mesh and the cluster, and runs services and builds."}
+          </p>
+        </div>
         {error && (
           <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
             <ShieldAlert className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
@@ -371,7 +386,7 @@ function ProvisioningTokensPanel() {
         )}
         {!provToken ? (
           <p className="text-sm text-muted-foreground">
-            Generate a single-use token to get the worker install command.
+            Generate a single-use token to get the install command.
           </p>
         ) : (
           <>

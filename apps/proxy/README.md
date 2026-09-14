@@ -14,7 +14,7 @@ Caddy (TLS) → Proxy (:8081) → WireGuard mesh → K3s worker node
             reverse_proxy to http://<mesh-ip>:<port>
 ```
 
-1. Caddy terminates TLS and forwards workload traffic to the proxy: app hostnames under `*.<domain>`, mesh-only `*.internal.<domain>` hostnames, and verified custom domains
+1. Caddy terminates TLS and forwards workload traffic to the proxy: app hostnames under `*.<domain>`, `*.internal.<domain>` hostnames reachable over the mesh, and verified custom domains
 2. The proxy strips the port from the `Host` header and looks up the route
 3. On a cache hit, it creates a `httputil.ReverseProxy` targeting `http://<target_ip>:<target_port>`
 4. The original `Host` is preserved as `X-Forwarded-Host` for host-aware upstreams

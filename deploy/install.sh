@@ -21,11 +21,15 @@ MESHPLOY_CLI="${MESHPLOY_CLI:-/usr/local/bin/meshploy}"
 # Empty = decide interactively. --dns-mode is the only way to reach the
 # self-managed path under --auto, where nothing can be asked.
 DNS_MODE_FLAG=""
+# Empty = ask, on a worker. Set by `meshploy node install --role`; node init and
+# the console's install command set MESHPLOY_NODE_ROLE instead.
+NODE_ROLE_FLAG=""
 for arg in "$@"; do
   case "$arg" in
     --reinstall) REINSTALL=true ;;
     --wipe-data) WIPE_DATA=true ;;
     --auto)      AUTO_MODE=true ;;
+    --role=*)    NODE_ROLE_FLAG="${arg#*=}" ;;
     --dns-mode=*)
       DNS_MODE_FLAG="${arg#*=}"
       case "$DNS_MODE_FLAG" in
@@ -1378,7 +1382,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   # The registration token is generated in the Meshploy dashboard → Cluster.
   echo
   echo -e "  ${BOLD}Node registration token${RESET}"
-  echo -e "  Find it in the Meshploy dashboard under ${CYAN}Cluster → Add a worker node${RESET}."
+  echo -e "  Find it in the Meshploy dashboard under ${CYAN}Cluster → Add a node${RESET}."
   echo
   ask_secret MESHPLOY_TOKEN "Node registration token (mreg-...)"
 
@@ -1430,18 +1434,34 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
 
   # ── Node role selection ──────────────────────────────────────────────────────
   echo
-  echo -e "  ${BOLD}Node scheduling role${RESET}"
-  echo -e "  ${CYAN}1)${RESET} workload_builder ${DIM}(default)${RESET} — runs customer workloads AND build jobs"
-  echo -e "  ${CYAN}2)${RESET} workload          — customer workloads only"
-  echo -e "  ${CYAN}3)${RESET} builder           — build jobs only (tainted, workloads won't land here)"
-  echo
-  ask NODE_ROLE_CHOICE "Choose role [1/2/3]" "1"
+  # Preset by --role=<role> or MESHPLOY_NODE_ROLE, as the console's install
+  # command and `meshploy node init --role` do; asked otherwise.
+  NODE_ROLE_PRESET="${NODE_ROLE_FLAG:-${MESHPLOY_NODE_ROLE:-}}"
+  if [[ -n "$NODE_ROLE_PRESET" ]]; then
+    NODE_ROLE_CHOICE="$NODE_ROLE_PRESET"
+  else
+    echo -e "  ${BOLD}Node role${RESET}"
+    echo -e "  ${CYAN}1)${RESET} workload_builder ${DIM}(default)${RESET}: runs customer workloads AND build jobs"
+    echo -e "  ${CYAN}2)${RESET} workload:         customer workloads only"
+    echo -e "  ${CYAN}3)${RESET} builder:          build jobs only (tainted, workloads won't land here)"
+    echo -e "  ${CYAN}4)${RESET} mesh:             joins the mesh only, not the cluster; routes can reach its ports"
+    echo
+    ask NODE_ROLE_CHOICE "Choose role [1/2/3/4]" "1"
+  fi
   case "$NODE_ROLE_CHOICE" in
-    2) NODE_MESH_ROLE="workload" ;;
-    3) NODE_MESH_ROLE="builder" ;;
-    *) NODE_MESH_ROLE="workload_builder" ;;
+    1|workload_builder) NODE_MESH_ROLE="workload_builder" ;;
+    2|workload)         NODE_MESH_ROLE="workload" ;;
+    3|builder)          NODE_MESH_ROLE="builder" ;;
+    4|mesh)             NODE_MESH_ROLE="mesh" ;;
+    *)
+      # A preset is a script's intent, so a typo stops it; a typed answer falls
+      # back to the default, as it always has.
+      if [[ -n "$NODE_ROLE_PRESET" ]]; then
+        die "Unknown node role '${NODE_ROLE_PRESET}': use workload_builder, workload, builder or mesh"
+      fi
+      NODE_MESH_ROLE="workload_builder" ;;
   esac
-  info "Node mesh role: ${BOLD}${NODE_MESH_ROLE}${RESET}"
+  info "Node role: ${BOLD}${NODE_MESH_ROLE}${RESET}"
 
   # ── Self-register with the Meshploy API ─────────────────────────────────────
   # Now on the mesh, so we can reach the master's API at its WireGuard IP.
@@ -1493,7 +1513,9 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
 
   # ── Optionally join k3s cluster ─────────────────────────────────────────────
   echo
-  if ask_yn "Join this node to the k3s cluster now?"; then
+  if [[ "$NODE_MESH_ROLE" == "mesh" ]]; then
+    info "Mesh-only node: not joining the k3s cluster. Routes can reach its ports over the mesh."
+  elif ask_yn "Join this node to the k3s cluster now?"; then
     ask_secret K3S_JOIN_TOKEN "k3s node token (from master summary or dashboard → Cluster)"
     K3S_SERVER_URL="${K3S_SERVER_URL:-https://100.64.0.1:6443}"
     ask K3S_SERVER_URL "k3s server URL" "$K3S_SERVER_URL"
@@ -1611,7 +1633,11 @@ NEUNIT
 
   echo
   hr
-  echo -e "  ${BOLD}${GREEN}✔  Worker node is ready!${RESET}"
+  if [[ "$NODE_MESH_ROLE" == "mesh" ]]; then
+    echo -e "  ${BOLD}${GREEN}✔  Mesh-only node is ready!${RESET}"
+  else
+    echo -e "  ${BOLD}${GREEN}✔  Worker node is ready!${RESET}"
+  fi
   hr
   echo -e "  ${BOLD}Node${RESET}       ${CYAN}${NODE_HOSTNAME}${RESET}"
   echo -e "  ${BOLD}Mesh IP${RESET}    ${CYAN}${MESH_IP_ASSIGNED}${RESET}"
@@ -1619,6 +1645,9 @@ NEUNIT
   echo -e "  ${BOLD}Next steps${RESET}"
   echo -e "    1. Check connectivity from master:  tailscale ping ${NODE_HOSTNAME}"
   echo -e "    2. View node in dashboard:          ${CYAN}Nodes → ${NODE_HOSTNAME}${RESET}"
+  if [[ "$NODE_MESH_ROLE" == "mesh" ]]; then
+    echo -e "    3. Route to a port on it:           ${CYAN}Project → Routes → New route → Node + port${RESET}"
+  fi
   hr
 
 fi

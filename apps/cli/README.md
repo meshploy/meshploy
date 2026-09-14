@@ -207,6 +207,8 @@ Adding and removing worker machines. These go through the API, so they work from
 
 SSH commands (`remove`, `init`, `add`) accept `--identity-file` and `--port`.
 
+`init` accepts `--role`: `workload_builder` (the default), `workload`, `builder`, or `mesh`. A **mesh** node joins the mesh but not the cluster: nothing is scheduled on it, routes can reach its ports through a **Node + port** target, and it is not sent the k3s token. Moving a node into or out of `mesh` means installing or removing K3s on the machine.
+
 For `install`, `uninstall` and `status`, which act on the machine you run them on, see [Server management](#server-management).
 
 ---

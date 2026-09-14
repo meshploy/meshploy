@@ -98,7 +98,7 @@ Named subdomains (api, console, headscale)
   → On-Demand TLS: Caddy asks the API before issuing, so only
     active routes and verified custom domains get a certificate
 
-*.internal.{domain}  (mesh-only)
+*.internal.{domain}  (reachable over the mesh)
   → Caddy's internal CA, since a public wildcard needs DNS-01
 ```
 

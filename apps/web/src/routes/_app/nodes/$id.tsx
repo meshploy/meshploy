@@ -223,7 +223,7 @@ function NodeDetailPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold tracking-tight">{node.name}</h1><StatusPill status={node.status}/>
               <Badge variant={node.k3sRole === "server" ? "default" : "secondary"} className="text-xs">
-                {node.k3sRole}
+                {node.meshRole === "mesh" ? "mesh only" : node.k3sRole}
               </Badge>
             </div>
             <div className="flex items-center gap-3 mt-0.5">
@@ -259,11 +259,13 @@ function NodeDetailPage() {
 
           {node.k3sRole !== "server" && (
             <>
+              {node.meshRole !== "mesh" && (
               <Button
                 variant="outline"
                 size="sm"
                 className="gap-1.5"
-                disabled={node.status !== "online"}
+                disabled={node.status !== "online" || !node.k8sMember}
+                title={!node.k8sMember ? "The terminal runs through K3s, and this node is not in the cluster" : undefined}
                 onClick={() => openTab({
                   id: node.id,
                   type: "terminal",
@@ -274,6 +276,7 @@ function NodeDetailPage() {
                 <SquareTerminal className="h-3.5 w-3.5" />
                 Terminal
               </Button>
+              )}
               {!node.removalRequestedAt && (
                 <Button
                   variant="ghost"
@@ -480,7 +483,7 @@ function NodeDetailPage() {
               )}
             </dl>
           ) : (
-            <p className="text-sm text-muted-foreground">Not joined to the k3s cluster.</p>
+            <p className="text-sm text-muted-foreground">{node.meshRole === "mesh" ? "Mesh only: not part of the cluster. Routes can reach its ports: in a project, Routes → New route → Node + port." : "Not joined to the k3s cluster."}</p>
           )}
         </InfoCard>
       </div><aside className="space-y-6">
@@ -488,7 +491,9 @@ function NodeDetailPage() {
       {/* Role controls */}
       {node.k3sRole === "server"
         ? <ServerBuildToggle node={node} orgId={orgId!} token={token} />
-        : <NodeRolePicker node={node} orgId={orgId!} token={token} />
+        : node.meshRole === "mesh"
+          ? <MeshOnlyRole />
+          : <NodeRolePicker node={node} orgId={orgId!} token={token} />
       }
 
       </aside></div>
@@ -564,6 +569,23 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
   )
 }
 
+// A mesh-only node's role is set when it is installed: moving it into the
+// cluster means installing K3s on the machine.
+function MeshOnlyRole() {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-medium text-foreground">Node role</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Controls which workloads this node accepts.</p>
+      </div>
+      <p className="text-sm font-medium text-foreground">Mesh only</p>
+      <p className="text-xs text-muted-foreground">
+        On the mesh, not in the cluster: nothing is scheduled here, and routes can reach its ports. Moving it into the cluster means installing K3s on the machine.
+      </p>
+    </section>
+  )
+}
+
 // ─── Node role picker ─────────────────────────────────────────────────────────
 
 const MESH_ROLES: { value: MeshRole; label: string; description: string }[] = [
@@ -605,6 +627,9 @@ function NodeRolePicker({ node, orgId, token }: { node: ReturnType<typeof toNode
       </div>
       {selectedRole && (
         <p className="text-xs text-muted-foreground">{selectedRole.description}</p>
+      )}
+      {!node.k8sMember && (
+        <p className="text-xs text-amber-400">Not in the cluster: the role takes effect once this node joins.</p>
       )}
     </section>
   )

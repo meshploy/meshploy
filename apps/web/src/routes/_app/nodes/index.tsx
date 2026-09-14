@@ -70,7 +70,7 @@ function NodesPage() {
       <div className="resource-metrics">
         <MetricTile icon={Server} label="Online" value={online} unit={`/ ${nodeList.length}`} detail="Mesh connectivity"/>
         <MetricTile icon={CheckCircle2} label="Cluster ready" value={nodeList.filter(n=>n.k8sReady).length} detail="Nodes reporting Kubernetes readiness"/>
-        <MetricTile icon={Cpu} label="Online CPU capacity" value={nodeList.filter(n=>n.status === "online").reduce((sum,n)=>sum+(n.cpuCores || 0),0)} unit="cores" detail="Hardware capacity, not current utilization"/>
+        <MetricTile icon={Cpu} label="Online CPU capacity" value={nodeList.filter(n=>n.status === "online" && n.k8sMember).reduce((sum,n)=>sum+(n.cpuCores || 0),0)} unit="cores" detail="Cluster nodes' hardware, not current utilization"/>
       </div>
       <div className="flex flex-wrap items-center gap-3"><Input aria-label="Search nodes" placeholder="Search by name or mesh IP…" value={search} onChange={e=>setSearch(e.target.value)} className="h-10 max-w-md"/><OptionSelect label="Filter node status" value={status} onChange={setStatus} options={[{"value": "all", "label": "All statuses"}, {"value": "online", "label": "Online"}, {"value": "offline", "label": "Not online"}]} /><Button variant="outline" className="sm:ml-auto" render={<Link to="/cluster"/>}><Plus className="size-4"/>Connect a node</Button></div>
       <NodesTable nodes={nodeList.filter(n => `${n.name} ${n.tailscaleIP}`.toLowerCase().includes(search.toLowerCase()) && (status === "all" || (status === "online" ? n.status === "online" : n.status !== "online")))} />

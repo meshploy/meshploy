@@ -42,7 +42,8 @@ const (
 	K3sRoleAgent  K3sRole = "agent"
 )
 
-// MeshRole controls which workloads are scheduled on a node via k8s labels/taints.
+// MeshRole controls which workloads are scheduled on a node via k8s labels/taints,
+// or, for MeshRoleMesh, that the node is not in the cluster at all.
 type MeshRole string
 
 const (
@@ -52,6 +53,10 @@ const (
 	MeshRoleWorkload MeshRole = "workload"
 	// MeshRoleBuilder — build jobs only; tainted so customer workloads can't land here.
 	MeshRoleBuilder MeshRole = "builder"
+	// MeshRoleMesh: on the mesh, not in the cluster. Nothing is scheduled on it,
+	// and routes reach its ports over the mesh. Chosen at install, which then
+	// never installs K3s.
+	MeshRoleMesh MeshRole = "mesh"
 )
 
 type ServiceType string

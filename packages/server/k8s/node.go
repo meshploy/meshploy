@@ -79,7 +79,11 @@ func IsBuildNode(labels map[string]string) bool {
 //   - workload_builder: adds builder label, no taint  → builds + workloads land here
 //   - workload:         removes builder label, no taint → workloads only
 //   - builder:          adds builder label + NoSchedule taint → builds only
+//   - mesh:             not in the cluster, so there is nothing to apply
 func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName string, role db.MeshRole) error {
+	if role == db.MeshRoleMesh {
+		return nil
+	}
 	node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("get node %s: %w", nodeName, err)

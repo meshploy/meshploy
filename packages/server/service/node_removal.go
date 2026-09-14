@@ -115,9 +115,10 @@ func (s *NodeService) finishRemoval(ctx context.Context, node *db.Node, waits []
 		}
 		return &RemovalResult{Error: msg}, nil
 	}
-	if s.k8s != nil && node.Name != "" {
+	if s.k8s != nil && node.Name != "" && node.MeshRole != db.MeshRoleMesh {
 		// Not fatal: without its peer the machine cannot reach the cluster, so
-		// a node object left behind only shows as NotReady.
+		// a node object left behind only shows as NotReady. A mesh-only node
+		// never had one.
 		if err := appk8s.DeleteNode(ctx, s.k8s, node.Name); err != nil && !apierrors.IsNotFound(err) {
 			log.Printf("warning: delete k8s node %s: %v", node.Name, err)
 		}

@@ -47,6 +47,9 @@ func (s *VolumeService) Get(ctx context.Context, volumeID, projectID uuid.UUID) 
 }
 
 func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name string, storageGB int, nodeID *uuid.UUID) (*db.Volume, error) {
+	if err := schedulable(ctx, s.db, nodeID); err != nil {
+		return nil, err
+	}
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}

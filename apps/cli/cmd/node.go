@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -234,6 +235,9 @@ k3s setup, Headscale registration, and saves /etc/meshploy/node.conf.`,
 			nodeInstallDNSMode != "delegation" && nodeInstallDNSMode != "ondemand" {
 			return fmt.Errorf("--dns-mode must be 'delegation' or 'ondemand', got %q", nodeInstallDNSMode)
 		}
+		if err := checkNodeRole(nodeInstallRole); err != nil {
+			return err
+		}
 		if os.Getuid() != 0 {
 			return fmt.Errorf("node install requires root — re-run with sudo")
 		}
@@ -257,6 +261,9 @@ k3s setup, Headscale registration, and saves /etc/meshploy/node.conf.`,
 		if nodeInstallDNSMode != "" {
 			scriptArgs = append(scriptArgs, "--dns-mode="+nodeInstallDNSMode)
 		}
+		if nodeInstallRole != "" {
+			scriptArgs = append(scriptArgs, "--role="+nodeInstallRole)
+		}
 		return runScript(installScript, scriptArgs)
 	},
 }
@@ -267,7 +274,19 @@ var (
 	nodeInstallWipeData  bool
 	nodeInstallAuto      bool
 	nodeInstallDNSMode   string
+	nodeInstallRole      string
 )
+
+// nodeRoles are the roles install.sh accepts for a worker. mesh joins the mesh
+// only, not the cluster: nothing is scheduled on it, and routes reach its ports.
+var nodeRoles = []string{"workload_builder", "workload", "builder", "mesh"}
+
+func checkNodeRole(role string) error {
+	if role == "" || slices.Contains(nodeRoles, role) {
+		return nil
+	}
+	return fmt.Errorf("--role must be one of %s, got %q", strings.Join(nodeRoles, ", "), role)
+}
 
 // ── node uninstall ────────────────────────────────────────────────────────────
 
@@ -344,15 +363,23 @@ mesh without any manual steps.
 Values are read from /opt/meshploy/.env on the master. A fresh Headscale
 preauth key is generated automatically; use --preauth-key to override.
 
+--role mesh joins the machine to the mesh only, not the cluster: nothing is
+scheduled on it, routes can reach its ports, and it is not sent the k3s token.
+
 Examples:
   meshploy node init root@192.168.1.10
   meshploy node init ubuntu@10.0.0.5 --identity-file ~/.ssh/id_ed25519
-  meshploy node init admin@worker.internal --port 2222`,
+  meshploy node init admin@worker.internal --port 2222
+  meshploy node init root@10.0.0.7 --role mesh`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identityFile, _ := cmd.Flags().GetString("identity-file")
 		sshPort, _ := cmd.Flags().GetInt("port")
 		preauthKeyOverride, _ := cmd.Flags().GetString("preauth-key")
+		role, _ := cmd.Flags().GetString("role")
+		if err := checkNodeRole(role); err != nil {
+			return err
+		}
 
 		if _, err := os.Stat(installScript); os.IsNotExist(err) {
 			return fmt.Errorf(
@@ -381,6 +408,9 @@ Examples:
 			"MESHPLOY_TOKEN":   regToken,
 			"NODE_TYPE":        "worker",
 		}
+		if role != "" {
+			envVars["MESHPLOY_NODE_ROLE"] = role
+		}
 
 		// Enrich from /opt/meshploy/.env when available.
 		dotenv, err := parseDotEnv(deployEnvFile)
@@ -396,10 +426,11 @@ Examples:
 			if domain != "" {
 				envVars["HEADSCALE_URL"] = "https://headscale." + domain
 			}
-			if meshIP != "" {
+			// A mesh-only node never joins the cluster, so it gets neither.
+			if meshIP != "" && role != "mesh" {
 				envVars["K3S_SERVER_URL"] = "https://" + meshIP + ":6443"
 			}
-			if k3sToken != "" {
+			if k3sToken != "" && role != "mesh" {
 				envVars["K3S_JOIN_TOKEN"] = k3sToken
 			}
 
@@ -764,6 +795,7 @@ func init() {
 
 	nodeInitCmd.Flags().StringP("identity-file", "i", "", "SSH identity file (private key)")
 	nodeInitCmd.Flags().IntP("port", "P", 22, "SSH port on the remote host")
+	nodeInitCmd.Flags().String("role", "", "Worker role: workload_builder (default), workload, builder, or mesh (the mesh only, not the cluster)")
 	nodeInitCmd.Flags().StringP("preauth-key", "k", "", "Headscale preauth key (auto-generated from /opt/meshploy/.env if omitted)")
 
 	nodeAddCmd.Flags().StringP("identity-file", "i", "", "SSH identity file (private key)")
@@ -780,6 +812,7 @@ func init() {
 	nodeInstallCmd.Flags().BoolVar(&nodeInstallReinstall, "reinstall", false, "Update images and config, preserving the database and TLS certs")
 	nodeInstallCmd.Flags().BoolVar(&nodeInstallWipeData, "wipe-data", false, "With --reinstall: wipe the database and TLS cert cache")
 	nodeInstallCmd.Flags().BoolVar(&nodeInstallAuto, "auto", false, "Non-interactive install, taking answers from the environment")
+	nodeInstallCmd.Flags().StringVar(&nodeInstallRole, "role", "", "Worker role: workload_builder (default), workload, builder, or mesh (the mesh only, not the cluster)")
 	nodeInstallCmd.Flags().StringVar(&nodeInstallDNSMode, "dns-mode", "", "DNS strategy: 'delegation' (NS record, wildcard DNS-01) or 'ondemand' (wildcard A record, cert per hostname)")
 
 	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeRemoveCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd, nodeAddCmd)

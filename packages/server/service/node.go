@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -163,10 +164,19 @@ type UpdateNodeInput struct {
 	MeshRole db.MeshRole // empty = no change
 }
 
+// ErrMeshRoleSwitch refuses moving a node into or out of the mesh-only role:
+// that means installing or removing K3s on the machine, which the API cannot do.
+var ErrMeshRoleSwitch = errors.New("a node moves into or out of the cluster on the machine itself: " +
+	"a mesh-only node joins by installing K3s there, and a cluster node becomes mesh only by removing it")
+
 func (s *NodeService) Update(ctx context.Context, nodeID uuid.UUID, in UpdateNodeInput) (*db.Node, error) {
 	var node db.Node
 	if err := s.db.WithContext(ctx).First(&node, "id = ?", nodeID).Error; err != nil {
 		return nil, err
+	}
+	if in.MeshRole != "" && in.MeshRole != node.MeshRole &&
+		(in.MeshRole == db.MeshRoleMesh || node.MeshRole == db.MeshRoleMesh) {
+		return nil, ErrMeshRoleSwitch
 	}
 	updates := map[string]any{}
 	if in.Name != "" {

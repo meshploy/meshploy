@@ -20,7 +20,7 @@ export interface OrgMember {
   joinedAt: Date
 }
 
-export type MeshRole = "workload_builder" | "workload" | "builder"
+export type MeshRole = "workload_builder" | "workload" | "builder" | "mesh"
 
 export interface Node {
   id: string

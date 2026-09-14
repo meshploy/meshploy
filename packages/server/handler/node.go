@@ -256,7 +256,7 @@ type UpdateNodeInput struct {
 	Body   struct {
 		Name     string `json:"name,omitempty"      maxLength:"100"`
 		K3sRole  string `json:"k3s_role,omitempty"  enum:"server,agent"`
-		MeshRole string `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder"`
+		MeshRole string `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder,mesh"`
 	}
 }
 
@@ -502,6 +502,9 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 		MeshRole: db.MeshRole(input.Body.MeshRole),
 	})
 	if err != nil {
+		if errors.Is(err, service.ErrMeshRoleSwitch) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, notFound(err)
 	}
 	// Keep Headscale MagicDNS in sync when the node is renamed.
@@ -744,7 +747,7 @@ type SelfRegisterNodeInput struct {
 		Token       string      `json:"token"        minLength:"1"`
 		Name        string      `json:"name"         minLength:"1" maxLength:"100"`
 		TailscaleIP string      `json:"tailscale_ip" minLength:"1"`
-		MeshRole    db.MeshRole `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder"`
+		MeshRole    db.MeshRole `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder,mesh"`
 	}
 }
 

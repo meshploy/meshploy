@@ -155,6 +155,9 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		return nil, err
 	}
 
+	if err := schedulable(ctx, s.db, in.NodeID); err != nil {
+		return nil, err
+	}
 	if in.Type == db.ServiceTypeDatabase {
 		return s.createDatabase(ctx, projectID, in)
 	}
@@ -632,6 +635,9 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 		updates["image"] = *in.Image
 	}
 	if in.UpdateNode {
+		if err := schedulable(ctx, s.db, in.NodeID); err != nil {
+			return nil, err
+		}
 		updates["node_id"] = in.NodeID // nil → NULL, uuid → pin
 	}
 	if in.Replicas != nil {

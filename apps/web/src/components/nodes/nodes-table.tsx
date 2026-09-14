@@ -47,7 +47,7 @@ export function NodesTable({ nodes }: NodesTableProps) {
               </TableCell>
               <TableCell className="py-3.5">
                 <Badge variant={node.k3sRole === "server" ? "default" : "secondary"} className="text-[10px] font-medium px-1.5 py-0 h-4.5">
-                  {node.k3sRole}
+                  {node.meshRole === "mesh" ? "mesh" : node.k3sRole}
                 </Badge>
               </TableCell>
               <TableCell className="py-3.5">
@@ -57,7 +57,7 @@ export function NodesTable({ nodes }: NodesTableProps) {
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 text-muted-foreground">
-                    Not Joined
+                    {node.meshRole === "mesh" ? "Mesh only" : "Not Joined"}
                   </Badge>
                 )}
               </TableCell>

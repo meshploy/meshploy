@@ -315,7 +315,7 @@ function TargetForm({
   form: TargetFormState
   zone: string
   serviceList: { id: string; name: string; ports?: { id: string; name: string; port: number; is_http: boolean; is_primary: boolean; is_public: boolean }[] }[]
-  nodeList: { id: string; name: string; tailscale_ip?: string }[]
+  nodeList: { id: string; name: string; tailscale_ip?: string; mesh_role?: string }[]
   redirectableRoutes: { id: string; hostname: string; zone: string }[]
   onChange: (patch: Partial<TargetFormState>) => void
   submitLabel: string
@@ -440,6 +440,7 @@ function TargetForm({
                 <SelectItem key={n.id} value={n.id}>
                   {n.name}
                   {n.tailscale_ip && <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>}
+                  {n.mesh_role === "mesh" && <span className="ml-2 text-muted-foreground text-xs">mesh only</span>}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -539,7 +540,7 @@ function TargetItem({
   nodeMap: Record<string, string>
   routeMap: Record<string, string>
   serviceList: { id: string; name: string; ports?: { id: string; name: string; port: number; is_http: boolean; is_primary: boolean; is_public: boolean }[] }[]
-  nodeList: { id: string; name: string; tailscale_ip?: string }[]
+  nodeList: { id: string; name: string; tailscale_ip?: string; mesh_role?: string }[]
   redirectableRoutes: { id: string; hostname: string; zone: string }[]
   orgId: string
   projectId: string

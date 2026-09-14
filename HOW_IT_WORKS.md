@@ -59,6 +59,14 @@ The only requirement is that the node can make an outbound connection to the gat
 
 ---
 
+## Can a machine join the mesh without running workloads?
+
+Yes: install it as a **mesh only** node. Choose role 4 in the installer, **Mesh only** under **Cluster → Add a node**, or run `meshploy node init <host> --role mesh`. The machine joins the WireGuard mesh but not the K3s cluster, so nothing is scheduled on it. Routes can still reach it: a route's **Node + port** target forwards a hostname to a port on that machine over the mesh, which suits something you run outside Meshploy, such as a database appliance or a legacy app.
+
+Moving a node into or out of the mesh-only role means installing or removing K3s on the machine itself.
+
+---
+
 ## Why K3s and not just Docker?
 
 Docker Compose works well for a single machine. Once you have multiple machines, you need something that handles:
