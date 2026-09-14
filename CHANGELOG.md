@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0](https://github.com/meshploy/meshploy/compare/v0.13.1...v0.14.0) (2026-09-14)
+
+
+### Features
+
+* add mesh-only nodes that join the mesh but not the cluster ([56f27ef](https://github.com/meshploy/meshploy/commit/56f27efd9d5b653b65a98e32c3b47183dcab7139))
+
+
+### Bug Fixes
+
+* cap build memory and validate builder resources ([a282f1c](https://github.com/meshploy/meshploy/commit/a282f1c2efa52e10ef5ef578d6ed90dd74473a28))
+* **web:** lay out resource limits the same way on the service forms ([2fefbdd](https://github.com/meshploy/meshploy/commit/2fefbddda35ba4808223a200cc8c2f2ecb05decc))
+* **web:** offer the gateway as a target node and leave out builder-only nodes ([28bbb8e](https://github.com/meshploy/meshploy/commit/28bbb8eee11a3e8fde75cc94fb3cbec83f513026))
+
 ## [0.13.1](https://github.com/meshploy/meshploy/compare/v0.13.0...v0.13.1) (2026-09-14)
 
 
