@@ -201,7 +201,7 @@ Adding and removing worker machines. These go through the API, so they work from
 | `node init <host>` | Prepare a remote machine over SSH (installs prerequisites) |
 | `node add <host>` | Bootstrap a remote machine as a worker node over SSH |
 | `node remove <host>` | Cleanly uninstall a remote node over SSH |
-| `node delete <id>` | Remove a node from Headscale, k3s, and the DB |
+| `node delete <id>` | Remove a node from Headscale, k3s, and the DB. If Headscale cannot be reached, the node waits and is removed once it can, retried every minute. Software on the machine stays; `node remove` uninstalls it over SSH |
 | `node token get` | Print the current node registration token |
 | `node token rotate` | Generate a new registration token (invalidates the old one) |
 

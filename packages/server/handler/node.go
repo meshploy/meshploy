@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -307,9 +308,20 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Method:      "DELETE",
 		Path:        "/api/v1/orgs/{orgId}/nodes/{nodeId}",
 		Summary:     "Remove a node",
+		Description: "Removes the node from Headscale, the cluster and Meshploy, in that order. 200 when it is gone; 202 while Headscale has not confirmed the peer is removed, which Meshploy retries every minute.",
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DeleteNode)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "cancel-node-removal",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/nodes/{nodeId}/cancel-removal",
+		Summary:       "Stop a node removal that is waiting for Headscale",
+		Tags:          []string{"Nodes"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.CancelNodeRemoval)
 
 	// Provisioning tokens — per-node single-use tokens (authenticated management)
 	huma.Register(api, huma.Operation{
@@ -508,7 +520,19 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 	return &UpdateNodeOutput{Body: &r}, nil
 }
 
-func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*struct{}, error) {
+// DeleteNodeOutput reports whether the node is gone: 200 when it is, 202 while
+// Headscale has not confirmed the peer is removed.
+type DeleteNodeOutput struct {
+	Status int
+	Body   NodeRemovalBody
+}
+
+type NodeRemovalBody struct {
+	Removed bool   `json:"removed"`
+	Error   string `json:"error,omitempty" doc:"Why the removal is waiting; Meshploy retries every minute"`
+}
+
+func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*DeleteNodeOutput, error) {
 	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
@@ -522,21 +546,30 @@ func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*struct
 	if node.K3sRole == db.K3sRoleServer {
 		return nil, huma.Error400BadRequest("the gateway node cannot be deleted")
 	}
-	// Remove the WireGuard peer from Headscale before deleting from the DB.
-	// Non-fatal: if Headscale is unavailable the DB record is still cleaned up.
-	if h.svc.Headscale != nil && node.HeadscaleID != "" {
-		if err := h.svc.Headscale.DeleteNode(ctx, node.HeadscaleID); err != nil {
-			log.Printf("warning: delete headscale peer %s for node %s: %v", node.HeadscaleID, node.Name, err)
-		}
+	res, err := h.svc.Nodes.Remove(ctx, nodeID)
+	if err != nil {
+		return nil, err
 	}
-	// Remove the node object from the k3s cluster so it doesn't linger as NotReady.
-	// The k3s-agent process on the worker keeps running until manually uninstalled.
-	if h.svc.K8s != nil && node.Name != "" {
-		if err := appk8s.DeleteNode(ctx, h.svc.K8s, node.Name); err != nil {
-			log.Printf("warning: delete k8s node %s: %v", node.Name, err)
-		}
+	out := &DeleteNodeOutput{Status: http.StatusOK, Body: NodeRemovalBody{Removed: res.Removed, Error: res.Error}}
+	if !res.Removed {
+		out.Status = http.StatusAccepted
 	}
-	return nil, h.svc.Nodes.Delete(ctx, nodeID)
+	return out, nil
+}
+
+// CancelNodeRemoval stops a removal that is waiting for Headscale.
+func (h *Handler) CancelNodeRemoval(ctx context.Context, input *NodePathInput) (*struct{}, error) {
+	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Nodes.CancelRemoval(ctx, nodeID); err != nil {
+		if errors.Is(err, service.ErrNoPendingRemoval) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, err
+	}
+	return nil, nil
 }
 
 // ─── Node registration token ─────────────────────────────────────────────────

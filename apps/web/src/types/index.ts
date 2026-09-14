@@ -26,6 +26,8 @@ export interface Node {
   id: string
   name: string
   tailscaleIP: string
+  removalRequestedAt?: Date | null // set while a removal waits for Headscale
+  removalError?: string
   status: NodeStatus
   k3sRole: K3sRole
   meshRole: MeshRole

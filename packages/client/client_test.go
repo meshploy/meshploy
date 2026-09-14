@@ -84,9 +84,43 @@ func TestDoNoContent_ErrorOnHTTP4xx(t *testing.T) {
 	defer srv.Close()
 
 	c := client.New(srv.URL, "token")
-	err := c.DeleteNode(testOrg, "gone")
+	_, err := c.DeleteNode(testOrg, "gone")
 	if err == nil {
 		t.Fatal("expected error on 404, got nil")
+	}
+}
+
+// DeleteNode reports a removal still waiting for Headscale, and reads an older
+// server's 204 as removed.
+func TestDeleteNodeReportsAPendingRemoval(t *testing.T) {
+	srv := newServer(t, []routeHandler{
+		{
+			method: "DELETE",
+			path:   "/api/v1/orgs/" + testOrg + "/nodes/waiting",
+			fn: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte(`{"removed":false,"error":"Headscale is down"}`))
+			},
+		},
+		{
+			method: "DELETE",
+			path:   "/api/v1/orgs/" + testOrg + "/nodes/old",
+			fn: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			},
+		},
+	})
+	defer srv.Close()
+
+	c := client.New(srv.URL, "token")
+	res, err := c.DeleteNode(testOrg, "waiting")
+	if err != nil || res.Removed || res.Error != "Headscale is down" {
+		t.Fatalf("waiting removal: %+v, %v", res, err)
+	}
+	res, err = c.DeleteNode(testOrg, "old")
+	if err != nil || !res.Removed {
+		t.Fatalf("204 from an older server: %+v, %v", res, err)
 	}
 }
 
@@ -229,7 +263,7 @@ func TestDeleteNode(t *testing.T) {
 	defer srv.Close()
 
 	c := client.New(srv.URL, "token")
-	if err := c.DeleteNode(testOrg, "n1"); err != nil {
+	if _, err := c.DeleteNode(testOrg, "n1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !called {

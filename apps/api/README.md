@@ -213,7 +213,8 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | POST | `/orgs/{orgId}/nodes` | ✓ | Register a new node |
 | GET | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Get a node |
 | PATCH | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Update a node |
-| DELETE | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Remove a node |
+| DELETE | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Remove a node from Headscale, the cluster and Meshploy, in that order. 200 `{"removed": true}` when it is gone; 202 `{"removed": false, "error": ...}` while Headscale has not confirmed the peer is removed, which is retried every minute. Calling it again retries at once |
+| POST | `/orgs/{orgId}/nodes/{nodeId}/cancel-removal` | ✓ | Stop a node removal that is waiting for Headscale; 409 if none is |
 | GET | `/orgs/{orgId}/nodes/{nodeId}/metrics` | ✓ | Get live resource metrics for a node (requires node_exporter) |
 
 ### Services

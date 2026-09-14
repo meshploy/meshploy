@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -276,6 +277,10 @@ func (h *HeadscaleService) GetNode(ctx context.Context, id string) (*HeadscaleNo
 	return &body.Node, nil
 }
 
+// ErrHeadscaleNodeNotFound is DeleteNode's answer for a peer Headscale does
+// not have.
+var ErrHeadscaleNodeNotFound = errors.New("headscale: node not found")
+
 // DeleteNode calls DELETE {url}/api/v1/node/{id} to remove a peer from Headscale.
 // Called when a Meshploy node is deleted so the WireGuard peer is also cleaned up.
 func (h *HeadscaleService) DeleteNode(ctx context.Context, id string) error {
@@ -291,6 +296,9 @@ func (h *HeadscaleService) DeleteNode(ctx context.Context, id string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrHeadscaleNodeNotFound
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("headscale delete node: unexpected status %d", resp.StatusCode)
 	}

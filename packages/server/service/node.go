@@ -12,6 +12,7 @@ import (
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"k8s.io/client-go/kubernetes"
 )
 
 // GetNodeMetrics scrapes live resource metrics from node_exporter on the node.
@@ -40,6 +41,7 @@ type NodeService struct {
 	hostGatewayIP string // Docker bridge host IP (HOST_GATEWAY_IP) — used instead of gatewayIP when API is in Docker
 	headscale     *HeadscaleService
 	notif         *NotificationService
+	k8s           kubernetes.Interface // nil without a cluster; removal then skips that step
 }
 
 // StartNodeMonitor polls Headscale every 2 minutes and dispatches node.offline

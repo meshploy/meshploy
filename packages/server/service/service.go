@@ -199,6 +199,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	nodes.headscale = headscaleSvc
 	nodes.notif = notif
+	nodes.k8s = k8sClient
 	// Workloads need the deployment service to re-apply a Deployment from current
 	// config on start; the two are wired after construction because deployments
 	// is built from workloads' dependencies.
@@ -264,6 +265,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go backups.StartScheduler(context.Background())
 	go backups.StartRetentionReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
+	go nodes.StartRemovalWorker(context.Background())
 
 	return svc
 }

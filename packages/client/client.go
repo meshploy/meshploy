@@ -152,17 +152,31 @@ func (c *Client) ListNodes(orgID string) ([]Node, error) {
 	return decode[[]Node](resp)
 }
 
-func (c *Client) DeleteNode(orgID, nodeID string) error {
+// NodeRemoval reports whether a node removal finished. One that is waiting
+// for Headscale finishes in the background.
+type NodeRemoval struct {
+	Removed bool   `json:"removed"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (c *Client) DeleteNode(orgID, nodeID string) (*NodeRemoval, error) {
 	resp, err := c.do("DELETE", "/api/v1/orgs/"+orgID+"/nodes/"+nodeID, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
 	}
-	return nil
+	if resp.StatusCode == http.StatusNoContent {
+		return &NodeRemoval{Removed: true}, nil // an older server
+	}
+	var r NodeRemoval
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 type K3sJoinToken struct {

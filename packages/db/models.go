@@ -473,6 +473,11 @@ type Node struct {
 	Status         NodeStatus `gorm:"type:varchar(10);not null;default:'offline'" json:"status"`
 	LastSeenAt     *time.Time `json:"last_seen_at"`
 
+	// RemovalRequestedAt is set while a removal waits for Headscale to drop the
+	// node's peer; the node is deleted once it has (see NodeService.Remove).
+	RemovalRequestedAt *time.Time `gorm:"index"              json:"removal_requested_at,omitempty"`
+	RemovalError       string     `gorm:"not null;default:''" json:"removal_error,omitempty"`
+
 	// K3s
 	K3sRole    K3sRole    `gorm:"type:varchar(10);not null;default:'agent'"    json:"k3s_role"`
 	K3sVersion string     `json:"k3s_version"` // e.g. "v1.28.4+k3s1"

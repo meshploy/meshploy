@@ -1076,8 +1076,12 @@ func (s *srv) handleDeleteNode(_ context.Context, req mcp.CallToolRequest) (*mcp
 	}
 	for _, n := range nodes {
 		if n.ID == nodeRef || n.Name == nodeRef {
-			if err := s.c.DeleteNode(s.orgID, n.ID); err != nil {
+			res, err := s.c.DeleteNode(s.orgID, n.ID)
+			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
+			}
+			if !res.Removed {
+				return mcp.NewToolResultText(fmt.Sprintf("node %q is waiting to be removed: %s; Meshploy retries every minute and removes it once Headscale drops its peer", n.Name, res.Error)), nil
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("node %q deleted", n.Name)), nil
 		}

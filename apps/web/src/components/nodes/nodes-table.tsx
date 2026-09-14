@@ -72,7 +72,9 @@ export function NodesTable({ nodes }: NodesTableProps) {
               <TableCell className="py-3.5">
                 <div className="flex items-center gap-1.5">
                   <NodeStatusDot status={node.status} />
-                  {node.status === "online" ? (
+                  {node.removalRequestedAt ? (
+                    <span className="text-xs text-amber-400/80">Removing</span>
+                  ) : node.status === "online" ? (
                     <span className="text-xs text-emerald-400/80">Connected</span>
                   ) : (
                     <span className="text-xs text-muted-foreground/50">

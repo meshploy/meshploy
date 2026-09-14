@@ -33,6 +33,9 @@ export interface ApiNode {
   active_projects: string[]
   // Public internet IP (gateway/server nodes only)
   public_ip: string
+  // Set while a removal waits for Headscale to drop the node's peer
+  removal_requested_at?: string | null
+  removal_error?: string
 }
 
 export interface ApiNodeMetrics {
@@ -59,6 +62,8 @@ export function toNode(n: ApiNode): Node {
     id: n.id,
     name: n.name,
     tailscaleIP: n.tailscale_ip,
+    removalRequestedAt: parseTimestamp(n.removal_requested_at ?? null),
+    removalError: n.removal_error ?? "",
     status: n.status,
     k3sRole: n.k3s_role,
     meshRole: n.mesh_role ?? "workload_builder",
@@ -106,8 +111,13 @@ export const nodes = {
   update: (orgId: string, nodeId: string, body: { mesh_role?: MeshRole; name?: string }, token: string) =>
     apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "PATCH", body: JSON.stringify(body) }, token),
 
+  // removed is false while the removal waits for Headscale; an older server
+  // answers 204, which means removed.
   delete: (orgId: string, nodeId: string, token: string) =>
-    apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "DELETE" }, token),
+    apiFetch<{ removed: boolean; error?: string } | undefined>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "DELETE" }, token),
+
+  cancelRemoval: (orgId: string, nodeId: string, token: string) =>
+    apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}/cancel-removal`, { method: "POST" }, token),
 
   createProvisioningToken: (orgId: string, label: string, expiresAt: string | null, token: string) =>
     apiFetch<ProvisioningTokenCreated>(

@@ -72,8 +72,13 @@ var nodeDeleteCmd = &cobra.Command{
 			}
 		}
 		c := apiClient()
-		if err := c.DeleteNode(orgID(), nodeID); err != nil {
+		res, err := c.DeleteNode(orgID(), nodeID)
+		if err != nil {
 			return err
+		}
+		if !res.Removed {
+			fmt.Printf("…  Node %s is waiting to be removed: %s\n   Meshploy retries every minute and removes it once Headscale drops its peer.\n", nodeID, res.Error)
+			return nil
 		}
 		fmt.Printf("✔  Node %s deleted.\n", nodeID)
 		return nil
@@ -182,9 +187,11 @@ Examples:
 
 		// ── Delete from DB + Headscale (fallback if self-deregister failed) ───
 		fmt.Printf("\nRemoving node record from Meshploy…\n")
-		if err := c.DeleteNode(orgID(), found.ID); err != nil {
+		if res, err := c.DeleteNode(orgID(), found.ID); err != nil {
 			// Non-fatal: self-deregister in uninstall.sh may have already removed it.
 			fmt.Printf("  (node record already removed or not found: %v)\n", err)
+		} else if !res.Removed {
+			fmt.Printf("  (waiting for Headscale to drop the peer; Meshploy retries every minute: %s)\n", res.Error)
 		}
 		fmt.Printf("✔  Node %q removed.\n", found.Name)
 		return nil

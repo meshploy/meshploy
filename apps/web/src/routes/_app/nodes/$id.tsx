@@ -146,6 +146,8 @@ function NodeDetailPage() {
     enabled: !!orgId,
     select: toNode,
     throwOnError: false,
+    // Watch a removal that is waiting for Headscale finish.
+    refetchInterval: (q) => (q.state.data?.removal_requested_at ? 15000 : false),
   })
 
   const { data: metricsData, dataUpdatedAt } = useQuery({
@@ -172,9 +174,21 @@ function NodeDetailPage() {
 
   const deleteMutation = useMutation({
     mutationFn: () => nodesApi.delete(orgId!, id, token),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["nodes", orgId] })
-      navigate({ to: "/nodes" })
+      if (res?.removed ?? true) {
+        navigate({ to: "/nodes" })
+        return
+      }
+      setConfirmDelete(false)
+      queryClient.invalidateQueries({ queryKey: ["node", orgId, id] })
+    },
+  })
+  const cancelRemoval = useMutation({
+    mutationFn: () => nodesApi.cancelRemoval(orgId!, id, token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["node", orgId, id] })
+      queryClient.invalidateQueries({ queryKey: ["nodes", orgId] })
     },
   })
 
@@ -259,21 +273,23 @@ function NodeDetailPage() {
                 <SquareTerminal className="h-3.5 w-3.5" />
                 Terminal
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove
-              </Button>
+              {!node.removalRequestedAt && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-1.5"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remove
+                </Button>
+              )}
             </>
           )}
 
           {node.k3sRole !== "server" && confirmDelete && (
             <>
-              <span className="text-xs text-muted-foreground">Remove this node?</span>
+              <span className="text-xs text-muted-foreground max-w-xs">Remove it from the mesh, the cluster and Meshploy? Software on the machine stays.</span>
               <Button
                 variant="destructive"
                 size="sm"
@@ -289,6 +305,29 @@ function NodeDetailPage() {
           )}
         </div>
       </div>
+
+      {deleteMutation.isError && (
+        <p role="alert" className="text-sm text-destructive">Could not remove the node: {(deleteMutation.error as Error).message}</p>
+      )}
+      {node.removalRequestedAt && (
+        <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+          <div>
+            <p className="text-sm font-medium">Removing: waiting for Headscale</p>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              {node.removalError || "Headscale has not confirmed the node's peer is gone."} Meshploy retries every minute. Once Headscale drops the peer, the node leaves the cluster and Meshploy; until then it stays, so the machine cannot rejoin unnoticed.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}>
+              {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Retry now
+            </Button>
+            <Button size="sm" variant="ghost" disabled={cancelRemoval.isPending} onClick={() => cancelRemoval.mutate()}>
+              Cancel removal
+            </Button>
+          </div>
+          {cancelRemoval.isError && <p role="alert" className="text-xs text-destructive">{(cancelRemoval.error as Error).message}</p>}
+        </div>
+      )}
 
       <ResourceIntro title="Capacity and utilization" description={computed ? "Live measurements from this node. Open Metrics for detailed monitoring." : "Reported hardware capacity. Live utilization is not available yet."}/>
       {/* Live metrics cards — only rendered when node_exporter is reachable */}
