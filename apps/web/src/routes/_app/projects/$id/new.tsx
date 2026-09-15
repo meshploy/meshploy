@@ -31,6 +31,7 @@ import { ConfigFileEditor } from "@/components/config-files/config-file-editor"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { StackEditor } from "@/components/stacks/stack-editor"
+import { invalidateProjectViews } from "@/lib/project-views"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -1848,8 +1849,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
       ),
     onSuccess: (stack) => {
       draftSaved()
-      queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      invalidateProjectViews(queryClient, orgId, projectId)
       navigate({
         to: "/projects/$id/stacks/$stackId/services",
         params: { id: projectId, stackId: stack.id },
@@ -1861,8 +1861,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
     mutationFn: () => stacksApi.create(orgId!, projectId, buildCreateBody(), token),
     onSuccess: (stack) => {
       draftSaved()
-      queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      invalidateProjectViews(queryClient, orgId, projectId)
       navigate({
         to: "/projects/$id/stacks/$stackId/editor",
         params: { id: projectId, stackId: stack.id },
@@ -1882,8 +1881,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
     },
     onSuccess: (stack) => {
       draftSaved()
-      queryClient.invalidateQueries({ queryKey: ["stacks", orgId, projectId] })
-      queryClient.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      invalidateProjectViews(queryClient, orgId, projectId)
       navigate({
         to: "/projects/$id/stacks/$stackId/services",
         params: { id: projectId, stackId: stack.id },

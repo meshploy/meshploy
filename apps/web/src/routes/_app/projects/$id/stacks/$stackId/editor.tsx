@@ -7,6 +7,7 @@ import { stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { StackEditor } from "@/components/stacks/stack-editor"
+import { invalidateProjectViews } from "@/lib/project-views"
 import { formatRelativeTime } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId/editor")({
@@ -58,6 +59,7 @@ function StackEditorTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: stackQueryKey })
       queryClient.invalidateQueries({ queryKey: servicesQueryKey })
+      invalidateProjectViews(queryClient, orgId, projectId)
       setDirty(false)
     },
   })
@@ -67,6 +69,7 @@ function StackEditorTab() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: stackQueryKey })
       queryClient.invalidateQueries({ queryKey: servicesQueryKey })
+      invalidateProjectViews(queryClient, orgId, projectId)
       setDirty(false)
       if (result.warning && result.suggested_mode && result.suggested_mode !== stack?.git_mode) {
         setSyncWarning({ message: result.warning, suggestedMode: result.suggested_mode })
