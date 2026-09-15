@@ -234,6 +234,7 @@ function StackEditorTab() {
             // field should not cost the user the outcome of their apply.
             const created = data.created ?? []
             const updated = data.updated ?? []
+            const deployed = data.deployed ?? []
             const deleted = data.deleted ?? []
             const errors = data.errors ?? []
             const warnings = data.warnings ?? []
@@ -242,6 +243,7 @@ function StackEditorTab() {
                 {syncMutation.isSuccess ? "Sync" : "Apply"} complete —
                 {created.length > 0 && ` created: ${created.join(", ")}`}
                 {updated.length > 0 && ` updated: ${updated.join(", ")}`}
+                {deployed.length > 0 && ` rolled out: ${deployed.join(", ")}`}
                 {deleted.length > 0 && ` unlinked: ${deleted.join(", ")}`}
                 {errors.length > 0 && (
                   <span className="text-destructive"> errors: {errors.join("; ")}</span>

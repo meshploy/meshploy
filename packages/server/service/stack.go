@@ -187,7 +187,7 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 //
 // files carries what the manifest's configs and secrets name by file:, keyed by
 // the path as written, since the server cannot read the client's directory.
-func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, name, spec string, triggerBy uuid.UUID, files map[string]string) (*ApplyResult, error) {
+func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, name, spec string, triggerBy uuid.UUID, files map[string]string, opts ...ApplyOptions) (*ApplyResult, error) {
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
@@ -221,7 +221,7 @@ func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, n
 		return nil, err
 	}
 
-	return s.apply(ctx, stack.ID, triggerBy, nil, mapFileSource(files))
+	return s.apply(ctx, stack.ID, triggerBy, nil, mapFileSource(files), applyOptions(opts))
 }
 
 func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
@@ -330,7 +330,7 @@ func (s *StackService) Destroy(ctx context.Context, stackID uuid.UUID, opts Dest
 
 // Sync fetches the compose spec from the stack's git source, updates Spec,
 // detects mode mismatches, then calls Apply.
-func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy uuid.UUID) (*SyncResult, error) {
+func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy uuid.UUID, opts ...ApplyOptions) (*SyncResult, error) {
 	var stack meshdb.Stack
 	if err := s.db.WithContext(ctx).Preload("GitIntegration").First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
@@ -357,7 +357,7 @@ func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy 
 
 	files, cleanup := s.gitFileSource(ctx, &stack)
 	defer cleanup()
-	applyResult, err := s.apply(ctx, stackID, triggeredBy, nil, files)
+	applyResult, err := s.apply(ctx, stackID, triggeredBy, nil, files, applyOptions(opts))
 	if err != nil {
 		return nil, err
 	}
@@ -547,6 +547,7 @@ type ApplyResult struct {
 	Created  []string
 	Updated  []string
 	Deleted  []string
+	Deployed []string // services this apply rolled out
 	Errors   []string
 	Warnings []string // what could not be carried over exactly, such as a UDP port
 }
@@ -555,13 +556,13 @@ type ApplyResult struct {
 // Apply — reconcile DB records from compose-go parsed spec
 // ---------------------------------------------------------------------------
 
-func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string) (*ApplyResult, error) {
-	return s.apply(ctx, stackID, triggerBy, envOverrides, nil)
+func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string, opts ...ApplyOptions) (*ApplyResult, error) {
+	return s.apply(ctx, stackID, triggerBy, envOverrides, nil, applyOptions(opts))
 }
 
 // apply reconciles a stack's spec. files reads what its configs and secrets
 // name by file:; nil when nothing is available to this apply.
-func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string, files stackFileSource) (*ApplyResult, error) {
+func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string, files stackFileSource, opts ApplyOptions) (*ApplyResult, error) {
 	var stack meshdb.Stack
 	if err := s.db.WithContext(ctx).First(&stack, "id = ?", stackID).Error; err != nil {
 		return nil, err
@@ -584,12 +585,14 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	// Services created by this apply are rolled out at the end; ones that already
 	// existed keep whatever run state the operator left them in.
 	var createdIDs []uuid.UUID
+	var changedSvcs []changedService
 
 	result := &ApplyResult{
 		Stack:    &stack,
 		Created:  []string{},
 		Updated:  []string{},
 		Deleted:  []string{},
+		Deployed: []string{},
 		Errors:   []string{},
 		Warnings: []string{},
 	}
@@ -697,6 +700,10 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					Engine:                     meshdb.DatabaseEngine(ext.Database.Engine),
 					Version:                    ext.Database.Version,
 					StorageGB:                  ext.Database.StorageGB,
+					CPURequest:                 cpuRequest,
+					CPULimit:                   cpuLimit,
+					MemoryRequest:              memRequest,
+					MemoryLimit:                memLimit,
 					DBName:                     ext.Database.DBName,
 					DBUser:                     ext.Database.DBUser,
 					DBPassword:                 ext.Database.DBPassword,
@@ -775,18 +782,49 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			if existingSvc.StackID == nil {
 				updates["stack_id"] = stackID
 			}
+			// What the spec now asks for, against what the service already
+			// has. An apply that changes nothing must roll nothing out.
+			want := serviceSpec{
+				Image:         svcDef.Image,
+				EnvVars:       envVarsStr,
+				Replicas:      replicas,
+				CPURequest:    cpuRequest,
+				CPULimit:      cpuLimit,
+				MemoryRequest: memRequest,
+				MemoryLimit:   memLimit,
+				Healthcheck:   hcCmd,
+				HCInterval:    hcInterval,
+				HCTimeout:     hcTimeout,
+				HCRetries:     hcRetries,
+				HCStartPeriod: hcStartPeriod,
+				Command:       joinArgs(svcDef.Entrypoint),
+				Args:          joinArgs(svcDef.Command),
+			}
+			changed := storedServiceSpec(existingSvc) != want
+
 			if err := s.db.WithContext(ctx).Model(&existingSvc).Updates(updates).Error; err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: update failed: %v", svcName, err))
 				continue
 			}
 			if !isDatabase && portsDeclared {
-				if err := s.syncStackPorts(ctx, existingSvc.ID, ports); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("%s: ports: %v", svcName, err))
+				portsChanged, perr := s.syncStackPorts(ctx, existingSvc.ID, ports)
+				if perr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("%s: ports: %v", svcName, perr))
 				}
+				changed = changed || portsChanged
 			}
-			s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName)
-			s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, svcFiles, result)
+			if s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName) {
+				changed = true
+			}
+			if s.syncConfigFiles(ctx, stack, existingSvc.ID, svcName, svcFiles, result) {
+				changed = true
+			}
 			result.Updated = append(result.Updated, svcName)
+			if changed {
+				changedSvcs = append(changedSvcs, changedService{
+					ID: existingSvc.ID, Name: svcName, Type: existingSvc.Type, Status: existingSvc.Status,
+				})
+			}
 		}
 	}
 
@@ -811,12 +849,14 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	stack.LastAppliedAt = &now
 	result.Stack = &stack
 
-	// Roll out what this apply created. "Apply" means make it so — leaving new
-	// services stopped turns a one-click template into a two-click one, and
-	// leaves any route created for them pointing at nothing.
+	// Roll out what this apply created or changed. "Apply" means make it so:
+	// leaving new services stopped turns a one-click template into a two-click
+	// one, and a changed image that never reaches the cluster looks like an
+	// apply that did nothing.
 	//
-	// Only newly created services are started. An apply that merely updates a
-	// stack must not resurrect a service the operator deliberately stopped.
+	// rolloutPlan decides which changed services go. A stopped one is never
+	// among them, since an apply must not resurrect a service the operator
+	// deliberately stopped; it is named in the warnings instead.
 	//
 	// A failed rollout is reported but does not fail the apply: the records are
 	// correct, only the rollout did not land, and that is visible on the
@@ -825,15 +865,33 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	// An instance with no cluster skips the rollout outright. There is nothing
 	// to deploy to, that is a supported state for local dev, and reporting it
 	// once per created service would repeat one instance-level fact N times.
+	if opts.NoDeploy {
+		// The caller is staging changes, so what would have rolled out is not
+		// advice they need.
+		return result, nil
+	}
+
+	deploy, warnings := rolloutPlan(changedSvcs)
+	result.Warnings = append(result.Warnings, warnings...)
+
 	if s.deployment.K8sConfigured() {
 		for i, id := range createdIDs {
-			if _, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: id, TriggeredBy: triggerBy}); err != nil {
-				name := ""
-				if i < len(result.Created) {
-					name = result.Created[i]
-				}
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: created but not deployed: %v", name, err))
+			name := ""
+			if i < len(result.Created) {
+				name = result.Created[i]
 			}
+			if _, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: id, TriggeredBy: triggerBy}); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: created but not deployed: %v", name, err))
+				continue
+			}
+			result.Deployed = append(result.Deployed, name)
+		}
+		for _, c := range deploy {
+			if _, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: c.ID, TriggeredBy: triggerBy}); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: updated but not deployed: %v", c.Name, err))
+				continue
+			}
+			result.Deployed = append(result.Deployed, c.Name)
 		}
 	}
 
@@ -898,9 +956,9 @@ func (s *StackService) attachVolumeMounts(
 	serviceID uuid.UUID,
 	mounts []composetypes.ServiceVolumeConfig,
 	volumesByName map[string]*meshdb.Volume,
-) {
+) (attached bool) {
 	if s.volumes == nil {
-		return
+		return false
 	}
 	for _, m := range mounts {
 		if m.Type != "volume" || m.Source == "" {
@@ -916,8 +974,11 @@ func (s *StackService) attachVolumeMounts(
 			First(&existing).Error == nil {
 			continue // already attached
 		}
-		s.volumes.Attach(ctx, vol.ID, serviceID, m.Target) //nolint:errcheck
+		if _, err := s.volumes.Attach(ctx, vol.ID, serviceID, m.Target); err == nil {
+			attached = true
+		}
 	}
+	return attached
 }
 
 // ---------------------------------------------------------------------------
@@ -1253,9 +1314,9 @@ func (s *StackService) syncConfigFiles(
 	svcName string,
 	files []meshployFile,
 	result *ApplyResult,
-) {
+) (changed bool) {
 	if s.configFiles == nil || len(files) == 0 {
-		return
+		return false
 	}
 	for _, f := range files {
 		name := fmt.Sprintf("%s-%s", svcName, path.Base(f.Path))
@@ -1267,10 +1328,16 @@ func (s *StackService) syncConfigFiles(
 
 		in := CreateConfigFileInput{Name: name, Path: f.Path, Content: f.Content, StackID: &stack.ID}
 		if err == nil {
+			if string(existing.Content) != f.Content || existing.Name != name {
+				changed = true
+			}
 			if _, uerr := s.configFiles.Update(ctx, existing.ID, in); uerr != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: config %s: %v", svcName, f.Path, uerr))
 			}
-			_ = s.configFiles.Attach(ctx, existing.ID, serviceID) // already-attached is not an error here
+			// An attach that succeeds is a file this service did not have.
+			if aerr := s.configFiles.Attach(ctx, existing.ID, serviceID); aerr == nil {
+				changed = true
+			}
 			continue
 		}
 
@@ -1279,8 +1346,10 @@ func (s *StackService) syncConfigFiles(
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: config %s: %v", svcName, f.Path, cerr))
 			continue
 		}
+		changed = true
 		if aerr := s.configFiles.Attach(ctx, created.ID, serviceID); aerr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: attach config %s: %v", svcName, f.Path, aerr))
 		}
 	}
+	return changed
 }

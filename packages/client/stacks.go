@@ -13,8 +13,15 @@ type ApplyResult struct {
 	Created  []string `json:"created"`
 	Updated  []string `json:"updated"`
 	Deleted  []string `json:"deleted"`
+	Deployed []string `json:"deployed"`
 	Errors   []string `json:"errors"`
 	Warnings []string `json:"warnings"`
+}
+
+// ApplyOptions carries what an apply does beyond reconciling the records.
+type ApplyOptions struct {
+	// NoDeploy writes the records and rolls nothing out.
+	NoDeploy bool
 }
 
 type CreateStackBody struct {
@@ -83,10 +90,13 @@ func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, err
 // reconciles it in one call. Idempotent — re-applying converges in place.
 // files carries what its configs and secrets name by file:, keyed by the path
 // as written; nil when there are none.
-func (c *Client) ApplyManifest(orgID, projectID, name, spec string, files map[string]string) (*ApplyResult, error) {
+func (c *Client) ApplyManifest(orgID, projectID, name, spec string, files map[string]string, opts ...ApplyOptions) (*ApplyResult, error) {
 	body := map[string]any{"name": name, "spec": spec}
 	if len(files) > 0 {
 		body["files"] = files
+	}
+	if len(opts) > 0 && opts[0].NoDeploy {
+		body["deploy"] = false
 	}
 	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/apply", body)
 	if err != nil {

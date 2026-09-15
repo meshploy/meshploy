@@ -28,6 +28,8 @@ export interface ApplyStackResult {
   created: string[]
   updated: string[]
   deleted: string[]
+  /** Services this apply rolled out. */
+  deployed?: string[]
   errors: string[]
   warnings?: string[]
 }

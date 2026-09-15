@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	applyFile    string
-	applyProject string
-	applyName    string
+	applyFile     string
+	applyProject  string
+	applyName     string
+	applyNoDeploy bool
 )
 
 var applyCmd = &cobra.Command{
@@ -25,6 +26,10 @@ var applyCmd = &cobra.Command{
 The manifest is upserted as a stack named --name (default: the manifest file's
 base name) and reconciled into live services in a single call. Idempotent — run
 it again to converge on the same spec.
+
+Services the apply changes are rolled out, so a changed image or command reaches
+the cluster. A stopped service is never started, and --no-deploy writes the
+records without rolling anything out.
 
 Example:
   meshploy apply -f compose.yml --project my-project`,
@@ -50,7 +55,7 @@ Example:
 
 		c := apiClient()
 		pid := resolveProjectID(applyProject)
-		result, err := c.ApplyManifest(orgID(), pid, name, string(data), files)
+		result, err := c.ApplyManifest(orgID(), pid, name, string(data), files, client.ApplyOptions{NoDeploy: applyNoDeploy})
 		if err != nil {
 			return err
 		}
@@ -116,6 +121,9 @@ func printApplyResult(r *client.ApplyResult) {
 	if len(r.Updated) > 0 {
 		fmt.Printf("  Updated: %s\n", strings.Join(r.Updated, ", "))
 	}
+	if len(r.Deployed) > 0 {
+		fmt.Printf("  Rolled out: %s\n", strings.Join(r.Deployed, ", "))
+	}
 	if len(r.Deleted) > 0 {
 		fmt.Printf("  Deleted: %s\n", strings.Join(r.Deleted, ", "))
 	}
@@ -137,5 +145,6 @@ func init() {
 	applyCmd.Flags().StringVarP(&applyFile, "file", "f", "", "Path to the compose manifest (required)")
 	applyCmd.Flags().StringVar(&applyProject, "project", "", "Project name or ID")
 	applyCmd.Flags().StringVar(&applyName, "name", "", "Stack name (default: manifest file base name)")
+	applyCmd.Flags().BoolVar(&applyNoDeploy, "no-deploy", false, "Update the records without rolling anything out")
 	rootCmd.AddCommand(applyCmd)
 }

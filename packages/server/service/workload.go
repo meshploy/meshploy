@@ -108,6 +108,24 @@ func (s *WorkloadService) getByID(ctx context.Context, serviceID uuid.UUID) (*db
 	return &service, err
 }
 
+// setResources copies the resource settings a caller gave onto a new service.
+// Each is optional: an empty one leaves the column default in place, which is
+// what the console sends when the user names none.
+func setResources(service *db.Service, in CreateWorkloadInput) {
+	if in.CPURequest != "" {
+		service.CPURequest = in.CPURequest
+	}
+	if in.CPULimit != "" {
+		service.CPULimit = in.CPULimit
+	}
+	if in.MemoryRequest != "" {
+		service.MemoryRequest = in.MemoryRequest
+	}
+	if in.MemoryLimit != "" {
+		service.MemoryLimit = in.MemoryLimit
+	}
+}
+
 // defaultDBVersion is the version a managed database gets when none is given.
 func defaultDBVersion(engine db.DatabaseEngine) string {
 	switch engine {
@@ -210,6 +228,10 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		Command:                    in.Command,
 		Args:                       in.Args,
 	}
+	// An empty resource setting keeps the column default. Leaving these out
+	// entirely ran a service on the defaults until something updated it, even
+	// when its stack spec asked for more.
+	setResources(service, in)
 
 	if in.GitRepo != "" {
 		if err := validateBuilderResources(in.BuilderCPURequest, in.BuilderCPULimit, in.BuilderMemoryRequest, in.BuilderMemoryLimit); err != nil {
@@ -390,8 +412,9 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 		Type:     db.ServiceTypeDatabase,
 		Image:    image,
 		Status:   db.ServiceStopped,
-		Replicas: 1,
+		Replicas: max(in.Replicas, 1),
 	}
+	setResources(service, in)
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(service).Error; err != nil {
 			return err

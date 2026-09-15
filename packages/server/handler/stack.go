@@ -74,6 +74,7 @@ type syncResultBody struct {
 	Created       []string  `json:"created"`
 	Updated       []string  `json:"updated"`
 	Deleted       []string  `json:"deleted"`
+	Deployed      []string  `json:"deployed"`
 	Errors        []string  `json:"errors"`
 	Warnings      []string  `json:"warnings"`
 	SuggestedMode string    `json:"suggested_mode,omitempty"`
@@ -107,6 +108,9 @@ type ListStackServicesOutput struct {
 
 type ApplyStackBody struct {
 	EnvOverrides map[string]string `json:"env_overrides,omitempty"`
+	// Deploy left out means true: an apply rolls out the services it changed.
+	// Sending false reconciles the records and rolls nothing out.
+	Deploy *bool `json:"deploy,omitempty" doc:"Roll out the services this apply changes (default true)"`
 }
 
 type ApplyStackInput struct {
@@ -125,6 +129,7 @@ type applyResultBody struct {
 	Created  []string  `json:"created"`
 	Updated  []string  `json:"updated"`
 	Deleted  []string  `json:"deleted"`
+	Deployed []string  `json:"deployed"`
 	Errors   []string  `json:"errors"`
 	Warnings []string  `json:"warnings"`
 }
@@ -397,6 +402,7 @@ func (h *Handler) SyncStack(ctx context.Context, input *SyncStackInput) (*SyncRe
 		Created:       result.Created,
 		Updated:       result.Updated,
 		Deleted:       result.Deleted,
+		Deployed:      result.Deployed,
 		Errors:        result.Errors,
 		Warnings:      result.Warnings,
 		SuggestedMode: string(result.SuggestedMode),
@@ -448,9 +454,10 @@ type ApplyManifestInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		Name string `json:"name" minLength:"1" maxLength:"100" doc:"Stack name — the manifest is upserted under this name"`
-		Spec  string            `json:"spec" minLength:"1" doc:"Docker Compose–style YAML with x-meshploy extensions"`
-		Files map[string]string `json:"files,omitempty" doc:"Files the manifest's configs and secrets name by file:, keyed by the path as written"`
+		Name   string            `json:"name" minLength:"1" maxLength:"100" doc:"Stack name — the manifest is upserted under this name"`
+		Spec   string            `json:"spec" minLength:"1" doc:"Docker Compose–style YAML with x-meshploy extensions"`
+		Files  map[string]string `json:"files,omitempty" doc:"Files the manifest's configs and secrets name by file:, keyed by the path as written"`
+		Deploy *bool             `json:"deploy,omitempty" doc:"Roll out the services this apply changes (default true)"`
 	}
 }
 
@@ -459,7 +466,8 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.svc.Stacks.ApplyManifest(ctx, projectID, input.Body.Name, input.Body.Spec, userID, input.Body.Files)
+	result, err := h.svc.Stacks.ApplyManifest(ctx, projectID, input.Body.Name, input.Body.Spec, userID, input.Body.Files,
+		service.ApplyOptions{NoDeploy: input.Body.Deploy != nil && !*input.Body.Deploy})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -468,6 +476,7 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 		Created:  result.Created,
 		Updated:  result.Updated,
 		Deleted:  result.Deleted,
+		Deployed: result.Deployed,
 		Errors:   result.Errors,
 		Warnings: result.Warnings,
 	}}, nil
@@ -499,7 +508,8 @@ func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*Appl
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.svc.Stacks.Apply(ctx, stackID, userID, input.Body.EnvOverrides)
+	result, err := h.svc.Stacks.Apply(ctx, stackID, userID, input.Body.EnvOverrides,
+		service.ApplyOptions{NoDeploy: input.Body.Deploy != nil && !*input.Body.Deploy})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -508,6 +518,7 @@ func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*Appl
 		Created:  result.Created,
 		Updated:  result.Updated,
 		Deleted:  result.Deleted,
+		Deployed: result.Deployed,
 		Errors:   result.Errors,
 		Warnings: result.Warnings,
 	}}, nil

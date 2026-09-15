@@ -168,14 +168,19 @@ func nameStackPorts(ports []PortInput) {
 }
 
 // syncStackPorts replaces a stack service's ports with the ones its compose
-// definition declares. A public port that stays keeps its assigned NodePort,
-// so a re-apply does not move it.
-func (s *StackService) syncStackPorts(ctx context.Context, serviceID uuid.UUID, ports []PortInput) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// definition declares, and reports whether that changed anything. A public port
+// that stays keeps its assigned NodePort, so a re-apply does not move it.
+func (s *StackService) syncStackPorts(ctx context.Context, serviceID uuid.UUID, ports []PortInput) (bool, error) {
+	changed := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current []meshdb.ServicePort
 		if err := tx.Where("service_id = ?", serviceID).Find(&current).Error; err != nil {
 			return err
 		}
+		if samePorts(current, ports) {
+			return nil
+		}
+		changed = true
 		nodePorts := make(map[int]int, len(current))
 		for _, p := range current {
 			nodePorts[p.Port] = p.NodePort
@@ -201,4 +206,32 @@ func (s *StackService) syncStackPorts(ctx context.Context, serviceID uuid.UUID, 
 		}
 		return nil
 	})
+	return changed, err
+}
+
+// samePorts reports whether a service's stored ports already are the ones
+// compose declares. Assigned NodePorts are left out: a deploy assigns those,
+// the spec does not, and comparing them would make every apply look like a
+// change.
+func samePorts(current []meshdb.ServicePort, want []PortInput) bool {
+	if len(current) != len(want) {
+		return false
+	}
+	type key struct {
+		name                  string
+		port                  int
+		http, primary, public bool
+	}
+	have := make(map[key]int, len(current))
+	for _, p := range current {
+		have[key{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic}]++
+	}
+	for _, p := range want {
+		k := key{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic}
+		if have[k] == 0 {
+			return false
+		}
+		have[k]--
+	}
+	return true
 }
