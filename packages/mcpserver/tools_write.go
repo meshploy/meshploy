@@ -248,20 +248,32 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 
 	ms.AddTool(
 		mcp.NewTool("create_stack",
-			mcp.WithDescription("Create a new stack with a Docker Compose–style YAML spec."),
+			mcp.WithDescription("Create a new stack, either from an inline Docker Compose–style YAML spec or from a git repo the platform reads the compose file from. Secrets belong in variables, not in the spec."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Stack name")),
-			mcp.WithString("spec", mcp.Description("Docker Compose–style YAML spec (optional, can apply later)")),
+			mcp.WithString("spec", mcp.Description("Docker Compose–style YAML spec (optional, can apply later; leave out for a git-backed stack)")),
+			mcp.WithString("variables", mcp.Description("Values the spec interpolates as ${NAME}, as KEY=VALUE lines. Write-only: no tool reads them back")),
+			mcp.WithString("git_repo", mcp.Description("Repo the compose file is read from, e.g. https://github.com/owner/repo. Set it instead of spec to make the stack git-backed, then reconcile with sync_stack")),
+			mcp.WithString("git_mode", mcp.Description("file = fetch the compose file only (default when git_repo is set), repo = clone the whole repo, needed when a service builds from source")),
+			mcp.WithString("git_branch", mcp.Description("Branch to read (default main)")),
+			mcp.WithString("git_path", mcp.Description("Path of the compose file in the repo (default docker-compose.yml)")),
+			mcp.WithString("git_integration_id", mcp.Description("Git integration to authenticate with, for a private repo. Leave out for a public one")),
 		),
 		s.handleCreateStack,
 	)
 
 	ms.AddTool(
 		mcp.NewTool("update_stack",
-			mcp.WithDescription("Update a stack's YAML spec."),
+			mcp.WithDescription("Update a stack: its YAML spec, its variables, or its git source. Only what is sent changes; apply_stack or sync_stack then rolls it out."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
 			mcp.WithString("stack_id", mcp.Required(), mcp.Description("Stack ID or name")),
-			mcp.WithString("spec", mcp.Required(), mcp.Description("New Docker Compose–style YAML spec")),
+			mcp.WithString("spec", mcp.Description("New Docker Compose–style YAML spec")),
+			mcp.WithString("variables", mcp.Description("Values the spec interpolates as ${NAME}, as KEY=VALUE lines. Replaces the whole set; write-only")),
+			mcp.WithString("git_repo", mcp.Description("Repo the compose file is read from; empty string detaches the stack from git")),
+			mcp.WithString("git_mode", mcp.Description("file = fetch the compose file only, repo = clone the whole repo")),
+			mcp.WithString("git_branch", mcp.Description("Branch to read")),
+			mcp.WithString("git_path", mcp.Description("Path of the compose file in the repo")),
+			mcp.WithString("git_integration_id", mcp.Description("Git integration to authenticate with; empty string clears it")),
 		),
 		s.handleUpdateStack,
 	)
@@ -472,7 +484,29 @@ func (s *srv) handleCreateStack(_ context.Context, req mcp.CallToolRequest) (*mc
 	if name == "" {
 		return mcp.NewToolResultError("name is required"), nil
 	}
-	st, err := s.c.CreateStack(s.orgID, projectID, client.CreateStackBody{Name: name, Spec: spec})
+	body := client.CreateStackBody{
+		Name:      name,
+		Spec:      spec,
+		GitRepo:   mcp.ParseString(req, "git_repo", ""),
+		GitMode:   mcp.ParseString(req, "git_mode", ""),
+		GitBranch: mcp.ParseString(req, "git_branch", ""),
+		GitPath:   mcp.ParseString(req, "git_path", ""),
+	}
+	if vars := mcp.ParseString(req, "variables", ""); vars != "" {
+		parsed, err := parseKeyValues(vars)
+		if err != nil {
+			return mcp.NewToolResultError("variables: " + err.Error()), nil
+		}
+		body.Variables = parsed
+	}
+	if id := mcp.ParseString(req, "git_integration_id", ""); id != "" {
+		body.GitIntegrationID = &id
+	}
+	// A repo with no mode would be stored as an inline stack that never syncs.
+	if body.GitRepo != "" && body.GitMode == "" {
+		body.GitMode = "file"
+	}
+	st, err := s.c.CreateStack(s.orgID, projectID, body)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -482,13 +516,51 @@ func (s *srv) handleCreateStack(_ context.Context, req mcp.CallToolRequest) (*mc
 func (s *srv) handleUpdateStack(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	projectID := mcp.ParseString(req, "project_id", "")
 	stackRef := mcp.ParseString(req, "stack_id", "")
-	spec := mcp.ParseString(req, "spec", "")
+
+	// Only what the caller sent changes: an argument left out keeps what the
+	// stack has, so a variables-only update cannot wipe the spec.
+	var body client.UpdateStackBody
+	sent := false
+	if spec, ok := argString(req, "spec"); ok {
+		body.Spec, sent = &spec, true
+	}
+	if vars, ok := argString(req, "variables"); ok {
+		parsed, err := parseKeyValues(vars)
+		if err != nil {
+			return mcp.NewToolResultError("variables: " + err.Error()), nil
+		}
+		body.Variables, sent = parsed, true
+	}
+	for _, f := range []struct {
+		key string
+		dst **string
+	}{
+		{"git_repo", &body.GitRepo},
+		{"git_mode", &body.GitMode},
+		{"git_branch", &body.GitBranch},
+		{"git_path", &body.GitPath},
+		{"git_integration_id", &body.GitIntegrationID},
+	} {
+		if v, ok := argString(req, f.key); ok {
+			val := v
+			*f.dst, sent = &val, true
+		}
+	}
+	// Detaching from git without saying so would leave a mode that syncs from
+	// a repo the stack no longer has.
+	if body.GitRepo != nil && *body.GitRepo == "" && body.GitMode == nil {
+		raw := ""
+		body.GitMode = &raw
+	}
+	if !sent {
+		return mcp.NewToolResultError("nothing to update: send spec, variables or a git field"), nil
+	}
 
 	st, err := s.c.GetStackByName(s.orgID, projectID, stackRef)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	updated, err := s.c.UpdateStack(s.orgID, projectID, st.ID, client.UpdateStackBody{Spec: spec})
+	updated, err := s.c.UpdateStack(s.orgID, projectID, st.ID, body)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

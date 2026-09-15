@@ -27,11 +27,31 @@ type ApplyOptions struct {
 type CreateStackBody struct {
 	Name string `json:"name"`
 	Spec string `json:"spec"`
+	// Variables interpolate into the spec as ${NAME}. Write-only - no read
+	// endpoint returns them, so a caller cannot read a secret back out.
+	Variables map[string]string `json:"variables,omitempty"`
+
+	// Git source. All empty means the stack holds the inline spec above.
+	GitMode          string  `json:"git_mode,omitempty"` // "" | "file" | "repo"
+	GitRepo          string  `json:"git_repo,omitempty"`
+	GitBranch        string  `json:"git_branch,omitempty"`
+	GitPath          string  `json:"git_path,omitempty"`
+	GitIntegrationID *string `json:"git_integration_id,omitempty"` // nil = public repo
 }
 
+// UpdateStackBody changes only the fields it carries: a nil pointer, an empty
+// name and nil variables keep what the stack has.
 type UpdateStackBody struct {
-	Name string `json:"name,omitempty"`
-	Spec string `json:"spec"`
+	Name      string            `json:"name,omitempty"`
+	Spec      *string           `json:"spec,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+
+	// Git source
+	GitMode          *string `json:"git_mode,omitempty"`
+	GitRepo          *string `json:"git_repo,omitempty"`
+	GitBranch        *string `json:"git_branch,omitempty"`
+	GitPath          *string `json:"git_path,omitempty"`
+	GitIntegrationID *string `json:"git_integration_id,omitempty"` // "" = clear, UUID = set
 }
 
 func (c *Client) ListStacks(orgID, projectID string) ([]Stack, error) {
