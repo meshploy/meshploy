@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.1](https://github.com/meshploy/meshploy/compare/v0.14.0...v0.14.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* change only the fields a stack update is sent ([78ab101](https://github.com/meshploy/meshploy/commit/78ab101cf80334738134d0b294f01e98295cbe47))
+* roll out the services an apply changes ([247daed](https://github.com/meshploy/meshploy/commit/247daed950d3760f07d404ed1f85778ec1deb3ac))
+* write stack x-meshploy defaults from the same code apply uses ([0eb9f2a](https://github.com/meshploy/meshploy/commit/0eb9f2ab8448f8aa517a2f10d8caae1f03d4fb31))
+
 ## [0.14.0](https://github.com/meshploy/meshploy/compare/v0.13.1...v0.14.0) (2026-09-14)
 
 
