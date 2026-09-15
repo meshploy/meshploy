@@ -572,6 +572,13 @@ type Service struct {
 	Command StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"command,omitempty"`
 	Args    StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"args,omitempty"`
 
+	// DeployedSpecHash fingerprints what last reached the cluster, so an apply
+	// can tell a service that is behind from one that is current. The record
+	// alone cannot: a rollout that is skipped, because a deploy was already in
+	// flight, leaves the record correct and the cluster old, and every later
+	// apply then sees nothing to do. Empty means nothing is recorded yet.
+	DeployedSpecHash string `gorm:"not null;default:''" json:"-"`
+
 	Project                 Project              `gorm:"foreignKey:ProjectID"                                         json:"-"`
 	Node                    *Node                `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"               json:"-"`
 	PullRegistryIntegration *RegistryIntegration `gorm:"foreignKey:PullRegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`

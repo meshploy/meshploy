@@ -40,6 +40,8 @@ func (s *WorkloadService) StartStatusReconciler(ctx context.Context) {
 	if s.k8s == nil {
 		return
 	}
+	s.backfillDeployedSpecs(ctx)
+
 	ticker := time.NewTicker(statusReconcileInterval)
 	defer ticker.Stop()
 	for {
@@ -197,4 +199,49 @@ func deriveServiceStatus(state appk8s.DeploymentState) db.ServiceStatus {
 		// Replicas wanted, none ready yet, still progressing.
 		return db.ServiceDeploying
 	}
+}
+
+// backfillDeployedSpecs records what is already running as deployed, once at
+// startup.
+//
+// A service that has never recorded a fingerprint reads as behind, which is
+// what makes a skipped rollout recoverable. Without this, the first apply after
+// this shipped would redeploy every service that predates it. Running and
+// stopped services are taken at their record: the cluster has a Deployment
+// built from it, scaled to zero in the stopped case. Failed and deploying ones
+// are left empty on purpose, since those are exactly the ones that may be
+// behind.
+func (s *WorkloadService) backfillDeployedSpecs(ctx context.Context) {
+	var services []db.Service
+	if err := s.db.WithContext(ctx).
+		Preload("Ports").
+		Where("deployed_spec_hash = ? AND status IN ?", "", []db.ServiceStatus{db.ServiceRunning, db.ServiceStopped}).
+		Find(&services).Error; err != nil {
+		log.Printf("deployed spec backfill: %v", err)
+		return
+	}
+	for i := range services {
+		if err := s.MarkDeployed(ctx, services[i].ID); err != nil {
+			log.Printf("deployed spec backfill: %s: %v", services[i].Name, err)
+		}
+	}
+	if len(services) > 0 {
+		log.Printf("recorded what %d already-deployed services run", len(services))
+	}
+}
+
+// MarkDeployed records a service's current spec as the one the cluster runs.
+//
+// The deploy paths call it when a rollout lands. It is exported because that is
+// not the only way a service and the cluster come to agree: a backfill says so
+// for services that were already running, and an operator tool can say so after
+// putting things right by hand.
+func (s *WorkloadService) MarkDeployed(ctx context.Context, serviceID uuid.UUID) error {
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Ports").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return err
+	}
+	hash := fingerprint(storedServiceSpec(svc), portPrintsFromRows(svc.Ports))
+	return s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).
+		Update("deployed_spec_hash", hash).Error
 }

@@ -631,7 +631,7 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 
 	// Current services in this stack.
 	var existing []meshdb.Service
-	s.db.WithContext(ctx).Where("stack_id = ?", stackID).Find(&existing)
+	s.db.WithContext(ctx).Preload("Ports").Where("stack_id = ?", stackID).Find(&existing)
 	existingByName := make(map[string]meshdb.Service, len(existing))
 	for _, svc := range existing {
 		existingByName[svc.Name] = svc
@@ -800,7 +800,16 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				Command:       joinArgs(svcDef.Entrypoint),
 				Args:          joinArgs(svcDef.Command),
 			}
-			changed := storedServiceSpec(existingSvc) != want
+			// Against what the cluster was last given, not against the record:
+			// a rollout skipped because a deploy was in flight leaves the record
+			// correct and the cluster old, and comparing records then finds
+			// nothing to do, forever. An empty fingerprint is unknown, which
+			// counts as behind.
+			wantPorts := portPrintsFromInputs(ports)
+			if isDatabase || !portsDeclared {
+				wantPorts = portPrintsFromRows(existingSvc.Ports)
+			}
+			changed := existingSvc.DeployedSpecHash != fingerprint(want, wantPorts)
 
 			if err := s.db.WithContext(ctx).Model(&existingSvc).Updates(updates).Error; err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: update failed: %v", svcName, err))

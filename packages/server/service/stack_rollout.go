@@ -1,7 +1,10 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -101,4 +104,46 @@ func rolloutPlan(changed []changedService) (deploy []changedService, warnings []
 		}
 	}
 	return deploy, warnings
+}
+
+// portPrint is a port as it shapes the pod, without the NodePort a deploy
+// assigns.
+type portPrint struct {
+	Name                  string
+	Port                  int
+	HTTP, Primary, Public bool
+}
+
+func portPrintsFromInputs(ports []PortInput) []portPrint {
+	out := make([]portPrint, 0, len(ports))
+	for _, p := range ports {
+		out = append(out, portPrint{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic})
+	}
+	return out
+}
+
+func portPrintsFromRows(ports []meshdb.ServicePort) []portPrint {
+	out := make([]portPrint, 0, len(ports))
+	for _, p := range ports {
+		out = append(out, portPrint{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic})
+	}
+	return out
+}
+
+// fingerprint identifies a service as the cluster would run it, so what was
+// deployed can be compared with what is wanted. Config files and volumes are
+// left out: they are compared directly during an apply, which sees both sides.
+func fingerprint(spec serviceSpec, ports []portPrint) string {
+	slices.SortFunc(ports, func(a, b portPrint) int {
+		if a.Port != b.Port {
+			return a.Port - b.Port
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	h := sha256.New()
+	fmt.Fprintf(h, "%#v", spec)
+	for _, p := range ports {
+		fmt.Fprintf(h, "|%s:%d:%t:%t:%t", p.Name, p.Port, p.HTTP, p.Primary, p.Public)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

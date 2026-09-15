@@ -285,6 +285,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			s.failDeployment(deploymentID, "failed to apply K8s deployment: "+err.Error())
 			return
 		}
+		s.markDeployed(bgCtx, svc, wp.Image)
 		if err := appk8s.ApplyService(bgCtx, s.k8s, appK8sName(svc), namespace, portSpecs); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
 			return
@@ -498,6 +499,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
 		return
 	}
+	s.markDeployed(ctx, &a.svc, wp.Image)
 	if err := appk8s.ApplyService(ctx, s.k8s, appK8sName(&a.svc), a.namespace, portSpecs); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s service: "+err.Error())
 		return
@@ -610,7 +612,28 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	if svc.Status != db.ServiceRunning || svc.Image == "" {
 		return nil
 	}
-	return appk8s.ApplyDeployment(ctx, s.k8s, s.workloadParams(ctx, &svc, svc.Image, uuid.Nil))
+	if err := appk8s.ApplyDeployment(ctx, s.k8s, s.workloadParams(ctx, &svc, svc.Image, uuid.Nil)); err != nil {
+		return err
+	}
+	s.markDeployed(ctx, &svc, svc.Image)
+	return nil
+}
+
+// markDeployed records what the cluster now runs, so a later apply can tell a
+// service that is behind from one that is current. image is what was deployed,
+// which for a rollback is an older one than the record carries.
+//
+// A failure here is logged rather than returned: the rollout happened, and the
+// worst a missing fingerprint costs is one redundant rollout later.
+func (s *DeploymentService) markDeployed(ctx context.Context, svc *db.Service, image string) {
+	spec := storedServiceSpec(*svc)
+	spec.Image = image
+	hash := fingerprint(spec, portPrintsFromRows(svc.Ports))
+	if err := s.db.WithContext(ctx).Model(&db.Service{}).
+		Where("id = ?", svc.ID).
+		Update("deployed_spec_hash", hash).Error; err != nil {
+		log.Printf("deploy: record what %s runs: %v", svc.Name, err)
+	}
 }
 
 // workloadParams describes a service to the cluster from its stored record: the
@@ -824,6 +847,7 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 			s.failDeployment(dep.ID, "rollback failed: "+err.Error())
 			return
 		}
+		s.markDeployed(context.Background(), &svc, wp.Image)
 		if err := appk8s.ApplyService(context.Background(), s.k8s, appK8sName(&svc), namespace, portSpecs); err != nil {
 			s.failDeployment(dep.ID, "rollback failed to apply K8s service: "+err.Error())
 			return
