@@ -54,8 +54,10 @@ func CreateRunJob(ctx context.Context, client kubernetes.Interface, p RunJobPara
 	}
 
 	podSpec := corev1.PodSpec{
-		RestartPolicy: corev1.RestartPolicyNever,
-		Containers:    []corev1.Container{container},
+		// No legacy service-link variables: see ApplyDeployment.
+		EnableServiceLinks: boolPtr(false),
+		RestartPolicy:      corev1.RestartPolicyNever,
+		Containers:         []corev1.Container{container},
 	}
 	if p.NodeName != "" {
 		podSpec.NodeName = p.NodeName

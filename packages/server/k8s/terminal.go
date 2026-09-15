@@ -50,6 +50,8 @@ func CreateShellPod(ctx context.Context, client kubernetes.Interface, k8sNodeNam
 			},
 		},
 		Spec: corev1.PodSpec{
+			// No legacy service-link variables: see ApplyDeployment.
+			EnableServiceLinks:            boolPtr(false),
 			NodeName:                      k8sNodeName,
 			HostPID:                       true,
 			HostNetwork:                   true,

@@ -190,8 +190,15 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 	}
 
 	podSpec := corev1.PodSpec{
-		Containers: []corev1.Container{container},
-		Volumes:    podVolumes,
+		// Kubernetes otherwise injects a variable per service in the namespace,
+		// named after it: a service called neo4j gives every container
+		// NEO4J_PORT_7687_TCP_PORT and a dozen more. Neo4j reads its own
+		// NEO4J_* variables as configuration and refused to start. They are a
+		// pre-DNS mechanism nothing here uses, and a namespace full of services
+		// makes them a collision waiting for the right name.
+		EnableServiceLinks: boolPtr(false),
+		Containers:         []corev1.Container{container},
+		Volumes:            podVolumes,
 	}
 	if p.NodeName != "" {
 		podSpec.NodeName = p.NodeName
@@ -450,7 +457,9 @@ func ApplyDatabaseDeployment(ctx context.Context, client kubernetes.Interface, p
 		ReadinessProbe: p.ReadinessProbe,
 	}
 	podSpec := corev1.PodSpec{
-		Containers: []corev1.Container{dbContainer},
+		// No legacy service-link variables: see ApplyDeployment.
+		EnableServiceLinks: boolPtr(false),
+		Containers:         []corev1.Container{dbContainer},
 		Volumes: []corev1.Volume{
 			{
 				Name: "data",

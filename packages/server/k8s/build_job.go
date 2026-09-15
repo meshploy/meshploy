@@ -150,7 +150,9 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 					Labels: map[string]string{"job-name": p.JobName},
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
+					// No legacy service-link variables: see ApplyDeployment.
+					EnableServiceLinks: boolPtr(false),
+					RestartPolicy:      corev1.RestartPolicyNever,
 					// Use ndots:1 so external hostnames like github.com are
 					// queried directly without appending cluster search domains.
 					// Alpine's musl libc resolver sends all search domain variants

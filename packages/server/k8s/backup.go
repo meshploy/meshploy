@@ -136,6 +136,8 @@ func CreateEphemeralPod(ctx context.Context, client kubernetes.Interface, name, 
 			},
 		},
 		Spec: corev1.PodSpec{
+			// No legacy service-link variables: see ApplyDeployment.
+			EnableServiceLinks:            boolPtr(false),
 			RestartPolicy:                 corev1.RestartPolicyNever,
 			TerminationGracePeriodSeconds: &grace,
 			Containers: []corev1.Container{{
