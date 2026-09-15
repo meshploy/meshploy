@@ -33,3 +33,24 @@ func TestDeriveStackStatus(t *testing.T) {
 		})
 	}
 }
+
+// A failed service is examined again, so one whose pod recovered stops reading
+// as failed. A stopped one is not: that is a decision, not an observation.
+func TestReconcilerLooksAtFailedButNotStoppedServices(t *testing.T) {
+	has := func(want db.ServiceStatus) bool {
+		for _, s := range reconciledStatuses {
+			if s == want {
+				return true
+			}
+		}
+		return false
+	}
+	for _, s := range []db.ServiceStatus{db.ServiceRunning, db.ServiceDeploying, db.ServiceFailed} {
+		if !has(s) {
+			t.Errorf("%q is not reconciled against the cluster", s)
+		}
+	}
+	if has(db.ServiceStopped) {
+		t.Error("a stopped service must be left alone")
+	}
+}

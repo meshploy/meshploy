@@ -16,6 +16,12 @@ import (
 // stuck rollout stops claiming success within a minute.
 const statusReconcileInterval = 30 * time.Second
 
+// reconciledStatuses are the stored statuses worth checking against the
+// cluster. Stopped is absent on purpose: it is a decision someone made rather
+// than something observed, and the cluster agreeing that nothing runs would
+// otherwise be read as news.
+var reconciledStatuses = []db.ServiceStatus{db.ServiceRunning, db.ServiceDeploying, db.ServiceFailed}
+
 // StartStatusReconciler keeps a service's stored status honest.
 //
 // Status used to be written from whether an API call returned without error —
@@ -23,9 +29,13 @@ const statusReconcileInterval = 30 * time.Second
 // could never be scheduled. The row then reported a service that was not
 // running and never would be, with the real reason only visible in kubectl.
 //
-// Only services already marked running or deploying are examined. A stopped or
-// failed service reflects a decision someone made, and this must not overrule
-// it; drift in that direction is left alone deliberately.
+// A stopped service is left alone: that is a decision someone made, and this
+// must not overrule it. Running, deploying and failed ones are all examined.
+//
+// Failure is not a decision, it is what the cluster last reported, so a service
+// that recovers has to be allowed to say so. Leaving failed out meant a service
+// stayed failed forever once it had been: a Keycloak whose pod was healthy
+// again still read as failed, and the only way back was another deploy.
 func (s *WorkloadService) StartStatusReconciler(ctx context.Context) {
 	if s.k8s == nil {
 		return
@@ -48,7 +58,7 @@ func (s *WorkloadService) reconcileStatuses(ctx context.Context) {
 	if err := s.db.WithContext(ctx).
 		Preload("Project").
 		Preload("DatabaseConfig").
-		Where("status IN ?", []db.ServiceStatus{db.ServiceRunning, db.ServiceDeploying}).
+		Where("status IN ?", reconciledStatuses).
 		Find(&services).Error; err != nil {
 		log.Printf("status reconciler: list services: %v", err)
 		return
