@@ -208,6 +208,7 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
+			Strategy: rolloutStrategy(p),
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
@@ -226,6 +227,25 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 	}
 	_, err = client.AppsV1().Deployments(p.Namespace).Update(ctx, desired, metav1.UpdateOptions{})
 	return err
+}
+
+// rolloutStrategy decides how a new version replaces the old one.
+//
+// A workload with a volume is replaced rather than rolled: the default rolling
+// update starts the new pod before stopping the old one, and with one replica
+// Kubernetes keeps the old pod until the new one is ready. Anything holding a
+// single-writer file on that volume then deadlocks, since the new pod cannot
+// open what the old one still holds and the old one is never asked to stop.
+// Keycloak did exactly this, crash-looping for hours on a locked database while
+// the old pod went on serving.
+//
+// Everything else keeps the rolling update, which is what makes a deploy of a
+// stateless service invisible to its callers.
+func rolloutStrategy(p WorkloadParams) appsv1.DeploymentStrategy {
+	if len(p.VolumeMounts) > 0 {
+		return appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
+	}
+	return appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType}
 }
 
 // ApplyService creates or updates a ClusterIP Service for the workload.
