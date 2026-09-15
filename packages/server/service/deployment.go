@@ -610,8 +610,20 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	if svc.Status != db.ServiceRunning || svc.Image == "" {
 		return nil
 	}
+	return appk8s.ApplyDeployment(ctx, s.k8s, s.workloadParams(ctx, &svc, svc.Image, uuid.Nil))
+}
+
+// workloadParams describes a service to the cluster from its stored record: the
+// same pod, whichever path re-applies it.
+//
+// It exists because those paths drifted. Re-applying dropped the service's
+// config files, and a rollback dropped its volumes, its probes and its pull
+// secret, each invisible at a call site that looked complete. image is passed
+// in because a rollback deploys an older one, and deploymentID is what the
+// service's environment reports as the current deploy, or Nil when nothing new
+// is being deployed.
+func (s *DeploymentService) workloadParams(ctx context.Context, svc *db.Service, image string, deploymentID uuid.UUID) appk8s.WorkloadParams {
 	portSpecs := toPortSpecs(svc.Ports)
-	port := primaryPort(svc.Ports)
 	nodeName := ""
 	if svc.NodeID != nil {
 		var node db.Node
@@ -619,9 +631,7 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 			nodeName = node.Name
 		}
 	}
-	envVars := s.serviceEnv(ctx, &svc, port, uuid.Nil)
-	volMounts := resolveServiceVolumeMounts(ctx, s.db, serviceID)
-	probe := buildProbeFromService(&svc)
+	probe := buildProbeFromService(svc)
 
 	pullSecretName := ""
 	if svc.PullRegistryIntegrationID != nil {
@@ -632,29 +642,26 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 		}
 	}
 
-	return appk8s.ApplyDeployment(ctx, s.k8s, appk8s.WorkloadParams{
-		Name:      appK8sName(&svc),
-		Namespace: svc.Project.Slug,
-		Image:     svc.Image,
-		Ports:     portSpecs,
-		// Leaving these out rebuilt the pod without its projected files, so a
-		// running service lost every config file the moment anything re-applied
-		// it. A config file edit did it through this very path.
-		ConfigFiles:         s.configMountsFor(ctx, svc.ID, appK8sName(&svc), svc.Project.Slug),
+	return appk8s.WorkloadParams{
+		Name:                appK8sName(svc),
+		Namespace:           svc.Project.Slug,
+		Image:               image,
+		Ports:               portSpecs,
+		ConfigFiles:         s.configMountsFor(ctx, svc.ID, appK8sName(svc), svc.Project.Slug),
 		Replicas:            int32(svc.Replicas),
-		Env:                 envVars,
+		Env:                 s.serviceEnv(ctx, svc, primaryPort(svc.Ports), deploymentID),
 		CPURequest:          svc.CPURequest,
 		CPULimit:            svc.CPULimit,
 		MemoryRequest:       svc.MemoryRequest,
 		MemoryLimit:         svc.MemoryLimit,
 		NodeName:            nodeName,
-		VolumeMounts:        volMounts,
+		VolumeMounts:        resolveServiceVolumeMounts(ctx, s.db, svc.ID),
 		LivenessProbe:       probe,
 		ReadinessProbe:      probe,
 		ImagePullSecretName: pullSecretName,
 		Command:             svc.Command,
 		Args:                svc.Args,
-	})
+	}
 }
 
 // buildProbeFromService constructs a K8s exec probe from the healthcheck fields
@@ -812,31 +819,7 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 
 	go func() {
 		portSpecs := toPortSpecs(svc.Ports)
-		port := primaryPort(svc.Ports)
-		nodeName := ""
-		if svc.NodeID != nil {
-			var node db.Node
-			if err := s.db.First(&node, svc.NodeID).Error; err == nil {
-				nodeName = node.Name
-			}
-		}
-		envVars := s.serviceEnv(context.Background(), &svc, port, dep.ID)
-		wp := appk8s.WorkloadParams{
-			ConfigFiles:   s.configMountsFor(context.Background(), svc.ID, appK8sName(&svc), namespace),
-			Name:          appK8sName(&svc),
-			Namespace:     namespace,
-			Image:         target.Image,
-			Ports:         portSpecs,
-			Replicas:      int32(svc.Replicas),
-			Env:           envVars,
-			CPURequest:    svc.CPURequest,
-			CPULimit:      svc.CPULimit,
-			MemoryRequest: svc.MemoryRequest,
-			MemoryLimit:   svc.MemoryLimit,
-			NodeName:      nodeName,
-			Command:       svc.Command,
-			Args:          svc.Args,
-		}
+		wp := s.workloadParams(context.Background(), &svc, target.Image, dep.ID)
 		if err := appk8s.ApplyDeployment(context.Background(), s.k8s, wp); err != nil {
 			s.failDeployment(dep.ID, "rollback failed: "+err.Error())
 			return

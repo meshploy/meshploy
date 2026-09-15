@@ -9,15 +9,25 @@ import (
 	"testing"
 )
 
-// Every deployment this package sends to the cluster carries the service's
-// config files.
+// What a service has attached reaches the cluster from every path that builds
+// its deployment.
 //
-// Four places build one, and one of them left this out. A running service then
-// lost every projected file the moment anything re-applied it, which is how a
-// Keycloak lost both its realm import and the script its probes run, while the
-// call site looked perfectly reasonable. The omission is invisible by reading,
-// so it is checked here instead.
-func TestEveryDeploymentCarriesConfigFiles(t *testing.T) {
+// Four places build one, and two of them had gaps. Re-applying dropped the
+// service's config files, so a running service lost its projected files the
+// moment anything touched it. A rollback dropped its volumes, its probes and
+// its pull secret, bringing the service back with no storage and no health
+// checks. Both call sites read as complete, which is why this is checked by
+// machine rather than by eye.
+func TestEveryDeploymentCarriesWhatTheServiceHasAttached(t *testing.T) {
+	required := []string{
+		"ConfigFiles",
+		"VolumeMounts",
+		"LivenessProbe",
+		"ReadinessProbe",
+		"ImagePullSecretName",
+		"Env",
+		"Ports",
+	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -43,15 +53,20 @@ func TestEveryDeploymentCarriesConfigFiles(t *testing.T) {
 				return true
 			}
 			found++
+			set := map[string]bool{}
 			for _, element := range lit.Elts {
 				if kv, ok := element.(*ast.KeyValueExpr); ok {
-					if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "ConfigFiles" {
-						return true
+					if key, ok := kv.Key.(*ast.Ident); ok {
+						set[key.Name] = true
 					}
 				}
 			}
-			t.Errorf("%s: a workload built without ConfigFiles. A deploy from here drops the service's projected files.",
-				fset.Position(lit.Pos()))
+			for _, field := range required {
+				if !set[field] {
+					t.Errorf("%s: a workload built without %s. A deploy from here drops it from the running service.",
+						fset.Position(lit.Pos()), field)
+				}
+			}
 			return true
 		})
 	}
