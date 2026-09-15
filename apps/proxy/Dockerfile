@@ -37,6 +37,8 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /out/proxy ./proxy
+COPY LICENSE NOTICE /usr/share/meshploy/
+COPY notices/THIRD-PARTY-NOTICES-proxy.md /usr/share/meshploy/
 EXPOSE 8081
 ENTRYPOINT ["./proxy"]
 # channel: main/latest

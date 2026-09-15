@@ -69,6 +69,33 @@ jobs:
           fi
           echo "all commits signed off"
 
+  notices:
+    name: Third-party notices
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: "**/go.sum"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: install console dependencies
+        run: npm ci
+        working-directory: apps/web
+
+      # Regenerates from the built artifacts and fails when what is committed
+      # no longer matches, the way the formatting check works. The same run
+      # refuses a GPL, AGPL or SSPL dependency reaching a binary.
+      - name: notices are current
+        run: python3 scripts/gen-notices.py --check
+
   build-cli:
     name: CLI build
     runs-on: ubuntu-latest

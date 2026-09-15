@@ -58,6 +58,8 @@ RUN apk add --no-cache ca-certificates tzdata postgresql-client
 
 WORKDIR /app
 COPY --from=builder /out/api ./api
+COPY LICENSE NOTICE /usr/share/meshploy/
+COPY notices/THIRD-PARTY-NOTICES-api.md /usr/share/meshploy/
 
 EXPOSE 4000
 

@@ -72,6 +72,10 @@ jobs:
           path: dist/
           merge-multiple: true
 
+      # The licences of what the binary bundles travel with the binary.
+      - name: Add licence and notices
+        run: cp LICENSE NOTICE notices/THIRD-PARTY-NOTICES-cli.md dist/
+
       # Published beside the binaries so `meshploy update` and get.sh can check
       # a download against it. It comes from the same release, so it catches a
       # corrupted or truncated download, not a compromised release.

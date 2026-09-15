@@ -94,6 +94,25 @@ export function ServerSection() {
           switchTo={target}
         />
       )}
+
+      {/* Meshploy is Apache-2.0 and bundles other people's code, whose licences
+          ship with the console. This is where someone asking for them looks. */}
+      <p className="text-[11px] text-muted-foreground/70">
+        Meshploy is open source under{" "}
+        <a
+          href="https://github.com/meshploy/meshploy/blob/main/LICENSE"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          Apache-2.0
+        </a>
+        . It bundles other software, listed in its{" "}
+        <a href="/third-party-notices.md" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+          open source notices
+        </a>
+        .
+      </p>
     </Section>
   )
 }
