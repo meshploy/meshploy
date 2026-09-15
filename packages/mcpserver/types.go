@@ -1,5 +1,7 @@
 package mcpserver
 
+import "github.com/meshploy/packages/client"
+
 // Lean projection types — only fields Claude needs. Metadata (created_at,
 // updated_at, slug, project_id, k8s_name) is intentionally excluded.
 
@@ -232,4 +234,42 @@ type MCPConfigFile struct {
 	Size     int      `json:"size"`
 	StackID  string   `json:"stack_id,omitempty"`
 	Services []string `json:"services"`
+}
+
+// MCPTemplate is a one-click template as an agent sees it: enough to choose
+// one and know what it will ask for. Variables are declarations only - a
+// prompted value is supplied on deploy and a generated one is made by the
+// server, and neither can be read back.
+type MCPTemplate struct {
+	ID          string                `json:"id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	Category    string                `json:"category"`
+	Version     string                `json:"version"`
+	Variables   []MCPTemplateVariable `json:"variables,omitempty"`
+}
+
+type MCPTemplateVariable struct {
+	Key      string `json:"key"`
+	Prompt   string `json:"prompt,omitempty"`
+	Required bool   `json:"required,omitempty"`
+	// Generate names how the server makes the value (a password, a subdomain)
+	// when the caller supplies none.
+	Generate string `json:"generate,omitempty"`
+}
+
+func toMCPTemplate(t client.Template) MCPTemplate {
+	out := MCPTemplate{
+		ID:          t.ID,
+		Name:        t.Name,
+		Description: t.Description,
+		Category:    t.Category,
+		Version:     t.Version,
+	}
+	for _, v := range t.Variables {
+		out.Variables = append(out.Variables, MCPTemplateVariable{
+			Key: v.Key, Prompt: v.Prompt, Required: v.Required, Generate: v.Generate,
+		})
+	}
+	return out
 }

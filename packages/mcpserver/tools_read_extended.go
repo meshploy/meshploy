@@ -200,6 +200,23 @@ func (s *srv) registerReadToolsExtended(ms *mcpsdk.MCPServer) {
 		),
 		s.handleListStackServices,
 	)
+
+	// ── Templates ─────────────────────────────────────────────────────────────
+
+	ms.AddTool(
+		mcp.NewTool("list_templates",
+			mcp.WithDescription("List the one-click templates this server can deploy: ready-made apps with their compose and the values they ask for. Check here before writing a manifest by hand."),
+		),
+		s.handleListTemplates,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("get_template",
+			mcp.WithDescription("Get a template's compose and the variables it declares, so you can see what deploying it would create, or edit the compose before deploying."),
+			mcp.WithString("template_id", mcp.Required(), mcp.Description("Template ID, from list_templates")),
+		),
+		s.handleGetTemplate,
+	)
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -502,3 +519,34 @@ func (s *srv) handleListStackServices(_ context.Context, req mcp.CallToolRequest
 
 // suppress unused import warning
 var _ = fmt.Sprintf
+
+func (s *srv) handleListTemplates(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	tpls, err := s.c.ListTemplates()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	out := make([]MCPTemplate, 0, len(tpls))
+	for _, t := range tpls {
+		out = append(out, toMCPTemplate(t))
+	}
+	return jsonResult(out)
+}
+
+func (s *srv) handleGetTemplate(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	templateID := mcp.ParseString(req, "template_id", "")
+	if templateID == "" {
+		return mcp.NewToolResultError("template_id is required"), nil
+	}
+	detail, err := s.c.GetTemplate(templateID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	out := struct {
+		Template MCPTemplate `json:"template"`
+		Compose  string      `json:"compose"`
+	}{Compose: detail.Compose}
+	if detail.Manifest != nil {
+		out.Template = toMCPTemplate(*detail.Manifest)
+	}
+	return jsonResult(out)
+}

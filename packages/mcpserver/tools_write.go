@@ -300,6 +300,17 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 	)
 
 	ms.AddTool(
+		mcp.NewTool("deploy_template",
+			mcp.WithDescription("Deploy a one-click template into a project: it becomes a stack, its services are created and rolled out, and any service the template exposes gets a public route. Read get_template first to see which values it asks for."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("template_id", mcp.Required(), mcp.Description("Template ID, from list_templates")),
+			mcp.WithString("prompt_values", mcp.Description("Values for the template's prompted variables, as KEY=VALUE lines. A variable the template generates is left out")),
+			mcp.WithString("spec", mcp.Description("An edited version of the template's compose; left out, the template's own is used")),
+		),
+		s.handleDeployTemplate,
+	)
+
+	ms.AddTool(
 		mcp.NewTool("delete_stack",
 			mcp.WithDescription("DESTRUCTIVE — delete a stack and all its managed services. Confirm with the user before calling."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
@@ -613,6 +624,27 @@ func (s *srv) handleApplyManifest(_ context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return jsonResult(result)
+}
+
+func (s *srv) handleDeployTemplate(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	templateID := mcp.ParseString(req, "template_id", "")
+	if templateID == "" {
+		return mcp.NewToolResultError("template_id is required"), nil
+	}
+	body := client.DeployTemplateBody{Spec: mcp.ParseString(req, "spec", "")}
+	if values := mcp.ParseString(req, "prompt_values", ""); values != "" {
+		parsed, err := client.ParseKeyValues(values)
+		if err != nil {
+			return mcp.NewToolResultError("prompt_values: " + err.Error()), nil
+		}
+		body.PromptValues = parsed
+	}
+	st, err := s.c.DeployTemplate(s.orgID, projectID, templateID, body)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(MCPStack{ID: st.ID, Name: st.Name, Status: st.Status, Spec: st.Spec})
 }
 
 func (s *srv) handleDeleteStack(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

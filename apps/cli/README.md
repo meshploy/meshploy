@@ -427,6 +427,8 @@ meshploy mcp
 
 Starts an MCP (Model Context Protocol) server over stdio, exposing Meshploy operations as tools for Claude Code or any MCP-compatible agent. It uses the credentials saved by `meshploy auth login` and acts as that user.
 
+Deploying an app is one call: `apply_manifest` takes the compose, the values it interpolates as `${NAME}` and the contents of the files its `configs:` name. `list_templates`, `get_template` and `deploy_template` do the same from the one-click catalog, and `create_stack` can point a stack at a git repository for `sync_stack` to reconcile. Variables and prompt values are write-only: no tool reads them back, so a password an agent sets does not return through a transcript.
+
 **Claude Code setup**: add it to the project's `.mcp.json`:
 
 ```json
