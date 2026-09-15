@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.2](https://github.com/meshploy/meshploy/compare/v0.14.1...v0.14.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* give a rollback the volumes, probes and pull secret it dropped ([c777a6d](https://github.com/meshploy/meshploy/commit/c777a6dc8536341e8050ef4121c8d919ea1da12f))
+* keep a service's config files when its deployment is re-applied ([db77430](https://github.com/meshploy/meshploy/commit/db774303a09ebe83b7ba975f010eb5837903f6d6))
+* keep Kubernetes service-link variables out of pods ([2b3c1ed](https://github.com/meshploy/meshploy/commit/2b3c1edfff412c7cfc902dca8cab893c1daf9d87))
+* let a failed service recover when its pod does ([cad592f](https://github.com/meshploy/meshploy/commit/cad592f5bda0fb27ea1d7e2de3c8e870c4f43ba9))
+* list the console dependency versions the lock file pins ([2001ec1](https://github.com/meshploy/meshploy/commit/2001ec1036de809744b393c26802dca4fe6db017))
+* replace a volume-backed workload instead of rolling it ([82ef4f2](https://github.com/meshploy/meshploy/commit/82ef4f28fe4012e91103b710c0a6620b83e3cd73))
+* roll out a change the cluster never received ([39cb8e7](https://github.com/meshploy/meshploy/commit/39cb8e70cedc7da4a21e2c5c2443fcde8f983098))
+* ship the licences of the software each artifact bundles ([cf99d51](https://github.com/meshploy/meshploy/commit/cf99d5149721b891be9d0fbe748a03176335e49a))
+* ship the licences the builder image bundles ([5cf976f](https://github.com/meshploy/meshploy/commit/5cf976faaeb2609db91f7e85b86ac2dfe9c8ac82))
+* **web:** invite a member from a dialog, and make label spacing apply ([5ff4c14](https://github.com/meshploy/meshploy/commit/5ff4c14c870bdb6f91a90c296514ef83cfeeb80b))
+
 ## [0.14.1](https://github.com/meshploy/meshploy/compare/v0.14.0...v0.14.1) (2026-09-15)
 
 
