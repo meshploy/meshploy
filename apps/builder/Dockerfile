@@ -3,7 +3,8 @@
 # Contains: git, nixpacks, railpack, buildah, buildkitd, buildctl.
 # Runs as root — build jobs are ephemeral and mesh-internal.
 #
-# Build: docker build -t ghcr.io/meshploy/builder:latest apps/builder/
+# Build: docker build -t ghcr.io/meshploy/builder:latest -f apps/builder/Dockerfile .
+#        (from the repository root, so the image can carry its LICENSE)
 # Push:  docker push ghcr.io/meshploy/builder:latest
 
 FROM alpine:3.22
@@ -65,8 +66,16 @@ RUN MISE_VERSION="2026.3.17" && \
     chmod +x "/tmp/railpack/mise/mise-${MISE_VERSION}"
 
 # ── Build script ──────────────────────────────────────────────────────────────
-COPY meshploy-build /usr/local/bin/meshploy-build
+COPY apps/builder/meshploy-build /usr/local/bin/meshploy-build
 RUN chmod +x /usr/local/bin/meshploy-build
+
+# ── Licences ──────────────────────────────────────────────────────────────────
+# What this image bundles is Alpine packages and four downloaded tools, so its
+# notices are read from the image itself rather than generated from a build
+# graph the way the API's are.
+COPY LICENSE NOTICE /usr/share/meshploy/
+COPY apps/builder/notices.sh /tmp/notices.sh
+RUN sh /tmp/notices.sh && rm /tmp/notices.sh
 
 WORKDIR /root
 
