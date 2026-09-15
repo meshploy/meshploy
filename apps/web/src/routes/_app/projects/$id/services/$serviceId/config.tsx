@@ -738,7 +738,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       {/* ── Build ─────────────────────────────────────────────── */}
       {form.source === "git" && (
         <Section title="Build" subtitle="Configure where and how the build job runs">
-          <div className="space-y-2">
+          <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
               <Server className="h-3.5 w-3.5" /> Builder node
             </label>
@@ -785,7 +785,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
 
       {/* ── Deployment ────────────────────────────────────────── */}
       <Section title="Deployment" subtitle="Choose where this service runs and how many replicas to start">
-        <div className="space-y-2">
+        <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" /> Target node
           </label>
@@ -977,7 +977,7 @@ function AutoDeploySection({
         </Field>
 
         {/* Per-service deploy token webhook URL */}
-        <div className="space-y-1.5">
+        <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <Zap className="h-3 w-3" /> Deploy webhook URL
           </label>

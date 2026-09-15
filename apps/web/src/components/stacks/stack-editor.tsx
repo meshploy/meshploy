@@ -866,7 +866,7 @@ function AppFields({
           <div className="border-t border-border/40" />
           <SectionHeader title="Build" subtitle="Where and how the build job runs" />
           <div className="space-y-4">
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-3">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                 <Server className="h-3 w-3" />Builder node
               </label>
@@ -915,7 +915,7 @@ function AppFields({
       <div className="border-t border-border/40" />
       <SectionHeader title="Deployment" subtitle="Where this service runs" />
       <div className="space-y-4">
-        <div className="space-y-1.5">
+        <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <Server className="h-3 w-3" />Target node
           </label>
@@ -1191,7 +1191,7 @@ function DatabaseFields({
 
       <div className="border-t border-border/40" />
       <SectionHeader title="Deployment" subtitle="Where this database runs" />
-      <div className="space-y-1.5">
+      <div className="flex flex-col gap-3">
         <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
           <Server className="h-3 w-3" />Target node
         </label>

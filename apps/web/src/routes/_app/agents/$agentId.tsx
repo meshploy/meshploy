@@ -387,7 +387,7 @@ function AddTokenDialog({ open, onOpenChange, orgId, agentId, token, onCreated }
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground">Name <span className="text-muted-foreground/50">(optional)</span></label>
             <Input
               placeholder="ci-runner"
@@ -397,7 +397,7 @@ function AddTokenDialog({ open, onOpenChange, orgId, agentId, token, onCreated }
               autoFocus
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground">Expires <span className="text-muted-foreground/50">(optional)</span></label>
             <Input
               type="date"

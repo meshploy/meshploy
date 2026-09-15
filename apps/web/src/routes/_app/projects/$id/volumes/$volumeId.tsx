@@ -128,7 +128,7 @@ function PlacementSection({
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="flex flex-col gap-3">
         <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
           <Server className="h-3.5 w-3.5" /> Target node
         </label>

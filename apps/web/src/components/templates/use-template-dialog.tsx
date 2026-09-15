@@ -90,7 +90,7 @@ export function UseTemplateDialog({
             </p>
           </div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground">Project</label>
             <Select value={projectId} onValueChange={(v) => setProjectId(v ?? "")}>
               <SelectTrigger className="w-full h-9 text-sm bg-muted/20 border-border/60">

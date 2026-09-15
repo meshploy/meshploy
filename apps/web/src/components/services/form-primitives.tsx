@@ -88,7 +88,7 @@ export function Field({
   const controlId = child?.props.id || fieldId
   return (
     <div
-      className="flex flex-col gap-2"
+      className="flex flex-col gap-3"
       role={isControl ? undefined : "group"}
       aria-labelledby={isControl ? undefined : `${fieldId}-label`}
     >

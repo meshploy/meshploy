@@ -67,7 +67,7 @@ function NewProjectPage() {
           {/* Form */}
           <form onSubmit={handleSubmit} className="quiet-surface creation-form"><div className="creation-form-fields space-y-6">
             {/* Name */}
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-3">
               <label htmlFor="project-name" className="text-sm font-medium">Project name</label>
               <input
                 id="project-name"

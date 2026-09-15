@@ -7,6 +7,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import {
@@ -38,11 +46,7 @@ function UsersPage() {
 
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
   const [showInvite, setShowInvite] = useState(false)
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ["org-members", orgId],
@@ -58,29 +62,6 @@ function UsersPage() {
 
   const callerRole = members.find((m) => m.user_id === userId)?.role ?? "member"
   const canEditRoles = callerRole === "owner" || callerRole === "admin"
-
-  const { mutate: createInvite, isPending: inviting, error: inviteError } = useMutation({
-    mutationFn: () => orgsApi.createInvitation(orgId, inviteEmail, inviteRole, token),
-    onSuccess: (inv) => {
-      qc.invalidateQueries({ queryKey: ["org-invitations", orgId] })
-      setInviteLink(`${window.location.origin}/register?token=${inv.token}`)
-      setInviteEmail("")
-    },
-  })
-
-  function copyLink() {
-    if (!inviteLink) return
-    navigator.clipboard.writeText(inviteLink)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  function closeInviteForm() {
-    setShowInvite(false)
-    setInviteLink(null)
-    setInviteEmail("")
-    setInviteRole("member")
-  }
 
   const total = members.length + invitations.length
 
@@ -99,63 +80,13 @@ function UsersPage() {
             size="sm"
             variant="outline"
             className="gap-1.5 h-7 text-xs shrink-0"
-            onClick={() => { setShowInvite((v) => !v); setInviteLink(null) }}
+            onClick={() => setShowInvite(true)}
           >
             <Plus className="h-3.5 w-3.5" />
             Invite
           </Button>
         )}
       </div>
-
-      {/* Invite form */}
-      {showInvite && (
-        <div className="rounded-lg border border-border/60 bg-muted/10 px-4 py-3 space-y-2">
-          {inviteLink ? (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Share this link — expires in 7 days, single use.</p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-8 flex items-center px-3 rounded-md border border-border/60 bg-muted/20 font-mono text-xs text-muted-foreground overflow-hidden">
-                  <span className="truncate">{inviteLink}</span>
-                </div>
-                <Button size="sm" variant="outline" className="h-8 shrink-0 gap-1.5" onClick={copyLink}>
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied ? "Copied" : "Copy"}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={closeInviteForm}>Done</Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  placeholder="Email address"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  className="h-8 text-sm"
-                  onKeyDown={(e) => { if (e.key === "Enter" && inviteEmail) createInvite() }}
-                  autoFocus
-                />
-                <Select value={inviteRole} onValueChange={(v) => v && setInviteRole(v as "admin" | "member")}>
-                  <SelectTrigger className="w-28! h-8 text-xs bg-muted/20 border-border/60 shrink-0">
-                    <SelectValue>{inviteRole}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">member</SelectItem>
-                    <SelectItem value="admin">admin</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" className="h-8 shrink-0" onClick={() => createInvite()} disabled={inviting || !inviteEmail}>
-                  {inviting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Generate link"}
-                </Button>
-                <Button size="sm" variant="ghost" className="h-8 shrink-0" onClick={closeInviteForm}>Cancel</Button>
-              </div>
-              {inviteError && (
-                <p className="text-xs text-destructive">{String((inviteError as Error).message)}</p>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
       <div className="flex flex-wrap gap-3"><Input aria-label="Search users" placeholder="Search by name or email…" value={search} onChange={e=>setSearch(e.target.value)} className="h-10 max-w-md"/><OptionSelect label="Filter users by role" value={roleFilter} onChange={setRoleFilter} options={[{"value": "all", "label": "All roles"}, {"value": "owner", "label": "Owner"}, {"value": "admin", "label": "Admin"}, {"value": "member", "label": "Member"}]} /></div>
       {/* Member list */}
@@ -180,7 +111,123 @@ function UsersPage() {
           ))}
         {!members.some(m => `${m.user_name} ${m.user_email}`.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || m.role === roleFilter)) && !invitations.some(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)) && <tr><td colSpan={4} className="p-8 text-center text-sm text-muted-foreground">No matching users or invitations.</td></tr>}</tbody></table></div>
       )}
+
+      <InviteDialog open={showInvite} onOpenChange={setShowInvite} orgId={orgId} token={token} />
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Inviting follows the same shape as creating an agent: a dialog with the
+ * fields, then the one thing the server hands back once. It was an inline strip
+ * above the member list, which read as a different kind of action than it is.
+ */
+function InviteDialog({ open, onOpenChange, orgId, token }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  orgId: string
+  token: string
+}) {
+  const qc = useQueryClient()
+  const [email, setEmail] = useState("")
+  const [role, setRole] = useState<"admin" | "member">("member")
+  const [link, setLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setEmail(""); setRole("member"); setLink(null); setCopied(false)
+    }
+  }, [open])
+
+  const { mutate, isPending, error } = useMutation({
+    mutationFn: () => orgsApi.createInvitation(orgId, email.trim(), role, token),
+    onSuccess: (inv) => {
+      qc.invalidateQueries({ queryKey: ["org-invitations", orgId] })
+      setLink(`${window.location.origin}/register?token=${inv.token}`)
+    },
+  })
+
+  function copyLink() {
+    if (!link) return
+    navigator.clipboard.writeText(link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{link ? "Invitation link" : "Invite a member"}</DialogTitle>
+          <DialogDescription>
+            {link
+              ? "Share this link. It expires in 7 days and can be used once."
+              : "Generate a link for someone to join this organization."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {link ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-9 flex items-center px-3 rounded-md border border-border/60 bg-muted/20 font-mono text-xs text-muted-foreground overflow-hidden">
+              <span className="truncate">{link}</span>
+            </div>
+            <Button variant="outline" className="shrink-0 gap-1.5" onClick={copyLink}>
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex flex-col gap-3">
+              <label className="text-xs font-medium text-muted-foreground">Email address</label>
+              <Input
+                type="email"
+                placeholder="person@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && email.trim()) mutate() }}
+                className="h-9 text-sm"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <label className="text-xs font-medium text-muted-foreground">Role</label>
+              <Select value={role} onValueChange={(v) => v && setRole(v as "admin" | "member")}>
+                <SelectTrigger className="w-full h-9 text-sm bg-muted/20 border-border/60">
+                  <SelectValue>{role}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">member</SelectItem>
+                  <SelectItem value="admin">admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {error && (
+              <p className="text-xs text-destructive">{(error as Error).message}</p>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          {link ? (
+            <Button onClick={() => onOpenChange(false)}>Done</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button onClick={() => mutate()} disabled={isPending || !email.trim()} className="gap-1.5">
+                {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                Generate link
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

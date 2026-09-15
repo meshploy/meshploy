@@ -432,7 +432,7 @@ function ServiceForm({
       {/* ── Section: Build ───────────────────────────────────── */}
       {form.source === "git" && (
         <Section title="Build" subtitle="Configure where and how the build job runs">
-          <div className="space-y-2">
+          <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
               <Server className="h-3.5 w-3.5" /> Builder node
             </label>
@@ -498,7 +498,7 @@ function ServiceForm({
       {/* ── Section: Deployment ──────────────────────────────── */}
       <Section title="Deployment" subtitle="Choose where this service runs and how many replicas to start">
         {/* Node selection */}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" /> Target node
           </label>
@@ -2234,7 +2234,7 @@ function VolumeForm({ projectId }: { projectId: string }) {
           <p className="text-[11px] text-muted-foreground mt-1">Default: 5 GB. Can be increased but not decreased after creation.</p>
         </Field>
 
-        <div className="space-y-2">
+        <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" /> Target node
           </label>

@@ -218,7 +218,7 @@ function LoginPage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-3">
       <label className="text-xs font-medium text-muted-foreground">{label}</label>
       {children}
     </div>

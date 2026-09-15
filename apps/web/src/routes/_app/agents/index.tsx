@@ -208,8 +208,8 @@ function CreateAgentDialog({ open, onOpenChange, orgId, token, onCreated }: {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="space-y-1.5">
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground">Name</label>
             <Input
               placeholder="ci-deploy-bot"
@@ -220,7 +220,7 @@ function CreateAgentDialog({ open, onOpenChange, orgId, token, onCreated }: {
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground">Role</label>
             <Select value={role} onValueChange={(v) => v && setRole(v as AgentRole)}>
               <SelectTrigger className="w-full h-9 text-sm bg-muted/20 border-border/60">
@@ -234,7 +234,7 @@ function CreateAgentDialog({ open, onOpenChange, orgId, token, onCreated }: {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-3">
               <label className="text-xs font-medium text-muted-foreground">Token name <span className="text-muted-foreground/50">(optional)</span></label>
               <Input
                 placeholder="default"
@@ -243,7 +243,7 @@ function CreateAgentDialog({ open, onOpenChange, orgId, token, onCreated }: {
                 className="h-9 text-sm"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-3">
               <label className="text-xs font-medium text-muted-foreground">Expires <span className="text-muted-foreground/50">(optional)</span></label>
               <Input
                 type="date"
