@@ -241,7 +241,7 @@ Installing, reinstalling and removing all go through the install script:
 
 ## Enterprise
 
-Community is complete and stays free: everything above is MIT, with one organization per server. Enterprise adds organizational features under a licence (the console's **Settings → Licence → Compare editions** lists them) and runs as a separate pair of private images, `ghcr.io/meshploy/api-ee` and `ghcr.io/meshploy/web-ee`, built from the same source and version as each Community release.
+Community is complete and stays free: everything above is Apache-2.0, with one organization per server. Enterprise adds organizational features under a licence (the console's **Settings → Licence → Compare editions** lists them) and runs as a separate pair of private images, `ghcr.io/meshploy/api-ee` and `ghcr.io/meshploy/web-ee`, built from the same source and version as each Community release.
 
 Moving a server to Enterprise keeps its data and settings:
 
@@ -332,7 +332,13 @@ See [**apps/api/README.md**](./apps/api/README.md) for the full route reference.
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE). The name and logo are covered separately by the
+[trademark policy](TRADEMARK.md).
+
+Each artifact ships the licences of what it bundles: images carry them at
+`/usr/share/meshploy`, the CLI release has one beside its binaries, and the
+console serves its own at `/third-party-notices.md`. They are generated from
+the built artifacts by `scripts/gen-notices.py`, which CI keeps current.
 
 ---
 

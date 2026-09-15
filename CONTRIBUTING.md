@@ -4,6 +4,20 @@ Thanks for your interest. This guide gets you from zero to a working dev environ
 
 ---
 
+## Sign your commits
+
+Meshploy takes contributions under the [Developer Certificate of
+Origin](https://developercertificate.org/). It is one line in each commit
+message, which `git commit -s` adds for you:
+
+```
+Signed-off-by: Your Name <you@example.com>
+```
+
+By adding it you certify that you wrote the change, or have the right to submit
+it under the project's licence. There is no separate agreement to sign, and
+nothing is transferred beyond that licence. CI checks that the line is there.
+
 ## Prerequisites
 
 | Tool | Version |
