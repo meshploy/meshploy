@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/service"
 )
@@ -200,5 +201,66 @@ func TestPodTerminalAllowsTheOwningOrg(t *testing.T) {
 	code := f.get(t, f.orgA, f.projectA, f.serviceA, "any-pod", f.ticketFor(t, f.victimID))
 	if code != http.StatusServiceUnavailable {
 		t.Fatalf("the owning org must pass authorization and reach the K8s check: got %d, want 503", code)
+	}
+}
+
+// A node terminal is root on the host, so it is administrative: it reaches
+// every container on that node and every secret projected into them, around
+// whatever a project's permissions say. A member of the org used to be enough.
+func TestNodeTerminalRequiresAnAdmin(t *testing.T) {
+	ctx := context.Background()
+	database := newAuthzTestDB(t)
+	svc := service.New(database)
+	h := New(nil, svc)
+
+	owner, err := svc.Auth.Register(ctx, service.RegisterInput{
+		Username: "owner", Email: "owner@example.com", Password: "password123",
+	})
+	if err != nil {
+		t.Fatalf("register owner: %v", err)
+	}
+	orgs, err := svc.Orgs.ListForUser(ctx, owner.ID)
+	if err != nil || len(orgs) != 1 {
+		t.Fatalf("list orgs: %v (n=%d)", err, len(orgs))
+	}
+	org := orgs[0]
+
+	// A plain member of the same org, created directly: the invitation flow
+	// needs mail, and what is under test is the role, not how it was granted.
+	member := &db.User{Username: "member", Email: "member@example.com", Password: "unused", Kind: db.UserHuman}
+	if err := database.Create(member).Error; err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if err := database.Create(&db.OrganizationMember{OrganizationID: org.ID, UserID: member.ID, Role: db.RoleMember}).Error; err != nil {
+		t.Fatalf("add member: %v", err)
+	}
+
+	node := &db.Node{OrganizationID: org.ID, Name: "worker-1", TailscaleIP: "100.64.0.9", K3sRole: db.K3sRoleAgent}
+	if err := database.Create(node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	router := chi.NewRouter()
+	router.Get("/api/v1/orgs/{orgId}/nodes/{nodeId}/terminal", h.NodeTerminal)
+
+	open := func(userID uuid.UUID) int {
+		t.Helper()
+		ticket, _, err := svc.Tickets.Mint(userID)
+		if err != nil {
+			t.Fatalf("mint ticket: %v", err)
+		}
+		url := fmt.Sprintf("/api/v1/orgs/%s/nodes/%s/terminal?ticket=%s", org.ID, node.ID, ticket)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+		return rec.Code
+	}
+
+	if code := open(member.ID); code != http.StatusForbidden {
+		t.Errorf("a member opened a node terminal: got %d, want 403", code)
+	}
+	// K8s is nil under test, so an owner gets past authorization and fails on
+	// the cluster instead. Anything but 403 means authorization allowed it.
+	if code := open(owner.ID); code == http.StatusForbidden {
+		t.Error("an owner was refused a node terminal")
 	}
 }

@@ -131,7 +131,11 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.svc.Orgs.MemberRole(ctx, orgID, userID); err != nil {
+	// A shell on a node is administrative by nature: it is root on the host, so
+	// it reaches every container that node runs and every secret projected into
+	// them, around whatever the project permissions say. Membership alone used
+	// to be enough, which made every member an administrator of the machines.
+	if err := h.enforceAdminRole(ctx, orgID, userID); err != nil {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
