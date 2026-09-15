@@ -278,7 +278,7 @@ meshploy apply -f compose.yml --project my-project
 
 Applies a Docker Compose manifest, with `x-meshploy` extensions, to a project in one call: it is upserted as a stack and reconciled into live services. Idempotent: run it again to converge on the same spec.
 
-Compose substitutes `${VAR}` from the stack's variables when the stack is applied. A service's env can also reference another variable at deploy time, such as a managed database's connection URL from an attached group; write that one as `$${PRIMARY_PG_DB_URL}` in the manifest, so it reaches the service as `${PRIMARY_PG_DB_URL}` and is resolved when it deploys.
+Compose substitutes `${VAR}` from the stack's variables when the stack is applied. `--env-file` sends those values with the manifest, so a file that needs a password is one command rather than a visit to the console; they are stored on the stack, so a later apply without the flag keeps them. A service's env can also reference another variable at deploy time, such as a managed database's connection URL from an attached group; write that one as `$${PRIMARY_PG_DB_URL}` in the manifest, so it reaches the service as `${PRIMARY_PG_DB_URL}` and is resolved when it deploys.
 
 Each compose service becomes a Meshploy service, read the way compose reads it:
 
@@ -295,6 +295,7 @@ Each compose service becomes a Meshploy service, read the way compose reads it:
 | `-f, --file` | Path to the compose manifest (required) |
 | `--name` | Stack name (default: the manifest file's base name) |
 | `--project` | Project name or ID |
+| `--env-file` | File of `KEY=VALUE` lines the manifest interpolates as `${KEY}` |
 | `--no-deploy` | Update the records without rolling anything out |
 
 ---

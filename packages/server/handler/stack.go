@@ -454,10 +454,12 @@ type ApplyManifestInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		Name   string            `json:"name" minLength:"1" maxLength:"100" doc:"Stack name — the manifest is upserted under this name"`
-		Spec   string            `json:"spec" minLength:"1" doc:"Docker Compose–style YAML with x-meshploy extensions"`
-		Files  map[string]string `json:"files,omitempty" doc:"Files the manifest's configs and secrets name by file:, keyed by the path as written"`
-		Deploy *bool             `json:"deploy,omitempty" doc:"Roll out the services this apply changes (default true)"`
+		Name  string            `json:"name" minLength:"1" maxLength:"100" doc:"Stack name — the manifest is upserted under this name"`
+		Spec  string            `json:"spec" minLength:"1" doc:"Docker Compose–style YAML with x-meshploy extensions"`
+		Files map[string]string `json:"files,omitempty" doc:"Files the manifest's configs and secrets name by file:, keyed by the path as written"`
+		// Variables are write-only: no endpoint returns a stack's variables.
+		Variables map[string]string `json:"variables,omitempty" doc:"Values the spec interpolates as ${NAME}; left out, the stack keeps the ones it has"`
+		Deploy    *bool             `json:"deploy,omitempty" doc:"Roll out the services this apply changes (default true)"`
 	}
 }
 
@@ -466,8 +468,12 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.svc.Stacks.ApplyManifest(ctx, projectID, input.Body.Name, input.Body.Spec, userID, input.Body.Files,
-		service.ApplyOptions{NoDeploy: input.Body.Deploy != nil && !*input.Body.Deploy})
+	result, err := h.svc.Stacks.ApplyManifest(ctx, projectID, service.ManifestInput{
+		Name:      input.Body.Name,
+		Spec:      input.Body.Spec,
+		Files:     input.Body.Files,
+		Variables: input.Body.Variables,
+	}, userID, service.ApplyOptions{NoDeploy: input.Body.Deploy != nil && !*input.Body.Deploy})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

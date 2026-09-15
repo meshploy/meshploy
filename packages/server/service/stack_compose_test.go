@@ -33,7 +33,7 @@ func TestStackApplyFollowsCompose(t *testing.T) {
 		return svc
 	}
 
-	r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, "infra", `
+	r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "infra", Spec: `
 services:
   minio:
     image: minio/minio
@@ -46,7 +46,7 @@ services:
     image: alpine
     entrypoint: ["/bin/sh", "-c"]
     command: ["echo $$HOME"]
-`, user.ID, nil)
+`}, user.ID)
 	require.NoError(t, err)
 	require.Empty(t, r.Errors)
 
@@ -72,7 +72,7 @@ services:
 	require.NoError(t, db.Model(&meshdb.ServicePort{}).Where("service_id = ? AND port = 9001", minio.ID).Update("node_port", 31001).Error)
 	require.NoError(t, db.Model(&meshdb.ServicePort{}).Where("service_id = ?", worker.ID).Update("port", 4000).Error)
 
-	r, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, "infra", `
+	r, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "infra", Spec: `
 services:
   minio:
     image: minio/minio
@@ -83,7 +83,7 @@ services:
     ports: ["127.0.0.1:6379:6379"]
   worker:
     image: alpine
-`, user.ID, nil)
+`}, user.ID)
 	require.NoError(t, err)
 	require.Empty(t, r.Errors)
 

@@ -28,6 +28,10 @@ func stackAPI(t *testing.T, body *map[string]any) *srv {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(client.Stack{ID: "st1", Name: "infra"})
 	})
+	mux.HandleFunc("/api/v1/orgs/org-1/projects/p1/apply", func(w http.ResponseWriter, r *http.Request) {
+		record(t, r, body)
+		_ = json.NewEncoder(w).Encode(client.ApplyResult{Stack: &client.Stack{ID: "st1", Name: "infra"}})
+	})
 	mux.HandleFunc("/api/v1/orgs/org-1/projects/p1/stacks/st1", func(w http.ResponseWriter, r *http.Request) {
 		record(t, r, body)
 		_ = json.NewEncoder(w).Encode(client.Stack{ID: "st1", Name: "infra"})
@@ -59,29 +63,6 @@ func callTool(t *testing.T, fn func(context.Context, mcp.CallToolRequest) (*mcp.
 		t.Fatalf("handler returned a transport error: %v", err)
 	}
 	return res
-}
-
-func TestParseKeyValues(t *testing.T) {
-	got, err := parseKeyValues("# a comment\n\nNEO4J_PASSWORD=\"s3cr3t\"\nKEY=a=b\nPEM=line1\\nline2\n")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := map[string]string{
-		"NEO4J_PASSWORD": "s3cr3t",
-		"KEY":            "a=b",
-		"PEM":            "line1\nline2",
-	}
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("%s = %q, want %q", k, got[k], v)
-		}
-	}
-	if len(got) != len(want) {
-		t.Errorf("want %d values, got %d: %v", len(want), len(got), got)
-	}
-	if _, err := parseKeyValues("NOT_A_PAIR"); err == nil {
-		t.Error("want an error for a line with no =")
-	}
 }
 
 // A stack's variables hold its secrets, so an agent that can write them must
@@ -139,5 +120,45 @@ func TestCreateStackDefaultsGitMode(t *testing.T) {
 	}
 	if body["git_mode"] != "file" {
 		t.Errorf("git_mode = %v, want file", body["git_mode"])
+	}
+}
+
+// The one-shot path has to carry everything the server cannot get elsewhere:
+// the values the manifest interpolates, and the files its configs name.
+func TestApplyManifestCarriesVariablesAndFiles(t *testing.T) {
+	var body map[string]any
+	s := stackAPI(t, &body)
+
+	res := callTool(t, s.handleApplyManifest, map[string]any{
+		"project_id": "p1", "name": "infra",
+		"spec":      "services:\n  db:\n    image: postgres:16\n",
+		"variables": "DB_PASSWORD=s3cr3t",
+		"files":     map[string]any{"./realm.json": `{"realm":"procureflow"}`},
+	})
+	if res.IsError {
+		t.Fatalf("apply failed: %+v", res.Content)
+	}
+	vars, _ := body["variables"].(map[string]any)
+	if vars["DB_PASSWORD"] != "s3cr3t" {
+		t.Errorf("variables not sent: %v", body["variables"])
+	}
+	files, _ := body["files"].(map[string]any)
+	if files["./realm.json"] != `{"realm":"procureflow"}` {
+		t.Errorf("files not sent: %v", body["files"])
+	}
+}
+
+// A file whose content arrives as something other than text would otherwise be
+// dropped silently, leaving a config the agent believes it wrote.
+func TestApplyManifestRejectsNonTextFile(t *testing.T) {
+	var body map[string]any
+	s := stackAPI(t, &body)
+
+	res := callTool(t, s.handleApplyManifest, map[string]any{
+		"project_id": "p1", "name": "infra", "spec": "services: {}",
+		"files": map[string]any{"./realm.json": map[string]any{"realm": "procureflow"}},
+	})
+	if !res.IsError {
+		t.Fatal("want a tool error for a file that is not text")
 	}
 }

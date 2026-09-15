@@ -106,14 +106,28 @@ func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, err
 	return decodePtr[ApplyResult](resp)
 }
 
-// ApplyManifest upserts a raw stack named name from an inline compose spec and
-// reconciles it in one call. Idempotent — re-applying converges in place.
-// files carries what its configs and secrets name by file:, keyed by the path
-// as written; nil when there are none.
-func (c *Client) ApplyManifest(orgID, projectID, name, spec string, files map[string]string, opts ...ApplyOptions) (*ApplyResult, error) {
-	body := map[string]any{"name": name, "spec": spec}
-	if len(files) > 0 {
-		body["files"] = files
+// ManifestBody is one inline compose manifest: the spec plus what the server
+// cannot read off the caller's machine.
+type ManifestBody struct {
+	Name string
+	Spec string
+	// Files carries what the manifest's configs and secrets name by file:,
+	// keyed by the path as written.
+	Files map[string]string
+	// Variables are the ${NAME} values the spec interpolates. Nil keeps the
+	// ones the stack already has. Write-only, like the ones on a create.
+	Variables map[string]string
+}
+
+// ApplyManifest upserts a raw stack named m.Name from an inline compose spec
+// and reconciles it in one call. Idempotent - re-applying converges in place.
+func (c *Client) ApplyManifest(orgID, projectID string, m ManifestBody, opts ...ApplyOptions) (*ApplyResult, error) {
+	body := map[string]any{"name": m.Name, "spec": m.Spec}
+	if len(m.Files) > 0 {
+		body["files"] = m.Files
+	}
+	if len(m.Variables) > 0 {
+		body["variables"] = m.Variables
 	}
 	if len(opts) > 0 && opts[0].NoDeploy {
 		body["deploy"] = false

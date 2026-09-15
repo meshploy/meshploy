@@ -179,39 +179,50 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 	return s.getByID(ctx, stackID)
 }
 
+// ManifestInput is one inline compose manifest: the spec plus what the server
+// cannot read off the caller's machine.
+type ManifestInput struct {
+	Name string
+	Spec string
+	// Files carries what the manifest's configs and secrets name by file:,
+	// keyed by the path as written.
+	Files map[string]string
+	// Variables are the ${NAME} values the spec interpolates. Nil keeps what
+	// the stack already has, so a re-apply that sends no secret keeps working.
+	Variables map[string]string
+}
+
 // ApplyManifest is the one-shot declarative entrypoint used by `meshploy apply`,
 // the API apply endpoint, and the apply_manifest MCP tool. It upserts a raw
 // (inline-spec) stack keyed by (project, name) and reconciles it, so re-applying
 // the same manifest converges in place. Errors if a git-backed stack already
 // owns the name (those are reconciled via Sync, not an inline push).
-//
-// files carries what the manifest's configs and secrets name by file:, keyed by
-// the path as written, since the server cannot read the client's directory.
-func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, name, spec string, triggerBy uuid.UUID, files map[string]string, opts ...ApplyOptions) (*ApplyResult, error) {
-	if name == "" {
+func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, in ManifestInput, triggerBy uuid.UUID, opts ...ApplyOptions) (*ApplyResult, error) {
+	if in.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	if spec == "" {
+	if in.Spec == "" {
 		return nil, fmt.Errorf("spec is required")
 	}
 
 	var stack meshdb.Stack
 	err := s.db.WithContext(ctx).
-		Where("project_id = ? AND name = ?", projectID, name).
+		Where("project_id = ? AND name = ?", projectID, in.Name).
 		First(&stack).Error
 	switch {
 	case err == nil:
 		if stack.GitMode != meshdb.StackGitModeRaw || stack.GitRepo != "" {
-			return nil, fmt.Errorf("stack %q is git-backed; reconcile it with sync instead of an inline apply", name)
+			return nil, fmt.Errorf("stack %q is git-backed; reconcile it with sync instead of an inline apply", in.Name)
 		}
-		if _, e := s.Update(ctx, stack.ID, UpdateStackInput{Name: name, Spec: &spec}); e != nil {
+		if _, e := s.Update(ctx, stack.ID, UpdateStackInput{Name: in.Name, Spec: &in.Spec, Variables: in.Variables}); e != nil {
 			return nil, e
 		}
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		created, e := s.Create(ctx, projectID, CreateStackInput{
-			Name:    name,
-			Spec:    spec,
-			GitMode: meshdb.StackGitModeRaw,
+			Name:      in.Name,
+			Spec:      in.Spec,
+			Variables: in.Variables,
+			GitMode:   meshdb.StackGitModeRaw,
 		})
 		if e != nil {
 			return nil, e
@@ -221,7 +232,7 @@ func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, n
 		return nil, err
 	}
 
-	return s.apply(ctx, stack.ID, triggerBy, nil, mapFileSource(files), applyOptions(opts))
+	return s.apply(ctx, stack.ID, triggerBy, nil, mapFileSource(in.Files), applyOptions(opts))
 }
 
 func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {

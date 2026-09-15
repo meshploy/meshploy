@@ -57,7 +57,7 @@ func TestStackApplyCarriesComposeConfigs(t *testing.T) {
 		"./keycloak/realm.json": `{"realm":"procureflow"}`,
 		"secrets/api.txt":       "s3cret",
 	}
-	r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, "auth", configsSpec, user.ID, files)
+	r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "auth", Spec: configsSpec, Files: files}, user.ID)
 	require.NoError(t, err)
 	require.Empty(t, r.Errors)
 
@@ -89,14 +89,14 @@ func TestStackApplyCarriesComposeConfigs(t *testing.T) {
 
 	// Applied again without the files, as the console would: the stored
 	// copies stay, and the apply says so.
-	r, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, "auth", configsSpec, user.ID, nil)
+	r, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "auth", Spec: configsSpec}, user.ID)
 	require.NoError(t, err)
 	require.Empty(t, r.Errors)
 	assert.Equal(t, `{"realm":"procureflow"}`, stored()["/opt/keycloak/data/import/realm.json"])
 	assert.Contains(t, strings.Join(r.Warnings, "\n"), `config "realm" kept the copy an earlier apply stored`)
 
 	// A file no apply has read is left out, with a way to supply it.
-	r, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, "other", `
+	r, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "other", Spec: `
 services:
   web:
     image: nginx
@@ -104,7 +104,7 @@ services:
 configs:
   site:
     file: ./site.conf
-`, user.ID, nil)
+`}, user.ID)
 	require.NoError(t, err)
 	assert.Contains(t, strings.Join(r.Warnings, "\n"), `config "site" left out`)
 }

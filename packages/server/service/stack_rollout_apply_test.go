@@ -41,7 +41,7 @@ services:
 	}
 	apply := func(spec string, opts ...service.ApplyOptions) *service.ApplyResult {
 		t.Helper()
-		r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, "infra", spec, user.ID, nil, opts...)
+		r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "infra", Spec: spec}, user.ID, opts...)
 		require.NoError(t, err)
 		require.Empty(t, r.Errors)
 		return r
@@ -133,7 +133,7 @@ func TestApplyDoesNotSeeAssignedNodePortsAsAChange(t *testing.T) {
 	require.NoError(t, err)
 
 	spec := "services:\n  web:\n    image: nginx\n    ports: [\"8080:8080\"]\n"
-	_, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, "infra", spec, user.ID, nil)
+	_, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "infra", Spec: spec}, user.ID)
 	require.NoError(t, err)
 
 	var web meshdb.Service
@@ -142,7 +142,7 @@ func TestApplyDoesNotSeeAssignedNodePortsAsAChange(t *testing.T) {
 	require.NoError(t, gdb.Model(&meshdb.ServicePort{}).Where("service_id = ?", web.ID).Update("node_port", 31234).Error)
 	require.NoError(t, gdb.Model(&web).Update("status", meshdb.ServiceStopped).Error)
 
-	r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, "infra", spec, user.ID, nil)
+	r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "infra", Spec: spec}, user.ID)
 	require.NoError(t, err)
 	assert.Empty(t, r.Warnings, "an assigned NodePort is not a spec change")
 
@@ -165,7 +165,7 @@ func TestStackServiceKeepsItsSpecResources(t *testing.T) {
 	proj, err := svcs.Projects.Create(ctx, org.ID, "limits", "limits")
 	require.NoError(t, err)
 
-	_, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, "infra", `
+	_, err = svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "infra", Spec: `
 services:
   web:
     image: nginx
@@ -173,7 +173,7 @@ services:
       deploy:
         cpu_limit: 2000m
         memory_limit: 2Gi
-`, user.ID, nil)
+`}, user.ID)
 	require.NoError(t, err)
 
 	var web meshdb.Service
@@ -205,7 +205,7 @@ func TestASkippedRolloutIsStillOwed(t *testing.T) {
 	}
 	apply := func(s string) *service.ApplyResult {
 		t.Helper()
-		r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, "infra", s, user.ID, nil)
+		r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "infra", Spec: s}, user.ID)
 		require.NoError(t, err)
 		require.Empty(t, r.Errors)
 		return r

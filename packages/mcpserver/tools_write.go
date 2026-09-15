@@ -293,6 +293,8 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Stack name — the manifest is upserted under this name")),
 			mcp.WithString("spec", mcp.Required(), mcp.Description("Docker Compose–style YAML with x-meshploy extensions")),
+			mcp.WithString("variables", mcp.Description("Values the spec interpolates as ${NAME}, as KEY=VALUE lines. Put secrets here rather than in the spec; left out, the stack keeps the ones it has")),
+			mcp.WithObject("files", mcp.Description("Contents of the files the manifest's configs and secrets name by file:, keyed by the path as written. The server cannot read them from anywhere else")),
 		),
 		s.handleApplyManifest,
 	)
@@ -493,7 +495,7 @@ func (s *srv) handleCreateStack(_ context.Context, req mcp.CallToolRequest) (*mc
 		GitPath:   mcp.ParseString(req, "git_path", ""),
 	}
 	if vars := mcp.ParseString(req, "variables", ""); vars != "" {
-		parsed, err := parseKeyValues(vars)
+		parsed, err := client.ParseKeyValues(vars)
 		if err != nil {
 			return mcp.NewToolResultError("variables: " + err.Error()), nil
 		}
@@ -525,7 +527,7 @@ func (s *srv) handleUpdateStack(_ context.Context, req mcp.CallToolRequest) (*mc
 		body.Spec, sent = &spec, true
 	}
 	if vars, ok := argString(req, "variables"); ok {
-		parsed, err := parseKeyValues(vars)
+		parsed, err := client.ParseKeyValues(vars)
 		if err != nil {
 			return mcp.NewToolResultError("variables: " + err.Error()), nil
 		}
@@ -587,7 +589,26 @@ func (s *srv) handleApplyManifest(_ context.Context, req mcp.CallToolRequest) (*
 	name := mcp.ParseString(req, "name", "")
 	spec := mcp.ParseString(req, "spec", "")
 
-	result, err := s.c.ApplyManifest(s.orgID, projectID, name, spec, nil)
+	m := client.ManifestBody{Name: name, Spec: spec}
+	if vars := mcp.ParseString(req, "variables", ""); vars != "" {
+		parsed, err := client.ParseKeyValues(vars)
+		if err != nil {
+			return mcp.NewToolResultError("variables: " + err.Error()), nil
+		}
+		m.Variables = parsed
+	}
+	for path, content := range mcp.ParseStringMap(req, "files", nil) {
+		text, ok := content.(string)
+		if !ok {
+			return mcp.NewToolResultError(fmt.Sprintf("files[%q] must be the file's text", path)), nil
+		}
+		if m.Files == nil {
+			m.Files = map[string]string{}
+		}
+		m.Files[path] = text
+	}
+
+	result, err := s.c.ApplyManifest(s.orgID, projectID, m)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

@@ -15,6 +15,7 @@ var (
 	applyFile     string
 	applyProject  string
 	applyName     string
+	applyEnvFile  string
 	applyNoDeploy bool
 )
 
@@ -30,6 +31,9 @@ it again to converge on the same spec.
 Services the apply changes are rolled out, so a changed image or command reaches
 the cluster. A stopped service is never started, and --no-deploy writes the
 records without rolling anything out.
+
+A manifest that interpolates ${NAME} values takes them from --env-file; they
+are stored on the stack, so a later apply without the flag keeps them.
 
 Example:
   meshploy apply -f compose.yml --project my-project`,
@@ -53,9 +57,23 @@ Example:
 			return err
 		}
 
+		manifest := client.ManifestBody{Name: name, Spec: string(data), Files: files}
+		if applyEnvFile != "" {
+			// The values the manifest interpolates as ${NAME}. They are the
+			// stack's, not this machine's, so they are sent with it.
+			env, err := os.ReadFile(applyEnvFile)
+			if err != nil {
+				return fmt.Errorf("read env file: %w", err)
+			}
+			manifest.Variables, err = client.ParseKeyValues(string(env))
+			if err != nil {
+				return fmt.Errorf("%s: %w", applyEnvFile, err)
+			}
+		}
+
 		c := apiClient()
 		pid := resolveProjectID(applyProject)
-		result, err := c.ApplyManifest(orgID(), pid, name, string(data), files, client.ApplyOptions{NoDeploy: applyNoDeploy})
+		result, err := c.ApplyManifest(orgID(), pid, manifest, client.ApplyOptions{NoDeploy: applyNoDeploy})
 		if err != nil {
 			return err
 		}
@@ -145,6 +163,7 @@ func init() {
 	applyCmd.Flags().StringVarP(&applyFile, "file", "f", "", "Path to the compose manifest (required)")
 	applyCmd.Flags().StringVar(&applyProject, "project", "", "Project name or ID")
 	applyCmd.Flags().StringVar(&applyName, "name", "", "Stack name (default: manifest file base name)")
+	applyCmd.Flags().StringVar(&applyEnvFile, "env-file", "", "File of KEY=VALUE lines the manifest interpolates as ${KEY}")
 	applyCmd.Flags().BoolVar(&applyNoDeploy, "no-deploy", false, "Update the records without rolling anything out")
 	rootCmd.AddCommand(applyCmd)
 }
