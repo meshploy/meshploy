@@ -99,7 +99,7 @@ function OverviewPage() {
         />
       </div>
 
-      <div className="flex items-center justify-between"><h2 className="text-base font-semibold">{org?.name ?? "Your workspace"}</h2><Link to="/cluster" className="text-sm text-muted-foreground hover:text-primary">View cluster →</Link></div>
+      <div className="flex items-center justify-between"><h2 className="text-base font-semibold">{org?.name ?? "Your workspace"}</h2>{isAdmin && <Link to="/cluster" className="text-sm text-muted-foreground hover:text-primary">View cluster →</Link>}</div>
       {/* Mesh topology + Projects */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="quiet-surface lg:col-span-2 rounded-xl border border-border/60 bg-card overflow-hidden">

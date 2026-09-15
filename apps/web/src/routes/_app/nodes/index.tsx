@@ -2,14 +2,14 @@ import { OptionSelect } from "@/components/layout/option-select"
 import { MetricTile } from "@/components/layout/resource-workbench"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router"
-import { useEffect, useState } from "react"
+import { createFileRoute, Link } from "@tanstack/react-router"
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Loader2, ServerCrash, Server, Cpu, CheckCircle2, Plus } from "lucide-react"
 import { NodesTable } from "@/components/nodes/nodes-table"
 import { nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore, useOrgRole } from "@/store/org-store"
+import { useOrgStore } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/nodes/")({
   component: NodesPage,
@@ -18,14 +18,8 @@ export const Route = createFileRoute("/_app/nodes/")({
 function NodesPage() {
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("all")
-  const role = useOrgRole()
-  const navigate = useNavigate()
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-
-  useEffect(() => {
-    if (role === "member") navigate({ to: "/" })
-  }, [role])
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["nodes", orgId],

@@ -33,6 +33,9 @@ type NavItem = {
   icon: React.ElementType
   label: string
   exact?: boolean
+  // A page a member cannot open. Showing a link that bounces them back is
+  // worse than not showing it.
+  adminOnly?: boolean
 }
 
 type NavGroup = {
@@ -48,7 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/projects", icon: FolderKanban, label: "Projects", exact: false },
       { href: "/templates", icon: LayoutTemplate, label: "Templates", exact: false },
       { href: "/nodes", icon: Server, label: "Nodes", exact: false },
-      { href: "/cluster", icon: Network, label: "Cluster", exact: false },
+      { href: "/cluster", icon: Network, label: "Cluster", exact: false, adminOnly: true },
     ],
   },
   {
@@ -172,7 +175,7 @@ export function AppSidebar() {
             {group.label && sidebarCollapsed && (
               <Separator className="mb-1 bg-sidebar-border/60" />
             )}
-            {group.items.map((item) => {
+            {group.items.filter((item) => !item.adminOnly || isAdmin).map((item) => {
               const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href)
 
               if (sidebarCollapsed) {

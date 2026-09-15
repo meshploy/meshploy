@@ -28,7 +28,7 @@ import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { nodes as nodesApi, toNode, type ApiNodeMetrics } from "@/lib/api"
 import type { MeshRole } from "@/types"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore } from "@/store/org-store"
+import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { useMetricsStore, type RawSample } from "@/store/metrics-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -135,6 +135,7 @@ export const Route = createFileRoute("/_app/nodes/$id")({
 function NodeDetailPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const isAdmin = useIsAdmin()
   const { id } = Route.useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -257,7 +258,7 @@ function NodeDetailPage() {
             Metrics
           </Button>
 
-          {node.k3sRole !== "server" && (
+          {isAdmin && node.k3sRole !== "server" && (
             <>
               {node.meshRole !== "mesh" && (
               <Button
@@ -493,7 +494,9 @@ function NodeDetailPage() {
         ? <ServerBuildToggle node={node} orgId={orgId!} token={token} />
         : node.meshRole === "mesh"
           ? <MeshOnlyRole />
-          : <NodeRolePicker node={node} orgId={orgId!} token={token} />
+          : isAdmin
+            ? <NodeRolePicker node={node} orgId={orgId!} token={token} />
+            : <NodeRoleSummary node={node} />
       }
 
       </aside></div>
@@ -571,6 +574,27 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
 
 // A mesh-only node's role is set when it is installed: moving it into the
 // cluster means installing K3s on the machine.
+// What a member sees in place of the picker: the same fact, without the
+// controls. The API refuses a role change from a member, and a control that
+// always fails is worse than none.
+function NodeRoleSummary({ node }: { node: ReturnType<typeof toNode> }) {
+  const label = node.meshRole === "builder"
+    ? "Builds only"
+    : node.meshRole === "workload"
+      ? "Workloads only"
+      : "Workloads and builds"
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-medium text-foreground">Node role</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Controls which workloads this node accepts.</p>
+      </div>
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground">An administrator can change this.</p>
+    </section>
+  )
+}
+
 function MeshOnlyRole() {
   return (
     <section className="space-y-3">
