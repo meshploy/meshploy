@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.15.0](https://github.com/meshploy/meshploy/compare/v0.14.2...v0.15.0) (2026-09-15)
+
+
+### Features
+
+* let an apply carry the variables and files its manifest needs ([0a26388](https://github.com/meshploy/meshploy/commit/0a26388cc60f9f3a47789309c90d0baa50d08aca))
+* **mcp:** let an agent browse and deploy one-click templates ([5eab28e](https://github.com/meshploy/meshploy/commit/5eab28ece107f97865fa2bcc4530dbfb518edcf4))
+* **mcp:** let an agent set a stack's variables and git source ([4135ac5](https://github.com/meshploy/meshploy/commit/4135ac53dc0f1dbb33659bfecfb414270290522b))
+
+
+### Bug Fixes
+
+* require an admin for a node terminal ([518fd41](https://github.com/meshploy/meshploy/commit/518fd41c2a75f1fa721d0138006e22de111d4abf))
+* **web:** let members open the nodes page, and hide what they cannot ([0b984ce](https://github.com/meshploy/meshploy/commit/0b984ce00ca0cb038a819f93ab04dc313084c073))
+* **web:** refresh a project's lists after an apply creates resources ([6c65480](https://github.com/meshploy/meshploy/commit/6c65480ab93b0aff5e9cc5bfd6d188962781a82f))
+
 ## [0.14.2](https://github.com/meshploy/meshploy/compare/v0.14.1...v0.14.2) (2026-09-15)
 
 
