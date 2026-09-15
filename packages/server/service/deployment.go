@@ -633,10 +633,14 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	}
 
 	return appk8s.ApplyDeployment(ctx, s.k8s, appk8s.WorkloadParams{
-		Name:                appK8sName(&svc),
-		Namespace:           svc.Project.Slug,
-		Image:               svc.Image,
-		Ports:               portSpecs,
+		Name:      appK8sName(&svc),
+		Namespace: svc.Project.Slug,
+		Image:     svc.Image,
+		Ports:     portSpecs,
+		// Leaving these out rebuilt the pod without its projected files, so a
+		// running service lost every config file the moment anything re-applied
+		// it. A config file edit did it through this very path.
+		ConfigFiles:         s.configMountsFor(ctx, svc.ID, appK8sName(&svc), svc.Project.Slug),
 		Replicas:            int32(svc.Replicas),
 		Env:                 envVars,
 		CPURequest:          svc.CPURequest,
