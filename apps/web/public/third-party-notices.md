@@ -466,7 +466,7 @@ SOFTWARE.
 
 ## MIT
 
-- @codemirror/autocomplete 6.20.3
+- @codemirror/autocomplete 6.20.2
 - @codemirror/commands 6.10.3
 - @codemirror/language 6.12.3
 - @codemirror/legacy-modes 6.5.2

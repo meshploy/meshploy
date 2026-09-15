@@ -13,6 +13,11 @@ tree, so build tooling is left out.
   python3 scripts/gen-notices.py           regenerate notices/
   python3 scripts/gen-notices.py --check   fail if the committed files are stale
 
+Run `npm ci` in apps/web first. The console's list comes from what is installed,
+so a node_modules that has drifted from the lock file produces a file that names
+versions nobody ships, and the check in CI, which installs from the lock, then
+disagrees with it.
+
 The check is what CI runs, the way it checks formatting.
 """
 
