@@ -519,8 +519,12 @@ func (s *JobService) executeRun(job *db.Job, run *db.JobRun, namespace string, p
 		"status":      status,
 		"last_run_at": finished.Format(time.RFC3339),
 	})
-	if !result.Success && s.notif != nil {
-		s.notif.Dispatch(bgCtx, orgID, "job.failed", NotificationData{
+	if s.notif != nil {
+		event := "job.success"
+		if !result.Success {
+			event = "job.failed"
+		}
+		s.notif.Dispatch(bgCtx, orgID, event, NotificationData{
 			ServiceName: job.Name,
 			ProjectName: projectName,
 		})

@@ -396,6 +396,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | GET | `/orgs/{orgId}/email-config` | ✓ | Get the org SMTP configuration |
 | PUT | `/orgs/{orgId}/email-config` | ✓ | Create or update the org SMTP configuration |
 | DELETE | `/orgs/{orgId}/email-config` | ✓ | Remove the org SMTP configuration |
+| GET | `/notification-events` | ✓ | List the events a notification channel can subscribe to |
 | GET | `/orgs/{orgId}/notification-channels` | ✓ | List notification channels |
 | POST | `/orgs/{orgId}/notification-channels` | ✓ | Create a notification channel |
 | PUT | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Update a notification channel |

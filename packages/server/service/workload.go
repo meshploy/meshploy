@@ -23,6 +23,9 @@ type WorkloadService struct {
 	// tcpRoutes re-resolves a route whose target moved. Assigned after
 	// construction in service.New.
 	tcpRoutes *TCPRouteService
+	// notif reports a service the reconciler finds has changed state on its
+	// own, which no deploy path can report. Assigned after construction.
+	notif *NotificationService
 	// nodePortMeshOnly records whether this cluster binds NodePorts to the mesh
 	// range alone. Reported with a database's config so the console can say
 	// what exposing it actually exposes.

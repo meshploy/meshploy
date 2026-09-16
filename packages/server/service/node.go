@@ -111,6 +111,11 @@ func (s *NodeService) checkNodeOnlineStatus(ctx context.Context, offlineNotified
 			})
 		} else if isOnline && wasOffline {
 			delete(offlineNotified, node.ID)
+			// Only after an offline was reported: a node that was never
+			// announced as down has nothing to come back from.
+			s.notif.Dispatch(ctx, node.OrganizationID, "node.online", NotificationData{
+				NodeName: node.Name,
+			})
 		}
 	}
 }

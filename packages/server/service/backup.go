@@ -410,13 +410,37 @@ func (s *BackupService) Restore(ctx context.Context, id, serviceID uuid.UUID, ke
 		return err
 	}
 	go func() {
-		if err := s.execRestore(context.Background(), id, key); err != nil {
+		bg := context.Background()
+		err := s.execRestore(bg, id, key)
+		if err != nil {
 			log.Printf("restore %s key=%s: %v", id, key, err)
 		} else {
 			log.Printf("restore %s key=%s: success", id, key)
 		}
+		// A restore is the one operation where silence is worst: it either put
+		// the data back or it did not, and nothing else reports which.
+		s.announceRestore(bg, id, err)
 	}()
 	return nil
+}
+
+// announceRestore reports the outcome of a service restore.
+func (s *BackupService) announceRestore(ctx context.Context, cfgID uuid.UUID, err error) {
+	if s.notif == nil {
+		return
+	}
+	var cfg db.BackupConfig
+	if s.db.WithContext(ctx).Preload("Service.Project").First(&cfg, "id = ?", cfgID).Error != nil {
+		return
+	}
+	event := "restore.success"
+	if err != nil {
+		event = "restore.failed"
+	}
+	s.notif.Dispatch(ctx, cfg.Service.Project.OrganizationID, event, NotificationData{
+		ServiceName: cfg.Service.Name,
+		ProjectName: cfg.Service.Project.Name,
+	})
 }
 
 // ListSystemObjects returns all available restore points for the system backup, newest first.
@@ -442,10 +466,19 @@ func (s *BackupService) RestoreSystem(ctx context.Context, orgID uuid.UUID, key 
 		return err
 	}
 	go func() {
-		if err := s.execSystemRestore(context.Background(), cfg.ID, key); err != nil {
+		bg := context.Background()
+		err := s.execSystemRestore(bg, cfg.ID, key)
+		if err != nil {
 			log.Printf("system-restore org=%s key=%s: %v", orgID, key, err)
 		} else {
 			log.Printf("system-restore org=%s key=%s: success", orgID, key)
+		}
+		if s.notif != nil {
+			event := "restore.success"
+			if err != nil {
+				event = "restore.failed"
+			}
+			s.notif.Dispatch(bg, orgID, event, NotificationData{})
 		}
 	}()
 	return nil

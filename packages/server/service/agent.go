@@ -19,6 +19,9 @@ import (
 // membership + permission model; it differs from a human only in authentication.
 type AgentService struct {
 	db *gorm.DB
+	// notif reports a token being minted: it is a credential for the whole
+	// org. Assigned after construction in service.New.
+	notif *NotificationService
 }
 
 // AgentView is an agent principal plus its token metadata (never plaintext).
@@ -230,6 +233,18 @@ func (s *AgentService) AddToken(ctx context.Context, orgID, agentID uuid.UUID, n
 	}
 	if err := s.db.WithContext(ctx).Create(&tok).Error; err != nil {
 		return "", nil, err
+	}
+	// A token that can act on the org has just come into existence. The
+	// plaintext is shown once and never stored; this says only that it exists.
+	if s.notif != nil {
+		var agent db.User
+		name := "an agent"
+		if s.db.WithContext(ctx).Select("username").First(&agent, "id = ?", agentID).Error == nil {
+			name = agent.Username
+		}
+		s.notif.Dispatch(ctx, orgID, "agent.token_created", NotificationData{
+			Detail: fmt.Sprintf("Token %q created for %s", tok.Name, name),
+		})
 	}
 	return plaintext, &tok, nil
 }

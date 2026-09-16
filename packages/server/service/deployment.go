@@ -318,15 +318,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			return
 		}
 
-		now := time.Now()
-		s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
-			"status":      db.DeploymentSuccess,
-			"log":         depLog,
-			"deployed_at": &now,
-		})
-		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
-			"status": db.ServiceRunning,
-		})
+		s.succeedDeployment(bgCtx, deploymentID, svc.ID, depLog, "")
 
 		if s.varGroups != nil {
 			var freshSvc db.Service
@@ -534,33 +526,13 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		return
 	}
 
-	// Update service image and status.
-	now := time.Now()
-	s.db.Model(&db.Deployment{}).Where("id = ?", a.deployment.ID).Updates(map[string]any{
-		"status":      db.DeploymentSuccess,
-		"log":         depLog,
-		"deployed_at": &now,
-	})
-	s.db.Model(&db.Service{}).Where("id = ?", a.svc.ID).Updates(map[string]any{
-		"image":  a.imageName,
-		"status": db.ServiceRunning,
-	})
+	s.succeedDeployment(ctx, a.deployment.ID, a.svc.ID, depLog, a.imageName)
 
 	// Refresh system-managed variable group with updated NodePorts.
 	if s.varGroups != nil {
 		var freshSvc db.Service
 		if err := s.db.WithContext(ctx).Preload("Ports").First(&freshSvc, "id = ?", a.svc.ID).Error; err == nil {
 			_ = s.varGroups.UpsertSystemGroup(ctx, &freshSvc, a.namespace)
-		}
-	}
-
-	if s.notif != nil {
-		var proj db.Project
-		if s.db.WithContext(ctx).First(&proj, "id = ?", a.svc.ProjectID).Error == nil {
-			s.notif.Dispatch(ctx, proj.OrganizationID, "deploy.success", NotificationData{
-				ServiceName: a.svc.Name,
-				ProjectName: proj.Name,
-			})
 		}
 	}
 
@@ -577,6 +549,41 @@ func (s *DeploymentService) setStatus(id uuid.UUID, status db.DeploymentStatus, 
 	})
 }
 
+// succeedDeployment writes the terminal state of a deployment that worked, and
+// tells the org about it.
+//
+// It exists because three of the four paths that finish a deployment -- a
+// direct image deploy, a rollback, a database provision -- wrote the rows
+// themselves and dispatched nothing, so a stack deploy, which is always
+// image-based, was silent on success while its failures were reported. The
+// notification belongs with the write, not beside it.
+//
+// logValue is a string, or a gorm expression for a path that appends to the log
+// rather than replacing it. image is written only when non-empty.
+func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID, serviceID uuid.UUID, logValue any, image string) {
+	now := time.Now()
+	s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
+		"status":      db.DeploymentSuccess,
+		"log":         logValue,
+		"deployed_at": &now,
+	})
+	svcUpdates := map[string]any{"status": db.ServiceRunning}
+	if image != "" {
+		svcUpdates["image"] = image
+	}
+	s.db.Model(&db.Service{}).Where("id = ?", serviceID).Updates(svcUpdates)
+
+	if s.notif == nil {
+		return
+	}
+	var svc db.Service
+	if s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error != nil {
+		return
+	}
+	s.notif.Dispatch(ctx, svc.Project.OrganizationID, "deploy.success",
+		s.notif.ForService(ctx, &svc, svc.Project.Name))
+}
+
 func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
 	s.db.Model(&db.Deployment{}).Where("id = ?", id).Updates(map[string]any{
 		"status": db.DeploymentFailed,
@@ -590,10 +597,9 @@ func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
 	if s.notif != nil {
 		var dep db.Deployment
 		if s.db.Preload("Service.Project").First(&dep, "id = ?", id).Error == nil {
-			s.notif.Dispatch(context.Background(), dep.Service.Project.OrganizationID, "deploy.failed", NotificationData{
-				ServiceName: dep.Service.Name,
-				ProjectName: dep.Service.Project.Name,
-			})
+			ctx := context.Background()
+			s.notif.Dispatch(ctx, dep.Service.Project.OrganizationID, "deploy.failed",
+				s.notif.ForService(ctx, &dep.Service, dep.Service.Project.Name))
 		}
 	}
 }
@@ -862,16 +868,7 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 				s.db.Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
 			}
 		}
-		finishedAt := time.Now()
-		s.db.Model(&db.Deployment{}).Where("id = ?", dep.ID).Updates(map[string]any{
-			"status":      db.DeploymentSuccess,
-			"log":         dep.Log + "Rollback applied successfully.",
-			"deployed_at": &finishedAt,
-		})
-		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
-			"image":  target.Image,
-			"status": db.ServiceRunning,
-		})
+		s.succeedDeployment(context.Background(), dep.ID, svc.ID, dep.Log+"Rollback applied successfully.", target.Image)
 	}()
 
 	return dep, nil
@@ -1672,15 +1669,7 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 			s.db.Model(&db.DatabaseConfig{}).Where("id = ?", dc.ID).Update("node_port", assigned)
 		}
 
-		now := time.Now()
-		s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
-			"status":      db.DeploymentSuccess,
-			"log":         gorm.Expr("log || ?", "Database provisioned successfully.\n"),
-			"deployed_at": &now,
-		})
-		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{
-			"status": db.ServiceRunning,
-		})
+		s.succeedDeployment(bgCtx, deploymentID, svc.ID, gorm.Expr("log || ?", "Database provisioned successfully.\n"), "")
 
 		// Regenerated on every deploy, not only at creation: the group carries
 		// the connection apps use, and redeploying the database is how an

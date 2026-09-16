@@ -21,6 +21,8 @@ var ErrSingleOrganization = errors.New("this server already has its organization
 
 type OrgService struct {
 	db *gorm.DB
+	// notif reports who joined. Assigned after construction in service.New.
+	notif *NotificationService
 }
 
 type CreateOrgInput struct {
@@ -263,6 +265,13 @@ func (s *OrgService) AcceptInvitation(ctx context.Context, token, username, pass
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Someone can sign in to this org who could not a moment ago. Whether that
+	// was expected is the reader's to judge, which is why it is reported.
+	if s.notif != nil {
+		s.notif.Dispatch(ctx, inv.OrgID, "member.joined", NotificationData{
+			Detail: fmt.Sprintf("%s joined as %s", user.Username, inv.Role),
+		})
 	}
 	return &user, nil
 }

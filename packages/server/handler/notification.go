@@ -9,6 +9,23 @@ import (
 )
 
 func (h *Handler) registerNotificationRoutes(api huma.API) {
+	// The events a channel can subscribe to, served rather than written out
+	// again in the console: a hand-kept second list is how job.failed came to
+	// be dispatched for months with no way to subscribe to it.
+	huma.Register(api, huma.Operation{
+		OperationID: "list-notification-events",
+		Method:      "GET",
+		Path:        "/api/v1/notification-events",
+		Summary:     "List the events a notification channel can subscribe to",
+		Tags:        []string{"notifications"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, _ *struct{}) (*struct{ Body []service.EventDef }, error) {
+		if _, err := requireUser(ctx); err != nil {
+			return nil, err
+		}
+		return &struct{ Body []service.EventDef }{Body: service.Events()}, nil
+	})
+
 	huma.Register(api, huma.Operation{
 		OperationID: "list-notification-channels",
 		Method:      "GET",

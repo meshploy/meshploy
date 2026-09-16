@@ -198,6 +198,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	routes := &RouteService{db: db, k8s: k8sClient}
 	tcpRoutes := &TCPRouteService{db: db, k8s: k8sClient}
 	workloads.tcpRoutes = tcpRoutes
+	workloads.notif = notif
 	configFiles := &ConfigFileService{db: db, deployment: deployments}
 	deployments.configFiles = configFiles
 
@@ -214,8 +215,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	svc := &Services{
 		Auth:            auth,
 		Entitlements:    entitlements,
-		Agents:          &AgentService{db: db},
-		Orgs:            &OrgService{db: db},
+		Agents:          &AgentService{db: db, notif: notif},
+		Orgs:            &OrgService{db: db, notif: notif},
 		Permissions:     &PermissionService{db: db},
 		Projects:        &ProjectService{db: db},
 		ConfigFiles:     configFiles,

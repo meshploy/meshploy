@@ -94,9 +94,15 @@ func (s *WorkloadService) reconcileStatuses(ctx context.Context) {
 		if want == "" || want == svc.Status {
 			continue
 		}
+		was := svc.Status
 		if err := s.db.WithContext(ctx).Model(svc).Update("status", want).Error; err != nil {
 			log.Printf("status reconciler: update %s: %v", svc.Name, err)
+			continue
 		}
+		// A deploy that reported success and then fell over is only visible
+		// here: no deployment row changes, so no deploy event fires. This is
+		// the Keycloak case -- green in the console, failing in the cluster.
+		s.announce(ctx, svc, was, want)
 	}
 }
 
@@ -244,4 +250,22 @@ func (s *WorkloadService) MarkDeployed(ctx context.Context, serviceID uuid.UUID)
 	hash := fingerprint(storedServiceSpec(svc), portPrintsFromRows(svc.Ports))
 	return s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).
 		Update("deployed_spec_hash", hash).Error
+}
+
+// announce reports a change the reconciler found, not one a deploy caused.
+func (s *WorkloadService) announce(ctx context.Context, svc *db.Service, was, now db.ServiceStatus) {
+	if s.notif == nil {
+		return
+	}
+	var event string
+	switch {
+	case now == db.ServiceFailed:
+		event = "service.crashed"
+	case now == db.ServiceRunning && was == db.ServiceFailed:
+		event = "service.recovered"
+	default:
+		return // stopped, deploying: someone asked for those
+	}
+	s.notif.Dispatch(ctx, svc.Project.OrganizationID, event,
+		s.notif.ForService(ctx, svc, svc.Project.Name))
 }
