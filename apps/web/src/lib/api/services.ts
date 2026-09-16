@@ -68,7 +68,10 @@ export interface ApiDatabaseConfig {
   db_name: string
   db_user: string
   db_password: string
+  mesh_exposed: boolean
   node_port: number
+  /** True when the cluster binds NodePorts to the mesh range alone. */
+  nodeport_mesh_only: boolean
 }
 
 export interface ApiSchemaColumn {
@@ -247,6 +250,19 @@ export const services = {
     apiFetch<ApiDatabaseConfig>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/database-config`,
       {},
+      token
+    ),
+
+  updateDatabaseConfig: (
+    orgId: string,
+    projectId: string,
+    serviceId: string,
+    body: { mesh_exposed?: boolean; node_port?: number },
+    token: string
+  ) =>
+    apiFetch<ApiDatabaseConfig>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/database-config`,
+      { method: "PATCH", body: JSON.stringify(body) },
       token
     ),
 

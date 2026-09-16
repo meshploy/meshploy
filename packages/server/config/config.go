@@ -50,6 +50,7 @@ type Config struct {
 	// The value is a point-in-time observation, not live state: install.sh
 	// rewrites .env on every run, so a re-install or server-upgrade refreshes it.
 	FirewallState     string // FIREWALL_STATE       none | ufw | firewalld
+	NodePortAddresses string // NODEPORT_ADDRESSES  CIDR kube-proxy binds NodePorts to; empty = every interface
 	FirewallCheckedAt string // FIREWALL_CHECKED_AT  RFC3339 UTC
 
 	// UpgradeDir is where the console and the host-side updater meet (see
@@ -145,6 +146,7 @@ func Load() (*Config, error) {
 		HostGatewayIP:   os.Getenv("HOST_GATEWAY_IP"),
 
 		FirewallState:     os.Getenv("FIREWALL_STATE"),
+		NodePortAddresses: os.Getenv("NODEPORT_ADDRESSES"),
 		FirewallCheckedAt: os.Getenv("FIREWALL_CHECKED_AT"),
 
 		UpgradeDir: func() string {

@@ -232,6 +232,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/env-vars` | ✓ | Get build-time environment variables for a service |
 | PUT | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/build-config/env-vars` | ✓ | Set build-time environment variables for a service |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/database-config` | ✓ | Get database config for a database service |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/database-config` | ✓ | Change a database's network access |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/query` | ✓ | Execute a database query |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/schema` | ✓ | Introspect database schema |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/env-vars` | ✓ | Get decrypted env vars for a service |
@@ -491,6 +492,7 @@ Worker nodes authenticate with a registration or provisioning token rather than 
 | `PUBLIC_IP` | No | Gateway public IP, backfilled on the gateway node record |
 | `HOST_GATEWAY_IP` | No | Docker bridge IP, used when the API runs in Docker to reach the gateway's node_exporter |
 | `FIREWALL_STATE` | No | What install.sh saw on the host: `none`, `ufw` or `firewalld`. Drives the console's exposure notice |
+| `NODEPORT_ADDRESSES` | No | The CIDR kube-proxy binds published ports to, e.g. `100.64.0.0/10` for the mesh. Empty means every interface, which the console warns about when a database is published |
 | `FIREWALL_CHECKED_AT` | No | When install.sh checked the firewall (RFC3339) |
 | `BUILTIN_REGISTRY_ENDPOINT` | No | Seed a built-in registry row per org (`<host>:<port>`) |
 | `TEMPLATE_DIR` | No | Local template catalog directory; overrides the remote repo |

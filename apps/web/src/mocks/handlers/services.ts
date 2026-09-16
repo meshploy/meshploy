@@ -118,7 +118,9 @@ export const servicesHandlers = [
       db_name: "demo",
       db_user: "demo",
       db_password: "demo-password",
+      mesh_exposed: true,
       node_port: 30003,
+      nodeport_mesh_only: true,
     })
   ),
 

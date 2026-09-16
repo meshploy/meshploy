@@ -591,9 +591,15 @@ func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name
 		return nil, err
 	}
 
-	// Preserve existing NodePorts by name so they don't change on update.
+	// Preserve existing NodePorts by name so they don't change on update -- but
+	// only where the caller asks for none. A non-zero request is a deliberate
+	// choice (an operator naming the port a database should answer on), and
+	// preserving over it would make that port impossible to change.
 	existingNPs := extractNodePorts(existing.Spec.Ports)
 	for i, sp := range desired.Spec.Ports {
+		if sp.NodePort != 0 {
+			continue
+		}
 		if np, ok := existingNPs[sp.Name]; ok {
 			desired.Spec.Ports[i].NodePort = np
 		}

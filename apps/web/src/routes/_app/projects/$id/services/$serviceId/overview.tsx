@@ -122,8 +122,11 @@ function ServiceOverviewTab() {
   const internalConnStr = dc && project
     ? buildConnectionString(dc, `${dc.slug}.${project.slug}.svc.cluster.local`)
     : null
-  const meshConnStr = dc?.node_port && node?.tailscaleIP
-    ? buildConnectionString(dc, node.tailscaleIP, dc.node_port)
+  // A published port answers on every node, so a database whose placement is
+  // not known still has a mesh address: the gateway's.
+  const meshNode = node ?? nodes.find(n => n.k3sRole === "server")
+  const meshConnStr = dc?.node_port && meshNode?.tailscaleIP
+    ? buildConnectionString(dc, meshNode.tailscaleIP, dc.node_port)
     : null
 
   return (
@@ -181,7 +184,7 @@ function ServiceOverviewTab() {
                     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
                       <span className="text-xs text-muted-foreground">Mesh</span>
                       <span className="text-xs text-muted-foreground/40 italic">
-                        {dc.node_port ? "resolving node…" : "not provisioned"}
+                        {dc.node_port ? "resolving node…" : dc.mesh_exposed ? "publishing…" : "in-cluster only"}
                       </span>
                     </div>
                   )

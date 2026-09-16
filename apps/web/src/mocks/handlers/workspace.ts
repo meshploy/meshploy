@@ -530,7 +530,28 @@ export const workspaceHandlers = [
       db_name: "demo",
       db_user: "demo",
       db_password: "demo-password",
+      mesh_exposed: true,
       node_port: 30003,
+      nodeport_mesh_only: true,
+    })
+  }),
+  http.patch(`${S}/database-config`, async ({ params, request }) => {
+    const b = await body(request)
+    const exposed = b.mesh_exposed ?? true
+    const s = find("services", params.serviceId)
+    return json({
+      id: params.serviceId,
+      service_id: params.serviceId,
+      engine: s?.engine || "postgres",
+      version: s?.version || "16",
+      storage_gb: s?.storage_gb || 20,
+      slug: "demo_db",
+      db_name: "demo",
+      db_user: "demo",
+      db_password: "demo-password",
+      mesh_exposed: exposed,
+      node_port: exposed ? b.node_port || 30003 : 0,
+      nodeport_mesh_only: true,
     })
   }),
   http.post(`${S}/db/query`, async ({ request }) => {

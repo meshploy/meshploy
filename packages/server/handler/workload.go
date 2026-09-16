@@ -228,6 +228,15 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 	}, h.GetDatabaseConfig)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "update-database-config",
+		Method:      "PATCH",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/database-config",
+		Summary:     "Change a database's network access",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.UpdateDatabaseConfig)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "reset-database",
 		Method:      "POST",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/reset",
@@ -671,6 +680,33 @@ func (h *Handler) GetDatabaseConfig(ctx context.Context, input *WorkloadPathInpu
 	dc, err := h.svc.Workloads.GetDatabaseConfig(ctx, serviceID)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	return &GetDatabaseConfigOutput{Body: dc}, nil
+}
+
+// UpdateDatabaseConfigInput changes only the fields it carries; one left out is
+// kept.
+type UpdateDatabaseConfigInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	ServiceID string `path:"serviceId"`
+	Body      struct {
+		MeshExposed *bool `json:"mesh_exposed,omitempty" doc:"Publish the database's port on every node, so it can be reached over the mesh"`
+		NodePort    *int  `json:"node_port,omitempty"    doc:"The port to answer on, 30000-32767. 0 asks the cluster to choose one"`
+	}
+}
+
+func (h *Handler) UpdateDatabaseConfig(ctx context.Context, input *UpdateDatabaseConfigInput) (*GetDatabaseConfigOutput, error) {
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionUpdate, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	dc, err := h.svc.Workloads.UpdateDatabaseConfig(ctx, serviceID, svc.UpdateDatabaseConfigInput{
+		MeshExposed: input.Body.MeshExposed,
+		NodePort:    input.Body.NodePort,
+	})
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &GetDatabaseConfigOutput{Body: dc}, nil
 }

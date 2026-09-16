@@ -20,6 +20,10 @@ type WorkloadService struct {
 	db        *gorm.DB
 	k8s       kubernetes.Interface // nil when K8s is not configured
 	varGroups *VariableGroupService
+	// nodePortMeshOnly records whether this cluster binds NodePorts to the mesh
+	// range alone. Reported with a database's config so the console can say
+	// what exposing it actually exposes.
+	nodePortMeshOnly bool
 	// deployment re-applies a service's K8s Deployment from its current DB
 	// config. Assigned after construction in service.New because the two
 	// services reference each other.
@@ -516,7 +520,109 @@ func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Se
 func (s *WorkloadService) GetDatabaseConfig(ctx context.Context, serviceID uuid.UUID) (*db.DatabaseConfig, error) {
 	var dc db.DatabaseConfig
 	err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error
+	dc.NodePortMeshOnly = s.nodePortMeshOnly
 	return &dc, err
+}
+
+// UpdateDatabaseConfigInput changes only what it carries: a nil field keeps
+// what the database has.
+type UpdateDatabaseConfigInput struct {
+	// MeshExposed publishes the database's port on every node, or withdraws it.
+	MeshExposed *bool
+	// NodePort is the port to answer on. 0 asks the cluster to pick one.
+	NodePort *int
+}
+
+// UpdateDatabaseConfig changes a database's network access and applies it to
+// the cluster at once, so an operator who turns exposure on can connect without
+// re-provisioning.
+func (s *WorkloadService) UpdateDatabaseConfig(ctx context.Context, serviceID uuid.UUID, in UpdateDatabaseConfigInput) (*db.DatabaseConfig, error) {
+	var dc db.DatabaseConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err != nil {
+		return nil, err
+	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+
+	exposed := dc.MeshExposed
+	if in.MeshExposed != nil {
+		exposed = *in.MeshExposed
+	}
+	want := dc.NodePort
+	if in.NodePort != nil {
+		want = *in.NodePort
+	}
+	if want != 0 && (want < nodePortMin || want > nodePortMax) {
+		return nil, fmt.Errorf("a node port must be between %d and %d, or 0 to let the cluster choose", nodePortMin, nodePortMax)
+	}
+	if !exposed {
+		want = 0
+	}
+
+	assigned, err := applyDatabaseMeshExposure(ctx, s.k8s, &dc, &svc, exposed, want)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.db.WithContext(ctx).Model(&dc).Updates(map[string]any{
+		"mesh_exposed": exposed,
+		"node_port":    assigned,
+	}).Error; err != nil {
+		return nil, err
+	}
+	return s.GetDatabaseConfig(ctx, serviceID)
+}
+
+// The range Kubernetes assigns NodePorts from, and the only range it accepts a
+// request in.
+const (
+	nodePortMin = 30000
+	nodePortMax = 32767
+)
+
+// applyDatabaseMeshExposure creates, moves or removes the NodePort Service that
+// makes a database reachable over the mesh, and returns the port the cluster
+// ended up publishing (0 when it is not exposed).
+//
+// Kept next to the database's other cluster calls rather than inside either
+// service, because both the config update and a re-provision have to do exactly
+// this: a provision that skipped it would quietly withdraw a database an
+// operator had exposed.
+func applyDatabaseMeshExposure(ctx context.Context, k8s kubernetes.Interface, dc *db.DatabaseConfig, svc *db.Service, exposed bool, want int) (int, error) {
+	if k8s == nil {
+		return 0, nil
+	}
+	slug := dc.Slug
+	if slug == "" {
+		slug = slugify(svc.Name)
+	}
+	// The primary port, or the only one: the same choice the provision makes.
+	var row *db.ServicePort
+	for i := range svc.Ports {
+		if svc.Ports[i].IsPrimary {
+			row = &svc.Ports[i]
+			break
+		}
+		if row == nil {
+			row = &svc.Ports[i]
+		}
+	}
+	if row == nil {
+		return 0, fmt.Errorf("this database has no port to publish")
+	}
+	name := row.Name
+	if name == "" {
+		name = "db"
+	}
+	assigned, err := appk8s.ApplyNodePortService(ctx, k8s, slug, svc.Project.Slug, []appk8s.PortSpec{{
+		Name: name, Port: int32(row.Port), IsPublic: exposed, NodePort: int32(want),
+	}})
+	if err != nil {
+		return 0, fmt.Errorf("publish %s on the mesh: %w", svc.Name, err)
+	}
+	return int(assigned[name]), nil
 }
 
 // k8sName returns the Deployment name backing a service.

@@ -684,8 +684,19 @@ type DatabaseConfig struct {
 	DBUser     string          `gorm:"not null;default:''" json:"db_user"`
 	DBPassword EncryptedString `gorm:"type:text"           json:"db_password"`
 
-	// NodePort assigned by K8s for direct mesh access. 0 = not yet provisioned.
+	// MeshExposed publishes the database's port on every node, so it can be
+	// reached over the mesh. Off by default: a database is in-cluster only
+	// until someone asks for more.
+	MeshExposed bool `gorm:"not null;default:false" json:"mesh_exposed"`
+
+	// NodePort assigned by K8s for direct mesh access. 0 = not exposed.
 	NodePort int `gorm:"default:0" json:"node_port"`
+
+	// NodePortMeshOnly is computed (not stored): true when this cluster binds
+	// NodePorts to the mesh range alone. False means an exposed port answers on
+	// every interface of every node, which the console warns about.
+	// Set by the service layer after loading from DB.
+	NodePortMeshOnly bool `gorm:"-" json:"nodeport_mesh_only"`
 
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }

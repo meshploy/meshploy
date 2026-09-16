@@ -1660,6 +1660,18 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 			}
 		}
 
+		// Re-publish on the mesh when the operator asked for it. A provision
+		// that skipped this would quietly withdraw a database someone exposed,
+		// since the NodePort Service belongs to the workload being replaced.
+		fresh := *svc
+		fresh.Ports = dbPorts
+		fresh.Project = project
+		if assigned, err := applyDatabaseMeshExposure(bgCtx, s.k8s, &dc, &fresh, dc.MeshExposed, dc.NodePort); err != nil {
+			log.Printf("warning: mesh access for database %s: %v", svc.Name, err)
+		} else if assigned != dc.NodePort {
+			s.db.Model(&db.DatabaseConfig{}).Where("id = ?", dc.ID).Update("node_port", assigned)
+		}
+
 		now := time.Now()
 		s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).Updates(map[string]any{
 			"status":      db.DeploymentSuccess,
@@ -1673,8 +1685,6 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 		// Regenerated on every deploy, not only at creation: the group carries
 		// the connection apps use, and redeploying the database is how an
 		// operator refreshes it.
-		fresh := *svc
-		fresh.Ports = dbPorts
 		if err := s.varGroups.UpsertSystemGroup(bgCtx, &fresh, namespace); err != nil {
 			log.Printf("warning: refresh variables for database %s: %v", svc.Name, err)
 		}

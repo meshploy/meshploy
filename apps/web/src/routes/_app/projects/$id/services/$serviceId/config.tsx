@@ -1254,10 +1254,131 @@ function PortsSection({ projectId, serviceId }: { projectId: string; serviceId: 
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// ─── Database network access ──────────────────────────────────────────────────
+
+// A database is in-cluster only until someone asks for more. Exposing it
+// publishes its port on every node, which is how you reach it from a laptop on
+// the mesh with psql or a GUI client.
+function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const queryClient = useQueryClient()
+  const queryKey = ["database-config", orgId, projectId, serviceId]
+  const draft = useConfigDraft({ exposed: false, port: "" })
+  const { value, setValue } = draft
+
+  const { data: dc, isLoading } = useQuery({
+    queryKey,
+    queryFn: () => servicesApi.getDatabaseConfig(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+
+  useEffect(() => {
+    if (dc) draft.sync({ exposed: dc.mesh_exposed, port: dc.node_port ? String(dc.node_port) : "" })
+  }, [dc])
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      servicesApi.updateDatabaseConfig(
+        orgId,
+        projectId,
+        serviceId,
+        { mesh_exposed: value.exposed, node_port: value.port ? Number(value.port) : 0 },
+        token
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  })
+
+  useConfigSave("Network access", draft, () => mutation.mutateAsync(), !isLoading)
+
+  // A published port answers on every node. The gateway is the one to show:
+  // it is the address an operator already knows.
+  const { data: node } = useQuery({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId, token),
+    enabled: !!orgId && value.exposed,
+    select: (nodes) => nodes.find((n) => n.k3s_role === "server") ?? nodes[0],
+  })
+
+  return (
+    <Section
+      title="Network access"
+      subtitle="Inside the cluster a database is always reachable by name. Publish its port to connect from a machine on the mesh."
+    >
+      <div className="space-y-4">
+        <Field label="Reachable over the mesh">
+          <div className="flex items-center gap-2">
+            <Switch checked={value.exposed} onCheckedChange={(exposed) => setValue((v) => ({ ...v, exposed }))} />
+            <span className="text-xs text-muted-foreground">
+              {value.exposed ? "Published on every node" : "In-cluster only"}
+            </span>
+          </div>
+        </Field>
+
+        {value.exposed && (
+          <>
+            <Field label="Port">
+              <input
+                className={inputCls}
+                value={value.port}
+                inputMode="numeric"
+                placeholder="Automatic: the cluster picks a free port"
+                onChange={(e) => setValue((v) => ({ ...v, port: e.target.value.replace(/[^0-9]/g, "") }))}
+              />
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Between 30000 and 32767. Leave it empty to let the cluster choose, then copy what it picked.
+              </p>
+            </Field>
+
+            {dc?.node_port ? (
+              <Field label="Address">
+                <code className="text-xs break-all">{node?.tailscale_ip || "a node's mesh IP"}:{dc.node_port}</code>
+              </Field>
+            ) : null}
+
+            {dc && !dc.nodeport_mesh_only && (
+              <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3 flex gap-2">
+                <AlertTriangle className="size-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-200/80 space-y-1">
+                  <p className="font-medium text-amber-300">This port answers on every interface, not only the mesh.</p>
+                  <p>
+                    A published port binds on all of a node's addresses unless the cluster is told otherwise, so on a
+                    gateway it is reachable from the internet too. Until this cluster restricts NodePorts to the mesh
+                    range, protect it with the host firewall, or keep the database in-cluster only.
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {mutation.isError && <p className="text-xs text-destructive">{(mutation.error as Error).message}</p>}
+      </div>
+    </Section>
+  )
+}
+
 function ConfigTab() {
   const { id: projectId, serviceId } = useParams({
     from: "/_app/projects/$id/services/$serviceId/config",
   })
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const { data: service } = useQuery({
+    queryKey: ["service", orgId, projectId, serviceId],
+    queryFn: () => servicesApi.get(orgId!, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+
+  // A database has no build source and no environment of its own: the only
+  // thing there is to configure is how it can be reached.
+  if (service?.type === "database") {
+    return (
+      <ConfigSaveBar key={serviceId}><div className="console-page space-y-6"><ResourceIntro title="Database configuration" description="Control how this database can be reached." /><FormLayout><div className="space-y-6">
+        <DatabaseNetworkSection projectId={projectId} serviceId={serviceId} />
+      </div></FormLayout></div></ConfigSaveBar>
+    )
+  }
 
   return (
     <ConfigSaveBar key={serviceId}><div className="console-page space-y-6"><ResourceIntro title="Service configuration" description="Configure the build source, environment, networking and mounted resources." /><FormLayout><div className="space-y-6">
