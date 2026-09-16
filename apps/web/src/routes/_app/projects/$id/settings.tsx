@@ -7,6 +7,7 @@ import { projects as projectsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { inputCls } from "@/components/services/form-primitives"
 
 export const Route = createFileRoute("/_app/projects/$id/settings")({
@@ -60,66 +61,65 @@ function ProjectSettingsPage() {
           <p className="text-xs text-muted-foreground mt-0.5">Basic project information.</p>
         </div>
 
-        <div className="rounded-lg border border-border/60 bg-card divide-y divide-border/40">
-          {/* Name */}
-          <div className="flex items-center justify-between px-4 py-3 gap-4">
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Name</p>
-              {editingName ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    className={inputCls + " h-7 text-xs w-48"}
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") renameMut.mutate()
-                      if (e.key === "Escape") setEditingName(false)
-                    }}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => renameMut.mutate()}
-                    disabled={!nameInput.trim() || renameMut.isPending}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    {renameMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setEditingName(false)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+        <div className="space-y-4">
+          {/* The field owns the row, with its actions beside it. */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Name</label>
+            {editingName ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  className="h-9 text-sm"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") renameMut.mutate()
+                    if (e.key === "Escape") setEditingName(false)
+                  }}
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => renameMut.mutate()}
+                  disabled={!nameInput.trim() || renameMut.isPending}
+                >
+                  {renameMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5 text-primary" />}
+                </Button>
+                <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => setEditingName(false)}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center h-9 px-3 rounded-md border border-border/60 bg-muted/20 flex-1 min-w-0">
+                  <span className="text-sm truncate">{project.name}</span>
                 </div>
-              ) : (
-                <p className="text-sm text-foreground">{project.name}</p>
-              )}
-            </div>
-            {!editingName && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => { setNameInput(project.name); setEditingName(true) }}
-                className="text-muted-foreground/40 hover:text-muted-foreground"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => { setNameInput(project.name); setEditingName(true) }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             )}
           </div>
 
           {/* Slug (read-only) */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Slug</p>
-              <code className="text-xs font-mono text-foreground">{project.slug}</code>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Slug</label>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between h-9 px-3 rounded-md border border-border/60 bg-muted/20 flex-1 min-w-0">
+                <code className="text-xs font-mono text-foreground truncate">{project.slug}</code>
+                <span className="text-[11px] text-muted-foreground/40 border border-border/40 px-1.5 py-0.5 rounded shrink-0">
+                  K8s namespace
+                </span>
+              </div>
+              {/* Keeps the field the same width as the name's, which has a button. */}
+              <span className="h-9 w-9 shrink-0" aria-hidden />
             </div>
-            <span className="text-[11px] text-muted-foreground/40 border border-border/40 px-1.5 py-0.5 rounded">
-              K8s namespace
-            </span>
           </div>
         </div>
       </section>
