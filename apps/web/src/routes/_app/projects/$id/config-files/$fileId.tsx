@@ -1,6 +1,7 @@
 import { MetricTile, ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, useParams, Link } from "@tanstack/react-router"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Box, FileCog, Loader2, Plus, Trash2, Unplug } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import {
   configFiles as configFilesApi,
+  type ApiConfigFileDetail,
   services as servicesApi,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -21,6 +23,70 @@ import { DetailPageHeader } from "@/components/layout/detail-page-header"
 import { ConfigFileEditor } from "@/components/config-files/config-file-editor"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 import { cn, formatRelativeTime } from "@/lib/utils"
+
+// Its own component so useConfigSave runs inside the save bar's provider: the
+// page renders the bar, so a hook called there would not find it.
+function FileSection({ file, orgId, projectId, fileId, token, attachedCount }: {
+  file: ApiConfigFileDetail
+  orgId: string
+  projectId: string
+  fileId: string
+  token: string
+  attachedCount: number
+}) {
+  const qc = useQueryClient()
+  const draft = useConfigDraft({ name: file.name, path: file.path, content: "" })
+  const { value: form } = draft
+  const patch = (p: Partial<typeof form>) => draft.setValue((v) => ({ ...v, ...p }))
+
+  // A background refetch reaches the draft only while nothing is unsaved.
+  useEffect(() => {
+    draft.sync({ name: file.name, path: file.path, content: "" })
+  }, [file])
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      configFilesApi.update(orgId, projectId, fileId, { name: form.name, path: form.path, content: form.content }, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["config-file", orgId, projectId, fileId] })
+      qc.invalidateQueries({ queryKey: ["config-files", orgId, projectId] })
+    },
+  })
+
+  useConfigSave("File", draft, () => saveMut.mutateAsync())
+
+  return (
+    <Section
+      title="File"
+      subtitle="Contents are stored encrypted and never shown again, so saving replaces them rather than editing in place. Leave the editor empty to change only the name or path."
+    >
+      <Field label="Name">
+        <input value={form.name} onChange={(e) => patch({ name: e.target.value })} className={inputCls} />
+      </Field>
+      <Field label="Mount path">
+        <input
+          value={form.path}
+          onChange={(e) => patch({ path: e.target.value })}
+          className={cn(inputCls, "font-mono text-xs")}
+          spellCheck={false}
+        />
+      </Field>
+      <Field label="Replace contents">
+        <ConfigFileEditor value={form.content} onChange={(v) => patch({ content: v })} path={form.path} height="280px" placeholder="New file contents" />
+      </Field>
+
+      {attachedCount > 0 && form.content !== "" && (
+        <p className="text-xs text-amber-400">
+          Saving redeploys {attachedCount} service{attachedCount === 1 ? "" : "s"}:{" "}
+          {file.attached_services.map((s) => s.name).join(", ")}.
+        </p>
+      )}
+      {saveMut.isError && (
+        <p className="text-xs text-destructive">{(saveMut.error as Error).message}</p>
+      )}
+    </Section>
+  )
+}
 
 export const Route = createFileRoute("/_app/projects/$id/config-files/$fileId")({
   component: ConfigFileDetailPage,
@@ -160,26 +226,7 @@ function ConfigFileDetailPage() {
     enabled: !!orgId,
   })
 
-  const [name, setName] = useState<string | null>(null)
-  const [path, setPath] = useState<string | null>(null)
-  const [content, setContent] = useState("")
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-
-  // The form mirrors the file until the user edits a field, so a background
-  // refetch does not overwrite what they are typing.
-  const nameValue = name ?? file?.name ?? ""
-  const pathValue = path ?? file?.path ?? ""
-  const dirty = nameValue !== (file?.name ?? "") || pathValue !== (file?.path ?? "") || content !== ""
-
-  const saveMut = useMutation({
-    mutationFn: () =>
-      configFilesApi.update(orgId, projectId, fileId, { name: nameValue, path: pathValue, content }, token),
-    onSuccess: () => {
-      setName(null); setPath(null); setContent("")
-      qc.invalidateQueries({ queryKey: ["config-file", orgId, projectId, fileId] })
-      qc.invalidateQueries({ queryKey: ["config-files", orgId, projectId] })
-    },
-  })
 
   const deleteMut = useMutation({
     mutationFn: () => configFilesApi.delete(orgId, projectId, fileId, token),
@@ -204,7 +251,7 @@ function ConfigFileDetailPage() {
   const attachedCount = file.attached_services.length
 
   return (
-    <div className="flex flex-col min-h-full">
+    <ConfigSaveBar key={fileId}><div className="flex flex-col min-h-full pb-24">
       <DetailPageHeader
         backTo="/projects/$id/config-files"
         backLabel="Back to config files"
@@ -222,51 +269,14 @@ function ConfigFileDetailPage() {
           <MetricTile icon={FileCog} label="Updated" value={<span className="text-xl">{formatRelativeTime(new Date(file.updated_at))}</span>} detail="Latest saved revision" />
         </div>
         <div className="resource-overview-columns"><div className="space-y-6 min-w-0">
-        <Section
-          title="File"
-          subtitle="Contents are stored encrypted and never shown again, so saving replaces them rather than editing in place. Leave the editor empty to change only the name or path."
-        >
-          <Field label="Name">
-            <input
-              value={nameValue}
-              onChange={(e) => setName(e.target.value)}
-              className={inputCls}
-            />
-          </Field>
-          <Field label="Mount path">
-            <input
-              value={pathValue}
-              onChange={(e) => setPath(e.target.value)}
-              className={cn(inputCls, "font-mono text-xs")}
-              spellCheck={false}
-            />
-          </Field>
-          <Field label="Replace contents">
-            <ConfigFileEditor value={content} onChange={setContent} path={pathValue} height="280px" placeholder="New file contents" />
-          </Field>
-
-          {attachedCount > 0 && content !== "" && (
-            <p className="text-xs text-amber-400">
-              Saving redeploys {attachedCount} service{attachedCount === 1 ? "" : "s"}:{" "}
-              {file.attached_services.map((s) => s.name).join(", ")}.
-            </p>
-          )}
-          {saveMut.isError && (
-            <p className="text-xs text-destructive">{(saveMut.error as Error).message}</p>
-          )}
-
-          <div className="flex items-center gap-2">
-            <Button size="sm" className="gap-1.5" disabled={!dirty || saveMut.isPending} onClick={() => saveMut.mutate()}>
-              {saveMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Save changes
-            </Button>
-            {dirty && (
-              <Button size="sm" variant="ghost" onClick={() => { setName(null); setPath(null); setContent("") }}>
-                Discard
-              </Button>
-            )}
-          </div>
-        </Section>
+        <FileSection
+          file={file}
+          orgId={orgId}
+          projectId={projectId}
+          fileId={fileId}
+          token={token}
+          attachedCount={attachedCount}
+        />
 
         </div><aside className="space-y-6 min-w-0">
           <ResourcePanel title="Mount details"><ResourceFact label="Path"><code>{file.path}</code></ResourceFact><ResourceFact label="Contents">Encrypted at rest</ResourceFact><p className="mt-5 text-xs leading-relaxed text-muted-foreground">Attach this file to a service to mount it in its containers. Replacing contents redeploys attached services.</p></ResourcePanel>
@@ -321,6 +331,6 @@ function ConfigFileDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div></ConfigSaveBar>
   )
 }

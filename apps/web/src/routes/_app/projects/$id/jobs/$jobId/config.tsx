@@ -1,9 +1,9 @@
+import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
 import { FormLayout } from "@/components/layout/form-layout"
 import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
-import { useState } from "react"
+import { useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Check, Loader2 } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
 import { envLanguage, envTheme } from "@/lib/env-lang"
 import { StreamLanguage } from "@codemirror/language"
@@ -11,7 +11,6 @@ import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { jobs as jobsApi, type ApiJob, type CreateJobBody } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
-import { Button } from "@/components/ui/button"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
 import { CronScheduleBlock } from "@/components/jobs/cron-schedule-block"
 import { cn } from "@/lib/utils"
@@ -36,65 +35,83 @@ function ConfigPage() {
   if (!job) return null
 
   return (
-    <div className="console-page"><ResourceIntro title="Execution configuration" description="Define what runs, when it runs, and the resources available to it." /><FormLayout><div className="space-y-6">
-      <ConfigForm key={job.updated_at} job={job} orgId={orgId} projectId={projectId} token={token} />
-    </div></FormLayout></div>
+    <ConfigSaveBar key={job.id}><div className="console-page pb-24"><ResourceIntro title="Execution configuration" description="Define what runs, when it runs, and the resources available to it." /><FormLayout><div className="space-y-6">
+      <ConfigForm job={job} orgId={orgId} projectId={projectId} token={token} />
+    </div></FormLayout></div></ConfigSaveBar>
   )
 }
 
 function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: string; projectId: string; token: string }) {
   const qc = useQueryClient()
 
-  const [image, setImage]               = useState(job.image)
-  const [command, setCommand]           = useState(job.command)
-  const [cpuRequest, setCpuRequest]     = useState(job.cpu_request)
-  const [cpuLimit, setCpuLimit]         = useState(job.cpu_limit)
-  const [memRequest, setMemRequest]     = useState(job.memory_request)
-  const [memLimit, setMemLimit]         = useState(job.memory_limit)
-  const [isCron, setIsCron]             = useState(job.is_cron)
-  const [schedule, setSchedule]         = useState(job.schedule ?? "")
-  const [concurrency, setConcurrency]   = useState(job.concurrency_policy ?? "allow")
-  const [historyLimit, setHistoryLimit] = useState(String(job.history_limit ?? 5))
-  const [envVars, setEnvVars]           = useState(job.env_vars)
-  const [saved, setSaved]               = useState(false)
+  // One draft for the page: the save bar reads its dirty state, and a refetch
+  // while you are typing syncs only when you have nothing unsaved.
+  const draft = useConfigDraft({
+    image: job.image,
+    command: job.command,
+    cpuRequest: job.cpu_request,
+    cpuLimit: job.cpu_limit,
+    memRequest: job.memory_request,
+    memLimit: job.memory_limit,
+    isCron: job.is_cron,
+    schedule: job.schedule ?? "",
+    concurrency: job.concurrency_policy ?? "allow",
+    historyLimit: String(job.history_limit ?? 5),
+    envVars: job.env_vars,
+  })
+  const { value: form } = draft
+  const patch = (p: Partial<typeof form>) => draft.setValue((v) => ({ ...v, ...p }))
+
+  useEffect(() => {
+    draft.sync({
+      image: job.image,
+      command: job.command,
+      cpuRequest: job.cpu_request,
+      cpuLimit: job.cpu_limit,
+      memRequest: job.memory_request,
+      memLimit: job.memory_limit,
+      isCron: job.is_cron,
+      schedule: job.schedule ?? "",
+      concurrency: job.concurrency_policy ?? "allow",
+      historyLimit: String(job.history_limit ?? 5),
+      envVars: job.env_vars,
+    })
+  }, [job])
 
   const updateMut = useMutation({
-    mutationFn: (body: Partial<CreateJobBody>) =>
-      jobsApi.update(orgId, projectId, job.id, body, token),
+    mutationFn: () => {
+      const body: Partial<CreateJobBody> = {
+        is_cron:        form.isCron,
+        image:          form.image,
+        command:        form.command,
+        cpu_request:    form.cpuRequest,
+        cpu_limit:      form.cpuLimit,
+        memory_request: form.memRequest,
+        memory_limit:   form.memLimit,
+        env_vars:       form.envVars || undefined,
+      }
+      if (form.isCron) {
+        body.schedule           = form.schedule
+        body.concurrency_policy = form.concurrency
+        body.history_limit      = parseInt(form.historyLimit, 10) || 5
+      }
+      return jobsApi.update(orgId, projectId, job.id, body, token)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["job", orgId, projectId, job.id] })
       qc.invalidateQueries({ queryKey: ["jobs", orgId, projectId] })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
     },
   })
 
-  function handleSave() {
-    const body: Partial<CreateJobBody> = {
-      is_cron:        isCron,
-      image,
-      command,
-      cpu_request:    cpuRequest,
-      cpu_limit:      cpuLimit,
-      memory_request: memRequest,
-      memory_limit:   memLimit,
-      env_vars:       envVars || undefined,
-    }
-    if (isCron) {
-      body.schedule           = schedule
-      body.concurrency_policy = concurrency
-      body.history_limit      = parseInt(historyLimit, 10) || 5
-    }
-    updateMut.mutate(body)
-  }
+  useConfigSave("Execution configuration", draft, () => updateMut.mutateAsync())
 
   return (
     <div className="space-y-8">
       <Section title="Container" subtitle="Image and script to execute">
         <Field label="Image" required>
           <input
-            value={image}
-            onChange={(e) => setImage(e.target.value)}
+            value={form.image}
+            onChange={(e) => patch({ image: e.target.value })}
             placeholder="alpine:latest"
             className={cn(inputCls, "font-mono text-xs")}
           />
@@ -102,11 +119,11 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
         <Field label="Script">
           <div className="rounded-md overflow-hidden border border-border/60">
             <CodeMirror
-              value={command}
+              value={form.command}
               height="200px"
               theme="dark"
               extensions={[shellExtension]}
-              onChange={(val) => setCommand(val)}
+              onChange={(val) => patch({ command: val })}
               placeholder={"#!/bin/sh\n\necho 'Hello World'"}
               style={{ fontSize: 12 }}
               basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
@@ -119,29 +136,29 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
       </Section>
 
       <CronScheduleBlock
-        enabled={isCron}
-        onToggle={() => setIsCron((v) => !v)}
-        schedule={schedule}
-        onScheduleChange={setSchedule}
-        concurrency={concurrency}
-        onConcurrencyChange={setConcurrency}
-        historyLimit={historyLimit}
-        onHistoryLimitChange={setHistoryLimit}
+        enabled={form.isCron}
+        onToggle={() => patch({ isCron: !form.isCron })}
+        schedule={form.schedule}
+        onScheduleChange={(v) => patch({ schedule: v })}
+        concurrency={form.concurrency}
+        onConcurrencyChange={(v) => patch({ concurrency: v })}
+        historyLimit={form.historyLimit}
+        onHistoryLimitChange={(v) => patch({ historyLimit: v })}
       />
 
       <Section title="Resources" subtitle="CPU and memory requests and limits">
         <div className="grid grid-cols-2 gap-4">
           <Field label="CPU request">
-            <input value={cpuRequest} onChange={(e) => setCpuRequest(e.target.value)} placeholder="100m" className={cn(inputCls, "font-mono text-xs")} />
+            <input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} placeholder="100m" className={cn(inputCls, "font-mono text-xs")} />
           </Field>
           <Field label="CPU limit">
-            <input value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} placeholder="500m" className={cn(inputCls, "font-mono text-xs")} />
+            <input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} placeholder="500m" className={cn(inputCls, "font-mono text-xs")} />
           </Field>
           <Field label="Memory request">
-            <input value={memRequest} onChange={(e) => setMemRequest(e.target.value)} placeholder="128Mi" className={cn(inputCls, "font-mono text-xs")} />
+            <input value={form.memRequest} onChange={(e) => patch({ memRequest: e.target.value })} placeholder="128Mi" className={cn(inputCls, "font-mono text-xs")} />
           </Field>
           <Field label="Memory limit">
-            <input value={memLimit} onChange={(e) => setMemLimit(e.target.value)} placeholder="512Mi" className={cn(inputCls, "font-mono text-xs")} />
+            <input value={form.memLimit} onChange={(e) => patch({ memLimit: e.target.value })} placeholder="512Mi" className={cn(inputCls, "font-mono text-xs")} />
           </Field>
         </div>
       </Section>
@@ -150,11 +167,11 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
         <Field label="Env vars">
           <div className="rounded-md overflow-hidden border border-border/60">
             <CodeMirror
-              value={envVars}
+              value={form.envVars}
               height="140px"
               theme="dark"
               extensions={[envLanguage, envTheme]}
-              onChange={(val) => setEnvVars(val)}
+              onChange={(val) => patch({ envVars: val })}
               placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"}
               style={{ fontSize: 12 }}
               basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
@@ -163,18 +180,9 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
         </Field>
       </Section>
 
-      <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={updateMut.isPending} size="sm" className="gap-1.5">
-          {updateMut.isPending
-            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : saved ? <Check className="h-3.5 w-3.5" /> : null
-          }
-          {saved ? "Saved" : "Save changes"}
-        </Button>
-        {updateMut.isError && (
-          <p className="text-xs text-destructive">Failed to save. Please try again.</p>
-        )}
-      </div>
+      {updateMut.isError && (
+        <p className="text-xs text-destructive">{(updateMut.error as Error).message}</p>
+      )}
     </div>
   )
 }
