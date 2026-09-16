@@ -55,8 +55,12 @@ var (
 	runtimeExec = func(runtime string, args ...string) error {
 		return sysCmd(runtime, args...)
 	}
-	lookPath    = exec.LookPath
-	verifyStack = func(ctx context.Context) error {
+	lookPath = exec.LookPath
+	// Seams for the published-port restriction, so a test can exercise it
+	// without a k3s to restart.
+	nodePortDropin   = "/etc/rancher/k3s/config.yaml.d/20-nodeport-addresses.yaml"
+	systemctlRestart = func(unit string) error { return sysCmd("systemctl", "restart", unit) }
+	verifyStack      = func(ctx context.Context) error {
 		return waitForHealthyStack(ctx, stackChecks(), upgradeHealthTimeout)
 	}
 )
@@ -295,6 +299,13 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 		return fail(err)
 	}
 
+	// Published ports on the mesh only. Left to last: it restarts k3s, which
+	// running pods survive but a deploy in flight does not, and everything above
+	// has already succeeded by here.
+	if err := restrictNodePorts(); err != nil {
+		fmt.Printf("warning: could not keep published ports on the mesh: %v\n", err)
+	}
+
 	// An updater that is on runs whichever unit files it was given; bring them
 	// in line with the CLI that just did this upgrade.
 	if err := refreshUpgradeUnits(); err != nil {
@@ -302,6 +313,50 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	}
 
 	fmt.Println("✔  Server upgraded successfully")
+	return nil
+}
+
+// nodePortCIDRs are Headscale's ranges: what a published port may answer on.
+// A port reachable from anywhere else is published through a TCP route on the
+// gateway, deliberately, rather than by kube-proxy binding every address.
+const nodePortCIDRs = "100.64.0.0/10,fd7a:115c:a1e0::/48"
+
+// restrictNodePorts writes the k3s drop-in that keeps published ports on the
+// mesh, and records the ranges in .env so the console can say whether an
+// exposed database really is mesh-only.
+//
+// A no-op once written: the drop-in is compared before anything restarts, so
+// every later upgrade passes straight through.
+func restrictNodePorts() error {
+	dropin := nodePortDropin
+	want := "kube-proxy-arg+:\n  - \"nodeport-addresses=" + nodePortCIDRs + "\"\n"
+
+	if have, err := os.ReadFile(dropin); err == nil && string(have) == want {
+		if readEnvVar("NODEPORT_ADDRESSES") == "" {
+			return setEnvVar("NODEPORT_ADDRESSES", nodePortCIDRs)
+		}
+		return nil
+	}
+	// Only a gateway runs the k3s server; a machine without it has no kube-proxy
+	// of its own to configure here.
+	if _, err := os.Stat(filepath.Dir(filepath.Dir(dropin))); err != nil {
+		return nil
+	}
+
+	fmt.Println("Keeping published ports on the mesh…")
+	if err := os.MkdirAll(filepath.Dir(dropin), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(dropin, []byte(want), 0o644); err != nil {
+		return err
+	}
+	if err := setEnvVar("NODEPORT_ADDRESSES", nodePortCIDRs); err != nil {
+		return err
+	}
+	if err := systemctlRestart("k3s"); err != nil {
+		return fmt.Errorf("restart k3s: %w", err)
+	}
+	fmt.Println("✔  Published ports answer on the mesh only")
 	return nil
 }
 

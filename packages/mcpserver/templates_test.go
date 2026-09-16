@@ -83,3 +83,41 @@ func TestMCPTemplateCarriesNoValues(t *testing.T) {
 		t.Errorf("a generated variable should say so: %s", b)
 	}
 }
+
+// The TCP tools are the agent's half of publishing a port, and registration is
+// the silent failure: the server starts and the agent simply cannot see them.
+func TestTCPPortToolsAreRegistered(t *testing.T) {
+	saved := toolHooks
+	t.Cleanup(func() { toolHooks = saved })
+	toolHooks = nil
+
+	ms := New(client.New("http://127.0.0.1:0", "t"), "org-1")
+	res := ms.HandleMessage(context.Background(), json.RawMessage(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	b, err := json.Marshal(res)
+	if err != nil {
+		t.Fatalf("marshal tools/list: %v", err)
+	}
+	for _, name := range []string{"list_tcp_ports", "publish_tcp_port", "unpublish_tcp_port"} {
+		if !strings.Contains(string(b), `"`+name+`"`) {
+			t.Errorf("tool %q is not on the MCP surface", name)
+		}
+	}
+}
+
+// A published port with no allow-list is open to the internet, so the agent has
+// to see that plainly rather than as an absent field.
+func TestMCPTCPRouteReportsWhoMayConnect(t *testing.T) {
+	b, err := json.Marshal(toMCPTCPRoute(client.TCPRoute{
+		ID: "r1", GatewayPort: 5432, TargetIP: "100.64.0.1", TargetPort: 31432, Status: "open",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"allowed_from":[]`) {
+		t.Errorf("an open port should say so as an empty list, got %s", b)
+	}
+	if !strings.Contains(string(b), `"target":"100.64.0.1:31432"`) {
+		t.Errorf("target not reported: %s", b)
+	}
+}

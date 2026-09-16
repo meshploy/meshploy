@@ -201,6 +201,16 @@ func (s *srv) registerReadToolsExtended(ms *mcpsdk.MCPServer) {
 		s.handleListStackServices,
 	)
 
+	// ── Routes ────────────────────────────────────────────────────────────────
+
+	ms.AddTool(
+		mcp.NewTool("list_tcp_ports",
+			mcp.WithDescription("List the TCP ports the gateway publishes for a project, with what each forwards to, whether it is listening, and who may connect."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+		),
+		s.handleListTCPPorts,
+	)
+
 	// ── Templates ─────────────────────────────────────────────────────────────
 
 	ms.AddTool(
@@ -519,6 +529,19 @@ func (s *srv) handleListStackServices(_ context.Context, req mcp.CallToolRequest
 
 // suppress unused import warning
 var _ = fmt.Sprintf
+
+func (s *srv) handleListTCPPorts(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	routes, err := s.c.ListTCPRoutes(s.orgID, projectID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	out := make([]MCPTCPRoute, 0, len(routes))
+	for _, r := range routes {
+		out = append(out, toMCPTCPRoute(r))
+	}
+	return jsonResult(out)
+}
 
 func (s *srv) handleListTemplates(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	tpls, err := s.c.ListTemplates()

@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpsdk "github.com/mark3labs/mcp-go/server"
@@ -393,6 +395,28 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 		s.handleDeleteRoute,
 	)
 
+	ms.AddTool(
+		mcp.NewTool("publish_tcp_port",
+			mcp.WithDescription("Publish a port on the gateway and forward it over the mesh, for a service that does not speak HTTP: Postgres, Redis and the like. Anything HTTP takes create_route instead, which gives it a hostname and TLS. A managed database must have mesh access before it can be published."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("gateway_port", mcp.Required(), mcp.Description("The port the gateway listens on, which clients connect to. It cannot be one the gateway uses for itself")),
+			mcp.WithString("service_id", mcp.Description("Service ID or name to forward to")),
+			mcp.WithString("node_id", mcp.Description("Node ID or name to forward to instead, for something running outside Meshploy")),
+			mcp.WithString("node_port", mcp.Description("The port on that node, with node_id")),
+			mcp.WithString("allow_from", mcp.Description("Addresses or ranges allowed to connect, comma separated, e.g. 203.0.113.7,10.0.0.0/8. Left out, the port is open to the internet")),
+		),
+		s.handlePublishTCPPort,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("unpublish_tcp_port",
+			mcp.WithDescription("DESTRUCTIVE — stop publishing a TCP port on the gateway. Anything connecting through it loses its route. Confirm with the user before calling."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("route_id", mcp.Required(), mcp.Description("TCP route ID, from list_tcp_ports")),
+		),
+		s.handleUnpublishTCPPort,
+	)
+
 	// ── Jobs (extended) ───────────────────────────────────────────────────────
 
 	ms.AddTool(
@@ -748,6 +772,69 @@ func (s *srv) handleDeleteVolume(_ context.Context, req mcp.CallToolRequest) (*m
 }
 
 // ── Route handlers ────────────────────────────────────────────────────────────
+
+func (s *srv) handlePublishTCPPort(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	gatewayPort, err := strconv.Atoi(mcp.ParseString(req, "gateway_port", ""))
+	if err != nil || gatewayPort < 1 || gatewayPort > 65535 {
+		return mcp.NewToolResultError("gateway_port must be a port between 1 and 65535"), nil
+	}
+
+	body := client.CreateTCPRouteBody{GatewayPort: gatewayPort}
+	if allow := mcp.ParseString(req, "allow_from", ""); allow != "" {
+		for _, c := range strings.Split(allow, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				body.AllowedCIDRs = append(body.AllowedCIDRs, c)
+			}
+		}
+	}
+
+	switch serviceRef, nodeRef := mcp.ParseString(req, "service_id", ""), mcp.ParseString(req, "node_id", ""); {
+	case serviceRef != "":
+		svc, err := s.c.GetServiceByName(s.orgID, projectID, serviceRef)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		body.ServiceID = &svc.ID
+	case nodeRef != "":
+		nodes, err := s.c.ListNodes(s.orgID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		nodeID := ""
+		for _, n := range nodes {
+			if n.ID == nodeRef || n.Name == nodeRef || n.TailscaleIP == nodeRef {
+				nodeID = n.ID
+				break
+			}
+		}
+		if nodeID == "" {
+			return mcp.NewToolResultError(fmt.Sprintf("node %q not found", nodeRef)), nil
+		}
+		nodePort, err := strconv.Atoi(mcp.ParseString(req, "node_port", ""))
+		if err != nil || nodePort < 1 || nodePort > 65535 {
+			return mcp.NewToolResultError("node_port must be a port between 1 and 65535"), nil
+		}
+		body.NodeID, body.NodePort = &nodeID, &nodePort
+	default:
+		return mcp.NewToolResultError("a target is required: service_id or node_id"), nil
+	}
+
+	route, err := s.c.CreateTCPRoute(s.orgID, projectID, body)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(toMCPTCPRoute(*route))
+}
+
+func (s *srv) handleUnpublishTCPPort(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	routeID := mcp.ParseString(req, "route_id", "")
+	if err := s.c.DeleteTCPRoute(s.orgID, projectID, routeID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText("the gateway no longer publishes that port"), nil
+}
 
 func (s *srv) handleCreateRoute(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	projectID := mcp.ParseString(req, "project_id", "")

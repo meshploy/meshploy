@@ -1,6 +1,10 @@
 package mcpserver
 
-import "github.com/meshploy/packages/client"
+import (
+	"fmt"
+
+	"github.com/meshploy/packages/client"
+)
 
 // Lean projection types — only fields Claude needs. Metadata (created_at,
 // updated_at, slug, project_id, k8s_name) is intentionally excluded.
@@ -47,6 +51,37 @@ type MCPRoute struct {
 	Hostname  string `json:"hostname"`
 	ServiceID string `json:"service_id,omitempty"`
 	Port      int    `json:"port"`
+}
+
+// MCPTCPRoute is a published port as an agent sees it. Status matters here in
+// a way it does not for a domain route: the listener lives in the gateway, so
+// creating the route and the port actually opening are two different moments.
+type MCPTCPRoute struct {
+	ID          string   `json:"id"`
+	GatewayPort int      `json:"gateway_port"`
+	Target      string   `json:"target"`
+	ServiceID   string   `json:"service_id,omitempty"`
+	AllowedFrom []string `json:"allowed_from"`
+	Status      string   `json:"status"`
+	LastError   string   `json:"last_error,omitempty"`
+}
+
+func toMCPTCPRoute(r client.TCPRoute) MCPTCPRoute {
+	out := MCPTCPRoute{
+		ID:          r.ID,
+		GatewayPort: r.GatewayPort,
+		Target:      fmt.Sprintf("%s:%d", r.TargetIP, r.TargetPort),
+		AllowedFrom: r.AllowedCIDRs,
+		Status:      r.Status,
+		LastError:   r.LastError,
+	}
+	if out.AllowedFrom == nil {
+		out.AllowedFrom = []string{}
+	}
+	if r.ServiceID != nil {
+		out.ServiceID = *r.ServiceID
+	}
+	return out
 }
 
 type MCPProject struct {

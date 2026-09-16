@@ -848,6 +848,9 @@ HOST_GATEWAY_IP=${HOST_GATEWAY_IP}
 MESHPLOY_CHANNEL=${MESHPLOY_CHANNEL:-latest}
 FIREWALL_STATE=${FIREWALL_STATE:-unknown}
 FIREWALL_CHECKED_AT=${FIREWALL_CHECKED_AT}
+# What kube-proxy binds published ports to, written when the drop-in below is.
+# The console reads it to know whether an exposed port really is mesh-only.
+NODEPORT_ADDRESSES=100.64.0.0/10,fd7a:115c:a1e0::/48
 # Fill in after first start: $COMPOSE_CMD exec headscale headscale apikeys create
 HEADSCALE_API_KEY=
 ENVEOF
@@ -1055,12 +1058,31 @@ for u in json.load(sys.stdin):
     || warn "tailscale up returned non-zero — it may already be connected, check: tailscale status"
   success "This node joined the mesh as 'gateway'"
 
+  # ── Keep published ports on the mesh ────────────────────────────────────────
+  # Without this kube-proxy binds every published port on every address of the
+  # node, so a port meant for the mesh also answers on the gateway's public IP.
+  # The ranges are Headscale's (deploy/headscale/config/config.yaml); a route on
+  # the gateway is how something is published to the internet deliberately.
+  #
+  # Written beside the flannel drop-in and applied by the same restart below.
+  NODEPORT_DROPIN="/etc/rancher/k3s/config.yaml.d/20-nodeport-addresses.yaml"
+  NODEPORT_CIDRS="100.64.0.0/10,fd7a:115c:a1e0::/48"
+  NODEPORT_CHANGED=0
+  if ! grep -qs "nodeport-addresses=${NODEPORT_CIDRS}" "$NODEPORT_DROPIN"; then
+    mkdir -p "$(dirname "$NODEPORT_DROPIN")"
+    cat > "$NODEPORT_DROPIN" <<NPEOF
+kube-proxy-arg+:
+  - "nodeport-addresses=${NODEPORT_CIDRS}"
+NPEOF
+    NODEPORT_CHANGED=1
+  fi
+
   # ── Pin flannel to the mesh interface ───────────────────────────────────────
   # Deferred from the k3s install above, where tailscale0 could not exist. A
   # drop-in rather than config.yaml so an operator's own config is left intact.
   FLANNEL_DROPIN="/etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml"
-  if ! grep -qs "flannel-iface: tailscale0" "$FLANNEL_DROPIN"; then
-    info "Binding flannel to the mesh interface…"
+  if ! grep -qs "flannel-iface: tailscale0" "$FLANNEL_DROPIN" || [[ "$NODEPORT_CHANGED" -eq 1 ]]; then
+    info "Binding flannel and published ports to the mesh interface…"
     mkdir -p "$(dirname "$FLANNEL_DROPIN")"
     printf 'flannel-iface: tailscale0\n' > "$FLANNEL_DROPIN"
     systemctl restart k3s
@@ -1082,10 +1104,10 @@ for u in json.load(sys.stdin):
     # only k3s's own system pods exist this early in an install.
     if k3s kubectl get --raw='/readyz' &>/dev/null; then
       k3s kubectl delete pods --all -n kube-system --wait=false &>/dev/null || true
-      success "flannel bound to tailscale0 (mesh MTU)"
+      success "flannel bound to tailscale0 (mesh MTU); published ports bound to the mesh"
     fi
   else
-    success "flannel already bound to the mesh interface"
+    success "flannel and published ports already bound to the mesh"
   fi
 
   # ── Phase 2: Start mesh-IP-dependent services ────────────────────────────────
@@ -1554,7 +1576,8 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
           K3S_NODE_NAME="$NODE_HOSTNAME" \
           sh -s - agent \
             --node-ip="${MESH_IP_ASSIGNED}" \
-            --flannel-iface=tailscale0; then
+            --flannel-iface=tailscale0 \
+            --kube-proxy-arg=nodeport-addresses=100.64.0.0/10,fd7a:115c:a1e0::/48; then
         error "k3s agent install failed."
         warn "Last log lines:"
         journalctl -u k3s-agent --no-pager -n 20 2>/dev/null || true
