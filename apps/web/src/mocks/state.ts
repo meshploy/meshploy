@@ -44,6 +44,7 @@ export const db: Record<string, DemoRecord[]> = {
       })),
     },
   ],
+  "tcp-routes": [],
   "variable-groups": [
     record({
       id: groupId,

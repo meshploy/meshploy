@@ -22,6 +22,7 @@ import {
   services as servicesApi,
   buildConfigs as buildConfigsApi,
   nodes as nodesApi,
+  tcpRoutes as tcpRoutesApi,
   volumes as volumesApi,
   variableGroups as groupsApi,
   configFiles as configFilesApi,
@@ -1262,7 +1263,7 @@ function PortsSection({ projectId, serviceId }: { projectId: string; serviceId: 
 // as the opposite.
 type DBReach = "cluster" | "mesh" | "internet"
 
-const REACH_RUNGS: { value: DBReach; label: string; detail: string; disabled?: string }[] = [
+const REACH_RUNGS: { value: DBReach; label: string; detail: string }[] = [
   {
     value: "cluster",
     label: "In-cluster only",
@@ -1276,8 +1277,7 @@ const REACH_RUNGS: { value: DBReach; label: string; detail: string; disabled?: s
   {
     value: "internet",
     label: "Reachable from the internet",
-    detail: "Needs a TCP route through the gateway.",
-    disabled: "Not available yet",
+    detail: "The gateway publishes a port of its own and forwards it. Restrict who may connect below.",
   },
 ]
 
@@ -1285,15 +1285,18 @@ const REACH_RUNGS: { value: DBReach; label: string; detail: string; disabled?: s
 const REACH_STATE: Record<DBReach, string> = {
   cluster: "only other services can connect, by name. Not from your own machine, not from the internet",
   mesh: "other services connect by name, and any machine on the mesh can connect at the address below",
-  internet: "reachable from the internet through a route on the gateway",
+  internet: "other services connect by name, the mesh connects directly, and the gateway forwards its own port from the internet",
 }
 
-function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+function DatabaseNetworkSection({ projectId, serviceId, dbPort }: { projectId: string; serviceId: string; dbPort: number }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
   const queryKey = ["database-config", orgId, projectId, serviceId]
-  const draft = useConfigDraft<{ reach: DBReach; port: string }>({ reach: "cluster", port: "" })
+  const tcpKey = ["tcp-routes", orgId, projectId]
+  const draft = useConfigDraft<{ reach: DBReach; port: string; gatewayPort: string; allowFrom: string }>({
+    reach: "cluster", port: "", gatewayPort: "", allowFrom: "",
+  })
   const { value, setValue } = draft
 
   const { data: dc, isLoading } = useQuery({
@@ -1302,25 +1305,50 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
     enabled: !!orgId,
   })
 
+  const { data: tcpList = [] } = useQuery({
+    queryKey: tcpKey,
+    queryFn: () => tcpRoutesApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+  const route = tcpList.find((r) => r.service_id === serviceId)
+
   useEffect(() => {
-    if (dc) {
-      draft.sync({
-        reach: dc.mesh_exposed ? "mesh" : "cluster",
-        port: dc.node_port ? String(dc.node_port) : "",
-      })
-    }
-  }, [dc])
+    if (!dc) return
+    draft.sync({
+      reach: route ? "internet" : dc.mesh_exposed ? "mesh" : "cluster",
+      port: dc.node_port ? String(dc.node_port) : "",
+      gatewayPort: String(route?.gateway_port ?? dbPort ?? ""),
+      allowFrom: (route?.allowed_cidrs ?? []).join(", "),
+    })
+  }, [dc, route])
 
   const mutation = useMutation({
-    mutationFn: () =>
-      servicesApi.updateDatabaseConfig(
+    // Mesh access first: the gateway forwards to the port the cluster
+    // publishes, so a route created before it exists has nothing to point at.
+    mutationFn: async () => {
+      await servicesApi.updateDatabaseConfig(
         orgId,
         projectId,
         serviceId,
         { mesh_exposed: value.reach !== "cluster", node_port: value.port ? Number(value.port) : 0 },
         token
-      ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+      )
+      if (value.reach === "internet") {
+        const allowed = value.allowFrom.split(/[\s,]+/).filter(Boolean)
+        const gatewayPort = Number(value.gatewayPort)
+        if (route) {
+          await tcpRoutesApi.update(orgId, projectId, route.id, { gateway_port: gatewayPort, allowed_cidrs: allowed }, token)
+        } else {
+          await tcpRoutesApi.create(orgId, projectId, { gateway_port: gatewayPort, service_id: serviceId, allowed_cidrs: allowed }, token)
+        }
+      } else if (route) {
+        await tcpRoutesApi.remove(orgId, projectId, route.id, token)
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: tcpKey })
+    },
   })
 
   useConfigSave("Network access", draft, () => mutation.mutateAsync(), !isLoading)
@@ -1351,14 +1379,11 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                disabled={!!rung.disabled}
                 onClick={() => setValue((v) => ({ ...v, reach: rung.value }))}
                 className={cn(
                   "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
                   selected ? "border-primary bg-primary/5" : "border-border/60 bg-card",
-                  rung.disabled
-                    ? "opacity-50 cursor-not-allowed"
-                    : !selected && "hover:border-border hover:bg-muted/20"
+                  !selected && "hover:border-border hover:bg-muted/20"
                 )}
               >
                 <span
@@ -1370,11 +1395,6 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
                 <span className="min-w-0 space-y-0.5">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-foreground">{rung.label}</span>
-                    {rung.disabled && (
-                      <span className="text-[11px] text-muted-foreground border border-border/60 rounded px-1.5 py-0.5">
-                        {rung.disabled}
-                      </span>
-                    )}
                   </span>
                   <span className="block text-xs text-muted-foreground">{rung.detail}</span>
                 </span>
@@ -1406,10 +1426,75 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
             </Field>
 
             {dc?.node_port ? (
-              <Field label="Address">
+              <Field label="Mesh address">
                 <code className="text-xs break-all">{node?.tailscale_ip || "a node's mesh IP"}:{dc.node_port}</code>
               </Field>
             ) : null}
+
+            {value.reach === "internet" && (
+              <>
+                <Field label="Gateway port">
+                  <input
+                    className={inputCls}
+                    value={value.gatewayPort}
+                    inputMode="numeric"
+                    placeholder={String(dbPort)}
+                    onChange={(e) => setValue((v) => ({ ...v, gatewayPort: e.target.value.replace(/[^0-9]/g, "") }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    The port the gateway listens on, which clients connect to. It cannot be one the gateway already
+                    uses for itself.
+                  </p>
+                </Field>
+
+                <Field label="Allow from">
+                  <input
+                    className={inputCls}
+                    value={value.allowFrom}
+                    placeholder="Anyone. e.g. 203.0.113.7, 10.0.0.0/8"
+                    onChange={(e) => setValue((v) => ({ ...v, allowFrom: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Addresses or ranges, separated by commas. Left empty the port is open to the internet.
+                  </p>
+                </Field>
+
+                {route && (
+                  <Field label="Public address">
+                    <span className="flex flex-wrap items-center justify-end gap-2">
+                      <code className="text-xs break-all">
+                        {node?.public_ip || "the gateway"}:{route.gateway_port}
+                      </code>
+                      <span
+                        className={cn(
+                          "text-[11px] border rounded px-1.5 py-0.5",
+                          route.status === "open"
+                            ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/10"
+                            : route.status === "failed"
+                              ? "text-destructive border-destructive/20 bg-destructive/10"
+                              : "text-muted-foreground border-border/60"
+                        )}
+                      >
+                        {route.status === "open" ? "listening" : route.status}
+                      </span>
+                    </span>
+                    {route.status === "failed" && route.last_error && (
+                      <p className="text-xs text-destructive mt-1.5">{route.last_error}</p>
+                    )}
+                    {route.status === "pending" && (
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        The gateway opens the port within a minute of saving.
+                      </p>
+                    )}
+                  </Field>
+                )}
+
+                <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+                  The host firewall, and a cloud security group if there is one, must also allow this port: the
+                  gateway listens on it, but neither of those knows that.
+                </div>
+              </>
+            )}
 
             {dc && !dc.nodeport_mesh_only && (
               <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3 flex gap-2">
@@ -1450,7 +1535,7 @@ function ConfigTab() {
   if (service?.type === "database") {
     return (
       <ConfigSaveBar key={serviceId}><div className="console-page space-y-6 pb-24"><ResourceIntro title="Database configuration" description="Control how this database can be reached." /><FormLayout><div className="space-y-6">
-        <DatabaseNetworkSection projectId={projectId} serviceId={serviceId} />
+        <DatabaseNetworkSection projectId={projectId} serviceId={serviceId} dbPort={service.ports?.find((p) => p.is_primary)?.port ?? service.ports?.[0]?.port ?? 5432} />
       </div></FormLayout></div></ConfigSaveBar>
     )
   }

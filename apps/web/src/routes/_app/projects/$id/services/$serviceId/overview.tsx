@@ -7,6 +7,7 @@ import {
   services as servicesApi,
   deployments, variableGroups, stacks,
   routes as routesApi,
+  tcpRoutes,
   nodes as nodesApi,
   projects as projectsApi,
   toNode,
@@ -100,6 +101,14 @@ function ServiceOverviewTab() {
     enabled: !!orgId && service?.type === "database",
   })
 
+  // A TCP route publishes this database on the gateway, so its address is one
+  // more thing to connect with -- and the one to be careful with.
+  const { data: tcpList = [] } = useQuery({
+    queryKey: ["tcp-routes", orgId, projectId],
+    queryFn: () => tcpRoutes.list(orgId!, projectId, token),
+    enabled: !!orgId && service?.type === "database",
+  })
+
   const { data: pods, isError: podsError } = useQuery({ queryKey: ["pods", orgId, projectId, serviceId], queryFn: () => servicesApi.listPods(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: 15000 })
   const { data: metrics, isError: metricsError } = useQuery({ queryKey: ["pod-metrics", orgId, projectId, serviceId], queryFn: () => servicesApi.getPodMetrics(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: 15000, retry: false })
   const { data: history, isError: historyError } = useQuery({ queryKey: ["deployments", orgId, projectId, serviceId], queryFn: () => deployments.list(orgId!, projectId, serviceId, token), enabled: !!orgId, refetchInterval: livePoll(list => list.some(d => ["pending", "building", "deploying"].includes(d.status))) })
@@ -125,6 +134,13 @@ function ServiceOverviewTab() {
   // A published port answers on every node, so a database whose placement is
   // not known still has a mesh address: the gateway's.
   const meshNode = node ?? nodes.find(n => n.k3sRole === "server")
+  // The gateway's public address comes from the raw row: the mapped node type
+  // carries what the console shows about a node, not how to reach it.
+  const gatewayPublicIP = rawNodes.find(n => n.k3s_role === "server")?.public_ip
+  const tcpRoute = tcpList.find(r => r.service_id === serviceId)
+  const publicConnStr = dc && tcpRoute && tcpRoute.status === "open" && gatewayPublicIP
+    ? buildConnectionString(dc, gatewayPublicIP, tcpRoute.gateway_port)
+    : null
   const meshConnStr = dc?.node_port && meshNode?.tailscaleIP
     ? buildConnectionString(dc, meshNode.tailscaleIP, dc.node_port)
     : null
@@ -178,6 +194,7 @@ function ServiceOverviewTab() {
                 <CopyRow label="Password" value={dc.db_password} />
                 <CopyRow label="Slug" value={dc.slug} />
                 {internalConnStr && <CopyRow label="Internal" value={internalConnStr} />}
+                {publicConnStr && <CopyRow label="Public" value={publicConnStr} />}
                 {meshConnStr
                   ? <CopyRow label="Mesh" value={meshConnStr} />
                   : (

@@ -46,6 +46,16 @@ const defaults: Record<string, any> = {
   volumes: { ...demoVolume, status: "idle" },
   stacks: demoStack,
   routes: { ...demoRoute, targets: [] },
+  "tcp-routes": {
+    service_id: null,
+    service_port: 0,
+    node_id: null,
+    target_ip: "100.64.0.1",
+    target_port: 31432,
+    allowed_cidrs: [],
+    status: "open",
+    last_error: "",
+  },
   "variable-groups": { description: "", system_managed: false, items: [] },
   "config-files": {
     stack_id: null,

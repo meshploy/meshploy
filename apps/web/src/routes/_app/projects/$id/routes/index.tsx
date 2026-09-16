@@ -1,11 +1,11 @@
 import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ExternalLink, Globe, Loader2, Plus } from "lucide-react"
+import { ExternalLink, Globe, Loader2, Network, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
-import { routes as routesApi, type ApiDbRoute } from "@/lib/api"
+import { routes as routesApi, tcpRoutes as tcpRoutesApi, services as servicesApi, type ApiDbRoute, type ApiTCPRoute } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
@@ -35,6 +35,18 @@ function RoutesTab() {
     enabled: !!orgId,
   })
 
+  const { data: tcpList = [] } = useQuery({
+    queryKey: ["tcp-routes", orgId, projectId],
+    queryFn: () => tcpRoutesApi.list(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  const { data: serviceList = [] } = useQuery({
+    queryKey: ["services", orgId, projectId],
+    queryFn: () => servicesApi.list(orgId!, projectId, token),
+    enabled: !!orgId && tcpList.length > 0,
+  })
+  const serviceNames = new Map(serviceList.map((s) => [s.id, s.name]))
+
   const goToNew = () =>
     navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "route" } })
 
@@ -44,7 +56,7 @@ function RoutesTab() {
         <div className="flex items-center gap-2">
           <h1>Routes</h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          {!isLoading && <span className="text-xs text-muted-foreground">{routeList.length}</span>}
+          {!isLoading && <span className="text-xs text-muted-foreground">{routeList.length + tcpList.length}</span>}
         </div>
         <Button size="sm" className="gap-1.5" onClick={goToNew}>
           <Plus className="h-3.5 w-3.5" />
@@ -58,7 +70,7 @@ function RoutesTab() {
         <div className="flex items-center justify-center h-40">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         </div>
-      ) : routeList.length === 0 ? (
+      ) : routeList.length === 0 && tcpList.length > 0 ? null : routeList.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/60 py-14 flex flex-col items-center gap-3">
           <Globe className="h-7 w-7 text-muted-foreground/40" />
           <div className="text-center">
@@ -96,7 +108,88 @@ function RoutesTab() {
           </Table>
         </div>
       )}
+
+      {tcpList.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <div>
+            <h2 className="text-sm font-medium">TCP ports</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Ports the gateway publishes and forwards over the mesh, for what does not speak HTTP.
+            </p>
+          </div>
+          <div className="console-data-table rounded-xl border border-border overflow-hidden">
+            <Table>
+              <TableHeader className="bg-muted/20">
+                <TableRow className="border-b border-border/40 hover:bg-transparent">
+                  <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[45%]">Gateway port</TableHead>
+                  <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[12%]">State</TableHead>
+                  <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground">Allowed from</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tcpList.map((route) => (
+                  <TCPRouteRow key={route.id} route={route} serviceNames={serviceNames} projectId={projectId} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+const TCP_STATE_STYLES: Record<string, string> = {
+  open:    "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  pending: "bg-muted text-muted-foreground border-border",
+  failed:  "bg-destructive/10 text-destructive border-destructive/20",
+}
+
+function TCPRouteRow({ route, serviceNames, projectId }: {
+  route: ApiTCPRoute
+  serviceNames: Map<string, string>
+  projectId: string
+}) {
+  const target = route.service_id
+    ? serviceNames.get(route.service_id) ?? "a service"
+    : `${route.target_ip}:${route.target_port}`
+
+  return (
+    <TableRow className="border-b border-border/30">
+      <TableCell className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Network className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+          <code className="font-medium text-foreground font-mono text-sm">:{route.gateway_port}</code>
+          <span className="text-xs text-muted-foreground">→</span>
+          {route.service_id ? (
+            <Link to="/projects/$id/services/$serviceId/config" params={{ id: projectId, serviceId: route.service_id }} className="text-sm hover:text-primary">
+              {target}
+            </Link>
+          ) : (
+            <span className="text-sm text-muted-foreground font-mono">{target}</span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="px-4 py-3">
+        <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${TCP_STATE_STYLES[route.status] ?? ""}`}>
+          {route.status === "open" ? "listening" : route.status}
+        </Badge>
+        {route.status === "failed" && route.last_error && (
+          <p className="text-[11px] text-destructive mt-1">{route.last_error}</p>
+        )}
+      </TableCell>
+      <TableCell className="px-4 py-3">
+        {route.allowed_cidrs.length === 0 ? (
+          <span className="text-xs text-amber-400">Anyone</span>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {route.allowed_cidrs.map((c) => (
+              <code key={c} className="text-[11px] font-mono bg-muted/50 border border-border/40 px-1.5 py-0.5 rounded text-muted-foreground">{c}</code>
+            ))}
+          </div>
+        )}
+      </TableCell>
+    </TableRow>
   )
 }
 

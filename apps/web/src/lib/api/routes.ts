@@ -104,3 +104,67 @@ export const routes = {
     ),
 
 }
+
+/** A TCP route publishes one port on the gateway and forwards it over the mesh. */
+export interface ApiTCPRoute {
+  id: string
+  organization_id: string
+  project_id: string
+  gateway_port: number
+  service_id: string | null
+  service_port: number
+  node_id: string | null
+  target_ip: string
+  target_port: number
+  /** Empty means anyone who can reach the gateway. */
+  allowed_cidrs: string[]
+  status: "pending" | "open" | "failed"
+  last_error: string
+  created_at: string
+  updated_at: string
+}
+
+export type TCPRouteBody = {
+  gateway_port: number
+  service_id?: string
+  service_port?: number
+  node_id?: string
+  node_port?: number
+  allowed_cidrs?: string[]
+}
+
+export const tcpRoutes = {
+  list: (orgId: string, projectId: string, token: string) =>
+    apiFetch<ApiTCPRoute[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes`,
+      {},
+      token
+    ),
+
+  create: (orgId: string, projectId: string, body: TCPRouteBody, token: string) =>
+    apiFetch<ApiTCPRoute>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  update: (
+    orgId: string,
+    projectId: string,
+    routeId: string,
+    body: { gateway_port?: number; allowed_cidrs?: string[] },
+    token: string
+  ) =>
+    apiFetch<ApiTCPRoute>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes/${routeId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+      token
+    ),
+
+  remove: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes/${routeId}`,
+      { method: "DELETE" },
+      token
+    ),
+}
