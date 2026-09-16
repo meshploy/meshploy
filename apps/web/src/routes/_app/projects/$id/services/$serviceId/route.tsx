@@ -115,7 +115,7 @@ function ServiceLayout() {
                   <Link
                     to="/projects/$id/stacks/$stackId"
                     params={{ id: projectId, stackId: service.stack_id }}
-                    className="text-primary hover:underline"
+                    className="text-primary hover:text-primary/80 transition-colors"
                   >
                     Managed by {stack?.name ?? "a stack"}
                   </Link>
