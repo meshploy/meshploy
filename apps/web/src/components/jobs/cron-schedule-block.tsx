@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils"
 import { Field, inputCls } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 
 export const CRON_PRESETS = [
   { label: "Every 5 min", value: "*/5 * * * *" },
@@ -39,23 +40,19 @@ export function CronScheduleBlock({
   onHistoryLimitChange,
 }: CronScheduleBlockProps) {
   return (
-    <div className="rounded-lg border border-border/40 overflow-hidden">
-      <Button
-        variant="ghost"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors"
-      >
-        <div className="text-left">
+    // Sits among Sections, so it carries their box: same radius, border and
+    // padding, rather than a tighter one of its own.
+    <div className="rounded-[12px] border border-border bg-card overflow-hidden">
+      <div className="flex items-center justify-between gap-4 px-[22px] py-4">
+        <div>
           <p className="text-sm font-medium text-foreground">Run on a schedule</p>
           <p className="text-xs text-muted-foreground mt-0.5">Repeat this job on a cron expression</p>
         </div>
-        <div className={cn("w-9 h-5 rounded-full transition-colors relative shrink-0", enabled ? "bg-primary" : "bg-muted")}>
-          <div className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform", enabled ? "translate-x-4" : "translate-x-0.5")} />
-        </div>
-      </Button>
+        <Switch checked={enabled} onCheckedChange={onToggle} className="shrink-0" />
+      </div>
 
       {enabled && (
-        <div className="border-t border-border/40 px-4 pb-4 pt-4 space-y-4">
+        <div className="border-t border-border px-[22px] pb-[22px] pt-5 space-y-4">
           <Field label="Cron expression" required>
             <div className="flex flex-wrap gap-1.5 mb-2">
               {CRON_PRESETS.map((p) => (
