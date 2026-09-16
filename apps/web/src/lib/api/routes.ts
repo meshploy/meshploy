@@ -133,7 +133,17 @@ export type TCPRouteBody = {
   allowed_cidrs?: string[]
 }
 
+/** Every published port in the org, plus the ports the gateway keeps for itself. */
+export interface ApiTCPPortUsage {
+  routes: ApiTCPRoute[]
+  reserved: number[]
+}
+
 export const tcpRoutes = {
+  /** Gateway ports are unique across the gateway, not per project. */
+  usage: (orgId: string, token: string) =>
+    apiFetch<ApiTCPPortUsage>(`/api/v1/orgs/${orgId}/tcp-routes`, {}, token),
+
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiTCPRoute[]>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes`,

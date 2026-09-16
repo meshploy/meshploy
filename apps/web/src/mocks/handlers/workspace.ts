@@ -400,6 +400,12 @@ export const workspaceHandlers = [
       })
     )
   ),
+  http.get(`${O}/tcp-routes`, () =>
+    json({
+      routes: db["tcp-routes"],
+      reserved: [22, 53, 80, 443, 2019, 4000, 5000, 6443, 8081, 8085, 9090, 9100, 10250],
+    })
+  ),
   ...crud("projects", `${O}/projects`),
   ...Object.keys(defaults).flatMap((kind) => crud(kind, `${P}/${kind}`, true)),
   ...[

@@ -63,6 +63,22 @@ func (s *TCPRouteService) List(ctx context.Context, projectID uuid.UUID) ([]db.T
 	return routes, err
 }
 
+// ListForOrg returns every published port in the organization. A gateway port
+// is unique across the gateway, not per project, so a form that only knew its
+// own project's ports would offer one that is already taken.
+func (s *TCPRouteService) ListForOrg(ctx context.Context, orgID uuid.UUID) ([]db.TCPRoute, error) {
+	var routes []db.TCPRoute
+	err := s.db.WithContext(ctx).
+		Preload("Service").Preload("Node").
+		Where("organization_id = ?", orgID).
+		Order("gateway_port ASC").
+		Find(&routes).Error
+	return routes, err
+}
+
+// ReservedPorts are the gateway's own, which a route may never take.
+func ReservedPorts() []int { return gatewayOwnPorts }
+
 func (s *TCPRouteService) Get(ctx context.Context, routeID, projectID uuid.UUID) (*db.TCPRoute, error) {
 	var route db.TCPRoute
 	err := s.db.WithContext(ctx).

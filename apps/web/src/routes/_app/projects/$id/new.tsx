@@ -1393,11 +1393,14 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
     queryFn: () => nodesApi.list(orgId, token),
     enabled: !!orgId,
   })
-  const { data: taken = [] } = useQuery({
-    queryKey: ["tcp-routes", orgId, projectId],
-    queryFn: () => tcpRoutesApi.list(orgId, projectId, token),
+  // Across the whole org: a port taken by another project is just as taken.
+  const { data: usage } = useQuery({
+    queryKey: ["tcp-port-usage", orgId],
+    queryFn: () => tcpRoutesApi.usage(orgId, token),
     enabled: !!orgId,
   })
+  const taken = usage?.routes ?? []
+  const reserved = usage?.reserved ?? []
 
   // A database is routable through its own mesh access; an application through
   // a published port that is not HTTP, since an HTTP one takes a domain route.
@@ -1418,8 +1421,24 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
 
   const onlineNodes = rawNodes.filter((n) => n.status === "online")
   const port = parseInt(gatewayPort, 10)
+
+  // Said here rather than by a 422 on submit: the port is the one field where a
+  // reasonable answer is already spoken for.
+  const portError = (() => {
+    if (!gatewayPort) return null
+    if (!(port > 0 && port < 65536)) return "A port is between 1 and 65535."
+    if (reserved.includes(port)) return `The gateway uses port ${port} itself. Pick another.`
+    const clash = taken.find((r) => r.gateway_port === port)
+    if (clash) {
+      return clash.project_id === projectId
+        ? `Port ${port} is already published in this project.`
+        : `Port ${port} is already published by another project.`
+    }
+    return null
+  })()
+
   const canCreate =
-    port > 0 && port < 65536 &&
+    port > 0 && port < 65536 && !portError &&
     (mode === "service" ? serviceId.length > 0 : nodeId.length > 0 && parseInt(nodePort, 10) > 0)
 
   const createMutation = useMutation({
@@ -1439,6 +1458,7 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
     onSuccess: () => {
       draftSaved()
       qc.invalidateQueries({ queryKey: ["tcp-routes", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["tcp-port-usage", orgId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       navigate({ to: "/projects/$id/routes", params: { id: projectId } })
     },
@@ -1484,7 +1504,10 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
         ) : (
           <div className="flex items-center gap-2">
             <Select value={nodeId} onValueChange={(v) => setNodeId(v ?? "")}>
-              <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+              {/* flex-1 rather than w-full: both children carry a width from
+                  their own class set, and two competing 100% widths shrink into
+                  each other instead of splitting the row. */}
+              <SelectTrigger className="flex-1 min-w-0 h-9 text-sm bg-background border-border/60">
                 <SelectValue placeholder="Select a node…">
                   {onlineNodes.find((n) => n.id === nodeId)?.name}
                 </SelectValue>
@@ -1499,7 +1522,7 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
               </SelectContent>
             </Select>
             <input
-              className={`${inputCls} w-28 shrink-0`}
+              className={cn(inputCls, "w-28! shrink-0")}
               value={nodePort}
               inputMode="numeric"
               placeholder="Port"
@@ -1517,10 +1540,14 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
           placeholder={servicePort ? String(servicePort) : "5432"}
           onChange={(e) => setGatewayPort(e.target.value.replace(/[^0-9]/g, ""))}
         />
-        <p className="text-xs text-muted-foreground mt-2">
-          It cannot be one the gateway uses for itself, and the host firewall, with a cloud security group if there is
-          one, must allow it too.
-        </p>
+        {portError ? (
+          <p className="text-xs text-destructive mt-2">{portError}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground mt-2">
+            It cannot be one the gateway uses for itself, and the host firewall, with a cloud security group if there
+            is one, must allow it too.
+          </p>
+        )}
       </Section>
 
       <Section title="Allow from" subtitle="Who may connect. Left empty, anyone on the internet.">

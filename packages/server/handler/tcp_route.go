@@ -21,7 +21,20 @@ type ListTCPRoutesInput struct {
 	ProjectID string `path:"projectId"`
 }
 
+type ListOrgTCPRoutesInput struct {
+	OrgID string `path:"orgId"`
+}
+
 type ListTCPRoutesOutput struct{ Body []db.TCPRoute }
+
+// OrgTCPRoutesOutput carries the ports the gateway already uses alongside the
+// routes, so a form can say a port is taken before it is submitted.
+type OrgTCPRoutesOutput struct {
+	Body struct {
+		Routes   []db.TCPRoute `json:"routes"`
+		Reserved []int         `json:"reserved" doc:"Ports the gateway uses for itself, which a route may never take"`
+	}
+}
 type GetTCPRouteOutput struct{ Body *db.TCPRoute }
 
 type CreateTCPRouteInput struct {
@@ -62,6 +75,15 @@ func (h *Handler) registerTCPRouteRoutes(api huma.API) {
 		Tags:        []string{"Routes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.ListTCPRoutes)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-org-tcp-routes",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/tcp-routes",
+		Summary:     "List every published TCP port in an organization, with the gateway's own",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListOrgTCPRoutes)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-tcp-route",
@@ -114,6 +136,20 @@ func (h *Handler) ListTCPRoutes(ctx context.Context, input *ListTCPRoutesInput) 
 		return nil, err
 	}
 	return &ListTCPRoutesOutput{Body: routes}, nil
+}
+
+func (h *Handler) ListOrgTCPRoutes(ctx context.Context, input *ListOrgTCPRoutesInput) (*OrgTCPRoutesOutput, error) {
+	_, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	routes, err := h.svc.TCPRoutes.ListForOrg(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	out := &OrgTCPRoutesOutput{}
+	out.Body.Routes, out.Body.Reserved = routes, svc.ReservedPorts()
+	return out, nil
 }
 
 func (h *Handler) CreateTCPRoute(ctx context.Context, input *CreateTCPRouteInput) (*GetTCPRouteOutput, error) {
