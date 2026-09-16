@@ -127,6 +127,12 @@ services:
       HOST_GATEWAY_IP: ${HOST_GATEWAY_IP}
       GATEWAY_HOSTNAME: ${GATEWAY_HOSTNAME}
       BUILTIN_REGISTRY_ENDPOINT: ${MESH_IP:-100.64.0.1}:5000
+      # What install.sh recorded about the host, for the console's advisories.
+      # The API cannot look at the host itself, and reads .env only through
+      # these: a value written there and not listed here never arrives.
+      FIREWALL_STATE: ${FIREWALL_STATE:-}
+      FIREWALL_CHECKED_AT: ${FIREWALL_CHECKED_AT:-}
+      NODEPORT_ADDRESSES: ${NODEPORT_ADDRESSES:-}
     extra_hosts:
       - "host.meshploy.internal:${HOST_GATEWAY_IP}"
     volumes:
