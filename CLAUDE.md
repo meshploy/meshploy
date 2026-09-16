@@ -141,7 +141,7 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (41 CE tables)
+## packages/db — schema (42 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
@@ -152,7 +152,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 | Workloads | `stacks`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
 | Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups` |
 | Config Files | `config_files`, `service_config_files` |
-| Traffic | `routes`, `route_targets` |
+| Traffic | `routes`, `route_targets`, `tcp_routes` |
 | History | `deployments`, `jobs`, `job_runs` |
 | Integrations | `storage_integrations`, `registry_integrations`, `git_integrations` |
 | Operations | `backup_configs`, `system_backup_configs`, `notification_channels`, `org_email_configs` |

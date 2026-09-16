@@ -71,6 +71,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 |---|---|
 | `routes` | Hostname → service routing rule |
 | `route_targets` | Target service + path-strip config per route |
+| `tcp_routes` | A port the gateway publishes and forwards over the mesh |
 
 ### Deployment History
 
