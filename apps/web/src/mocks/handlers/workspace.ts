@@ -400,6 +400,7 @@ export const workspaceHandlers = [
       })
     )
   ),
+  http.get(`${O}/routes`, () => json(db["routes"])),
   http.get(`${O}/tcp-routes`, () =>
     json({
       routes: db["tcp-routes"],

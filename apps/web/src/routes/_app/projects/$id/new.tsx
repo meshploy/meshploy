@@ -1102,6 +1102,19 @@ function RouteForm({ projectId }: { projectId: string }) {
     enabled: !!orgId,
   })
 
+  // For the suggestion below: a hostname is unique across the org, so this
+  // project's routes are not enough to know what is free.
+  const { data: orgRoutes = [] } = useQuery<ApiDbRoute[]>({
+    queryKey: ["org-routes", orgId],
+    queryFn: () => routesApi.listOrg(orgId, token),
+    enabled: !!orgId,
+  })
+  const { data: project } = useQuery({
+    queryKey: ["project", orgId, projectId],
+    queryFn: () => projectsApi.get(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+
   const verifiedDomains = domainList.filter((d) => d.verified)
   const allNodes = rawNodes.filter((n) => n.status === "online")
   const gatewayNode = rawNodes.find((n) => n.k3s_role === "server")
@@ -1125,6 +1138,30 @@ function RouteForm({ projectId }: { projectId: string }) {
     }
     return `${rf.subdomain}.${selectedDomain.base_domain}`
   })()
+
+  // A name from what the route is: the project, and the service it points at
+  // when one is chosen. Numbered upwards rather than refusing, so the button
+  // always gives something usable.
+  const suggestSubdomain = () => {
+    const service = serviceList.find((s) => s.id === rf.targets[0]?.serviceId)
+    const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+    const base = [project?.slug ?? "", service ? slug(service.name) : ""].filter(Boolean).join("-") || "app"
+
+    const suffix = selectedDomain
+      ? rf.zone === "internal"
+        ? `.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
+        : `.${selectedDomain.base_domain}`
+      : ""
+    const taken = new Set(orgRoutes.map((r) => r.hostname))
+
+    for (let n = 1; n < 100; n++) {
+      const candidate = n === 1 ? base : `${base}-${n}`
+      if (!RESERVED_SUBDOMAINS.has(candidate) && !taken.has(candidate + suffix)) {
+        patchRf({ subdomain: candidate })
+        return
+      }
+    }
+  }
 
   const patchTarget = (id: number, patch: Partial<TargetRow>) =>
     patchRf({ targets: rf.targets.map((t) => (t.id === id ? { ...t, ...patch } : t)) })
@@ -1282,21 +1319,32 @@ function RouteForm({ projectId }: { projectId: string }) {
               <p className="text-xs text-muted-foreground">No verified domains — add one in Domains first.</p>
             )}
             <Field label="Subdomain" required>
-              <div className="flex items-center gap-0">
-                <input
-                  value={rf.subdomain}
-                  onChange={(e) => patchRf({ subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9\-.*]/g, "") })}
-                  placeholder="api or *.my-app"
-                  className={cn(inputCls, "rounded-r-none")}
+              <div className="flex items-center gap-2">
+                <div className="flex items-stretch gap-0 flex-1 min-w-0">
+                  <input
+                    value={rf.subdomain}
+                    onChange={(e) => patchRf({ subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9\-.*]/g, "") })}
+                    placeholder="api or *.my-app"
+                    className={cn(inputCls, "rounded-r-none")}
+                    disabled={!rf.domainId}
+                  />
+                  {selectedDomain && (
+                    <span className="flex items-center px-3 text-sm text-muted-foreground bg-muted/20 border border-l-0 border-border/60 rounded-r-md whitespace-nowrap">
+                      {rf.zone === "internal"
+                        ? `.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
+                        : `.${selectedDomain.base_domain}`}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  className="shrink-0 gap-1.5"
                   disabled={!rf.domainId}
-                />
-                {selectedDomain && (
-                  <span className="h-9 flex items-center px-3 text-sm text-muted-foreground bg-muted/20 border border-l-0 border-border/60 rounded-r-md whitespace-nowrap">
-                    {rf.zone === "internal"
-                      ? `.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
-                      : `.${selectedDomain.base_domain}`}
-                  </span>
-                )}
+                  onClick={suggestSubdomain}
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  Suggest
+                </Button>
               </div>
             </Field>
 

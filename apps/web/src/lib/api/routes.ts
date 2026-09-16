@@ -43,6 +43,10 @@ export type TargetBody = {
 }
 
 export const routes = {
+  /** Every route in the org. Hostnames are unique across it, not per project. */
+  listOrg: (orgId: string, token: string) =>
+    apiFetch<ApiDbRoute[]>(`/api/v1/orgs/${orgId}/routes`, {}, token),
+
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiDbRoute[]>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/routes`,
