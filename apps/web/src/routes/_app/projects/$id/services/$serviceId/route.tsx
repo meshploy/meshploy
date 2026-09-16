@@ -5,7 +5,7 @@ import { Box, Database, Loader2, Play, ServerCrash, Square, Terminal, Plus } fro
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { services as servicesApi, deployments } from "@/lib/api"
+import { services as servicesApi, deployments, stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
@@ -60,6 +60,14 @@ function ServiceLayout() {
     refetchInterval: livePoll<{ status: string }>((d) => d.status === "deploying"),
   })
 
+  // Named so the subtitle can link to it: "Managed by a stack" is a dead end
+  // when the stack is one click away.
+  const { data: stack } = useQuery({
+    queryKey: ["stack", orgId, projectId, service?.stack_id],
+    queryFn: () => stacksApi.get(orgId!, projectId, service!.stack_id!, token),
+    enabled: !!orgId && !!service?.stack_id,
+  })
+
   const startMutation = useMutation({
     mutationFn: () => servicesApi.start(orgId!, projectId, serviceId, token),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
@@ -98,7 +106,22 @@ function ServiceLayout() {
           : <Box className="h-4 w-4 text-muted-foreground" />
         }
         name={service.name}
-        subtitle={service.type === "database" ? "Database · Persistent data service" : service.stack_id ? "Application · Managed by a stack" : "Application · Standalone service"}
+        subtitle={
+          service.type === "database"
+            ? "Database · Persistent data service"
+            : service.stack_id
+              ? <>
+                  Application ·{" "}
+                  <Link
+                    to="/projects/$id/stacks/$stackId"
+                    params={{ id: projectId, stackId: service.stack_id }}
+                    className="text-primary hover:underline"
+                  >
+                    Managed by {stack?.name ?? "a stack"}
+                  </Link>
+                </>
+              : "Application · Standalone service"
+        }
         badge={<StatusPill status={service.status} />}
         actions={
           <>
