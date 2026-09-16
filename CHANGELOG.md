@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.15.0](https://github.com/meshploy/meshploy/compare/v0.14.2...v0.15.0) (2026-09-16)
+
+
+### Features
+
+* keep published ports on the mesh, and manage TCP routes from the CLI and MCP ([fa3f057](https://github.com/meshploy/meshploy/commit/fa3f057fa0e95780ba41c65ef0738854673ab79c))
+* let a database be published on the mesh ([b208de5](https://github.com/meshploy/meshploy/commit/b208de5879662f25f5943914b9798cbb12793ffb))
+* let a job read variables from an attached group ([ee10770](https://github.com/meshploy/meshploy/commit/ee107704387745ad217ff2e7097f0efdf628b650))
+* let an apply carry the variables and files its manifest needs ([0a26388](https://github.com/meshploy/meshploy/commit/0a26388cc60f9f3a47789309c90d0baa50d08aca))
+* **mcp:** let an agent browse and deploy one-click templates ([5eab28e](https://github.com/meshploy/meshploy/commit/5eab28ece107f97865fa2bcc4530dbfb518edcf4))
+* **mcp:** let an agent set a stack's variables and git source ([4135ac5](https://github.com/meshploy/meshploy/commit/4135ac53dc0f1dbb33659bfecfb414270290522b))
+* publish a TCP port on the gateway with a route ([bc50d13](https://github.com/meshploy/meshploy/commit/bc50d13f6b9c0b8c3f7f0d281401fde3b0741bdd))
+* report more of what happens, from one event catalogue ([c1e96a2](https://github.com/meshploy/meshploy/commit/c1e96a21e622bb025279a8f2e66102d0ce58334f))
+* **web:** choose notification events by group, with presets ([4d7adbb](https://github.com/meshploy/meshploy/commit/4d7adbbabacb325b39d31ca931d5ee107d6dfc67))
+* **web:** link a stack-managed service to the stack that owns it ([445107d](https://github.com/meshploy/meshploy/commit/445107d53e5bc5aa9ac82dc739e8f187a7869673))
+* **web:** publish a database on the gateway from its network access ([a2408c2](https://github.com/meshploy/meshploy/commit/a2408c2fd4f9d8bd16168ebbbae1caa1b472144e))
+* **web:** publish a TCP port from the new route page ([90b6fda](https://github.com/meshploy/meshploy/commit/90b6fda5095db6609c6480bc0521a0ce924dc21c))
+* **web:** save the job and config file pages from the floating bar ([c657b88](https://github.com/meshploy/meshploy/commit/c657b88866e156b7e0800606c8fb1fec55ec03a8))
+* **web:** suggest a subdomain from the project and its target ([1f438d5](https://github.com/meshploy/meshploy/commit/1f438d5077ca13c8b9947aec743c004742f33ad3))
+* **web:** switch project and resource from the breadcrumb ([681e580](https://github.com/meshploy/meshploy/commit/681e580ecbf19a016a8771e8e060beee02b80d75))
+
+
+### Bug Fixes
+
+* give the api what install.sh recorded about the host ([81858fb](https://github.com/meshploy/meshploy/commit/81858fbdfa59c6c50fb06e2519de7fb0cdf7e2f5))
+* name the hostname when a route collides, instead of the constraint ([51c7ec7](https://github.com/meshploy/meshploy/commit/51c7ec766b86814d47dd83e7fcca6985e1b1da67))
+* require an admin for a node terminal ([518fd41](https://github.com/meshploy/meshploy/commit/518fd41c2a75f1fa721d0138006e22de111d4abf))
+* **web:** drop the hover underline from the stack link ([d68cd4d](https://github.com/meshploy/meshploy/commit/d68cd4df232e7784bc84e6e86574f7e5057eca86))
+* **web:** give the project name field the width of its row ([6a617af](https://github.com/meshploy/meshploy/commit/6a617afc9d83badf159c2a652ca4d89cf25b2a3a))
+* **web:** let members open the nodes page, and hide what they cannot ([0b984ce](https://github.com/meshploy/meshploy/commit/0b984ce00ca0cb038a819f93ab04dc313084c073))
+* **web:** match select and input heights, and offer a free gateway port ([0e25f59](https://github.com/meshploy/meshploy/commit/0e25f593f6bf3e077a0b5f23dfe476cd0e679864))
+* **web:** match the schedule block to the sections around it ([3171f87](https://github.com/meshploy/meshploy/commit/3171f87d15534be19490383ecbc16e3a0e93b74a))
+* **web:** match the target row's mode switch to the path input ([75a9f57](https://github.com/meshploy/meshploy/commit/75a9f5765d89dd8b41f48c502f82b84483a4de96))
+* **web:** name the email recipient, and send you to the provider first ([8d0870b](https://github.com/meshploy/meshploy/commit/8d0870bf4aaf8e4b218a09e2ea6c1ca0946937d9))
+* **web:** name the service configuration tab as the job's is named ([9f05098](https://github.com/meshploy/meshploy/commit/9f0509809d50cc28e0ac3572c666fd4cb8417ac0))
+* **web:** refresh a project's lists after an apply creates resources ([6c65480](https://github.com/meshploy/meshploy/commit/6c65480ab93b0aff5e9cc5bfd6d188962781a82f))
+* **web:** say what a database is reachable from, as three levels ([20a8e6d](https://github.com/meshploy/meshploy/commit/20a8e6dadfc30e1d117fe8358e4ec01b7cc0ffa7))
+* **web:** say when a database's gateway port is already taken ([056d351](https://github.com/meshploy/meshploy/commit/056d3519510219c727029d06a89ba7f8806052e3))
+* **web:** say when a gateway port is taken, and lay out the node target row ([418ef9d](https://github.com/meshploy/meshploy/commit/418ef9db40f4b9c92e1c21529192d9dc196938e3))
+
 ## [0.14.2](https://github.com/meshploy/meshploy/compare/v0.14.1...v0.14.2) (2026-09-15)
 
 
