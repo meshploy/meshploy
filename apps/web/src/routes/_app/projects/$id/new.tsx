@@ -1629,7 +1629,8 @@ function TargetRowField({
           value={row.targetMode}
           onValueChange={(v) => onChange({ targetMode: v as TargetMode, serviceId: "", servicePortId: "", nodeId: "", port: "", redirectRouteId: "", redirectCode: "301" })}
           options={modeOptions}
-          className="text-xs shrink-0"
+          // Matches the path input beside it, which the console holds at 38px.
+          className="text-xs shrink-0 h-[38px]"
         />
         <input
           value={row.path}
