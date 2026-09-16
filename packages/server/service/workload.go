@@ -20,6 +20,9 @@ type WorkloadService struct {
 	db        *gorm.DB
 	k8s       kubernetes.Interface // nil when K8s is not configured
 	varGroups *VariableGroupService
+	// tcpRoutes re-resolves a route whose target moved. Assigned after
+	// construction in service.New.
+	tcpRoutes *TCPRouteService
 	// nodePortMeshOnly records whether this cluster binds NodePorts to the mesh
 	// range alone. Reported with a database's config so the console can say
 	// what exposing it actually exposes.
@@ -571,6 +574,13 @@ func (s *WorkloadService) UpdateDatabaseConfig(ctx context.Context, serviceID uu
 		"node_port":    assigned,
 	}).Error; err != nil {
 		return nil, err
+	}
+	// A route to this database forwards to the port that just moved, so it has
+	// to follow. Withdrawing mesh access leaves the route pointing at nothing,
+	// which the console shows as failed rather than silently repairing: the
+	// route is still something the operator asked for.
+	if s.tcpRoutes != nil && assigned != 0 {
+		s.tcpRoutes.Retarget(ctx, serviceID)
 	}
 	return s.GetDatabaseConfig(ctx, serviceID)
 }

@@ -352,6 +352,11 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | DELETE | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Delete a route target |
 | POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname` | ✓ | Verify DNS ownership of a custom-domain route via TXT record |
 | GET | `/orgs/{orgId}/routes` | ✓ | List all routes in an organization |
+| GET | `/orgs/{orgId}/projects/{projectId}/tcp-routes` | ✓ | List TCP routes in a project |
+| POST | `/orgs/{orgId}/projects/{projectId}/tcp-routes` | ✓ | Publish a TCP port on the gateway |
+| GET | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Get a TCP route |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Change a TCP route's port or who may connect |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Stop publishing a TCP port |
 
 ### Domains & TLS
 

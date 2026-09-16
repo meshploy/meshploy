@@ -29,6 +29,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerDomainRoutes(api)
 	h.registerOnDemandTLSRoutes(api)
 	h.registerRouteRoutes(api)
+	h.registerTCPRouteRoutes(api)
 	h.registerDeploymentRoutes(api)
 	h.registerGitIntegrationRoutes(api)
 	h.registerRegistryRoutes(api)

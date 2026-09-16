@@ -98,6 +98,7 @@ func Migrate(db *gorm.DB) error {
 		// Traffic (Domain must migrate before Route; Route before RouteTarget)
 		&Route{},
 		&RouteTarget{},
+		&TCPRoute{},
 
 		// Deployment History
 		&Deployment{},

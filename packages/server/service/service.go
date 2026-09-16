@@ -31,6 +31,7 @@ type Services struct {
 	Volumes         *VolumeService
 	Domains         *DomainService
 	Routes          *RouteService
+	TCPRoutes       *TCPRouteService
 	Deployments     *DeploymentService
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
@@ -195,6 +196,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
 	routes := &RouteService{db: db, k8s: k8sClient}
+	tcpRoutes := &TCPRouteService{db: db, k8s: k8sClient}
+	workloads.tcpRoutes = tcpRoutes
 	configFiles := &ConfigFileService{db: db, deployment: deployments}
 	deployments.configFiles = configFiles
 
@@ -223,6 +226,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Volumes:         volumes,
 		Domains:         domains,
 		Routes:          routes,
+		TCPRoutes:       tcpRoutes,
 		Deployments:     deployments,
 		GitIntegrations: gitSvc,
 		Registries:      registries,

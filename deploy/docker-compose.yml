@@ -3,6 +3,12 @@ services:
   postgres:
     image: docker.io/library/postgres:17-alpine
     restart: unless-stopped
+    # Published on loopback for the proxy, which runs on host networking so it
+    # can open TCP-route ports, and so cannot reach the compose network by name.
+    # A non-default host port keeps it out of the way of a Postgres the operator
+    # already runs.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-meshploy}
       POSTGRES_USER: ${POSTGRES_USER:-meshploy}
@@ -162,15 +168,20 @@ services:
   proxy:
     image: ghcr.io/meshploy/proxy:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
-    dns:
-      - 1.1.1.1
-      - 1.0.0.1
-    ports:
-      - "127.0.0.1:8081:8081"
+    # Host networking, as Caddy and CoreDNS already run: a TCP route opens a
+    # port the operator chose, which a published-port list fixed at build time
+    # cannot express. Caddy already reaches the proxy at localhost:8081, so that
+    # path is unchanged -- but the proxy now has to bind loopback itself, or it
+    # would publish its own port alongside the routed ones.
+    network_mode: host
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT:-5433}/${POSTGRES_DB:-meshploy}?sslmode=disable
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       PROXY_PORT: 8081
+      PROXY_BIND: 127.0.0.1
+      # Where TCP routes listen. Empty publishes them on every interface, which
+      # is the point of a route on the gateway.
+      TCP_BIND: ""
     depends_on:
       postgres:
         condition: service_healthy

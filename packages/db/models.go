@@ -906,6 +906,59 @@ type RouteTarget struct {
 	RedirectRoute *Route   `gorm:"foreignKey:RedirectRouteID" json:"-"`
 }
 
+// TCPRouteStatus is what the gateway managed to do with the route. A port it
+// could not bind has to be visible: the listener lives in the proxy, so nothing
+// the caller did returns the failure.
+type TCPRouteStatus string
+
+const (
+	TCPRoutePending TCPRouteStatus = "pending" // saved, not yet picked up
+	TCPRouteOpen    TCPRouteStatus = "open"    // listening on the gateway
+	TCPRouteFailed  TCPRouteStatus = "failed"  // could not bind; LastError says why
+)
+
+// TCPRoute publishes one non-HTTP port on the gateway and forwards it over the
+// mesh to a service or a node.
+//
+// Separate from Route, which carries a hostname and paths: a raw TCP connection
+// has neither, so the gateway port is the whole address and is unique across
+// the gateway rather than per project. HTTP keeps its own path, where a
+// hostname distinguishes routes sharing port 443.
+type TCPRoute struct {
+	Base
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index" json:"organization_id"`
+	ProjectID      uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
+	// GatewayPort is the port the gateway listens on, unique across it.
+	GatewayPort int `gorm:"uniqueIndex;not null" json:"gateway_port"`
+
+	// The target: a service's published port, or a port on a node (the TCP twin
+	// of an HTTP route's "Node + port", for something running outside Meshploy).
+	ServiceID *uuid.UUID `gorm:"type:uuid;index" json:"service_id"`
+	// ServicePort is the container port chosen on that service, which the
+	// address below was resolved from.
+	ServicePort int        `gorm:"not null;default:0" json:"service_port"`
+	NodeID      *uuid.UUID `gorm:"type:uuid;index"    json:"node_id"`
+
+	// Where the gateway forwards to, resolved when the route is saved and
+	// denormalised for the proxy's hot path, as a route target is.
+	TargetIP   string `gorm:"not null;default:''" json:"target_ip"`
+	TargetPort int    `gorm:"not null;default:0"  json:"target_port"`
+
+	// AllowedCIDRs restricts who may connect. Empty means anyone who can reach
+	// the port, which on the gateway is the internet.
+	AllowedCIDRs StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"allowed_cidrs"`
+
+	Status    TCPRouteStatus `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
+	LastError string         `gorm:"not null;default:''"                         json:"last_error"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`
+	Service      *Service     `gorm:"foreignKey:ServiceID"      json:"-"`
+	Node         *Node        `gorm:"foreignKey:NodeID"         json:"-"`
+}
+
+func (TCPRoute) TableName() string { return "tcp_routes" }
+
 // ---------------------------------------------------------------------------
 // Deployment History
 // ---------------------------------------------------------------------------
