@@ -1312,20 +1312,53 @@ function DatabaseNetworkSection({ projectId, serviceId, dbPort }: { projectId: s
   })
   const route = tcpList.find((r) => r.service_id === serviceId)
 
+  // A gateway port is unique across the gateway, so the whole org is what says
+  // whether one is free -- another project's route takes it just as surely.
+  const { data: usage } = useQuery({
+    queryKey: ["tcp-port-usage", orgId],
+    queryFn: () => tcpRoutesApi.usage(orgId, token),
+    enabled: !!orgId,
+  })
+  const inUse = useMemo(() => {
+    const taken = new Map<number, string>()
+    for (const p of usage?.reserved ?? []) taken.set(p, "the gateway uses it itself")
+    for (const r of usage?.routes ?? []) {
+      if (r.id !== route?.id) taken.set(r.gateway_port, r.project_id === projectId ? "another resource in this project has it" : "another project has it")
+    }
+    return taken
+  }, [usage, route?.id, projectId])
+
+  // The database's own port is what a client expects to type, so it is offered
+  // first; otherwise the first free port above 10000.
+  const freePort = () => {
+    if (dbPort && !inUse.has(dbPort)) return dbPort
+    for (let p = 10000; p < 65536; p++) if (!inUse.has(p)) return p
+    return dbPort
+  }
+
   useEffect(() => {
-    if (!dc) return
+    if (!dc || !usage) return
     draft.sync({
       reach: route ? "internet" : dc.mesh_exposed ? "mesh" : "cluster",
       port: dc.node_port ? String(dc.node_port) : "",
-      gatewayPort: String(route?.gateway_port ?? dbPort ?? ""),
+      gatewayPort: String(route?.gateway_port ?? freePort() ?? ""),
       allowFrom: (route?.allowed_cidrs ?? []).join(", "),
     })
-  }, [dc, route])
+  }, [dc, route, usage])
+
+  const gatewayPortNum = Number(value.gatewayPort)
+  const gatewayPortError = (() => {
+    if (value.reach !== "internet" || !value.gatewayPort) return null
+    if (!(gatewayPortNum > 0 && gatewayPortNum < 65536)) return "A port is between 1 and 65535."
+    const why = inUse.get(gatewayPortNum)
+    return why ? `Port ${gatewayPortNum} is not free: ${why}.` : null
+  })()
 
   const mutation = useMutation({
     // Mesh access first: the gateway forwards to the port the cluster
     // publishes, so a route created before it exists has nothing to point at.
     mutationFn: async () => {
+      if (gatewayPortError) throw new Error(gatewayPortError)
       await servicesApi.updateDatabaseConfig(
         orgId,
         projectId,
@@ -1434,17 +1467,31 @@ function DatabaseNetworkSection({ projectId, serviceId, dbPort }: { projectId: s
             {value.reach === "internet" && (
               <>
                 <Field label="Gateway port">
-                  <input
-                    className={inputCls}
-                    value={value.gatewayPort}
-                    inputMode="numeric"
-                    placeholder={String(dbPort)}
-                    onChange={(e) => setValue((v) => ({ ...v, gatewayPort: e.target.value.replace(/[^0-9]/g, "") }))}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1.5">
-                    The port the gateway listens on, which clients connect to. It cannot be one the gateway already
-                    uses for itself.
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className={cn(inputCls, "flex-1 min-w-0")}
+                      value={value.gatewayPort}
+                      inputMode="numeric"
+                      placeholder={String(dbPort)}
+                      onChange={(e) => setValue((v) => ({ ...v, gatewayPort: e.target.value.replace(/[^0-9]/g, "") }))}
+                    />
+                    <Button
+                      variant="outline"
+                      className="shrink-0 gap-1.5"
+                      onClick={() => setValue((v) => ({ ...v, gatewayPort: String(freePort()) }))}
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      Find a free port
+                    </Button>
+                  </div>
+                  {gatewayPortError ? (
+                    <p className="text-xs text-destructive mt-1.5">{gatewayPortError}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      The port the gateway listens on, which clients connect to. It cannot be one the gateway already
+                      uses for itself.
+                    </p>
+                  )}
                 </Field>
 
                 <Field label="Allow from">
