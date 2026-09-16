@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router"
 import React, { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -717,6 +717,15 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
 
   // A new channel starts on the failures preset, once the catalogue says what
   // that is. Untouched selections only: a cleared list stays cleared.
+  // An email channel is only usable once the org has somewhere to send from.
+  const { data: emailProvider } = useQuery({
+    queryKey: ["email-config", orgId],
+    queryFn: () => emailConfigApi.get(orgId, token).catch(() => null),
+    enabled: !!orgId,
+    retry: false,
+  })
+  const hasEmailProvider = !!emailProvider?.host
+
   const { data: catalogue } = useNotificationEvents()
   const [touched, setTouched] = useState(false)
   useEffect(() => {
@@ -769,9 +778,24 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
           />
         </Field>
 
+        {/* Without a provider an email channel cannot deliver, so the rest of
+            the form is not worth filling in. */}
+        {type === "email" && !hasEmailProvider ? (
+          <p className="text-sm text-muted-foreground">
+            No email provider configured yet ·{" "}
+            <Link
+              to="/integrations/new"
+              search={{ category: "email" as const }}
+              className="text-primary hover:text-primary/80 transition-colors"
+            >
+              Add an email provider
+            </Link>
+          </p>
+        ) : (
+        <>
         {/* Type-specific config */}
         {type === "email" ? (
-          <Field label="Email address">
+          <Field label="Send to">
             <input
               type="email"
               value={address}
@@ -811,6 +835,8 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
         <Field label="Notify on">
           <EventPicker events={events} onChange={(next) => { setTouched(true); setEvents(next) }} />
         </Field>
+        </>
+        )}
       </Section>
 
       {error && <ErrorBanner message={error} />}
@@ -914,6 +940,9 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
             autoComplete="off"
             className={inputCls}
           />
+          <p className="text-[11px] text-muted-foreground/60 mt-1">
+            What the SMTP server authenticates you as. Often not an address: SendGrid uses <code className="font-mono">apikey</code>, others want the full mailbox.
+          </p>
         </Field>
 
         <Field label={prefilled ? "Password (leave empty to keep current)" : "Password"} required={!prefilled}>
@@ -932,6 +961,9 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
             value={fromAddress} onChange={(e) => setFromAddress(e.target.value)}
             className={inputCls}
           />
+          <p className="text-[11px] text-muted-foreground/60 mt-1">
+            What recipients see the alert coming from. Most providers require a domain you have verified with them.
+          </p>
         </Field>
 
         <Field label="From name (optional)">
