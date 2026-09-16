@@ -45,6 +45,7 @@ import {
   nodes as nodesApi,
   services as servicesApi,
   routes as routesApi,
+  tcpRoutes as tcpRoutesApi,
   domains as domainsApi,
   jobs as jobsApi,
   stacks as stacksApi,
@@ -1039,7 +1040,34 @@ const ROUTE_INITIAL: RouteFormState = {
   targets: [mkTargetRow()],
 }
 
+type RouteKind = "domain" | "tcp"
+
+// A route is a hostname through Caddy, or a port the gateway forwards as it is.
+// The two share nothing but the word, so the form asks which before anything
+// else rather than growing a target mode that hides the difference.
+function RouteKindPicker({ value, onChange }: { value: RouteKind; onChange: (v: RouteKind) => void }) {
+  return (
+    <Section title="Type" subtitle="What kind of route is this?">
+      <SegmentedControl
+        value={value}
+        onValueChange={(v) => onChange(v as RouteKind)}
+        options={[
+          { value: "domain", label: "Domain (HTTPS)" },
+          { value: "tcp",    label: "TCP port" },
+        ]}
+        className="text-sm"
+      />
+      <p className="text-xs text-muted-foreground">
+        {value === "domain"
+          ? "A hostname served over HTTPS, for anything that speaks HTTP."
+          : "A port on the gateway, forwarded over the mesh as it is, for Postgres, Redis, SSH and anything else that does not."}
+      </p>
+    </Section>
+  )
+}
+
 function RouteForm({ projectId }: { projectId: string }) {
+  const [kind, setKind] = useState<RouteKind>("domain")
   const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
@@ -1166,8 +1194,19 @@ function RouteForm({ projectId }: { projectId: string }) {
     },
   })
 
+  if (kind === "tcp") {
+    return (
+      <div className="space-y-8">
+        <RouteKindPicker value={kind} onChange={setKind} />
+        <TCPRouteFields projectId={projectId} />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
+      <RouteKindPicker value={kind} onChange={setKind} />
+
       {/* ── Section: Zone ───────────────────────────────────── */}
       <Section title="Zone" subtitle="Where is this route exposed?">
         <SegmentedControl
@@ -1322,6 +1361,192 @@ function RouteForm({ projectId }: { projectId: string }) {
         Create route
       </Button>
     </div>
+  )
+}
+
+
+// ─── TCPRouteFields ───────────────────────────────────────────────────────────
+
+// A TCP route needs three things the domain form has no room for: which port
+// the gateway should listen on, what it forwards to, and who may connect.
+function TCPRouteFields({ projectId }: { projectId: string }) {
+  const draftSaved = useContext(ResourceDraftContext)
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  const [mode, setMode] = useState<"service" | "node">("service")
+  const [serviceId, setServiceId] = useState("")
+  const [nodeId, setNodeId] = useState("")
+  const [nodePort, setNodePort] = useState("")
+  const [gatewayPort, setGatewayPort] = useState("")
+  const [allowFrom, setAllowFrom] = useState("")
+
+  const { data: allServices = [] } = useQuery<ApiService[]>({
+    queryKey: ["services", orgId, projectId],
+    queryFn: () => servicesApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+  const { data: taken = [] } = useQuery({
+    queryKey: ["tcp-routes", orgId, projectId],
+    queryFn: () => tcpRoutesApi.list(orgId, projectId, token),
+    enabled: !!orgId,
+  })
+
+  // A database is routable through its own mesh access; an application through
+  // a published port that is not HTTP, since an HTTP one takes a domain route.
+  const routable = allServices.filter((s) =>
+    s.type === "database" || (s.ports ?? []).some((p) => p.is_public && !p.is_http)
+  )
+  const selected = routable.find((s) => s.id === serviceId)
+  const servicePort = selected
+    ? ((selected.ports ?? []).find((p) => p.is_primary) ?? (selected.ports ?? [])[0])?.port
+    : undefined
+
+  // Default the gateway port to the service's own, which is what a client
+  // expects to type, unless something already answers there.
+  useEffect(() => {
+    if (!servicePort || gatewayPort) return
+    if (!taken.some((r) => r.gateway_port === servicePort)) setGatewayPort(String(servicePort))
+  }, [servicePort]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onlineNodes = rawNodes.filter((n) => n.status === "online")
+  const port = parseInt(gatewayPort, 10)
+  const canCreate =
+    port > 0 && port < 65536 &&
+    (mode === "service" ? serviceId.length > 0 : nodeId.length > 0 && parseInt(nodePort, 10) > 0)
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      tcpRoutesApi.create(
+        orgId,
+        projectId,
+        {
+          gateway_port: port,
+          allowed_cidrs: allowFrom.split(/[\s,]+/).filter(Boolean),
+          ...(mode === "service"
+            ? { service_id: serviceId }
+            : { node_id: nodeId, node_port: parseInt(nodePort, 10) }),
+        },
+        token
+      ),
+    onSuccess: () => {
+      draftSaved()
+      qc.invalidateQueries({ queryKey: ["tcp-routes", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      navigate({ to: "/projects/$id/routes", params: { id: projectId } })
+    },
+  })
+
+  return (
+    <>
+      <Section title="Target" subtitle="What the gateway forwards connections to.">
+        <SegmentedControl
+          value={mode}
+          onValueChange={(v) => setMode(v as "service" | "node")}
+          options={[
+            { value: "service", label: "Service" },
+            { value: "node",    label: "Node + port" },
+          ]}
+          className="text-sm mb-4"
+        />
+
+        {mode === "service" ? (
+          <>
+            <Select value={serviceId} onValueChange={(v) => setServiceId(v ?? "")}>
+              <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+                <SelectValue placeholder={routable.length === 0 ? "No service publishes a non-HTTP port yet" : "Select a service…"}>
+                  {selected?.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {routable.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                    <span className="ml-2 text-muted-foreground text-xs">
+                      :{((s.ports ?? []).find((p) => p.is_primary) ?? (s.ports ?? [])[0])?.port ?? "?"}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-2">
+              A service speaking HTTP takes a domain route instead, which gives it a hostname and TLS. A database has
+              to have mesh access before it can be routed.
+            </p>
+          </>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Select value={nodeId} onValueChange={(v) => setNodeId(v ?? "")}>
+              <SelectTrigger className="w-full! h-9 text-sm bg-background border-border/60">
+                <SelectValue placeholder="Select a node…">
+                  {onlineNodes.find((n) => n.id === nodeId)?.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {onlineNodes.map((n) => (
+                  <SelectItem key={n.id} value={n.id}>
+                    {n.name}
+                    <span className="ml-2 text-muted-foreground text-xs">{n.tailscale_ip}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input
+              className={`${inputCls} w-28 shrink-0`}
+              value={nodePort}
+              inputMode="numeric"
+              placeholder="Port"
+              onChange={(e) => setNodePort(e.target.value.replace(/[^0-9]/g, ""))}
+            />
+          </div>
+        )}
+      </Section>
+
+      <Section title="Gateway port" subtitle="The port clients connect to, on the gateway's public address.">
+        <input
+          className={inputCls}
+          value={gatewayPort}
+          inputMode="numeric"
+          placeholder={servicePort ? String(servicePort) : "5432"}
+          onChange={(e) => setGatewayPort(e.target.value.replace(/[^0-9]/g, ""))}
+        />
+        <p className="text-xs text-muted-foreground mt-2">
+          It cannot be one the gateway uses for itself, and the host firewall, with a cloud security group if there is
+          one, must allow it too.
+        </p>
+      </Section>
+
+      <Section title="Allow from" subtitle="Who may connect. Left empty, anyone on the internet.">
+        <input
+          className={inputCls}
+          value={allowFrom}
+          placeholder="e.g. 203.0.113.7, 10.0.0.0/8"
+          onChange={(e) => setAllowFrom(e.target.value)}
+        />
+      </Section>
+
+      {createMutation.error && (
+        <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+          <p className="text-xs text-destructive">{(createMutation.error as Error).message}</p>
+        </div>
+      )}
+
+      <Button
+        className="w-full gap-2"
+        disabled={!canCreate || createMutation.isPending}
+        onClick={() => createMutation.mutate()}
+      >
+        {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        Publish port
+      </Button>
+    </>
   )
 }
 
