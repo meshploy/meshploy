@@ -319,6 +319,9 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups` | ✓ | List variable groups attached to service |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups` | ✓ | Attach variable group to service |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/variable-groups/{groupId}` | ✓ | Detach variable group from service |
+| GET | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/variable-groups` | ✓ | List variable groups attached to a job |
+| POST | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/variable-groups` | ✓ | Attach a variable group to a job |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/jobs/{jobId}/variable-groups/{groupId}` | ✓ | Detach a variable group from a job |
 | GET | `/orgs/{orgId}/projects/{projectId}/variable-groups` | ✓ | List variable groups |
 | POST | `/orgs/{orgId}/projects/{projectId}/variable-groups` | ✓ | Create variable group |
 | GET | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}` | ✓ | Get variable group |

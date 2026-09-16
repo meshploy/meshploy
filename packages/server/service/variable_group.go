@@ -60,6 +60,26 @@ func (s *VariableGroupService) ListForService(ctx context.Context, serviceID uui
 	return groups, err
 }
 
+// ListForJob returns the groups attached to a job. A job has no system-managed
+// group of its own -- it owns no database -- so every group here was attached
+// deliberately.
+func (s *VariableGroupService) ListForJob(ctx context.Context, jobID uuid.UUID) ([]db.VariableGroup, error) {
+	var jvgs []db.JobVariableGroup
+	if err := s.db.WithContext(ctx).Where("job_id = ?", jobID).Find(&jvgs).Error; err != nil {
+		return nil, err
+	}
+	if len(jvgs) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, len(jvgs))
+	for i, jv := range jvgs {
+		ids[i] = jv.GroupID
+	}
+	var groups []db.VariableGroup
+	err := s.db.WithContext(ctx).Preload("Items").Where("id IN ?", ids).Find(&groups).Error
+	return groups, err
+}
+
 // ─── User-managed group CRUD ──────────────────────────────────────────────────
 
 type CreateGroupInput struct {
@@ -360,16 +380,44 @@ func mergeItems(base, extra []db.VariableGroupItem) []db.VariableGroupItem {
 // CollectEnvVars loads all variable groups attached to a service and returns
 // them as a flat key→value map, ready for injection into the K8s Deployment.
 // Items from later-attached groups win on key conflict.
+// AttachJob and DetachJob mirror Attach and Detach. Nothing is redeployed: a
+// job has nothing running, so the next run reads the new values.
+func (s *VariableGroupService) AttachJob(ctx context.Context, jobID, groupID uuid.UUID) error {
+	jvg := db.JobVariableGroup{JobID: jobID, GroupID: groupID}
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&jvg).Error
+}
+
+func (s *VariableGroupService) DetachJob(ctx context.Context, jobID, groupID uuid.UUID) error {
+	return s.db.WithContext(ctx).
+		Where("job_id = ? AND group_id = ?", jobID, groupID).
+		Delete(&db.JobVariableGroup{}).Error
+}
+
+// CollectEnvVarsForJob is CollectEnvVars for a job's attachments.
+func (s *VariableGroupService) CollectEnvVarsForJob(ctx context.Context, jobID uuid.UUID) (map[string]string, error) {
+	groups, err := s.ListForJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	return flattenGroups(groups), nil
+}
+
 func (s *VariableGroupService) CollectEnvVars(ctx context.Context, serviceID uuid.UUID) (map[string]string, error) {
 	groups, err := s.ListForService(ctx, serviceID)
 	if err != nil {
 		return nil, err
 	}
+	return flattenGroups(groups), nil
+}
+
+func flattenGroups(groups []db.VariableGroup) map[string]string {
 	out := make(map[string]string)
 	for _, g := range groups {
 		for _, item := range g.Items {
 			out[item.Key] = string(item.Value)
 		}
 	}
-	return out, nil
+	return out
 }

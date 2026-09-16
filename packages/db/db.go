@@ -106,6 +106,7 @@ func Migrate(db *gorm.DB) error {
 		// Jobs & Cron Jobs
 		&Job{},
 		&JobRun{},
+		&JobVariableGroup{}, // after Job: it references one
 
 		// Integrations
 		&StorageIntegration{},
@@ -164,6 +165,9 @@ func applyConstraints(db *gorm.DB) error {
 		// A service can only attach a given group once
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_variable_group
 		 ON service_variable_groups (service_id, group_id)`,
+		// Nor can a job
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_job_variable_group
+		 ON job_variable_groups (job_id, group_id)`,
 		// Only one system-managed group per service
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_variable_group_service
 		 ON variable_groups (service_id)
@@ -299,6 +303,8 @@ func applyConstraints(db *gorm.DB) error {
 		{"variable_groups", "service_id", "services", "CASCADE"},
 		// Variable group → its attachments and items.
 		{"service_variable_groups", "group_id", "variable_groups", "CASCADE"},
+		{"job_variable_groups", "group_id", "variable_groups", "CASCADE"},
+		{"job_variable_groups", "job_id", "jobs", "CASCADE"},
 		{"variable_group_items", "group_id", "variable_groups", "CASCADE"},
 		// Volume → its mounts; project → its volumes and stacks.
 		{"volume_mounts", "volume_id", "volumes", "CASCADE"},

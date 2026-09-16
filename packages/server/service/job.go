@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -21,6 +23,36 @@ type JobService struct {
 	db    *gorm.DB
 	k8s   kubernetes.Interface
 	notif *NotificationService
+	// varGroups resolves the groups a job has attached. Assigned after
+	// construction in service.New.
+	varGroups *VariableGroupService
+}
+
+// jobEnv is a job's environment, composed the way a service's is: its own
+// variables, then its attached groups (its own win on a clash), with ${NAME}
+// references resolved against the result.
+//
+// A job that runs against a database attaches that database's group and writes
+// DATABASE_URL=${PRIMARY_PG_DB_URL}, rather than carrying a second copy of the
+// password that nothing rotates.
+func (s *JobService) jobEnv(ctx context.Context, job *db.Job) []corev1.EnvVar {
+	own := appk8s.ParseEnvBlock(string(job.EnvVars))
+	if s.varGroups == nil {
+		return own
+	}
+	groupEnvs, err := s.varGroups.CollectEnvVarsForJob(ctx, job.ID)
+	if err != nil {
+		log.Printf("job %s: read variable groups: %v", job.Name, err)
+		return own
+	}
+	envs, unknown, looped := resolveEnvRefs(mergeSecretEnvs(own, groupEnvs))
+	if len(unknown) > 0 {
+		log.Printf("job %s: left as written, not defined for this job: ${%s}", job.Name, strings.Join(unknown, "}, ${"))
+	}
+	if len(looped) > 0 {
+		log.Printf("job %s: left as written, their references go round in a loop: %s", job.Name, strings.Join(looped, ", "))
+	}
+	return envs
 }
 
 // ─── Input types ─────────────────────────────────────────────────────────────
@@ -283,7 +315,7 @@ func (s *JobService) applyCronJob(ctx context.Context, job *db.Job) {
 		HistoryLimit:      int32(job.HistoryLimit),
 		Image:             job.Image,
 		Command:           job.Command,
-		EnvVars:           appk8s.ParseEnvBlock(string(job.EnvVars)),
+		EnvVars:           s.jobEnv(ctx, job),
 		CPURequest:        job.CPURequest,
 		CPULimit:          job.CPULimit,
 		MemRequest:        job.MemoryRequest,
@@ -430,7 +462,7 @@ func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, 
 		}
 	}
 
-	envVars := appk8s.ParseEnvBlock(string(job.EnvVars))
+	envVars := s.jobEnv(ctx, job)
 
 	params := appk8s.RunJobParams{
 		JobName:    k8sJobName,

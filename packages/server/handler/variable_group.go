@@ -332,6 +332,70 @@ func (h *Handler) DetachVariableGroup(ctx context.Context, input *DetachVariable
 	return nil, h.svc.VariableGroups.Detach(ctx, serviceID, groupID)
 }
 
+// ─── Groups on a job ──────────────────────────────────────────────────────────
+
+type ListJobVariableGroupsInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	JobID     string `path:"jobId"`
+}
+
+func (h *Handler) ListJobVariableGroups(ctx context.Context, input *ListJobVariableGroupsInput) (*ListServiceVariableGroupsOutput, error) {
+	_, _, jobID, _, err := h.checkAccess(ctx, input.OrgID, input.JobID, db.ResourceJob, db.ActionView, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := h.svc.VariableGroups.ListForJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ApiVariableGroup, len(groups))
+	for i, g := range groups {
+		out[i] = toApiGroup(g, false)
+	}
+	return &ListServiceVariableGroupsOutput{Body: out}, nil
+}
+
+type AttachJobVariableGroupInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	JobID     string `path:"jobId"`
+	Body      struct {
+		GroupID string `json:"group_id"`
+	}
+}
+
+func (h *Handler) AttachJobVariableGroup(ctx context.Context, input *AttachJobVariableGroupInput) (*struct{}, error) {
+	_, _, jobID, _, err := h.checkAccess(ctx, input.OrgID, input.JobID, db.ResourceJob, db.ActionUpdate, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	groupID, err := uuid.Parse(input.Body.GroupID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid group_id")
+	}
+	return nil, h.svc.VariableGroups.AttachJob(ctx, jobID, groupID)
+}
+
+type DetachJobVariableGroupInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	JobID     string `path:"jobId"`
+	GroupID   string `path:"groupId"`
+}
+
+func (h *Handler) DetachJobVariableGroup(ctx context.Context, input *DetachJobVariableGroupInput) (*struct{}, error) {
+	_, _, jobID, _, err := h.checkAccess(ctx, input.OrgID, input.JobID, db.ResourceJob, db.ActionUpdate, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	groupID, err := parseUUID(input.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	return nil, h.svc.VariableGroups.DetachJob(ctx, jobID, groupID)
+}
+
 // ─── Route registration ───────────────────────────────────────────────────────
 
 func (h *Handler) registerVariableGroupRoutes(api huma.API) {
@@ -350,4 +414,8 @@ func (h *Handler) registerVariableGroupRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "list-service-variable-groups", Method: "GET", Path: base + "/services/{serviceId}/variable-groups", Summary: "List variable groups attached to service", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.ListServiceVariableGroups)
 	huma.Register(api, huma.Operation{OperationID: "attach-variable-group", Method: "POST", Path: base + "/services/{serviceId}/variable-groups", Summary: "Attach variable group to service", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.AttachVariableGroup)
 	huma.Register(api, huma.Operation{OperationID: "detach-variable-group", Method: "DELETE", Path: base + "/services/{serviceId}/variable-groups/{groupId}", Summary: "Detach variable group from service", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.DetachVariableGroup)
+
+	huma.Register(api, huma.Operation{OperationID: "list-job-variable-groups", Method: "GET", Path: base + "/jobs/{jobId}/variable-groups", Summary: "List variable groups attached to a job", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.ListJobVariableGroups)
+	huma.Register(api, huma.Operation{OperationID: "attach-job-variable-group", Method: "POST", Path: base + "/jobs/{jobId}/variable-groups", Summary: "Attach a variable group to a job", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.AttachJobVariableGroup)
+	huma.Register(api, huma.Operation{OperationID: "detach-job-variable-group", Method: "DELETE", Path: base + "/jobs/{jobId}/variable-groups/{groupId}", Summary: "Detach a variable group from a job", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.DetachJobVariableGroup)
 }

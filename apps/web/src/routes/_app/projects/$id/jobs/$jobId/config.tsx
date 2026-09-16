@@ -1,4 +1,5 @@
 import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
+import { GroupAttachments } from "@/components/variables/group-attachments"
 import { FormLayout } from "@/components/layout/form-layout"
 import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, useParams } from "@tanstack/react-router"
@@ -107,6 +108,25 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
 
   return (
     <div className="space-y-8">
+      <Section title="Environment" subtitle="Variables injected at runtime. One KEY=VALUE per line.">
+        <Field label="Env vars">
+          <div className="rounded-md overflow-hidden border border-border/60">
+            <CodeMirror
+              value={form.envVars}
+              height="140px"
+              theme="dark"
+              extensions={[envLanguage, envTheme]}
+              onChange={(val) => patch({ envVars: val })}
+              placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"}
+              style={{ fontSize: 12 }}
+              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+            />
+          </div>
+        </Field>
+      </Section>
+
+      <GroupAttachments owner={{ kind: "job", id: job.id }} projectId={projectId} />
+
       <Section title="Container" subtitle="Image and script to execute">
         <Field label="Image" required>
           <input
@@ -163,22 +183,6 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
         </div>
       </Section>
 
-      <Section title="Environment" subtitle="Variables injected at runtime. One KEY=VALUE per line.">
-        <Field label="Env vars">
-          <div className="rounded-md overflow-hidden border border-border/60">
-            <CodeMirror
-              value={form.envVars}
-              height="140px"
-              theme="dark"
-              extensions={[envLanguage, envTheme]}
-              onChange={(val) => patch({ envVars: val })}
-              placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"}
-              style={{ fontSize: 12 }}
-              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
-            />
-          </div>
-        </Field>
-      </Section>
 
       {updateMut.isError && (
         <p className="text-xs text-destructive">{(updateMut.error as Error).message}</p>

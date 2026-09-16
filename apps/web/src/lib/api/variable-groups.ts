@@ -90,4 +90,26 @@ export const variableGroups = {
       { method: "DELETE" },
       token
     ),
+
+  /** A job attaches groups the same way, and reads them on its next run. */
+  listForJob: (orgId: string, projectId: string, jobId: string, token: string) =>
+    apiFetch<ApiVariableGroup[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/jobs/${jobId}/variable-groups`,
+      {},
+      token
+    ),
+
+  attachToJob: (orgId: string, projectId: string, jobId: string, groupId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/jobs/${jobId}/variable-groups`,
+      { method: "POST", body: JSON.stringify({ group_id: groupId }) },
+      token
+    ),
+
+  detachFromJob: (orgId: string, projectId: string, jobId: string, groupId: string, token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/jobs/${jobId}/variable-groups/${groupId}`,
+      { method: "DELETE" },
+      token
+    ),
 }

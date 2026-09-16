@@ -31,6 +31,7 @@ import { ConfigFileEditor } from "@/components/config-files/config-file-editor"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
 import { StackEditor } from "@/components/stacks/stack-editor"
+import { StagedGroupPicker } from "@/components/variables/group-attachments"
 import { invalidateProjectViews } from "@/lib/project-views"
 import { Button } from "@/components/ui/button"
 import {
@@ -1876,6 +1877,8 @@ function JobForm({ projectId }: { projectId: string }) {
 
   const [jf, setJf] = useState<JobFormState>(JOB_INITIAL)
   const patch = (p: Partial<JobFormState>) => setJf((s) => ({ ...s, ...p }))
+  // Held until the job exists: an attachment needs its id.
+  const [groupIds, setGroupIds] = useState<string[]>([])
 
   const { data: rawNodes = [] } = useQuery<ApiNode[]>({
     queryKey: ["nodes", orgId],
@@ -1885,8 +1888,8 @@ function JobForm({ projectId }: { projectId: string }) {
   const workerNodes = schedulableNodes(rawNodes).map(toNode)
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      jobsApi.create(orgId, projectId, {
+    mutationFn: async () => {
+      const job = await jobsApi.create(orgId, projectId, {
         name: jf.name,
         is_cron: jf.isScheduled,
         image: jf.image,
@@ -1900,7 +1903,12 @@ function JobForm({ projectId }: { projectId: string }) {
         memory_limit: jf.memoryLimit || undefined,
         env_vars: jf.envVars || undefined,
         node_id: jf.nodeId ?? undefined,
-      }, token),
+      }, token)
+      for (const id of groupIds) {
+        await groupsApi.attachToJob(orgId, projectId, job.id, id, token)
+      }
+      return job
+    },
     onSuccess: () => {
       draftSaved()
       qc.invalidateQueries({ queryKey: ["jobs", orgId, projectId] })
@@ -1927,6 +1935,25 @@ function JobForm({ projectId }: { projectId: string }) {
           />
         </Field>
       </Section>
+
+      <Section title="Environment" subtitle="Variables injected at runtime. One KEY=VALUE per line.">
+        <Field label="Env vars">
+          <div className="rounded-md overflow-hidden border border-border/60">
+            <CodeMirror
+              value={jf.envVars}
+              height="120px"
+              theme="dark"
+              extensions={[envLanguage, envTheme]}
+              onChange={(val) => patch({ envVars: val })}
+              placeholder={"DATABASE_URL=postgres://...\nDEBUG=true"}
+              style={{ fontSize: 13 }}
+              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
+            />
+          </div>
+        </Field>
+      </Section>
+
+      <StagedGroupPicker projectId={projectId} selected={groupIds} onChange={setGroupIds} />
 
       <Section title="Image" subtitle="Docker image to run">
         <Field label="Image" required>
@@ -1964,22 +1991,6 @@ function JobForm({ projectId }: { projectId: string }) {
         onHistoryLimitChange={(v) => patch({ historyLimit: parseInt(v) || 5 })}
       />
 
-      <Section title="Environment" subtitle="Variables injected at runtime. One KEY=VALUE per line.">
-        <Field label="Env vars">
-          <div className="rounded-md overflow-hidden border border-border/60">
-            <CodeMirror
-              value={jf.envVars}
-              height="120px"
-              theme="dark"
-              extensions={[envLanguage, envTheme]}
-              onChange={(val) => patch({ envVars: val })}
-              placeholder={"DATABASE_URL=postgres://...\nDEBUG=true"}
-              style={{ fontSize: 13 }}
-              basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
-            />
-          </div>
-        </Field>
-      </Section>
 
       <Section title="Placement" subtitle="Choose which node this job runs on">
         <div className="flex flex-wrap gap-2">

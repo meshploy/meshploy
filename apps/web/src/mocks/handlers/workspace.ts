@@ -40,6 +40,8 @@ const body = async (request: Request): Promise<Record<string, any>> => {
   }
 }
 const find = (kind: string, id: unknown) => db[kind].find((r) => r.id === id)
+// Which groups each job has attached, for the demo workspace.
+const jobGroups: Record<string, string[]> = {}
 const defaults: Record<string, any> = {
   services: { ...demoServiceApi, status: "stopped", ports: [] },
   jobs: demoJob,
@@ -743,6 +745,25 @@ export const workspaceHandlers = [
     const v = find("volumes", params.volumeId)
     if (!v) return missing()
     v.mounts = v.mounts.filter((m: any) => m.id !== params.mountId)
+    return ok()
+  }),
+  http.get(`${P}/jobs/:jobId/variable-groups`, ({ params }) =>
+    json(
+      (jobGroups[params.jobId as string] ?? [])
+        .map((id) => find("variable-groups", id))
+        .filter(Boolean)
+    )
+  ),
+  http.post(`${P}/jobs/:jobId/variable-groups`, async ({ params, request }) => {
+    const b = await body(request)
+    const jobId = params.jobId as string
+    const ids = jobGroups[jobId] ?? (jobGroups[jobId] = [])
+    if (b.group_id && !ids.includes(b.group_id)) ids.push(b.group_id)
+    return ok()
+  }),
+  http.delete(`${P}/jobs/:jobId/variable-groups/:groupId`, ({ params }) => {
+    const jobId = params.jobId as string
+    jobGroups[jobId] = (jobGroups[jobId] ?? []).filter((id) => id !== params.groupId)
     return ok()
   }),
   http.get(`${P}/routes/:routeId/targets`, ({ params }) =>

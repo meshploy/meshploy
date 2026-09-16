@@ -237,7 +237,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,
 		Jobs: func() *JobService {
-			j := &JobService{db: db, k8s: k8sClient, notif: notif}
+			j := &JobService{db: db, k8s: k8sClient, notif: notif, varGroups: varGroups}
 			if k8sClient != nil {
 				go j.StartReconciler(context.Background())
 			}

@@ -469,6 +469,23 @@ type ServiceVariableGroup struct {
 
 func (ServiceVariableGroup) TableName() string { return "service_variable_groups" }
 
+// JobVariableGroup attaches a variable group to a job, the way
+// ServiceVariableGroup does for a service.
+//
+// A separate table rather than one polymorphic attachment: the rows are the
+// same shape, but moving the live ones to gain nothing but tidiness is a
+// migration with no behaviour behind it.
+type JobVariableGroup struct {
+	Base
+	JobID   uuid.UUID `gorm:"type:uuid;not null;index" json:"job_id"`
+	GroupID uuid.UUID `gorm:"type:uuid;not null;index" json:"group_id"`
+
+	Job   Job           `gorm:"foreignKey:JobID;constraint:OnDelete:CASCADE"   json:"-"`
+	Group VariableGroup `gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (JobVariableGroup) TableName() string { return "job_variable_groups" }
+
 type Node struct {
 	Base
 	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                    json:"organization_id"`
