@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState } from "react"
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Bell, Box, GitBranch, HardDrive, Loader2, Mail, Pencil, Plus, Trash2, Download, RefreshCw } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { EventPicker } from "@/components/notifications/event-picker"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -449,15 +450,68 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
   onToggle: (enabled: boolean) => void
   isToggling: boolean
 }) {
+  const [editing, setEditing] = useState(false)
   const destination =
     channel.type === "email" ? channel.config.address
     : channel.type === "slack" || channel.type === "discord" ? channel.config.webhook_url
     : channel.config.url
 
-  return <IntegrationRow name={channel.name} provider={channel.type} status={channel.enabled ? "Enabled" : "Paused"} details={<><span className="block max-w-sm truncate">{destination}</span><span className="text-xs">{channel.events.length} subscribed events</span></>} actions={<>
-    <Button variant="outline" size="sm" onClick={() => onToggle(!channel.enabled)} disabled={isToggling}>{channel.enabled ? "Pause" : "Resume"}</Button>
-    <DisconnectButton name={channel.name} onDelete={onDelete} pending={isDeleting} />
-  </>} />
+  return <>
+    <IntegrationRow name={channel.name} provider={channel.type} status={channel.enabled ? "Enabled" : "Paused"} details={<><span className="block max-w-sm truncate">{destination}</span><span className="text-xs">{channel.events.length} subscribed events</span></>} actions={<>
+      <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Events</Button>
+      <Button variant="outline" size="sm" onClick={() => onToggle(!channel.enabled)} disabled={isToggling}>{channel.enabled ? "Pause" : "Resume"}</Button>
+      <DisconnectButton name={channel.name} onDelete={onDelete} pending={isDeleting} />
+    </>} />
+    <EditEventsDialog channel={channel} open={editing} onOpenChange={setEditing} />
+  </>
+}
+
+/**
+ * Changing what an existing channel listens for.
+ *
+ * Without this a channel's events are fixed at creation, so the events added in
+ * a release are unreachable for every channel made before it -- the same shape
+ * of problem as an event nothing could subscribe to.
+ */
+function EditEventsDialog({ channel, open, onOpenChange }: {
+  channel: ApiNotificationChannel
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc = useQueryClient()
+  const [events, setEvents] = useState<string[]>(channel.events)
+
+  useEffect(() => { if (open) setEvents(channel.events) }, [open, channel.events])
+
+  const save = useMutation({
+    mutationFn: () => notificationsApi.update(orgId, channel.id, { events }, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notification-channels", orgId] })
+      onOpenChange(false)
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Events for {channel.name}</DialogTitle>
+          <DialogDescription>Choose what this channel is told about.</DialogDescription>
+        </DialogHeader>
+        <EventPicker events={events} onChange={setEvents} />
+        {save.isError && <p className="text-xs text-destructive">{(save.error as Error).message}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || events.length === 0}>
+            {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Save
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 // ─── Email provider section ───────────────────────────────────────────────────

@@ -19,7 +19,23 @@ export interface CreateNotificationBody {
   events: string[]
 }
 
+/** One event a channel can subscribe to, as the API describes it. */
+export interface ApiNotificationEvent {
+  event: string
+  group: string
+  title: string
+  /** When this fires, in plain words. */
+  description: string
+  tone: "good" | "bad" | "warning"
+  /** Part of the set a new channel starts with. */
+  recommended: boolean
+}
+
 export const notifications = {
+  /** The catalogue, served so the console cannot drift from what is dispatched. */
+  events: (token: string) =>
+    apiFetch<ApiNotificationEvent[]>("/api/v1/notification-events", {}, token),
+
   list: (orgId: string, token: string) =>
     apiFetch<ApiNotificationChannel[]>(
       `/api/v1/orgs/${orgId}/notification-channels`,

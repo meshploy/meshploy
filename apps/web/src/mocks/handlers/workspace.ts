@@ -402,6 +402,24 @@ export const workspaceHandlers = [
       })
     )
   ),
+  http.get("/api/v1/notification-events", () =>
+    json([
+      { event: "deploy.success", group: "Deploy", title: "Deployment succeeded", description: "A service finished deploying and is running. Covers builds, image deploys, rollbacks and databases.", tone: "good", recommended: false },
+      { event: "deploy.failed", group: "Deploy", title: "Deployment failed", description: "A deploy did not finish: the build failed, or the workload never became ready.", tone: "bad", recommended: true },
+      { event: "service.crashed", group: "Service", title: "Service crashed", description: "A service that was running stopped working on its own, with no deploy involved.", tone: "bad", recommended: true },
+      { event: "service.recovered", group: "Service", title: "Service recovered", description: "A failing service started working again without a deploy.", tone: "good", recommended: false },
+      { event: "job.success", group: "Job", title: "Job succeeded", description: "A job run finished with exit code 0.", tone: "good", recommended: false },
+      { event: "job.failed", group: "Job", title: "Job failed", description: "A job run exited non-zero, or could not start.", tone: "bad", recommended: true },
+      { event: "backup.success", group: "Backup", title: "Backup succeeded", description: "A scheduled or manual backup was written to storage.", tone: "good", recommended: false },
+      { event: "backup.failed", group: "Backup", title: "Backup failed", description: "A backup did not reach storage. The last good copy is older than you think.", tone: "bad", recommended: true },
+      { event: "restore.success", group: "Backup", title: "Restore succeeded", description: "A restore finished and the data is back.", tone: "good", recommended: false },
+      { event: "restore.failed", group: "Backup", title: "Restore failed", description: "A restore did not finish. The service may be holding partial data.", tone: "bad", recommended: true },
+      { event: "member.joined", group: "Organization", title: "Member joined", description: "Someone accepted an invitation and can now sign in to this organization.", tone: "warning", recommended: true },
+      { event: "agent.token_created", group: "Organization", title: "Agent token created", description: "A token was minted for an agent. It can act on this organization until revoked.", tone: "warning", recommended: true },
+      { event: "node.offline", group: "Node", title: "Node went offline", description: "A node stopped answering on the mesh. Its workloads reschedule only if another node can take them.", tone: "warning", recommended: true },
+      { event: "node.online", group: "Node", title: "Node came back", description: "A node that was reported offline is answering again.", tone: "good", recommended: false },
+    ])
+  ),
   http.get(`${O}/routes`, () => json(db["routes"])),
   http.get(`${O}/tcp-routes`, () =>
     json({

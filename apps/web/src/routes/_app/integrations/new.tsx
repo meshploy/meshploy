@@ -7,6 +7,7 @@ import {
 } from "lucide-react"
 import { SiGithub, SiGitlab, SiGitea } from "@icons-pack/react-simple-icons"
 import { z } from "zod"
+import { EventPicker, defaultEvents, useNotificationEvents } from "@/components/notifications/event-picker"
 import { Button } from "@/components/ui/button"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -701,14 +702,6 @@ function RegistryForm({ onSuccess }: { onSuccess: (reg: ApiRegistryIntegration) 
 
 // ─── Notifications form ───────────────────────────────────────────────────────
 
-const ALL_EVENTS = [
-  { value: "deploy.success", label: "Deploy succeeded" },
-  { value: "deploy.failed",  label: "Deploy failed"    },
-  { value: "node.offline",   label: "Node went offline" },
-  { value: "backup.success", label: "Backup succeeded" },
-  { value: "backup.failed",  label: "Backup failed"    },
-]
-
 function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
@@ -719,11 +712,16 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
   const [url,     setUrl]     = useState("")
   const [secret,  setSecret]  = useState("")
   const [address, setAddress] = useState("")
-  const [events,  setEvents]  = useState<string[]>(["deploy.failed", "node.offline"])
+  const [events,  setEvents]  = useState<string[]>([])
   const [error,   setError]   = useState<string | null>(null)
 
-  const toggleEvent = (ev: string) =>
-    setEvents((prev) => prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev])
+  // A new channel starts on the failures preset, once the catalogue says what
+  // that is. Untouched selections only: a cleared list stays cleared.
+  const { data: catalogue } = useNotificationEvents()
+  const [touched, setTouched] = useState(false)
+  useEffect(() => {
+    if (!touched && catalogue?.length) setEvents(defaultEvents(catalogue))
+  }, [catalogue, touched])
 
   const config: Record<string, string> =
     type === "email" ? { address }
@@ -811,22 +809,7 @@ function NotificationsForm({ onSuccess }: { onSuccess: () => void }) {
 
         {/* Events */}
         <Field label="Notify on">
-          <div className="space-y-1.5 pt-0.5">
-            {ALL_EVENTS.map(({ value, label }) => (
-              <label key={value} className="flex items-center gap-2.5 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={events.includes(value)}
-                  onChange={() => toggleEvent(value)}
-                  className="h-3.5 w-3.5 rounded accent-primary"
-                />
-                <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
-                  {label}
-                </span>
-                <code className="text-[11px] font-mono text-muted-foreground/50">{value}</code>
-              </label>
-            ))}
-          </div>
+          <EventPicker events={events} onChange={(next) => { setTouched(true); setEvents(next) }} />
         </Field>
       </Section>
 

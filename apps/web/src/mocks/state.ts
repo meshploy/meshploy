@@ -143,7 +143,16 @@ export const db: Record<string, DemoRecord[]> = {
       organization_id: seed.DEMO_ORG_ID,
     }),
   ],
-  "notification-channels": [],
+  "notification-channels": [
+    record({
+      organization_id: seed.DEMO_ORG_ID,
+      name: "Ops alerts",
+      type: "email",
+      config: { address: "ops@demo.meshploy.app" },
+      events: ["deploy.failed", "node.offline"],
+      enabled: true,
+    }),
+  ],
   domains: [
     record({
       organization_id: seed.DEMO_ORG_ID,
