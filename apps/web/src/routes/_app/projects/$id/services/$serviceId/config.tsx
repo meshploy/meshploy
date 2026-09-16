@@ -1256,15 +1256,44 @@ function PortsSection({ projectId, serviceId }: { projectId: string; serviceId: 
 
 // ─── Database network access ──────────────────────────────────────────────────
 
-// A database is in-cluster only until someone asks for more. Exposing it
-// publishes its port on every node, which is how you reach it from a laptop on
-// the mesh with psql or a GUI client.
+// Three rungs, each including the one before, so the selected rung is the state
+// rather than something to infer from a switch. Labelling a switch "reachable
+// over the mesh" read as a claim about the present, and the text beside it read
+// as the opposite.
+type DBReach = "cluster" | "mesh" | "internet"
+
+const REACH_RUNGS: { value: DBReach; label: string; detail: string; disabled?: string }[] = [
+  {
+    value: "cluster",
+    label: "In-cluster only",
+    detail: "Other services connect by name. Nothing outside the cluster can.",
+  },
+  {
+    value: "mesh",
+    label: "Reachable over the mesh",
+    detail: "Any machine on your WireGuard network can connect, with a client of your own.",
+  },
+  {
+    value: "internet",
+    label: "Reachable from the internet",
+    detail: "Needs a TCP route through the gateway.",
+    disabled: "Not available yet",
+  },
+]
+
+// What the database is, in one sentence, for the line under the rungs.
+const REACH_STATE: Record<DBReach, string> = {
+  cluster: "only other services can connect, by name. Not from your own machine, not from the internet",
+  mesh: "other services connect by name, and any machine on the mesh can connect at the address below",
+  internet: "reachable from the internet through a route on the gateway",
+}
+
 function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
   const queryKey = ["database-config", orgId, projectId, serviceId]
-  const draft = useConfigDraft({ exposed: false, port: "" })
+  const draft = useConfigDraft<{ reach: DBReach; port: string }>({ reach: "cluster", port: "" })
   const { value, setValue } = draft
 
   const { data: dc, isLoading } = useQuery({
@@ -1274,7 +1303,12 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
   })
 
   useEffect(() => {
-    if (dc) draft.sync({ exposed: dc.mesh_exposed, port: dc.node_port ? String(dc.node_port) : "" })
+    if (dc) {
+      draft.sync({
+        reach: dc.mesh_exposed ? "mesh" : "cluster",
+        port: dc.node_port ? String(dc.node_port) : "",
+      })
+    }
   }, [dc])
 
   const mutation = useMutation({
@@ -1283,7 +1317,7 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
         orgId,
         projectId,
         serviceId,
-        { mesh_exposed: value.exposed, node_port: value.port ? Number(value.port) : 0 },
+        { mesh_exposed: value.reach !== "cluster", node_port: value.port ? Number(value.port) : 0 },
         token
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
@@ -1296,26 +1330,67 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
   const { data: node } = useQuery({
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId, token),
-    enabled: !!orgId && value.exposed,
+    enabled: !!orgId && value.reach !== "cluster",
     select: (nodes) => nodes.find((n) => n.k3s_role === "server") ?? nodes[0],
   })
+
+  const published = value.reach !== "cluster"
 
   return (
     <Section
       title="Network access"
-      subtitle="Inside the cluster a database is always reachable by name. Publish its port to connect from a machine on the mesh."
+      subtitle="Other services always reach this database by name, from inside the cluster. That name does not work anywhere else."
     >
       <div className="space-y-4">
-        <Field label="Reachable over the mesh">
-          <div className="flex items-center gap-2">
-            <Switch checked={value.exposed} onCheckedChange={(exposed) => setValue((v) => ({ ...v, exposed }))} />
-            <span className="text-xs text-muted-foreground">
-              {value.exposed ? "Published on every node" : "In-cluster only"}
-            </span>
-          </div>
-        </Field>
+        <div className="space-y-2" role="radiogroup" aria-label="Network access">
+          {REACH_RUNGS.map((rung) => {
+            const selected = value.reach === rung.value
+            return (
+              <button
+                key={rung.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={!!rung.disabled}
+                onClick={() => setValue((v) => ({ ...v, reach: rung.value }))}
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  selected ? "border-primary bg-primary/5" : "border-border/60 bg-card",
+                  rung.disabled
+                    ? "opacity-50 cursor-not-allowed"
+                    : !selected && "hover:border-border hover:bg-muted/20"
+                )}
+              >
+                <span
+                  className={cn(
+                    "mt-0.5 size-3.5 shrink-0 rounded-full border-2",
+                    selected ? "border-primary bg-primary/30" : "border-border"
+                  )}
+                />
+                <span className="min-w-0 space-y-0.5">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-foreground">{rung.label}</span>
+                    {rung.disabled && (
+                      <span className="text-[11px] text-muted-foreground border border-border/60 rounded px-1.5 py-0.5">
+                        {rung.disabled}
+                      </span>
+                    )}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">{rung.detail}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
 
-        {value.exposed && (
+        {/* Says which moment it describes: a description that reads like now
+            while describing later is the confusion the rungs just removed. */}
+        <p className="text-xs text-muted-foreground">
+          <span className="text-foreground">{draft.dirty ? "After saving:" : "Current state:"}</span>{" "}
+          {REACH_STATE[value.reach]}.
+        </p>
+
+        {published && (
           <>
             <Field label="Port">
               <input
@@ -1343,8 +1418,8 @@ function DatabaseNetworkSection({ projectId, serviceId }: { projectId: string; s
                   <p className="font-medium text-amber-300">This port answers on every interface, not only the mesh.</p>
                   <p>
                     A published port binds on all of a node's addresses unless the cluster is told otherwise, so on a
-                    gateway it is reachable from the internet too. Until this cluster restricts NodePorts to the mesh
-                    range, protect it with the host firewall, or keep the database in-cluster only.
+                    gateway it is reachable from the internet too. Until this cluster restricts published ports to the
+                    mesh range, protect it with the host firewall, or keep the database in-cluster only.
                   </p>
                 </div>
               </div>
@@ -1374,7 +1449,7 @@ function ConfigTab() {
   // thing there is to configure is how it can be reached.
   if (service?.type === "database") {
     return (
-      <ConfigSaveBar key={serviceId}><div className="console-page space-y-6"><ResourceIntro title="Database configuration" description="Control how this database can be reached." /><FormLayout><div className="space-y-6">
+      <ConfigSaveBar key={serviceId}><div className="console-page space-y-6 pb-24"><ResourceIntro title="Database configuration" description="Control how this database can be reached." /><FormLayout><div className="space-y-6">
         <DatabaseNetworkSection projectId={projectId} serviceId={serviceId} />
       </div></FormLayout></div></ConfigSaveBar>
     )
