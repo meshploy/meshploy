@@ -575,7 +575,11 @@ a {
   background: color-mix(in oklch, var(--muted) 35%, transparent);
 }
 .console-route input:not([type="checkbox"]):not([type="radio"]),
-.console-route select {
+.console-route select,
+/* A select trigger sits beside an input on the same row -- a node and its
+   port, a target and its path -- and carried the component's own 32px while
+   the input took the 38px below, so every such row was a little out. */
+.console-route [data-slot="select-trigger"] {
   min-height: 38px;
 }
 .console-route .console-page > .grid > a:hover {

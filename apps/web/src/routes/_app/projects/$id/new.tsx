@@ -1437,6 +1437,19 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
     return null
   })()
 
+  // The service's own port is what a client expects to type, so it is offered
+  // first; otherwise the first free port above 10000, high enough to be clear
+  // of the well-known ones. Only the gateway's own ports and published routes
+  // are knowable from here -- something else on the host may still hold one,
+  // which is why the route reports whether it could actually bind.
+  const findFreePort = () => {
+    const inUse = new Set([...reserved, ...taken.map((r) => r.gateway_port)])
+    if (servicePort && !inUse.has(servicePort)) return setGatewayPort(String(servicePort))
+    for (let p = 10000; p < 65536; p++) {
+      if (!inUse.has(p)) return setGatewayPort(String(p))
+    }
+  }
+
   const canCreate =
     port > 0 && port < 65536 && !portError &&
     (mode === "service" ? serviceId.length > 0 : nodeId.length > 0 && parseInt(nodePort, 10) > 0)
@@ -1533,13 +1546,19 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
       </Section>
 
       <Section title="Gateway port" subtitle="The port clients connect to, on the gateway's public address.">
-        <input
-          className={inputCls}
-          value={gatewayPort}
-          inputMode="numeric"
-          placeholder={servicePort ? String(servicePort) : "5432"}
-          onChange={(e) => setGatewayPort(e.target.value.replace(/[^0-9]/g, ""))}
-        />
+        <div className="flex items-center gap-2">
+          <input
+            className={cn(inputCls, "flex-1 min-w-0")}
+            value={gatewayPort}
+            inputMode="numeric"
+            placeholder={servicePort ? String(servicePort) : "5432"}
+            onChange={(e) => setGatewayPort(e.target.value.replace(/[^0-9]/g, ""))}
+          />
+          <Button variant="outline" className="shrink-0 gap-1.5" onClick={findFreePort}>
+            <Zap className="h-3.5 w-3.5" />
+            Find a free port
+          </Button>
+        </div>
         {portError ? (
           <p className="text-xs text-destructive mt-2">{portError}</p>
         ) : (
