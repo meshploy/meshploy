@@ -170,6 +170,13 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 	}
 
 	if err := s.db.WithContext(ctx).Create(route).Error; err != nil {
+		// The hostname is unique across the table, which is the real guarantee:
+		// the console checks what it can see, and two people creating the same
+		// name at once still meet here. Say which name, rather than handing back
+		// a constraint violation.
+		if isUniqueViolation(err) {
+			return nil, huma.Error409Conflict(fmt.Sprintf("%s is already routed", hostname))
+		}
 		return nil, err
 	}
 

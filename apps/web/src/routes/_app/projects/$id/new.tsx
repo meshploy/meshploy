@@ -1161,6 +1161,9 @@ function RouteForm({ projectId }: { projectId: string }) {
         return
       }
     }
+    // A hundred of the same name is not a real case, but a button that does
+    // nothing looks broken, so fall back to something that cannot collide.
+    patchRf({ subdomain: `${base}-${Math.random().toString(36).slice(2, 6)}` })
   }
 
   const patchTarget = (id: number, patch: Partial<TargetRow>) =>

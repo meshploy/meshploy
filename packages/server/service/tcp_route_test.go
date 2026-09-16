@@ -158,3 +158,29 @@ func TestTCPRouteRefusesAnHTTPPort(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain route")
 }
+
+// The console checks what it can see before suggesting a hostname, but two
+// people creating the same one at once still meet at the unique index. The
+// message has to name the hostname rather than the constraint.
+func TestDuplicateHostnameIsReportedAsAConflict(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+
+	domain := meshdb.Domain{
+		OrganizationID: e.org.ID, BaseDomain: "example.com", Verified: true,
+		InternalSubdomain: "internal", PreviewSubdomain: "preview",
+	}
+	require.NoError(t, e.gdb.Create(&domain).Error)
+
+	in := service.CreateRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID,
+		DomainID: &domain.ID, Zone: meshdb.RouteZonePublic, Subdomain: "shop",
+	}
+	_, err := e.svcs.Routes.Create(ctx, in)
+	require.NoError(t, err)
+
+	_, err = e.svcs.Routes.Create(ctx, in)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "shop.example.com")
+	assert.Contains(t, err.Error(), "already routed")
+}
