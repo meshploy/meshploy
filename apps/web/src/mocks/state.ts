@@ -44,7 +44,25 @@ export const db: Record<string, DemoRecord[]> = {
       })),
     },
   ],
-  "tcp-routes": [],
+  // The demo database, published on the gateway, so a TCP route has a page.
+  "tcp-routes": [
+    record({
+      organization_id: seed.DEMO_ORG_ID,
+      project_id: projectId,
+      gateway_port: 15432,
+      service_id: seed.DEMO_SVC_DB,
+      service_port: 5432,
+      node_id: null,
+      target_ip: "100.64.0.1",
+      target_port: 31432,
+      allowed_cidrs: [],
+      status: "open",
+      last_error: "",
+      published: true,
+      published_changed_at: null,
+      published_changed_by: null,
+    }),
+  ],
   "variable-groups": [
     record({
       id: groupId,

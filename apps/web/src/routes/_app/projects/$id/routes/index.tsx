@@ -141,7 +141,13 @@ function RoutesTab() {
               </TableHeader>
               <TableBody>
                 {tcpList.map((route) => (
-                  <TCPRouteRow key={route.id} route={route} serviceNames={serviceNames} projectId={projectId} />
+                  <TCPRouteRow
+                    key={route.id}
+                    route={route}
+                    serviceNames={serviceNames}
+                    projectId={projectId}
+                    onClick={() => navigate({ to: "/projects/$id/routes/tcp/$routeId", params: { id: projectId, routeId: route.id } })}
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -166,21 +172,22 @@ const TCP_STATE_LABELS: Record<string, string> = {
   paused: "paused",
 }
 
-function TCPRouteRow({ route, serviceNames, projectId }: {
+function TCPRouteRow({ route, serviceNames, projectId, onClick }: {
   route: ApiTCPRoute
   serviceNames: Map<string, string>
   projectId: string
+  onClick: () => void
 }) {
   const target = route.service_id
     ? serviceNames.get(route.service_id) ?? "a service"
     : `${route.target_ip}:${route.target_port}`
 
   return (
-    <TableRow className="border-b border-border/30">
+    <TableRow tabIndex={0} onKeyDown={e => { if (e.target === e.currentTarget && e.key === "Enter") onClick() }} className="border-b border-border/30 hover:bg-muted/20 cursor-pointer" onClick={e => { if (!(e.target as HTMLElement).closest("a,button")) onClick() }}>
       <TableCell className="px-4 py-3">
         <div className="flex items-center gap-2">
           <Network className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-          <code className="font-medium text-foreground font-mono text-sm">:{route.gateway_port}</code>
+          <Link to="/projects/$id/routes/tcp/$routeId" params={{ id: projectId, routeId: route.id }} className="font-medium text-foreground font-mono text-sm hover:text-primary">:{route.gateway_port}</Link>
           <span className="text-xs text-muted-foreground">→</span>
           {route.service_id ? (
             <Link to="/projects/$id/services/$serviceId/config" params={{ id: projectId, serviceId: route.service_id }} className="text-sm hover:text-primary">

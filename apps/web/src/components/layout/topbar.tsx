@@ -17,7 +17,7 @@ import { StatusPill } from "@/components/layout/resource-workbench"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { UserMenu } from "./user-menu"
-import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi, variableGroups, configFiles, agents } from "@/lib/api"
+import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, tcpRoutes as tcpRoutesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi, variableGroups, configFiles, agents } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -36,6 +36,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   services:     "Services",
   deployments:  "Deployments",
   routes:       "Routes",
+  tcp:          "TCP ports",
   jobs:         "Jobs",
   databases:    "Databases",
   stacks:       "Stacks",
@@ -61,7 +62,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "member" | "variable-group" | "config-file" | "agent" | "static" | "uuid"
+type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "member" | "tcp-route" | "variable-group" | "config-file" | "agent" | "static" | "uuid"
 
 interface BreadcrumbEntry {
   segment: string
@@ -98,6 +99,8 @@ function parsePath(segments: string[]): BreadcrumbEntry[] {
       entries.push({ segment, href, type: "node" })
     } else if (prev === "volumes") {
       entries.push({ segment, href, type: "volume", projectId })
+    } else if (prev === "tcp" && segments[i - 2] === "routes") {
+      entries.push({ segment, href, type: "tcp-route", projectId })
     } else if (prev === "routes") {
       entries.push({ segment, href, type: "route", projectId })
     } else if (prev === "jobs") {
@@ -161,6 +164,13 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
     staleTime: 5 * 60 * 1000,
   })
 
+  const tcpRouteQuery = useQuery({
+    queryKey: ["tcp-route", orgId, entry.projectId, entry.segment],
+    queryFn: () => tcpRoutesApi.get(orgId!, entry.projectId!, entry.segment, token!),
+    enabled: !!orgId && !!token && entry.type === "tcp-route" && !!entry.projectId,
+    staleTime: 5 * 60 * 1000,
+  })
+
   const jobQuery = useQuery({
     queryKey: ["job", orgId, entry.projectId, entry.segment],
     queryFn: () => jobsApi.get(orgId!, entry.projectId!, entry.segment, token!),
@@ -196,6 +206,7 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
   if (entry.type === "node") return <>{nodeQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "volume") return <>{volumeQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "route") return <>{routeQuery.data?.hostname ?? entry.segment.slice(0, 8)}</>
+  if (entry.type === "tcp-route") return <>{tcpRouteQuery.data ? `:${tcpRouteQuery.data.gateway_port}` : "TCP route"}</>
   if (entry.type === "job") return <>{jobQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "stack") return <>{stackQuery.data?.name ?? entry.segment.slice(0, 8)}</>
   if (entry.type === "member") return <>{memberQuery.data?.user_name ?? entry.segment.slice(0, 8)}</>

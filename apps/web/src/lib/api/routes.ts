@@ -165,6 +165,9 @@ export const tcpRoutes = {
   usage: (orgId: string, token: string) =>
     apiFetch<ApiTCPPortUsage>(`/api/v1/orgs/${orgId}/tcp-routes`, {}, token),
 
+  get: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiTCPRoute>(`/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes/${routeId}`, {}, token),
+
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiTCPRoute[]>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes`,

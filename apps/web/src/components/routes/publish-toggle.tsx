@@ -49,7 +49,7 @@ export function PublishToggle({ kind, routeId, projectId, published, label }: {
       publish ? api.publish(orgId, projectId, routeId, token) : api.pause(orgId, projectId, routeId, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [kind === "http" ? "routes" : "tcp-routes", orgId, projectId] })
-      qc.invalidateQueries({ queryKey: ["route", orgId, projectId, routeId] })
+      qc.invalidateQueries({ queryKey: [kind === "http" ? "route" : "tcp-route", orgId, projectId, routeId] })
       setConfirming(false)
     },
   })
