@@ -29,6 +29,7 @@ import { Route as AppTemplatesIdRouteImport } from './routes/_app/templates/$id'
 import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
 import { Route as AppIntegrationsNewRouteImport } from './routes/_app/integrations/new'
+import { Route as AppIntegrationsTabsRouteImport } from './routes/_app/integrations/_tabs'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/_app/agents/$agentId'
 import { Route as AppProjectsIdRouteRouteImport } from './routes/_app/projects/$id/route'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/_app/projects/$id/index'
@@ -37,6 +38,11 @@ import { Route as AppProjectsIdRoutesRouteImport } from './routes/_app/projects/
 import { Route as AppProjectsIdPipelinesRouteImport } from './routes/_app/projects/$id/pipelines'
 import { Route as AppProjectsIdNewRouteImport } from './routes/_app/projects/$id/new'
 import { Route as AppProjectsIdDatabasesRouteImport } from './routes/_app/projects/$id/databases'
+import { Route as AppIntegrationsTabsStorageRouteImport } from './routes/_app/integrations/_tabs/storage'
+import { Route as AppIntegrationsTabsRegistriesRouteImport } from './routes/_app/integrations/_tabs/registries'
+import { Route as AppIntegrationsTabsNotificationsRouteImport } from './routes/_app/integrations/_tabs/notifications'
+import { Route as AppIntegrationsTabsGitRouteImport } from './routes/_app/integrations/_tabs/git'
+import { Route as AppIntegrationsTabsEmailRouteImport } from './routes/_app/integrations/_tabs/email'
 import { Route as AppProjectsIdVolumesIndexRouteImport } from './routes/_app/projects/$id/volumes/index'
 import { Route as AppProjectsIdVariablesIndexRouteImport } from './routes/_app/projects/$id/variables/index'
 import { Route as AppProjectsIdStacksIndexRouteImport } from './routes/_app/projects/$id/stacks/index'
@@ -169,6 +175,11 @@ const AppIntegrationsNewRoute = AppIntegrationsNewRouteImport.update({
   path: '/integrations/new',
   getParentRoute: () => AppRoute,
 } as any)
+const AppIntegrationsTabsRoute = AppIntegrationsTabsRouteImport.update({
+  id: '/integrations/_tabs',
+  path: '/integrations',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAgentsAgentIdRoute = AppAgentsAgentIdRouteImport.update({
   id: '/agents/$agentId',
   path: '/agents/$agentId',
@@ -209,6 +220,35 @@ const AppProjectsIdDatabasesRoute = AppProjectsIdDatabasesRouteImport.update({
   path: '/databases',
   getParentRoute: () => AppProjectsIdRouteRoute,
 } as any)
+const AppIntegrationsTabsStorageRoute =
+  AppIntegrationsTabsStorageRouteImport.update({
+    id: '/storage',
+    path: '/storage',
+    getParentRoute: () => AppIntegrationsTabsRoute,
+  } as any)
+const AppIntegrationsTabsRegistriesRoute =
+  AppIntegrationsTabsRegistriesRouteImport.update({
+    id: '/registries',
+    path: '/registries',
+    getParentRoute: () => AppIntegrationsTabsRoute,
+  } as any)
+const AppIntegrationsTabsNotificationsRoute =
+  AppIntegrationsTabsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AppIntegrationsTabsRoute,
+  } as any)
+const AppIntegrationsTabsGitRoute = AppIntegrationsTabsGitRouteImport.update({
+  id: '/git',
+  path: '/git',
+  getParentRoute: () => AppIntegrationsTabsRoute,
+} as any)
+const AppIntegrationsTabsEmailRoute =
+  AppIntegrationsTabsEmailRouteImport.update({
+    id: '/email',
+    path: '/email',
+    getParentRoute: () => AppIntegrationsTabsRoute,
+  } as any)
 const AppProjectsIdVolumesIndexRoute =
   AppProjectsIdVolumesIndexRouteImport.update({
     id: '/volumes/',
@@ -414,6 +454,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof AuthRegisterRoute
   '/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/integrations': typeof AppIntegrationsTabsRouteWithChildren
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
@@ -428,6 +469,11 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AppSettingsIndexRoute
   '/templates/': typeof AppTemplatesIndexRoute
   '/users/': typeof AppUsersIndexRoute
+  '/integrations/email': typeof AppIntegrationsTabsEmailRoute
+  '/integrations/git': typeof AppIntegrationsTabsGitRoute
+  '/integrations/notifications': typeof AppIntegrationsTabsNotificationsRoute
+  '/integrations/registries': typeof AppIntegrationsTabsRegistriesRoute
+  '/integrations/storage': typeof AppIntegrationsTabsStorageRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
@@ -474,6 +520,7 @@ export interface FileRoutesByTo {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/integrations': typeof AppIntegrationsIndexRoute
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
   '/projects/new': typeof AppProjectsNewRoute
@@ -482,12 +529,16 @@ export interface FileRoutesByTo {
   '/account': typeof AppAccountIndexRoute
   '/agents': typeof AppAgentsIndexRoute
   '/cluster': typeof AppClusterIndexRoute
-  '/integrations': typeof AppIntegrationsIndexRoute
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
   '/templates': typeof AppTemplatesIndexRoute
   '/users': typeof AppUsersIndexRoute
+  '/integrations/email': typeof AppIntegrationsTabsEmailRoute
+  '/integrations/git': typeof AppIntegrationsTabsGitRoute
+  '/integrations/notifications': typeof AppIntegrationsTabsNotificationsRoute
+  '/integrations/registries': typeof AppIntegrationsTabsRegistriesRoute
+  '/integrations/storage': typeof AppIntegrationsTabsStorageRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
@@ -534,6 +585,7 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
   '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/_app/integrations/_tabs': typeof AppIntegrationsTabsRouteWithChildren
   '/_app/integrations/new': typeof AppIntegrationsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
   '/_app/projects/new': typeof AppProjectsNewRoute
@@ -548,6 +600,11 @@ export interface FileRoutesById {
   '/_app/settings/': typeof AppSettingsIndexRoute
   '/_app/templates/': typeof AppTemplatesIndexRoute
   '/_app/users/': typeof AppUsersIndexRoute
+  '/_app/integrations/_tabs/email': typeof AppIntegrationsTabsEmailRoute
+  '/_app/integrations/_tabs/git': typeof AppIntegrationsTabsGitRoute
+  '/_app/integrations/_tabs/notifications': typeof AppIntegrationsTabsNotificationsRoute
+  '/_app/integrations/_tabs/registries': typeof AppIntegrationsTabsRegistriesRoute
+  '/_app/integrations/_tabs/storage': typeof AppIntegrationsTabsStorageRoute
   '/_app/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
   '/_app/projects/$id/new': typeof AppProjectsIdNewRoute
   '/_app/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
@@ -597,6 +654,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/projects/$id'
     | '/agents/$agentId'
+    | '/integrations'
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
@@ -611,6 +669,11 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/templates/'
     | '/users/'
+    | '/integrations/email'
+    | '/integrations/git'
+    | '/integrations/notifications'
+    | '/integrations/registries'
+    | '/integrations/storage'
     | '/projects/$id/databases'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
@@ -657,6 +720,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/agents/$agentId'
+    | '/integrations'
     | '/integrations/new'
     | '/nodes/$id'
     | '/projects/new'
@@ -665,12 +729,16 @@ export interface FileRouteTypes {
     | '/account'
     | '/agents'
     | '/cluster'
-    | '/integrations'
     | '/nodes'
     | '/projects'
     | '/settings'
     | '/templates'
     | '/users'
+    | '/integrations/email'
+    | '/integrations/git'
+    | '/integrations/notifications'
+    | '/integrations/registries'
+    | '/integrations/storage'
     | '/projects/$id/databases'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
@@ -716,6 +784,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/projects/$id'
     | '/_app/agents/$agentId'
+    | '/_app/integrations/_tabs'
     | '/_app/integrations/new'
     | '/_app/nodes/$id'
     | '/_app/projects/new'
@@ -730,6 +799,11 @@ export interface FileRouteTypes {
     | '/_app/settings/'
     | '/_app/templates/'
     | '/_app/users/'
+    | '/_app/integrations/_tabs/email'
+    | '/_app/integrations/_tabs/git'
+    | '/_app/integrations/_tabs/notifications'
+    | '/_app/integrations/_tabs/registries'
+    | '/_app/integrations/_tabs/storage'
     | '/_app/projects/$id/databases'
     | '/_app/projects/$id/new'
     | '/_app/projects/$id/pipelines'
@@ -919,6 +993,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIntegrationsNewRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/integrations/_tabs': {
+      id: '/_app/integrations/_tabs'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof AppIntegrationsTabsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/agents/$agentId': {
       id: '/_app/agents/$agentId'
       path: '/agents/$agentId'
@@ -974,6 +1055,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/$id/databases'
       preLoaderRoute: typeof AppProjectsIdDatabasesRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
+    }
+    '/_app/integrations/_tabs/storage': {
+      id: '/_app/integrations/_tabs/storage'
+      path: '/storage'
+      fullPath: '/integrations/storage'
+      preLoaderRoute: typeof AppIntegrationsTabsStorageRouteImport
+      parentRoute: typeof AppIntegrationsTabsRoute
+    }
+    '/_app/integrations/_tabs/registries': {
+      id: '/_app/integrations/_tabs/registries'
+      path: '/registries'
+      fullPath: '/integrations/registries'
+      preLoaderRoute: typeof AppIntegrationsTabsRegistriesRouteImport
+      parentRoute: typeof AppIntegrationsTabsRoute
+    }
+    '/_app/integrations/_tabs/notifications': {
+      id: '/_app/integrations/_tabs/notifications'
+      path: '/notifications'
+      fullPath: '/integrations/notifications'
+      preLoaderRoute: typeof AppIntegrationsTabsNotificationsRouteImport
+      parentRoute: typeof AppIntegrationsTabsRoute
+    }
+    '/_app/integrations/_tabs/git': {
+      id: '/_app/integrations/_tabs/git'
+      path: '/git'
+      fullPath: '/integrations/git'
+      preLoaderRoute: typeof AppIntegrationsTabsGitRouteImport
+      parentRoute: typeof AppIntegrationsTabsRoute
+    }
+    '/_app/integrations/_tabs/email': {
+      id: '/_app/integrations/_tabs/email'
+      path: '/email'
+      fullPath: '/integrations/email'
+      preLoaderRoute: typeof AppIntegrationsTabsEmailRouteImport
+      parentRoute: typeof AppIntegrationsTabsRoute
     }
     '/_app/projects/$id/volumes/': {
       id: '/_app/projects/$id/volumes/'
@@ -1359,10 +1475,30 @@ const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
 const AppProjectsIdRouteRouteWithChildren =
   AppProjectsIdRouteRoute._addFileChildren(AppProjectsIdRouteRouteChildren)
 
+interface AppIntegrationsTabsRouteChildren {
+  AppIntegrationsTabsEmailRoute: typeof AppIntegrationsTabsEmailRoute
+  AppIntegrationsTabsGitRoute: typeof AppIntegrationsTabsGitRoute
+  AppIntegrationsTabsNotificationsRoute: typeof AppIntegrationsTabsNotificationsRoute
+  AppIntegrationsTabsRegistriesRoute: typeof AppIntegrationsTabsRegistriesRoute
+  AppIntegrationsTabsStorageRoute: typeof AppIntegrationsTabsStorageRoute
+}
+
+const AppIntegrationsTabsRouteChildren: AppIntegrationsTabsRouteChildren = {
+  AppIntegrationsTabsEmailRoute: AppIntegrationsTabsEmailRoute,
+  AppIntegrationsTabsGitRoute: AppIntegrationsTabsGitRoute,
+  AppIntegrationsTabsNotificationsRoute: AppIntegrationsTabsNotificationsRoute,
+  AppIntegrationsTabsRegistriesRoute: AppIntegrationsTabsRegistriesRoute,
+  AppIntegrationsTabsStorageRoute: AppIntegrationsTabsStorageRoute,
+}
+
+const AppIntegrationsTabsRouteWithChildren =
+  AppIntegrationsTabsRoute._addFileChildren(AppIntegrationsTabsRouteChildren)
+
 interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppProjectsIdRouteRoute: typeof AppProjectsIdRouteRouteWithChildren
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
+  AppIntegrationsTabsRoute: typeof AppIntegrationsTabsRouteWithChildren
   AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
   AppProjectsNewRoute: typeof AppProjectsNewRoute
@@ -1383,6 +1519,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppProjectsIdRouteRoute: AppProjectsIdRouteRouteWithChildren,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
+  AppIntegrationsTabsRoute: AppIntegrationsTabsRouteWithChildren,
   AppIntegrationsNewRoute: AppIntegrationsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
   AppProjectsNewRoute: AppProjectsNewRoute,

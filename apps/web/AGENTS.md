@@ -122,7 +122,9 @@ src/routes/
 │   │           └── $groupId.tsx  # variable group detail + items
 │   ├── cluster/index.tsx         # /cluster — Headscale, K3s status, preauth key
 │   ├── integrations/
-│   │   ├── index.tsx             # /integrations — git, registry, storage list
+│   │   ├── index.tsx             # /integrations → redirects to /integrations/git
+│   │   ├── _tabs.tsx             # pathless layout: header + category tab bar
+│   │   ├── _tabs/                # git, registries, storage, notifications, email (sections in components/integrations)
 │   │   └── new.tsx               # /integrations/new — add integration wizard
 │   └── settings/index.tsx        # /settings — org settings, notifications, SMTP
 ├── _auth.tsx                     # Pathless auth layout (centered card)

@@ -60,6 +60,8 @@ const CATEGORIES: { id: Category; icon: typeof GitBranch; label: string; descrip
 function NewIntegrationPage() {
   const navigate = useNavigate()
   const { category } = Route.useSearch()
+  // Back to the tab this category lives on.
+  const back = () => navigate({ to: category === "registry" ? "/integrations/registries" : `/integrations/${category}` })
 
   return (
     <div className="new-resource-page integration-create bg-background flex flex-col">
@@ -68,7 +70,7 @@ function NewIntegrationPage() {
         <div className="h-14 flex items-center gap-3 px-6">
           <Button
             variant="ghost"
-            onClick={() => navigate({ to: "/integrations" })}
+            onClick={back}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -117,19 +119,19 @@ function NewIntegrationPage() {
         {/* Form */}
         <main className="resource-form flex-1 py-8 px-8 max-w-2xl">
           {category === "git" && (
-            <GitForm onSuccess={() => navigate({ to: "/integrations" })} />
+            <GitForm onSuccess={back} />
           )}
           {category === "registry" && (
-            <RegistryForm onSuccess={() => navigate({ to: "/integrations" })} />
+            <RegistryForm onSuccess={back} />
           )}
           {category === "storage" && (
-            <StorageForm onSuccess={() => navigate({ to: "/integrations" })} />
+            <StorageForm onSuccess={back} />
           )}
           {category === "notifications" && (
-            <NotificationsForm onSuccess={() => navigate({ to: "/integrations" })} />
+            <NotificationsForm onSuccess={back} />
           )}
           {category === "email" && (
-            <EmailProviderForm onSuccess={() => navigate({ to: "/integrations" })} />
+            <EmailProviderForm onSuccess={back} />
           )}
         </main>
       </div>

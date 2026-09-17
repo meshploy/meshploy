@@ -331,16 +331,16 @@ func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
 	state := q.Get("state")
 
 	if code == "" || state == "" {
-		http.Redirect(w, r, frontendURL+"/integrations?github_setup=error&reason=missing_params", http.StatusFound)
+		http.Redirect(w, r, frontendURL+"/integrations/git?github_setup=error&reason=missing_params", http.StatusFound)
 		return
 	}
 
 	if err := h.svc.GitIntegrations.HandleAppCallback(r.Context(), code, state); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("%s/integrations?github_setup=error&reason=internal_error", frontendURL), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations/git?github_setup=error&reason=internal_error", frontendURL), http.StatusFound)
 		return
 	}
 
-	http.Redirect(w, r, frontendURL+"/integrations?github_setup=done", http.StatusFound)
+	http.Redirect(w, r, frontendURL+"/integrations/git?github_setup=done", http.StatusFound)
 }
 
 // GitLabOAuthCallback handles the redirect back from GitLab after OAuth authorization.
@@ -349,14 +349,14 @@ func (h *Handler) GitLabOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	code, state := q.Get("code"), q.Get("state")
 	if code == "" || state == "" {
-		http.Redirect(w, r, frontendURL+"/integrations?gitlab=error&reason=missing_params", http.StatusFound)
+		http.Redirect(w, r, frontendURL+"/integrations/git?gitlab=error&reason=missing_params", http.StatusFound)
 		return
 	}
 	if _, err := h.svc.GitIntegrations.HandleGitLabOAuthCallback(r.Context(), code, state); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("%s/integrations?gitlab=error&reason=internal_error", frontendURL), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations/git?gitlab=error&reason=internal_error", frontendURL), http.StatusFound)
 		return
 	}
-	http.Redirect(w, r, frontendURL+"/integrations?gitlab=connected", http.StatusFound)
+	http.Redirect(w, r, frontendURL+"/integrations/git?gitlab=connected", http.StatusFound)
 }
 
 // GiteaOAuthCallback handles the redirect back from Gitea after OAuth authorization.
@@ -365,14 +365,14 @@ func (h *Handler) GiteaOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	code, state := q.Get("code"), q.Get("state")
 	if code == "" || state == "" {
-		http.Redirect(w, r, frontendURL+"/integrations?gitea=error&reason=missing_params", http.StatusFound)
+		http.Redirect(w, r, frontendURL+"/integrations/git?gitea=error&reason=missing_params", http.StatusFound)
 		return
 	}
 	if _, err := h.svc.GitIntegrations.HandleGiteaOAuthCallback(r.Context(), code, state); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("%s/integrations?gitea=error&reason=internal_error", frontendURL), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations/git?gitea=error&reason=internal_error", frontendURL), http.StatusFound)
 		return
 	}
-	http.Redirect(w, r, frontendURL+"/integrations?gitea=connected", http.StatusFound)
+	http.Redirect(w, r, frontendURL+"/integrations/git?gitea=connected", http.StatusFound)
 }
 
 // GitHubCallback handles the redirect back from GitHub after App installation.
@@ -385,20 +385,20 @@ func (h *Handler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 	state := q.Get("state")
 
 	if setupAction != "install" && setupAction != "update" {
-		http.Redirect(w, r, frontendURL+"/integrations", http.StatusFound)
+		http.Redirect(w, r, frontendURL+"/integrations/git", http.StatusFound)
 		return
 	}
 
 	if installationID == "" || state == "" {
-		http.Redirect(w, r, frontendURL+"/integrations?github=error&reason=missing_params", http.StatusFound)
+		http.Redirect(w, r, frontendURL+"/integrations/git?github=error&reason=missing_params", http.StatusFound)
 		return
 	}
 
 	_, err := h.svc.GitIntegrations.HandleGitHubCallback(r.Context(), installationID, state)
 	if err != nil {
-		http.Redirect(w, r, fmt.Sprintf("%s/integrations?github=error&reason=internal_error", frontendURL), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations/git?github=error&reason=internal_error", frontendURL), http.StatusFound)
 		return
 	}
 
-	http.Redirect(w, r, frontendURL+"/integrations?github=connected", http.StatusFound)
+	http.Redirect(w, r, frontendURL+"/integrations/git?github=connected", http.StatusFound)
 }
