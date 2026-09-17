@@ -131,6 +131,8 @@ Plans moving a server that runs Dokploy into Meshploy. It only reads: Docker, Do
 | `--json` | Print the plan as JSON |
 | `--out <file>` | Also write the plan as JSON, readable by root only |
 
+The plan also lists **groups**: what moves together so no data lives in two places. A database groups with every application and compose app that names it by its Dokploy hostname (in its env, its environment's or project's variables, or its compose file), and apps that bind-mount the same host folder group together and copy it once into a shared volume. Each group shows its members, the data to copy (database volumes, compose and named volumes, bind-mounted folders), a downtime estimate, and whether it can move now; groups that can move and carry no data come first.
+
 Supported: Dokploy schema levels 133 to 196 (v0.26.1 to v0.30.6); anything else is refused with the reason. Regex redirects that send one of an app's hostnames to another are worked out into route redirects. A bind mount another container also uses has no default choice, since copying it into one volume would split what was shared.
 
 ---

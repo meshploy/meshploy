@@ -23,7 +23,7 @@ func fixture() Source {
 		},
 		"application": {
 			{"applicationId": "a1", "name": "api", "appName": "shop-api-abc123", "environmentId": "e1", "sourceType": "gitlab", "buildType": "nixpacks",
-				"gitlabPathNamespace": "team/api", "gitlabBranch": "main", "env": "A=supersecret-env-value\nB=2\n# comment", "applicationStatus": "done", "replicas": 1},
+				"gitlabPathNamespace": "team/api", "gitlabBranch": "main", "env": "A=supersecret-env-value\nDATABASE_URL=postgres://shop:db-password-123@shop-db-stu901:5432/shop\n# comment", "applicationStatus": "done", "replicas": 1},
 			{"applicationId": "a2", "name": "worker", "appName": "shop-worker-def456", "environmentId": "e1", "sourceType": "docker",
 				"dockerImage": "ghcr.io/shop/worker:1", "applicationStatus": "idle", "password": "db-password-123"},
 			{"applicationId": "a3", "name": "admin", "appName": "shop-admin-ghi789", "environmentId": "e2", "sourceType": "git", "buildType": "dockerfile",
@@ -42,10 +42,13 @@ func fixture() Source {
 		"mount": {
 			{"mountId": "m1", "type": "bind", "hostPath": "/srv/uploads", "applicationId": "a1"},
 			{"mountId": "m3", "type": "bind", "hostPath": "/srv/shared", "applicationId": "a2"},
+			// sh-hg's case: two apps in different environments share a folder.
+			{"mountId": "m4", "type": "bind", "hostPath": "/srv/uploads", "applicationId": "a3"},
 			{"mountId": "m2", "type": "volume", "volumeName": "shop-db-data", "postgresId": "d1"},
 		},
 		"compose": {
-			{"composeId": "c1", "name": "stack", "appName": "shop-stack-pqr678", "environmentId": "e1", "sourceType": "raw", "composeType": "docker-compose", "isolatedDeployment": true},
+			{"composeId": "c1", "name": "stack", "appName": "shop-stack-pqr678", "environmentId": "e1", "sourceType": "raw", "composeType": "docker-compose", "isolatedDeployment": true,
+				"composeFile": "services:\n  web:\n    environment:\n      DB_HOST: shop-wp-vwx234\n      DB_PASSWORD: supersecret-env-value\n"},
 		},
 		"postgres": {
 			{"postgresId": "d1", "name": "db", "appName": "shop-db-stu901", "environmentId": "e1", "dockerImage": "postgres:17", "databaseName": "shop",
@@ -87,9 +90,11 @@ func fixture() Source {
 				{Name: "shop-stack-pqr678-web-1", Project: "shop-stack-pqr678", State: "running", Image: "web"},
 				{Name: "shop-stack-pqr678-db-1", Project: "shop-stack-pqr678", State: "exited", Image: "postgres:16"},
 				{Name: "saathealth-db-1", Project: "saathealth", State: "running", Image: "postgres:16", BindSources: []string{"/srv/shared/pg"}},
+				{Name: "shop-api-abc123.1.x", Service: "shop-api-abc123", State: "running", BindSources: []string{"/srv/uploads"}},
+				{Name: "shop-admin-ghi789.1.y", Service: "shop-admin-ghi789", State: "running", BindSources: []string{"/srv/uploads"}},
 				{Name: "saathealth-app-1", Project: "saathealth", State: "running", Image: "app:prod"},
 			},
-			Volumes: []migrate.Volume{{Name: "shop-db-stu901-data", MB: 3000}},
+			Volumes: []migrate.Volume{{Name: "shop-db-stu901-data", MB: 3000}, {Name: "shop-stack-pqr678_pgdata", MB: 700}},
 		},
 		Listeners: []migrate.Listener{{Port: 80, Address: "0.0.0.0", Process: "docker-proxy"}, {Port: 443, Address: "0.0.0.0", Process: "docker-proxy"}},
 		Resources: migrate.Resources{Cores: 8, MemoryMB: 32000, AvailableMB: 24000, DiskFreeMB: 300000, DockerVolumeMB: 3000},
@@ -138,8 +143,8 @@ func TestPlanMapsEachKind(t *testing.T) {
 	if api.Verdict != NeedsYou || !hasAuth || auth.Default != "keep_paused" || !hasMount || api.Details["variables"] != "2" {
 		t.Errorf("api: %+v", api)
 	}
-	if mount.Default != "copy" || !strings.Contains(mount.Question, "420 MB") {
-		t.Errorf("an unshared mount defaults to a copy and gives its size: %+v", mount)
+	if mount.Default != "copy" || !strings.Contains(mount.Question, "admin, which moves in the same group") {
+		t.Errorf("a folder shared only within the group is copied once into a shared volume: %+v", mount)
 	}
 	if api.Details["repository"] != "team/api" || api.Details["branch"] != "main" || api.Running == nil || !*api.Running {
 		t.Errorf("api source or state: %+v", api)
@@ -327,6 +332,110 @@ func TestResolveRealRedirects(t *testing.T) {
 	_, unresolved := resolveRedirects([]Row{{"regex": `^https?://a\.example(.*)`, "replacement": "https://elsewhere.example$1"}}, []string{"a.example"}, migrated)
 	if len(unresolved) != 1 || !strings.Contains(unresolved[0], "not a migrated domain") {
 		t.Errorf("unresolved = %v", unresolved)
+	}
+}
+
+func groupWith(t *testing.T, p Plan, id string) Group {
+	t.Helper()
+	for _, g := range p.Groups {
+		for _, m := range g.Members {
+			if m.ID == id {
+				return g
+			}
+		}
+	}
+	t.Fatalf("%s is in no group", id)
+	return Group{}
+}
+
+// A database moves with every app that uses it, found from the app's env or
+// its compose file, so no data lives in two places while they move.
+func TestPlanGroupsDatabasesWithTheirApps(t *testing.T) {
+	p := BuildPlan(fixture(), time.Now())
+
+	// api names the database in DATABASE_URL, and shares a folder with admin.
+	g := groupWith(t, p, "a1")
+	if len(g.Members) != 3 || groupWith(t, p, "d1").ID != g.ID || groupWith(t, p, "a3").ID != g.ID {
+		t.Errorf("api, its database and the app sharing its folder: %+v", g)
+	}
+	if len(g.Data) != 2 || g.Data[0].MB+g.Data[1].MB != 3420 || !g.CanMove {
+		t.Errorf("the shared folder is copied once: %+v", g.Data)
+	}
+	// Members span two projects (Shop, Shop · staging), so no project prefix.
+	if g.Name != "db with admin, api" {
+		t.Errorf("name = %q", g.Name)
+	}
+
+	stack := groupWith(t, p, "c1")
+	if groupWith(t, p, "d2").ID != stack.ID || !hasData(stack.Data, "shop-stack-pqr678_pgdata") {
+		t.Errorf("a compose file naming a database groups them, and its own volume is data: %+v", stack)
+	}
+	if !strings.HasPrefix(stack.Name, "Shop / ") {
+		t.Errorf("a group within one project is named with it: %q", stack.Name)
+	}
+
+	worker := groupWith(t, p, "a2")
+	if worker.CanMove || len(worker.Blockers) != 1 || len(worker.Members) != 1 {
+		t.Errorf("a group with a decision that has no choice cannot move: %+v", worker)
+	}
+	if worker.Downtime != "a restart plus under a minute to copy data" && worker.Downtime != "a restart, usually under a minute" {
+		t.Errorf("downtime = %q", worker.Downtime)
+	}
+
+	// Every moving application, compose app and database is in exactly one
+	// group; one on a remote server is in none.
+	seen := map[string]int{}
+	for _, gr := range p.Groups {
+		for _, m := range gr.Members {
+			seen[m.ID]++
+		}
+	}
+	for _, it := range p.Items {
+		switch it.Kind {
+		case "application", "compose", "database":
+			want := 1
+			if it.Verdict == NotMoved {
+				want = 0
+			}
+			if seen[it.ID] != want {
+				t.Errorf("%s %s is in %d groups, want %d", it.Kind, it.Name, seen[it.ID], want)
+			}
+		}
+	}
+	// Groups that can move come before blocked ones, and among them those
+	// without data first.
+	rank := func(g Group) int {
+		switch {
+		case !g.CanMove:
+			return 2
+		case len(g.Data) > 0:
+			return 1
+		}
+		return 0
+	}
+	for i := 1; i < len(p.Groups); i++ {
+		if rank(p.Groups[i]) < rank(p.Groups[i-1]) {
+			t.Errorf("group %d (%s) is out of order", i, p.Groups[i].Name)
+		}
+	}
+	if rank(p.Groups[len(p.Groups)-1]) != 2 {
+		t.Error("the blocked groups are not last")
+	}
+}
+
+func TestDowntimeEstimate(t *testing.T) {
+	for _, c := range []struct {
+		minutes float64
+		data    bool
+		want    string
+	}{
+		{0, false, "a restart, usually under a minute"},
+		{0.4, true, "a restart plus under a minute to copy data"},
+		{7.2, true, "a restart plus about 8 minutes to copy data"},
+	} {
+		if got := downtimeEstimate(c.minutes, c.data); got != c.want {
+			t.Errorf("%v: %q", c, got)
+		}
 	}
 }
 

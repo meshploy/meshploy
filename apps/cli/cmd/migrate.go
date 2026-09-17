@@ -135,6 +135,42 @@ func printPlan(w io.Writer, p dokploy.Plan) {
 	fmt.Fprintf(w, "\n%d move, %d need you, %d are not moved; %d decisions have no default\n",
 		p.Summary[dokploy.Moves], p.Summary[dokploy.NeedsYou], p.Summary[dokploy.NotMoved], p.Summary["open_decisions"])
 
+	if len(p.Groups) > 0 {
+		movable := 0
+		for _, g := range p.Groups {
+			if g.CanMove {
+				movable++
+			}
+		}
+		fmt.Fprintf(w, "\nGroups (%d, %d can move now): each moves together, in this order\n", len(p.Groups), movable)
+		for i, g := range p.Groups {
+			mark := "✔"
+			if !g.CanMove {
+				mark = "!"
+			}
+			fmt.Fprintf(w, "  %d. %s %s\n", i+1, mark, g.Name)
+			var names []string
+			for _, m := range g.Members {
+				names = append(names, m.Kind+" "+m.Name)
+			}
+			fmt.Fprintf(w, "       members:  %s\n", strings.Join(names, ", "))
+			if len(g.Data) > 0 {
+				var data []string
+				for _, d := range g.Data {
+					data = append(data, fmt.Sprintf("%s %d MB (%s)", d.Name, d.MB, d.Move))
+				}
+				fmt.Fprintf(w, "       data:     %s\n", strings.Join(data, "; "))
+			}
+			fmt.Fprintf(w, "       downtime: %s\n", g.Downtime)
+			for _, b := range g.Blockers {
+				fmt.Fprintf(w, "       blocked:  %s\n", b)
+			}
+			for _, n := range g.Notes {
+				fmt.Fprintf(w, "       note:     %s\n", n)
+			}
+		}
+	}
+
 	order := []string{"project", "application", "compose", "database", "domain", "git_provider", "registry", "destination", "backup", "certificate", "server"}
 	titles := map[string]string{"project": "Projects", "application": "Applications", "compose": "Compose apps", "database": "Databases",
 		"domain": "Domains", "git_provider": "Git providers", "registry": "Registries", "destination": "Backup storage",

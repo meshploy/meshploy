@@ -40,8 +40,11 @@ type Plan struct {
 	Resources   migrate.Resources `json:"resources"`
 	Mode        Mode              `json:"mode"`
 	Items       []Item            `json:"items"`
-	Unmanaged   []Unmanaged       `json:"unmanaged"`
-	Summary     map[string]int    `json:"summary"`
+	// Groups are what moves together; every application, compose app and
+	// database that moves is in exactly one.
+	Groups    []Group        `json:"groups"`
+	Unmanaged []Unmanaged    `json:"unmanaged"`
+	Summary   map[string]int `json:"summary"`
 }
 
 // Item is one thing in Dokploy and what becomes of it.
@@ -111,6 +114,9 @@ func BuildPlan(src Source, now time.Time) Plan {
 	b.backups()
 	b.servers()
 
+	// Grouping settles some decisions (a folder shared only within a group),
+	// so it runs before the items are counted.
+	p.Groups = b.buildGroups()
 	p.Items = b.items
 	if p.Items == nil {
 		p.Items = []Item{}
@@ -150,12 +156,17 @@ type builder struct {
 	hosts     map[string][]string // applicationId -> its domains
 	migrated  map[string]bool     // every domain that moves
 	providers map[string]Row      // gitProviderId -> git_provider
+	// itemData is each item's named Docker volumes, and bindUsers the items
+	// that bind-mount each host path, for grouping.
+	itemData  map[string][]GroupData
+	bindUsers map[string][]string
 }
 
 func (b *builder) index() {
 	b.env, b.project, b.appNames = map[string]Row{}, map[string]Row{}, map[string]bool{}
 	b.secured, b.redirects, b.providers = map[string]int{}, map[string][]Row{}, map[string]Row{}
 	b.hosts, b.migrated = map[string][]string{}, map[string]bool{}
+	b.itemData, b.bindUsers = map[string][]GroupData{}, map[string][]string{}
 	for _, r := range b.rows["domain"] {
 		host := r.Str("host")
 		if r.Str("applicationId") != "" {
@@ -371,12 +382,18 @@ func (b *builder) mounts(it *Item, key string) {
 		switch m.Str("type") {
 		case "volume":
 			volumes++
+			if name := m.Str("volumeName"); name != "" {
+				if mb := b.src.Docker.VolumeMB(name); mb >= 0 {
+					b.itemData[it.ID] = append(b.itemData[it.ID], GroupData{Name: name, MB: mb, Move: "volume copy, stopped"})
+				}
+			}
 		case "file":
 			files++
 		case "bind":
 			binds++
 			if host := m.Str("hostPath"); host != "" && !strings.HasPrefix(host, "/etc/dokploy/") {
 				it.Decisions = append(it.Decisions, b.mountDecision(host, appName))
+				b.bindUsers[host] = append(b.bindUsers[host], it.ID)
 			}
 		}
 	}
@@ -428,6 +445,12 @@ func (b *builder) composes() {
 		}
 		if n := r.Lines("env"); n > 0 {
 			it.Details["variables"] = fmt.Sprint(n)
+		}
+		// A compose project's named volumes are "<project>_<volume>".
+		for _, v := range b.src.Docker.Volumes {
+			if strings.HasPrefix(v.Name, name+"_") {
+				b.itemData[it.ID] = append(b.itemData[it.ID], GroupData{Name: v.Name, MB: v.MB, Move: "volume copy, stopped"})
+			}
 		}
 		running, total := 0, 0
 		for _, c := range b.src.Docker.Containers {
