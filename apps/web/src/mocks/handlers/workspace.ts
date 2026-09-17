@@ -323,7 +323,59 @@ export function applyStack(stack: DemoRecord) {
   }
 }
 
+// Notification deliveries for the demo workspace. The seeded channel has been
+// failing, as a gateway with a misconfigured provider would.
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
+const deliveries: DemoRecord[] = (() => {
+  const channel = db["notification-channels"][0]
+  if (!channel) return []
+  const tls = "dial smtp.demo.meshploy.app:587: tls: first record does not look like a TLS handshake"
+  const attempt = (m: number, event: string, success: boolean, data: Record<string, string>) =>
+    record({ channel_id: channel.id, event, success, error: success ? "" : tls, test: false, data, created_at: minutesAgo(m) })
+  return [
+    attempt(4, "deploy.failed", false, { service: "api", project: "Storefront" }),
+    attempt(38, "node.offline", false, { node: "worker-2" }),
+    attempt(60 * 26, "deploy.failed", true, { service: "worker", project: "Storefront", stack: "shop" }),
+  ]
+})()
+const sendDemo = (channel: DemoRecord, event: string, data: Record<string, string>, extra: Record<string, unknown> = {}) => {
+  const provider = settings[`/api/v1/orgs/${channel.organization_id}/email-config`]
+  const failure = channel.type === "email" && !provider?.host ? "no SMTP provider configured for this org" : ""
+  const row = record({ channel_id: channel.id, event, data, success: !failure, error: failure, test: false, ...extra })
+  deliveries.unshift(row)
+  return row
+}
+const withStatus = (channel: DemoRecord) => {
+  const mine = deliveries.filter((d) => d.channel_id === channel.id)
+  const streak = mine.findIndex((d) => d.success)
+  return { ...channel, last_delivery: mine[0] ?? null, failing_streak: streak === -1 ? mine.length : streak }
+}
+
 export const workspaceHandlers = [
+  http.get(`${O}/notification-channels`, () =>
+    json(db["notification-channels"].map(withStatus))
+  ),
+  http.post(`${O}/notification-channels/:channelId/test`, ({ params }) => {
+    const channel = find("notification-channels", params.channelId)
+    if (!channel) return missing()
+    return json(sendDemo(channel, "notification.test", { detail: "Sent from the Meshploy console to check this channel works." }, { test: true }))
+  }),
+  http.get(`${O}/notification-channels/:channelId/deliveries`, ({ params, request }) => {
+    const failed = new URL(request.url).searchParams.get("status") === "failed"
+    return json(deliveries.filter((d) => d.channel_id === params.channelId && (!failed || !d.success)))
+  }),
+  http.post(`${O}/notification-deliveries/:deliveryId/retry`, ({ params }) => {
+    const original = deliveries.find((d) => d.id === params.deliveryId)
+    const channel = original && find("notification-channels", original.channel_id)
+    if (!original || !channel) return missing()
+    return json(sendDemo(channel, original.event, original.data, { test: original.test, retry_of: original.id }))
+  }),
+  http.post(`${O}/email-config/test`, async ({ params, request }) => {
+    const { to } = await body(request)
+    const provider = settings[`/api/v1/orgs/${params.orgId}/email-config`]
+    if (!provider?.host) return json({ success: false, error: "no email provider configured for this org" })
+    return json({ success: true, error: "", to })
+  }),
   http.get("/api/v1/invitations/:inviteToken", ({ params }) => {
     const token = String(params.inviteToken)
     if (!token.startsWith("demo-invite.")) return missing()

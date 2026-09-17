@@ -6,6 +6,7 @@ import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/rea
 import { Bell, Box, GitBranch, HardDrive, Loader2, Mail, Pencil, Plus, Trash2, Download, RefreshCw } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { EventPicker } from "@/components/notifications/event-picker"
+import { DeliveryLogDialog, DeliveryStatus, TestChannelButton, TestEmailProviderButton } from "@/components/notifications/delivery-log"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -450,18 +451,21 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
   isToggling: boolean
 }) {
   const [editing, setEditing] = useState(false)
+  const [log, setLog] = useState<{ open: boolean; focus?: string }>({ open: false })
   const destination =
     channel.type === "email" ? channel.config.address
     : channel.type === "slack" || channel.type === "discord" ? channel.config.webhook_url
     : channel.config.url
 
   return <>
-    <IntegrationRow name={channel.name} provider={channel.type} status={channel.enabled ? "Enabled" : "Paused"} details={<><span className="block max-w-sm truncate">{destination}</span><span className="text-xs">{channel.events.length} subscribed events</span></>} actions={<>
+    <IntegrationRow name={channel.name} provider={channel.type} status={channel.enabled ? "Enabled" : "Paused"} details={<><span className="block max-w-sm truncate">{destination}</span><span className="block text-xs">{channel.events.length} subscribed events{" · "}<DeliveryStatus channel={channel} onOpen={() => setLog({ open: true })} /></span></>} actions={<>
+      <TestChannelButton channel={channel} onFailed={(d) => setLog({ open: true, focus: d.id })} />
       <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Events</Button>
       <Button variant="outline" size="sm" onClick={() => onToggle(!channel.enabled)} disabled={isToggling}>{channel.enabled ? "Pause" : "Resume"}</Button>
       <DisconnectButton name={channel.name} onDelete={onDelete} pending={isDeleting} />
     </>} />
     <EditEventsDialog channel={channel} open={editing} onOpenChange={setEditing} />
+    <DeliveryLogDialog channel={channel} open={log.open} focus={log.focus} onOpenChange={(open) => setLog((l) => ({ ...l, open }))} />
   </>
 }
 
@@ -494,7 +498,7 @@ function EditEventsDialog({ channel, open, onOpenChange }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Events for {channel.name}</DialogTitle>
           <DialogDescription>Choose what this channel is told about.</DialogDescription>
@@ -584,6 +588,7 @@ function EmailProviderCard({ cfg, onEdit, onDelete, isDeleting }: {
   isDeleting: boolean
 }) {
   return <IntegrationTable><IntegrationRow name={cfg.host} provider="email" status="Configured" details={<>{cfg.from_address}<span className="block text-xs">Port {cfg.port} · {cfg.use_tls ? "TLS" : "No TLS"}</span></>} actions={<>
+    <TestEmailProviderButton />
     <Button variant="outline" size="sm" onClick={onEdit}><Pencil className="size-3" />Edit</Button>
     <DisconnectButton name={cfg.host} onDelete={onDelete} pending={isDeleting} />
   </>} /></IntegrationTable>

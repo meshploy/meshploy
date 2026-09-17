@@ -10,6 +10,25 @@ export interface ApiNotificationChannel {
   events: string[]
   enabled: boolean
   created_at: string
+  /** The latest attempt, test or not. Null when nothing has been sent yet. */
+  last_delivery: ApiNotificationDelivery | null
+  /** Attempts in a row that failed since the last one that worked. */
+  failing_streak: number
+}
+
+/** One attempt to send an event to a channel. */
+export interface ApiNotificationDelivery {
+  id: string
+  channel_id: string
+  event: string
+  /** What the event was about: service, project, stack, node, detail. */
+  data: Record<string, string>
+  success: boolean
+  error: string
+  test: boolean
+  /** The attempt this one sent again. */
+  retry_of?: string
+  created_at: string
 }
 
 export interface CreateNotificationBody {
@@ -61,6 +80,28 @@ export const notifications = {
     apiFetch<void>(
       `/api/v1/orgs/${orgId}/notification-channels/${id}`,
       { method: "DELETE" },
+      token
+    ),
+
+  /** Sends at once. A failed send resolves too, with `success: false`. */
+  test: (orgId: string, id: string, token: string) =>
+    apiFetch<ApiNotificationDelivery>(
+      `/api/v1/orgs/${orgId}/notification-channels/${id}/test`,
+      { method: "POST" },
+      token
+    ),
+
+  deliveries: (orgId: string, id: string, status: "all" | "failed", token: string) =>
+    apiFetch<ApiNotificationDelivery[]>(
+      `/api/v1/orgs/${orgId}/notification-channels/${id}/deliveries?status=${status}`,
+      {},
+      token
+    ),
+
+  retry: (orgId: string, deliveryId: string, token: string) =>
+    apiFetch<ApiNotificationDelivery>(
+      `/api/v1/orgs/${orgId}/notification-deliveries/${deliveryId}/retry`,
+      { method: "POST" },
       token
     ),
 }

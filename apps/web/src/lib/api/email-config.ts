@@ -38,6 +38,14 @@ export const emailConfig = {
       token
     ),
 
+  /** Sends a test email to one address. A failed send resolves with the error. */
+  test: (orgId: string, to: string, token: string) =>
+    apiFetch<{ success: boolean; error: string }>(
+      `/api/v1/orgs/${orgId}/email-config/test`,
+      { method: "POST", body: JSON.stringify({ to }) },
+      token
+    ),
+
   delete: (orgId: string, token: string) =>
     apiFetch<void>(
       `/api/v1/orgs/${orgId}/email-config`,
