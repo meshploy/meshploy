@@ -14,6 +14,8 @@ import {
   services as servicesApi,
   nodes as nodesApi,
   orgs as orgsApi,
+  domains as domainsApi,
+  type ApiDatabaseConfig,
   type ApiTCPRoute,
 } from "@/lib/api"
 import { cn, formatRelativeTime } from "@/lib/utils"
@@ -123,7 +125,7 @@ function TCPRouteDetailPage() {
         <div className="console-page space-y-6 pb-24">
           <div className="resource-overview-columns">
             <div className="min-w-0 space-y-6">
-              <ConnectSection route={route} host={gateway?.public_ip || gateway?.name || "the gateway"} projectId={projectId} />
+              <ConnectSection route={route} gatewayIP={gateway?.public_ip} projectId={projectId} />
               <SettingsSection route={route} projectId={projectId} />
             </div>
             <aside className="space-y-6">
@@ -181,8 +183,25 @@ function TCPRouteDetailPage() {
   )
 }
 
-/** Where to point a client, and for a database the command that does it. */
-function ConnectSection({ route, host, projectId }: { route: ApiTCPRoute; host: string; projectId: string }) {
+/**
+ * A URL a driver or GUI client accepts. The password goes in the copied text
+ * and is masked on screen.
+ */
+function connectionString(dc: ApiDatabaseConfig, host: string, port: number, masked: boolean) {
+  const secret = !dc.db_password ? "" : `:${masked ? "••••••••" : encodeURIComponent(dc.db_password)}`
+  const auth = `${encodeURIComponent(dc.db_user)}${secret}@${host}:${port}`
+  switch (dc.engine) {
+    case "postgres":   return `postgresql://${auth}/${dc.db_name}`
+    case "mysql":      return `mysql://${auth}/${dc.db_name}`
+    case "redis":
+    case "dragonfly":  return `redis://${auth}`
+    case "mongodb":    return `mongodb://${auth}/${dc.db_name}?authSource=admin`
+    case "clickhouse": return `clickhouse://${auth}/${dc.db_name}`
+  }
+}
+
+/** Where to point a client, and for a database the command and URL that do it. */
+function ConnectSection({ route, gatewayIP, projectId }: { route: ApiTCPRoute; gatewayIP?: string; projectId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const { data: services = [] } = useQuery({
@@ -196,24 +215,48 @@ function ConnectSection({ route, host, projectId }: { route: ApiTCPRoute; host: 
     queryFn: () => servicesApi.getDatabaseConfig(orgId, projectId, route.service_id!, token),
     enabled: !!orgId && isDatabase,
   })
+  // A name outlives the gateway's address. The port does the routing, so the
+  // base domain itself is enough: install points it, and everything under it,
+  // at the gateway.
+  const { data: domain } = useQuery({
+    queryKey: ["domains", orgId],
+    queryFn: () => domainsApi.list(orgId, token),
+    enabled: !!orgId,
+    select: (list) => list.find((d) => d.verified)?.base_domain,
+  })
 
-  const address = `${host}:${route.gateway_port}`
-  // The password is left for the client to ask: a command copied into a shell
+  const host = domain || gatewayIP || "the gateway"
+  const port = route.gateway_port
+  const address = `${host}:${port}`
+  // The password is left for the client to ask: a command pasted into a shell
   // lands in its history.
   const command = !dc ? null : {
-    postgres: `psql -h ${host} -p ${route.gateway_port} -U ${dc.db_user} ${dc.db_name}`,
-    mysql: `mysql -h ${host} -P ${route.gateway_port} -u ${dc.db_user} -p ${dc.db_name}`,
-    redis: `redis-cli -h ${host} -p ${route.gateway_port} --askpass`,
-    dragonfly: `redis-cli -h ${host} -p ${route.gateway_port} --askpass`,
+    postgres: `psql -h ${host} -p ${port} -U ${dc.db_user} ${dc.db_name}`,
+    mysql: `mysql -h ${host} -P ${port} -u ${dc.db_user} -p ${dc.db_name}`,
+    redis: `redis-cli -h ${host} -p ${port} --askpass`,
+    dragonfly: `redis-cli -h ${host} -p ${port} --askpass`,
     mongodb: `mongosh "mongodb://${dc.db_user}@${address}/${dc.db_name}?authSource=admin"`,
-    clickhouse: `clickhouse-client --host ${host} --port ${route.gateway_port} --user ${dc.db_user} --ask-password`,
+    clickhouse: `clickhouse-client --host ${host} --port ${port} --user ${dc.db_user} --ask-password`,
   }[dc.engine]
 
   return (
     <Section title="Connect" subtitle="Where clients reach this port.">
       <div className="space-y-3">
         <CopyRow label="Address" value={address} />
+        {dc && (
+          <CopyRow
+            label="URL"
+            value={connectionString(dc, host, port, false)}
+            display={connectionString(dc, host, port, true)}
+            copyLabel="Copy with the password"
+          />
+        )}
         {command && <CopyRow label="Command" value={command} />}
+        {domain && gatewayIP && (
+          <p className="text-xs text-muted-foreground">
+            Or by address, <code className="font-mono">{gatewayIP}:{port}</code>, for a client that cannot resolve {domain}.
+          </p>
+        )}
         {!route.published ? (
           <p className="text-xs text-muted-foreground">Paused: the gateway refuses connections until the route is published.</p>
         ) : route.status === "failed" ? (
@@ -228,16 +271,23 @@ function ConnectSection({ route, host, projectId }: { route: ApiTCPRoute; host: 
   )
 }
 
-function CopyRow({ label, value }: { label: string; value: string }) {
+function CopyRow({ label, value, display, copyLabel }: {
+  label: string
+  value: string
+  /** What is shown, when it differs from what is copied. */
+  display?: string
+  copyLabel?: string
+}) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="flex items-center gap-3">
       <span className="w-20 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <code className="flex-1 min-w-0 truncate rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-mono">{value}</code>
+      <code className="flex-1 min-w-0 truncate rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-mono">{display ?? value}</code>
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label={`Copy ${label.toLowerCase()}`}
+        aria-label={copyLabel ?? `Copy ${label.toLowerCase()}`}
+        title={copyLabel}
         onClick={() => {
           navigator.clipboard?.writeText(value).then(() => {
             setCopied(true)
