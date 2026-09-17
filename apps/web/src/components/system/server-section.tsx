@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { AlertCircle, ExternalLink, Loader2 } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { AlertCircle, ExternalLink, Loader2, RefreshCw } from "lucide-react"
 import { system as systemApi, type ChannelCommit, type Channels } from "@/lib/api/system"
 import { useAuthStore } from "@/store/auth-store"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,7 @@ const EDGE_SHOWN = 6
  */
 export function ServerSection() {
   const token = useAuthStore((s) => s.token)!
+  const qc = useQueryClient()
   const [switching, setSwitching] = useState(false)
 
   const channels = useQuery({
@@ -34,6 +35,15 @@ export function ServerSection() {
     queryKey: ["system-version"],
     queryFn: () => systemApi.versionInfo(token),
     staleTime: 60_000,
+  })
+  // The sidebar's "Update available" can lag a new build by a few minutes,
+  // because the API caches what GitHub said. This asks again now.
+  const check = useMutation({
+    mutationFn: () => systemApi.checkForUpdates(token),
+    onSuccess: (info) => {
+      qc.setQueryData(["system-version"], info)
+      qc.invalidateQueries({ queryKey: ["system-channels"] })
+    },
   })
 
   const ch = channels.data
@@ -60,6 +70,20 @@ export function ServerSection() {
   return (
     <Section
       title="Server"
+      action={
+        <div className="flex items-center gap-3">
+          {check.isSuccess && (
+            <span className={cn("text-xs", check.data.update_available ? "text-primary" : "text-muted-foreground")}>
+              {check.data.update_available ? `Update available: ${check.data.latest}` : "Up to date"}
+            </span>
+          )}
+          {check.isError && <span className="text-xs text-destructive">Could not check</span>}
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => check.mutate()} disabled={check.isPending}>
+            <RefreshCw className={cn("size-3", check.isPending && "animate-spin")} />
+            Check for updates
+          </Button>
+        </div>
+      }
       subtitle={
         cur.channel
           ? `Running ${cur.channel === "stable" ? `v${cur.version}` : cur.version} on the ${cur.channel} channel`

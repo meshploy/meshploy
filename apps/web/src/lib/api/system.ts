@@ -7,6 +7,8 @@ export interface VersionInfo {
   latest: string
   update_available: boolean
   release_url: string
+  /** When GitHub was last asked. */
+  checked_at?: string
 }
 
 export interface ExposedPort {
@@ -106,6 +108,10 @@ export interface Channels {
 export const system = {
   versionInfo: (token: string) =>
     apiFetch<VersionInfo>("/api/v1/system/version", {}, token),
+
+  /** Ask GitHub now, past the API's caches. At most one real check every 30 seconds. */
+  checkForUpdates: (token: string) =>
+    apiFetch<VersionInfo>("/api/v1/system/check-updates", { method: "POST" }, token),
 
   exposure: (token: string) =>
     apiFetch<Exposure>("/api/v1/system/exposure", {}, token),

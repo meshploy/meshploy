@@ -459,6 +459,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | GET | `/system/upgrade` | ✓ | Report whether this server can be upgraded from the console, and the last upgrade |
 | POST | `/system/upgrade` | ✓ | Queue an upgrade of this server to the latest build on its channel, a switch to the other channel (`{"channel": "edge"}`), or a switch to the Enterprise images the active licence grants (`{"edition": "enterprise"}`). Instance owner only |
 | GET | `/system/version` | ✓ | Get current and latest platform version |
+| POST | `/system/check-updates` | ✓ | Ask GitHub for the newest release or build now, past the caches; at most one real check every 30 seconds |
 
 ### Outside /api/v1
 

@@ -43,7 +43,14 @@ type VersionInfo struct {
 	Latest          string `json:"latest"`
 	UpdateAvailable bool   `json:"update_available"`
 	ReleaseURL      string `json:"release_url"`
+	// CheckedAt is when GitHub was last asked, so a stale answer reads as one.
+	CheckedAt time.Time `json:"checked_at"`
 }
+
+// minForcedCheck is how often "Check for updates" really asks GitHub. A click
+// sooner gets the answer just fetched: GitHub's 60 requests an hour are shared
+// by everything this gateway asks it, and a button is easy to press twice.
+const minForcedCheck = 30 * time.Second
 
 // buildCommit returns the commit an edge build was cut from, taken from the
 // "+sha" suffix its version carries. Empty when the build has none — a release
@@ -61,6 +68,8 @@ type SystemService struct {
 	mu       sync.Mutex
 	cached   *VersionInfo
 	cachedAt time.Time
+	// forcedAt is the last time a check was forced past the caches.
+	forcedAt time.Time
 	db       *gorm.DB
 	// cfg carries the gateway facts install.sh recorded, including the firewall
 	// state the exposure advisory reads. Nil in tests and wherever New() was
@@ -95,9 +104,26 @@ func (s *SystemService) GetVersionInfo(ctx context.Context) VersionInfo {
 	}
 
 	info := s.fetchVersionInfo(ctx)
+	info.CheckedAt = time.Now().UTC()
 	s.cached = &info
-	s.cachedAt = time.Now()
+	s.cachedAt = info.CheckedAt
 	return info
+}
+
+// CheckForUpdates asks GitHub again now, past the version and channel caches,
+// for someone who knows a build has landed. It cannot see a build that is still
+// running: an edge server only moves to a commit whose images exist.
+func (s *SystemService) CheckForUpdates(ctx context.Context) VersionInfo {
+	s.mu.Lock()
+	if time.Since(s.forcedAt) >= minForcedCheck {
+		s.forcedAt = time.Now()
+		s.cached = nil
+		s.channels.mu.Lock()
+		s.channels.releases, s.channels.built = nil, ""
+		s.channels.mu.Unlock()
+	}
+	s.mu.Unlock()
+	return s.GetVersionInfo(ctx)
 }
 
 func (s *SystemService) fetchVersionInfo(ctx context.Context) VersionInfo {

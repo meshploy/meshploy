@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/meshploy/packages/server/version"
 )
 
 // An edge build carries the commit it was cut from as a "+sha" suffix. That
@@ -101,5 +103,45 @@ func TestEdgeCheckAsksForSuccessfulBuildsOfMain(t *testing.T) {
 		if !strings.Contains(githubBuildRunsURL, want) {
 			t.Errorf("githubBuildRunsURL %q lacks %q", githubBuildRunsURL, want)
 		}
+	}
+}
+
+// "Check for updates" exists because the cache hides a build that has just
+// landed for up to two minutes. A forced check must ask GitHub again, and a
+// second click straight after must not spend another request.
+func TestCheckForUpdatesSkipsTheCacheOnceInAWhile(t *testing.T) {
+	origCurrent, origChannel := version.Current, version.Channel
+	version.Current, version.Channel = "0.15.0+6c0a0d1", channelEdge
+	t.Cleanup(func() { version.Current, version.Channel = origCurrent, origChannel })
+
+	head := "6c0a0d1f00d"
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		fmt.Fprintf(w, `{"workflow_runs":[{"head_sha":%q}]}`, head)
+	}))
+	t.Cleanup(srv.Close)
+	orig := githubBuildRunsURL
+	githubBuildRunsURL = srv.URL
+	t.Cleanup(func() { githubBuildRunsURL = orig })
+
+	s := &SystemService{}
+	if info := s.GetVersionInfo(t.Context()); info.UpdateAvailable || info.CheckedAt.IsZero() {
+		t.Fatalf("first check: %+v", info)
+	}
+
+	head = "dc82d3dbeef" // a build lands
+	if info := s.GetVersionInfo(t.Context()); info.UpdateAvailable {
+		t.Fatal("expected the cached answer before a forced check")
+	}
+	if info := s.CheckForUpdates(t.Context()); !info.UpdateAvailable || info.Latest != "dc82d3d" {
+		t.Fatalf("forced check did not see the new build: %+v", info)
+	}
+	if hits != 2 {
+		t.Fatalf("GitHub asked %d times, want 2", hits)
+	}
+	s.CheckForUpdates(t.Context())
+	if hits != 2 {
+		t.Errorf("a second forced check within %s asked GitHub again", minForcedCheck)
 	}
 }

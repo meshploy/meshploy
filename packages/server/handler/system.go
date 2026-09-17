@@ -24,6 +24,16 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 	}, h.GetVersion)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "check-for-updates",
+		Method:      "POST",
+		Path:        "/api/v1/system/check-updates",
+		Summary:     "Ask GitHub for the newest release or build now, past the caches",
+		Description: "Forced checks are limited to one every 30 seconds; a sooner one returns the last answer.",
+		Tags:        []string{"System"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.CheckForUpdates)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-exposure",
 		Method:      "GET",
 		Path:        "/api/v1/system/exposure",
@@ -111,6 +121,14 @@ func (h *Handler) GetVersion(ctx context.Context, _ *struct{}) (*VersionInfoOutp
 		return nil, err
 	}
 	info := h.svc.System.GetVersionInfo(ctx)
+	return &VersionInfoOutput{Body: &info}, nil
+}
+
+func (h *Handler) CheckForUpdates(ctx context.Context, _ *struct{}) (*VersionInfoOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	info := h.svc.System.CheckForUpdates(ctx)
 	return &VersionInfoOutput{Body: &info}, nil
 }
 

@@ -960,6 +960,16 @@ export const workspaceHandlers = [
       release_url: "",
     })
   ),
+  http.post("/api/v1/system/check-updates", () =>
+    json({
+      current: "v0.11.0-demo",
+      latest: "v0.11.0-demo",
+      channel: "dev",
+      update_available: false,
+      release_url: "",
+      checked_at: now(),
+    })
+  ),
   http.get("/api/v1/system/exposure", () =>
     json({ firewall_state: "ufw", ports: [], dismissed: true })
   ),
