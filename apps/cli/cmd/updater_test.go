@@ -33,8 +33,9 @@ func newUpdaterFixture(t *testing.T) *updaterFixture {
 	origDir, origUnits, origCLI, origInst := upgradeDir, systemdUnitDir, updaterCLIPath, meshployInstDir
 	origStep, origVer, origURL := upgradeStep, upgradeCLIVersion, upgradeHealthURL
 	origTimeout, origInterval, origBeat := upgradeHealthTimeout, upgradeHealthInterval, upgradeHeartbeat
-	origCtl, origState := systemctl, systemctlState
+	origCtl, origState, origHost := systemctl, systemctlState, hostDir
 	t.Cleanup(func() {
+		hostDir = origHost
 		upgradeDir, systemdUnitDir, updaterCLIPath, meshployInstDir = origDir, origUnits, origCLI, origInst
 		upgradeStep, upgradeCLIVersion, upgradeHealthURL = origStep, origVer, origURL
 		upgradeHealthTimeout, upgradeHealthInterval, upgradeHeartbeat = origTimeout, origInterval, origBeat
@@ -42,6 +43,7 @@ func newUpdaterFixture(t *testing.T) *updaterFixture {
 	})
 
 	upgradeDir = filepath.Join(fx.root, "upgrade")
+	hostDir = filepath.Join(fx.root, "host")
 	systemdUnitDir = filepath.Join(fx.root, "systemd")
 	updaterCLIPath = filepath.Join(fx.root, "meshploy")
 	meshployInstDir = filepath.Join(fx.root, "opt")
@@ -398,33 +400,41 @@ func TestRunUpgradeLeavesAQueuedRequestWhileAnotherRunHoldsTheLock(t *testing.T)
 
 // ── start / stop ─────────────────────────────────────────────────────────────
 
-func TestUpdaterStartInstallsUnitsAndEnablesTheWatcher(t *testing.T) {
+// Turning the updater on makes sure the host agent runs, since it is what acts
+// on a request, and removes the path unit that used to, so the two never race.
+func TestUpdaterStartTurnsOnTheAgentAndRetiresTheWatcher(t *testing.T) {
 	fx := newUpdaterFixture(t)
+	writeTestFile(t, filepath.Join(systemdUnitDir, upgradePathUnit), "[Path]\n")
+	writeTestFile(t, filepath.Join(systemdUnitDir, upgradeServiceUnit), "[Service]\n")
+
 	if err := updaterStart(io.Discard); err != nil {
 		t.Fatal(err)
 	}
-
-	path, _ := os.ReadFile(filepath.Join(systemdUnitDir, upgradePathUnit))
-	if want := "PathExists=" + filepath.Join(upgradeDir, "inbox", upgradeRequestFile); !strings.Contains(string(path), want) {
-		t.Errorf("path unit lacks %q:\n%s", want, path)
+	wantCtl := [][]string{
+		{"disable", "--now", upgradePathUnit}, {"daemon-reload"},
+		{"daemon-reload"}, {"enable", hostUnit}, {"restart", hostUnit},
 	}
-	svc, _ := os.ReadFile(filepath.Join(systemdUnitDir, upgradeServiceUnit))
-	if want := "ExecStart=" + updaterCLIPath + " updater run --queued"; !strings.Contains(string(svc), want) {
-		t.Errorf("service unit lacks %q:\n%s", want, svc)
-	}
-	wantCtl := [][]string{{"daemon-reload"}, {"enable", "--now", upgradePathUnit}}
 	if !reflect.DeepEqual(fx.ctl, wantCtl) {
 		t.Errorf("systemctl calls = %v, want %v", fx.ctl, wantCtl)
 	}
-	for _, p := range []string{upgradeInboxDir(), filepath.Join(upgradeStateDir(), upgradeEnabledFile)} {
+	for _, gone := range []string{upgradePathUnit, upgradeServiceUnit} {
+		if fileExists(filepath.Join(systemdUnitDir, gone)) {
+			t.Errorf("%s left installed", gone)
+		}
+	}
+	for _, p := range []string{upgradeInboxDir(), filepath.Join(upgradeStateDir(), upgradeEnabledFile), filepath.Join(systemdUnitDir, hostUnit)} {
 		if !fileExists(p) {
 			t.Errorf("%s missing", p)
 		}
 	}
 
-	// Idempotent: a second start just rewrites the units.
+	// Idempotent: with nothing to retire, a second start only restarts the agent.
+	fx.ctl = nil
 	if err := updaterStart(io.Discard); err != nil {
 		t.Fatalf("second start: %v", err)
+	}
+	if want := [][]string{{"daemon-reload"}, {"enable", hostUnit}, {"restart", hostUnit}}; !reflect.DeepEqual(fx.ctl, want) {
+		t.Errorf("second start: systemctl calls = %v, want %v", fx.ctl, want)
 	}
 }
 
@@ -437,14 +447,14 @@ func TestUpdaterStartRefusesAMachineWithoutAServer(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no Meshploy server") {
 		t.Fatalf("got %v", err)
 	}
-	if len(fx.ctl) != 0 || fileExists(filepath.Join(systemdUnitDir, upgradePathUnit)) {
-		t.Error("installed units on a machine with no server")
+	if len(fx.ctl) != 0 || fileExists(filepath.Join(systemdUnitDir, hostUnit)) {
+		t.Error("installed the agent on a machine with no server")
 	}
 }
 
-// The enabled marker must not exist if enabling the watcher failed: the
+// The enabled marker must not exist if the agent could not be started: the
 // console reads it as "the button will work".
-func TestUpdaterStartWritesNoMarkerWhenEnableFails(t *testing.T) {
+func TestUpdaterStartWritesNoMarkerWhenTheAgentFails(t *testing.T) {
 	newUpdaterFixture(t)
 	systemctl = func(args ...string) error {
 		if args[0] == "enable" {
@@ -456,11 +466,13 @@ func TestUpdaterStartWritesNoMarkerWhenEnableFails(t *testing.T) {
 		t.Fatal("want an error")
 	}
 	if fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile)) {
-		t.Error("enabled marker written although the watcher is not running")
+		t.Error("enabled marker written although the agent is not running")
 	}
 }
 
-func TestUpdaterStopDisablesAndDiscardsAPendingRequest(t *testing.T) {
+// Stopping takes the marker away and discards a waiting request, and leaves
+// the agent running for its reports.
+func TestUpdaterStopDiscardsAPendingRequestAndKeepsTheAgent(t *testing.T) {
 	fx := newUpdaterFixture(t)
 	if err := updaterStart(io.Discard); err != nil {
 		t.Fatal(err)
@@ -472,27 +484,39 @@ func TestUpdaterStopDisablesAndDiscardsAPendingRequest(t *testing.T) {
 	if err := updaterStop(&out); err != nil {
 		t.Fatal(err)
 	}
-	if want := [][]string{{"disable", "--now", upgradePathUnit}}; !reflect.DeepEqual(fx.ctl, want) {
-		t.Errorf("systemctl calls = %v, want %v", fx.ctl, want)
+	if len(fx.ctl) != 0 {
+		t.Errorf("systemctl calls = %v, want none: the agent keeps running", fx.ctl)
 	}
 	if fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile)) {
 		t.Error("enabled marker left behind")
 	}
 	if fileExists(path) {
-		t.Error("pending request left behind; it would run when the watcher comes back")
+		t.Error("pending request left behind; it would run when the updater comes back")
 	}
-	if !strings.Contains(out.String(), "Discarded") {
+	if !strings.Contains(out.String(), "Discarded") || !strings.Contains(out.String(), "Updater off") {
 		t.Errorf("output: %s", out.String())
 	}
 }
 
-func TestUpdaterStopWhenNotInstalled(t *testing.T) {
+// A server still carrying the old watcher has it retired by stop as well.
+func TestUpdaterStopRetiresAnOldWatcher(t *testing.T) {
+	fx := newUpdaterFixture(t)
+	writeTestFile(t, filepath.Join(systemdUnitDir, upgradePathUnit), "[Path]\n")
+	if err := updaterStop(io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if want := [][]string{{"disable", "--now", upgradePathUnit}, {"daemon-reload"}}; !reflect.DeepEqual(fx.ctl, want) {
+		t.Errorf("systemctl calls = %v, want %v", fx.ctl, want)
+	}
+}
+
+func TestUpdaterStopWhenNotOn(t *testing.T) {
 	fx := newUpdaterFixture(t)
 	var out bytes.Buffer
 	if err := updaterStop(&out); err != nil {
 		t.Fatal(err)
 	}
-	if len(fx.ctl) != 0 || !strings.Contains(out.String(), "not installed") {
+	if len(fx.ctl) != 0 || !strings.Contains(out.String(), "not on") {
 		t.Errorf("ctl = %v, output: %s", fx.ctl, out.String())
 	}
 }
@@ -527,7 +551,7 @@ func TestPrintUpdaterStatus(t *testing.T) {
 
 	var out bytes.Buffer
 	printUpdaterStatus(&out, updaterInfo{}, now)
-	if s := out.String(); !strings.Contains(s, "not installed") || !strings.Contains(s, "none yet") {
+	if s := out.String(); !strings.Contains(s, "off (turn it on") || !strings.Contains(s, "none yet") {
 		t.Errorf("fresh machine:\n%s", s)
 	}
 
@@ -540,7 +564,7 @@ func TestPrintUpdaterStatus(t *testing.T) {
 		},
 		logTail: []string{"line one", "line two"},
 	}, now)
-	for _, want := range []string{"on, watching", "waiting to run", "failed, edge channel, requested by u1",
+	for _, want := range []string{"on, the host agent runs", "waiting to run", "failed, edge channel, requested by u1",
 		"0.10.0 → 0.11.0", "Step:      Upgrading the server", "compose pull: boom", "  line two"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("missing %q in:\n%s", want, out.String())

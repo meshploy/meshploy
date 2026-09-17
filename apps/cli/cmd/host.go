@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,8 +22,8 @@ import (
 // it looks at the host and reports. It listens on nothing. The API reads what
 // it writes from a directory mounted read-only.
 //
-// Phase 1 of internal-docs/plans/host-agent.md: the firewall report. Requests
-// from the console, upgrades first, come later.
+// It reports the host firewall, and starts the upgrades the console asks for
+// (internal-docs/plans/host-agent.md, phases 1 and 2).
 const hostUnit = "meshploy-host.service"
 
 // Seams replaced by tests.
@@ -34,6 +35,17 @@ var (
 		return string(out), err
 	}
 	hostLookPath = exec.LookPath
+	// hostSystemdRun starts a transient unit.
+	hostSystemdRun = func(args ...string) (string, error) {
+		out, err := exec.Command("systemd-run", args...).CombinedOutput()
+		return string(out), err
+	}
+	// upgradeWatchInterval is how often the agent looks for a request.
+	upgradeWatchInterval = 2 * time.Second
+	// upgradeRelaunchAfter is how long a request that is still waiting after a
+	// launch is left alone. The runner consumes a request as it starts, so one
+	// still there means the run never started; retrying at once would loop.
+	upgradeRelaunchAfter = 2 * time.Minute
 )
 
 var hostCmd = &cobra.Command{
@@ -105,6 +117,40 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		return err
 	}
 	agent := hostagent.Agent{Version: Version, StartedAt: time.Now().UTC(), Tasks: map[string]hostagent.Task{}}
+	var mu sync.Mutex
+	writeAgent := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		agent.HeartbeatAt = time.Now().UTC()
+		if err := writeHostJSON(filepath.Join(state, hostagent.AgentFile), agent); err != nil {
+			fmt.Fprintf(logw, "agent status: %v\n", err)
+		}
+	}
+	setTask := func(name string, t hostagent.Task) {
+		mu.Lock()
+		agent.Tasks[name] = t
+		mu.Unlock()
+	}
+
+	upgrades := &upgradeLauncher{}
+	go func() {
+		t := time.NewTicker(upgradeWatchInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if task, changed := upgrades.check(time.Now()); changed {
+					if task.Error != "" {
+						fmt.Fprintf(logw, "upgrades: %s\n", task.Error)
+					}
+					setTask("upgrades", task)
+					writeAgent()
+				}
+			}
+		}
+	}()
 
 	tick := func() {
 		fw := collectFirewall()
@@ -115,11 +161,8 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		if task.Error != "" {
 			fmt.Fprintf(logw, "firewall: %s\n", task.Error)
 		}
-		agent.Tasks["firewall"] = task
-		agent.HeartbeatAt = time.Now().UTC()
-		if err := writeHostJSON(filepath.Join(state, hostagent.AgentFile), agent); err != nil {
-			fmt.Fprintf(logw, "agent status: %v\n", err)
-		}
+		setTask("firewall", task)
+		writeAgent()
 	}
 
 	tick()
@@ -132,6 +175,68 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		case <-t.C:
 			tick()
 		}
+	}
+}
+
+// upgradeLauncher starts the upgrade the console queued, as a transient unit
+// the agent does not own: the run replaces this binary and restarts this
+// service, and must outlive both.
+type upgradeLauncher struct {
+	launched   string // the request last launched, by modification time and size
+	launchedAt time.Time
+}
+
+// check launches a waiting request. It reports a task result only when it did
+// something, so an idle agent does not rewrite its status every two seconds.
+func (l *upgradeLauncher) check(now time.Time) (hostagent.Task, bool) {
+	if !fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile)) {
+		return hostagent.Task{}, false
+	}
+	// Lstat, not Stat: the API can write this directory and could plant a
+	// symlink. The runner refuses one too; the agent does not act on it.
+	info, err := os.Lstat(filepath.Join(upgradeInboxDir(), upgradeRequestFile))
+	if err != nil || !info.Mode().IsRegular() {
+		return hostagent.Task{}, false
+	}
+	switch systemctlState("is-active", upgradeServiceUnit) {
+	case "active", "activating", "deactivating", "reloading":
+		return hostagent.Task{}, false
+	}
+	key := fmt.Sprintf("%d-%d", info.ModTime().UnixNano(), info.Size())
+	if key == l.launched && now.Sub(l.launchedAt) < upgradeRelaunchAfter {
+		return hostagent.Task{}, false
+	}
+	l.launched, l.launchedAt = key, now
+
+	out, err := hostSystemdRun(upgradeRunArgs()...)
+	if err != nil {
+		msg := strings.TrimSpace(out)
+		if msg == "" {
+			msg = err.Error()
+		}
+		return hostagent.Task{Error: "start the upgrade: " + clipLine(msg), At: now.UTC()}, true
+	}
+	return hostagent.Task{OK: true, At: now.UTC()}, true
+}
+
+// upgradeRunArgs are systemd-run's arguments for one upgrade. A oneshot unit
+// is "activating" for the length of the run, which is what `updater status`
+// and the stale-run check read.
+func upgradeRunArgs() []string {
+	return []string{
+		"--unit=" + strings.TrimSuffix(upgradeServiceUnit, ".service"),
+		"--collect",
+		"--no-block",
+		"--service-type=oneshot",
+		"--description=Upgrade Meshploy (requested from the console)",
+		// A hung image pull must not hold the upgrade lock forever.
+		"--property=TimeoutStartSec=30min",
+		// docker compose reads registry credentials from root's home, and a
+		// system unit does not always have HOME set.
+		"--setenv=HOME=/root",
+		// Optional; only a private fork needs it, for GITHUB_PAT.
+		"--property=EnvironmentFile=-/etc/meshploy/updater.env",
+		updaterCLIPath, "updater", "run", "--queued",
 	}
 }
 

@@ -464,8 +464,8 @@ func TestRecordRunningImagesWithNothingRunning(t *testing.T) {
 }
 
 // The API's compose mounts need the updater's folders to exist, since podman
-// will not create them, and an updater that is on must end up running the
-// unit files of the CLI that just upgraded the server.
+// will not create them, and upgrades must end up running through the host
+// agent of the CLI that just upgraded the server.
 func TestServerUpgradePreparesTheUpdater(t *testing.T) {
 	fx := newUpgradeFixture(t)
 	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
@@ -476,25 +476,28 @@ func TestServerUpgradePreparesTheUpdater(t *testing.T) {
 			t.Errorf("%s not created", d)
 		}
 	}
-	// The host agent is installed on every upgrade; the updater's units are not
-	// while the updater is off.
+	// The host agent is installed on every upgrade.
 	hostCalls := [][]string{{"daemon-reload"}, {"enable", hostUnit}, {"restart", hostUnit}}
-	if fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) || !reflect.DeepEqual(fx.ctl, hostCalls) {
-		t.Errorf("systemctl calls with the updater off = %v, want only the host agent's %v", fx.ctl, hostCalls)
+	if !reflect.DeepEqual(fx.ctl, hostCalls) {
+		t.Errorf("systemctl calls = %v, want only the host agent's %v", fx.ctl, hostCalls)
 	}
 	if !fileExists(filepath.Join(systemdUnitDir, hostUnit)) {
 		t.Error("the host agent was not installed")
 	}
 
+	// A server still carrying the path unit that ran upgrades before the agent
+	// has it retired, before the agent restarts on the new binary.
 	fx.ctl = nil
-	writeTestFile(t, filepath.Join(upgradeStateDir(), upgradeEnabledFile), "on\n")
+	writeTestFile(t, filepath.Join(systemdUnitDir, upgradePathUnit), "[Path]\n")
+	writeTestFile(t, filepath.Join(systemdUnitDir, upgradeServiceUnit), "[Service]\n")
 	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if !fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) {
-		t.Error("units not refreshed although the updater is on")
+	if fileExists(filepath.Join(systemdUnitDir, upgradePathUnit)) || fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) {
+		t.Error("the old upgrade watcher was not retired")
 	}
-	if want := append([][]string{{"daemon-reload"}}, hostCalls...); !reflect.DeepEqual(fx.ctl, want) {
+	want := append([][]string{{"disable", "--now", upgradePathUnit}, {"daemon-reload"}}, hostCalls...)
+	if !reflect.DeepEqual(fx.ctl, want) {
 		t.Errorf("systemctl calls = %v, want %v", fx.ctl, want)
 	}
 }

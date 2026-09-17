@@ -20,6 +20,16 @@ type HostAgentStatus struct {
 	Firewall string `json:"firewall,omitempty"`
 }
 
+// hostAgentReporting reports whether the host agent, which picks up upgrade
+// requests, has reported recently. An API configured without a host directory
+// has no agent to wait for.
+func (s *SystemService) hostAgentReporting() bool {
+	if s.cfg == nil || s.cfg.HostDir == "" {
+		return true
+	}
+	return s.HostAgentStatus().Reporting
+}
+
 func (s *SystemService) HostAgentStatus() HostAgentStatus {
 	if s.cfg == nil || s.cfg.HostDir == "" {
 		return HostAgentStatus{}

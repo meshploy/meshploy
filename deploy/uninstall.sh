@@ -338,8 +338,9 @@ if ! $REINSTALL && { [[ -f /etc/systemd/system/meshploy-host.service ]] || [[ -d
 fi
 
 # ── Upgrade service (gateway) ─────────────────────────────────────────────────
-# `meshploy updater start` installs it so the console can upgrade the server.
-# Disabling the watcher leaves an upgrade already running to finish.
+# `meshploy updater start` turns it on so the console can upgrade the server;
+# the host agent runs the upgrades. Older installs also have a path unit, which
+# this removes too. An upgrade already running finishes.
 if ! $REINSTALL && { [[ -f /etc/systemd/system/meshploy-upgrade.path ]] || [[ -d /var/lib/meshploy/upgrade ]]; }; then
   header "Upgrade service"
   if confirm "Remove the upgrade service (lets the console upgrade this server)?"; then

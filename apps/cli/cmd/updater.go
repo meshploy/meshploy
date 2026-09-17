@@ -23,10 +23,12 @@ import (
 )
 
 // The updater lets the console upgrade this server without the API gaining any
-// privilege on the host. The API only drops a request into inbox/; a systemd
-// path unit notices it and runs `meshploy updater run --queued` as root, which
-// does what an operator would: `update`, then `server-upgrade` with the new
-// binary, then waits for the API to come back healthy.
+// privilege on the host. The API only drops a request into inbox/; the host
+// agent (`meshploy host serve`) notices it and starts `meshploy updater run
+// --queued` as a transient systemd unit, which does what an operator would:
+// `update`, then `server-upgrade` with the new binary, then waits for the API
+// to come back healthy. A transient unit, so restarting or replacing the agent
+// never interrupts a run.
 //
 // inbox/ is mounted into the API container read-write and state/ read-only.
 // The API runs as root in its container, so it could plant a symlink in any
@@ -39,7 +41,10 @@ var (
 )
 
 const (
-	upgradePathUnit    = "meshploy-upgrade.path"
+	// upgradePathUnit is the watcher earlier versions installed, before the
+	// host agent took over; kept only to retire it.
+	upgradePathUnit = "meshploy-upgrade.path"
+	// upgradeServiceUnit is the transient unit a run executes as.
 	upgradeServiceUnit = "meshploy-upgrade.service"
 
 	upgradeRequestFile = "request.json"
@@ -142,20 +147,20 @@ var updaterCmd = &cobra.Command{
 	Short: "Let the console upgrade this server",
 	Long: `The updater upgrades a Meshploy gateway on request from the console.
 
-The API cannot touch the host, so it only queues a request. A systemd path unit
-on this machine notices it and runs 'meshploy updater run' as root, which
+The API cannot touch the host, so it only queues a request. The host agent
+('meshploy host') notices it and runs 'meshploy updater run' as root, which
 updates the CLI, runs server-upgrade with the new binary on the server's current
 channel, and waits for the API to come back healthy.
 
-  start    install the systemd units and start watching for requests
-  stop     stop watching; an upgrade already running finishes
+  start    let the console start upgrades, and make sure the host agent runs
+  stop     stop taking requests; an upgrade already running finishes
   status   whether the watcher is on, and the last run with its log
   run      upgrade now, the same way the console would; usable by hand`,
 }
 
 var updaterStartCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Install the upgrade service and start watching for console requests",
+	Short: "Let the console start upgrades on this server",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if os.Getuid() != 0 {
 			return fmt.Errorf("updater start requires root; re-run with sudo")
@@ -166,7 +171,7 @@ var updaterStartCmd = &cobra.Command{
 
 var updaterStopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop watching for console requests; a running upgrade finishes",
+	Short: "Stop taking upgrade requests from the console; a running upgrade finishes",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if os.Getuid() != 0 {
 			return fmt.Errorf("updater stop requires root; re-run with sudo")
@@ -214,60 +219,27 @@ It stays on the channel the server is on now (MESHPLOY_CHANNEL in
 
 // ── start / stop ─────────────────────────────────────────────────────────────
 
-// upgradeUnitFiles renders the two systemd units, keyed by file name.
-func upgradeUnitFiles(cliPath string) map[string]string {
-	return map[string]string{
-		upgradePathUnit: fmt.Sprintf(`[Unit]
-Description=Watch for Meshploy upgrade requests from the console
-
-[Path]
-PathExists=%s
-Unit=%s
-
-[Install]
-WantedBy=multi-user.target
-`, filepath.Join(upgradeInboxDir(), upgradeRequestFile), upgradeServiceUnit),
-
-		upgradeServiceUnit: fmt.Sprintf(`[Unit]
-Description=Upgrade Meshploy (requested from the console)
-After=network-online.target docker.service
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=%s updater run --queued
-# docker compose reads registry credentials from root's home directory, and
-# systemd does not always set HOME for a system service.
-Environment=HOME=/root
-# Optional; only a private fork needs it, for GITHUB_PAT.
-EnvironmentFile=-/etc/meshploy/updater.env
-# oneshot units have no start timeout by default, and a hung image pull
-# would otherwise hold the upgrade lock forever.
-TimeoutStartSec=30min
-`, cliPath),
-	}
-}
-
-// updaterStart installs the units and turns the watcher on. Running it again
-// rewrites the units, which is how they follow the CLI version.
+// updaterStart lets the console start upgrades: it makes sure the host agent,
+// which picks requests up, is running, and then writes the marker the console
+// reads. Running it again is harmless.
 func updaterStart(out io.Writer) error {
 	if _, err := os.Stat(filepath.Join(meshployInstDir, ".env")); err != nil {
 		return fmt.Errorf("no Meshploy server found at %s: the updater runs on the gateway", meshployInstDir)
 	}
 	if _, err := os.Stat(updaterCLIPath); err != nil {
-		return fmt.Errorf("the upgrade service runs %s, which is missing: %w", updaterCLIPath, err)
+		return fmt.Errorf("upgrades run %s, which is missing: %w", updaterCLIPath, err)
 	}
 	if err := ensureUpgradeDirs(); err != nil {
 		return err
 	}
-	if err := writeUpgradeUnits(); err != nil {
+	if err := retireUpgradeWatcher(); err != nil {
 		return err
 	}
-	if err := systemctl("enable", "--now", upgradePathUnit); err != nil {
-		return fmt.Errorf("enable %s: %w", upgradePathUnit, err)
+	if err := hostStart(io.Discard); err != nil {
+		return fmt.Errorf("the host agent runs upgrade requests, and could not be started: %w", err)
 	}
 	// Written last: it tells the console the button will work, so it must
-	// not exist unless the watcher really is running.
+	// not exist unless the agent that acts on requests really is running.
 	marker := filepath.Join(upgradeStateDir(), upgradeEnabledFile)
 	if err := writeFileAtomic(marker, []byte(nowRFC3339()+"\n"), 0644); err != nil {
 		return err
@@ -290,11 +262,23 @@ func ensureUpgradeDirs() error {
 	return nil
 }
 
-// writeUpgradeUnits writes both units and has systemd reload them.
-func writeUpgradeUnits() error {
-	for name, body := range upgradeUnitFiles(updaterCLIPath) {
-		if err := writeFileAtomic(filepath.Join(systemdUnitDir, name), []byte(body), 0644); err != nil {
-			return fmt.Errorf("write %s: %w", name, err)
+// retireUpgradeWatcher removes the path unit that ran upgrades before the host
+// agent did, so two runners never race for a request. A run the old service is
+// in the middle of finishes: systemd keeps a running unit whose file is gone.
+func retireUpgradeWatcher() error {
+	pathUnit := filepath.Join(systemdUnitDir, upgradePathUnit)
+	serviceUnit := filepath.Join(systemdUnitDir, upgradeServiceUnit)
+	if !fileExists(pathUnit) && !fileExists(serviceUnit) {
+		return nil
+	}
+	if fileExists(pathUnit) {
+		if err := systemctl("disable", "--now", upgradePathUnit); err != nil {
+			return fmt.Errorf("disable %s: %w", upgradePathUnit, err)
+		}
+	}
+	for _, f := range []string{pathUnit, serviceUnit} {
+		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
 	}
 	if err := systemctl("daemon-reload"); err != nil {
@@ -303,28 +287,18 @@ func writeUpgradeUnits() error {
 	return nil
 }
 
-// refreshUpgradeUnits rewrites the units when the updater is on, so they
-// follow the CLI installed now. server-upgrade calls it; with the updater off
-// it does nothing.
-func refreshUpgradeUnits() error {
-	if !fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile)) {
-		return nil
-	}
-	return writeUpgradeUnits()
-}
-
-// updaterStop turns the watcher off. It never stops the service itself:
-// interrupting server-upgrade halfway is worse than letting it finish.
+// updaterStop stops the console starting upgrades. It never stops a run in
+// progress, since interrupting server-upgrade halfway is worse than letting it
+// finish, and leaves the host agent running for its reports.
 func updaterStop(out io.Writer) error {
-	installed := fileExists(filepath.Join(systemdUnitDir, upgradePathUnit))
-	if installed {
-		if err := systemctl("disable", "--now", upgradePathUnit); err != nil {
-			return fmt.Errorf("disable %s: %w", upgradePathUnit, err)
-		}
+	marker := filepath.Join(upgradeStateDir(), upgradeEnabledFile)
+	installed := fileExists(marker) || fileExists(filepath.Join(systemdUnitDir, upgradePathUnit))
+	if err := retireUpgradeWatcher(); err != nil {
+		return err
 	}
-	_ = os.Remove(filepath.Join(upgradeStateDir(), upgradeEnabledFile))
+	_ = os.Remove(marker)
 
-	// A request left in the inbox would run the moment the watcher came back.
+	// A request left in the inbox would run the moment the updater came back.
 	pending := filepath.Join(upgradeInboxDir(), upgradeRequestFile)
 	if _, err := os.Lstat(pending); err == nil {
 		if err := os.RemoveAll(pending); err == nil {
@@ -333,7 +307,7 @@ func updaterStop(out io.Writer) error {
 	}
 
 	if !installed {
-		fmt.Fprintln(out, "The updater is not installed on this server.")
+		fmt.Fprintln(out, "The updater is not on for this server.")
 		return nil
 	}
 	fmt.Fprintln(out, "✔  Updater off: the console can no longer start an upgrade here.")
@@ -811,8 +785,8 @@ func (b bestEffortWriter) Write(p []byte) (int, error) {
 // ── status ───────────────────────────────────────────────────────────────────
 
 type updaterInfo struct {
-	installed     bool
-	watcher       string // `systemctl is-active` of the path unit
+	installed     bool   // the console may start upgrades
+	watcher       string // `systemctl is-active` of the host agent, which runs them
 	serviceActive bool
 	pending       bool
 	status        *upgradeStatus
@@ -821,11 +795,11 @@ type updaterInfo struct {
 }
 
 func collectUpdaterInfo() updaterInfo {
-	in := updaterInfo{installed: fileExists(filepath.Join(systemdUnitDir, upgradePathUnit))}
+	in := updaterInfo{installed: fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile))}
 	if in.installed {
-		in.watcher = systemctlState("is-active", upgradePathUnit)
-		in.serviceActive = systemctlState("is-active", upgradeServiceUnit) == "activating"
+		in.watcher = systemctlState("is-active", hostUnit)
 	}
+	in.serviceActive = systemctlState("is-active", upgradeServiceUnit) == "activating"
 	_, err := os.Lstat(filepath.Join(upgradeInboxDir(), upgradeRequestFile))
 	in.pending = err == nil
 	in.status, in.statusErr = readUpgradeStatus(upgradeStateDir())
@@ -850,11 +824,11 @@ func effectiveUpgradeState(st upgradeStatus, serviceActive bool, now time.Time) 
 func printUpdaterStatus(w io.Writer, in updaterInfo, now time.Time) {
 	switch {
 	case !in.installed:
-		fmt.Fprintln(w, "Updater:   not installed (turn it on with: sudo meshploy updater start)")
+		fmt.Fprintln(w, "Updater:   off (turn it on with: sudo meshploy updater start)")
 	case in.watcher == "active":
-		fmt.Fprintln(w, "Updater:   on, watching for upgrade requests from the console")
+		fmt.Fprintln(w, "Updater:   on, the host agent runs upgrade requests from the console")
 	default:
-		fmt.Fprintf(w, "Updater:   off (watcher %s; turn it on with: sudo meshploy updater start)\n", orDash(in.watcher))
+		fmt.Fprintf(w, "Updater:   on, but the host agent that runs requests is %s (start it with: sudo meshploy host start)\n", orDash(in.watcher))
 	}
 	if in.pending {
 		fmt.Fprintln(w, "Queued:    an upgrade request is waiting to run")

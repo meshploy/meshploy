@@ -310,10 +310,11 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 		fmt.Printf("warning: could not keep published ports on the mesh: %v\n", err)
 	}
 
-	// An updater that is on runs whichever unit files it was given; bring them
-	// in line with the CLI that just did this upgrade.
-	if err := refreshUpgradeUnits(); err != nil {
-		fmt.Printf("warning: could not refresh the upgrade service: %v\n", err)
+	// Upgrades now run through the host agent; retire the path unit earlier
+	// versions installed, so the two never race for a request. When this
+	// upgrade was started by that unit, its run still finishes.
+	if err := retireUpgradeWatcher(); err != nil {
+		fmt.Printf("warning: could not retire the old upgrade watcher: %v\n", err)
 	}
 
 	// The host agent follows the CLI too, and a gateway installed before it

@@ -132,13 +132,13 @@ The host agent: a systemd service on the gateway that reports what the API, in i
 ### `meshploy updater`
 
 ```bash
-sudo meshploy updater start     # install the upgrade service and start watching for requests
-sudo meshploy updater stop      # stop watching; an upgrade already running finishes
+sudo meshploy updater start     # let the console start upgrades; makes sure the host agent runs
+sudo meshploy updater stop      # stop taking requests; an upgrade already running finishes
 meshploy updater status         # whether it is on, and the last upgrade with its log
 sudo meshploy updater run       # upgrade now: update, server-upgrade, health check
 ```
 
-Upgrades the server on request from the console. The API cannot touch the host, so it only queues a request; a systemd path unit on the gateway notices it and runs `meshploy updater run` as root. That updates the CLI, runs `server-upgrade` with the new binary, and waits for the API to answer healthy. Progress and the log are kept in `/var/lib/meshploy/upgrade/state`, where the console and `updater status` read them.
+Upgrades the server on request from the console. The API cannot touch the host, so it only queues a request; the host agent (`meshploy host`) notices it and runs `meshploy updater run` as root, as a transient systemd unit, so restarting or replacing the agent never interrupts a run. Servers that ran upgrades through the older `meshploy-upgrade.path` unit have it removed by their next `server-upgrade`. That updates the CLI, runs `server-upgrade` with the new binary, and waits for the API to answer healthy. Progress and the log are kept in `/var/lib/meshploy/upgrade/state`, where the console and `updater status` read them.
 
 `updater run` also works by hand, as a one-command upgrade. It stays on the channel the server is on now; pass `--edge` or `--stable` to switch. Unlike `server-upgrade`, leaving out `--edge` does not move an edge server to stable. The console's **Settings → Server** switches channels through the same runner, and only forward: it offers edge to stable once a release includes the running build. By hand, `--stable` does not check that. A switch to Enterprise from the licence section runs through it too: the API names the image from the verified licence, and the runner checks it is one of Meshploy's Enterprise API images before passing it to `server-upgrade --ee`.
 

@@ -25,9 +25,9 @@ import (
 // The API never upgrades anything itself. It has no Docker socket and no access
 // to the host, by design: gaining either would make a compromise of the
 // internet-facing API a compromise of the machine. Instead it queues a request
-// as a file in inbox/, a systemd path unit on the gateway runs
-// `meshploy updater run --queued` as root, and that runner reports its progress
-// in state/. docker-compose mounts inbox/ read-write and state/ read-only, so
+// as a file in inbox/, the host agent on the gateway starts
+// `meshploy updater run --queued` as root in a transient systemd unit, and that
+// runner reports its progress in state/. docker-compose mounts inbox/ read-write and state/ read-only, so
 // the API can ask for an upgrade but never write anything the root runner reads
 // back as its own.
 //
@@ -69,9 +69,13 @@ const (
 
 // UpgradeStatus is what the console needs to offer an upgrade and follow one.
 type UpgradeStatus struct {
-	// Enabled reports whether the updater is on (`meshploy updater start`).
-	// When it is off the console shows the commands to run instead of a button.
+	// Enabled reports whether the updater is on (`meshploy updater start`) and
+	// the host agent that runs requests is reporting. When it is not, the
+	// console shows the commands to run instead of a button.
 	Enabled bool `json:"enabled"`
+	// AgentStopped is true when the updater is on but the host agent is not
+	// reporting: a request would wait with nobody to pick it up.
+	AgentStopped bool `json:"agent_stopped"`
 	// CanUpgrade reports whether the current user may start one now: the
 	// instance owner, on a server with the updater on, running a release or
 	// edge build.
@@ -169,7 +173,9 @@ func (s *SystemService) upgradeStatus(ctx context.Context, userID uuid.UUID, now
 		return out, err
 	}
 	_, err = os.Stat(s.upgradePath("state", upgradeEnabledFile))
-	out.Enabled = err == nil
+	on := err == nil
+	out.Enabled = on && s.hostAgentReporting()
+	out.AgentStopped = on && !out.Enabled
 	out.CanUpgrade = owner && out.Enabled && upgradeChannel() != ""
 
 	if req, err := readUpgradeJSON[upgradeRequest](s.upgradePath("inbox", upgradeRequestFile)); err == nil && req != nil {
@@ -357,8 +363,8 @@ func effectiveUpgradeState(st runnerStatus, now time.Time) string {
 }
 
 // writeUpgradeRequest writes the request under a temporary name and renames it
-// into place: the path unit watches for request.json, and must never start the
-// runner on half a file.
+// into place: the host agent watches for request.json, and must never start
+// the runner on half a file.
 func writeUpgradeRequest(inbox string, req upgradeRequest) error {
 	data, err := json.Marshal(req)
 	if err != nil {

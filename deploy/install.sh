@@ -1129,9 +1129,8 @@ NPEOF
   success "CoreDNS and Caddy started"
 
   # ── Upgrades from the console ───────────────────────────────────────────────
-  # Installs the systemd unit that runs an upgrade when the console asks for
-  # one; the API itself only ever queues the request. Idempotent, so a re-run
-  # refreshes it.
+  # Lets the console upgrade the server: the API only ever queues the request,
+  # and the host agent, which this also starts, runs it. Idempotent.
   header "Enabling upgrades from the console"
   if [[ -x "$MESHPLOY_CLI" ]] && "$MESHPLOY_CLI" updater --help &>/dev/null; then
     if sudo "$MESHPLOY_CLI" updater start >/dev/null; then

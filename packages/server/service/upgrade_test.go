@@ -116,6 +116,30 @@ func TestUpgradeStatusWithNoUpgradeDirectory(t *testing.T) {
 	require.False(t, st.Enabled)
 }
 
+// Upgrades run through the host agent, so a server whose agent has stopped
+// reporting must not offer a button that queues a request nobody picks up.
+func TestUpgradeStatusNeedsTheHostAgent(t *testing.T) {
+	e := newUpgradeEnv(t, "edge", true)
+	hostDir := t.TempDir()
+	state := filepath.Join(hostDir, "state")
+	require.NoError(t, os.MkdirAll(state, 0o755))
+	svc := service.New(e.db, &config.Config{UpgradeDir: e.dir, HostDir: hostDir})
+
+	st, err := svc.System.GetUpgradeStatus(context.Background(), e.owner)
+	require.NoError(t, err)
+	require.False(t, st.Enabled, "no agent has reported")
+	require.True(t, st.AgentStopped)
+	require.False(t, st.CanUpgrade)
+
+	agent, _ := json.Marshal(map[string]any{"version": "0.16.0", "heartbeat_at": time.Now().UTC()})
+	writeUpgradeFile(t, filepath.Join(state, "agent.json"), string(agent))
+	st, err = svc.System.GetUpgradeStatus(context.Background(), e.owner)
+	require.NoError(t, err)
+	require.True(t, st.Enabled)
+	require.False(t, st.AgentStopped)
+	require.True(t, st.CanUpgrade)
+}
+
 func TestUpgradeStatusForTheOwner(t *testing.T) {
 	e := newUpgradeEnv(t, "edge", true)
 	e.writeRun(t, "running", time.Now())
