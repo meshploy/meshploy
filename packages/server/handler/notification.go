@@ -2,10 +2,11 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/meshploy/packages/server/service"
 	meshdb "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 )
 
 func (h *Handler) registerNotificationRoutes(api huma.API) {
@@ -46,10 +47,10 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID:  "create-notification-channel",
-		Method:       "POST",
-		Path:         "/api/v1/orgs/{orgId}/notification-channels",
-		Tags:         []string{"notifications"},
+		OperationID:   "create-notification-channel",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/notification-channels",
+		Tags:          []string{"notifications"},
 		DefaultStatus: 201,
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
@@ -152,16 +153,17 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 		Summary:     "List a channel's delivery attempts, newest first",
 		Tags:        []string{"notifications"},
 	}, func(ctx context.Context, in *struct {
-		OrgID  string `path:"orgId"`
-		ID     string `path:"id"`
-		Status string `query:"status" enum:"all,failed" default:"all"`
-		Limit  int    `query:"limit" minimum:"1" maximum:"200" default:"50"`
+		OrgID  string    `path:"orgId"`
+		ID     string    `path:"id"`
+		Status string    `query:"status" enum:"all,failed" default:"all"`
+		Before time.Time `query:"before" doc:"Only attempts older than this, to page back from the last one shown"`
+		Limit  int       `query:"limit" minimum:"1" maximum:"200" default:"50"`
 	}) (*struct{ Body []meshdb.NotificationDelivery }, error) {
 		_, orgID, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.svc.Notifications.Deliveries(ctx, orgID, id, in.Status == "failed", in.Limit)
+		rows, err := h.svc.Notifications.Deliveries(ctx, orgID, id, in.Status == "failed", in.Before, in.Limit)
 		if err != nil {
 			return nil, notFound(err)
 		}

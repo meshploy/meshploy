@@ -244,6 +244,7 @@ func (s *AgentService) AddToken(ctx context.Context, orgID, agentID uuid.UUID, n
 		}
 		s.notif.Dispatch(ctx, orgID, "agent.token_created", NotificationData{
 			Detail: fmt.Sprintf("Token %q created for %s", tok.Name, name),
+			Link:   "/agents/" + agentID.String(),
 		})
 	}
 	return plaintext, &tok, nil

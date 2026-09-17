@@ -524,10 +524,15 @@ func (s *JobService) executeRun(job *db.Job, run *db.JobRun, namespace string, p
 		if !result.Success {
 			event = "job.failed"
 		}
-		s.notif.Dispatch(bgCtx, orgID, event, NotificationData{
+		data := NotificationData{
 			ServiceName: job.Name,
 			ProjectName: projectName,
-		})
+			Link:        jobRunsLink(job),
+		}
+		if !result.Success {
+			data.Error = failureTail(result.Log, s.notif.jobSecrets(bgCtx, job))
+		}
+		s.notif.Dispatch(bgCtx, orgID, event, data)
 	}
 }
 
@@ -543,8 +548,14 @@ func (s *JobService) failRun(ctx context.Context, job *db.Job, run *db.JobRun, m
 		s.notif.Dispatch(ctx, orgID, "job.failed", NotificationData{
 			ServiceName: job.Name,
 			ProjectName: projectName,
+			Link:        jobRunsLink(job),
+			Error:       failureTail(msg, s.notif.jobSecrets(ctx, job)),
 		})
 	}
+}
+
+func jobRunsLink(job *db.Job) string {
+	return fmt.Sprintf("/projects/%s/jobs/%s/runs", job.ProjectID, job.ID)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

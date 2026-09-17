@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -437,10 +438,19 @@ func (s *BackupService) announceRestore(ctx context.Context, cfgID uuid.UUID, er
 	if err != nil {
 		event = "restore.failed"
 	}
-	s.notif.Dispatch(ctx, cfg.Service.Project.OrganizationID, event, NotificationData{
+	data := NotificationData{
 		ServiceName: cfg.Service.Name,
 		ProjectName: cfg.Service.Project.Name,
-	})
+		Link:        backupsLink(cfg.Service),
+	}
+	if err != nil {
+		data.Error = failureTail(err.Error(), s.notif.serviceSecrets(ctx, cfg.ServiceID))
+	}
+	s.notif.Dispatch(ctx, cfg.Service.Project.OrganizationID, event, data)
+}
+
+func backupsLink(svc db.Service) string {
+	return fmt.Sprintf("/projects/%s/services/%s/backups", svc.ProjectID, svc.ID)
 }
 
 // ListSystemObjects returns all available restore points for the system backup, newest first.
@@ -478,7 +488,11 @@ func (s *BackupService) RestoreSystem(ctx context.Context, orgID uuid.UUID, key 
 			if err != nil {
 				event = "restore.failed"
 			}
-			s.notif.Dispatch(bg, orgID, event, NotificationData{})
+			data := NotificationData{Detail: "System restore of this server's own database", Link: "/settings"}
+			if err != nil {
+				data.Error = failureTail(err.Error(), nil)
+			}
+			s.notif.Dispatch(bg, orgID, event, data)
 		}
 	}()
 	return nil

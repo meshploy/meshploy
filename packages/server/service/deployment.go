@@ -580,8 +580,13 @@ func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID,
 	if s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error != nil {
 		return
 	}
-	s.notif.Dispatch(ctx, svc.Project.OrganizationID, "deploy.success",
-		s.notif.ForService(ctx, &svc, svc.Project.Name))
+	data := s.notif.ForService(ctx, &svc, svc.Project.Name)
+	data.Link = deploymentLink(svc.ProjectID, svc.ID, deploymentID)
+	s.notif.Dispatch(ctx, svc.Project.OrganizationID, "deploy.success", data)
+}
+
+func deploymentLink(projectID, serviceID, deploymentID uuid.UUID) string {
+	return fmt.Sprintf("/projects/%s/services/%s/deployments/%s", projectID, serviceID, deploymentID)
 }
 
 func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
@@ -598,8 +603,10 @@ func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
 		var dep db.Deployment
 		if s.db.Preload("Service.Project").First(&dep, "id = ?", id).Error == nil {
 			ctx := context.Background()
-			s.notif.Dispatch(ctx, dep.Service.Project.OrganizationID, "deploy.failed",
-				s.notif.ForService(ctx, &dep.Service, dep.Service.Project.Name))
+			data := s.notif.ForService(ctx, &dep.Service, dep.Service.Project.Name)
+			data.Link = deploymentLink(dep.Service.ProjectID, dep.ServiceID, dep.ID)
+			data.Error = failureTail(reason, s.notif.serviceSecrets(ctx, dep.ServiceID))
+			s.notif.Dispatch(ctx, dep.Service.Project.OrganizationID, "deploy.failed", data)
 		}
 	}
 }

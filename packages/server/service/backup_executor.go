@@ -116,6 +116,7 @@ func (s *BackupService) markEnd(ctx context.Context, id uuid.UUID, status db.Bac
 			s.notif.Dispatch(ctx, cfg.Service.Project.OrganizationID, event, NotificationData{
 				ServiceName: cfg.Service.Name,
 				ProjectName: cfg.Service.Project.Name,
+				Link:        backupsLink(cfg.Service),
 			})
 		}
 	}
@@ -139,7 +140,10 @@ func (s *BackupService) markSysEnd(ctx context.Context, id uuid.UUID, status db.
 			if status == db.BackupSuccess {
 				event = "backup.success"
 			}
-			s.notif.Dispatch(ctx, cfg.OrganizationID, event, NotificationData{})
+			s.notif.Dispatch(ctx, cfg.OrganizationID, event, NotificationData{
+				Detail: "System backup of this server's own database",
+				Link:   "/settings",
+			})
 		}
 	}
 }

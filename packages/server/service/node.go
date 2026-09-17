@@ -108,6 +108,7 @@ func (s *NodeService) checkNodeOnlineStatus(ctx context.Context, offlineNotified
 			offlineNotified[node.ID] = true
 			s.notif.Dispatch(ctx, node.OrganizationID, "node.offline", NotificationData{
 				NodeName: node.Name,
+				Link:     "/nodes/" + node.ID.String(),
 			})
 		} else if isOnline && wasOffline {
 			delete(offlineNotified, node.ID)
@@ -115,6 +116,7 @@ func (s *NodeService) checkNodeOnlineStatus(ctx context.Context, offlineNotified
 			// announced as down has nothing to come back from.
 			s.notif.Dispatch(ctx, node.OrganizationID, "node.online", NotificationData{
 				NodeName: node.Name,
+				Link:     "/nodes/" + node.ID.String(),
 			})
 		}
 	}

@@ -271,6 +271,7 @@ func (s *OrgService) AcceptInvitation(ctx context.Context, token, username, pass
 	if s.notif != nil {
 		s.notif.Dispatch(ctx, inv.OrgID, "member.joined", NotificationData{
 			Detail: fmt.Sprintf("%s joined as %s", user.Username, inv.Role),
+			Link:   "/users/" + user.ID.String(),
 		})
 	}
 	return &user, nil

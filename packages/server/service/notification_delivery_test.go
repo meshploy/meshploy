@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
@@ -47,7 +48,7 @@ func TestDeliveriesAreRecordedAndRetried(t *testing.T) {
 	svcs.Notifications.Dispatch(ctx, org.ID, "deploy.failed", data)
 	svcs.Notifications.Dispatch(ctx, org.ID, "deploy.success", data) // not subscribed
 
-	failed, err := svcs.Notifications.Deliveries(ctx, org.ID, ch.ID, true, 50)
+	failed, err := svcs.Notifications.Deliveries(ctx, org.ID, ch.ID, true, time.Time{}, 50)
 	require.NoError(t, err)
 	require.Len(t, failed, 2)
 	assert.Equal(t, "HTTP 502", failed[0].Error)
@@ -78,7 +79,7 @@ func TestDeliveriesAreRecordedAndRetried(t *testing.T) {
 	// Another org can neither read nor retry this channel's attempts.
 	other := meshdb.Organization{Name: "other", Slug: "other"}
 	require.NoError(t, db.Create(&other).Error)
-	_, err = svcs.Notifications.Deliveries(ctx, other.ID, ch.ID, false, 50)
+	_, err = svcs.Notifications.Deliveries(ctx, other.ID, ch.ID, false, time.Time{}, 50)
 	assert.Error(t, err)
 	_, err = svcs.Notifications.Retry(ctx, other.ID, failed[0].ID)
 	assert.Error(t, err)

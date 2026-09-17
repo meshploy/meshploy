@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -29,6 +28,9 @@ import (
 
 type NotificationService struct {
 	db *gorm.DB
+	// consoleURL is the console's public base URL (FRONTEND_URL), for links in
+	// a notification. Empty leaves the links out.
+	consoleURL string
 }
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
@@ -161,13 +163,46 @@ type NotificationData struct {
 	// Detail is one line of context the event carries: who joined, what was
 	// created. Used where a service and project name say nothing.
 	Detail string `json:"detail,omitempty"`
+	// Link is the console path that shows what happened, such as the failed
+	// deployment. Kept relative, so a retry links to the console as it is
+	// addressed now.
+	Link string `json:"link,omitempty"`
+	// Error is the end of the failure's own output: the last lines of a build
+	// or job log, or the reason a step gave up. Empty for a success.
+	Error string `json:"error,omitempty"`
+}
+
+// failureTail keeps the last lines of a log, which is where a build or a job
+// says why it stopped, with secrets filtered out, and bounds the size of an
+// alert. known is the values the workload is configured with.
+func failureTail(log string, known []string) string {
+	const window, maxLines, maxBytes = 200, 8, 1200
+	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
+	// Filter a wider window than is kept, so a secret spanning lines (a key)
+	// is recognised whole before the cut.
+	if len(lines) > window {
+		lines = lines[len(lines)-window:]
+	}
+	lines = strings.Split(redactSecrets(strings.Join(lines, "\n"), known), "\n")
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	out := strings.TrimSpace(strings.Join(lines, "\n"))
+	if len(out) > maxBytes {
+		out = "…" + out[len(out)-maxBytes:]
+	}
+	return out
 }
 
 // ForService builds the payload for an event about a service, naming the stack
 // it belongs to. An alert that says only "redis" leaves the reader asking which
 // redis, and the answer is one join away.
 func (s *NotificationService) ForService(ctx context.Context, svc *meshdb.Service, projectName string) NotificationData {
-	data := NotificationData{ServiceName: svc.Name, ProjectName: projectName}
+	data := NotificationData{
+		ServiceName: svc.Name,
+		ProjectName: projectName,
+		Link:        fmt.Sprintf("/projects/%s/services/%s/overview", svc.ProjectID, svc.ID),
+	}
 	if svc.StackID != nil {
 		var stack meshdb.Stack
 		if s.db.WithContext(ctx).Select("name").First(&stack, "id = ?", *svc.StackID).Error == nil {
@@ -231,7 +266,7 @@ func (s *NotificationService) emailConfig(ctx context.Context, orgID uuid.UUID) 
 // is written even when the caller's request has ended, since a dispatch often
 // outlives the request that caused it.
 func (s *NotificationService) attempt(ctx context.Context, ch meshdb.NotificationChannel, event string, data NotificationData, emailCfg *meshdb.OrgEmailConfig, test bool, retryOf *uuid.UUID) *meshdb.NotificationDelivery {
-	err := sendNotification(ch, event, data, emailCfg)
+	err := sendNotification(ch, s.notice(ch.Name, event, data), emailCfg)
 	row := meshdb.NotificationDelivery{
 		OrganizationID: ch.OrganizationID,
 		ChannelID:      ch.ID,
@@ -249,9 +284,32 @@ func (s *NotificationService) attempt(ctx context.Context, ch meshdb.Notificatio
 	if err := conn.Create(&row).Error; err != nil {
 		log.Printf("notification %q: record delivery: %v", ch.Name, err)
 	}
-	conn.Where("channel_id = ? AND created_at < ?", ch.ID, time.Now().Add(-deliveryRetention)).
-		Delete(&meshdb.NotificationDelivery{})
 	return &row
+}
+
+// StartDeliveryReaper deletes attempts older than the retention, hourly.
+// Postgres has no row TTL, and pruning only when a channel sends would keep a
+// quiet channel's old attempts forever.
+func (s *NotificationService) StartDeliveryReaper(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		s.pruneDeliveries(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *NotificationService) pruneDeliveries(ctx context.Context) {
+	res := s.db.WithContext(ctx).
+		Where("created_at < ?", time.Now().Add(-deliveryRetention)).
+		Delete(&meshdb.NotificationDelivery{})
+	if res.Error != nil {
+		log.Printf("notification deliveries: prune: %v", res.Error)
+	}
 }
 
 // deliveryError is the error as stored and shown. An HTTP client error quotes
@@ -318,7 +376,10 @@ func (s *NotificationService) channel(ctx context.Context, orgID, id uuid.UUID) 
 	return &ch, nil
 }
 
-var testData = NotificationData{Detail: "Sent from the Meshploy console to check this channel works."}
+var testData = NotificationData{
+	Detail: "Sent from the Meshploy console to check this channel works.",
+	Link:   "/integrations/notifications",
+}
 
 // Test sends a test notification to a channel, paused or not, and records it.
 func (s *NotificationService) Test(ctx context.Context, orgID, id uuid.UUID) (*meshdb.NotificationDelivery, error) {
@@ -344,14 +405,17 @@ func (s *NotificationService) TestEmailProvider(ctx context.Context, orgID uuid.
 		return fmt.Errorf("no email provider configured for this org")
 	}
 	ch := meshdb.NotificationChannel{Type: meshdb.NotificationEmail, Config: meshdb.JSONObject{"address": to}}
-	if err := sendEmail(ch, TestEvent, testData, *cfg); err != nil {
+	data := testData
+	data.Link = "/integrations/email"
+	if err := sendEmail(ch, s.notice("", TestEvent, data), *cfg); err != nil {
 		return errors.New(deliveryError(err))
 	}
 	return nil
 }
 
-// Deliveries lists a channel's attempts, newest first.
-func (s *NotificationService) Deliveries(ctx context.Context, orgID, channelID uuid.UUID, failedOnly bool, limit int) ([]meshdb.NotificationDelivery, error) {
+// Deliveries lists a channel's attempts, newest first. A non-zero before pages
+// back: only attempts older than it.
+func (s *NotificationService) Deliveries(ctx context.Context, orgID, channelID uuid.UUID, failedOnly bool, before time.Time, limit int) ([]meshdb.NotificationDelivery, error) {
 	if _, err := s.channel(ctx, orgID, channelID); err != nil {
 		return nil, err
 	}
@@ -359,6 +423,9 @@ func (s *NotificationService) Deliveries(ctx context.Context, orgID, channelID u
 	q := s.db.WithContext(ctx).Where("channel_id = ?", channelID)
 	if failedOnly {
 		q = q.Where("success = false")
+	}
+	if !before.IsZero() {
+		q = q.Where("created_at < ?", before)
 	}
 	err := q.Order("created_at desc").Limit(limit).Find(&rows).Error
 	return rows, err
@@ -503,19 +570,90 @@ func (d NotificationData) origin() string {
 	return "standalone"
 }
 
-func sendNotification(ch meshdb.NotificationChannel, event string, data NotificationData, emailCfg *meshdb.OrgEmailConfig) error {
+// notice is one event rendered for sending: the same title, colour, link and
+// facts whichever channel it goes to.
+type notice struct {
+	Event       string
+	Title       string
+	Tone        EventTone
+	Data        NotificationData
+	Link        string // absolute; empty when the console's URL is unknown
+	Console     string // the console's host, for the footer
+	ConsoleBase string // the console's base URL
+	Channel     string // the channel's name; empty for a provider test
+	At          time.Time
+}
+
+type fact struct{ Label, Value string }
+
+func (s *NotificationService) notice(channel, event string, data NotificationData) notice {
+	n := notice{Event: event, Title: eventTitle(event), Data: data, Channel: channel, At: time.Now()}
+	if d, ok := eventDef(event); ok {
+		n.Tone = d.Tone
+	}
+	if base := strings.TrimRight(s.consoleURL, "/"); base != "" {
+		n.ConsoleBase = base
+		if data.Link != "" {
+			n.Link = base + data.Link
+		}
+		if u, err := url.Parse(base); err == nil {
+			n.Console = u.Host
+		}
+	}
+	return n
+}
+
+// facts are what the alert is about, in reading order.
+func (n notice) facts() []fact {
+	var out []fact
+	if d := n.Data; d.ServiceName != "" {
+		name := d.ServiceName
+		if o := d.origin(); o != "" {
+			name += " (" + o + ")"
+		}
+		label := "Service"
+		if strings.HasPrefix(n.Event, "job.") {
+			label, name = "Job", d.ServiceName
+		}
+		out = append(out, fact{label, name})
+	}
+	if n.Data.ProjectName != "" {
+		out = append(out, fact{"Project", n.Data.ProjectName})
+	}
+	if n.Data.NodeName != "" {
+		out = append(out, fact{"Node", n.Data.NodeName})
+	}
+	out = append(out, fact{"When", n.At.UTC().Format("2 Jan 2006, 15:04 UTC")})
+	return out
+}
+
+func (n notice) colourHex() string {
+	if c, ok := toneHex[n.Tone]; ok {
+		return c
+	}
+	return "#64748b"
+}
+
+func (n notice) colourInt() int {
+	if c, ok := toneInt[n.Tone]; ok {
+		return c
+	}
+	return 0x64748b
+}
+
+func sendNotification(ch meshdb.NotificationChannel, n notice, emailCfg *meshdb.OrgEmailConfig) error {
 	switch ch.Type {
 	case meshdb.NotificationWebhook:
-		return sendWebhook(ch, event, data)
+		return sendWebhook(ch, n)
 	case meshdb.NotificationSlack:
-		return sendSlack(ch, event, data)
+		return sendSlack(ch, n)
 	case meshdb.NotificationDiscord:
-		return sendDiscord(ch, event, data)
+		return sendDiscord(ch, n)
 	case meshdb.NotificationEmail:
 		if emailCfg == nil {
 			return fmt.Errorf("no SMTP provider configured for this org")
 		}
-		return sendEmail(ch, event, data, *emailCfg)
+		return sendEmail(ch, n, *emailCfg)
 	default:
 		return nil
 	}
@@ -523,24 +661,29 @@ func sendNotification(ch meshdb.NotificationChannel, event string, data Notifica
 
 // ── Webhook ───────────────────────────────────────────────────────────────────
 
-func sendWebhook(ch meshdb.NotificationChannel, event string, data NotificationData) error {
-	url, _ := ch.Config["url"].(string)
-	if url == "" {
+func sendWebhook(ch meshdb.NotificationChannel, n notice) error {
+	target, _ := ch.Config["url"].(string)
+	if target == "" {
 		return fmt.Errorf("missing config.url")
 	}
 	body, err := json.Marshal(map[string]any{
-		"event":     event,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"event":     n.Event,
+		"title":     n.Title,
+		"timestamp": n.At.UTC().Format(time.RFC3339),
+		"url":       n.Link,
 		"data": map[string]string{
-			"service": data.ServiceName,
-			"project": data.ProjectName,
-			"node":    data.NodeName,
+			"service": n.Data.ServiceName,
+			"project": n.Data.ProjectName,
+			"stack":   n.Data.StackName,
+			"node":    n.Data.NodeName,
+			"detail":  n.Data.Detail,
+			"error":   n.Data.Error,
 		},
 	})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -569,10 +712,13 @@ type slackPayload struct {
 }
 
 type slackAttachment struct {
-	Color  string       `json:"color"`
-	Fields []slackField `json:"fields,omitempty"`
-	Footer string       `json:"footer"`
-	Ts     int64        `json:"ts"`
+	Color     string       `json:"color"`
+	Title     string       `json:"title,omitempty"`
+	TitleLink string       `json:"title_link,omitempty"`
+	Text      string       `json:"text,omitempty"`
+	Fields    []slackField `json:"fields,omitempty"`
+	Footer    string       `json:"footer"`
+	Ts        int64        `json:"ts"`
 }
 
 type slackField struct {
@@ -581,42 +727,40 @@ type slackField struct {
 	Short bool   `json:"short"`
 }
 
-func sendSlack(ch meshdb.NotificationChannel, event string, data NotificationData) error {
+func footer(n notice) string {
+	if n.Console != "" {
+		return "Meshploy · " + n.Console
+	}
+	return "Meshploy"
+}
+
+func sendSlack(ch meshdb.NotificationChannel, n notice) error {
 	webhookURL, _ := ch.Config["webhook_url"].(string)
 	if webhookURL == "" {
 		return fmt.Errorf("missing config.webhook_url")
 	}
-	title := eventTitle(event)
-	if title == "" {
-		title = event
-	}
-	color := eventSlackColor(event)
-	if color == "" {
-		color = "#6b7280"
-	}
 	var fields []slackField
-	if data.ServiceName != "" {
-		fields = append(fields, slackField{"Service", data.ServiceName, true})
-		fields = append(fields, slackField{"Belongs to", data.origin(), true})
+	for _, f := range n.facts() {
+		fields = append(fields, slackField{f.Label, f.Value, true})
 	}
-	if data.ProjectName != "" {
-		fields = append(fields, slackField{"Project", data.ProjectName, true})
+	var text []string
+	if n.Data.Detail != "" {
+		text = append(text, n.Data.Detail)
 	}
-	if data.NodeName != "" {
-		fields = append(fields, slackField{"Node", data.NodeName, true})
+	if n.Data.Error != "" {
+		text = append(text, "```"+n.Data.Error+"```")
 	}
-	if data.Detail != "" {
-		fields = append(fields, slackField{"Detail", data.Detail, false})
+	att := slackAttachment{
+		Color:  n.colourHex(),
+		Text:   strings.Join(text, "\n"),
+		Fields: fields,
+		Footer: footer(n),
+		Ts:     n.At.Unix(),
 	}
-	return postJSON(webhookURL, slackPayload{
-		Text: title,
-		Attachments: []slackAttachment{{
-			Color:  color,
-			Fields: fields,
-			Footer: "Meshploy",
-			Ts:     time.Now().Unix(),
-		}},
-	})
+	if n.Link != "" {
+		att.Title, att.TitleLink = "View in console", n.Link
+	}
+	return postJSON(webhookURL, slackPayload{Text: n.Title, Attachments: []slackAttachment{att}})
 }
 
 // ── Discord ───────────────────────────────────────────────────────────────────
@@ -626,87 +770,67 @@ type discordPayload struct {
 }
 
 type discordEmbed struct {
-	Title       string        `json:"title"`
-	Description string        `json:"description,omitempty"`
-	Color       int           `json:"color"`
-	Footer      discordFooter `json:"footer"`
-	Timestamp   string        `json:"timestamp"`
+	Title       string         `json:"title"`
+	URL         string         `json:"url,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Color       int            `json:"color"`
+	Fields      []discordField `json:"fields,omitempty"`
+	Footer      discordFooter  `json:"footer"`
+	Timestamp   string         `json:"timestamp"`
+}
+
+type discordField struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline"`
 }
 
 type discordFooter struct {
 	Text string `json:"text"`
 }
 
-func sendDiscord(ch meshdb.NotificationChannel, event string, data NotificationData) error {
+func sendDiscord(ch meshdb.NotificationChannel, n notice) error {
 	webhookURL, _ := ch.Config["webhook_url"].(string)
 	if webhookURL == "" {
 		return fmt.Errorf("missing config.webhook_url")
 	}
-	title := eventTitle(event)
-	if title == "" {
-		title = event
+	var fields []discordField
+	for _, f := range n.facts() {
+		if f.Label == "When" {
+			continue // the embed's timestamp shows it, in the reader's zone
+		}
+		fields = append(fields, discordField{f.Label, f.Value, true})
 	}
-	color := eventDiscordColor(event)
-	var desc string
-	switch {
-	case data.ServiceName != "" && data.ProjectName != "":
-		desc = fmt.Sprintf("**%s** (%s) in **%s**", data.ServiceName, data.origin(), data.ProjectName)
-	case data.NodeName != "":
-		desc = fmt.Sprintf("**%s**", data.NodeName)
-	case data.ServiceName != "":
-		desc = fmt.Sprintf("**%s**", data.ServiceName)
-	case data.Detail != "":
-		desc = data.Detail
+	var desc []string
+	if n.Data.Detail != "" {
+		desc = append(desc, n.Data.Detail)
 	}
-	if data.Detail != "" && data.ServiceName != "" {
-		desc += "\n" + data.Detail
+	if n.Data.Error != "" {
+		desc = append(desc, "```\n"+n.Data.Error+"\n```")
 	}
 	return postJSON(webhookURL, discordPayload{
 		Embeds: []discordEmbed{{
-			Title:       title,
-			Description: desc,
-			Color:       color,
-			Footer:      discordFooter{"Meshploy"},
-			Timestamp:   time.Now().UTC().Format(time.RFC3339),
+			Title:       n.Title,
+			URL:         n.Link,
+			Description: strings.Join(desc, "\n"),
+			Color:       n.colourInt(),
+			Fields:      fields,
+			Footer:      discordFooter{footer(n)},
+			Timestamp:   n.At.UTC().Format(time.RFC3339),
 		}},
 	})
 }
 
 // ── Email ─────────────────────────────────────────────────────────────────────
 
-func sendEmail(ch meshdb.NotificationChannel, event string, data NotificationData, cfg meshdb.OrgEmailConfig) error {
+func sendEmail(ch meshdb.NotificationChannel, n notice, cfg meshdb.OrgEmailConfig) error {
 	to, _ := ch.Config["address"].(string)
 	if to == "" {
 		return fmt.Errorf("missing config.address")
 	}
-	title := eventTitle(event)
-	if title == "" {
-		title = event
-	}
-
-	from := cfg.FromAddress
-	if cfg.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", cfg.FromName, cfg.FromAddress)
-	}
-
-	var msg strings.Builder
-	fmt.Fprintf(&msg, "Subject: [Meshploy] %s\r\n", title)
-	fmt.Fprintf(&msg, "From: %s\r\n", from)
-	fmt.Fprintf(&msg, "To: %s\r\n", to)
-	fmt.Fprintf(&msg, "MIME-Version: 1.0\r\n")
-	fmt.Fprintf(&msg, "Content-Type: text/plain; charset=utf-8\r\n")
-	fmt.Fprintf(&msg, "\r\n%s\r\n", title)
-	if data.ServiceName != "" {
-		fmt.Fprintf(&msg, "\r\nService: %s (%s)", data.ServiceName, data.origin())
-	}
-	if data.ProjectName != "" {
-		fmt.Fprintf(&msg, "\r\nProject: %s", data.ProjectName)
-	}
-	if data.Detail != "" {
-		fmt.Fprintf(&msg, "\r\n%s", data.Detail)
-	}
-	if data.NodeName != "" {
-		fmt.Fprintf(&msg, "\r\nNode: %s", data.NodeName)
+	msg, err := buildEmail(n, cfg, to)
+	if err != nil {
+		return fmt.Errorf("build email: %w", err)
 	}
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
@@ -720,7 +844,6 @@ func sendEmail(ch meshdb.NotificationChannel, event string, data NotificationDat
 	// server offers it; UseTLS makes that upgrade required.
 	implicitTLS := cfg.Port == 465 || cfg.Port == 2465
 	var conn net.Conn
-	var err error
 	if implicitTLS {
 		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsCfg)
 	} else {
@@ -760,7 +883,7 @@ func sendEmail(ch meshdb.NotificationChannel, event string, data NotificationDat
 	if err != nil {
 		return fmt.Errorf("smtp data: %w", err)
 	}
-	if _, err := io.WriteString(w, msg.String()); err != nil {
+	if _, err := w.Write(msg); err != nil {
 		return fmt.Errorf("smtp write: %w", err)
 	}
 	// Close is where the server accepts or rejects the message.

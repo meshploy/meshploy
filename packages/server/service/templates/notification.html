@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}}</title></head>
+<body style="margin:0;padding:0;background:#f4f4f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
+<tr><td align="center" style="padding:32px 16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e4e4e7;border-radius:8px;">
+    <tr><td style="height:4px;background:{{.Colour}};border-radius:8px 8px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+    <tr><td style="padding:28px 32px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <div style="font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#71717a;">Meshploy</div>
+      <h1 style="margin:6px 0 0;font-size:20px;line-height:28px;font-weight:600;color:#18181b;">{{.Title}}</h1>
+      {{if .Summary}}<p style="margin:6px 0 0;font-size:14px;line-height:22px;color:#3f3f46;">{{.Summary}}</p>{{end}}
+    </td></tr>
+    <tr><td style="padding:16px 32px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;">
+        {{range .Facts}}<tr>
+          <td style="padding:8px 0;border-top:1px solid #f4f4f5;color:#71717a;width:96px;vertical-align:top;">{{.Label}}</td>
+          <td style="padding:8px 0;border-top:1px solid #f4f4f5;color:#18181b;vertical-align:top;">{{.Value}}</td>
+        </tr>{{end}}
+      </table>
+    </td></tr>
+    {{if .Error}}<tr><td style="padding:12px 32px 0;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#71717a;margin-bottom:6px;">What it said</div>
+      <pre style="margin:0;padding:12px 14px;background:#fafafa;border:1px solid #e4e4e7;border-radius:6px;font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:18px;color:#b91c1c;white-space:pre-wrap;word-break:break-word;">{{.Error}}</pre>
+    </td></tr>{{end}}
+    {{if .Link}}<tr><td style="padding:24px 32px 4px;">
+      <a href="{{.Link}}" style="display:inline-block;padding:10px 18px;background:#18181b;border-radius:6px;color:#ffffff;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:500;">View in console</a>
+    </td></tr>{{end}}
+    <tr><td style="padding:24px 32px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#a1a1aa;">
+      Sent by Meshploy{{if .Console}} at <a href="{{.ConsoleURL}}" style="color:#71717a;">{{.Console}}</a>{{end}}{{if .Channel}} to the “{{.Channel}}” channel{{end}}.
+      {{if .ManageURL}}<br><a href="{{.ManageURL}}" style="color:#71717a;">Change what this channel receives</a>{{end}}
+    </td></tr>
+  </table>
+</td></tr>
+</table>
+</body>
+</html>

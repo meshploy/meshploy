@@ -92,6 +92,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		hostGatewayIP = c.HostGatewayIP
 	}
 	notif := &NotificationService{db: db}
+	if c != nil {
+		notif.consoleURL = c.FrontendURL
+	}
 	nodes := &NodeService{db: db, gatewayIP: gatewayIP, hostGatewayIP: hostGatewayIP}
 	domains := &DomainService{db: db}
 	auth := &AuthService{db: db}
@@ -270,6 +273,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	go backups.StartScheduler(context.Background())
 	go backups.StartRetentionReaper(context.Background())
+	go notif.StartDeliveryReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
 

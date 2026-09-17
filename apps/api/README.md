@@ -403,7 +403,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | PUT | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Update a notification channel |
 | DELETE | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Delete a notification channel |
 | POST | `/orgs/{orgId}/notification-channels/{id}/test` | ✓ | Send a test notification and record the attempt |
-| GET | `/orgs/{orgId}/notification-channels/{id}/deliveries` | ✓ | A channel's delivery attempts, newest first (`?status=failed`, `?limit=`) |
+| GET | `/orgs/{orgId}/notification-channels/{id}/deliveries` | ✓ | A channel's delivery attempts, newest first (`?status=failed`, `?limit=`, `?before=<timestamp>` to page back) |
 | POST | `/orgs/{orgId}/notification-deliveries/{id}/retry` | ✓ | Send a recorded attempt again |
 
 ### Integrations
