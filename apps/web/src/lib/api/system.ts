@@ -47,8 +47,10 @@ export const NOTICE_HOST_EXPOSURE = "host-exposure"
  * systemd unit on the gateway runs the upgrade and reports progress back.
  */
 export interface UpgradeStatus {
-  /** The updater is on (`sudo meshploy updater start`). */
+  /** The updater is on (`sudo meshploy updater start`) and the host agent is reporting. */
   enabled: boolean
+  /** The updater is on, but the host agent that runs upgrades is not reporting. */
+  agent_stopped?: boolean
   /** The current user may start an upgrade: the server's owner, while enabled. */
   can_upgrade: boolean
   /** A request is queued and the server has not picked it up yet. */

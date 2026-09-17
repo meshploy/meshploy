@@ -334,6 +334,20 @@ function IdleBody({
     return <p className="text-xs text-muted-foreground">Checking this server…</p>
   }
 
+  if (!s.enabled && s.agent_stopped) {
+    return (
+      <div className="space-y-2 text-xs text-muted-foreground">
+        <p>
+          Upgrades from the console are on, but the host agent that runs them is not reporting, so a request would
+          wait with nothing to pick it up. On the gateway, run:
+        </p>
+        <pre className="overflow-x-auto rounded-md bg-muted/50 p-2.5 font-mono text-[11px] text-foreground">
+          {`sudo meshploy host start\nmeshploy host status`}
+        </pre>
+      </div>
+    )
+  }
+
   if (!s.enabled) {
     return (
       <div className="space-y-2 text-xs text-muted-foreground">
