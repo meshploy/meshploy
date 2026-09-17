@@ -57,6 +57,9 @@ const defaults: Record<string, any> = {
     allowed_cidrs: [],
     status: "open",
     last_error: "",
+    published: true,
+    published_changed_at: null,
+    published_changed_by: null,
   },
   "variable-groups": { description: "", system_managed: false, items: [] },
   "config-files": {
@@ -847,6 +850,18 @@ export const workspaceHandlers = [
     jobGroups[jobId] = (jobGroups[jobId] ?? []).filter((id) => id !== params.groupId)
     return ok()
   }),
+  ...(["routes", "tcp-routes"] as const).flatMap((kind) =>
+    (["publish", "pause"] as const).map((action) =>
+      http.post(`${P}/${kind}/:routeId/${action}`, ({ params }) => {
+        const r = find(kind, params.routeId)
+        if (!r) return missing()
+        r.published = action === "publish"
+        r.published_changed_at = now()
+        if (kind === "tcp-routes") r.status = r.published ? "open" : "paused"
+        return json(r)
+      })
+    )
+  ),
   http.get(`${P}/routes/:routeId/targets`, ({ params }) =>
     json(find("routes", params.routeId)?.targets || [])
   ),

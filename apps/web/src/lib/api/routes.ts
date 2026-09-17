@@ -26,6 +26,10 @@ export interface ApiDbRoute {
   custom_domain_verified: boolean
   /** Stack that created this route. null = created directly. */
   stack_id: string | null
+  /** False when paused: kept with its targets, not served. */
+  published: boolean
+  published_changed_at: string | null
+  published_changed_by: string | null
   targets: ApiRouteTarget[]
   created_at: string
   updated_at: string
@@ -107,6 +111,14 @@ export const routes = {
       token
     ),
 
+  /** Serve the hostname again. The proxy picks it up within 30 seconds. */
+  publish: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiDbRoute>(`/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/publish`, { method: "POST" }, token),
+
+  /** Keep the route, answer 404 and issue no certificate. */
+  pause: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiDbRoute>(`/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/pause`, { method: "POST" }, token),
+
 }
 
 /** A TCP route publishes one port on the gateway and forwards it over the mesh. */
@@ -122,8 +134,13 @@ export interface ApiTCPRoute {
   target_port: number
   /** Empty means anyone who can reach the gateway. */
   allowed_cidrs: string[]
-  status: "pending" | "open" | "failed"
+  status: "pending" | "open" | "failed" | "paused"
   last_error: string
+  /** False when paused: kept with its targets, not served. */
+  published: boolean
+  published_changed_at: string | null
+  published_changed_by: string | null
+
   created_at: string
   updated_at: string
 }
@@ -181,4 +198,10 @@ export const tcpRoutes = {
       { method: "DELETE" },
       token
     ),
+
+  publish: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiTCPRoute>(`/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes/${routeId}/publish`, { method: "POST" }, token),
+
+  pause: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiTCPRoute>(`/api/v1/orgs/${orgId}/projects/${projectId}/tcp-routes/${routeId}/pause`, { method: "POST" }, token),
 }

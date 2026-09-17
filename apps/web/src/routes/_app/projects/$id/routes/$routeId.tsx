@@ -19,6 +19,7 @@ import { Section, inputCls } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DetailPageHeader } from "@/components/layout/detail-page-header"
+import { PublishStateBadge, PublishToggle } from "@/components/routes/publish-toggle"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/$routeId")({
@@ -185,6 +186,7 @@ function RouteDetailPage() {
         nameClassName="font-mono"
         badge={
           <>
+            <PublishStateBadge published={route.published} className="h-4 shrink-0" />
             <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${ZONE_STYLES[route.zone] ?? ""}`}>
               {route.zone}
             </Badge>
@@ -199,6 +201,7 @@ function RouteDetailPage() {
           </>
         }
         subtitle={`${targetCount} path rule${targetCount !== 1 ? "s" : ""}`}
+        actions={<PublishToggle kind="http" routeId={route.id} projectId={projectId} published={route.published} label={route.hostname} />}
       />
       <div className="console-page space-y-6">
         <div className="routing-flow"><Globe className="size-6 text-primary" /><div><p className="text-sm font-semibold break-all">{route.hostname}</p><p className="text-xs text-muted-foreground mt-1">{route.zone === "internal" ? "Internal traffic" : "Public traffic"}</p></div><span className="routing-flow-line"/><div><p className="text-sm font-semibold">{targetCount} path rules</p><p className="text-xs text-muted-foreground mt-1">Longest matching path first</p></div></div>

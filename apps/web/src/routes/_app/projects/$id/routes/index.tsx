@@ -9,6 +9,7 @@ import { routes as routesApi, tcpRoutes as tcpRoutesApi, services as servicesApi
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
+import { PublishStateBadge, PublishToggle } from "@/components/routes/publish-toggle"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/")({
   component: RoutesTab,
@@ -39,6 +40,8 @@ function RoutesTab() {
     queryKey: ["tcp-routes", orgId, projectId],
     queryFn: () => tcpRoutesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
+    // Pending until the gateway reports back, usually within 30 seconds.
+    refetchInterval: (q) => q.state.data?.some((r) => r.status === "pending") ? 5000 : false,
   })
   const { data: serviceList = [] } = useQuery({
     queryKey: ["services", orgId, projectId],
@@ -83,14 +86,22 @@ function RoutesTab() {
           </Button>
         </div>
       ) : (
+        <div className="space-y-2">
+          <div>
+            <h2 className="text-sm font-medium">HTTPS routes</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Hostnames the gateway serves with TLS and forwards over the mesh, by path.
+            </p>
+          </div>
         <div className="console-data-table rounded-xl border border-border overflow-hidden">
           <Table>
             <TableHeader className="bg-muted/20">
               <TableRow className="border-b border-border/40 hover:bg-transparent">
-                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[45%]">Hostname</TableHead>
-                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[12%]">Zone</TableHead>
+                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[40%]">Hostname</TableHead>
+                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[10%]">State</TableHead>
+                <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[10%]">Zone</TableHead>
                 <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground">Paths</TableHead>
-                <TableHead aria-label="Actions" className="w-10" />
+                <TableHead aria-label="Actions" className="w-32" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -107,6 +118,7 @@ function RoutesTab() {
             </TableBody>
           </Table>
         </div>
+        </div>
       )}
 
       {tcpList.length > 0 && (
@@ -121,9 +133,10 @@ function RoutesTab() {
             <Table>
               <TableHeader className="bg-muted/20">
                 <TableRow className="border-b border-border/40 hover:bg-transparent">
-                  <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[45%]">Gateway port</TableHead>
-                  <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[12%]">State</TableHead>
+                  <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[40%]">Gateway port</TableHead>
+                  <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground w-[20%]">State</TableHead>
                   <TableHead className="px-4 py-2.5 text-[11px] font-medium text-muted-foreground">Allowed from</TableHead>
+                  <TableHead aria-label="Actions" className="w-32" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -143,6 +156,14 @@ const TCP_STATE_STYLES: Record<string, string> = {
   open:    "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   pending: "bg-muted text-muted-foreground border-border",
   failed:  "bg-destructive/10 text-destructive border-destructive/20",
+  paused:  "bg-muted text-muted-foreground border-border",
+}
+
+const TCP_STATE_LABELS: Record<string, string> = {
+  open: "listening",
+  pending: "opening…",
+  failed: "failed",
+  paused: "paused",
 }
 
 function TCPRouteRow({ route, serviceNames, projectId }: {
@@ -172,7 +193,7 @@ function TCPRouteRow({ route, serviceNames, projectId }: {
       </TableCell>
       <TableCell className="px-4 py-3">
         <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${TCP_STATE_STYLES[route.status] ?? ""}`}>
-          {route.status === "open" ? "listening" : route.status}
+          {!route.published && route.status !== "paused" ? "closing…" : TCP_STATE_LABELS[route.status] ?? route.status}
         </Badge>
         {route.status === "failed" && route.last_error && (
           <p className="text-[11px] text-destructive mt-1">{route.last_error}</p>
@@ -188,6 +209,9 @@ function TCPRouteRow({ route, serviceNames, projectId }: {
             ))}
           </div>
         )}
+      </TableCell>
+      <TableCell className="px-3 py-3 text-right">
+        <PublishToggle kind="tcp" routeId={route.id} projectId={projectId} published={route.published} label={`:${route.gateway_port}`} />
       </TableCell>
     </TableRow>
   )
@@ -212,6 +236,9 @@ function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
           <Link to="/projects/$id/routes/$routeId" params={{ id: projectId, routeId: route.id }} className="font-medium text-foreground font-mono text-sm hover:text-primary">{route.hostname}</Link>
           <StackPill stackId={route.stack_id} stackNames={stackNames} orgId={orgId} projectId={projectId} />
         </div>
+      </TableCell>
+      <TableCell className="px-4 py-3">
+        <PublishStateBadge published={route.published} />
       </TableCell>
       <TableCell className="px-4 py-3">
         <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${ZONE_STYLES[route.zone] ?? "bg-muted text-muted-foreground border-border"}`}>
@@ -244,6 +271,8 @@ function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
         </div>
       </TableCell>
       <TableCell className="px-3 py-3 text-right">
+        <div className="flex items-center justify-end gap-3">
+        <PublishToggle kind="http" routeId={route.id} projectId={projectId} published={route.published} label={route.hostname} />
         <a
           aria-label={`Open ${route.hostname} in a new tab`}
           href={`https://${route.hostname}`}
@@ -254,6 +283,7 @@ function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
+        </div>
       </TableCell>
     </TableRow>
   )
