@@ -335,7 +335,11 @@ const deliveries: DemoRecord[] = (() => {
   return [
     attempt(4, "deploy.failed", false, { service: "api", project: "Storefront" }),
     attempt(38, "node.offline", false, { node: "worker-2" }),
-    attempt(60 * 26, "deploy.failed", true, { service: "worker", project: "Storefront", stack: "shop" }),
+    attempt(60 * 26, "deploy.success", true, { service: "worker", project: "Storefront", stack: "shop" }),
+    // Enough history to need a second page.
+    ...Array.from({ length: 55 }, (_, i) =>
+      attempt(60 * 30 + i * 180, "deploy.success", true, { service: i % 2 ? "api" : "worker", project: "Storefront" })
+    ),
   ]
 })()
 const sendDemo = (channel: DemoRecord, event: string, data: Record<string, string>, extra: Record<string, unknown> = {}) => {
@@ -361,8 +365,15 @@ export const workspaceHandlers = [
     return json(sendDemo(channel, "notification.test", { detail: "Sent from the Meshploy console to check this channel works." }, { test: true }))
   }),
   http.get(`${O}/notification-channels/:channelId/deliveries`, ({ params, request }) => {
-    const failed = new URL(request.url).searchParams.get("status") === "failed"
-    return json(deliveries.filter((d) => d.channel_id === params.channelId && (!failed || !d.success)))
+    const query = new URL(request.url).searchParams
+    const failed = query.get("status") === "failed"
+    const before = query.get("before")
+    const limit = Number(query.get("limit") ?? 50)
+    return json(
+      deliveries
+        .filter((d) => d.channel_id === params.channelId && (!failed || !d.success) && (!before || d.created_at < before))
+        .slice(0, limit)
+    )
   }),
   http.post(`${O}/notification-deliveries/:deliveryId/retry`, ({ params }) => {
     const original = deliveries.find((d) => d.id === params.deliveryId)

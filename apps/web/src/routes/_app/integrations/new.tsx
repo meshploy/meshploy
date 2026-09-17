@@ -943,7 +943,7 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
             className={inputCls}
           />
           <p className="text-[11px] text-muted-foreground/60 mt-1">
-            What the SMTP server authenticates you as. Often not an address: SendGrid uses <code className="font-mono">apikey</code>, others want the full mailbox.
+            Usually the full mailbox, e.g. <code className="font-mono">alerts@yourdomain.com</code>. API-key relays differ: SendGrid uses <code className="font-mono">apikey</code>.
           </p>
         </Field>
 
@@ -964,7 +964,7 @@ function EmailProviderForm({ onSuccess }: { onSuccess: () => void }) {
             className={inputCls}
           />
           <p className="text-[11px] text-muted-foreground/60 mt-1">
-            What recipients see the alert coming from. Most providers require a domain you have verified with them.
+            Mailbox providers such as Zoho, Gmail and Microsoft 365 only send as the signed-in mailbox or one of its aliases; anything else is refused as a relay.
           </p>
         </Field>
 

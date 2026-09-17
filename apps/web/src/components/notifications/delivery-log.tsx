@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, ChevronRight, Loader2, RotateCw, Send } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import {
   notifications as notificationsApi,
   emailConfig as emailConfigApi,
   auth as authApi,
+  DELIVERY_PAGE,
   type ApiNotificationChannel,
   type ApiNotificationDelivery,
 } from "@/lib/api"
@@ -92,11 +93,15 @@ export function DeliveryLogDialog({ channel, open, onOpenChange, focus }: {
 
   useEffect(() => { if (open) setExpanded(focus) }, [open, focus])
 
-  const { data: rows = [], isLoading } = useQuery({
+  const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ["notification-deliveries", channel.id, status],
-    queryFn: () => notificationsApi.deliveries(orgId, channel.id, status, token),
+    queryFn: ({ pageParam }) => notificationsApi.deliveries(orgId, channel.id, status, token, pageParam),
+    initialPageParam: undefined as string | undefined,
+    // A short page is the last one.
+    getNextPageParam: (page) => page.length < DELIVERY_PAGE ? undefined : page[page.length - 1].created_at,
     enabled: open && !!orgId,
   })
+  const rows = data?.pages.flat() ?? []
 
   const retry = useMutation({
     mutationFn: (id: string) => notificationsApi.retry(orgId, id, token),
@@ -117,7 +122,7 @@ export function DeliveryLogDialog({ channel, open, onOpenChange, focus }: {
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Deliveries for {channel.name}</DialogTitle>
-          <DialogDescription>Every attempt from the last 30 days, newest first.</DialogDescription>
+          <DialogDescription>Newest first. Attempts are kept for 30 days.</DialogDescription>
         </DialogHeader>
 
         <SegmentedControl
@@ -181,6 +186,14 @@ export function DeliveryLogDialog({ channel, open, onOpenChange, focus }: {
               </div>
             )
           })}
+          {hasNextPage && (
+            <div className="flex justify-center py-2.5">
+              <Button variant="ghost" size="sm" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+                {isFetchingNextPage && <Loader2 className="size-3 animate-spin" />}
+                Load more
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -50,6 +50,8 @@ export interface ApiNotificationEvent {
   recommended: boolean
 }
 
+export const DELIVERY_PAGE = 50
+
 export const notifications = {
   /** The catalogue, served so the console cannot drift from what is dispatched. */
   events: (token: string) =>
@@ -91,9 +93,10 @@ export const notifications = {
       token
     ),
 
-  deliveries: (orgId: string, id: string, status: "all" | "failed", token: string) =>
+  /** A page of attempts, newest first; `before` pages back from the last one shown. */
+  deliveries: (orgId: string, id: string, status: "all" | "failed", token: string, before?: string) =>
     apiFetch<ApiNotificationDelivery[]>(
-      `/api/v1/orgs/${orgId}/notification-channels/${id}/deliveries?status=${status}`,
+      `/api/v1/orgs/${orgId}/notification-channels/${id}/deliveries?status=${status}&limit=${DELIVERY_PAGE}${before ? `&before=${encodeURIComponent(before)}` : ""}`,
       {},
       token
     ),
