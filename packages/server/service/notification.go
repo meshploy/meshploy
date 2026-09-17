@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/smtp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -509,37 +511,62 @@ func sendEmail(ch meshdb.NotificationChannel, event string, data NotificationDat
 		fmt.Fprintf(&msg, "\r\nNode: %s", data.NodeName)
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	auth := smtp.PlainAuth("", cfg.Username, string(cfg.Password), cfg.Host)
 
-	if cfg.UseTLS {
-		conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: cfg.Host})
-		if err != nil {
-			return fmt.Errorf("tls dial: %w", err)
+	tlsCfg := &tls.Config{ServerName: cfg.Host}
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
+
+	// Port 465 speaks TLS from the first byte. Every other port (587, 25)
+	// starts in plain text and upgrades with STARTTLS, which UseTLS requires.
+	var conn net.Conn
+	var err error
+	if cfg.Port == 465 {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsCfg)
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", addr, err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(time.Minute))
+	client, err := smtp.NewClient(conn, cfg.Host)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("smtp client: %w", err)
+	}
+	defer client.Close()
+	if cfg.UseTLS && cfg.Port != 465 {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("%s does not offer STARTTLS", addr)
 		}
-		client, err := smtp.NewClient(conn, cfg.Host)
-		if err != nil {
-			return fmt.Errorf("smtp client: %w", err)
+		if err := client.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("starttls: %w", err)
 		}
-		defer client.Close()
+	}
+	if cfg.Username != "" {
 		if err := client.Auth(auth); err != nil {
 			return fmt.Errorf("smtp auth: %w", err)
 		}
-		if err := client.Mail(cfg.FromAddress); err != nil {
-			return err
-		}
-		if err := client.Rcpt(to); err != nil {
-			return err
-		}
-		w, err := client.Data()
-		if err != nil {
-			return err
-		}
-		defer w.Close()
-		_, err = io.WriteString(w, msg.String())
-		return err
 	}
-	return smtp.SendMail(addr, auth, cfg.FromAddress, []string{to}, []byte(msg.String()))
+	if err := client.Mail(cfg.FromAddress); err != nil {
+		return fmt.Errorf("smtp from: %w", err)
+	}
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("smtp rcpt: %w", err)
+	}
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data: %w", err)
+	}
+	if _, err := io.WriteString(w, msg.String()); err != nil {
+		return fmt.Errorf("smtp write: %w", err)
+	}
+	// Close is where the server accepts or rejects the message.
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("smtp send: %w", err)
+	}
+	return client.Quit()
 }
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
