@@ -14,6 +14,55 @@ const projectId = seed.DEMO_PROJECT_ID
 export const secondProjectId = "00000000-0000-0000-0000-000000000040"
 export const groupId = "00000000-0000-0000-0000-000000000041"
 export const fileId = "00000000-0000-0000-0000-000000000042"
+// The managed databases beyond the seeded Postgres, one per engine.
+const demoDatabases = (
+  [
+    ["mysql", "8.4", "mysql:8.4", 3306, 13306, "app", "shop"],
+    ["redis", "7", "redis:7", 6379, 16379, "default", "0"],
+    ["mongodb", "7", "mongo:7", 27017, 17017, "app", "catalog"],
+    ["dragonfly", "1.21", "docker.dragonflydb.io/dragonflydb/dragonfly:v1.21", 6379, 16380, "default", "0"],
+    ["clickhouse", "24.8", "clickhouse/clickhouse-server:24.8", 9000, 19001, "default", "events"],
+  ] as const
+).map(([engine, version, image, port, gatewayPort, dbUser, dbName], i) => {
+  const id = `00000000-0000-0000-0000-0000000000d${i}`
+  return {
+    port,
+    gatewayPort,
+    nodePort: 31000 + i,
+    service: {
+      ...seed.demoServiceDb,
+      id,
+      name: engine,
+      image,
+      engine,
+      version,
+      db_user: dbUser,
+      db_name: dbName,
+      ports: [{ id: `pd${i}`, service_id: id, name: engine, port, is_http: false, is_primary: true, is_public: false, node_port: 31000 + i }],
+    },
+  }
+})
+
+function tcpRoute(gatewayPort: number, over: Record<string, unknown>) {
+  return record({
+    organization_id: seed.DEMO_ORG_ID,
+    project_id: projectId,
+    gateway_port: gatewayPort,
+    service_id: null,
+    service_port: 0,
+    node_id: null,
+    target_ip: "100.64.0.1",
+    target_port: 0,
+    allowed_cidrs: [],
+    status: "open",
+    last_error: "",
+    published: true,
+    published_changed_at: null,
+    published_changed_by: null,
+    ...over,
+  })
+}
+
 export const db: Record<string, DemoRecord[]> = {
   projects: [
     seed.demoProject,
@@ -24,7 +73,7 @@ export const db: Record<string, DemoRecord[]> = {
       slug: "experiments",
     },
   ],
-  services: [seed.demoServiceApi, seed.demoServiceWeb, seed.demoServiceDb],
+  services: [seed.demoServiceApi, seed.demoServiceWeb, seed.demoServiceDb, ...demoDatabases.map((d) => d.service)],
   jobs: [seed.demoJob],
   volumes: [{ ...seed.demoVolume, stack_id: null }],
   stacks: [seed.demoStack],
@@ -45,22 +94,18 @@ export const db: Record<string, DemoRecord[]> = {
     },
   ],
   // The demo database, published on the gateway, so a TCP route has a page.
+  // One published port per managed database engine, so each engine's connect
+  // command can be seen, and one to a plain port on a node, which has none.
   "tcp-routes": [
-    record({
-      organization_id: seed.DEMO_ORG_ID,
-      project_id: projectId,
-      gateway_port: 15432,
-      service_id: seed.DEMO_SVC_DB,
-      service_port: 5432,
-      node_id: null,
-      target_ip: "100.64.0.1",
-      target_port: 31432,
-      allowed_cidrs: [],
-      status: "open",
-      last_error: "",
-      published: true,
-      published_changed_at: null,
-      published_changed_by: null,
+    tcpRoute(15432, { service_id: seed.DEMO_SVC_DB, service_port: 5432, target_port: 31432 }),
+    ...demoDatabases.map((d) =>
+      tcpRoute(d.gatewayPort, { service_id: d.service.id, service_port: d.port, target_port: d.nodePort })
+    ),
+    tcpRoute(19000, {
+      node_id: seed.DEMO_NODE_W1,
+      target_ip: "100.64.0.2",
+      target_port: 9000,
+      allowed_cidrs: ["203.0.113.0/24", "10.0.0.0/8"],
     }),
   ],
   "variable-groups": [
