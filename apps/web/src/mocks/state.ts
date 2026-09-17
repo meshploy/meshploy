@@ -246,7 +246,7 @@ export function projectCounts(p: DemoRecord) {
     ...p,
     services_count: count("services", (r) => r.type !== "database"),
     databases_count: count("services", (r) => r.type === "database"),
-    routes_count: count("routes"),
+    routes_count: count("routes") + count("tcp-routes"),
     variables_count: count("variable-groups"),
     jobs_count: count("jobs"),
     stacks_count: count("stacks"),

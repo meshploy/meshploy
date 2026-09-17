@@ -39,8 +39,13 @@ func TestProjectCountsCoverEveryResourceKind(t *testing.T) {
 	require.NoError(t, gdb.Model(&meshdb.VariableGroup{}).Where("project_id = ?", project.ID).Count(&groups).Error)
 	require.GreaterOrEqual(t, groups, int64(1))
 
+	// The Routes tab lists HTTPS routes and TCP ports, so both count.
+	require.NoError(t, gdb.Create(&meshdb.Route{OrganizationID: org.ID, ProjectID: project.ID, Hostname: "app.example.com"}).Error)
+	require.NoError(t, gdb.Create(&meshdb.TCPRoute{OrganizationID: org.ID, ProjectID: project.ID, GatewayPort: 7001, TargetIP: "100.64.0.1", TargetPort: 31000}).Error)
+
 	got, err := svcs.Projects.GetWithCounts(ctx, project.ID)
 	require.NoError(t, err)
+	require.Equal(t, 2, got.RoutesCount)
 	require.Equal(t, 2, got.ServicesCount)
 	require.Equal(t, 1, got.DatabasesCount)
 	require.Equal(t, int(groups), got.VariablesCount)

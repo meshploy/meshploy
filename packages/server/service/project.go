@@ -101,9 +101,13 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID, op
 			GROUP BY project_id
 		) s ON s.project_id = p.id
 		LEFT JOIN (
+			-- The Routes tab lists HTTPS routes and TCP ports together.
 			SELECT project_id, COUNT(*) AS routes_count
-			FROM routes
-			WHERE project_id IN ?
+			FROM (
+				SELECT project_id FROM routes WHERE project_id IN ?
+				UNION ALL
+				SELECT project_id FROM tcp_routes WHERE project_id IN ?
+			) all_routes
 			GROUP BY project_id
 		) r ON r.project_id = p.id
 		LEFT JOIN (
@@ -137,7 +141,7 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID, op
 			GROUP BY project_id
 		) cf ON cf.project_id = p.id
 		WHERE p.id IN ?
-	`, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts).Error; err != nil {
+	`, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs, projectIDs).Scan(&counts).Error; err != nil {
 		// Returned, not dropped: an ignored error here once showed every
 		// project as empty after the secrets table was retired.
 		return nil, err
@@ -176,13 +180,14 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 			? AS project_id,
 			(SELECT COUNT(*) FROM services s WHERE s.project_id = ? AND s.type = 'application') AS services_count,
 			(SELECT COUNT(*) FROM services s WHERE s.project_id = ? AND s.type = 'database')    AS databases_count,
-			(SELECT COUNT(*) FROM routes r   WHERE r.project_id   = ?) AS routes_count,
+			(SELECT COUNT(*) FROM routes r   WHERE r.project_id   = ?)
+			+ (SELECT COUNT(*) FROM tcp_routes tr WHERE tr.project_id = ?) AS routes_count,
 			(SELECT COUNT(*) FROM variable_groups vg WHERE vg.project_id = ?) AS variables_count,
 			(SELECT COUNT(*) FROM jobs j     WHERE j.project_id   = ?) AS jobs_count,
 			(SELECT COUNT(*) FROM stacks st  WHERE st.project_id  = ?) AS stacks_count,
 			(SELECT COUNT(*) FROM volumes v  WHERE v.project_id   = ?) AS volumes_count,
 			(SELECT COUNT(*) FROM config_files cf WHERE cf.project_id = ?) AS config_files_count
-	`, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID).Scan(&counts).Error; err != nil {
+	`, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID, projectID).Scan(&counts).Error; err != nil {
 		return nil, err
 	}
 	result := &ProjectWithCounts{Project: *project}
