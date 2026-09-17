@@ -517,11 +517,13 @@ func sendEmail(ch meshdb.NotificationChannel, event string, data NotificationDat
 	tlsCfg := &tls.Config{ServerName: cfg.Host}
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
 
-	// Port 465 speaks TLS from the first byte. Every other port (587, 25)
-	// starts in plain text and upgrades with STARTTLS, which UseTLS requires.
+	// Ports 465 and 2465 speak TLS from the first byte. Every other port (587,
+	// 2525, 25) starts in plain text and upgrades with STARTTLS whenever the
+	// server offers it; UseTLS makes that upgrade required.
+	implicitTLS := cfg.Port == 465 || cfg.Port == 2465
 	var conn net.Conn
 	var err error
-	if cfg.Port == 465 {
+	if implicitTLS {
 		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsCfg)
 	} else {
 		conn, err = dialer.Dial("tcp", addr)
@@ -536,12 +538,13 @@ func sendEmail(ch meshdb.NotificationChannel, event string, data NotificationDat
 		return fmt.Errorf("smtp client: %w", err)
 	}
 	defer client.Close()
-	if cfg.UseTLS && cfg.Port != 465 {
-		if ok, _ := client.Extension("STARTTLS"); !ok {
+	if !implicitTLS {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(tlsCfg); err != nil {
+				return fmt.Errorf("starttls: %w", err)
+			}
+		} else if cfg.UseTLS {
 			return fmt.Errorf("%s does not offer STARTTLS", addr)
-		}
-		if err := client.StartTLS(tlsCfg); err != nil {
-			return fmt.Errorf("starttls: %w", err)
 		}
 	}
 	if cfg.Username != "" {
