@@ -56,6 +56,16 @@ func (h *Handler) registerEmailConfigRoutes(api huma.API) {
 		Tags:        []string{"Email"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DeleteEmailConfig)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "test-email-config",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/email-config/test",
+		Summary:     "Send a test email through the org SMTP configuration",
+		Description: "A failed send is a result, not an error: the body says what went wrong.",
+		Tags:        []string{"Email"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.TestEmailConfig)
 }
 
 func (h *Handler) GetEmailConfig(ctx context.Context, input *EmailConfigOrgInput) (*EmailConfigOutput, error) {
@@ -96,4 +106,32 @@ func (h *Handler) DeleteEmailConfig(ctx context.Context, input *EmailConfigOrgIn
 		return nil, err
 	}
 	return nil, h.svc.EmailConfig.Delete(ctx, orgID)
+}
+
+type TestEmailConfigInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		To string `json:"to" minLength:"3"`
+	}
+}
+
+type TestResultOutput struct {
+	Body struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+}
+
+func (h *Handler) TestEmailConfig(ctx context.Context, input *TestEmailConfigInput) (*TestResultOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	out := &TestResultOutput{}
+	if err := h.svc.Notifications.TestEmailProvider(ctx, orgID, input.Body.To); err != nil {
+		out.Body.Error = err.Error()
+	} else {
+		out.Body.Success = true
+	}
+	return out, nil
 }

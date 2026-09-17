@@ -396,11 +396,15 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | GET | `/orgs/{orgId}/email-config` | ✓ | Get the org SMTP configuration |
 | PUT | `/orgs/{orgId}/email-config` | ✓ | Create or update the org SMTP configuration |
 | DELETE | `/orgs/{orgId}/email-config` | ✓ | Remove the org SMTP configuration |
+| POST | `/orgs/{orgId}/email-config/test` | ✓ | Send a test email to one address; a failed send returns `success: false` and the error |
 | GET | `/notification-events` | ✓ | List the events a notification channel can subscribe to |
 | GET | `/orgs/{orgId}/notification-channels` | ✓ | List notification channels |
 | POST | `/orgs/{orgId}/notification-channels` | ✓ | Create a notification channel |
 | PUT | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Update a notification channel |
 | DELETE | `/orgs/{orgId}/notification-channels/{id}` | ✓ | Delete a notification channel |
+| POST | `/orgs/{orgId}/notification-channels/{id}/test` | ✓ | Send a test notification and record the attempt |
+| GET | `/orgs/{orgId}/notification-channels/{id}/deliveries` | ✓ | A channel's delivery attempts, newest first (`?status=failed`, `?limit=`) |
+| POST | `/orgs/{orgId}/notification-deliveries/{id}/retry` | ✓ | Send a recorded attempt again |
 
 ### Integrations
 

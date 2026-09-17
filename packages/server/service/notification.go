@@ -8,12 +8,15 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/mail"
 	"net/smtp"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,7 +53,10 @@ func (s *NotificationService) List(ctx context.Context, orgID uuid.UUID) ([]mesh
 		Where("organization_id = ?", orgID).
 		Order("created_at asc").
 		Find(&rows).Error
-	return rows, err
+	if err != nil {
+		return nil, err
+	}
+	return rows, s.withStatus(ctx, rows)
 }
 
 func (s *NotificationService) Create(ctx context.Context, orgID uuid.UUID, in CreateNotificationInput) (*meshdb.NotificationChannel, error) {
@@ -126,6 +132,9 @@ func validateNotificationConfig(t meshdb.NotificationChannelType, cfg map[string
 		if cfg["address"] == "" {
 			return fmt.Errorf("email channel requires config.address")
 		}
+		if err := validRecipient(cfg["address"]); err != nil {
+			return err
+		}
 	case meshdb.NotificationWebhook:
 		if cfg["url"] == "" {
 			return fmt.Errorf("webhook channel requires config.url")
@@ -142,16 +151,16 @@ func validateNotificationConfig(t meshdb.NotificationChannelType, cfg map[string
 
 // NotificationData carries event context. Populate whichever fields are relevant.
 type NotificationData struct {
-	ServiceName string
-	ProjectName string
-	NodeName    string
+	ServiceName string `json:"service,omitempty"`
+	ProjectName string `json:"project,omitempty"`
+	NodeName    string `json:"node,omitempty"`
 	// StackName names the stack a service belongs to, so an alert says what
 	// the thing is without a second lookup. Empty for a standalone service,
 	// which the senders render as such.
-	StackName string
+	StackName string `json:"stack,omitempty"`
 	// Detail is one line of context the event carries: who joined, what was
 	// created. Used where a service and project name say nothing.
-	Detail string
+	Detail string `json:"detail,omitempty"`
 }
 
 // ForService builds the payload for an event about a service, naming the stack
@@ -189,17 +198,203 @@ func (s *NotificationService) Dispatch(ctx context.Context, orgID uuid.UUID, eve
 		}
 
 		if ch.Type == meshdb.NotificationEmail && !emailCfgLoaded {
-			var cfg meshdb.OrgEmailConfig
-			if s.db.WithContext(ctx).Where("organization_id = ?", orgID).First(&cfg).Error == nil {
-				emailCfg = &cfg
-			}
+			emailCfg = s.emailConfig(ctx, orgID)
 			emailCfgLoaded = true
 		}
 
-		if err := sendNotification(ch, event, data, emailCfg); err != nil {
-			log.Printf("notification %q (%s): %v", ch.Name, ch.Type, err)
+		s.attempt(ctx, ch, event, data, emailCfg, false, nil)
+	}
+}
+
+// ─── Delivery log ─────────────────────────────────────────────────────────────
+
+// TestEvent is what "Send test" sends. It is not in the catalogue, so nothing
+// can subscribe to it.
+const TestEvent = "notification.test"
+
+const (
+	deliveryRetention = 30 * 24 * time.Hour
+	maxDeliveryError  = 2000
+	// streakWindow bounds how far back a failing streak is counted.
+	streakWindow = 50
+)
+
+func (s *NotificationService) emailConfig(ctx context.Context, orgID uuid.UUID) *meshdb.OrgEmailConfig {
+	var cfg meshdb.OrgEmailConfig
+	if s.db.WithContext(ctx).Where("organization_id = ?", orgID).First(&cfg).Error != nil {
+		return nil
+	}
+	return &cfg
+}
+
+// attempt sends one event to one channel and records how it went. The record
+// is written even when the caller's request has ended, since a dispatch often
+// outlives the request that caused it.
+func (s *NotificationService) attempt(ctx context.Context, ch meshdb.NotificationChannel, event string, data NotificationData, emailCfg *meshdb.OrgEmailConfig, test bool, retryOf *uuid.UUID) *meshdb.NotificationDelivery {
+	err := sendNotification(ch, event, data, emailCfg)
+	row := meshdb.NotificationDelivery{
+		OrganizationID: ch.OrganizationID,
+		ChannelID:      ch.ID,
+		Event:          event,
+		Data:           data.record(),
+		Success:        err == nil,
+		Test:           test,
+		RetryOf:        retryOf,
+	}
+	if err != nil {
+		row.Error = deliveryError(err)
+		log.Printf("notification %q (%s): %s", ch.Name, ch.Type, row.Error)
+	}
+	conn := s.db.WithContext(context.WithoutCancel(ctx))
+	if err := conn.Create(&row).Error; err != nil {
+		log.Printf("notification %q: record delivery: %v", ch.Name, err)
+	}
+	conn.Where("channel_id = ? AND created_at < ?", ch.ID, time.Now().Add(-deliveryRetention)).
+		Delete(&meshdb.NotificationDelivery{})
+	return &row
+}
+
+// deliveryError is the error as stored and shown. An HTTP client error quotes
+// the URL it failed on, and a Slack or Discord webhook URL is the credential
+// itself, so the URL is left out.
+func deliveryError(err error) string {
+	var ue *url.Error
+	msg := err.Error()
+	if errors.As(err, &ue) {
+		msg = fmt.Sprintf("%s: %v", ue.Op, ue.Err)
+	}
+	if len(msg) > maxDeliveryError {
+		msg = msg[:maxDeliveryError]
+	}
+	return msg
+}
+
+func (d NotificationData) record() meshdb.JSONObject {
+	out := meshdb.JSONObject{}
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+
+func dataFromRecord(o meshdb.JSONObject) NotificationData {
+	var d NotificationData
+	b, _ := json.Marshal(o)
+	_ = json.Unmarshal(b, &d)
+	return d
+}
+
+// withStatus fills in each channel's latest attempt and failing streak.
+func (s *NotificationService) withStatus(ctx context.Context, channels []meshdb.NotificationChannel) error {
+	for i := range channels {
+		var recent []meshdb.NotificationDelivery
+		if err := s.db.WithContext(ctx).
+			Where("channel_id = ?", channels[i].ID).
+			Order("created_at desc").
+			Limit(streakWindow).
+			Find(&recent).Error; err != nil {
+			return err
+		}
+		if len(recent) == 0 {
+			continue
+		}
+		channels[i].LastDelivery = &recent[0]
+		for _, d := range recent {
+			if d.Success {
+				break
+			}
+			channels[i].FailingStreak++
 		}
 	}
+	return nil
+}
+
+func (s *NotificationService) channel(ctx context.Context, orgID, id uuid.UUID) (*meshdb.NotificationChannel, error) {
+	var ch meshdb.NotificationChannel
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND organization_id = ?", id, orgID).
+		First(&ch).Error; err != nil {
+		return nil, err
+	}
+	return &ch, nil
+}
+
+var testData = NotificationData{Detail: "Sent from the Meshploy console to check this channel works."}
+
+// Test sends a test notification to a channel, paused or not, and records it.
+func (s *NotificationService) Test(ctx context.Context, orgID, id uuid.UUID) (*meshdb.NotificationDelivery, error) {
+	ch, err := s.channel(ctx, orgID, id)
+	if err != nil {
+		return nil, err
+	}
+	var emailCfg *meshdb.OrgEmailConfig
+	if ch.Type == meshdb.NotificationEmail {
+		emailCfg = s.emailConfig(ctx, orgID)
+	}
+	return s.attempt(ctx, *ch, TestEvent, testData, emailCfg, true, nil), nil
+}
+
+// TestEmailProvider sends a test email through the org's provider to one
+// address. Nothing is recorded: there is no channel to record it against.
+func (s *NotificationService) TestEmailProvider(ctx context.Context, orgID uuid.UUID, to string) error {
+	if err := validRecipient(to); err != nil {
+		return err
+	}
+	cfg := s.emailConfig(ctx, orgID)
+	if cfg == nil {
+		return fmt.Errorf("no email provider configured for this org")
+	}
+	ch := meshdb.NotificationChannel{Type: meshdb.NotificationEmail, Config: meshdb.JSONObject{"address": to}}
+	if err := sendEmail(ch, TestEvent, testData, *cfg); err != nil {
+		return errors.New(deliveryError(err))
+	}
+	return nil
+}
+
+// Deliveries lists a channel's attempts, newest first.
+func (s *NotificationService) Deliveries(ctx context.Context, orgID, channelID uuid.UUID, failedOnly bool, limit int) ([]meshdb.NotificationDelivery, error) {
+	if _, err := s.channel(ctx, orgID, channelID); err != nil {
+		return nil, err
+	}
+	rows := make([]meshdb.NotificationDelivery, 0)
+	q := s.db.WithContext(ctx).Where("channel_id = ?", channelID)
+	if failedOnly {
+		q = q.Where("success = false")
+	}
+	err := q.Order("created_at desc").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+// Retry sends a recorded attempt's event to its channel again, with the data
+// it carried then, and records the new attempt.
+func (s *NotificationService) Retry(ctx context.Context, orgID, deliveryID uuid.UUID) (*meshdb.NotificationDelivery, error) {
+	var d meshdb.NotificationDelivery
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND organization_id = ?", deliveryID, orgID).
+		First(&d).Error; err != nil {
+		return nil, err
+	}
+	ch, err := s.channel(ctx, orgID, d.ChannelID)
+	if err != nil {
+		return nil, err
+	}
+	var emailCfg *meshdb.OrgEmailConfig
+	if ch.Type == meshdb.NotificationEmail {
+		emailCfg = s.emailConfig(ctx, orgID)
+	}
+	return s.attempt(ctx, *ch, d.Event, dataFromRecord(d.Data), emailCfg, d.Test, &d.ID), nil
+}
+
+// validRecipient refuses anything but one plain address. It is written into
+// the To header, so a line break would let it add headers of its own.
+func validRecipient(addr string) error {
+	if strings.ContainsAny(addr, "\r\n") {
+		return fmt.Errorf("invalid email address")
+	}
+	parsed, err := mail.ParseAddress(addr)
+	if err != nil || parsed.Address != addr {
+		return fmt.Errorf("invalid email address %q", addr)
+	}
+	return nil
 }
 
 // ─── Senders ──────────────────────────────────────────────────────────────────
@@ -266,6 +461,9 @@ func eventDef(event string) (EventDef, bool) {
 }
 
 func eventTitle(event string) string {
+	if event == TestEvent {
+		return "Test notification"
+	}
 	if d, ok := eventDef(event); ok {
 		return d.Title
 	}
@@ -352,7 +550,7 @@ func sendWebhook(ch meshdb.NotificationChannel, event string, data NotificationD
 		mac.Write(body)
 		req.Header.Set("X-Meshploy-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := notifyHTTP.Do(req)
 	if err != nil {
 		return err
 	}
@@ -574,12 +772,16 @@ func sendEmail(ch meshdb.NotificationChannel, event string, data NotificationDat
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
+// notifyHTTP bounds a webhook call, so a receiver that never answers cannot
+// hold a dispatch, or a "Send test" request, open indefinitely.
+var notifyHTTP = &http.Client{Timeout: 15 * time.Second}
+
 func postJSON(url string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body)) //nolint:noctx
+	resp, err := notifyHTTP.Post(url, "application/json", bytes.NewReader(body)) //nolint:noctx
 	if err != nil {
 		return err
 	}

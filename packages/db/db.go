@@ -117,6 +117,7 @@ func Migrate(db *gorm.DB) error {
 		&BackupConfig{},
 		&SystemBackupConfig{},
 		&NotificationChannel{},
+		&NotificationDelivery{},
 		&OrgEmailConfig{},
 
 		// Invitations
@@ -168,6 +169,9 @@ func applyConstraints(db *gorm.DB) error {
 		// Nor can a job
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_job_variable_group
 		 ON job_variable_groups (job_id, group_id)`,
+		// A channel's delivery log reads newest first
+		`CREATE INDEX IF NOT EXISTS idx_delivery_channel_time
+		 ON notification_deliveries (channel_id, created_at DESC)`,
 		// Only one system-managed group per service
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_variable_group_service
 		 ON variable_groups (service_id)
@@ -277,6 +281,8 @@ func applyConstraints(db *gorm.DB) error {
 		{"registry_integrations", "organization_id", "organizations", "CASCADE"},
 		{"git_integrations", "organization_id", "organizations", "CASCADE"},
 		{"notification_channels", "organization_id", "organizations", "CASCADE"},
+		{"notification_deliveries", "organization_id", "organizations", "CASCADE"},
+		{"notification_deliveries", "channel_id", "notification_channels", "CASCADE"},
 		{"domains", "organization_id", "organizations", "CASCADE"},
 		{"resource_permissions", "organization_id", "organizations", "CASCADE"},
 		// Project → children CASCADE

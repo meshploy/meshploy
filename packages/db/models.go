@@ -1216,10 +1216,35 @@ type NotificationChannel struct {
 	Events         StringArray             `gorm:"type:jsonb;not null;default:'[]'" json:"events"`
 	Enabled        bool                    `gorm:"default:true"              json:"enabled"`
 
+	// LastDelivery and FailingStreak are computed (not stored): the latest
+	// attempt, and how many attempts in a row have failed since the last one
+	// that worked.
+	LastDelivery  *NotificationDelivery `gorm:"-" json:"last_delivery"`
+	FailingStreak int                   `gorm:"-" json:"failing_streak"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }
 
 func (NotificationChannel) TableName() string { return "notification_channels" }
+
+// NotificationDelivery is one attempt to send an event to a channel: a
+// dispatch, a test, or a retry. It keeps the event's data so a failed attempt
+// can be sent again, and never the channel's config, so no webhook URL or
+// address is copied. Pruned after 30 days.
+type NotificationDelivery struct {
+	Base
+	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index"                       json:"organization_id"`
+	ChannelID      uuid.UUID  `gorm:"type:uuid;not null"                            json:"channel_id"`
+	Event          string     `gorm:"not null"                                       json:"event"`
+	Data           JSONObject `gorm:"type:jsonb;not null;default:'{}'"               json:"data"`
+	Success        bool       `gorm:"not null"                                       json:"success"`
+	Error          string     `gorm:"type:text;not null;default:''"                  json:"error"`
+	Test           bool       `gorm:"not null;default:false"                         json:"test"`
+	// RetryOf is the attempt this one sent again, when it is a retry.
+	RetryOf *uuid.UUID `gorm:"type:uuid" json:"retry_of,omitempty"`
+}
+
+func (NotificationDelivery) TableName() string { return "notification_deliveries" }
 
 // OrgEmailConfig stores the outbound SMTP provider for an org (singleton).
 // Email notification channels reference this config when sending alerts.

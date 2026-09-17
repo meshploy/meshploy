@@ -9,7 +9,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | File | Purpose |
 |---|---|
 | `db.go` | `Open()`, `Migrate()`, `FromEnv()`, `RegisterMigration()` |
-| `models.go` | All 41 CE table definitions |
+| `models.go` | All 44 CE table definitions |
 | `types.go` | Custom JSONB types: `EnvVarsMap`, `JSONObject`, `StringArray` |
 | `crypto.go` | `EncryptedString` — AES-256-GCM GORM type |
 
@@ -102,6 +102,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `backup_configs` | Scheduled DB backup config (service-scoped) |
 | `system_backup_configs` | Org-wide system backup config |
 | `notification_channels` | Slack / Discord / webhook / email event routing |
+| `notification_deliveries` | One row per attempt to send an event to a channel (success, error, test, retry); pruned after 30 days |
 | `org_email_configs` | SMTP credentials per org |
 
 ### Templates

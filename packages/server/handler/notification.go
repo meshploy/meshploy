@@ -122,4 +122,71 @@ func (h *Handler) registerNotificationRoutes(api huma.API) {
 		}
 		return nil, h.svc.Notifications.Delete(ctx, id, orgID)
 	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "test-notification-channel",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/notification-channels/{id}/test",
+		Summary:     "Send a test notification to a channel",
+		Description: "Sends at once and records the attempt. A failed send is a result, not an error: the body says what went wrong.",
+		Tags:        []string{"notifications"},
+	}, func(ctx context.Context, in *struct {
+		OrgID string `path:"orgId"`
+		ID    string `path:"id"`
+	}) (*struct{ Body *meshdb.NotificationDelivery }, error) {
+		_, orgID, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		row, err := h.svc.Notifications.Test(ctx, orgID, id)
+		if err != nil {
+			return nil, notFound(err)
+		}
+		return &struct{ Body *meshdb.NotificationDelivery }{Body: row}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-notification-deliveries",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/notification-channels/{id}/deliveries",
+		Summary:     "List a channel's delivery attempts, newest first",
+		Tags:        []string{"notifications"},
+	}, func(ctx context.Context, in *struct {
+		OrgID  string `path:"orgId"`
+		ID     string `path:"id"`
+		Status string `query:"status" enum:"all,failed" default:"all"`
+		Limit  int    `query:"limit" minimum:"1" maximum:"200" default:"50"`
+	}) (*struct{ Body []meshdb.NotificationDelivery }, error) {
+		_, orgID, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.svc.Notifications.Deliveries(ctx, orgID, id, in.Status == "failed", in.Limit)
+		if err != nil {
+			return nil, notFound(err)
+		}
+		return &struct{ Body []meshdb.NotificationDelivery }{Body: rows}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "retry-notification-delivery",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/notification-deliveries/{id}/retry",
+		Summary:     "Send a recorded delivery again",
+		Description: "Resends the event with the data it carried, to the channel as it is configured now, and records a new attempt.",
+		Tags:        []string{"notifications"},
+	}, func(ctx context.Context, in *struct {
+		OrgID string `path:"orgId"`
+		ID    string `path:"id"`
+	}) (*struct{ Body *meshdb.NotificationDelivery }, error) {
+		_, orgID, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		row, err := h.svc.Notifications.Retry(ctx, orgID, id)
+		if err != nil {
+			return nil, notFound(err)
+		}
+		return &struct{ Body *meshdb.NotificationDelivery }{Body: row}, nil
+	})
 }
