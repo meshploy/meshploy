@@ -12,25 +12,38 @@ const TOOL_NAMES: Record<string, string> = { ufw: "UFW", firewalld: "firewalld",
 const PROVIDER_NOTE = "A firewall or security group at the hosting provider has to allow the port too, and the gateway cannot see it."
 
 /**
- * The short form for a table row, beside the state. "blocked" when the host
- * agent says the gateway's own firewall drops the port; otherwise a reminder
- * that the hosting provider's firewall may.
+ * The short form for a table row, beside the state: only when the host firewall
+ * blocks the port, restricts it, or could not be checked. An open port shows
+ * nothing here; the route's page still reminds about the provider's firewall.
  */
 export function FirewallMarker({ port, verdict }: { port: number; verdict?: ApiPortFirewall }) {
-  const blocked = verdict?.state === "blocked"
+  const state = verdict?.state ?? "unknown"
+  if (state === "open") return null
+  const tool = TOOL_NAMES[verdict?.tool ?? ""] ?? "host"
+  const { label, cls, tip } = {
+    blocked: {
+      label: "blocked",
+      cls: "text-destructive",
+      tip: `The gateway's ${tool} firewall blocks port ${port}. Open the route for the command that allows it.`,
+    },
+    restricted: {
+      label: "restricted",
+      cls: "text-amber-400",
+      tip: `The gateway's ${tool} firewall allows port ${port} only from ${(verdict?.sources ?? []).join(", ")}.`,
+    },
+    unknown: {
+      label: "unchecked",
+      cls: "text-amber-400",
+      tip: `The gateway's firewall could not be checked${verdict?.reason ? `: ${verdict.reason}` : ""}.`,
+    },
+  }[state]
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={<span className={cn("inline-flex items-center gap-1 text-[11px] cursor-default", blocked ? "text-destructive" : "text-amber-400")} />}
-      >
+      <TooltipTrigger render={<span className={cn("inline-flex items-center gap-1 text-[11px] cursor-default", cls)} />}>
         <AlertTriangle className="h-3 w-3" />
-        {blocked ? "blocked" : "firewall"}
+        {label}
       </TooltipTrigger>
-      <TooltipContent>
-        {blocked
-          ? `The gateway's ${TOOL_NAMES[verdict!.tool ?? ""] ?? "host"} firewall blocks port ${port}. Open the route for the command that allows it.`
-          : `A firewall on the gateway or at the hosting provider may block port ${port}. Open the route to see what to check.`}
-      </TooltipContent>
+      <TooltipContent>{tip}</TooltipContent>
     </Tooltip>
   )
 }
