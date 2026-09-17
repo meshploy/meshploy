@@ -7,6 +7,7 @@
 package hostagent
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -105,6 +106,8 @@ func ReadState(dir string) (*Agent, *Firewall, error) {
 	}
 	return agent, fw, nil
 }
+
+func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
 
 func readJSON[T any](path string) (*T, error) {
 	info, err := os.Lstat(path)

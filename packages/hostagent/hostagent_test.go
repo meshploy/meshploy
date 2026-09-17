@@ -106,7 +106,7 @@ OpenSSH                    ALLOW IN    Anywhere
 		{60500, PortOpen},
 		{443, PortOpen},
 		{3306, PortBlocked}, // the deny comes first, and ufw stops at the first match
-		{22, PortOpen},     // OpenSSH resolved
+		{22, PortOpen},      // OpenSSH resolved
 		{9000, PortBlocked}, // allowed outgoing only
 	}
 	for _, c := range cases {

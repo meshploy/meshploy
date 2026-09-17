@@ -137,7 +137,7 @@ Supported: Dokploy schema levels 133 to 196 (v0.26.1 to v0.30.6); anything else 
 
 ### `meshploy host`
 
-The host agent: a systemd service on the gateway that reports what the API, in its container, cannot see. It listens on nothing; the API reads its reports from `/var/lib/meshploy/host/state`, mounted read-only. Today it reports the host firewall, so a TCP route can say whether the gateway blocks its port. `install.sh` and `server-upgrade` start it.
+The host agent: a systemd service on the gateway that reports what the API, in its container, cannot see. It listens on nothing; the API reads its reports from `/var/lib/meshploy/host/state`, mounted read-only. It reports the host firewall, so a TCP route can say whether the gateway blocks its port; starts the upgrades the console asks for; and runs requests the API drops into `/var/lib/meshploy/host/inbox`, today a Dokploy `detect` or `plan`, writing the result under its state directory. `install.sh` and `server-upgrade` start it.
 
 | Command | Description |
 |---|---|

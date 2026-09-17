@@ -33,6 +33,27 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 	}, h.GetHostAgent)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-dokploy-migration",
+		Method:      "GET",
+		Path:        "/api/v1/system/migrate/dokploy",
+		Summary:     "The latest Dokploy detection and plan from the host agent, and their requests",
+		Description: "Instance owner only: the plan names every app, domain and path on the server.",
+		Tags:        []string{"System"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetDokployMigration)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "request-dokploy-migration",
+		Method:        "POST",
+		Path:          "/api/v1/system/migrate/dokploy/{kind}",
+		Summary:       "Ask the host agent to detect Dokploy or plan moving it",
+		Description:   "Read-only on the host. Queues the request; follow it with GET /system/migrate/dokploy.",
+		Tags:          []string{"System"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 202,
+	}, h.RequestDokployMigration)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "check-for-updates",
 		Method:      "POST",
 		Path:        "/api/v1/system/check-updates",
@@ -131,6 +152,42 @@ func (h *Handler) GetVersion(ctx context.Context, _ *struct{}) (*VersionInfoOutp
 	}
 	info := h.svc.System.GetVersionInfo(ctx)
 	return &VersionInfoOutput{Body: &info}, nil
+}
+
+func (h *Handler) GetDokployMigration(ctx context.Context, _ *struct{}) (*struct{ Body service.MigrationState }, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	st, err := h.svc.System.GetMigrationState(ctx, userID)
+	if errors.Is(err, service.ErrMigrationNotOwner) {
+		return nil, huma.Error403Forbidden(err.Error())
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &struct{ Body service.MigrationState }{Body: st}, nil
+}
+
+func (h *Handler) RequestDokployMigration(ctx context.Context, in *struct {
+	Kind string `path:"kind" enum:"detect,plan"`
+}) (*struct{ Body service.HostRequestState }, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	st, err := h.svc.System.RequestMigration(ctx, userID, in.Kind)
+	switch {
+	case errors.Is(err, service.ErrMigrationNotOwner):
+		return nil, huma.Error403Forbidden(err.Error())
+	case errors.Is(err, service.ErrHostAgentNotReporting):
+		return nil, huma.Error409Conflict(err.Error())
+	case errors.Is(err, service.ErrUnknownHostRequest):
+		return nil, huma.Error404NotFound(err.Error())
+	case err != nil:
+		return nil, err
+	}
+	return &struct{ Body service.HostRequestState }{Body: st}, nil
 }
 
 func (h *Handler) GetHostAgent(ctx context.Context, _ *struct{}) (*struct{ Body service.HostAgentStatus }, error) {

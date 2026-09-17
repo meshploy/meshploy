@@ -148,6 +148,9 @@ services:
       # What the host agent reports about this gateway, such as its firewall.
       # Read-only: the agent writes, the API reads. See `meshploy host`.
       - /var/lib/meshploy/host/state:/var/lib/meshploy/host/state:ro,z
+      # Requests for the agent, such as planning a migration. The API may only
+      # drop a request here; the agent checks and runs it.
+      - /var/lib/meshploy/host/inbox:/var/lib/meshploy/host/inbox:z
     depends_on:
       postgres:
         condition: service_healthy

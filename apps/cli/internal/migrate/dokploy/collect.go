@@ -12,9 +12,19 @@ import (
 // traefikDir is where Dokploy keeps Traefik's configuration. A var for tests.
 var traefikDir = "/etc/dokploy/traefik/dynamic"
 
+// CollectDetect reads what detection shows: Dokploy's version and schema, the
+// edge and the resources, without reading Dokploy's rows.
+func CollectDetect(r migrate.Runner) (Source, error) {
+	return collect(r, false)
+}
+
 // Collect reads everything the plan needs from this host. Detection is filled
 // even when the rest cannot be read, so the reason can be shown.
 func Collect(r migrate.Runner) (Source, error) {
+	return collect(r, true)
+}
+
+func collect(r migrate.Runner, withRows bool) (Source, error) {
 	var src Source
 	docker, err := migrate.ReadDocker(r)
 	if err != nil {
@@ -39,7 +49,7 @@ func Collect(r migrate.Runner) (Source, error) {
 	if info, err := os.Stat(filepath.Join(traefikDir, "acme.json")); err == nil {
 		src.AcmeBytes = info.Size()
 	}
-	if !src.Detection.Supported {
+	if !src.Detection.Supported || !withRows {
 		return src, nil
 	}
 	rows, err := Read(r, src.Detection)

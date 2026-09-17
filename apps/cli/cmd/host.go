@@ -133,6 +133,7 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 	}
 
 	upgrades := &upgradeLauncher{}
+	requests := &requestRunner{running: map[string]bool{}}
 	go func() {
 		t := time.NewTicker(upgradeWatchInterval)
 		defer t.Stop()
@@ -148,6 +149,13 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 					setTask("upgrades", task)
 					writeAgent()
 				}
+				requests.check(func(task hostagent.Task) {
+					if task.Error != "" {
+						fmt.Fprintf(logw, "requests: %s\n", task.Error)
+					}
+					setTask("requests", task)
+					writeAgent()
+				})
 			}
 		}
 	}()
@@ -385,10 +393,16 @@ WantedBy=multi-user.target
 `, cliPath)
 }
 
-// ensureHostDirs creates the state directory docker-compose mounts into the
-// API. Podman refuses to start a container whose bind-mount source is missing.
+// ensureHostDirs creates the directories docker-compose mounts into the API:
+// state/ read-only, inbox/ for requests. Podman refuses to start a container
+// whose bind-mount source is missing.
 func ensureHostDirs() error {
-	return os.MkdirAll(hostagent.StateDir(hostDir), 0755)
+	for _, d := range []string{hostagent.StateDir(hostDir), hostagent.InboxDir(hostDir)} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // hostStart installs the unit and starts it. Running it again rewrites the unit

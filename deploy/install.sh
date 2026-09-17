@@ -966,7 +966,7 @@ ENVEOF
   # The API mounts these for upgrades from the console and the host agent's
   # reports, and podman will not start a container whose bind-mount source is
   # missing.
-  sudo mkdir -p /var/lib/meshploy/upgrade/inbox /var/lib/meshploy/upgrade/state /var/lib/meshploy/host/state
+  sudo mkdir -p /var/lib/meshploy/upgrade/inbox /var/lib/meshploy/upgrade/state /var/lib/meshploy/host/state /var/lib/meshploy/host/inbox
   info "Starting postgres, headscale, api, web, proxy…"
   DOMAIN="$DOMAIN" $COMPOSE_CMD up -d postgres headscale api web proxy
   success "Core services started"
