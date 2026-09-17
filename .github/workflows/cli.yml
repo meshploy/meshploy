@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/cli/**"
+      - "packages/hostagent/**"
       - "go.work"
       - "go.work.sum"
       - "VERSION"

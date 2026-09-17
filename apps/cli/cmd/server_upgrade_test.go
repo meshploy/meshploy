@@ -65,18 +65,19 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 	origDir, origCfg := meshployInstDir, loadedCfg
 	origRef, origFetch, origCompose := upgradeRefFor, fetchDeploy, composeExec
 	origOut, origExec, origVerify, origLook := runtimeOutput, runtimeExec, verifyStack, lookPath
-	origUpgrade, origUnits, origCtl := upgradeDir, systemdUnitDir, systemctl
+	origUpgrade, origUnits, origCtl, origHost := upgradeDir, systemdUnitDir, systemctl, hostDir
 	t.Cleanup(func() {
 		meshployInstDir, loadedCfg = origDir, origCfg
 		upgradeRefFor, fetchDeploy, composeExec = origRef, origFetch, origCompose
 		runtimeOutput, runtimeExec, verifyStack, lookPath = origOut, origExec, origVerify, origLook
-		upgradeDir, systemdUnitDir, systemctl = origUpgrade, origUnits, origCtl
+		upgradeDir, systemdUnitDir, systemctl, hostDir = origUpgrade, origUnits, origCtl, origHost
 	})
 	meshployInstDir = fx.live
 	loadedCfg = nil // no licence lookup against a real API
 	// Docker unless a test says otherwise, whatever this machine has on PATH.
 	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	upgradeDir = filepath.Join(t.TempDir(), "upgrade")
+	hostDir = filepath.Join(t.TempDir(), "host")
 	systemdUnitDir = t.TempDir()
 	systemctl = func(args ...string) error {
 		fx.ctl = append(fx.ctl, args)
@@ -475,10 +476,17 @@ func TestServerUpgradePreparesTheUpdater(t *testing.T) {
 			t.Errorf("%s not created", d)
 		}
 	}
-	if fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) || len(fx.ctl) != 0 {
-		t.Errorf("touched systemd although the updater is off: %v", fx.ctl)
+	// The host agent is installed on every upgrade; the updater's units are not
+	// while the updater is off.
+	hostCalls := [][]string{{"daemon-reload"}, {"enable", hostUnit}, {"restart", hostUnit}}
+	if fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) || !reflect.DeepEqual(fx.ctl, hostCalls) {
+		t.Errorf("systemctl calls with the updater off = %v, want only the host agent's %v", fx.ctl, hostCalls)
+	}
+	if !fileExists(filepath.Join(systemdUnitDir, hostUnit)) {
+		t.Error("the host agent was not installed")
 	}
 
+	fx.ctl = nil
 	writeTestFile(t, filepath.Join(upgradeStateDir(), upgradeEnabledFile), "on\n")
 	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
 		t.Fatal(err)
@@ -486,8 +494,8 @@ func TestServerUpgradePreparesTheUpdater(t *testing.T) {
 	if !fileExists(filepath.Join(systemdUnitDir, upgradeServiceUnit)) {
 		t.Error("units not refreshed although the updater is on")
 	}
-	if !reflect.DeepEqual(fx.ctl, [][]string{{"daemon-reload"}}) {
-		t.Errorf("systemctl calls = %v, want only a reload", fx.ctl)
+	if want := append([][]string{{"daemon-reload"}}, hostCalls...); !reflect.DeepEqual(fx.ctl, want) {
+		t.Errorf("systemctl calls = %v, want %v", fx.ctl, want)
 	}
 }
 

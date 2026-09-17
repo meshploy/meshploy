@@ -273,9 +273,13 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	}
 	caddyAfter, _ := os.ReadFile(caddyfile)
 
-	// docker-compose mounts the updater's folders into the API.
+	// docker-compose mounts the updater's folders and the host agent's
+	// reports into the API.
 	if err := ensureUpgradeDirs(); err != nil {
 		fmt.Printf("warning: could not create %s: %v\n", upgradeDir, err)
+	}
+	if err := ensureHostDirs(); err != nil {
+		fmt.Printf("warning: could not create %s: %v\n", hostDir, err)
 	}
 
 	fmt.Println("Restarting services…")
@@ -310,6 +314,12 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	// in line with the CLI that just did this upgrade.
 	if err := refreshUpgradeUnits(); err != nil {
 		fmt.Printf("warning: could not refresh the upgrade service: %v\n", err)
+	}
+
+	// The host agent follows the CLI too, and a gateway installed before it
+	// existed gets it here. Restarted, not stopped: it only reads the host.
+	if err := hostStart(io.Discard); err != nil {
+		fmt.Printf("warning: could not start the host agent: %v\n", err)
 	}
 
 	fmt.Println("✔  Server upgraded successfully")

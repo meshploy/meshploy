@@ -989,10 +989,26 @@ type TCPRoute struct {
 	PublishedChangedAt *time.Time `json:"published_changed_at"`
 	PublishedChangedBy *uuid.UUID `gorm:"type:uuid" json:"published_changed_by"`
 
+	// HostFirewall is computed (not stored): what the gateway's host firewall
+	// does with this port, from the host agent's last report.
+	HostFirewall *PortFirewall `gorm:"-" json:"host_firewall,omitempty"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`
 	Service      *Service     `gorm:"foreignKey:ServiceID"      json:"-"`
 	Node         *Node        `gorm:"foreignKey:NodeID"         json:"-"`
+}
+
+// PortFirewall is what the gateway's host firewall does with a port: open,
+// restricted to Sources, blocked, or unknown with a Reason. It never says a
+// port is reachable: a firewall at the hosting provider is invisible from the
+// host.
+type PortFirewall struct {
+	State     string     `json:"state"`
+	Tool      string     `json:"tool,omitempty"`
+	Sources   []string   `json:"sources,omitempty"`
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
 }
 
 func (TCPRoute) TableName() string { return "tcp_routes" }

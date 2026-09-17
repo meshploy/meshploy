@@ -200,6 +200,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
 	routes := &RouteService{db: db, k8s: k8sClient}
 	tcpRoutes := &TCPRouteService{db: db, k8s: k8sClient}
+	if c != nil {
+		tcpRoutes.hostDir = c.HostDir
+	}
 	workloads.tcpRoutes = tcpRoutes
 	workloads.notif = notif
 	configFiles := &ConfigFileService{db: db, deployment: deployments}

@@ -60,6 +60,11 @@ type Config struct {
 	// what a local API sees.
 	UpgradeDir string // UPGRADE_DIR  (default: /var/lib/meshploy/upgrade)
 
+	// HostDir is where the host agent reports (see `meshploy host`), mounted
+	// read-only. Missing reports mean the agent is not running, and the console
+	// says the host could not be checked.
+	HostDir string // HOST_DIR  (default: /var/lib/meshploy/host)
+
 	// SetupToken gates the very first registration. install.sh generates one and
 	// prints it once, so claiming a fresh gateway needs something only whoever
 	// ran the installer has seen.
@@ -154,6 +159,12 @@ func Load() (*Config, error) {
 				return v
 			}
 			return "/var/lib/meshploy/upgrade"
+		}(),
+		HostDir: func() string {
+			if v := os.Getenv("HOST_DIR"); v != "" {
+				return v
+			}
+			return "/var/lib/meshploy/host"
 		}(),
 
 		BuiltinRegistryEndpoint: os.Getenv("BUILTIN_REGISTRY_ENDPOINT"),

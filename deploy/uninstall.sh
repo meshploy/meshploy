@@ -326,6 +326,17 @@ if ! $REINSTALL && { command -v node_exporter &>/dev/null || [[ -f /etc/systemd/
   fi
 fi
 
+# ── Host agent (gateway) ──────────────────────────────────────────────────────
+if ! $REINSTALL && { [[ -f /etc/systemd/system/meshploy-host.service ]] || [[ -d /var/lib/meshploy/host ]]; }; then
+  header "Host agent"
+  sudo systemctl disable --now meshploy-host.service 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/meshploy-host.service
+  sudo systemctl daemon-reload 2>/dev/null || true
+  sudo rm -rf /var/lib/meshploy/host
+  sudo rmdir /var/lib/meshploy 2>/dev/null || true
+  success "Host agent removed"
+fi
+
 # ── Upgrade service (gateway) ─────────────────────────────────────────────────
 # `meshploy updater start` installs it so the console can upgrade the server.
 # Disabling the watcher leaves an upgrade already running to finish.

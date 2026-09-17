@@ -24,6 +24,15 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 	}, h.GetVersion)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-host-agent",
+		Method:      "GET",
+		Path:        "/api/v1/system/host-agent",
+		Summary:     "Whether the gateway's host agent is reporting",
+		Tags:        []string{"System"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetHostAgent)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "check-for-updates",
 		Method:      "POST",
 		Path:        "/api/v1/system/check-updates",
@@ -122,6 +131,13 @@ func (h *Handler) GetVersion(ctx context.Context, _ *struct{}) (*VersionInfoOutp
 	}
 	info := h.svc.System.GetVersionInfo(ctx)
 	return &VersionInfoOutput{Body: &info}, nil
+}
+
+func (h *Handler) GetHostAgent(ctx context.Context, _ *struct{}) (*struct{ Body service.HostAgentStatus }, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	return &struct{ Body service.HostAgentStatus }{Body: h.svc.System.HostAgentStatus()}, nil
 }
 
 func (h *Handler) CheckForUpdates(ctx context.Context, _ *struct{}) (*VersionInfoOutput, error) {

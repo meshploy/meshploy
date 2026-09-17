@@ -117,6 +117,18 @@ The upgrade runs with the CLI you have installed, so run `sudo meshploy update` 
 
 ---
 
+### `meshploy host`
+
+The host agent: a systemd service on the gateway that reports what the API, in its container, cannot see. It listens on nothing; the API reads its reports from `/var/lib/meshploy/host/state`, mounted read-only. Today it reports the host firewall, so a TCP route can say whether the gateway blocks its port. `install.sh` and `server-upgrade` start it.
+
+| Command | Description |
+|---|---|
+| `sudo meshploy host start` | Install the service and start it; running it again refreshes the unit |
+| `sudo meshploy host stop` | Stop the service; firewall verdicts turn unknown |
+| `meshploy host status` | Whether it runs, its last report, and the firewall it found |
+
+---
+
 ### `meshploy updater`
 
 ```bash

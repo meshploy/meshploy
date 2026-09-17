@@ -22,6 +22,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mark3labs/mcp-go v0.52.0
 	github.com/meshploy/packages/client v0.0.0
+	github.com/meshploy/packages/hostagent v0.0.0
 	github.com/meshploy/packages/license v0.0.0
 	github.com/meshploy/packages/mcpserver v0.0.0
 	github.com/spf13/pflag v1.0.10 // indirect
@@ -29,6 +30,8 @@ require (
 )
 
 replace github.com/meshploy/packages/client => ../../packages/client
+
+replace github.com/meshploy/packages/hostagent => ../../packages/hostagent
 
 replace github.com/meshploy/packages/license => ../../packages/license
 

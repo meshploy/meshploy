@@ -963,9 +963,10 @@ ENVEOF
   header "Starting core services"
   info "Pulling images…"
   $COMPOSE_CMD pull
-  # The API mounts these for upgrades from the console, and podman will not
-  # start a container whose bind-mount source is missing.
-  sudo mkdir -p /var/lib/meshploy/upgrade/inbox /var/lib/meshploy/upgrade/state
+  # The API mounts these for upgrades from the console and the host agent's
+  # reports, and podman will not start a container whose bind-mount source is
+  # missing.
+  sudo mkdir -p /var/lib/meshploy/upgrade/inbox /var/lib/meshploy/upgrade/state /var/lib/meshploy/host/state
   info "Starting postgres, headscale, api, web, proxy…"
   DOMAIN="$DOMAIN" $COMPOSE_CMD up -d postgres headscale api web proxy
   success "Core services started"
@@ -1140,6 +1141,20 @@ NPEOF
     fi
   else
     info "This meshploy CLI predates console upgrades. Run 'sudo meshploy update', then 'sudo meshploy updater start'."
+  fi
+
+  # ── Host agent ──────────────────────────────────────────────────────────────
+  # Reports what the API cannot see from its container, starting with whether
+  # the host firewall blocks a published port. Idempotent: a re-run refreshes it.
+  header "Starting the host agent"
+  if [[ -x "$MESHPLOY_CLI" ]] && "$MESHPLOY_CLI" host --help &>/dev/null; then
+    if sudo "$MESHPLOY_CLI" host start >/dev/null; then
+      success "Host agent running (check on it with: meshploy host status)"
+    else
+      warn "Could not start the host agent; retry with: sudo meshploy host start"
+    fi
+  else
+    info "This meshploy CLI predates the host agent. Run 'sudo meshploy update', then 'sudo meshploy host start'."
   fi
 
   # ── Install node_exporter (metrics) ─────────────────────────────────────────

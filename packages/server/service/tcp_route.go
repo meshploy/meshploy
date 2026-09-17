@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/hostagent"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
@@ -18,6 +19,27 @@ import (
 type TCPRouteService struct {
 	db  *gorm.DB
 	k8s kubernetes.Interface
+	// hostDir is where the host agent reports; empty on an API with no config.
+	hostDir string
+}
+
+// withHostFirewall reads the host agent's last report once and says, for each
+// route, what the host firewall does with its port.
+func (s *TCPRouteService) withHostFirewall(routes []db.TCPRoute) {
+	if s.hostDir == "" || len(routes) == 0 {
+		return
+	}
+	agent, fw, err := hostagent.ReadState(s.hostDir)
+	now := time.Now()
+	for i := range routes {
+		var v hostagent.PortVerdict
+		if err != nil {
+			v = hostagent.PortVerdict{State: hostagent.PortUnknown, Reason: "the host agent's report could not be read"}
+		} else {
+			v = hostagent.Evaluate(agent, fw, routes[i].GatewayPort, "tcp", now)
+		}
+		routes[i].HostFirewall = &db.PortFirewall{State: v.State, Tool: v.Tool, Sources: v.Sources, CheckedAt: v.CheckedAt, Reason: v.Reason}
+	}
 }
 
 // gatewayOwnPorts are the gateway's own listeners. Routing one would take the
@@ -65,6 +87,7 @@ func (s *TCPRouteService) List(ctx context.Context, projectID uuid.UUID) ([]db.T
 		Where("project_id = ?", projectID).
 		Order("gateway_port ASC").
 		Find(&routes).Error
+	s.withHostFirewall(routes)
 	return routes, err
 }
 
@@ -78,6 +101,7 @@ func (s *TCPRouteService) ListForOrg(ctx context.Context, orgID uuid.UUID) ([]db
 		Where("organization_id = ?", orgID).
 		Order("gateway_port ASC").
 		Find(&routes).Error
+	s.withHostFirewall(routes)
 	return routes, err
 }
 
@@ -89,6 +113,11 @@ func (s *TCPRouteService) Get(ctx context.Context, routeID, projectID uuid.UUID)
 	err := s.db.WithContext(ctx).
 		Preload("Service").Preload("Node").
 		First(&route, "id = ? AND project_id = ?", routeID, projectID).Error
+	if err == nil {
+		one := []db.TCPRoute{route}
+		s.withHostFirewall(one)
+		route = one[0]
+	}
 	return &route, err
 }
 
