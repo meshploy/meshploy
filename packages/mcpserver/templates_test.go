@@ -98,7 +98,7 @@ func TestTCPPortToolsAreRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal tools/list: %v", err)
 	}
-	for _, name := range []string{"list_tcp_ports", "publish_tcp_port", "unpublish_tcp_port"} {
+	for _, name := range []string{"list_tcp_ports", "publish_tcp_port", "unpublish_tcp_port", "pause_route", "publish_route", "pause_tcp_port", "reopen_tcp_port"} {
 		if !strings.Contains(string(b), `"`+name+`"`) {
 			t.Errorf("tool %q is not on the MCP surface", name)
 		}

@@ -31,9 +31,9 @@ var routeListCmd = &cobra.Command{
 			return nil
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tHOSTNAME\tTARGET\tZONE")
+		fmt.Fprintln(w, "ID\tHOSTNAME\tSTATE\tTARGET\tZONE")
 		for _, r := range routes {
-			fmt.Fprintf(w, "%s\t%s\t%s:%d\t%s\n", r.ID, r.Hostname, r.TargetIP, r.TargetPort, r.Zone)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s:%d\t%s\n", r.ID, r.Hostname, publishState(r.Published), r.TargetIP, r.TargetPort, r.Zone)
 		}
 		return w.Flush()
 	},
@@ -135,6 +135,51 @@ Use a raw mesh IP directly:
 	},
 }
 
+func publishState(published bool) string {
+	if published {
+		return "published"
+	}
+	return "paused"
+}
+
+var routePublishCmd = &cobra.Command{
+	Use:   "publish <id>",
+	Short: "Serve a paused route again",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		r, err := apiClient().PublishRoute(orgID(), resolveProjectID(routeProject), args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("✔  %s is published. The proxy serves it within 30 seconds.\n", r.Hostname)
+		return nil
+	},
+}
+
+var routePauseCmd = &cobra.Command{
+	Use:   "pause <id>",
+	Short: "Stop serving a route and keep it: 404, no certificate",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		yes, _ := cmd.Flags().GetBool("yes")
+		if !yes {
+			fmt.Printf("Pause route %q? Visitors get a 404 until it is published again. [y/N]: ", args[0])
+			var answer string
+			fmt.Scanln(&answer)
+			if answer != "y" && answer != "Y" {
+				fmt.Println("Aborted.")
+				return nil
+			}
+		}
+		r, err := apiClient().PauseRoute(orgID(), resolveProjectID(routeProject), args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("✔  %s is paused. The proxy stops serving it within 30 seconds.\n", r.Hostname)
+		return nil
+	},
+}
+
 var routeDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
 	Short: "Delete a route",
@@ -171,7 +216,8 @@ func init() {
 	routeCreateCmd.Flags().String("zone", "public", "Route zone: public | internal | preview")
 
 	routeDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
+	routePauseCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 
-	routeCmd.AddCommand(routeListCmd, routeCreateCmd, routeDeleteCmd)
+	routeCmd.AddCommand(routeListCmd, routeCreateCmd, routePublishCmd, routePauseCmd, routeDeleteCmd)
 	rootCmd.AddCommand(routeCmd)
 }

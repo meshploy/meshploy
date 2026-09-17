@@ -51,6 +51,8 @@ type MCPRoute struct {
 	Hostname  string `json:"hostname"`
 	ServiceID string `json:"service_id,omitempty"`
 	Port      int    `json:"port"`
+	// Published is false for a paused route, which is kept and not served.
+	Published bool `json:"published"`
 }
 
 // MCPTCPRoute is a published port as an agent sees it. Status matters here in

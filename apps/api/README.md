@@ -354,11 +354,15 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | PATCH | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Update a route target |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Delete a route target |
 | POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname` | ✓ | Verify DNS ownership of a custom-domain route via TXT record |
+| POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/publish` | ✓ | Serve a paused route again |
+| POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/pause` | ✓ | Keep a route, answer 404 and issue no certificate. Create one paused with `published: false` |
 | GET | `/orgs/{orgId}/routes` | ✓ | List all routes in an organization |
 | GET | `/orgs/{orgId}/tcp-routes` | ✓ | List every published TCP port in an organization, with the gateway's own |
 | GET | `/orgs/{orgId}/projects/{projectId}/tcp-routes` | ✓ | List TCP routes in a project |
 | POST | `/orgs/{orgId}/projects/{projectId}/tcp-routes` | ✓ | Publish a TCP port on the gateway |
 | GET | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Get a TCP route |
+| POST | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}/publish` | ✓ | Open a paused TCP route's port again |
+| POST | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}/pause` | ✓ | Close a TCP route's port and keep the route |
 | PATCH | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Change a TCP route's port or who may connect |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Stop publishing a TCP port |
 

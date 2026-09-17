@@ -7,7 +7,9 @@ type Route struct {
 	TargetPort int     `json:"target_port"`
 	ServiceID  *string `json:"service_id"`
 	Zone       string  `json:"zone"`
-	CreatedAt  string  `json:"created_at"`
+	// Published is false for a paused route: kept, not served.
+	Published bool   `json:"published"`
+	CreatedAt string `json:"created_at"`
 }
 
 type CreateRouteBody struct {
@@ -39,6 +41,24 @@ func (c *Client) ListRoutes(orgID, projectID string) ([]Route, error) {
 
 func (c *Client) CreateRoute(orgID, projectID string, body CreateRouteBody) (*Route, error) {
 	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/routes", body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Route](resp)
+}
+
+// PublishRoute serves a paused route's hostname again.
+func (c *Client) PublishRoute(orgID, projectID, routeID string) (*Route, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/routes/"+routeID+"/publish", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Route](resp)
+}
+
+// PauseRoute keeps a route and stops serving it: 404, no certificate.
+func (c *Client) PauseRoute(orgID, projectID, routeID string) (*Route, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/routes/"+routeID+"/pause", nil)
 	if err != nil {
 		return nil, err
 	}

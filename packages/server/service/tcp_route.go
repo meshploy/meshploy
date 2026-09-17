@@ -6,6 +6,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
@@ -41,6 +42,10 @@ type CreateTCPRouteInput struct {
 	NodePort    int // the port on that node
 
 	AllowedCIDRs []string
+
+	// Paused creates the route without opening its port. The zero value
+	// publishes.
+	Paused bool
 }
 
 // UpdateTCPRouteInput changes only what it carries: a nil field keeps what the
@@ -108,7 +113,17 @@ func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*
 	if err := s.resolveTarget(ctx, route, in); err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Create(route).Error; err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(route).Error; err != nil {
+			return err
+		}
+		// A false bool with a column default is left out of the insert, so a
+		// paused route is written published and paused in the same transaction.
+		if in.Paused {
+			return tx.Model(route).Updates(map[string]any{"published": false, "status": db.TCPRoutePaused}).Error
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, route.ID, in.ProjectID)
@@ -141,6 +156,25 @@ func (s *TCPRouteService) Update(ctx context.Context, routeID, projectID uuid.UU
 		if err := s.db.WithContext(ctx).Model(route).Updates(updates).Error; err != nil {
 			return nil, err
 		}
+	}
+	return s.Get(ctx, routeID, projectID)
+}
+
+// SetPublished opens or closes a route's port without deleting the route, and
+// records who did it. The route is pending until the gateway reports back.
+func (s *TCPRouteService) SetPublished(ctx context.Context, routeID, projectID uuid.UUID, published bool, by uuid.UUID) (*db.TCPRoute, error) {
+	route, err := s.Get(ctx, routeID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.db.WithContext(ctx).Model(route).Updates(map[string]any{
+		"published":            published,
+		"published_changed_at": time.Now(),
+		"published_changed_by": by,
+		"status":               db.TCPRoutePending,
+		"last_error":           "",
+	}).Error; err != nil {
+		return nil, err
 	}
 	return s.Get(ctx, routeID, projectID)
 }

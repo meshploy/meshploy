@@ -396,6 +396,42 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 	)
 
 	ms.AddTool(
+		mcp.NewTool("pause_route",
+			mcp.WithDescription("Take a route off the air and keep it: visitors get a 404 and no certificate is issued until publish_route. Takes effect within 30 seconds. Confirm with the user before pausing a live site."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("route_id", mcp.Required(), mcp.Description("Route ID")),
+		),
+		s.handleSetRoutePublished(false),
+	)
+
+	ms.AddTool(
+		mcp.NewTool("publish_route",
+			mcp.WithDescription("Serve a paused route's hostname again. Takes effect within 30 seconds."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("route_id", mcp.Required(), mcp.Description("Route ID")),
+		),
+		s.handleSetRoutePublished(true),
+	)
+
+	ms.AddTool(
+		mcp.NewTool("pause_tcp_port",
+			mcp.WithDescription("Close a published TCP port on the gateway and keep the route, so it can be reopened with reopen_tcp_port. Anything connected through it is refused. Confirm with the user before calling."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("route_id", mcp.Required(), mcp.Description("TCP route ID, from list_tcp_ports")),
+		),
+		s.handleSetTCPRoutePublished(false),
+	)
+
+	ms.AddTool(
+		mcp.NewTool("reopen_tcp_port",
+			mcp.WithDescription("Open a paused TCP port on the gateway again. The status is pending until the gateway reports it open."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("route_id", mcp.Required(), mcp.Description("TCP route ID, from list_tcp_ports")),
+		),
+		s.handleSetTCPRoutePublished(true),
+	)
+
+	ms.AddTool(
 		mcp.NewTool("publish_tcp_port",
 			mcp.WithDescription("Publish a port on the gateway and forward it over the mesh, for a service that does not speak HTTP: Postgres, Redis and the like. Anything HTTP takes create_route instead, which gives it a hostname and TLS. A managed database must have mesh access before it can be published."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
@@ -855,7 +891,43 @@ func (s *srv) handleCreateRoute(_ context.Context, req mcp.CallToolRequest) (*mc
 	if route.ServiceID != nil {
 		svcID = *route.ServiceID
 	}
-	return jsonResult(MCPRoute{ID: route.ID, Hostname: route.Hostname, ServiceID: svcID, Port: route.TargetPort})
+	return jsonResult(MCPRoute{ID: route.ID, Hostname: route.Hostname, ServiceID: svcID, Port: route.TargetPort, Published: route.Published})
+}
+
+func (s *srv) handleSetRoutePublished(published bool) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		projectID := mcp.ParseString(req, "project_id", "")
+		routeID := mcp.ParseString(req, "route_id", "")
+		change := s.c.PauseRoute
+		if published {
+			change = s.c.PublishRoute
+		}
+		route, err := change(s.orgID, projectID, routeID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		svcID := ""
+		if route.ServiceID != nil {
+			svcID = *route.ServiceID
+		}
+		return jsonResult(MCPRoute{ID: route.ID, Hostname: route.Hostname, ServiceID: svcID, Port: route.TargetPort, Published: route.Published})
+	}
+}
+
+func (s *srv) handleSetTCPRoutePublished(published bool) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		projectID := mcp.ParseString(req, "project_id", "")
+		routeID := mcp.ParseString(req, "route_id", "")
+		change := s.c.PauseTCPRoute
+		if published {
+			change = s.c.PublishTCPRoute
+		}
+		route, err := change(s.orgID, projectID, routeID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(toMCPTCPRoute(*route))
+	}
 }
 
 func (s *srv) handleDeleteRoute(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

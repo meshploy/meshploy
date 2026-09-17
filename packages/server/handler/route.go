@@ -49,6 +49,7 @@ type CreateRouteInput struct {
 		Zone      string  `json:"zone"`
 		Subdomain string  `json:"subdomain,omitempty"`
 		Hostname  *string `json:"hostname,omitempty"`
+		Published *bool   `json:"published,omitempty" doc:"False creates the route paused: kept, not served. Defaults to true"`
 		Targets   []struct {
 			Path            string  `json:"path"`
 			StripPath       bool    `json:"strip_path"`
@@ -158,6 +159,24 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.VerifyCustomHostname)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "publish-route",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/publish",
+		Summary:     "Publish a route: serve traffic for its hostname",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.PublishRoute)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "pause-route",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/pause",
+		Summary:     "Pause a route: keep it, answer 404 and issue no certificate",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.PauseRoute)
+
 	// Target CRUD
 	huma.Register(api, huma.Operation{
 		OperationID: "add-route-target",
@@ -251,6 +270,7 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 		Subdomain: input.Body.Subdomain,
 		Hostname:  hostname,
 		Targets:   targets,
+		Paused:    input.Body.Published != nil && !*input.Body.Published,
 	})
 	if err != nil {
 		return nil, err
@@ -276,6 +296,26 @@ func (h *Handler) DeleteRoute(ctx context.Context, input *RoutePathInput) (*stru
 		return nil, err
 	}
 	return nil, h.svc.Routes.Delete(ctx, routeID)
+}
+
+func (h *Handler) PublishRoute(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
+	return h.setRoutePublished(ctx, input, true)
+}
+
+func (h *Handler) PauseRoute(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {
+	return h.setRoutePublished(ctx, input, false)
+}
+
+func (h *Handler) setRoutePublished(ctx context.Context, input *RoutePathInput, published bool) (*GetRouteOutput, error) {
+	userID, _, routeID, parentID, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionUpdate, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	route, err := h.svc.Routes.SetPublished(ctx, routeID, *parentID, published, userID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &GetRouteOutput{Body: route}, nil
 }
 
 func (h *Handler) VerifyCustomHostname(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {

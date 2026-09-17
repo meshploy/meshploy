@@ -94,8 +94,8 @@ func (c *Cache) load() error {
 	}
 	m := make(map[string][]TargetEntry, len(targets))
 	for _, t := range targets {
-		if t.Route == nil || t.Route.Hostname == "" {
-			continue
+		if t.Route == nil || t.Route.Hostname == "" || !t.Route.Published {
+			continue // a paused route answers as if it did not exist
 		}
 		entry := TargetEntry{
 			Path:       t.Path,
@@ -121,14 +121,14 @@ func (c *Cache) load() error {
 
 func (c *Cache) loadHostname(hostname string) []TargetEntry {
 	var route db.Route
-	err := c.db.Where("hostname = ?", hostname).First(&route).Error
+	err := c.db.Where("hostname = ? AND published = ?", hostname, true).First(&route).Error
 	if err != nil {
 		// Try wildcard pattern (*.parent.domain).
 		wc := wildcardKey(hostname)
 		if wc == "" {
 			return nil
 		}
-		if err2 := c.db.Where("hostname = ?", wc).First(&route).Error; err2 != nil {
+		if err2 := c.db.Where("hostname = ? AND published = ?", wc, true).First(&route).Error; err2 != nil {
 			return nil
 		}
 	}

@@ -121,6 +121,44 @@ var routeTCPCreateCmd = &cobra.Command{
 	},
 }
 
+var routeTCPPublishCmd = &cobra.Command{
+	Use:   "publish <id>",
+	Short: "Open a paused port again",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		r, err := apiClient().PublishTCPRoute(orgID(), resolveProjectID(routeProject), args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("✔  :%d is published. The gateway opens it within 30 seconds.\n", r.GatewayPort)
+		return nil
+	},
+}
+
+var routeTCPPauseCmd = &cobra.Command{
+	Use:   "pause <id>",
+	Short: "Close a port and keep the route",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		yes, _ := cmd.Flags().GetBool("yes")
+		if !yes {
+			fmt.Printf("Pause %q? The gateway refuses connections until it is published again. [y/N]: ", args[0])
+			var answer string
+			fmt.Scanln(&answer)
+			if answer != "y" && answer != "Y" {
+				fmt.Println("Aborted.")
+				return nil
+			}
+		}
+		r, err := apiClient().PauseTCPRoute(orgID(), resolveProjectID(routeProject), args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("✔  :%d is paused. The gateway closes it within 30 seconds.\n", r.GatewayPort)
+		return nil
+	},
+}
+
 var routeTCPDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
 	Short: "Stop publishing a port",
@@ -154,7 +192,8 @@ func init() {
 	routeTCPCreateCmd.Flags().StringSlice("allow", nil, "Addresses or ranges allowed to connect (repeatable). Empty means anyone")
 
 	routeTCPDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
+	routeTCPPauseCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 
-	routeTCPCmd.AddCommand(routeTCPListCmd, routeTCPCreateCmd, routeTCPDeleteCmd)
+	routeTCPCmd.AddCommand(routeTCPListCmd, routeTCPCreateCmd, routeTCPPublishCmd, routeTCPPauseCmd, routeTCPDeleteCmd)
 	routeCmd.AddCommand(routeTCPCmd)
 }

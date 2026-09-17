@@ -12,9 +12,11 @@ type TCPRoute struct {
 	TargetPort  int     `json:"target_port"`
 	// AllowedCIDRs is empty when anyone who can reach the gateway may connect.
 	AllowedCIDRs []string `json:"allowed_cidrs"`
-	// Status is what the gateway managed to do: pending, open or failed.
+	// Status is what the gateway managed to do: pending, open, failed or paused.
 	Status    string `json:"status"`
 	LastError string `json:"last_error"`
+	// Published is false for a paused route: the port stays reserved, closed.
+	Published bool   `json:"published"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -52,6 +54,24 @@ func (c *Client) CreateTCPRoute(orgID, projectID string, body CreateTCPRouteBody
 
 func (c *Client) UpdateTCPRoute(orgID, projectID, routeID string, body UpdateTCPRouteBody) (*TCPRoute, error) {
 	resp, err := c.do("PATCH", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/tcp-routes/"+routeID, body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[TCPRoute](resp)
+}
+
+// PublishTCPRoute opens a paused route's port again.
+func (c *Client) PublishTCPRoute(orgID, projectID, routeID string) (*TCPRoute, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/tcp-routes/"+routeID+"/publish", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[TCPRoute](resp)
+}
+
+// PauseTCPRoute closes a route's port and keeps the route.
+func (c *Client) PauseTCPRoute(orgID, projectID, routeID string) (*TCPRoute, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/tcp-routes/"+routeID+"/pause", nil)
 	if err != nil {
 		return nil, err
 	}

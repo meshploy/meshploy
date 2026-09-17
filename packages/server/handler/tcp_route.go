@@ -47,6 +47,7 @@ type CreateTCPRouteInput struct {
 		NodeID       *string  `json:"node_id,omitempty"      doc:"Route to a port on this node instead, for something running outside Meshploy"`
 		NodePort     *int     `json:"node_port,omitempty"    doc:"The port on that node"`
 		AllowedCIDRs []string `json:"allowed_cidrs,omitempty" doc:"Addresses or ranges allowed to connect. Empty means anyone who can reach the gateway"`
+		Published    *bool    `json:"published,omitempty"     doc:"False creates the route with its port closed. Defaults to true"`
 	}
 }
 
@@ -114,6 +115,24 @@ func (h *Handler) registerTCPRouteRoutes(api huma.API) {
 	}, h.UpdateTCPRoute)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "publish-tcp-route",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}/publish",
+		Summary:     "Open a paused TCP route's port again",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.PublishTCPRoute)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "pause-tcp-route",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}/pause",
+		Summary:     "Close a TCP route's port and keep the route",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.PauseTCPRoute)
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "delete-tcp-route",
 		Method:        "DELETE",
 		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}",
@@ -162,6 +181,7 @@ func (h *Handler) CreateTCPRoute(ctx context.Context, input *CreateTCPRouteInput
 		ProjectID:    projectID,
 		GatewayPort:  input.Body.GatewayPort,
 		AllowedCIDRs: input.Body.AllowedCIDRs,
+		Paused:       input.Body.Published != nil && !*input.Body.Published,
 	}
 	if input.Body.ServiceID != nil {
 		id, err := parseUUID(*input.Body.ServiceID)
@@ -201,6 +221,30 @@ func (h *Handler) GetTCPRoute(ctx context.Context, input *TCPRoutePathInput) (*G
 		return nil, err
 	}
 	route, err := h.svc.TCPRoutes.Get(ctx, routeID, projectID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &GetTCPRouteOutput{Body: route}, nil
+}
+
+func (h *Handler) PublishTCPRoute(ctx context.Context, input *TCPRoutePathInput) (*GetTCPRouteOutput, error) {
+	return h.setTCPRoutePublished(ctx, input, true)
+}
+
+func (h *Handler) PauseTCPRoute(ctx context.Context, input *TCPRoutePathInput) (*GetTCPRouteOutput, error) {
+	return h.setTCPRoutePublished(ctx, input, false)
+}
+
+func (h *Handler) setTCPRoutePublished(ctx context.Context, input *TCPRoutePathInput, published bool) (*GetTCPRouteOutput, error) {
+	userID, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, "")
+	if err != nil {
+		return nil, err
+	}
+	routeID, err := parseUUID(input.RouteID)
+	if err != nil {
+		return nil, err
+	}
+	route, err := h.svc.TCPRoutes.SetPublished(ctx, routeID, projectID, published, userID)
 	if err != nil {
 		return nil, notFound(err)
 	}

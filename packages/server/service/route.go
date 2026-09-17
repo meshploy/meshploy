@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -56,6 +57,10 @@ type CreateRouteInput struct {
 	Hostname string
 
 	Targets []TargetInput
+
+	// Paused creates the route without serving it. The zero value publishes,
+	// which is what creating a route has always done.
+	Paused bool
 }
 
 // ── List / Get ────────────────────────────────────────────────────────────────
@@ -169,7 +174,19 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		route.CustomDomainVerifyToken = token
 	}
 
-	if err := s.db.WithContext(ctx).Create(route).Error; err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(route).Error; err != nil {
+			return err
+		}
+		// GORM leaves a false bool out of the insert when the column has a
+		// default, so a paused route is written as published and then paused,
+		// inside the transaction so the proxy never sees it live.
+		if in.Paused {
+			route.Published = false
+			return tx.Model(route).Update("published", false).Error
+		}
+		return nil
+	}); err != nil {
 		// The hostname is unique across the table, which is the real guarantee:
 		// the console checks what it can see, and two people creating the same
 		// name at once still meet here. Say which name, rather than handing back
@@ -310,18 +327,37 @@ func (s *RouteService) VerifyCustomHostname(ctx context.Context, routeID uuid.UU
 func (s *RouteService) IsCustomDomainVerified(ctx context.Context, hostname string) bool {
 	var route db.Route
 	err := s.db.WithContext(ctx).
-		Where("hostname = ? AND domain_id IS NULL AND custom_domain_verified = ?", hostname, true).
+		Where("hostname = ? AND domain_id IS NULL AND custom_domain_verified = ? AND published = ?", hostname, true, true).
 		First(&route).Error
 	return err == nil
 }
 
-// HasRoute reports whether any route exists for the exact hostname. Used by the
-// on-demand TLS ask endpoint (self-managed DNS mode) to authorize certs for
-// active workload subdomains under the base domain.
+// HasRoute reports whether a published route exists for the exact hostname.
+// Used by the on-demand TLS ask endpoint (self-managed DNS mode) to authorize
+// certs for active workload subdomains under the base domain. A paused route
+// gets no certificate: it is not live.
 func (s *RouteService) HasRoute(ctx context.Context, hostname string) bool {
 	var route db.Route
-	err := s.db.WithContext(ctx).Where("hostname = ?", hostname).First(&route).Error
+	err := s.db.WithContext(ctx).Where("hostname = ? AND published = ?", hostname, true).First(&route).Error
 	return err == nil
+}
+
+// SetPublished publishes or pauses a route and records who did it. The proxy
+// picks the change up on its next refresh.
+func (s *RouteService) SetPublished(ctx context.Context, routeID, projectID uuid.UUID, published bool, by uuid.UUID) (*db.Route, error) {
+	route, err := s.Get(ctx, routeID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(route).Updates(map[string]any{
+		"published":            published,
+		"published_changed_at": now,
+		"published_changed_by": by,
+	}).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, routeID, projectID)
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

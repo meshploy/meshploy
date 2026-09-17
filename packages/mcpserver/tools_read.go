@@ -207,7 +207,7 @@ func (s *srv) handleListResources(_ context.Context, req mcp.CallToolRequest) (*
 			if r.ServiceID != nil {
 				svcID = *r.ServiceID
 			}
-			out = append(out, MCPRoute{ID: r.ID, Hostname: r.Hostname, ServiceID: svcID, Port: r.TargetPort})
+			out = append(out, MCPRoute{ID: r.ID, Hostname: r.Hostname, ServiceID: svcID, Port: r.TargetPort, Published: r.Published})
 		}
 		return jsonResult(out)
 
@@ -475,7 +475,7 @@ func (s *srv) handleGetResource(_ context.Context, req mcp.CallToolRequest) (*mc
 				if r.ServiceID != nil {
 					svcID = *r.ServiceID
 				}
-				return jsonResult(MCPRoute{ID: r.ID, Hostname: r.Hostname, ServiceID: svcID, Port: r.TargetPort})
+				return jsonResult(MCPRoute{ID: r.ID, Hostname: r.Hostname, ServiceID: svcID, Port: r.TargetPort, Published: r.Published})
 			}
 		}
 		return mcp.NewToolResultError("route " + id + " not found"), nil

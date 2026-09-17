@@ -62,7 +62,12 @@ func (f *Forwarder) sync() {
 	}
 
 	wanted := make(map[int]db.TCPRoute, len(routes))
+	var paused []db.TCPRoute
 	for _, r := range routes {
+		if !r.Published {
+			paused = append(paused, r) // its listener, if any, closes below
+			continue
+		}
 		if r.TargetIP == "" || r.TargetPort == 0 {
 			continue // unresolved: the API reports why, and there is nothing to forward to
 		}
@@ -78,6 +83,9 @@ func (f *Forwarder) sync() {
 			delete(f.listeners, port)
 			log.Printf("tcp: closed :%d", port)
 		}
+	}
+	for _, r := range paused {
+		f.setStatus(r, db.TCPRoutePaused, "")
 	}
 
 	for port, route := range wanted {

@@ -898,6 +898,16 @@ type Route struct {
 	// exposes services through one). SET NULL on stack delete.
 	StackID *uuid.UUID `gorm:"type:uuid;index" json:"stack_id"`
 
+	// Published decides whether the route carries traffic. A paused route is
+	// kept with its targets but answers as if it did not exist, and gets no
+	// certificate, so it can be prepared before it goes live. Existing rows
+	// became published when the column was added.
+	Published bool `gorm:"not null;default:true" json:"published"`
+	// PublishedChangedAt and PublishedChangedBy record the last publish or
+	// pause. Nil on a route that was never changed.
+	PublishedChangedAt *time.Time `json:"published_changed_at"`
+	PublishedChangedBy *uuid.UUID `gorm:"type:uuid" json:"published_changed_by"`
+
 	Organization Organization  `gorm:"foreignKey:OrganizationID" json:"-"`
 	Project      Project       `gorm:"foreignKey:ProjectID"      json:"-"`
 	Domain       *Domain       `gorm:"foreignKey:DomainID"       json:"-"`
@@ -932,6 +942,7 @@ const (
 	TCPRoutePending TCPRouteStatus = "pending" // saved, not yet picked up
 	TCPRouteOpen    TCPRouteStatus = "open"    // listening on the gateway
 	TCPRouteFailed  TCPRouteStatus = "failed"  // could not bind; LastError says why
+	TCPRoutePaused  TCPRouteStatus = "paused"  // not published: the gateway holds no listener
 )
 
 // TCPRoute publishes one non-HTTP port on the gateway and forwards it over the
@@ -967,6 +978,16 @@ type TCPRoute struct {
 
 	Status    TCPRouteStatus `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
 	LastError string         `gorm:"not null;default:''"                         json:"last_error"`
+
+	// Published decides whether the gateway listens. A paused route keeps its
+	// port reserved and its target, with no listener, so it can be prepared
+	// before it goes live. Existing rows became published when the column was
+	// added.
+	Published bool `gorm:"not null;default:true" json:"published"`
+	// PublishedChangedAt and PublishedChangedBy record the last publish or
+	// pause. Nil on a route that was never changed.
+	PublishedChangedAt *time.Time `json:"published_changed_at"`
+	PublishedChangedBy *uuid.UUID `gorm:"type:uuid" json:"published_changed_by"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	Project      Project      `gorm:"foreignKey:ProjectID"      json:"-"`

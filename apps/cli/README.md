@@ -345,9 +345,13 @@ Each compose service becomes a Meshploy service, read the way compose reads it:
 |---|---|
 | `route list` | List HTTP routes in the project |
 | `route create --hostname <host> --service <svc>` | Map a hostname to a service |
+| `route pause <route-id>` | Stop serving a route and keep it: visitors get a 404, no certificate is issued |
+| `route publish <route-id>` | Serve a paused route again |
 | `route delete <route-id>` | Remove a route |
 | `route tcp list` | List the TCP ports the gateway publishes |
 | `route tcp create --service <svc> --port <n>` | Publish a port on the gateway and forward it over the mesh |
+| `route tcp pause <route-id>` | Close a port and keep the route |
+| `route tcp publish <route-id>` | Open a paused port again |
 | `route tcp delete <route-id>` | Stop publishing a port |
 
 A route carries a hostname through Caddy, with TLS, for anything that speaks HTTP. What does not - Postgres, Redis, SSH - takes a TCP route instead: the gateway listens on a port of its own and forwards it over the mesh. `--allow` restricts who may connect, by address or range, and an empty allow-list means anyone who can reach the gateway. The host firewall, and a cloud security group where there is one, must allow the port too: the gateway listens on it, but neither of those knows that. A managed database has to have mesh access before it can be published.
