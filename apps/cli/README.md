@@ -117,6 +117,24 @@ The upgrade runs with the CLI you have installed, so run `sudo meshploy update` 
 
 ---
 
+### `meshploy migrate dokploy`
+
+Plans moving a server that runs Dokploy into Meshploy. It only reads: Docker, Dokploy's database (through `docker exec`), the Traefik folder and the listening ports. Secrets are read only in memory and never printed or written. Run it on the Dokploy server, as root.
+
+| Command | Description |
+|---|---|
+| `sudo meshploy migrate dokploy detect` | Whether Dokploy runs here, its version and schema level, what holds ports 80 and 443, resources, and how a move would run |
+| `sudo meshploy migrate dokploy plan` | What each project, environment, application, compose app, database, domain and integration becomes in Meshploy: moves, needs you (with the choices and a default where one is safe), or not moved; plus containers Dokploy does not manage |
+
+| Flag (`plan`) | Description |
+|---|---|
+| `--json` | Print the plan as JSON |
+| `--out <file>` | Also write the plan as JSON, readable by root only |
+
+Supported: Dokploy schema levels 133 to 196 (v0.26.1 to v0.30.6); anything else is refused with the reason. Regex redirects that send one of an app's hostnames to another are worked out into route redirects. A bind mount another container also uses has no default choice, since copying it into one volume would split what was shared.
+
+---
+
 ### `meshploy host`
 
 The host agent: a systemd service on the gateway that reports what the API, in its container, cannot see. It listens on nothing; the API reads its reports from `/var/lib/meshploy/host/state`, mounted read-only. Today it reports the host firewall, so a TCP route can say whether the gateway blocks its port. `install.sh` and `server-upgrade` start it.

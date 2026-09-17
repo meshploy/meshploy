@@ -1,0 +1,339 @@
+package dokploy
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/meshploy/apps/cli/internal/migrate"
+)
+
+// secretValues are planted in the fixture; none may appear in a plan.
+var secretValues = []string{"supersecret-env-value", "db-password-123", "ghp_clonetoken", "gitlab-access-token", "s3-secret-key", "basic-auth-pass"}
+
+func fixture() Source {
+	rows := map[string][]Row{
+		"project": {
+			{"projectId": "p1", "name": "Shop", "env": ""},
+		},
+		"environment": {
+			{"environmentId": "e1", "name": "production", "projectId": "p1", "isDefault": true, "env": ""},
+			{"environmentId": "e2", "name": "staging", "projectId": "p1", "isDefault": false, "env": "SHARED=supersecret-env-value"},
+		},
+		"application": {
+			{"applicationId": "a1", "name": "api", "appName": "shop-api-abc123", "environmentId": "e1", "sourceType": "gitlab", "buildType": "nixpacks",
+				"gitlabPathNamespace": "team/api", "gitlabBranch": "main", "env": "A=supersecret-env-value\nB=2\n# comment", "applicationStatus": "done", "replicas": 1},
+			{"applicationId": "a2", "name": "worker", "appName": "shop-worker-def456", "environmentId": "e1", "sourceType": "docker",
+				"dockerImage": "ghcr.io/shop/worker:1", "applicationStatus": "idle", "password": "db-password-123"},
+			{"applicationId": "a3", "name": "admin", "appName": "shop-admin-ghi789", "environmentId": "e2", "sourceType": "git", "buildType": "dockerfile",
+				"customGitUrl": "https://oauth2:ghp_clonetoken@github.com/shop/admin.git", "customGitBranch": "dev"},
+			{"applicationId": "a4", "name": "site", "appName": "shop-site-jkl012", "environmentId": "e1", "sourceType": "github", "buildType": "static",
+				"owner": "shop", "repository": "site", "branch": "main"},
+			{"applicationId": "a5", "name": "far", "appName": "shop-far-mno345", "environmentId": "e1", "sourceType": "gitlab", "buildType": "nixpacks", "serverId": "s1"},
+		},
+		"security": {{"securityId": "x1", "applicationId": "a1", "username": "admin", "password": "basic-auth-pass"}},
+		"redirect": {
+			// A host-to-host rule, as Dokploy servers have them, and one that rewrites the path.
+			{"redirectId": "r1", "applicationId": "a4", "regex": `^https?://www\.site\.example(.*)$`, "replacement": "https://site.example$1", "permanent": true},
+			{"redirectId": "r2", "applicationId": "a4", "regex": `^https?://site\.example/old/(.*)`, "replacement": "https://site.example/new/${1}", "permanent": false},
+		},
+		"port": {{"portId": "pt1", "applicationId": "a2", "publishedPort": 8085, "targetPort": 80, "protocol": "tcp"}},
+		"mount": {
+			{"mountId": "m1", "type": "bind", "hostPath": "/srv/uploads", "applicationId": "a1"},
+			{"mountId": "m3", "type": "bind", "hostPath": "/srv/shared", "applicationId": "a2"},
+			{"mountId": "m2", "type": "volume", "volumeName": "shop-db-data", "postgresId": "d1"},
+		},
+		"compose": {
+			{"composeId": "c1", "name": "stack", "appName": "shop-stack-pqr678", "environmentId": "e1", "sourceType": "raw", "composeType": "docker-compose", "isolatedDeployment": true},
+		},
+		"postgres": {
+			{"postgresId": "d1", "name": "db", "appName": "shop-db-stu901", "environmentId": "e1", "dockerImage": "postgres:17", "databaseName": "shop",
+				"databasePassword": "db-password-123", "externalPort": 5432},
+		},
+		"mariadb": {{"mariadbId": "d2", "name": "wp", "appName": "shop-wp-vwx234", "environmentId": "e1", "dockerImage": "mariadb:11"}},
+		"domain": {
+			{"domainId": "dm1", "host": "api.shop.example", "path": "/", "https": true, "certificateType": "letsencrypt", "applicationId": "a1", "domainType": "application"},
+			{"domainId": "dm2", "host": "shop-api-1-2-3-4.traefik.me", "applicationId": "a1", "domainType": "application"},
+			{"domainId": "dm3", "host": "legacy.shop.example", "certificateType": "custom", "applicationId": "a4", "domainType": "application"},
+			{"domainId": "dm5", "host": "site.example", "applicationId": "a4", "domainType": "application"},
+			{"domainId": "dm6", "host": "www.site.example", "applicationId": "a4", "domainType": "application"},
+			{"domainId": "dm4", "host": "stack.shop.example", "path": "/app", "stripPath": true, "composeId": "c1", "serviceName": "web", "domainType": "compose"},
+		},
+		"git_provider": {
+			{"gitProviderId": "g1", "name": "GitLab", "providerType": "gitlab"},
+			{"gitProviderId": "g2", "name": "GitHub", "providerType": "github"},
+		},
+		"destination": {{"destinationId": "b1", "name": "s3", "provider": "aws", "bucket": "backups", "secretAccessKey": "s3-secret-key"}},
+		"backup": {
+			{"backupId": "k1", "schedule": "0 2 * * *", "databaseType": "postgres", "keepLatestCount": 7, "enabled": true},
+			{"backupId": "k2", "schedule": "0 3 * * *", "databaseType": "web-server"},
+		},
+		"server": {{"serverId": "s1", "name": "remote-1"}},
+	}
+	return Source{
+		Detection: Detection{Dokploy: true, Migrations: 196, Supported: true, Version: "v0.30.6"},
+		Rows:      rows,
+		Docker: migrate.Docker{
+			Services: []migrate.SwarmService{
+				{Name: "dokploy", Running: 1, Desired: 1},
+				{Name: "shop-api-abc123", Running: 1, Desired: 1},
+				{Name: "shop-worker-def456", Running: 0, Desired: 0},
+				{Name: "shop-db-stu901", Running: 1, Desired: 1},
+				{Name: "handmade", Image: "nginx", Running: 1, Desired: 1},
+			},
+			Containers: []migrate.Container{
+				{Name: "dokploy-traefik", Image: "traefik:v3.6", State: "running", Ports: "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp"},
+				{Name: "shop-stack-pqr678-web-1", Project: "shop-stack-pqr678", State: "running", Image: "web"},
+				{Name: "shop-stack-pqr678-db-1", Project: "shop-stack-pqr678", State: "exited", Image: "postgres:16"},
+				{Name: "saathealth-db-1", Project: "saathealth", State: "running", Image: "postgres:16", BindSources: []string{"/srv/shared/pg"}},
+				{Name: "saathealth-app-1", Project: "saathealth", State: "running", Image: "app:prod"},
+			},
+			Volumes: []migrate.Volume{{Name: "shop-db-stu901-data", MB: 3000}},
+		},
+		Listeners: []migrate.Listener{{Port: 80, Address: "0.0.0.0", Process: "docker-proxy"}, {Port: 443, Address: "0.0.0.0", Process: "docker-proxy"}},
+		Resources: migrate.Resources{Cores: 8, MemoryMB: 32000, AvailableMB: 24000, DiskFreeMB: 300000, DockerVolumeMB: 3000},
+		PathMB:    map[string]int{"/srv/uploads": 420},
+	}
+}
+
+func decision(it Item, id string) (Decision, bool) {
+	for _, d := range it.Decisions {
+		if d.ID == id {
+			return d, true
+		}
+	}
+	return Decision{}, false
+}
+
+func item(t *testing.T, p Plan, kind, id string) Item {
+	t.Helper()
+	for _, it := range p.Items {
+		if it.Kind == kind && it.ID == id {
+			return it
+		}
+	}
+	t.Fatalf("no %s %s in plan", kind, id)
+	return Item{}
+}
+
+func hasReason(it Item, part string) bool {
+	for _, r := range it.Reasons {
+		if strings.Contains(r, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestPlanMapsEachKind(t *testing.T) {
+	p := BuildPlan(fixture(), time.Now())
+
+	if it := item(t, p, "project", "e2"); it.Name != "Shop · staging" || it.Verdict != Moves || it.Details["shared_variables"] != "1" {
+		t.Errorf("staging environment: %+v", it)
+	}
+	api := item(t, p, "application", "a1")
+	auth, hasAuth := decision(api, "basic_auth")
+	mount, hasMount := decision(api, "mount:/srv/uploads")
+	if api.Verdict != NeedsYou || !hasAuth || auth.Default != "keep_paused" || !hasMount || api.Details["variables"] != "2" {
+		t.Errorf("api: %+v", api)
+	}
+	if mount.Default != "copy" || !strings.Contains(mount.Question, "420 MB") {
+		t.Errorf("an unshared mount defaults to a copy and gives its size: %+v", mount)
+	}
+	if api.Details["repository"] != "team/api" || api.Details["branch"] != "main" || api.Running == nil || !*api.Running {
+		t.Errorf("api source or state: %+v", api)
+	}
+	worker := item(t, p, "application", "a2")
+	if worker.MapsTo != "Image service" || !hasReason(worker, "created stopped") || worker.Details["published_ports"] != "8085/tcp" {
+		t.Errorf("worker: %+v", worker)
+	}
+	// Another project's container mounts a folder inside this path: no default.
+	if shared, ok := decision(worker, "mount:/srv/shared"); !ok || shared.Default != "" || !strings.Contains(shared.Question, "also mounted by saathealth") {
+		t.Errorf("shared mount: %+v", worker.Decisions)
+	}
+	if admin := item(t, p, "application", "a3"); admin.Project != "Shop · staging" || admin.Details["repository"] != "https://github.com/shop/admin.git" {
+		t.Errorf("admin: %+v", admin)
+	}
+	site := item(t, p, "application", "a4")
+	gh, hasGH := decision(site, "github")
+	if site.Verdict != NeedsYou || !hasGH || gh.Default != "image_only" || !hasReason(site, "Railpack") {
+		t.Errorf("site: %+v", site)
+	}
+	if len(site.Redirects) != 1 || site.Redirects[0] != (Redirect{From: "www.site.example", To: "site.example", Code: 301}) {
+		t.Errorf("host-to-host redirect: %+v", site.Redirects)
+	}
+	if rd, ok := decision(site, "redirects"); !ok || rd.Default != "" || !strings.Contains(rd.Question, "some paths of site.example") {
+		t.Errorf("path-rewriting redirect: %+v", site.Decisions)
+	}
+	if far := item(t, p, "application", "a5"); far.Verdict != NotMoved || len(far.Reasons) != 1 {
+		t.Errorf("app on a remote server: %+v", far)
+	}
+	if stack := item(t, p, "compose", "c1"); stack.Verdict != Moves || stack.Details["containers"] != "1 of 2 running" || stack.Details["isolated"] != "true" {
+		t.Errorf("compose: %+v", stack)
+	}
+	db := item(t, p, "database", "d1")
+	if db.Details["external_port"] != "5432" || db.Details["data_move"] != "volume copy, stopped" || db.MapsTo != "Managed Postgres" {
+		t.Errorf("postgres: %+v", db)
+	}
+	if wp := item(t, p, "database", "d2"); !hasReason(wp, "no managed MariaDB") {
+		t.Errorf("mariadb: %+v", wp)
+	}
+	if d := item(t, p, "domain", "dm2"); d.Verdict != NotMoved {
+		t.Errorf("traefik.me domain: %+v", d)
+	}
+	if d := item(t, p, "domain", "dm3"); d.Verdict != NeedsYou || d.Decisions[0].Default != "caddy" {
+		t.Errorf("custom certificate: %+v", d)
+	}
+	if d := item(t, p, "domain", "dm4"); d.MapsTo != "Route to stack / web" || d.Details["path"] != "/app" {
+		t.Errorf("compose domain: %+v", d)
+	}
+	if g := item(t, p, "git_provider", "g2"); g.Verdict != NeedsYou || g.Decisions[0].Default != "skip" {
+		t.Errorf("github provider: %+v", g)
+	}
+	// The shared mount and the path-rewriting redirect have no safe default.
+	if p.Summary["open_decisions"] != 2 {
+		t.Errorf("open decisions = %d, want 2", p.Summary["open_decisions"])
+	}
+	if k := item(t, p, "backup", "k2"); k.Verdict != NotMoved {
+		t.Errorf("web-server backup: %+v", k)
+	}
+	if s := item(t, p, "server", "s1"); s.Verdict != NotMoved {
+		t.Errorf("remote server: %+v", s)
+	}
+	if p.Summary[Moves]+p.Summary[NeedsYou]+p.Summary[NotMoved] != len(p.Items) {
+		t.Errorf("summary %v does not add up to %d items", p.Summary, len(p.Items))
+	}
+}
+
+// The plan is printed and written to disk; nothing read from Dokploy's
+// database that is a secret may reach it.
+func TestPlanCarriesNoSecrets(t *testing.T) {
+	b, err := json.Marshal(BuildPlan(fixture(), time.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range secretValues {
+		if strings.Contains(string(b), secret) {
+			t.Errorf("plan contains %q", secret)
+		}
+	}
+}
+
+func TestPlanFindsUnmanagedWorkloads(t *testing.T) {
+	p := BuildPlan(fixture(), time.Now())
+	names := map[string]Unmanaged{}
+	for _, u := range p.Unmanaged {
+		names[u.Name] = u
+	}
+	if u, ok := names["saathealth"]; !ok || u.Kind != "compose-project" || u.Total != 2 {
+		t.Errorf("hand-run compose project: %+v", names)
+	}
+	if _, ok := names["handmade"]; !ok {
+		t.Error("a Swarm service no row owns was missed")
+	}
+	for _, own := range []string{"dokploy", "dokploy-traefik", "shop-stack-pqr678", "shop-api-abc123"} {
+		if _, ok := names[own]; ok {
+			t.Errorf("%s is Dokploy's or owned by a row, not unmanaged", own)
+		}
+	}
+}
+
+func TestPlanReadsTheEdge(t *testing.T) {
+	src := fixture()
+	if e := BuildPlan(src, time.Now()).Edge; e.Kind != "traefik-container" {
+		t.Errorf("default edge: %+v", e)
+	}
+
+	src.Docker.Services = append(src.Docker.Services, migrate.SwarmService{Name: "dokploy-traefik", Running: 1, Desired: 1})
+	if e := BuildPlan(src, time.Now()).Edge; e.Kind != "traefik-service" {
+		t.Errorf("Traefik as a Swarm service: %+v", e)
+	}
+
+	// sh-hg: a host Caddy in front, Traefik moved to other ports.
+	src = fixture()
+	src.Docker.Containers[0].Ports = "0.0.0.0:6080->80/tcp, 0.0.0.0:6443->443/tcp"
+	src.Listeners = []migrate.Listener{{Port: 80, Address: "*", Process: "caddy"}, {Port: 443, Address: "*", Process: "caddy"}}
+	if e := BuildPlan(src, time.Now()).Edge; e.Kind != "custom" || e.Holders[0] != "caddy" || !strings.Contains(e.Traefik, "6080") {
+		t.Errorf("custom edge: %+v", e)
+	}
+}
+
+func TestPlanChoosesAMode(t *testing.T) {
+	src := fixture()
+	if m := BuildPlan(src, time.Now()).Mode.Choice; m != ModeSideBySide {
+		t.Errorf("large host: %s", m)
+	}
+	src.Resources = migrate.Resources{Cores: 1, MemoryMB: 3800, AvailableMB: 1400, DiskFreeMB: 30000, DockerVolumeMB: 200}
+	if m := BuildPlan(src, time.Now()).Mode.Choice; m != ModeHandOver {
+		t.Errorf("small host: %s", m)
+	}
+	// tcm-hg's shape: 4 GB free, but its workloads use far more than that, so
+	// a second copy does not fit beside them.
+	src.Docker.Containers[1].MemoryMB = 9000
+	if m := BuildPlan(src, time.Now()); m.Mode.Choice != ModeHandOver || m.Resources.WorkloadMemoryMB != 9000 {
+		t.Errorf("workloads too big to run twice: %s, workload memory %d", m.Mode.Choice, m.Resources.WorkloadMemoryMB)
+	}
+	src.Resources = migrate.Resources{Cores: 4, MemoryMB: 15000, AvailableMB: 4000, DiskFreeMB: 5000, DockerVolumeMB: 40000}
+	src.Docker.Volumes = []migrate.Volume{{Name: "big-data", MB: 16000}}
+	if m := BuildPlan(src, time.Now()).Mode.Choice; m != ModeMoveToNode {
+		t.Errorf("data too large for the disk: %s", m)
+	}
+}
+
+// Consumers read these as lists, so none is null.
+func TestPlanListsAreNeverNull(t *testing.T) {
+	b, _ := json.Marshal(BuildPlan(Source{Detection: Detection{Dokploy: true, Supported: true}}, time.Now()))
+	for _, field := range []string{`"items":null`, `"unmanaged":null`, `"holders":null`} {
+		if strings.Contains(string(b), field) {
+			t.Errorf("%s in %s", field, b)
+		}
+	}
+}
+
+// The rules on the reference servers, copied as they are: each sends hostnames
+// of the app to another, keeping the path.
+func TestResolveRealRedirects(t *testing.T) {
+	cases := []struct {
+		regex, replacement string
+		hosts              []string
+		want               []Redirect
+	}{
+		{`^https?://(?:www\.)?solontio\.(?:net|cloud)/(.*)`, "https://solontio.com/${1}",
+			[]string{"solontio.net", "www.solontio.cloud", "solontio.com"},
+			[]Redirect{{"solontio.net", "solontio.com", 301}, {"www.solontio.cloud", "solontio.com", 301}}},
+		{`^https?://www\.saathealth\.com(.*)$`, "https://saathealth.com$1",
+			[]string{"www.saathealth.com", "saathealth.com"},
+			[]Redirect{{"www.saathealth.com", "saathealth.com", 301}}},
+		{`^https?://(www\.)?tcmstunner\.in(.*)$`, "https://tcmstunner.com$2",
+			[]string{"tcmstunner.in", "www.tcmstunner.in"},
+			[]Redirect{{"tcmstunner.in", "tcmstunner.com", 301}, {"www.tcmstunner.in", "tcmstunner.com", 301}}},
+	}
+	migrated := map[string]bool{"solontio.com": true, "saathealth.com": true, "tcmstunner.com": true}
+	for _, c := range cases {
+		got, unresolved := resolveRedirects([]Row{{"regex": c.regex, "replacement": c.replacement, "permanent": true}}, c.hosts, migrated)
+		if len(unresolved) != 0 || len(got) != len(c.want) {
+			t.Errorf("%s: resolved %+v, unresolved %v", c.regex, got, unresolved)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%s: %+v, want %+v", c.regex, got[i], c.want[i])
+			}
+		}
+	}
+
+	// Sending to a host that does not move cannot be a route redirect.
+	_, unresolved := resolveRedirects([]Row{{"regex": `^https?://a\.example(.*)`, "replacement": "https://elsewhere.example$1"}}, []string{"a.example"}, migrated)
+	if len(unresolved) != 1 || !strings.Contains(unresolved[0], "not a migrated domain") {
+		t.Errorf("unresolved = %v", unresolved)
+	}
+}
+
+func TestSupportRange(t *testing.T) {
+	for n, want := range map[int]bool{132: false, 133: true, 191: true, 196: true, 197: false} {
+		if got := n >= MinMigrations && n <= MaxMigrations; got != want {
+			t.Errorf("level %d supported=%v", n, got)
+		}
+	}
+}
