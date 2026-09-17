@@ -10,6 +10,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 import { PublishStateBadge, PublishToggle } from "@/components/routes/publish-toggle"
+import { FirewallMarker } from "@/components/routes/firewall-hint"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/")({
   component: RoutesTab,
@@ -199,9 +200,12 @@ function TCPRouteRow({ route, serviceNames, projectId, onClick }: {
         </div>
       </TableCell>
       <TableCell className="px-4 py-3">
-        <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${TCP_STATE_STYLES[route.status] ?? ""}`}>
-          {!route.published && route.status !== "paused" ? "closing…" : TCP_STATE_LABELS[route.status] ?? route.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${TCP_STATE_STYLES[route.status] ?? ""}`}>
+            {!route.published && route.status !== "paused" ? "closing…" : TCP_STATE_LABELS[route.status] ?? route.status}
+          </Badge>
+          {route.published && route.status !== "failed" && <FirewallMarker port={route.gateway_port} verdict={route.host_firewall} />}
+        </div>
         {route.status === "failed" && route.last_error && (
           <p className="text-[11px] text-destructive mt-1">{route.last_error}</p>
         )}

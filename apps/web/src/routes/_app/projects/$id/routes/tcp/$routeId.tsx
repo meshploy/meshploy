@@ -9,6 +9,7 @@ import { ResourcePanel, ResourceFact } from "@/components/layout/resource-workbe
 import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
 import { PublishStateBadge, PublishToggle } from "@/components/routes/publish-toggle"
+import { FirewallHint } from "@/components/routes/firewall-hint"
 import {
   tcpRoutes as tcpRoutesApi,
   services as servicesApi,
@@ -266,6 +267,7 @@ function ConnectSection({ route, gatewayIP, projectId }: { route: ApiTCPRoute; g
         ) : route.allowed_cidrs.length === 0 ? (
           <p className="text-xs text-amber-400">Open to anyone who can reach the gateway. Limit it under Allow from.</p>
         ) : null}
+        {route.published && route.status !== "failed" && <FirewallHint port={port} verdict={route.host_firewall} />}
       </div>
     </Section>
   )

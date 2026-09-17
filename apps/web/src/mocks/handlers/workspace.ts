@@ -60,6 +60,8 @@ const defaults: Record<string, any> = {
     published: true,
     published_changed_at: null,
     published_changed_by: null,
+    // A new port on a gateway whose ufw denies by default.
+    host_firewall: { state: "blocked", tool: "ufw" },
   },
   "variable-groups": { description: "", system_managed: false, items: [] },
   "config-files": {
@@ -960,6 +962,16 @@ export const workspaceHandlers = [
       release_url: "",
     })
   ),
+  http.get("/api/v1/system/host-agent", () =>
+    json({
+      reporting: true,
+      version: "0.16.0-demo",
+      started_at: now(),
+      heartbeat_at: now(),
+      tasks: { firewall: { ok: true, at: now() } },
+      firewall: "ufw",
+    })
+  ),
   http.post("/api/v1/system/check-updates", () =>
     json({
       current: "v0.11.0-demo",
@@ -971,7 +983,7 @@ export const workspaceHandlers = [
     })
   ),
   http.get("/api/v1/system/exposure", () =>
-    json({ firewall_state: "ufw", ports: [], dismissed: true })
+    json({ firewall_state: "ufw", checked_at: "2026-09-10T08:00:00Z", ports: [], dismissed: true })
   ),
   http.get("/api/v1/system/channels", () =>
     json({

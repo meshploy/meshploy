@@ -43,6 +43,10 @@ const demoDatabases = (
   }
 })
 
+export function firewall(state: string, over: Record<string, unknown> = {}) {
+  return { state, tool: "ufw", checked_at: now(), ...over }
+}
+
 function tcpRoute(gatewayPort: number, over: Record<string, unknown>) {
   return record({
     organization_id: seed.DEMO_ORG_ID,
@@ -97,15 +101,25 @@ export const db: Record<string, DemoRecord[]> = {
   // One published port per managed database engine, so each engine's connect
   // command can be seen, and one to a plain port on a node, which has none.
   "tcp-routes": [
-    tcpRoute(15432, { service_id: seed.DEMO_SVC_DB, service_port: 5432, target_port: 31432 }),
+    // Each firewall verdict the host agent can give, spread across the routes.
+    tcpRoute(15432, { service_id: seed.DEMO_SVC_DB, service_port: 5432, target_port: 31432, host_firewall: firewall("blocked") }),
     ...demoDatabases.map((d) =>
-      tcpRoute(d.gatewayPort, { service_id: d.service.id, service_port: d.port, target_port: d.nodePort })
+      tcpRoute(d.gatewayPort, {
+        service_id: d.service.id,
+        service_port: d.port,
+        target_port: d.nodePort,
+        host_firewall:
+          d.service.engine === "mysql" ? firewall("restricted", { sources: ["203.0.113.0/24", "10.0.0.0/8"] })
+          : d.service.engine === "mongodb" ? { state: "unknown", reason: "the host agent's last report is out of date" }
+          : firewall("open"),
+      })
     ),
     tcpRoute(19000, {
       node_id: seed.DEMO_NODE_W1,
       target_ip: "100.64.0.2",
       target_port: 9000,
       allowed_cidrs: ["203.0.113.0/24", "10.0.0.0/8"],
+      host_firewall: firewall("blocked"),
     }),
   ],
   "variable-groups": [

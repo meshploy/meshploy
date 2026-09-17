@@ -121,6 +121,18 @@ export const routes = {
 
 }
 
+/**
+ * What the gateway's own firewall does with a port, from the host agent. Never
+ * "reachable": a firewall at the hosting provider is invisible from the host.
+ */
+export interface ApiPortFirewall {
+  state: "open" | "restricted" | "blocked" | "unknown"
+  tool?: string
+  sources?: string[]
+  checked_at?: string
+  reason?: string
+}
+
 /** A TCP route publishes one port on the gateway and forwards it over the mesh. */
 export interface ApiTCPRoute {
   id: string
@@ -136,6 +148,8 @@ export interface ApiTCPRoute {
   allowed_cidrs: string[]
   status: "pending" | "open" | "failed" | "paused"
   last_error: string
+  /** Absent from an API older than the host agent. */
+  host_firewall?: ApiPortFirewall
   /** False when paused: kept with its targets, not served. */
   published: boolean
   published_changed_at: string | null

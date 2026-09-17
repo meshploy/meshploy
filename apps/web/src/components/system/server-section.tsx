@@ -10,6 +10,40 @@ import { cn, formatRelativeTime } from "@/lib/utils"
 
 const REPO = "https://github.com/meshploy/meshploy"
 
+/**
+ * The host agent reports what the API cannot see from its container. When it
+ * stops, firewall checks turn unknown, so its state belongs with the server's.
+ */
+function HostAgentLine() {
+  const token = useAuthStore((s) => s.token)!
+  const { data } = useQuery({
+    queryKey: ["system-host-agent"],
+    queryFn: () => systemApi.hostAgent(token),
+    staleTime: 60_000,
+  })
+  if (!data) return null
+  const failing = Object.entries(data.tasks ?? {}).filter(([, t]) => !t.ok)
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border/60 px-3 py-2 text-xs">
+      <span className={cn("size-1.5 rounded-full", data.reporting ? "bg-primary" : "bg-amber-400")} />
+      <span className="font-medium">Host agent</span>
+      {data.reporting ? (
+        <span className="text-muted-foreground">
+          reporting{data.version && ` · ${data.version}`}
+          {data.heartbeat_at && ` · last report ${formatRelativeTime(new Date(data.heartbeat_at))}`}
+          {data.firewall && ` · firewall: ${data.firewall}`}
+          {failing.map(([name, t]) => ` · ${name} failed: ${t.error}`)}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">
+          not reporting, so firewall checks are unknown. Start it on the gateway with{" "}
+          <code className="font-mono">sudo meshploy host start</code>
+        </span>
+      )}
+    </div>
+  )
+}
+
 // How many of main's commits the edge lane lists before linking to the rest.
 const EDGE_SHOWN = 6
 
@@ -93,7 +127,7 @@ export function ServerSection() {
       {ch.unavailable && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
           <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-400">{ch.unavailable}. Try again in a few minutes.</p>
+          <p className="text-xs text-amber-400">{ch.unavailable.replace(/\.$/, "")}. Try again in a few minutes.</p>
         </div>
       )}
 
@@ -101,6 +135,8 @@ export function ServerSection() {
         <StableLane ch={ch} />
         <EdgeLane ch={ch} />
       </div>
+
+      <HostAgentLine />
 
       {ch.switch && (
         <SwitchPanel

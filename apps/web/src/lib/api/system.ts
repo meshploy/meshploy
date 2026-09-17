@@ -28,6 +28,17 @@ export interface Exposure {
   dismissed: boolean
 }
 
+/** Whether the gateway's host agent is reporting. */
+export interface HostAgentStatus {
+  reporting: boolean
+  version?: string
+  started_at?: string
+  heartbeat_at?: string
+  tasks?: Record<string, { ok: boolean; error?: string; at: string }>
+  /** ufw, firewalld, iptables or none. */
+  firewall?: string
+}
+
 /** Stable slug for the host-exposure advisory. */
 export const NOTICE_HOST_EXPOSURE = "host-exposure"
 
@@ -135,6 +146,9 @@ export const system = {
         : { method: "POST" },
       token
     ),
+
+  hostAgent: (token: string) =>
+    apiFetch<HostAgentStatus>("/api/v1/system/host-agent", {}, token),
 
   channels: (token: string) =>
     apiFetch<Channels>("/api/v1/system/channels", {}, token),
