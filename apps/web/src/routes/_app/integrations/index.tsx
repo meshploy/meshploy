@@ -73,8 +73,7 @@ function IntegrationsPage() {
     { queryKey: ["storage-integrations", orgId], queryFn: () => storageApi.list(orgId, token), enabled: !!orgId },
     { queryKey: ["notification-channels", orgId], queryFn: () => notificationsApi.list(orgId, token), enabled: !!orgId },
   ] })
-  const emailCount = useQuery({ queryKey: ["email-config", orgId], queryFn: () => emailConfigApi.get(orgId, token), enabled: !!orgId })
-  const counts = [gitLoading ? "…" : gitList.length, ...countQueries.map(q => q.isPending ? "…" : q.isError ? "-" : (q.data?.length ?? 0)), emailCount.isPending ? "…" : emailCount.data ? 1 : 0]
+  const counts = [gitLoading ? "…" : gitList.length, ...countQueries.map(q => q.isPending ? "…" : q.isError ? "-" : (q.data?.length ?? 0))]
 
   const gitDeleteMutation = useMutation({
     mutationFn: (id: string) => gitApi.delete(orgId, id, token),
@@ -93,7 +92,7 @@ function IntegrationsPage() {
       <Tabs defaultValue="git" className="gap-6 min-w-0">
         <div className="overflow-x-auto border-b border-border">
           <TabsList variant="line" aria-label="Integration categories" className="detail-tabs console-panel-tabs">
-            {categories.map(([id, label], index) => <TabsTrigger key={id} value={id} className="console-detail-tab">{label}<span className="text-xs text-muted-foreground tabular-nums">{counts[index]}</span></TabsTrigger>)}
+            {categories.map(([id, label], index) => <TabsTrigger key={id} value={id} className="console-detail-tab">{label}{id !== "email" && <span className="text-xs text-muted-foreground tabular-nums">{counts[index]}</span>}</TabsTrigger>)}
           </TabsList>
         </div>
         <TabsContent value="git">
