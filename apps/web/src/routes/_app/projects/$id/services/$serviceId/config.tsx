@@ -933,7 +933,7 @@ function AutoDeploySection({
                     the <span className="text-foreground/80">{pushHook.event}</span> event only.
                   </p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+                    <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded-lg h-[34px] leading-[32px] px-2.5 text-foreground/70 truncate">
                       POST {pushHook.url}
                     </code>
                     <Button size="icon-sm" variant="outline" title="Copy the webhook URL"
@@ -945,7 +945,7 @@ function AutoDeploySection({
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+                    <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded-lg h-[34px] leading-[32px] px-2.5 text-foreground/70 truncate">
                       {showSecret ? pushHook.secret : "•".repeat(32)}
                     </code>
                     <Button size="icon-sm" variant="outline" onClick={() => setShowSecret((v) => !v)}
@@ -1044,9 +1044,11 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
       title="Rollback"
       subtitle="Keep previous deployment images so you can roll back instantly without a rebuild."
     >
-      <div className="space-y-4">
+      {/* Two short fields, and the second only means anything while the first
+          is on, so they read as one setting on one line. */}
+      <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
         <Field label="Enable rollback">
-          <div className="flex items-center gap-2">
+          <div className="flex h-[34px] items-center gap-2">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
             <span className="text-xs text-muted-foreground">
               {enabled ? "Enabled" : "Disabled"}
@@ -1066,7 +1068,6 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
             />
           </Field>
         )}
-
       </div>
     </Section>
   )

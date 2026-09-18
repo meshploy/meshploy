@@ -46,7 +46,7 @@ export function DeployWebhookURL({
     <div className="flex flex-col gap-2">
       {description && <p className="text-xs text-muted-foreground">{description}</p>}
       <div className="flex items-center gap-2">
-        <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+        <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded-lg h-[34px] leading-[32px] px-2.5 text-foreground/70 truncate">
           POST {url}
         </code>
         <Button
