@@ -2,7 +2,7 @@ import { OptionSelect } from "@/components/layout/option-select"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ChevronRight, Clock, Copy, Crown, Loader2, Plus, Shield, User } from "lucide-react"
+import { Check, Clock, Copy, Crown, Loader2, Plus, Shield, User } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,7 +24,6 @@ import {
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin, useOrgRole } from "@/store/org-store"
-import { cn } from "@/lib/utils"
 import type { OrgRole } from "@/types"
 
 export const Route = createFileRoute("/_app/users/")({
@@ -38,7 +37,6 @@ function UsersPage() {
   const userId = useAuthStore((s) => s.userId)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const isAdmin = useIsAdmin()
-  const qc = useQueryClient()
 
   useEffect(() => {
     if (role === "member") navigate({ to: "/" })

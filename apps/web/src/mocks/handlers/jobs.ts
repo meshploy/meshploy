@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { demoJob, demoJobRun, DEMO_JOB_ID } from "../data"
+import { demoJob, demoJobRun } from "../data"
 
 export const jobsHandlers = [
   http.get("/api/v1/orgs/:orgId/projects/:projectId/jobs", () =>

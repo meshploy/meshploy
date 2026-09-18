@@ -160,15 +160,6 @@ function ErrorBanner({ message }: { message: string }) {
   )
 }
 
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-64 gap-3 text-muted-foreground">
-      <p className="text-sm font-medium">{label}</p>
-      <p className="text-xs text-muted-foreground/60">Coming soon</p>
-    </div>
-  )
-}
-
 // ─── Git form ─────────────────────────────────────────────────────────────────
 
 type GitProvider = "github" | "gitlab" | "gitea" | "bitbucket"

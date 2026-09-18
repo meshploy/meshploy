@@ -6,7 +6,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X, Zap } from "lucide-react"
+import { AlertTriangle, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, HardDrive, Layers, Loader2, Plus, Server, Trash2, X, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -1588,7 +1588,7 @@ function ConfigTab() {
           projectId={projectId}
           serviceId={serviceId}
           dbPort={service.ports?.find((p) => p.is_primary)?.port ?? service.ports?.[0]?.port ?? 5432}
-          serviceName={service.slug || service.name}
+          serviceName={service.name}
         />
       </div></FormLayout></div></ConfigSaveBar>
     )

@@ -24,7 +24,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Card, CardContent } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { SegmentedControl } from "@/components/ui/segmented-control"
-import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { nodes as nodesApi, toNode, type ApiNodeMetrics } from "@/lib/api"
 import type { MeshRole } from "@/types"
 import { useAuthStore } from "@/store/auth-store"

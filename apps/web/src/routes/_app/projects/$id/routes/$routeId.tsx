@@ -1,4 +1,4 @@
-import { MetricTile, ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
+import { ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CornerDownRight, ExternalLink, Globe, Loader2, Pencil, Plus, ServerCrash, Trash2, X } from "lucide-react"
@@ -154,14 +154,6 @@ function RouteDetailPage() {
       navigate({ to: "/projects/$id/routes", params: { id: projectId } })
     },
   })
-
-  const addValid =
-    add.path.trim().startsWith("/") && (
-      add.mode === "service"  ? add.serviceId.length > 0 :
-      add.mode === "node"     ? add.nodeId.length > 0 && add.port.trim().length > 0 :
-      add.mode === "address"  ? add.targetIp.length > 0 && add.port.trim().length > 0 :
-      /* redirect */            add.redirectRouteId.length > 0
-    )
 
   if (isLoading) {
     return (
@@ -699,15 +691,6 @@ function TargetItem({
           </code>
         </div>
       )}
-    </div>
-  )
-}
-
-function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex items-center gap-4 px-4 py-3">
-      <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
-      <span className={`text-xs text-foreground flex-1 ${mono ? "font-mono" : ""}`}>{value}</span>
     </div>
   )
 }

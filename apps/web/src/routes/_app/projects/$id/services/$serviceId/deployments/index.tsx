@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Rocket, RotateCcw, ScrollText, Trash2, X } from "lucide-react"
 import { services as servicesApi, buildConfigs as buildConfigsApi } from "@/lib/api"
-import { Badge } from "@/components/ui/badge"
 import { DeployWebhookURL } from "@/components/services/deploy-webhook"
 import { Button } from "@/components/ui/button"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
@@ -19,15 +18,6 @@ export const Route = createFileRoute(
 })
 
 const ACTIVE_STATUSES = new Set(["pending", "building", "deploying"])
-
-const STATUS_STYLES: Record<ApiDeployment["status"], string> = {
-  pending:   "bg-muted text-muted-foreground border-border",
-  building:  "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  deploying: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  running:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  success:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  failed:    "bg-destructive/10 text-destructive border-destructive/20",
-}
 
 const STATUS_DOT: Record<ApiDeployment["status"], string> = {
   pending:   "bg-muted-foreground/40",

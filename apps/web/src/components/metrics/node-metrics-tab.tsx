@@ -8,12 +8,10 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from "recharts"
 import { useMetricsStore, type RawSample } from "@/store/metrics-store"
 import { type MetricsPayload } from "@/store/tab-store"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import { cn } from "@/lib/utils"
 
 const EMPTY_HISTORY: RawSample[] = []
@@ -45,7 +43,6 @@ function buildChartData(history: RawSample[], seconds: number): ChartPoint[] {
     const dIdle  = c.cpuIdle  - p.cpuIdle
     const cpu = dTotal > 0 ? (1 - dIdle / dTotal) * 100 : null
 
-    const GB  = 1_073_741_824
     const mem  = c.memTotal  > 0 ? (1 - c.memAvail  / c.memTotal)  * 100 : 0
     const disk = c.diskTotal > 0 ? (1 - c.diskAvail / c.diskTotal) * 100 : 0
 

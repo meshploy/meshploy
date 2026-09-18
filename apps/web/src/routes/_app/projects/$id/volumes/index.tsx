@@ -85,7 +85,7 @@ function VolumesTab() {
   const stackNames = useStackNames(orgId, projectId)
   const navigate = useNavigate()
 
-  const { data: volumeList = [], isLoading, isError, error, refetch } = useQuery({
+  const { data: volumeList = [], isLoading } = useQuery({
     queryKey: ["volumes", orgId, projectId],
     queryFn: () => volumesApi.list(orgId, projectId, token),
     enabled: !!orgId,

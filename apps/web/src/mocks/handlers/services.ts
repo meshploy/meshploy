@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw"
 import {
   demoServiceApi, demoServiceWeb, demoServiceDb,
   demoDeployment, demoBuildConfig, demoPods,
-  DEMO_SVC_API, DEMO_SVC_WEB, DEMO_SVC_DB,
+  DEMO_SVC_DB,
 } from "../data"
 
 const serviceList = [demoServiceApi, demoServiceWeb, demoServiceDb]

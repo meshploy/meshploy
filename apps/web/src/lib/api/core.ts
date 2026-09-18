@@ -47,7 +47,10 @@ export async function apiFetch<T>(
       const body = await res.json()
       detail = body.detail ?? body.message ?? detail
       title = body.title
-    } catch {}
+    } catch {
+      // A body that is not JSON leaves the status and default detail, which is
+      // what the caller shows.
+    }
     throw new ApiError(res.status, detail, title)
   }
 

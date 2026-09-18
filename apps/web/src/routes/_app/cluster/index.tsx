@@ -13,7 +13,6 @@ import {
   Terminal,
   Check,
   Loader2,
-  Plus,
   ShieldAlert,
 } from "lucide-react"
 import { useState } from "react"
@@ -428,7 +427,7 @@ function ProvisioningTokensPanel() {
                   size="icon"
                   variant="ghost"
                   className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => copy(curlCommand.replace(/\\\n  /g, " "), "cmd")}
+                  onClick={() => copy(curlCommand.replace(/\\\n {2}/g, " "), "cmd")}
                 >
                   {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                 </Button>
@@ -562,7 +561,7 @@ function HeadscalePreAuthKeyPanel() {
                       size="icon"
                       variant="ghost"
                       className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => copy(tailscaleCmd.replace(/\\\n  /g, " "), "cmd")}
+                      onClick={() => copy(tailscaleCmd.replace(/\\\n {2}/g, " "), "cmd")}
                     >
                       {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                     </Button>
@@ -659,7 +658,7 @@ function K3sJoinTokenPanel() {
                   size="icon"
                   variant="ghost"
                   className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => copy(installCmd.replace(/\\\n  /g, " "), "cmd")}
+                  onClick={() => copy(installCmd.replace(/\\\n {2}/g, " "), "cmd")}
                 >
                   {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
                 </Button>

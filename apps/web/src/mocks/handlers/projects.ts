@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { demoProject, DEMO_ORG_ID, DEMO_PROJECT_ID } from "../data"
+import { demoProject } from "../data"
 
 export const projectsHandlers = [
   // Searches as the API does: name or slug, ignoring case.

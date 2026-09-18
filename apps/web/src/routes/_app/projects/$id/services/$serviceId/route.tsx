@@ -2,9 +2,7 @@ import { StatusPill } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, Outlet, useParams, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Box, Database, Loader2, Play, ServerCrash, Square, Terminal, Plus } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import { services as servicesApi, deployments, stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -35,12 +33,6 @@ const DB_TABS = [
   { label: "Settings",    to: "/projects/$id/services/$serviceId/settings"    },
 ]
 
-const STATUS_STYLES: Record<string, string> = {
-  running:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  deploying: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  failed:    "bg-destructive/10 text-destructive border-destructive/20",
-  stopped:   "bg-muted text-muted-foreground border-border",
-}
 
 function ServiceLayout() {
   const { id: projectId, serviceId } = useParams({ from: "/_app/projects/$id/services/$serviceId" })

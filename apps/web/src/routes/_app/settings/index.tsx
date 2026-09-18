@@ -34,7 +34,7 @@ import { DEFAULT_ENTERPRISE_IMAGE } from "@/lib/api/entitlements"
 import { BackupCard } from "@/components/backups/backup-card"
 import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
-import { ACCENT_GROUPS, getAccent } from "@/lib/accents"
+import { ACCENT_GROUPS } from "@/lib/accents"
 import { useAccentStore } from "@/store/accent-store"
 
 export const Route = createFileRoute("/_app/settings/")({

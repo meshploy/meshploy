@@ -33,7 +33,7 @@ function ProjectSettingsPage() {
 
   const renameMut = useMutation({
     mutationFn: () => projectsApi.update(orgId, projectId, nameInput.trim(), token),
-    onSuccess: (updated) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["projects", orgId] })
       setEditingName(false)

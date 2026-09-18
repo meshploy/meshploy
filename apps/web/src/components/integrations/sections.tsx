@@ -425,7 +425,7 @@ function NotificationsSection({ orgId, token }: { orgId: string; token: string }
               onDelete={() => deleteMutation.mutateAsync(ch.id)}
               isDeleting={deleteMutation.isPending && deleteMutation.variables === ch.id}
               onToggle={(enabled) => toggleMutation.mutate({ id: ch.id, enabled })}
-              isToggling={toggleMutation.isPending && (toggleMutation.variables as any)?.id === ch.id}
+              isToggling={toggleMutation.isPending && toggleMutation.variables?.id === ch.id}
             />
           ))}
         </IntegrationTable>

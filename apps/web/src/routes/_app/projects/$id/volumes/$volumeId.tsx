@@ -1,4 +1,4 @@
-import { MetricTile, ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
+import { MetricTile, ResourcePanel } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"

@@ -1,7 +1,7 @@
 "use client"
 
 import { Home, Database, Terminal, Activity, X } from "lucide-react"
-import { useTabStore, type SessionTab } from "@/store/tab-store"
+import { useTabStore } from "@/store/tab-store"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 

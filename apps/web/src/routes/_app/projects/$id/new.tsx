@@ -11,9 +11,7 @@ import {
   ChevronDown,
   CornerDownRight,
   Database,
-  Eye,
   FileCog,
-  EyeOff,
   Globe,
   HardDrive,
   Info,
@@ -1961,13 +1959,6 @@ interface JobFormState {
   memoryLimit: string
 }
 
-const CRON_PRESETS = [
-  { label: "Every 5 min", value: "*/5 * * * *" },
-  { label: "Hourly",      value: "0 * * * *"   },
-  { label: "Daily",       value: "0 0 * * *"   },
-  { label: "Weekly",      value: "0 0 * * 0"   },
-  { label: "Monthly",     value: "0 0 1 * *"   },
-]
 
 
 const JOB_INITIAL: JobFormState = {

@@ -2,7 +2,7 @@ import { MetricTile, ResourcePanel, ResourceFact, StatusPill } from "@/component
 import { livePoll } from "@/lib/live-poll"
 import { createFileRoute, useParams, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, Server, Box, Database, ExternalLink, Copy, Check, Table2, ArrowRight, Activity, MemoryStick, Clock, Layers, Variable, ArrowUpRight } from "lucide-react"
+import { Server, Box, ExternalLink, Copy, Check, Table2, ArrowRight, Activity, MemoryStick, ArrowUpRight } from "lucide-react"
 import {
   services as servicesApi,
   deployments, variableGroups, stacks,

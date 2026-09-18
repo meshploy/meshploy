@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { demoNodeGateway, demoNodeWorker, demoNodeMetrics, DEMO_NODE_GW, DEMO_NODE_W1 } from "../data"
+import { demoNodeGateway, demoNodeWorker, demoNodeMetrics } from "../data"
 
 const nodes = [demoNodeGateway, demoNodeWorker]
 
