@@ -28,11 +28,12 @@ type Server struct {
 	resolver Resolver
 	runner   Runner
 
-	// running is held for the length of an install so a second browser tab, or
-	// an impatient double-click, cannot start a concurrent compose run against
-	// the same directory.
-	mu      sync.Mutex
-	running bool
+	// run is the install in flight, if any. It is owned by the server rather
+	// than by the request that started it, so a second browser tab watches the
+	// one run instead of starting a second compose run against the same
+	// directory - and closing the browser does not kill an install half way.
+	mu  sync.Mutex
+	run *installRun
 
 	// done is closed when the operator leaves for the console. A privileged
 	// installer that keeps listening afterwards is a permanent liability, not a
@@ -143,21 +144,15 @@ func (s *Server) install(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One run, however many tabs ask. A second ask watches the first.
 	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
-		// Not an error: a second tab should watch, not start a second compose
-		// run against the same directory.
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "an install is already running"})
-		return
+	run := s.run
+	if run == nil || run.finished() {
+		run = newInstallRun(st.Log)
+		s.run = run
+		go s.doInstall(run, st.Answers)
 	}
-	s.running = true
 	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		s.running = false
-		s.mu.Unlock()
-	}()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -169,24 +164,61 @@ func (s *Server) install(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	for _, line := range st.Log {
+	backlog, lines, unsubscribe := run.watch()
+	defer unsubscribe()
+	for _, line := range backlog {
 		send("log", line)
 	}
 
+	drain := func() {
+		for {
+			select {
+			case line := <-lines:
+				send("log", line)
+			default:
+				return
+			}
+		}
+	}
+	for {
+		select {
+		case line := <-lines:
+			send("log", line)
+		case <-run.done:
+			drain()
+			if err := run.failure(); err != nil {
+				send("failed", err.Error())
+			} else {
+				send("done", "")
+			}
+			return
+		case <-r.Context().Done():
+			// The browser went away: a reload, a closed tab, a dropped
+			// connection. The install keeps running - it writes .env and drives
+			// compose, and stopping it here would leave the machine half
+			// installed. The transcript is on disk, so a reload replays it.
+			return
+		}
+	}
+}
+
+// doInstall runs the installer to the end, whatever the browser does.
+func (s *Server) doInstall(run *installRun, a Answers) {
 	_ = s.store.Update(func(x *State) { x.Phase = PhaseInstall; x.Failed = "" })
 
-	err := s.runner.Run(r.Context(), st.Answers, func(line string) {
+	// context.Background(), not the request's: this outlives whoever started
+	// it. It ends when this process does, which is also when the installer's
+	// own child processes end.
+	err := s.runner.Run(context.Background(), a, func(line string) {
 		s.store.Append(line)
-		send("log", line)
+		run.append(line)
 	})
 	if err != nil {
 		_ = s.store.Update(func(x *State) { x.Failed = err.Error() })
-		send("failed", err.Error())
-		return
+	} else {
+		_ = s.store.Update(func(x *State) { x.Phase = PhaseVerify; x.Failed = "" })
 	}
-
-	_ = s.store.Update(func(x *State) { x.Phase = PhaseVerify; x.Failed = "" })
-	send("done", "")
+	run.finish(err)
 }
 
 // complete ends setup: the state file is removed so a later run starts clean

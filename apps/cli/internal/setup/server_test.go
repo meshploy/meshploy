@@ -15,13 +15,17 @@ import (
 type fakeRunner struct {
 	lines   []string
 	err     error
+	runs    int
 	started chan struct{} // closed on first Run
 	release chan struct{} // Run blocks until closed
 }
 
 func (f *fakeRunner) Run(_ context.Context, _ Answers, out func(string)) error {
+	f.runs++
+	// Closed on the first run only: a retry runs this again.
 	if f.started != nil {
 		close(f.started)
+		f.started = nil
 	}
 	for _, l := range f.lines {
 		out(l)
@@ -170,25 +174,86 @@ func TestFailedInstallIsRecorded(t *testing.T) {
 }
 
 // Two tabs, or an impatient double-click, must not start two compose runs
-// against the same directory.
-func TestConcurrentInstallsAreRefused(t *testing.T) {
+// against the same directory: the second one watches the first.
+func TestASecondInstallWatchesTheFirst(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
-	s, h := newTestServer(t, &fakeRunner{started: started, release: release})
+	runner := &fakeRunner{lines: []string{"installing"}, started: started, release: release}
+	s, h := newTestServer(t, runner)
 	_ = s.store.Update(func(st *State) {
 		st.Answers = Answers{Domain: "example.com", DNSMode: "ondemand", PublicIP: "203.0.113.10"}
 	})
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() { defer wg.Done(); do(h, "POST", "/api/install", "ms_token", "") }()
+	wg.Add(2)
+	var first, second *httptest.ResponseRecorder
+	go func() { defer wg.Done(); first = do(h, "POST", "/api/install", "ms_token", "") }()
 	<-started
+	go func() { defer wg.Done(); second = do(h, "POST", "/api/install", "ms_token", "") }()
+	waitFor(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.run != nil && s.run.watchers() == 2
+	}, "both browsers to be watching the run")
 
-	if got := do(h, "POST", "/api/install", "ms_token", "").Code; got != http.StatusConflict {
-		t.Errorf("a second install must be refused with 409, got %d", got)
-	}
 	close(release)
 	wg.Wait()
+
+	if runner.runs != 1 {
+		t.Fatalf("want one install, got %d", runner.runs)
+	}
+	for name, w := range map[string]*httptest.ResponseRecorder{"first": first, "second": second} {
+		if w.Code != http.StatusOK {
+			t.Errorf("%s: want 200, got %d", name, w.Code)
+		}
+		if !strings.Contains(w.Body.String(), "event: done") {
+			t.Errorf("%s: should have been told the install finished: %s", name, w.Body)
+		}
+	}
+	// The one that arrived late still gets the output it missed.
+	if !strings.Contains(second.Body.String(), "installing") {
+		t.Errorf("a watcher must see the transcript so far: %s", second.Body)
+	}
+}
+
+// waitFor polls until want is true, so a test never depends on how the
+// scheduler happened to interleave two requests.
+func waitFor(t *testing.T, want func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !want() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// An install belongs to the machine, not to the browser that asked for it. It
+// writes .env, generates config and drives compose; stopping it because a tab
+// closed would leave the machine half installed.
+func TestClosingTheBrowserDoesNotStopTheInstall(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	s, h := newTestServer(t, &fakeRunner{lines: []string{"first"}, started: started, release: release})
+	_ = s.store.Update(func(st *State) {
+		st.Answers = Answers{Domain: "example.com", DNSMode: "ondemand", PublicIP: "203.0.113.10"}
+	})
+
+	ctx, gone := context.WithCancel(context.Background())
+	r := httptest.NewRequest("POST", "/api/install", nil).WithContext(ctx)
+	r.Header.Set("X-Setup-Token", "ms_token")
+	done := make(chan struct{})
+	go func() { defer close(done); h.ServeHTTP(httptest.NewRecorder(), r) }()
+
+	<-started
+	gone() // the operator closed the tab
+	<-done
+
+	close(release)
+	// The run carries on and records its result, which is what a reload reads.
+	waitFor(t, func() bool { return s.store.Get().Phase == PhaseVerify },
+		"the install to finish on its own")
 }
 
 // Installing before the answers are valid must be refused, not attempted with
