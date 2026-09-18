@@ -112,6 +112,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          source "${GITHUB_WORKSPACE}/.github/upload-release-binaries.sh"
           NOTES=$(cat <<'EOF'
           Rolling build from `main`. Updated automatically on every change.
           Use `meshploy update --edge` to install this build.
@@ -128,33 +129,13 @@ jobs:
             gh release create cli-latest --title "meshploy CLI (edge)" --notes "$NOTES" --prerelease
           fi
 
-          # One file at a time, three tries each. --clobber removes the old
-          # asset just before uploading its replacement, so keeping that window
-          # to a single file means a stalled upload costs that one binary for
-          # seconds rather than leaving the release short of it until someone
-          # notices.
-          failed=""
-          for file in dist/*; do
-            name=$(basename "$file")
-            for attempt in 1 2 3; do
-              if gh release upload cli-latest "$file" --clobber; then
-                name=""
-                break
-              fi
-              echo "::warning::upload of ${name} failed (attempt ${attempt})"
-              sleep $((attempt * 10))
-            done
-            if [ -n "$name" ]; then
-              failed="${failed} ${name}"
-            fi
-          done
-          if [ -n "$failed" ]; then
-            echo "::error::could not upload:${failed}"
-            exit 1
-          fi
+          upload_binaries cli-latest
 
       - name: Attach CLI binaries to existing release
         if: steps.detect.outputs.is_release == 'true'
-        run: gh release upload v${{ steps.detect.outputs.version }} dist/* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          source "${GITHUB_WORKSPACE}/.github/upload-release-binaries.sh"
+          upload_binaries "v${{ steps.detect.outputs.version }}"
