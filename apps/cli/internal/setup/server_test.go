@@ -46,7 +46,7 @@ func newTestServer(t *testing.T, runner Runner) (*Server, http.Handler) {
 		"console.example.com": {"203.0.113.10"},
 		"api.example.com":     {"203.0.113.10"},
 	}}
-	s := NewServer(store, "ms_token", res, runner)
+	s := NewServer(store, "ms_token", res, runner, nil)
 	return s, s.Handler()
 }
 
@@ -70,6 +70,9 @@ func TestEveryAPIRouteRequiresTheToken(t *testing.T) {
 		{"POST", "/api/check-domain"},
 		{"POST", "/api/answers"},
 		{"POST", "/api/install"},
+		{"GET", "/api/migration"},
+		{"POST", "/api/migration/plan"},
+		{"POST", "/api/migration"},
 	} {
 		if got := do(h, c.method, c.path, "", "{}").Code; got != http.StatusForbidden {
 			t.Errorf("%s %s without a token: want 403, got %d", c.method, c.path, got)

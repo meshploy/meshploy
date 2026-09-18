@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
+
+	"github.com/meshploy/apps/cli/internal/migrate/dokploy"
 )
 
 // Runner performs the actual install. Injected so the HTTP surface can be
@@ -27,6 +30,15 @@ type Server struct {
 	token    string
 	resolver Resolver
 	runner   Runner
+	// planner is nil when this build cannot plan a migration; the wizard then
+	// shows no migration step.
+	planner Planner
+
+	// plan is the last plan read from the host. Reading it takes a while on a
+	// large server, so the wizard asks for it once and reviews it as long as
+	// it likes.
+	planMu sync.Mutex
+	plan   *dokploy.Plan
 
 	// run is the install in flight, if any. It is owned by the server rather
 	// than by the request that started it, so a second browser tab watches the
@@ -42,9 +54,9 @@ type Server struct {
 	doneOnce sync.Once
 }
 
-func NewServer(store *Store, token string, resolver Resolver, runner Runner) *Server {
+func NewServer(store *Store, token string, resolver Resolver, runner Runner, planner Planner) *Server {
 	return &Server{
-		store: store, token: token, resolver: resolver, runner: runner,
+		store: store, token: token, resolver: resolver, runner: runner, planner: planner,
 		done: make(chan struct{}),
 	}
 }
@@ -55,9 +67,13 @@ func (s *Server) Done() <-chan struct{} { return s.done }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
+	mux.Handle("GET /assets/fonts/", fonts())
 	mux.Handle("GET /api/state", s.auth(http.HandlerFunc(s.getState)))
 	mux.Handle("POST /api/check-domain", s.auth(http.HandlerFunc(s.checkDomain)))
 	mux.Handle("POST /api/answers", s.auth(http.HandlerFunc(s.saveAnswers)))
+	mux.Handle("GET /api/migration", s.auth(http.HandlerFunc(s.getMigration)))
+	mux.Handle("POST /api/migration/plan", s.auth(http.HandlerFunc(s.planMigration)))
+	mux.Handle("POST /api/migration", s.auth(http.HandlerFunc(s.saveMigration)))
 	mux.Handle("POST /api/install", s.auth(http.HandlerFunc(s.install)))
 	mux.Handle("POST /api/complete", s.auth(http.HandlerFunc(s.complete)))
 	return mux
@@ -125,6 +141,116 @@ func (s *Server) saveAnswers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.store.Get())
+}
+
+// getMigration reports what was found on this server: nothing, or a platform
+// with its version and whether it can be planned. The plan itself is read only
+// when the operator asks for it.
+func (s *Server) getMigration(w http.ResponseWriter, r *http.Request) {
+	out := s.migrationState()
+	if s.planner == nil {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	s.planMu.Lock()
+	cached := s.plan
+	s.planMu.Unlock()
+	if cached != nil {
+		out.Plan = cached
+		fillDetection(&out, *cached)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	found, err := s.planner.Detect(r.Context())
+	if err != nil {
+		out.Note = err.Error()
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	fillDetection(&out, found)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// planMigration reads the whole platform and returns the plan. Separate from
+// the detection above because on a server like a busy Dokploy host it takes
+// long enough that the wizard has to ask for it deliberately.
+func (s *Server) planMigration(w http.ResponseWriter, r *http.Request) {
+	if s.planner == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this build cannot plan a migration"})
+		return
+	}
+	plan, err := s.planner.Plan(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.planMu.Lock()
+	s.plan = &plan
+	s.planMu.Unlock()
+
+	out := s.migrationState()
+	out.Plan = &plan
+	fillDetection(&out, plan)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// saveMigration records the operator's answers, checked against the plan, and
+// writes both where the migration stages read them.
+func (s *Server) saveMigration(w http.ResponseWriter, r *http.Request) {
+	var in MigrationChoices
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	in.SavedAt = time.Now().UTC()
+
+	if !in.Skipped {
+		s.planMu.Lock()
+		plan := s.plan
+		s.planMu.Unlock()
+		if plan == nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "read the plan before saving choices for it"})
+			return
+		}
+		if err := validateChoices(*plan, in); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		in = withDefaults(*plan, in)
+		if err := saveConfirmedPlan(*plan, in); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	if err := s.store.Update(func(st *State) { st.Migration = &in }); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	out := s.migrationState()
+	s.planMu.Lock()
+	out.Plan = s.plan
+	s.planMu.Unlock()
+	if out.Plan != nil {
+		fillDetection(&out, *out.Plan)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) migrationState() Migration {
+	return Migration{Choices: s.store.Get().Migration}
+}
+
+// fillDetection copies what detection found into the wizard's view.
+func fillDetection(out *Migration, plan dokploy.Plan) {
+	if !plan.Detection.Dokploy {
+		return
+	}
+	out.Platform = "Dokploy"
+	out.Version = plan.Detection.Version
+	out.Supported = plan.Detection.Supported
+	if out.Note == "" {
+		out.Note = plan.Detection.SupportNote
+	}
 }
 
 // install runs the installer and streams its output as Server-Sent Events.

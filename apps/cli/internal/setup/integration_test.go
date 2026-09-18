@@ -33,7 +33,7 @@ echo "  ok  core services started"
 		"api.example.com":     {"203.0.113.10"},
 	}}
 	srv := httptest.NewServer(NewServer(store, "ms_e2e", res,
-		ScriptRunner{Script: script, Dir: dir}).Handler())
+		ScriptRunner{Script: script, Dir: dir}, nil).Handler())
 	defer srv.Close()
 
 	h := srv.Config.Handler
@@ -105,7 +105,7 @@ func TestPageLeaksNothing(t *testing.T) {
 	_ = store.Update(func(st *State) {
 		st.Answers = Answers{Domain: "secret-internal.example.com", PublicIP: "203.0.113.10"}
 	})
-	h := NewServer(store, "ms_supersecret", fakeResolver{}, &fakeRunner{}).Handler()
+	h := NewServer(store, "ms_supersecret", fakeResolver{}, &fakeRunner{}, nil).Handler()
 
 	body := do(h, "GET", "/", "", "").Body.String()
 	for _, leak := range []string{"ms_supersecret", "secret-internal.example.com", "203.0.113.10"} {
@@ -124,7 +124,7 @@ func TestTranscriptSurvivesADisconnect(t *testing.T) {
 		st.Answers = Answers{Domain: "example.com", DNSMode: "ondemand", PublicIP: "203.0.113.10"}
 	})
 	h := NewServer(store, "ms_e2e", fakeResolver{},
-		&fakeRunner{lines: []string{"line one", "line two"}}).Handler()
+		&fakeRunner{lines: []string{"line one", "line two"}}, nil).Handler()
 
 	do(h, "POST", "/api/install", "ms_e2e", "")
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -19,6 +20,12 @@ import (
 var (
 	setupServeAddr     string
 	setupServePublicIP string
+	// setupServeDemo runs the page against stand-ins, for working on it
+	// without a server to install.
+	setupServeDemo bool
+	// setupServeDemoPlatform is what the demo host pretends to run: "dokploy",
+	// or "none" for a fresh server.
+	setupServeDemoPlatform string
 )
 
 // setupServeCmd runs the browser-driven installer.
@@ -38,6 +45,9 @@ Headscale and Caddy configuration, and drives compose. Access is gated on the
 setup token from /opt/meshploy/.env — this listens on a public address over
 plain HTTP, because no certificate exists yet.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if setupServeDemo {
+			return serveSetupDemo(cmd.Context(), cmd.OutOrStdout(), cmd.Flags().Changed("addr"))
+		}
 		if os.Getuid() != 0 {
 			return fmt.Errorf("setup serve requires root — re-run with sudo")
 		}
@@ -86,6 +96,7 @@ plain HTTP, because no certificate exists yet.`,
 			store, token,
 			setup.PublicResolver(""),
 			setup.ScriptRunner{Script: meshployInstDir + "/install.sh", Dir: meshployInstDir},
+			setup.DokployPlanner{},
 		)
 		srv := &http.Server{
 			Addr:    setupServeAddr,
@@ -177,6 +188,47 @@ func init() {
 		"Address to serve the setup page on")
 	setupServeCmd.Flags().StringVar(&setupServePublicIP, "public-ip", "",
 		"Public IP to pre-fill and to check DNS against (defaults to PUBLIC_IP from .env)")
+	setupServeCmd.Flags().BoolVar(&setupServeDemo, "demo", false,
+		"Serve the page against stand-ins on localhost, installing nothing (for working on the page)")
+	setupServeCmd.Flags().StringVar(&setupServeDemoPlatform, "demo-platform", "dokploy",
+		"What the demo host pretends to run: dokploy, or none for a fresh server")
+	_ = setupServeCmd.Flags().MarkHidden("demo")
+	_ = setupServeCmd.Flags().MarkHidden("demo-platform")
 	setupCmd.AddCommand(setupServeCmd)
 	rootCmd.AddCommand(setupCmd)
+}
+
+// serveSetupDemo runs the setup page against stand-ins on the loopback
+// address: nothing is installed, no host is read, and its state lives in a
+// temporary directory. For working on the page itself.
+func serveSetupDemo(ctx context.Context, out io.Writer, ownAddr bool) error {
+	dir, err := os.MkdirTemp("", "meshploy-setup-demo-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+
+	srv, err := setup.NewDemoServer(dir, setupServeDemoPlatform)
+	if err != nil {
+		return err
+	}
+
+	// Loopback unless asked otherwise: this serves a page that accepts a token
+	// printed on the terminal, which is fine on this machine and nowhere else.
+	addr := "127.0.0.1:7788"
+	if ownAddr {
+		addr = setupServeAddr
+	}
+	fmt.Fprintf(out, "Setup demo on http://%s\n  token: %s\n  host: %s\n  nothing is installed and no host is read.\n",
+		addr, setup.DemoToken, setupServeDemoPlatform)
+
+	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 15 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = httpSrv.Close()
+	}()
+	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }

@@ -177,12 +177,14 @@ Run it on the **gateway server**. `start`, `stop` and `run` need root. New insta
 sudo meshploy setup serve
 ```
 
-Serves the browser installer: a page on port 9000 that collects the domain and DNS mode, runs the installer, and streams its output. `install.sh` starts it for you when you choose to continue setup in a browser. Run it yourself to reopen setup, for example to change the domain; it starts from the current configuration in `.env`. Requires root, and access is gated on the setup token from `/opt/meshploy/.env`. It serves plain HTTP, because no certificate exists yet.
+Serves the browser installer: a page on port 9000 that collects the domain and DNS mode, offers to migrate another platform already on the machine, runs the installer, and streams its output. `install.sh` starts it for you when you choose to continue setup in a browser. Run it yourself to reopen setup, for example to change the domain; it starts from the current configuration in `.env`. Requires root, and access is gated on the setup token from `/opt/meshploy/.env`. It serves plain HTTP, because no certificate exists yet.
 
 | Flag | Description |
 |---|---|
 | `--addr` | Address to serve on (default: `0.0.0.0:9000`) |
 | `--public-ip` | Public IP to pre-fill and to check DNS against (default: `PUBLIC_IP` from `.env`) |
+
+When another platform is on the machine, setup adds a **Migrate** step: it detects it, reads what moving it would take, and records what you decide. Nothing on the other platform is changed - the move itself runs later, from the console. Today that means Dokploy; see [`meshploy migrate dokploy`](#meshploy-migrate-dokploy).
 
 ---
 

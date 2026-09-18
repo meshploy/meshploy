@@ -40,6 +40,10 @@ type State struct {
 	// reload does not lose the output the operator was reading.
 	Log []string `json:"log"`
 
+	// Migration is the operator's answers about another platform found on this
+	// server, once they have confirmed them.
+	Migration *MigrationChoices `json:"migration,omitempty"`
+
 	// Failed records why an install stopped, so resuming can show it rather
 	// than starting again silently.
 	Failed    string    `json:"failed,omitempty"`
