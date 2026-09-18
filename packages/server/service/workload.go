@@ -1043,9 +1043,13 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	if isNew {
 		// Generate a per-service deploy token so the user can set up a manual webhook
 		// without needing a GitHub App integration.
-		deployToken, err := generateDeployToken()
-		if err != nil {
-			return nil, err
+		// tokenErr, not err: `deployToken, err :=` declared a second err inside
+		// this block, so the create's result went into that one and the outer
+		// err kept the ErrRecordNotFound from the lookup above - which this
+		// function then returned for every build configuration it created.
+		deployToken, tokenErr := generateDeployToken()
+		if tokenErr != nil {
+			return nil, tokenErr
 		}
 		bc.DeployToken = db.EncryptedString(deployToken)
 		err = s.db.WithContext(ctx).Create(&bc).Error
