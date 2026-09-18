@@ -913,6 +913,52 @@ export const workspaceHandlers = [
       { full_name: "demo/web", default_branch: "main", private: false },
     ])
   ),
+  // What a provider needs to deliver pushes, and whether the hook is on the
+  // repository. The demo starts with it missing, so the "Add it" button has
+  // something to do.
+  ...(() => {
+    const installed = new Set<string>()
+    const details = (integration: any, repo: string | null) => {
+      const field: Record<string, [string, string]> = {
+        gitlab: ["Secret token", "Push events"],
+        gitea: ["Secret", "Push"],
+        bitbucket: ["Secret", "Repository push"],
+      }
+      const [secret_field, event] = field[integration.provider as string] ?? ["Secret", "Push"]
+      return {
+        provider: integration.provider,
+        url: `${window.location.origin}/api/v1/webhooks/git/${integration.provider}/${integration.id}`,
+        secret: "demo-secret-0123456789abcdef0123456789abcdef",
+        secret_field,
+        event,
+        state: !repo ? "unknown" : installed.has(`${integration.id}:${repo}`) ? "installed" : "missing",
+      }
+    }
+    return [
+      http.get(`${O}/git-integrations/:integrationId/push-hook`, ({ params, request }) => {
+        const integration = find("git-integrations", params.integrationId)
+        if (!integration) return missing()
+        const repo = new URL(request.url).searchParams.get("repo")
+        if (integration.provider === "github") {
+          // The App holds the URL and secret; what can be wrong is which
+          // repositories it was installed on.
+          return json({
+            provider: "github", url: "", secret: "", secret_field: "", event: "",
+            state: repo ? "installed" : "unknown",
+          })
+        }
+        return json(details(integration, repo))
+      }),
+      http.post(`${O}/git-integrations/:integrationId/push-hook`, async ({ params, request }) => {
+        const integration = find("git-integrations", params.integrationId)
+        if (!integration) return missing()
+        const body = (await request.json()) as { repo?: string }
+        if (!body.repo) return error("name the repository to add the webhook to", 400)
+        installed.add(`${integration.id}:${body.repo}`)
+        return json(details(integration, body.repo), 201)
+      }),
+    ]
+  })(),
   http.get(`${O}/git-integrations/:integrationId/branches`, () =>
     json(["main", "develop", "staging"])
   ),

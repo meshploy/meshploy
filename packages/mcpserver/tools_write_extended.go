@@ -256,12 +256,15 @@ func (s *srv) registerWriteToolsExtended(ms *mcpsdk.MCPServer) {
 
 	ms.AddTool(
 		mcp.NewTool("create_git_integration",
-			mcp.WithDescription("Connect a git provider using a Personal Access Token (PAT). Provider is one of: github, gitlab, gitea, bitbucket."),
+			// GitHub is not here: it is connected as a GitHub App, through a
+			// browser flow the API cannot do on anyone's behalf. Offering it
+			// here only produced "unsupported provider: github".
+			mcp.WithDescription("Connect a git provider with a token: a personal access token for GitLab or Gitea, an Atlassian API token for Bitbucket. GitHub is connected as a GitHub App from the console instead."),
 			mcp.WithString("provider", mcp.Required(), mcp.Description("Git provider"),
-				mcp.Enum("github", "gitlab", "gitea", "bitbucket")),
+				mcp.Enum("gitlab", "gitea", "bitbucket")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Display name for this integration")),
-			mcp.WithString("token", mcp.Required(), mcp.Description("Personal access token")),
-			mcp.WithString("base_url", mcp.Description("Base URL for self-hosted providers (e.g. https://gitlab.example.com)")),
+			mcp.WithString("token", mcp.Required(), mcp.Description("Personal access token, or an Atlassian API token for Bitbucket")),
+			mcp.WithString("base_url", mcp.Description("Instance URL for a self-hosted GitLab or Gitea/Forgejo (e.g. https://gitlab.example.com, https://codeberg.org). Not used by Bitbucket Cloud")),
 		),
 		s.handleCreateGitIntegration,
 	)

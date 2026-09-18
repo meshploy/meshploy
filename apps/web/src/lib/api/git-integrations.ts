@@ -1,5 +1,24 @@
 import { apiFetch } from "./core"
 
+// The providers connected with a token or an OAuth app. GitHub is not one of
+// them: it is a GitHub App, with its own flow.
+export type TokenGitProvider = "gitlab" | "gitea" | "bitbucket"
+
+// PushHook is where a provider delivers pushes for an integration, and the
+// secret it signs them with, for setting a hook up by hand.
+export interface PushHook {
+  // github: the App delivers, and the question is whether it covers the repo.
+  provider: string
+  url: string
+  secret: string
+  secret_field: string
+  event: string
+  // What was found on the repository: installed, missing, no_access,
+  // unreachable, or unknown when no repository was asked about.
+  state: "installed" | "missing" | "no_access" | "unreachable" | "unknown"
+  reason?: string
+}
+
 export interface ApiGitIntegration {
   id: string
   organization_id: string
@@ -33,7 +52,7 @@ export const gitIntegrations = {
 
   createPAT: (
     orgId: string,
-    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; token: string },
+    body: { provider: TokenGitProvider; name: string; base_url?: string; groups?: string; token: string },
     authToken: string
   ) =>
     apiFetch<ApiGitIntegration>(
@@ -44,7 +63,7 @@ export const gitIntegrations = {
 
   initOAuth: (
     orgId: string,
-    body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; redirect_uri: string; client_id: string; client_secret: string },
+    body: { provider: TokenGitProvider; name: string; base_url?: string; groups?: string; redirect_uri: string; client_id: string; client_secret: string },
     authToken: string
   ) =>
     apiFetch<{ auth_url: string; redirect_uri: string }>(
@@ -69,6 +88,23 @@ export const gitIntegrations = {
 
   repos: (orgId: string, id: string, token: string) =>
     apiFetch<GitRepo[]>(`/api/v1/orgs/${orgId}/git-integrations/${id}/repos`, {}, token),
+
+  // Where the provider should deliver pushes, for adding a hook by hand when
+  // the token cannot create one. Admin only: it carries the secret.
+  pushHook: (orgId: string, id: string, token: string, repo?: string) =>
+    apiFetch<PushHook>(
+      `/api/v1/orgs/${orgId}/git-integrations/${id}/push-hook${repo ? `?repo=${encodeURIComponent(repo)}` : ""}`,
+      {},
+      token
+    ),
+
+  // Ask the provider to add the hook, for when the connection can manage them.
+  installPushHook: (orgId: string, id: string, repo: string, token: string) =>
+    apiFetch<PushHook>(
+      `/api/v1/orgs/${orgId}/git-integrations/${id}/push-hook`,
+      { method: "POST", body: JSON.stringify({ repo }) },
+      token
+    ),
 
   branches: (orgId: string, id: string, repo: string, token: string) =>
     apiFetch<string[]>(`/api/v1/orgs/${orgId}/git-integrations/${id}/branches?repo=${encodeURIComponent(repo)}`, {}, token),

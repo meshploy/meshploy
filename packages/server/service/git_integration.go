@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -350,6 +352,29 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 			return nil, huma.Error500InternalServerError("failed to list Gitea branches: " + err.Error())
 		}
 		return branches, nil
+	case "bitbucket":
+		token, err := s.resolveOAuthToken(ctx, &integration, false)
+		if err == errUnauthorized {
+			return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		branches, err := listBitbucketBranches(token, repo)
+		if err == errUnauthorized {
+			token, err = s.resolveOAuthToken(ctx, &integration, true)
+			if err == errUnauthorized {
+				return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+			}
+			if err != nil {
+				return nil, huma.Error500InternalServerError(err.Error())
+			}
+			branches, err = listBitbucketBranches(token, repo)
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list Bitbucket branches: " + err.Error())
+		}
+		return branches, nil
 	}
 
 	// GitHub App flow — credentials are on the integration row itself.
@@ -408,6 +433,13 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 		if err := validateGitToken(strings.TrimRight(baseURL, "/")+"/api/v1/user", "token", pat); err != nil {
 			return nil, huma.Error400BadRequest("invalid Gitea token: " + err.Error())
 		}
+	case "bitbucket":
+		// An Atlassian API token, which Bitbucket takes as a bearer. Needs
+		// read:repository:bitbucket to be of any use, and
+		// write:webhook:bitbucket to deploy on push.
+		if err := validateGitToken(bitbucketAPI+"/user", "Bearer", pat); err != nil {
+			return nil, huma.Error400BadRequest("invalid Bitbucket API token: " + err.Error())
+		}
 	default:
 		return nil, huma.Error400BadRequest("unsupported provider: " + provider)
 	}
@@ -420,6 +452,7 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 		InstallationID: db.EncryptedString(pat),
 		BaseURL:        baseURL,
 		Groups:         groups,
+		WebhookSecret:  db.EncryptedString(newWebhookSecret()),
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, huma.Error500InternalServerError("failed to save git integration")
@@ -441,6 +474,7 @@ func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID 
 		OAuthClientID:     clientID,
 		OAuthClientSecret: db.EncryptedString(clientSecret),
 		OAuthRedirectURI:  redirectURI,
+		WebhookSecret:     db.EncryptedString(newWebhookSecret()),
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, "", huma.Error500InternalServerError("failed to save git integration")
@@ -458,6 +492,8 @@ func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID 
 		base := strings.TrimRight(baseURL, "/")
 		authURL = fmt.Sprintf("%s/login/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
 			base, url.QueryEscape(clientID), url.QueryEscape(redirectURI), state)
+	case "bitbucket":
+		authURL = bitbucketAuthorizeURL(clientID, redirectURI, state)
 	default:
 		_ = s.db.WithContext(ctx).Delete(&row)
 		return nil, "", huma.Error400BadRequest("unsupported provider: " + provider)
@@ -539,6 +575,41 @@ func (s *GitIntegrationService) HandleGiteaOAuthCallback(ctx context.Context, co
 	return &integration, nil
 }
 
+// HandleBitbucketOAuthCallback does the same for Bitbucket. Separate from the
+// other two because Bitbucket wants the client credentials as HTTP Basic.
+func (s *GitIntegrationService) HandleBitbucketOAuthCallback(ctx context.Context, code, state string) (*db.GitIntegration, error) {
+	integrationID, err := validateState(state, s.cfg.JWTSecret)
+	if err != nil {
+		return nil, fmt.Errorf("invalid state: %w", err)
+	}
+	id, err := uuid.Parse(integrationID)
+	if err != nil {
+		return nil, fmt.Errorf("malformed integration ID in state")
+	}
+
+	var integration db.GitIntegration
+	if err := s.db.WithContext(ctx).First(&integration, id).Error; err != nil {
+		return nil, fmt.Errorf("integration not found")
+	}
+
+	tok, err := bitbucketExchangeCode(integration.OAuthClientID, string(integration.OAuthClientSecret),
+		code, integration.OAuthRedirectURI)
+	if err != nil {
+		return nil, fmt.Errorf("token exchange failed: %w", err)
+	}
+
+	updates := map[string]any{
+		"installation_id":      db.EncryptedString(tok.AccessToken),
+		"o_auth_refresh_token": db.EncryptedString(tok.RefreshToken),
+		"o_auth_token_expiry":  tok.Expiry,
+	}
+	if err := s.db.WithContext(ctx).Model(&integration).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("failed to persist access token")
+	}
+	integration.InstallationID = db.EncryptedString(tok.AccessToken)
+	return &integration, nil
+}
+
 // resolveOAuthToken returns a valid access token for an OAuth integration.
 // If force is false: only refreshes when the token is within 5 minutes of expiry.
 // If force is true: always refreshes using the refresh token (called after a 401 response).
@@ -571,11 +642,20 @@ func (s *GitIntegrationService) resolveOAuthToken(ctx context.Context, integrati
 		tokenURL = gitLabBase(integration.BaseURL) + "/oauth/token"
 	case "gitea":
 		tokenURL = strings.TrimRight(integration.BaseURL, "/") + "/login/oauth/access_token"
+	case "bitbucket":
+		// Bitbucket wants the client credentials as HTTP Basic, so it renews
+		// through its own call rather than the shared one.
 	default:
 		return string(integration.InstallationID), nil
 	}
 
-	tok, err := refreshOAuthToken(tokenURL, integration.OAuthClientID, string(integration.OAuthClientSecret), string(integration.OAuthRefreshToken))
+	var tok oauthTokenResult
+	var err error
+	if integration.Provider == "bitbucket" {
+		tok, err = bitbucketRefreshToken(integration.OAuthClientID, string(integration.OAuthClientSecret), string(integration.OAuthRefreshToken))
+	} else {
+		tok, err = refreshOAuthToken(tokenURL, integration.OAuthClientID, string(integration.OAuthClientSecret), string(integration.OAuthRefreshToken))
+	}
 	if err != nil {
 		return "", errUnauthorized
 	}
@@ -648,6 +728,31 @@ func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uui
 		}
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list Gitea repositories: " + err.Error())
+		}
+		return repos, nil
+	case "bitbucket":
+		token, err := s.resolveOAuthToken(ctx, &integration, false)
+		if err == errUnauthorized {
+			return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		// Groups carries the workspace here, the way it carries a group on
+		// GitLab and an org on Gitea.
+		repos, err := listBitbucketRepos(token, integration.Groups)
+		if err == errUnauthorized {
+			token, err = s.resolveOAuthToken(ctx, &integration, true)
+			if err == errUnauthorized {
+				return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
+			}
+			if err != nil {
+				return nil, huma.Error500InternalServerError(err.Error())
+			}
+			repos, err = listBitbucketRepos(token, integration.Groups)
+		}
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list Bitbucket repositories: " + err.Error())
 		}
 		return repos, nil
 	}
@@ -839,6 +944,19 @@ func fetchAllRepos(token string) ([]GitRepo, error) {
 }
 
 // ─── Shared auth helpers ──────────────────────────────────────────────────────
+
+// newWebhookSecret returns the secret a provider signs its push deliveries
+// with. 32 bytes: it is a key, not an identifier, and it is stored encrypted.
+func newWebhookSecret() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand does not fail in practice, and a predictable secret is
+		// worse than no auto-deploy: leave it empty and the receiver refuses
+		// every delivery until the integration is set up again.
+		return ""
+	}
+	return hex.EncodeToString(b)
+}
 
 // validateGitToken sends a GET to userURL with "Authorization: {scheme} {token}"
 // and returns an error if the response is not 200.

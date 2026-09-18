@@ -6,7 +6,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { useState, useEffect, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, Check, ChevronDown, Copy, ExternalLink, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X, Zap } from "lucide-react"
+import { AlertTriangle, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, HardDrive, Layers, Loader2, Lock, Plus, Save, Server, Trash2, X, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -27,6 +27,7 @@ import {
   volumes as volumesApi,
   variableGroups as groupsApi,
   configFiles as configFilesApi,
+  gitIntegrations as gitApi,
   toNode,
   type ApiNode,
   type ApiBuildConfig,
@@ -779,6 +780,52 @@ function AutoDeploySection({
   const token = useAuthStore((s) => s.token)!
   const qc = useQueryClient()
   const [copied, setCopied] = useState(false)
+  const [copiedHook, setCopiedHook] = useState<"url" | "secret" | null>(null)
+  const [showSecret, setShowSecret] = useState(false)
+  // Both shut by default. The toggle is what this section is about; the two
+  // URLs are for the times it needs setting up by hand, and side by side in
+  // the open they read as a choice to make rather than fallbacks.
+  const [showHook, setShowHook] = useState(false)
+  const [showDeployURL, setShowDeployURL] = useState(false)
+
+  // Which provider this service builds from decides how a push reaches
+  // Meshploy: GitHub's App delivers on its own, the others need a webhook on
+  // the repository.
+  const { data: integrations = [] } = useQuery({
+    queryKey: ["git-integrations", orgId],
+    queryFn: () => gitApi.list(orgId, token).then((r) => r ?? []),
+    enabled: !!orgId && !!bc?.git_integration_id,
+  })
+
+  // Where to add a repository to a GitHub App: that choice is made at GitHub.
+  const installUrlMut = useMutation({
+    mutationFn: () => gitApi.installUrl(orgId, bc!.git_integration_id!, token),
+    onSuccess: ({ url }) => window.open(url, "_blank", "noopener"),
+  })
+  const integration = integrations.find((i) => i.id === bc?.git_integration_id)
+  // GitHub has no repository webhook to add, but it has the same question:
+  // does the connection actually cover this repository?
+  const needsRepoHook = !!integration && integration.provider !== "github"
+  const checksRepo = !!integration
+
+  // Meshploy adds this hook itself when the token allows it, so this is the
+  // fallback rather than the instruction - shown only when there is one to
+  // show, and only to an admin, which is who the endpoint answers.
+  const { data: pushHook, isLoading: hookLoading } = useQuery({
+    queryKey: ["git-push-hook", orgId, bc?.git_integration_id, bc?.git_repo],
+    queryFn: () => gitApi.pushHook(orgId, bc!.git_integration_id!, token, bc!.git_repo),
+    enabled: !!orgId && checksRepo,
+    retry: false,
+  })
+
+  // Adding the hook is the same call the build config makes on save; offered
+  // here for when that one failed, or the hook was removed at the provider.
+  const installHookMut = useMutation({
+    mutationFn: () => gitApi.installPushHook(orgId, bc!.git_integration_id!, bc!.git_repo, token),
+    onSuccess: (updated) => {
+      qc.setQueryData(["git-push-hook", orgId, bc?.git_integration_id, bc?.git_repo], updated)
+    },
+  })
 
   const regenMut = useMutation({
     mutationFn: () => buildConfigsApi.regenerateDeployToken(orgId, projectId, serviceId, token),
@@ -790,10 +837,12 @@ function AutoDeploySection({
   if (!bc) return null
 
   const deployToken = bc.deploy_token
-  const webhookPath = `/api/v1/webhooks/deploy/${serviceId}?token=${deployToken}`
+  // Shown whole, the way it has to be pasted: a path alone is no use in a
+  // provider's webhook box or a curl.
+  const webhookURL = `${window.location.origin}/api/v1/webhooks/deploy/${serviceId}?token=${deployToken}`
 
   function copyWebhook() {
-    navigator.clipboard.writeText(window.location.origin + webhookPath)
+    navigator.clipboard.writeText(webhookURL)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -804,53 +853,187 @@ function AutoDeploySection({
       subtitle="Trigger a new build automatically on every push to the tracked branch."
     >
       <div className="space-y-4">
-        {/* GitHub App auto-deploy toggle */}
+        {/* Deploy-on-push toggle */}
         <Field label="Auto-deploy on push">
           <div className="flex items-center gap-2">
             <Switch checked={autoDeploy} onCheckedChange={onToggle} />
             <span className="text-xs text-muted-foreground">
               {autoDeploy
-                ? "Enabled — deploys on every push via GitHub App webhook"
+                ? integration?.provider === "github"
+                  ? "Enabled — the GitHub App reports every push"
+                  : needsRepoHook
+                    ? `Enabled — a webhook on the repository reports every push to ${bc.branch}`
+                    : "Enabled — deploys on every push to the tracked branch"
                 : "Disabled"}
             </span>
           </div>
           {autoDeploy && !bc.git_integration_id && (
             <p className="text-xs text-amber-400 flex items-center gap-1 mt-1.5">
               <AlertTriangle className="h-3 w-3 shrink-0" />
-              GitHub App auto-deploy requires a connected private git integration. For public repos, use the webhook URL below instead.
+              Deploying on push needs a connected git integration. For a public repository, use the deploy webhook URL below instead.
             </p>
           )}
         </Field>
 
-        {/* Per-service deploy token webhook URL */}
-        <div className="flex flex-col gap-3">
-          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-            <Zap className="h-3 w-3" /> Deploy webhook URL
-          </label>
-          <p className="text-xs text-muted-foreground mb-2">
-            Add this as a webhook in your git provider — any POST triggers a build. Works with GitHub, GitLab, Gitea, Bitbucket, or any provider.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
-              POST {webhookPath}
-            </code>
-            <Button size="icon-sm" variant="outline" onClick={copyWebhook} title="Copy full webhook URL">
-              {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="outline"
-              onClick={() => regenMut.mutate()}
-              disabled={regenMut.isPending}
-              title="Regenerate token — invalidates the current URL"
-            >
-              {regenMut.isPending
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Zap className="h-3.5 w-3.5" />}
-            </Button>
+        {/* The repository webhook, for the providers that keep one per repo.
+            What is shown depends on what is actually on the repository, because
+            "add this by hand" is noise when the hook is already there. */}
+        {autoDeploy && checksRepo && pushHook && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-xs">
+              {pushHook.state === "installed" ? (
+                <>
+                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  <span className="text-muted-foreground">
+                    {needsRepoHook ? "Webhook installed on " : "The GitHub App reports pushes for "}
+                    <span className="text-foreground/80 font-mono">{bc.git_repo}</span>
+                    {needsRepoHook ? " — pushes reach Meshploy." : "."}
+                  </span>
+                </>
+              ) : pushHook.state === "missing" && needsRepoHook ? (
+                <>
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <span className="text-muted-foreground">
+                    No webhook on <span className="text-foreground/80 font-mono">{bc.git_repo}</span> yet, so pushes are not reaching Meshploy.
+                  </span>
+                  <Button size="sm" variant="outline" className="ml-1 gap-1.5"
+                    onClick={() => installHookMut.mutate()} disabled={installHookMut.isPending}>
+                    {installHookMut.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                    Add it
+                  </Button>
+                </>
+              ) : !needsRepoHook ? (
+                <>
+                  {/* GitHub: the App delivers, so what can be wrong is which
+                      repositories it was installed on, and that is changed at
+                      GitHub rather than here. */}
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <span className="text-muted-foreground">
+                    {pushHook.reason || `${bc.git_repo} is not covered by this GitHub App, so its pushes do not reach Meshploy.`}
+                  </span>
+                  <Button size="sm" variant="outline" className="ml-1 gap-1.5"
+                    onClick={() => installUrlMut.mutate()} disabled={installUrlMut.isPending}>
+                    {installUrlMut.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                    Add it on GitHub
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <span className="text-muted-foreground">
+                    {pushHook.reason || "The webhook on this repository could not be checked."} Add it by hand below.
+                  </span>
+                </>
+              )}
+            </div>
+            {installHookMut.isError && (
+              <p className="text-xs text-destructive">{(installHookMut.error as Error).message}</p>
+            )}
+
+            {needsRepoHook && (
+            <div className="rounded-lg border border-border/40">
+              <Button
+                variant="ghost"
+                onClick={() => setShowHook(!showHook)}
+                aria-expanded={showHook}
+                aria-controls="push-hook-details"
+                className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="font-medium">Add the {integration?.name} webhook by hand</span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform", showHook ? "rotate-180" : "")} />
+              </Button>
+              {showHook && (
+                <div id="push-hook-details" className="flex flex-col gap-3 border-t border-border/40 p-4">
+                  <p className="text-xs text-muted-foreground">
+                    In {integration?.provider === "bitbucket" ? "Repository settings → Webhooks" : "the repository's webhook settings"}:
+                    the URL below, the secret in <span className="text-foreground/80">{pushHook.secret_field}</span>, and
+                    the <span className="text-foreground/80">{pushHook.event}</span> event only.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+                      POST {pushHook.url}
+                    </code>
+                    <Button size="icon-sm" variant="outline" title="Copy the webhook URL"
+                      onClick={() => {
+                        navigator.clipboard.writeText(pushHook.url)
+                        setCopiedHook("url"); setTimeout(() => setCopiedHook(null), 2000)
+                      }}>
+                      {copiedHook === "url" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+                      {showSecret ? pushHook.secret : "•".repeat(32)}
+                    </code>
+                    <Button size="icon-sm" variant="outline" onClick={() => setShowSecret((v) => !v)}
+                      title={showSecret ? "Hide the secret" : "Show the secret"}>
+                      {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button size="icon-sm" variant="outline" title="Copy the secret"
+                      onClick={() => {
+                        navigator.clipboard.writeText(pushHook.secret)
+                        setCopiedHook("secret"); setTimeout(() => setCopiedHook(null), 2000)
+                      }}>
+                      {copiedHook === "secret" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    One secret per integration, shared by every repository connected through it.
+                  </p>
+                </div>
+              )}
+            </div>
+            )}
           </div>
-          {regenMut.isError && (
-            <p className="text-xs text-destructive mt-1">{(regenMut.error as Error).message}</p>
+        )}
+        {autoDeploy && checksRepo && hookLoading && (
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin" /> Checking whether pushes reach Meshploy…
+          </p>
+        )}
+
+        {/* The per-service deploy token: nothing to do with a git connection,
+            which is the point of it. Also shut. */}
+        <div className="rounded-lg border border-border/40">
+          <Button
+            variant="ghost"
+            onClick={() => setShowDeployURL(!showDeployURL)}
+            aria-expanded={showDeployURL}
+            aria-controls="deploy-webhook-url"
+            className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span className="font-medium">Build this service from anything else</span>
+            <ChevronDown className={cn("h-4 w-4 transition-transform", showDeployURL ? "rotate-180" : "")} />
+          </Button>
+          {showDeployURL && (
+            <div id="deploy-webhook-url" className="flex flex-col gap-3 border-t border-border/40 p-4">
+              <p className="text-xs text-muted-foreground">
+                A URL that builds this one service, whoever calls it: a public repository with no connection, a
+                CI job, a cron. The token in it is the only thing guarding it, so treat it as a credential.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
+                  POST {webhookURL}
+                </code>
+                <Button size="icon-sm" variant="outline" onClick={copyWebhook} title="Copy full webhook URL">
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="outline"
+                  onClick={() => regenMut.mutate()}
+                  disabled={regenMut.isPending}
+                  title="Regenerate token — invalidates the current URL"
+                >
+                  {regenMut.isPending
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Zap className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              {regenMut.isError && (
+                <p className="text-xs text-destructive">{(regenMut.error as Error).message}</p>
+              )}
+            </div>
           )}
         </div>
       </div>

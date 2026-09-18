@@ -207,6 +207,7 @@ var publicRules = []publicRule{
 	{Method: "GET", Path: "/api/v1/github/callback", Match: matchExact},
 	{Method: "GET", Path: "/api/v1/gitlab/callback", Match: matchExact},
 	{Method: "GET", Path: "/api/v1/gitea/callback", Match: matchExact},
+	{Method: "GET", Path: "/api/v1/bitbucket/callback", Match: matchExact},
 }
 
 // RequireAuth is a fail-closed middleware that returns 401 for any request

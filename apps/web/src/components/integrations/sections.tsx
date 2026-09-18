@@ -45,6 +45,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   github: "GitHub",
   gitlab: "GitLab",
   gitea: "Gitea",
+  bitbucket: "Bitbucket",
 }
 
 
@@ -78,11 +79,11 @@ export function GitSourcesTab() {
   // The providers' connect flows come back here with how it went.
   const search = useSearch({ strict: false }) as Record<string, string>
   useEffect(() => {
-    if (search.github_setup === "done" || search.github === "connected" || search.gitlab === "connected" || search.gitea === "connected") {
+    if (search.github_setup === "done" || search.github === "connected" || search.gitlab === "connected" || search.gitea === "connected" || search.bitbucket === "connected") {
       qc.invalidateQueries({ queryKey: ["git-integrations", orgId] })
       navigate({ to: "/integrations/git", replace: true })
     }
-  }, [search.github_setup, search.github, search.gitlab, search.gitea])
+  }, [search.github_setup, search.github, search.gitlab, search.gitea, search.bitbucket])
 
   const { data: gitList = [], isLoading: gitLoading } = useQuery({
     queryKey: ["git-integrations", orgId],
@@ -589,7 +590,7 @@ function EmailProviderCard({ cfg, onEdit, onDelete, isDeleting }: {
 function ProviderIcon({ provider }: { provider: string }) {
   return (
     <div className="flex items-center justify-center accent-icon-tile shrink-0 text-xs font-bold uppercase">
-      {({ github: "GH", gitlab: "GL", gitea: "GT" } as Record<string, string>)[provider] || provider.slice(0, 2)}
+      {({ github: "GH", gitlab: "GL", gitea: "GT", bitbucket: "BB" } as Record<string, string>)[provider] || provider.slice(0, 2)}
     </div>
   )
 }

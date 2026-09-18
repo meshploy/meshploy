@@ -129,7 +129,7 @@ export interface Deployment {
 export interface GitIntegration {
   id: string
   name: string
-  provider: "github" | "gitlab" | "gitea" | "generic"
+  provider: "github" | "gitlab" | "gitea" | "bitbucket" | "generic"
   baseUrl?: string
   organizationId: string
   createdAt: Date

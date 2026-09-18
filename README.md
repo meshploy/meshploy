@@ -88,7 +88,7 @@ See [**apps/cli/README.md**](./apps/cli/README.md) for the full command referenc
 - **AI-native**: MCP server with 90+ tools — Claude Code can deploy, query, manage, and monitor your platform without leaving your editor
 - **WireGuard mesh networking**: workers are dark to the public internet; all traffic routes over the mesh
 - **Multi-node K3s cluster**: unlimited workers; builds and jobs run as ephemeral K8s Jobs
-- **Git integrations**: GitHub (App), GitLab, and Gitea; auto-detect build context
+- **Git integrations**: GitHub (App), GitLab, Gitea/Forgejo (including Codeberg) and Bitbucket; deploy on push on all of them; auto-detect build context
 - **Jobs & cron**: one-off and scheduled jobs with full run history
 - **Automated backups**: scheduled to any S3-compatible storage (R2, MinIO, AWS); restore from dashboard
 - **Real-time monitoring**: node and container CPU / memory / network metrics

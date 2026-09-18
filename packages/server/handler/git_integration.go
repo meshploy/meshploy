@@ -6,7 +6,9 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	db "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 )
 
 // ─── I/O types ────────────────────────────────────────────────────────────────
@@ -40,10 +42,30 @@ type ListBranchesOutput struct {
 	Body []string
 }
 
+type GetPushHookOutput struct {
+	Body service.PushHook
+}
+
+type PushHookInput struct {
+	OrgID string `path:"orgId"`
+	ID    string `path:"id"`
+	// Repo asks whether the hook is on that repository. Without it the answer
+	// is only where deliveries go and what signs them.
+	Repo string `query:"repo"`
+}
+
+type InstallPushHookInput struct {
+	OrgID string `path:"orgId"`
+	ID    string `path:"id"`
+	Body  struct {
+		Repo string `json:"repo" minLength:"1"`
+	}
+}
+
 type CreatePATIntegrationInput struct {
 	OrgID string `path:"orgId"`
 	Body  struct {
-		Provider string `json:"provider" enum:"gitlab,gitea"`
+		Provider string `json:"provider" enum:"gitlab,gitea,bitbucket"`
 		Name     string `json:"name"     minLength:"1" maxLength:"100"`
 		BaseURL  string `json:"base_url,omitempty"`
 		Groups   string `json:"groups,omitempty"`
@@ -58,7 +80,7 @@ type CreatePATIntegrationOutput struct {
 type InitOAuthIntegrationInput struct {
 	OrgID string `path:"orgId"`
 	Body  struct {
-		Provider     string `json:"provider"      enum:"gitlab,gitea"`
+		Provider     string `json:"provider"      enum:"gitlab,gitea,bitbucket"`
 		Name         string `json:"name"          minLength:"1" maxLength:"100"`
 		BaseURL      string `json:"base_url,omitempty"`
 		Groups       string `json:"groups,omitempty"`
@@ -153,7 +175,7 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		OperationID:   "create-pat-git-integration",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/orgs/{orgId}/git-integrations",
-		Summary:       "Create a GitLab or Gitea integration via personal access token",
+		Summary:       "Create a GitLab, Gitea or Bitbucket integration from a token",
 		Tags:          []string{tag},
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
@@ -174,7 +196,7 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		OperationID:   "init-oauth-git-integration",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/orgs/{orgId}/git-integrations/oauth",
-		Summary:       "Start a GitLab or Gitea OAuth App connection",
+		Summary:       "Start a GitLab, Gitea or Bitbucket OAuth App connection",
 		Tags:          []string{tag},
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
@@ -270,6 +292,57 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 			}
 		}
 		return &ListReposOutput{Body: items}, nil
+	})
+
+	// Push hook details, for setting one up by hand
+	huma.Register(api, huma.Operation{
+		OperationID: "get-git-push-hook",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/orgs/{orgId}/git-integrations/{id}/push-hook",
+		Summary:     "Where a provider should deliver pushes for this integration, and the secret to sign them with",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *PushHookInput) (*GetPushHookOutput, error) {
+		// Admin, not member: the response carries the secret that makes a
+		// delivery trusted.
+		_, _, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
+		if err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid integration ID")
+		}
+		hook, err := h.svc.GitIntegrations.PushHookDetails(ctx, id, in.Repo)
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return &GetPushHookOutput{Body: *hook}, nil
+	})
+
+	// Add the push hook to a repository on request
+	huma.Register(api, huma.Operation{
+		OperationID:   "install-git-push-hook",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/orgs/{orgId}/git-integrations/{id}/push-hook",
+		Summary:       "Add this integration's push webhook to a repository",
+		Tags:          []string{tag},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusCreated,
+	}, func(ctx context.Context, in *InstallPushHookInput) (*GetPushHookOutput, error) {
+		_, _, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
+		if err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid integration ID")
+		}
+		hook, err := h.svc.GitIntegrations.InstallPushHook(ctx, id, in.Body.Repo)
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return &GetPushHookOutput{Body: *hook}, nil
 	})
 
 	// List branches
@@ -373,6 +446,23 @@ func (h *Handler) GiteaOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, frontendURL+"/integrations/git?gitea=connected", http.StatusFound)
+}
+
+// BitbucketOAuthCallback handles the redirect back from Bitbucket after OAuth
+// authorization.
+func (h *Handler) BitbucketOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	frontendURL := h.cfg.FrontendURL
+	q := r.URL.Query()
+	code, state := q.Get("code"), q.Get("state")
+	if code == "" || state == "" {
+		http.Redirect(w, r, frontendURL+"/integrations/git?bitbucket=error&reason=missing_params", http.StatusFound)
+		return
+	}
+	if _, err := h.svc.GitIntegrations.HandleBitbucketOAuthCallback(r.Context(), code, state); err != nil {
+		http.Redirect(w, r, fmt.Sprintf("%s/integrations/git?bitbucket=error&reason=internal_error", frontendURL), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, frontendURL+"/integrations/git?bitbucket=connected", http.StatusFound)
 }
 
 // GitHubCallback handles the redirect back from GitHub after App installation.

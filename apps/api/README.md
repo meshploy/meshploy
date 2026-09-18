@@ -58,6 +58,7 @@ packages/server/
 │   ├── storage.go          # Storage integration CRUD
 │   ├── terminal.go         # WebSocket: node terminal + pod terminal
 │   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
+│   ├── webhook_git.go      # Inbound push webhooks for GitLab, Gitea/Forgejo, Bitbucket
 │   ├── template.go         # One-click template catalog
 │   ├── config_file.go      # Config file CRUD + attach/detach
 │   ├── entitlement.go      # Licence status + activation
@@ -419,13 +420,14 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | GET | `/github/callback` | OAuth state | GitHub OAuth callback |
 | GET | `/gitlab/callback` | OAuth state | GitLab OAuth callback |
 | GET | `/orgs/{orgId}/git-integrations` | ✓ | List git integrations |
-| POST | `/orgs/{orgId}/git-integrations` | ✓ | Create a GitLab or Gitea integration via personal access token |
+| POST | `/orgs/{orgId}/git-integrations` | ✓ | Create a GitLab, Gitea or Bitbucket integration from a token |
 | POST | `/orgs/{orgId}/git-integrations/github` | ✓ | Start a GitHub App integration (manifest flow) |
-| POST | `/orgs/{orgId}/git-integrations/oauth` | ✓ | Start a GitLab or Gitea OAuth App connection |
+| POST | `/orgs/{orgId}/git-integrations/oauth` | ✓ | Start a GitLab, Gitea or Bitbucket OAuth App connection |
 | DELETE | `/orgs/{orgId}/git-integrations/{id}` | ✓ | Delete a git integration |
 | GET | `/orgs/{orgId}/git-integrations/{id}/branches` | ✓ | List branches for a repository |
 | GET | `/orgs/{orgId}/git-integrations/{id}/install-url` | ✓ | Get GitHub App install URL for a specific integration |
 | GET | `/orgs/{orgId}/git-integrations/{id}/oauth-reconnect` | ✓ | Re-generate OAuth authorization URL for a pending integration |
+| GET | `/orgs/{orgId}/git-integrations/{id}/push-hook` | ✓ | Where the provider should deliver pushes, and the secret to sign them with (org admin) |
 | GET | `/orgs/{orgId}/git-integrations/{id}/repos` | ✓ | List repositories for a git integration |
 | GET | `/orgs/{orgId}/registry-integrations` | ✓ | List container registry integrations |
 | POST | `/orgs/{orgId}/registry-integrations` | ✓ | Add a container registry integration |
@@ -448,6 +450,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 |---|---|---|---|
 | POST | `/webhooks/deploy/{serviceId}` | deploy token | Inbound deploy webhook |
 | POST | `/webhooks/github/{integrationId}` | HMAC | Inbound GitHub push webhook |
+| POST | `/webhooks/git/{provider}/{integrationId}` | HMAC / token | Inbound push webhook for GitLab, Gitea/Forgejo and Bitbucket |
 
 ### System
 

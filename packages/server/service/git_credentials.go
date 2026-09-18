@@ -58,6 +58,21 @@ func (s *GitIntegrationService) cloneCredentials(ctx context.Context, integratio
 		// the one GitLab documents.
 		return gitCredentials{URL: repoCloneURL(base, repo), User: "oauth2", Token: token}, nil
 
+	case "bitbucket":
+		// An API token is used as stored; an OAuth token is renewed first,
+		// which matters more here than anywhere else because Bitbucket's last
+		// two hours.
+		token, err := s.resolveOAuthToken(ctx, integration, false)
+		if errors.Is(err, errUnauthorized) {
+			return gitCredentials{}, errGitTokenExpired
+		}
+		if err != nil {
+			return gitCredentials{}, err
+		}
+		// Atlassian's fixed user name for git over HTTPS with a token, so the
+		// account's own user name is never needed.
+		return gitCredentials{URL: repoCloneURL(bitbucketWeb, repo), User: bitbucketGitUser, Token: token}, nil
+
 	default: // GitHub, which Meshploy connects only through a GitHub App
 		if integration.GHAppID == "" || string(integration.InstallationID) == "" {
 			return gitCredentials{}, errGitHubAppIncomplete

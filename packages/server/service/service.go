@@ -205,6 +205,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	}
 	workloads.tcpRoutes = tcpRoutes
 	workloads.notif = notif
+	workloads.git = gitSvc
 	configFiles := &ConfigFileService{db: db, deployment: deployments}
 	deployments.configFiles = configFiles
 

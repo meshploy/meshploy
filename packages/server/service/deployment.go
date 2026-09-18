@@ -743,17 +743,53 @@ func (s *DeploymentService) resolveRegistry(ctx context.Context, bc *db.BuildCon
 	return reg.Endpoint, string(reg.Username), string(reg.Password), nil
 }
 
-// FindAndTriggerForPush finds all auto-deploy services tracking the given
-// repo+branch via the specified git integration and triggers a new deployment.
-// Called by the GitHub App push webhook handler.
+// FindAndTriggerForPush builds every service that tracks the pushed repository
+// and branch through this integration.
+//
+// The delivery URL belongs to the integration, not to a service: what narrows a
+// push down is the repository and branch inside the payload. So one push builds
+// the services watching that branch of that repository - often one, sometimes
+// several when a repository holds more than one service - and nothing else on
+// the integration.
+//
+// Repositories are compared normalized because the two sides are written by
+// different hands: the picker stores what the provider calls the repository
+// (owner/name, or a GitLab group/subgroup/project path), while a repository
+// typed in by hand is often a full https URL. Comparing those literally made
+// auto-deploy do nothing at all, silently, which is the worst way for this to
+// fail.
 func (s *DeploymentService) FindAndTriggerForPush(ctx context.Context, integrationID uuid.UUID, repo, branch string) {
 	var configs []db.BuildConfig
 	s.db.WithContext(ctx).
-		Where("git_integration_id = ? AND git_repo = ? AND branch = ? AND auto_deploy = true", integrationID, repo, branch).
+		Where("git_integration_id = ? AND branch = ? AND auto_deploy = true", integrationID, branch).
 		Find(&configs)
+	pushed := normalizeRepoPath(repo)
 	for _, bc := range configs {
+		if normalizeRepoPath(bc.GitRepo) != pushed {
+			continue
+		}
 		go s.Trigger(context.Background(), TriggerInput{ServiceID: bc.ServiceID})
 	}
+}
+
+// normalizeRepoPath reduces a repository to the path the provider knows it by:
+// no scheme, no host, no .git, no surrounding slashes. Case is folded because
+// GitHub and Bitbucket treat repository names case-insensitively; branch names
+// are left alone, since git does not.
+func normalizeRepoPath(repo string) string {
+	r := strings.ToLower(strings.TrimSpace(repo))
+	if i := strings.Index(r, "://"); i >= 0 {
+		r = r[i+3:]
+		if j := strings.Index(r, "/"); j >= 0 {
+			r = r[j+1:] // drop the host
+		} else {
+			r = ""
+		}
+	}
+	// A URL may carry credentials or a port before the path; both belong to the
+	// host, which is already gone by here.
+	r = strings.TrimSuffix(strings.Trim(r, "/"), ".git")
+	return strings.Trim(r, "/")
 }
 
 // TriggerByDeployToken validates the per-service deploy token and triggers a build.

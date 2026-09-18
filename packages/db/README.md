@@ -93,7 +93,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 |---|---|
 | `storage_integrations` | S3-compatible storage credentials (org-scoped) |
 | `registry_integrations` | Container registry credentials (org-scoped) |
-| `git_integrations` | Git provider connections (GitHub App, GitLab OAuth, Gitea OAuth) |
+| `git_integrations` | Git provider connections (GitHub App; GitLab, Gitea/Forgejo and Bitbucket by token or OAuth) |
 
 ### Operations
 

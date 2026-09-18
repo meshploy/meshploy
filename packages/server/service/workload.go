@@ -26,6 +26,9 @@ type WorkloadService struct {
 	// notif reports a service the reconciler finds has changed state on its
 	// own, which no deploy path can report. Assigned after construction.
 	notif *NotificationService
+	// git creates the repository hook that makes deploy-on-push work for the
+	// providers that keep hooks per repository. Assigned after construction.
+	git *GitIntegrationService
 	// nodePortMeshOnly records whether this cluster binds NodePorts to the mesh
 	// range alone. Reported with a database's config so the console can say
 	// what exposing it actually exposes.
@@ -1036,6 +1039,16 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.AutoDeploy != nil {
 		bc.AutoDeploy = *in.AutoDeploy
+	} else if isNew {
+		// On by default for a service built from a connected repository: that
+		// is what someone connecting a repository is asking for, and leaving it
+		// off meant every new service silently ignored its pushes until
+		// somebody found this switch.
+		//
+		// Not for a repository with no connection: nothing can report a push
+		// there, so it would promise something it cannot do. Those use the
+		// deploy URL instead.
+		bc.AutoDeploy = bc.GitIntegrationID != nil
 	}
 	if err := validateBuilderResources(bc.BuilderCPURequest, bc.BuilderCPULimit, bc.BuilderMemoryRequest, bc.BuilderMemoryLimit); err != nil {
 		return nil, err
@@ -1055,6 +1068,19 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 		err = s.db.WithContext(ctx).Create(&bc).Error
 	} else {
 		err = s.db.WithContext(ctx).Save(&bc).Error
+	}
+	if err == nil && !bc.AutoDeploy && bc.GitIntegrationID != nil && s.git != nil {
+		// Turned off: take the hook away, unless another service built from the
+		// same repository still deploys on its pushes.
+		s.git.removePushHookQuietly(*bc.GitIntegrationID, bc.GitRepo)
+	}
+	if err == nil && bc.AutoDeploy && bc.GitIntegrationID != nil && s.git != nil {
+		// GitHub's App already delivers every push; the other providers hold a
+		// hook per repository, and this is where the first service on that
+		// repository asks for one. It cannot fail the save: a token without the
+		// scope to manage hooks is common, and the console then shows the URL
+		// and secret to add by hand.
+		s.git.ensurePushHookQuietly(*bc.GitIntegrationID, bc.GitRepo)
 	}
 	return &bc, err
 }

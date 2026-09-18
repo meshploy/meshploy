@@ -5,7 +5,7 @@ import {
   Bell, Box, ChevronLeft, GitBranch, HardDrive, Mail,
   Loader2, Settings2, AlertCircle,
 } from "lucide-react"
-import { SiGithub, SiGitlab, SiGitea } from "@icons-pack/react-simple-icons"
+import { SiGithub, SiGitlab, SiGitea, SiBitbucket } from "@icons-pack/react-simple-icons"
 import { z } from "zod"
 import { EventPicker, defaultEvents, useNotificationEvents } from "@/components/notifications/event-picker"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ import {
   type CreateStorageBody,
   type ApiRegistryIntegration,
   type SaveEmailConfigBody,
+  type TokenGitProvider,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -170,14 +171,105 @@ function ComingSoon({ label }: { label: string }) {
 
 // ─── Git form ─────────────────────────────────────────────────────────────────
 
-type GitProvider = "github" | "gitlab" | "gitea"
+type GitProvider = "github" | "gitlab" | "gitea" | "bitbucket"
 type AuthMethod  = "pat" | "oauth"
 
 const GIT_PROVIDERS: { value: GitProvider; label: string; icon: React.ElementType }[] = [
-  { value: "github", label: "GitHub", icon: SiGithub },
-  { value: "gitlab", label: "GitLab", icon: SiGitlab  },
-  { value: "gitea",  label: "Gitea",  icon: SiGitea   },
+  { value: "github",    label: "GitHub",    icon: SiGithub    },
+  { value: "gitlab",    label: "GitLab",    icon: SiGitlab    },
+  { value: "gitea",     label: "Gitea",     icon: SiGitea     },
+  { value: "bitbucket", label: "Bitbucket", icon: SiBitbucket },
 ]
+
+// What the three token/OAuth providers call things. GitHub is not here: it is a
+// GitHub App, with its own form above.
+//
+// A table rather than a ternary per field: with two providers the ternaries
+// read fine, with three they stop being readable and start hiding mistakes.
+const GIT_PROVIDER_COPY: Record<TokenGitProvider, {
+  label: string
+  callbackPath: string
+  instance: "required" | "optional" | "none"
+  instancePlaceholder?: string
+  instanceNote?: React.ReactNode
+  scopeLabel: string
+  scopePlaceholder: string
+  namePlaceholder: string
+  tokenLabel: string
+  tokenPlaceholder?: string
+  tokenNote?: string
+  clientIDLabel: string
+  clientSecretLabel: string
+  // What it takes for Meshploy to add the push webhook to a repository itself.
+  // Read access is enough to build; creating a webhook is a write, and on every
+  // provider it also needs a role on the repository.
+  hookNote: React.ReactNode
+}> = {
+  gitlab: {
+    label: "GitLab",
+    callbackPath: "/api/v1/gitlab/callback",
+    instance: "optional",
+    instancePlaceholder: "https://gitlab.example.com",
+    scopeLabel: "Group name (optional)",
+    scopePlaceholder: "e.g. my-group or my-group/sub-group",
+    namePlaceholder: "e.g. my-gitlab-org",
+    tokenLabel: "Personal access token",
+    tokenPlaceholder: "glpat-…",
+    clientIDLabel: "Application ID",
+    clientSecretLabel: "Application Secret",
+    hookNote: (
+      <>
+        To let Meshploy add the push webhook for you, the connection needs the <code className="bg-muted px-1 rounded">api</code> scope
+        and Maintainer or Owner on the project. With <code className="bg-muted px-1 rounded">read_api</code> it can build, but the
+        webhook has to be added by hand from the service's Auto-deploy section.
+      </>
+    ),
+  },
+  gitea: {
+    label: "Gitea",
+    callbackPath: "/api/v1/gitea/callback",
+    instance: "required",
+    instancePlaceholder: "https://gitea.example.com",
+    // Codeberg runs Forgejo, a Gitea fork that kept the same API and webhook
+    // signatures, so it needs no provider of its own - only saying so.
+    instanceNote: "Codeberg and other Forgejo servers speak the Gitea API: use https://codeberg.org here.",
+    scopeLabel: "Organization name (optional)",
+    scopePlaceholder: "e.g. my-org",
+    namePlaceholder: "e.g. my-gitea-org",
+    tokenLabel: "Personal access token",
+    clientIDLabel: "Client ID",
+    clientSecretLabel: "Client Secret",
+    hookNote: (
+      <>
+        To let Meshploy add the push webhook for you, the connection needs
+        <code className="bg-muted px-1 rounded">write:repository</code> and admin rights on the repository. Otherwise it can
+        build, and the webhook is added by hand from the service's Auto-deploy section.
+      </>
+    ),
+  },
+  bitbucket: {
+    label: "Bitbucket",
+    callbackPath: "/api/v1/bitbucket/callback",
+    // Cloud only: Bitbucket Data Center is a different API, so there is nothing
+    // useful to type here.
+    instance: "none",
+    scopeLabel: "Workspace (optional)",
+    scopePlaceholder: "e.g. my-workspace",
+    namePlaceholder: "e.g. my-bitbucket-workspace",
+    // Atlassian replaced app passwords with scoped API tokens.
+    tokenLabel: "API token",
+    tokenNote: "An Atlassian API token with scopes, not an app password.",
+    clientIDLabel: "Consumer Key",
+    clientSecretLabel: "Consumer Secret",
+    hookNote: (
+      <>
+        <code className="bg-muted px-1 rounded">write:webhook:bitbucket</code> — or Webhooks: Read and write on the consumer — is
+        what lets Meshploy add the push webhook for you. Without it, it can build, and the webhook is added by hand from the
+        service's Auto-deploy section.
+      </>
+    ),
+  },
+}
 
 function GitForm({ onSuccess }: { onSuccess: () => void }) {
   const token  = useAuthStore((s) => s.token)!
@@ -196,21 +288,24 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
   const [error,      setError]      = useState<string | null>(null)
   const [actioning,  setActioning]  = useState(false)
 
-  const apiBase         = getAPIBase()
-  const gitlabRedirectURI = `${apiBase}/api/v1/gitlab/callback`
-  const giteaRedirectURI  = `${apiBase}/api/v1/gitea/callback`
-  const isPAT           = authMethod === "pat"
-  const isGitLabOrGitea = provider === "gitlab" || provider === "gitea"
+  const apiBase   = getAPIBase()
+  const isPAT     = authMethod === "pat"
+  // Every provider but GitHub is connected with a token or an OAuth app, and
+  // copy tells this form what each of them calls things.
+  const isTokenProvider = provider !== "github"
+  const copy        = isTokenProvider ? GIT_PROVIDER_COPY[provider as TokenGitProvider] : null
+  const redirectURI = copy ? `${apiBase}${copy.callbackPath}` : ""
+  const needsInstance = copy?.instance === "required"
 
   const patMutation = useMutation({
-    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; token: string }) =>
+    mutationFn: (body: { provider: TokenGitProvider; name: string; base_url?: string; groups?: string; token: string }) =>
       gitApi.createPAT(orgId, body, token),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["git-integrations", orgId] }); onSuccess() },
     onError: (err: Error) => setError(err.message),
   })
 
   const oauthMutation = useMutation({
-    mutationFn: (body: { provider: "gitlab" | "gitea"; name: string; base_url?: string; groups?: string; redirect_uri: string; client_id: string; client_secret: string }) =>
+    mutationFn: (body: { provider: TokenGitProvider; name: string; base_url?: string; groups?: string; redirect_uri: string; client_id: string; client_secret: string }) =>
       gitApi.initOAuth(orgId, body, token),
     onSuccess: ({ auth_url }) => { window.location.href = auth_url },
     onError: (err: Error) => setError(err.message),
@@ -238,13 +333,12 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
 
   function submitPAT() {
     setError(null)
-    patMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, token: pat })
+    patMutation.mutate({ provider: provider as TokenGitProvider, name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, token: pat })
   }
 
   function submitOAuth() {
     setError(null)
-    const redirectURI = provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI
-    oauthMutation.mutate({ provider: provider as "gitlab" | "gitea", name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, redirect_uri: redirectURI, client_id: clientID.trim(), client_secret: clientSecret })
+    oauthMutation.mutate({ provider: provider as TokenGitProvider, name: name.trim(), base_url: baseURL.trim() || undefined, groups: groups.trim() || undefined, redirect_uri: redirectURI, client_id: clientID.trim(), client_secret: clientSecret })
   }
 
   const monoCls = inputCls + " font-mono"
@@ -255,7 +349,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
       {/* Provider selector */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">Provider</p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {GIT_PROVIDERS.map(({ value, label, icon: Icon }) => (
             <Button
               key={value}
@@ -297,8 +391,8 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
         </div>
       )}
 
-      {/* ── GitLab / Gitea ── */}
-      {isGitLabOrGitea && (
+      {/* ── GitLab / Gitea / Bitbucket ── */}
+      {isTokenProvider && copy && (
         <div className="space-y-4">
           {/* Auth method cards */}
           <div className="space-y-2">
@@ -314,7 +408,7 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                   )}
                 >
                   <p className={cn("text-xs font-semibold", authMethod === m ? "text-foreground" : "text-muted-foreground")}>
-                    {m === "pat" ? "Personal Access Token" : "OAuth Application"}
+                    {m === "pat" ? copy.tokenLabel : "OAuth Application"}
                   </p>
                   <p className="text-[11px] text-muted-foreground/70 mt-0.5 leading-relaxed">
                     {m === "pat" ? "Simple — paste a token from your account settings" : "Standard — stable, refreshable OAuth2 connection"}
@@ -324,14 +418,19 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
             </div>
           </div>
 
-          <Field label={provider === "gitlab" ? "Instance URL (leave empty for gitlab.com)" : "Instance URL"}>
-            <input type="url"
-              placeholder={provider === "gitlab" ? "https://gitlab.example.com" : "https://gitea.example.com"}
-              value={baseURL} onChange={(e) => setBaseURL(e.target.value)}
-              required={provider === "gitea"}
-              className={monoCls}
-            />
-          </Field>
+          {copy.instance !== "none" && (
+            <Field label={copy.instance === "optional" ? `Instance URL (leave empty for ${copy.label.toLowerCase()}.com)` : "Instance URL"}>
+              <input type="url"
+                placeholder={copy.instancePlaceholder}
+                value={baseURL} onChange={(e) => setBaseURL(e.target.value)}
+                required={needsInstance}
+                className={monoCls}
+              />
+              {copy.instanceNote && (
+                <p className="text-[11px] text-muted-foreground/60 mt-1">{copy.instanceNote}</p>
+              )}
+            </Field>
+          )}
 
           {/* Setup instructions */}
           <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 space-y-1.5 text-xs text-muted-foreground">
@@ -341,14 +440,33 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                 <ol className="space-y-1 list-decimal list-inside">
                   <li>Go to your GitLab profile → <span className="font-medium text-foreground">Access Tokens</span></li>
                   <li>Click <span className="font-medium text-foreground">Add new token</span></li>
-                  <li>Enable scopes: <code className="bg-muted px-1 rounded">read_api</code> <code className="bg-muted px-1 rounded">read_repository</code></li>
+                  <li>
+                    Enable scopes: <code className="bg-muted px-1 rounded">read_api</code>{" "}
+                    <code className="bg-muted px-1 rounded">read_repository</code> — or{" "}
+                    <code className="bg-muted px-1 rounded">api</code> instead of{" "}
+                    <code className="bg-muted px-1 rounded">read_api</code> to have webhooks set up for you
+                  </li>
                   <li>Copy the generated token and paste it below</li>
                 </ol>
-              ) : (
+              ) : provider === "gitea" ? (
                 <ol className="space-y-1 list-decimal list-inside">
                   <li>Go to your Gitea profile → <span className="font-medium text-foreground">Settings → Applications</span></li>
                   <li>Under <span className="font-medium text-foreground">Manage Access Tokens</span>, click <span className="font-medium text-foreground">Generate Token</span></li>
-                  <li>Enable <code className="bg-muted px-1 rounded">repository</code> read permission</li>
+                  <li>
+                    Enable <code className="bg-muted px-1 rounded">repository</code> read, and write as well to have webhooks
+                    set up for you
+                  </li>
+                  <li>Copy the token and paste it below</li>
+                </ol>
+              ) : (
+                <ol className="space-y-1 list-decimal list-inside">
+                  <li>Go to <span className="font-medium text-foreground">Atlassian account settings → Security → API tokens</span></li>
+                  <li>Click <span className="font-medium text-foreground">Create API token with scopes</span> and pick the Bitbucket product</li>
+                  <li>
+                    Select <code className="bg-muted px-1 rounded">read:repository:bitbucket</code>{" "}
+                    <code className="bg-muted px-1 rounded">read:webhook:bitbucket</code>{" "}
+                    <code className="bg-muted px-1 rounded">write:webhook:bitbucket</code>
+                  </li>
                   <li>Copy the token and paste it below</li>
                 </ol>
               )
@@ -361,33 +479,43 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
                     <li>Set Redirect URI below, enable scopes: <code className="bg-muted px-1 rounded">api</code> <code className="bg-muted px-1 rounded">read_user</code> <code className="bg-muted px-1 rounded">read_repository</code></li>
                     <li>Copy the Application ID and Secret and paste them below</li>
                   </ol>
-                ) : (
+                ) : provider === "gitea" ? (
                   <ol className="space-y-1 list-decimal list-inside">
                     <li>Go to your Gitea profile → <span className="font-medium text-foreground">Settings → Applications</span></li>
                     <li>Under <span className="font-medium text-foreground">OAuth2 Applications</span>, click <span className="font-medium text-foreground">Create OAuth2 Application</span></li>
                     <li>Name: <span className="font-medium text-foreground">Meshploy</span>, set Redirect URI below</li>
                     <li>Copy the Client ID and Secret and paste them below</li>
                   </ol>
+                ) : (
+                  <ol className="space-y-1 list-decimal list-inside">
+                    <li>Go to your workspace → <span className="font-medium text-foreground">Settings → OAuth consumers</span></li>
+                    <li>Add a consumer — Name: <span className="font-medium text-foreground">Meshploy</span>, set the Callback URL below</li>
+                    <li>
+                      Grant <span className="font-medium text-foreground">Repositories: Read</span> and{" "}
+                      <span className="font-medium text-foreground">Webhooks: Read and write</span>. Bitbucket fixes the
+                      scopes on the consumer, so they cannot be asked for later
+                    </li>
+                    <li>Copy the Key and Secret and paste them below</li>
+                  </ol>
                 )}
                 <div className="mt-2 space-y-1">
-                  <p className="text-[11px] text-muted-foreground/60">Redirect URI:</p>
+                  <p className="text-[11px] text-muted-foreground/60">{provider === "bitbucket" ? "Callback URL:" : "Redirect URI:"}</p>
                   <div className="flex items-center gap-1.5 rounded bg-muted px-2 py-1.5">
-                    <code className="flex-1 text-[11px] font-mono text-foreground break-all">
-                      {provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI}
-                    </code>
+                    <code className="flex-1 text-[11px] font-mono text-foreground break-all">{redirectURI}</code>
                     <Button variant="ghost" size="icon-sm"
-                      onClick={() => navigator.clipboard.writeText(provider === "gitlab" ? gitlabRedirectURI : giteaRedirectURI)}
+                      onClick={() => navigator.clipboard.writeText(redirectURI)}
                       className="shrink-0 text-muted-foreground hover:text-foreground transition-colors text-[11px]"
                     >Copy</Button>
                   </div>
                 </div>
               </>
             )}
+            <p className="pt-1.5 text-[11px] leading-relaxed text-muted-foreground/70">{copy.hookNote}</p>
           </div>
 
-          <Field label={provider === "gitlab" ? "Group name (optional)" : "Organization name (optional)"}>
+          <Field label={copy.scopeLabel}>
             <input type="text"
-              placeholder={provider === "gitlab" ? "e.g. my-group or my-group/sub-group" : "e.g. my-org"}
+              placeholder={copy.scopePlaceholder}
               value={groups} onChange={(e) => setGroups(e.target.value)}
               className={inputCls}
             />
@@ -395,30 +523,32 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
 
           <Field label="Label" required>
             <input type="text"
-              placeholder={provider === "gitlab" ? "e.g. my-gitlab-org" : "e.g. my-gitea-org"}
+              placeholder={copy.namePlaceholder}
               value={name} onChange={(e) => setName(e.target.value)}
               className={inputCls}
             />
           </Field>
 
           {isPAT ? (
-            <Field label="Personal access token" required>
+            <Field label={copy.tokenLabel} required>
               <PasswordInput
                 value={pat} onChange={(e) => setPAT(e.target.value)}
                 autoComplete="new-password"
-                placeholder={provider === "gitlab" ? "glpat-…" : ""}
+                placeholder={copy.tokenPlaceholder ?? ""}
                 className={monoCls}
               />
-              <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM</p>
+              <p className="text-[11px] text-muted-foreground/60 mt-1">
+                {copy.tokenNote ? `${copy.tokenNote} ` : ""}Stored encrypted with AES-256-GCM
+              </p>
             </Field>
           ) : (
             <>
-              <Field label={provider === "gitlab" ? "Application ID" : "Client ID"} required>
+              <Field label={copy.clientIDLabel} required>
                 <input type="text" value={clientID} onChange={(e) => setClientID(e.target.value)}
                   autoComplete="off" className={monoCls}
                 />
               </Field>
-              <Field label={provider === "gitlab" ? "Application Secret" : "Client Secret"} required>
+              <Field label={copy.clientSecretLabel} required>
                 <PasswordInput
                   value={clientSecret} onChange={(e) => setClientSecret(e.target.value)}
                   autoComplete="new-password" className={monoCls}
@@ -433,20 +563,20 @@ function GitForm({ onSuccess }: { onSuccess: () => void }) {
           {isPAT ? (
             <Button
               onClick={submitPAT}
-              disabled={patMutation.isPending || !name || !pat || (provider === "gitea" && !baseURL)}
+              disabled={patMutation.isPending || !name || !pat || (needsInstance && !baseURL)}
               className="gap-1.5"
             >
               {patMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Connect {provider === "gitlab" ? "GitLab" : "Gitea"}
+              Connect {copy.label}
             </Button>
           ) : (
             <Button
               onClick={submitOAuth}
-              disabled={oauthMutation.isPending || !name || !clientID || !clientSecret || (provider === "gitea" && !baseURL)}
+              disabled={oauthMutation.isPending || !name || !clientID || !clientSecret || (needsInstance && !baseURL)}
               className="gap-1.5"
             >
               {oauthMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Authorize {provider === "gitlab" ? "GitLab" : "Gitea"}
+              Authorize {copy.label}
             </Button>
           )}
         </div>

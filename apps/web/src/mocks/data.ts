@@ -192,6 +192,12 @@ export const demoDeployment = {
   updated_at: DEMO_NOW,
 }
 
+// Fixed ids so the demo's build config can point at a real integration, which
+// is what makes the auto-deploy section show a provider's push webhook.
+export const DEMO_GIT_GITHUB_ID = "00000000-0000-0000-0000-000000000050"
+export const DEMO_GIT_GITLAB_ID = "00000000-0000-0000-0000-000000000051"
+export const DEMO_GIT_BITBUCKET_ID = "00000000-0000-0000-0000-000000000052"
+
 export const demoBuildConfig = {
   id: "00000000-0000-0000-0000-000000000020",
   service_id: DEMO_SVC_API,
@@ -200,7 +206,7 @@ export const demoBuildConfig = {
   branch: "main",
   dockerfile_path: "Dockerfile",
   registry_integration_id: null,
-  git_integration_id: null,
+  git_integration_id: DEMO_GIT_GITLAB_ID,
   builder_node: "",
   builder_cpu_request: "1000m",
   builder_memory_request: "1Gi",

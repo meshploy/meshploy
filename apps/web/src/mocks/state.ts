@@ -185,18 +185,30 @@ export const db: Record<string, DemoRecord[]> = {
   invitations: [],
   "git-integrations": [
     record({
+      id: seed.DEMO_GIT_GITHUB_ID,
       name: "Team GitHub",
       provider: "github",
-      auth_method: "pat",
+      auth_method: "app",
       base_url: "https://github.com",
       connected: true,
       organization_id: seed.DEMO_ORG_ID,
     }),
     record({
+      id: seed.DEMO_GIT_GITLAB_ID,
       name: "Demo GitLab",
       provider: "gitlab",
       auth_method: "pat",
       base_url: "https://gitlab.com",
+      connected: true,
+      organization_id: seed.DEMO_ORG_ID,
+    }),
+    record({
+      id: seed.DEMO_GIT_BITBUCKET_ID,
+      name: "Demo Bitbucket",
+      provider: "bitbucket",
+      auth_method: "pat",
+      base_url: "",
+      groups: "demo-workspace",
       connected: true,
       organization_id: seed.DEMO_ORG_ID,
     }),
@@ -249,6 +261,17 @@ export const user = { ...seed.demoUser }
 export const settings: Record<string, any> = {}
 export const buildConfigs: Record<string, any> = {
   [seed.DEMO_SVC_API]: { ...seed.demoBuildConfig },
+  // A second one on Bitbucket, so the auto-deploy screens can be seen on more
+  // than one provider without connecting anything.
+  [seed.DEMO_SVC_WEB]: {
+    ...seed.demoBuildConfig,
+    id: "00000000-0000-0000-0000-000000000021",
+    service_id: seed.DEMO_SVC_WEB,
+    git_integration_id: seed.DEMO_GIT_BITBUCKET_ID,
+    git_repo: "demo-workspace/web",
+    branch: "main",
+    builder: "dockerfile",
+  },
 }
 export const attachments: Record<string, string[]> = {
   [seed.DEMO_SVC_API]: [groupId],

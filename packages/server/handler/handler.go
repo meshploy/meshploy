@@ -75,6 +75,7 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	r.Get("/api/v1/github/callback", h.GitHubCallback)
 	r.Get("/api/v1/gitlab/callback", h.GitLabOAuthCallback)
 	r.Get("/api/v1/gitea/callback", h.GiteaOAuthCallback)
+	r.Get("/api/v1/bitbucket/callback", h.BitbucketOAuthCallback)
 
 	// SSE log streams
 	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream",
@@ -93,5 +94,6 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 
 	// Inbound webhooks — no auth, validated by HMAC / deploy token
 	r.Post("/api/v1/webhooks/github/{integrationId}", h.GitHubWebhook)
+	r.Post("/api/v1/webhooks/git/{provider}/{integrationId}", h.GitWebhook)
 	r.Post("/api/v1/webhooks/deploy/{serviceId}", h.DeployWebhook)
 }

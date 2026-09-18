@@ -1146,7 +1146,7 @@ func (RegistryIntegration) TableName() string { return "registry_integrations" }
 type GitIntegration struct {
 	Base
 	OrganizationID    uuid.UUID       `gorm:"type:uuid;not null;index"   json:"organization_id"`
-	Provider          string          `gorm:"type:varchar(15);not null"  json:"provider"`    // "github" | "gitlab" | "gitea"
+	Provider          string          `gorm:"type:varchar(15);not null"  json:"provider"`    // "github" | "gitlab" | "gitea" | "bitbucket"
 	AuthMethod        string          `gorm:"not null;default:'pat'"     json:"auth_method"` // "app" | "pat" | "oauth"
 	Name              string          `gorm:"not null"                   json:"name"`
 	InstallationID    EncryptedString `gorm:"type:text"                  json:"-"`                // GitHub: installation_id; GitLab/Gitea PAT: token; GitLab/Gitea OAuth: access token
@@ -1156,7 +1156,12 @@ type GitIntegration struct {
 	OAuthRedirectURI  string          `gorm:"not null;default:''"        json:"-"`                // redirect_uri used when initiating the OAuth flow — must match callback
 	OAuthRefreshToken EncryptedString `gorm:"type:text"                  json:"-"`                // GitLab/Gitea OAuth refresh token (used to renew expired access tokens)
 	OAuthTokenExpiry  *time.Time      `gorm:"default:null"               json:"-"`                // when the current access token expires; nil = unknown / PAT
-	Groups            string          `gorm:"not null;default:''"        json:"groups,omitempty"` // GitLab: group path; Gitea: org name — scopes repo listing
+	Groups            string          `gorm:"not null;default:''"        json:"groups,omitempty"` // GitLab: group path; Gitea: org name; Bitbucket: workspace — scopes repo listing
+
+	// WebhookSecret proves a push delivery came from the provider, for every
+	// provider that is not a GitHub App (which has its own, below). One secret
+	// per integration, shared by the repository hooks created under it.
+	WebhookSecret EncryptedString `gorm:"type:text" json:"-"`
 
 	// GitHub App credentials (auth_method="app" only). All encrypted at rest.
 	GHAppID         string          `gorm:"not null;default:''" json:"-"`
