@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-01-02T03:04:05Z",
+  "detection": {
+    "dokploy": true,
+    "signals": [
+      "dokploy-postgres container"
+    ],
+    "image_tag": "latest",
+    "version": "v0.33.0",
+    "migrations": 210,
+    "supported": false,
+    "support_note": "Dokploy schema level 210 has not been checked; supported are 133 to 196 (Dokploy v0.26.1 to v0.30.6)"
+  },
+  "edge": {
+    "kind": "traefik-container",
+    "holders": [
+      "docker-proxy"
+    ],
+    "dynamic_files": 0,
+    "acme_bytes": 0
+  },
+  "resources": {
+    "cores": 2,
+    "memory_mb": 3900,
+    "available_mb": 2100,
+    "disk_free_mb": 20000,
+    "docker_volume_mb": 100,
+    "workload_memory_mb": 0
+  },
+  "mode": {
+    "choice": "side_by_side",
+    "reason": "2100 MB of memory free covers Meshploy and a second copy of the workloads (1536 MB), and 20000 MB of disk the data twice: both can run until everything is ready"
+  },
+  "items": [],
+  "groups": [],
+  "unmanaged": [],
+  "summary": {
+    "moves": 0,
+    "needs_you": 0,
+    "not_moved": 0,
+    "open_decisions": 0
+  }
+}

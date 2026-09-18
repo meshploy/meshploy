@@ -287,8 +287,8 @@ func (b *builder) applications() {
 			case "static":
 				it.Reasons = append(it.Reasons, "static site: rebuilt with Railpack")
 			}
-			if src == "github" {
-				it.Decisions = append(it.Decisions, githubDecision())
+			if reconnectsAfterMove(src) {
+				it.Reasons = append(it.Reasons, reconnectReason(src))
 			}
 		}
 		if r.Str("sourceType") != "docker" {
@@ -433,8 +433,8 @@ func (b *builder) composes() {
 		} else {
 			it.MapsTo = "Stack from git"
 			it.Details["repository"], it.Details["branch"] = gitSource(r)
-			if r.Str("sourceType") == "github" {
-				it.Decisions = append(it.Decisions, githubDecision())
+			if src := r.Str("sourceType"); reconnectsAfterMove(src) {
+				it.Reasons = append(it.Reasons, reconnectReason(src))
 			}
 		}
 		if r.Str("composeType") == "stack" {
@@ -562,17 +562,59 @@ func (b *builder) domains() {
 	}
 }
 
+// reconnectsAfterMove is true for the providers Dokploy connects with an app or
+// an OAuth application: both are bound to a callback on the server they were
+// created for, so they cannot be carried across. Bitbucket is not one of them -
+// Dokploy holds an API token there, and a token moves.
+func reconnectsAfterMove(sourceType string) bool {
+	switch sourceType {
+	case "github", "gitlab", "gitea":
+		return true
+	}
+	return false
+}
+
+// reconnectReason says what that means for one service: it runs, and it builds
+// again after a reconnect. Not a decision, because there is nothing to decide.
+func reconnectReason(sourceType string) string {
+	name := providerLabel(sourceType)
+	return "runs the image it runs now until " + name +
+		" is reconnected in Meshploy; builds and deploys on push resume then, with no further setup"
+}
+
+// providerLabel is a provider's name as its own users write it.
+func providerLabel(sourceType string) string {
+	switch sourceType {
+	case "github":
+		return "GitHub"
+	case "gitlab":
+		return "GitLab"
+	case "gitea":
+		return "Gitea"
+	case "bitbucket":
+		return "Bitbucket"
+	}
+	return sourceType
+}
+
 func (b *builder) integrations() {
 	for _, r := range b.rows["git_provider"] {
 		it := Item{Kind: "git_provider", ID: r.Str("gitProviderId"), Name: r.Str("name"), Verdict: Moves,
 			Details: map[string]string{"provider": r.Str("providerType")}}
-		switch r.Str("providerType") {
-		case "github":
-			it.MapsTo = "Git integration"
-			it.Decisions = append(it.Decisions, Decision{ID: "github", Question: "A GitHub App installation cannot be moved",
-				Options: []Option{{"reconnect", "Reconnect GitHub in Meshploy"}, {"skip", "Skip it: apps built from it run from their images"}}, Default: "skip"})
+		// Nothing to answer here. A connection Meshploy cannot carry still
+		// moves: the integration arrives with every service pointing at it and
+		// its repository and branch kept, waiting for one reconnect. Asking
+		// "image only or reconnect?" made that sound like a choice between two
+		// outcomes when it is the same outcome, a reconnect apart.
+		switch p := r.Str("providerType"); p {
+		case "bitbucket":
+			it.MapsTo = "Git integration, connected"
+			it.Reasons = append(it.Reasons,
+				"arrives working: Bitbucket is connected by an API token, which is not tied to this server")
 		default:
-			it.MapsTo = "Git integration, token copied"
+			it.MapsTo = "Git integration, waiting to be reconnected"
+			it.Reasons = append(it.Reasons, providerLabel(p)+
+				" is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume")
 		}
 		b.add(it)
 	}

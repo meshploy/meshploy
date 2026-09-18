@@ -1,0 +1,56 @@
+{
+  "detection": {
+    "dokploy": true,
+    "signals": ["dokploy-postgres container"],
+    "image_tag": "v0.26.1",
+    "version": "v0.26.1",
+    "migrations": 133,
+    "supported": true
+  },
+  "rows": {
+    "project": [{ "projectId": "p1", "name": "Blog" }],
+    "application": [
+      {
+        "applicationId": "a1", "name": "site", "appName": "blog-site-t1u2v3", "projectId": "p1",
+        "sourceType": "git", "buildType": "static", "customGitUrl": "https://git.example/blog/site.git",
+        "customGitBranch": "main", "applicationStatus": "done"
+      },
+      {
+        "applicationId": "a2", "name": "uploader", "appName": "blog-uploader-w4x5y6", "projectId": "p1",
+        "sourceType": "drop", "buildType": "nixpacks", "applicationStatus": "done"
+      }
+    ],
+    "mariadb": [
+      { "mariadbId": "d1", "name": "db", "appName": "blog-db-z7a8b9", "projectId": "p1", "dockerImage": "mariadb:11", "databaseName": "blog" }
+    ],
+    "domain": [
+      { "domainId": "dm1", "host": "blog.example", "path": "/", "https": true, "certificateType": "custom", "applicationId": "a1", "domainType": "application" },
+      { "domainId": "dm2", "host": "blog-site-t1u2v3-abc.traefik.me", "path": "/", "https": false, "applicationId": "a1", "domainType": "application" }
+    ],
+    "mount": [
+      { "mountId": "m1", "type": "bind", "hostPath": "/srv/blog/media", "applicationId": "a1" },
+      { "mountId": "m2", "type": "bind", "hostPath": "/srv/blog/media", "applicationId": "a2" }
+    ]
+  },
+  "docker": {
+    "containers": [
+      { "name": "dokploy-traefik", "image": "traefik:v3.1", "state": "running", "ports": "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp" },
+      { "name": "blog-site-t1u2v3.1.abcdef", "image": "blog/site:latest", "state": "running", "swarm_service": "blog-site-t1u2v3", "memory_mb": 120, "bind_sources": ["/srv/blog/media"] },
+      { "name": "blog-uploader-w4x5y6.1.ghijkl", "image": "blog/uploader:latest", "state": "running", "swarm_service": "blog-uploader-w4x5y6", "memory_mb": 90, "bind_sources": ["/srv/blog/media"] }
+    ],
+    "services": [
+      { "name": "blog-site-t1u2v3", "image": "blog/site:latest", "running": 1, "desired": 1 },
+      { "name": "blog-uploader-w4x5y6", "image": "blog/uploader:latest", "running": 1, "desired": 1 },
+      { "name": "blog-db-z7a8b9", "image": "mariadb:11", "running": 1, "desired": 1 }
+    ],
+    "volumes": [{ "name": "blog-db-z7a8b9-data", "mb": 640 }]
+  },
+  "listeners": [
+    { "port": 80, "address": "0.0.0.0", "process": "docker-proxy" },
+    { "port": 443, "address": "0.0.0.0", "process": "docker-proxy" }
+  ],
+  "resources": { "cores": 2, "memory_mb": 3900, "available_mb": 900, "disk_free_mb": 8000, "docker_volume_mb": 700, "workload_memory_mb": 1100 },
+  "dynamic_files": 2,
+  "acme_bytes": 8192,
+  "path_mb": { "/srv/blog/media": 2200 }
+}

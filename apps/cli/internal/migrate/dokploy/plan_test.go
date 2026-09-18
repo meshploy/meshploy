@@ -161,8 +161,13 @@ func TestPlanMapsEachKind(t *testing.T) {
 		t.Errorf("admin: %+v", admin)
 	}
 	site := item(t, p, "application", "a4")
-	gh, hasGH := decision(site, "github")
-	if site.Verdict != NeedsYou || !hasGH || gh.Default != "image_only" || !hasReason(site, "Railpack") {
+	// A GitHub connection cannot move, but that is not a question: the service
+	// runs its current image and builds again after one reconnect, which it
+	// says as a reason rather than asking.
+	if _, asks := decision(site, "github"); asks {
+		t.Errorf("a reconnect is not a decision: %+v", site.Decisions)
+	}
+	if !hasReason(site, "until GitHub is reconnected") || !hasReason(site, "Railpack") {
 		t.Errorf("site: %+v", site)
 	}
 	if len(site.Redirects) != 1 || site.Redirects[0] != (Redirect{From: "www.site.example", To: "site.example", Code: 301}) {
@@ -193,7 +198,10 @@ func TestPlanMapsEachKind(t *testing.T) {
 	if d := item(t, p, "domain", "dm4"); d.MapsTo != "Route to stack / web" || d.Details["path"] != "/app" {
 		t.Errorf("compose domain: %+v", d)
 	}
-	if g := item(t, p, "git_provider", "g2"); g.Verdict != NeedsYou || g.Decisions[0].Default != "skip" {
+	// The integration moves with its repositories and branches; only its
+	// credentials stay behind.
+	if g := item(t, p, "git_provider", "g2"); g.Verdict != Moves || len(g.Decisions) != 0 ||
+		!hasReason(g, "reconnect it once in Meshploy") {
 		t.Errorf("github provider: %+v", g)
 	}
 	// The shared mount and the path-rewriting redirect have no safe default.

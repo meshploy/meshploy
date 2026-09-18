@@ -1,0 +1,438 @@
+{
+  "generated_at": "2026-01-02T03:04:05Z",
+  "detection": {
+    "dokploy": true,
+    "signals": [
+      "dokploy-postgres container",
+      "/etc/dokploy"
+    ],
+    "image_tag": "v0.30.5",
+    "version": "v0.30.5",
+    "migrations": 191,
+    "supported": true
+  },
+  "edge": {
+    "kind": "traefik-container",
+    "holders": [
+      "docker-proxy"
+    ],
+    "dynamic_files": 4,
+    "acme_bytes": 24576
+  },
+  "resources": {
+    "cores": 4,
+    "memory_mb": 7900,
+    "available_mb": 5200,
+    "disk_free_mb": 64000,
+    "docker_volume_mb": 1300,
+    "workload_memory_mb": 2436
+  },
+  "mode": {
+    "choice": "side_by_side",
+    "reason": "5200 MB of memory free covers Meshploy and a second copy of the workloads (3972 MB), and 64000 MB of disk the data twice: both can run until everything is ready"
+  },
+  "items": [
+    {
+      "kind": "project",
+      "id": "e1",
+      "name": "Shop",
+      "maps_to": "Project",
+      "verdict": "moves",
+      "details": {
+        "dokploy_environment": "production",
+        "dokploy_project": "Shop"
+      }
+    },
+    {
+      "kind": "project",
+      "id": "e2",
+      "name": "Shop · staging",
+      "maps_to": "Project",
+      "verdict": "moves",
+      "reasons": [
+        "a non-default environment becomes a project of its own"
+      ],
+      "details": {
+        "dokploy_environment": "staging",
+        "dokploy_project": "Shop"
+      }
+    },
+    {
+      "kind": "application",
+      "id": "a1",
+      "name": "web",
+      "project": "Shop",
+      "maps_to": "Service built from git (railpack)",
+      "verdict": "moves",
+      "reasons": [
+        "runs the image it runs now until GitLab is reconnected in Meshploy; builds and deploys on push resume then, with no further setup",
+        "starts from the image running now; the next deploy builds from its source",
+        "redirect www.shop.example → shop.example (301) becomes a route redirect"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "shop-web-a1b2c3",
+        "branch": "main",
+        "build": "railpack",
+        "replicas": "2",
+        "repository": "shop/web",
+        "source": "gitlab",
+        "status": "done",
+        "variables": "2"
+      },
+      "redirects": [
+        {
+          "from": "www.shop.example",
+          "to": "shop.example",
+          "code": 301
+        }
+      ]
+    },
+    {
+      "kind": "application",
+      "id": "a2",
+      "name": "api",
+      "project": "Shop",
+      "maps_to": "Service built from git (dockerfile)",
+      "verdict": "needs_you",
+      "reasons": [
+        "runs the image it runs now until GitHub is reconnected in Meshploy; builds and deploys on push resume then, with no further setup",
+        "starts from the image running now; the next deploy builds from its source",
+        "published ports become TCP routes on the gateway"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "shop-api-d4e5f6",
+        "bind_mounts": "1",
+        "branch": "main",
+        "build": "dockerfile",
+        "published_ports": "9100/tcp",
+        "replicas": "1",
+        "repository": "shop/api",
+        "source": "github",
+        "status": "done",
+        "variables": "1"
+      },
+      "decisions": [
+        {
+          "id": "mount:/home/ubuntu/shop/uploads",
+          "question": "Bind mount of /home/ubuntu/shop/uploads, 340 MB",
+          "options": [
+            {
+              "id": "copy",
+              "label": "Copy its contents into a Meshploy volume"
+            },
+            {
+              "id": "skip",
+              "label": "Leave the mount out"
+            }
+          ],
+          "default": "copy"
+        }
+      ]
+    },
+    {
+      "kind": "application",
+      "id": "a3",
+      "name": "admin",
+      "project": "Shop · staging",
+      "maps_to": "Service built from git (nixpacks)",
+      "verdict": "moves",
+      "reasons": [
+        "starts from the image running now; the next deploy builds from its source"
+      ],
+      "details": {
+        "app_name": "shop-admin-k1l2m3",
+        "branch": "main",
+        "build": "nixpacks",
+        "repository": "shop/admin",
+        "source": "bitbucket",
+        "status": "done"
+      }
+    },
+    {
+      "kind": "compose",
+      "id": "c1",
+      "name": "analytics",
+      "project": "Shop",
+      "maps_to": "Stack from the stored compose file",
+      "verdict": "moves",
+      "reasons": [
+        "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "shop-analytics-n4o5p6",
+        "compose_path": "./docker-compose.yml",
+        "containers": "1 of 1 running",
+        "source": "raw",
+        "status": "done",
+        "type": "docker-compose"
+      }
+    },
+    {
+      "kind": "database",
+      "id": "d1",
+      "name": "db",
+      "project": "Shop",
+      "maps_to": "Managed Postgres",
+      "verdict": "moves",
+      "reasons": [
+        "published on port 5432: becomes a TCP route on the gateway"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "shop-db-g7h8i9",
+        "data_mb": "1200",
+        "data_move": "dump and restore",
+        "database": "shop",
+        "engine": "Postgres",
+        "external_port": "5432",
+        "image": "postgres:16"
+      }
+    },
+    {
+      "kind": "database",
+      "id": "d2",
+      "name": "cache",
+      "project": "Shop",
+      "maps_to": "Managed Redis",
+      "verdict": "moves",
+      "running": true,
+      "details": {
+        "app_name": "shop-cache-q7r8s9",
+        "data_mb": "30",
+        "data_move": "dump and restore",
+        "engine": "Redis",
+        "image": "redis:7"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "dm1",
+      "name": "shop.example/",
+      "maps_to": "Route to web",
+      "verdict": "moves",
+      "details": {
+        "certificate": "letsencrypt",
+        "https": "true"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "dm2",
+      "name": "www.shop.example/",
+      "maps_to": "Route to web",
+      "verdict": "moves",
+      "details": {
+        "certificate": "letsencrypt",
+        "https": "true"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "dm3",
+      "name": "api.shop.example/",
+      "maps_to": "Route to api",
+      "verdict": "moves",
+      "details": {
+        "certificate": "letsencrypt",
+        "https": "true"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "dm4",
+      "name": "analytics.shop.example/",
+      "maps_to": "Route to analytics / metabase",
+      "verdict": "moves",
+      "details": {
+        "certificate": "none",
+        "https": "true"
+      }
+    },
+    {
+      "kind": "git_provider",
+      "id": "g1",
+      "name": "shop-gitlab",
+      "maps_to": "Git integration, waiting to be reconnected",
+      "verdict": "moves",
+      "reasons": [
+        "GitLab is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+      ],
+      "details": {
+        "provider": "gitlab"
+      }
+    },
+    {
+      "kind": "git_provider",
+      "id": "g2",
+      "name": "shop-github",
+      "maps_to": "Git integration, waiting to be reconnected",
+      "verdict": "moves",
+      "reasons": [
+        "GitHub is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+      ],
+      "details": {
+        "provider": "github"
+      }
+    },
+    {
+      "kind": "git_provider",
+      "id": "g3",
+      "name": "shop-bitbucket",
+      "maps_to": "Git integration, connected",
+      "verdict": "moves",
+      "reasons": [
+        "arrives working: Bitbucket is connected by an API token, which is not tied to this server"
+      ],
+      "details": {
+        "provider": "bitbucket"
+      }
+    },
+    {
+      "kind": "registry",
+      "id": "rg1",
+      "name": "ghcr",
+      "maps_to": "Registry integration",
+      "verdict": "moves",
+      "details": {
+        "url": "ghcr.io"
+      }
+    },
+    {
+      "kind": "destination",
+      "id": "ds1",
+      "name": "backups",
+      "maps_to": "Storage integration",
+      "verdict": "moves",
+      "details": {
+        "bucket": "shop-backups",
+        "endpoint": "https://s3.example",
+        "provider": "s3"
+      }
+    },
+    {
+      "kind": "backup",
+      "id": "b1",
+      "name": "postgres backup, 0 3 * * *",
+      "maps_to": "Backup schedule to the same storage",
+      "verdict": "moves",
+      "details": {
+        "enabled": "true",
+        "keep": "7",
+        "schedule": "0 3 * * *"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-1c24b8a7",
+      "name": "Shop / web",
+      "members": [
+        {
+          "kind": "application",
+          "id": "a1",
+          "name": "web",
+          "project": "Shop"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true
+    },
+    {
+      "id": "g-1e24bbcd",
+      "name": "Shop · staging / admin",
+      "members": [
+        {
+          "kind": "application",
+          "id": "a3",
+          "name": "admin",
+          "project": "Shop · staging"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true
+    },
+    {
+      "id": "g-871d1253",
+      "name": "Shop / cache",
+      "members": [
+        {
+          "kind": "database",
+          "id": "d2",
+          "name": "cache",
+          "project": "Shop"
+        }
+      ],
+      "data": [
+        {
+          "name": "cache",
+          "mb": 30,
+          "move": "dump and restore"
+        }
+      ],
+      "downtime": "a restart plus under a minute to copy data",
+      "can_move": true,
+      "notes": [
+        "no app names cache by its Dokploy hostname; if one reaches it by address or published port, move them together"
+      ]
+    },
+    {
+      "id": "g-5a01132d",
+      "name": "Shop / db with analytics, api",
+      "members": [
+        {
+          "kind": "application",
+          "id": "a2",
+          "name": "api",
+          "project": "Shop"
+        },
+        {
+          "kind": "compose",
+          "id": "c1",
+          "name": "analytics",
+          "project": "Shop"
+        },
+        {
+          "kind": "database",
+          "id": "d1",
+          "name": "db",
+          "project": "Shop"
+        }
+      ],
+      "data": [
+        {
+          "name": "/home/ubuntu/shop/uploads",
+          "mb": 340,
+          "move": "copy into a volume"
+        },
+        {
+          "name": "db",
+          "mb": 1200,
+          "move": "dump and restore"
+        }
+      ],
+      "downtime": "a restart plus about 3 minutes to copy data",
+      "can_move": true
+    }
+  ],
+  "unmanaged": [
+    {
+      "name": "watchtower",
+      "kind": "container",
+      "images": "containrrr/watchtower:latest",
+      "running": 1,
+      "total": 1,
+      "maps_to": "Service, through the Docker importer"
+    }
+  ],
+  "summary": {
+    "moves": 17,
+    "needs_you": 1,
+    "not_moved": 0,
+    "open_decisions": 0
+  }
+}

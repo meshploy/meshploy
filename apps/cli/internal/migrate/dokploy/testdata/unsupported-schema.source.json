@@ -1,0 +1,23 @@
+{
+  "detection": {
+    "dokploy": true,
+    "signals": ["dokploy-postgres container"],
+    "image_tag": "latest",
+    "version": "v0.33.0",
+    "migrations": 210,
+    "supported": false,
+    "support_note": "Dokploy schema level 210 has not been checked; supported are 133 to 196 (Dokploy v0.26.1 to v0.30.6)"
+  },
+  "docker": {
+    "containers": [
+      { "name": "dokploy-traefik", "image": "traefik:v3.6", "state": "running", "ports": "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp" }
+    ],
+    "services": [],
+    "volumes": []
+  },
+  "listeners": [
+    { "port": 80, "address": "0.0.0.0", "process": "docker-proxy" },
+    { "port": 443, "address": "0.0.0.0", "process": "docker-proxy" }
+  ],
+  "resources": { "cores": 2, "memory_mb": 3900, "available_mb": 2100, "disk_free_mb": 20000, "docker_volume_mb": 100 }
+}

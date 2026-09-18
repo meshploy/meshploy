@@ -26,19 +26,9 @@ type Option struct {
 // Choices shared by several kinds of item.
 var (
 	optImageOnly  = Option{"image_only", "Run the image running now, with no builds until a source is connected"}
-	optReconnect  = Option{"reconnect", "Reconnect GitHub in Meshploy first, then build from the repository"}
 	optCaddyCert  = Option{"caddy", "Let Caddy issue a certificate"}
 	optUploadCert = Option{"upload", "Upload the certificate by hand"}
 )
-
-func githubDecision() Decision {
-	return Decision{
-		ID:       "github",
-		Question: "Built from a GitHub App connection, which cannot be moved",
-		Options:  []Option{optImageOnly, optReconnect},
-		Default:  optImageOnly.ID,
-	}
-}
 
 func certificateDecision() Decision {
 	return Decision{ID: "certificate", Question: "Uses a custom certificate", Options: []Option{optCaddyCert, optUploadCert}, Default: optCaddyCert.ID}

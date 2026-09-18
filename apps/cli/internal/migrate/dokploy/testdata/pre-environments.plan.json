@@ -1,0 +1,242 @@
+{
+  "generated_at": "2026-01-02T03:04:05Z",
+  "detection": {
+    "dokploy": true,
+    "signals": [
+      "dokploy-postgres container"
+    ],
+    "image_tag": "v0.26.1",
+    "version": "v0.26.1",
+    "migrations": 133,
+    "supported": true
+  },
+  "edge": {
+    "kind": "traefik-container",
+    "holders": [
+      "docker-proxy"
+    ],
+    "dynamic_files": 2,
+    "acme_bytes": 8192
+  },
+  "resources": {
+    "cores": 2,
+    "memory_mb": 3900,
+    "available_mb": 900,
+    "disk_free_mb": 8000,
+    "docker_volume_mb": 700,
+    "workload_memory_mb": 1310
+  },
+  "mode": {
+    "choice": "hand_over",
+    "reason": "900 MB of memory free is less than Meshploy and a second copy of the workloads need (2846 MB): Dokploy's own UI stops first, then workloads move one at a time"
+  },
+  "items": [
+    {
+      "kind": "application",
+      "id": "a1",
+      "name": "site",
+      "project": "Blog",
+      "maps_to": "Service built from git (static)",
+      "verdict": "needs_you",
+      "reasons": [
+        "static site: rebuilt with Railpack",
+        "starts from the image running now; the next deploy builds from its source"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "blog-site-t1u2v3",
+        "bind_mounts": "1",
+        "branch": "main",
+        "build": "static",
+        "repository": "https://git.example/blog/site.git",
+        "source": "git",
+        "status": "done"
+      },
+      "decisions": [
+        {
+          "id": "mount:/srv/blog/media",
+          "question": "Bind mount of /srv/blog/media, shared with uploader, which moves in the same group: copied once into a volume both mount",
+          "options": [
+            {
+              "id": "copy",
+              "label": "Copy its contents into a Meshploy volume"
+            },
+            {
+              "id": "skip",
+              "label": "Leave the mount out"
+            }
+          ],
+          "default": "copy"
+        }
+      ]
+    },
+    {
+      "kind": "application",
+      "id": "a2",
+      "name": "uploader",
+      "project": "Blog",
+      "maps_to": "Image service, from the image running now",
+      "verdict": "needs_you",
+      "reasons": [
+        "starts from the image running now; the next deploy builds from its source"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "blog-uploader-w4x5y6",
+        "bind_mounts": "1",
+        "build": "nixpacks",
+        "source": "drop",
+        "status": "done"
+      },
+      "decisions": [
+        {
+          "id": "source",
+          "question": "Uploaded source (drop): there is no repository to build from",
+          "options": [
+            {
+              "id": "image_only",
+              "label": "Run the image running now, with no builds until a source is connected"
+            }
+          ],
+          "default": "image_only"
+        },
+        {
+          "id": "mount:/srv/blog/media",
+          "question": "Bind mount of /srv/blog/media, shared with site, which moves in the same group: copied once into a volume both mount",
+          "options": [
+            {
+              "id": "copy",
+              "label": "Copy its contents into a Meshploy volume"
+            },
+            {
+              "id": "skip",
+              "label": "Leave the mount out"
+            }
+          ],
+          "default": "copy"
+        }
+      ]
+    },
+    {
+      "kind": "database",
+      "id": "d1",
+      "name": "db",
+      "project": "Blog",
+      "maps_to": "Stack service with the same image",
+      "verdict": "moves",
+      "reasons": [
+        "Meshploy has no managed MariaDB"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "blog-db-z7a8b9",
+        "data_mb": "640",
+        "data_move": "dump and restore",
+        "database": "blog",
+        "engine": "MariaDB",
+        "image": "mariadb:11"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "dm1",
+      "name": "blog.example/",
+      "maps_to": "Route to site",
+      "verdict": "needs_you",
+      "details": {
+        "certificate": "custom",
+        "https": "true"
+      },
+      "decisions": [
+        {
+          "id": "certificate",
+          "question": "Uses a custom certificate",
+          "options": [
+            {
+              "id": "caddy",
+              "label": "Let Caddy issue a certificate"
+            },
+            {
+              "id": "upload",
+              "label": "Upload the certificate by hand"
+            }
+          ],
+          "default": "caddy"
+        }
+      ]
+    },
+    {
+      "kind": "domain",
+      "id": "dm2",
+      "name": "blog-site-t1u2v3-abc.traefik.me/",
+      "maps_to": "Route to site",
+      "verdict": "not_moved",
+      "reasons": [
+        "a throwaway traefik.me host Dokploy generates"
+      ],
+      "details": {
+        "https": "false"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-881d13e6",
+      "name": "Blog / db",
+      "members": [
+        {
+          "kind": "database",
+          "id": "d1",
+          "name": "db",
+          "project": "Blog"
+        }
+      ],
+      "data": [
+        {
+          "name": "db",
+          "mb": 640,
+          "move": "dump and restore"
+        }
+      ],
+      "downtime": "a restart plus about 2 minutes to copy data",
+      "can_move": true,
+      "notes": [
+        "no app names db by its Dokploy hostname; if one reaches it by address or published port, move them together"
+      ]
+    },
+    {
+      "id": "g-aea9d680",
+      "name": "Blog / site, uploader",
+      "members": [
+        {
+          "kind": "application",
+          "id": "a1",
+          "name": "site",
+          "project": "Blog"
+        },
+        {
+          "kind": "application",
+          "id": "a2",
+          "name": "uploader",
+          "project": "Blog"
+        }
+      ],
+      "data": [
+        {
+          "name": "/srv/blog/media",
+          "mb": 2200,
+          "move": "copy into a volume"
+        }
+      ],
+      "downtime": "a restart plus about 2 minutes to copy data",
+      "can_move": true
+    }
+  ],
+  "unmanaged": [],
+  "summary": {
+    "moves": 1,
+    "needs_you": 3,
+    "not_moved": 1,
+    "open_decisions": 0
+  }
+}

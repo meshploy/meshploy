@@ -84,18 +84,21 @@ var Tables = []string{
 
 // Source is everything read from the host: Dokploy's rows, and the generic
 // inventory.
+// Tagged so a server's reading can be written to a file and replayed: the
+// golden plans in testdata are Sources, and the plan built from one is compared
+// against a recorded plan.
 type Source struct {
-	Detection Detection
-	Rows      map[string][]Row
-	Docker    migrate.Docker
-	Listeners []migrate.Listener
-	Resources migrate.Resources
+	Detection Detection          `json:"detection"`
+	Rows      map[string][]Row   `json:"rows,omitempty"`
+	Docker    migrate.Docker     `json:"docker"`
+	Listeners []migrate.Listener `json:"listeners,omitempty"`
+	Resources migrate.Resources  `json:"resources"`
 	// DynamicFiles is how many route files Dokploy's Traefik has, and
 	// AcmeBytes the size of its certificate store.
-	DynamicFiles int
-	AcmeBytes    int64
+	DynamicFiles int   `json:"dynamic_files,omitempty"`
+	AcmeBytes    int64 `json:"acme_bytes,omitempty"`
 	// PathMB is the size of host paths apps bind-mount, measured with du.
-	PathMB map[string]int
+	PathMB map[string]int `json:"path_mb,omitempty"`
 }
 
 // Detection is whether this is a Dokploy host, and which Dokploy.
