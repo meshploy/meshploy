@@ -134,6 +134,7 @@ export const demoServiceApi = {
   memory_limit: "512Mi",
   created_at: DEMO_NOW,
   updated_at: DEMO_NOW,
+  deployed_at: DEMO_NOW,
 }
 
 export const demoServiceWeb = {
@@ -156,6 +157,7 @@ export const demoServiceWeb = {
   memory_limit: "256Mi",
   created_at: DEMO_NOW,
   updated_at: DEMO_NOW,
+  deployed_at: DEMO_NOW,
 }
 
 export const demoServiceDb = {
@@ -178,6 +180,7 @@ export const demoServiceDb = {
   memory_limit: "1Gi",
   created_at: DEMO_NOW,
   updated_at: DEMO_NOW,
+  deployed_at: DEMO_NOW,
 }
 
 export const demoDeployment = {

@@ -117,7 +117,7 @@ function ServiceLayout() {
         badge={<StatusPill status={service.status} />}
         actions={
           <>
-            {(service.status === "stopped" || service.status === "failed") && !!service.image && (
+            {(service.status === "stopped" || service.status === "failed") && !!service.image && !!service.deployed_at && (
               <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs"
                 onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
                 {startMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -132,7 +132,7 @@ function ServiceLayout() {
               </Button>
             )}
             <Button variant="outline" size="sm" render={<Link to="/projects/$id/services/$serviceId/logs" params={{ id: projectId, serviceId }} />}><Terminal className="size-4" />Logs</Button>
-            <Button size="sm" onClick={() => deployMutation.mutate()} disabled={deployMutation.isPending || service.status === "deploying"}><Plus className="size-4" />{service.type === "database" ? "Provision" : "Deploy"}</Button>
+            <Button size="sm" onClick={() => deployMutation.mutate()} disabled={deployMutation.isPending || service.status === "deploying"}><Plus className="size-4" />Deploy</Button>
           </>
         }
       >

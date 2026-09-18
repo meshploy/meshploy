@@ -27,6 +27,8 @@ export interface ApiService {
   cpu_limit: string
   memory_request: string
   memory_limit: string
+  /** Null when it has never deployed: there is nothing to start yet. */
+  deployed_at: string | null
   created_at: string
   updated_at: string
 }

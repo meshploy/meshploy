@@ -74,7 +74,7 @@ function DeploymentsTab() {
       return data?.some((d) => ACTIVE_STATUSES.has(d.status)) ? 3000 : false
     },
   })
-  const isProvisioned = isDatabase && deploymentList.length > 0
+  const isDeployed = isDatabase && deploymentList.length > 0
 
   // When active deployments settle, refresh service status in services list + overview.
   const wasActive = useRef(false)
@@ -129,7 +129,7 @@ function DeploymentsTab() {
           )}
         </div>
 
-        {(isDatabase || !isProvisioned) && (
+        {(isDatabase || !isDeployed) && (
           <Button
             size="sm"
             className="gap-1.5"
@@ -141,7 +141,7 @@ function DeploymentsTab() {
             ) : (
               <Rocket className="h-3.5 w-3.5" />
             )}
-            {isDatabase ? (isProvisioned ? "Re-provision" : "Provision") : "Deploy"}
+            {isDeployed ? "Re-deploy" : "Deploy"}
           </Button>
         )}
       </div>
@@ -164,7 +164,7 @@ function DeploymentsTab() {
           <div className="text-center">
             <p className="text-sm text-muted-foreground">No deployments yet</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              {isDatabase ? "Provision the database to start it" : "Trigger a deployment to build and deploy this service"}
+              {isDatabase ? "Deploy the database to start it" : "Trigger a deployment to build and deploy this service"}
             </p>
           </div>
           <Button
@@ -174,7 +174,7 @@ function DeploymentsTab() {
             disabled={triggerMutation.isPending}
           >
             <Rocket className="h-3.5 w-3.5" />
-            {isDatabase ? "Provision now" : "Deploy now"}
+            Deploy now
           </Button>
         </div>
       ) : (

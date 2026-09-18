@@ -564,6 +564,10 @@ type Service struct {
 	PullRegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"pull_registry_integration_id,omitempty"`
 
 	Status   ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
+	// DeployedAt is when this service last finished deploying. Nil means it
+	// never has, which is what tells a stopped service that has run apart from
+	// one that was only ever created: only the first can be started.
+	DeployedAt *time.Time `json:"deployed_at"`
 	Replicas int           `gorm:"not null;default:1"                          json:"replicas"`
 
 	// K8s resource spec (standard K8s quantity strings)

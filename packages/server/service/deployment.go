@@ -567,7 +567,7 @@ func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID,
 		"log":         logValue,
 		"deployed_at": &now,
 	})
-	svcUpdates := map[string]any{"status": db.ServiceRunning}
+	svcUpdates := map[string]any{"status": db.ServiceRunning, "deployed_at": &now}
 	if image != "" {
 		svcUpdates["image"] = image
 	}
