@@ -41,11 +41,14 @@ type CreateTCPRouteInput struct {
 	OrgID     string `path:"orgId"`
 	ProjectID string `path:"projectId"`
 	Body      struct {
-		GatewayPort  int      `json:"gateway_port" minimum:"1" maximum:"65535" doc:"The port the gateway listens on"`
+		GatewayPort  int      `json:"gateway_port" minimum:"0" maximum:"65535" doc:"The port the gateway listens on. Off the public zone it may be left out, and the target's port is used"`
+		Zone         *string  `json:"zone,omitempty" enum:"public,mesh,local" doc:"Where the port is reachable from: every interface, the mesh address alone, or loopback alone. Defaults to public"`
 		ServiceID    *string  `json:"service_id,omitempty"   doc:"Route to this service's published port"`
 		ServicePort  *int     `json:"service_port,omitempty" doc:"Which of its ports; left out, the one it publishes"`
 		NodeID       *string  `json:"node_id,omitempty"      doc:"Route to a port on this node instead, for something running outside Meshploy"`
 		NodePort     *int     `json:"node_port,omitempty"    doc:"The port on that node"`
+		TargetIP     *string  `json:"target_ip,omitempty"    doc:"Route to an address the gateway can reach, loopback included. The proxy shares the gateway's network"`
+		TargetPort   *int     `json:"target_port,omitempty"  doc:"The port at that address"`
 		AllowedCIDRs []string `json:"allowed_cidrs,omitempty" doc:"Addresses or ranges allowed to connect. Empty means anyone who can reach the gateway"`
 		Published    *bool    `json:"published,omitempty"     doc:"False creates the route with its port closed. Defaults to true"`
 	}
@@ -202,6 +205,15 @@ func (h *Handler) CreateTCPRoute(ctx context.Context, input *CreateTCPRouteInput
 	}
 	if input.Body.NodePort != nil {
 		in.NodePort = *input.Body.NodePort
+	}
+	if input.Body.TargetIP != nil {
+		in.TargetIP = *input.Body.TargetIP
+	}
+	if input.Body.TargetPort != nil {
+		in.TargetPort = *input.Body.TargetPort
+	}
+	if input.Body.Zone != nil {
+		in.Zone = db.TCPRouteZone(*input.Body.Zone)
 	}
 
 	route, err := h.svc.TCPRoutes.Create(ctx, in)

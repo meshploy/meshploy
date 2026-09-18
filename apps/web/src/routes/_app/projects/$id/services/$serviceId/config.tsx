@@ -1264,13 +1264,24 @@ const REACH_RUNGS: { value: DBReach; label: string; detail: string }[] = [
 ]
 
 // What the database is, in one sentence, for the line under the rungs.
-const REACH_STATE: Record<DBReach, string> = {
-  cluster: "only other services can connect, by name. Not from your own machine, not from the internet",
-  mesh: "other services connect by name, and any machine on the mesh can connect at the address below",
-  internet: "other services connect by name, the mesh connects directly, and the gateway forwards its own port from the internet",
+// The path each rung opens, drawn rather than described: "the gateway forwards
+// its own port" never said that :15432 reaches the mesh NodePort, which reaches
+// the database - and that is the question people actually ask.
+function reachPaths(reach: DBReach, opts: { dbPort: number; nodePort: string; gatewayPort: string; name: string }): string[] {
+  const inCluster = `${opts.name}:${opts.dbPort}  ←  other services, by name`
+  const mesh = `mesh 100.64.0.1:${opts.nodePort || "<port>"}  →  ${opts.name}:${opts.dbPort}`
+  const internet = `internet :${opts.gatewayPort || "<port>"}  →  100.64.0.1:${opts.nodePort || "<port>"}  →  ${opts.name}:${opts.dbPort}`
+  switch (reach) {
+    case "cluster":
+      return [inCluster]
+    case "mesh":
+      return [inCluster, mesh]
+    default:
+      return [inCluster, internet]
+  }
 }
 
-function DatabaseNetworkSection({ projectId, serviceId, dbPort }: { projectId: string; serviceId: string; dbPort: number }) {
+function DatabaseNetworkSection({ projectId, serviceId, dbPort, serviceName }: { projectId: string; serviceId: string; dbPort: number; serviceName: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
@@ -1420,10 +1431,19 @@ function DatabaseNetworkSection({ projectId, serviceId, dbPort }: { projectId: s
 
         {/* Says which moment it describes: a description that reads like now
             while describing later is the confusion the rungs just removed. */}
-        <p className="text-xs text-muted-foreground">
-          <span className="text-foreground">{draft.dirty ? "After saving:" : "Current state:"}</span>{" "}
-          {REACH_STATE[value.reach]}.
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-xs text-foreground">{draft.dirty ? "After saving:" : "Current state:"}</p>
+          <div className="rounded-md bg-muted/30 px-2.5 py-2 space-y-1">
+            {reachPaths(value.reach, {
+              dbPort,
+              nodePort: value.port,
+              gatewayPort: value.gatewayPort,
+              name: serviceName,
+            }).map((line) => (
+              <p key={line} className="text-[11px] font-mono text-muted-foreground">{line}</p>
+            ))}
+          </div>
+        </div>
 
         {published && (
           <>
@@ -1564,7 +1584,12 @@ function ConfigTab() {
   if (service?.type === "database") {
     return (
       <ConfigSaveBar key={serviceId}><div className="console-page space-y-6 pb-24"><ResourceIntro title="Database configuration" description="Control how this database can be reached." /><FormLayout><div className="space-y-6">
-        <DatabaseNetworkSection projectId={projectId} serviceId={serviceId} dbPort={service.ports?.find((p) => p.is_primary)?.port ?? service.ports?.[0]?.port ?? 5432} />
+        <DatabaseNetworkSection
+          projectId={projectId}
+          serviceId={serviceId}
+          dbPort={service.ports?.find((p) => p.is_primary)?.port ?? service.ports?.[0]?.port ?? 5432}
+          serviceName={service.slug || service.name}
+        />
       </div></FormLayout></div></ConfigSaveBar>
     )
   }

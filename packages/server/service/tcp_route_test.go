@@ -184,3 +184,68 @@ func TestDuplicateHostnameIsReportedAsAConflict(t *testing.T) {
 	assert.Contains(t, err.Error(), "shop.example.com")
 	assert.Contains(t, err.Error(), "already routed")
 }
+
+// ── Address targets and zones ────────────────────────────────────────────────
+
+// The proxy runs with the gateway's own network namespace, so it can reach a
+// container bound to loopback - something no service or node target can name.
+func TestTCPRouteToAnAddress(t *testing.T) {
+	e := newTCPEnv(t)
+
+	route, err := e.create(8080, service.CreateTCPRouteInput{TargetIP: "127.0.0.1", TargetPort: 3580})
+	require.NoError(t, err)
+	assert.Equal(t, "127.0.0.1", route.TargetIP, "an address is taken as written")
+	assert.Equal(t, 3580, route.TargetPort)
+	assert.Equal(t, meshdb.TCPZonePublic, route.Zone, "a route with no zone is public, as every route was")
+}
+
+func TestTCPRouteRefusesAnAddressThatIsNotOne(t *testing.T) {
+	e := newTCPEnv(t)
+
+	_, err := e.create(8080, service.CreateTCPRouteInput{TargetIP: "localhost", TargetPort: 3580})
+	require.Error(t, err, "a hostname resolves somewhere else at some other time; an address does not")
+	_, err = e.create(8081, service.CreateTCPRouteInput{TargetIP: "127.0.0.1", TargetPort: 0})
+	require.Error(t, err)
+}
+
+// Off the public interface the listening port may be the target's: the
+// addresses differ, so the numbers need not.
+func TestAMeshRouteTakesTheTargetsPort(t *testing.T) {
+	e := newTCPEnv(t)
+
+	route, err := e.svcs.TCPRoutes.Create(context.Background(), service.CreateTCPRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID,
+		Zone:     meshdb.TCPZoneMesh,
+		TargetIP: "127.0.0.1", TargetPort: 3580,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 3580, route.GatewayPort, "the mesh listener defaults to the target's port")
+	assert.Equal(t, meshdb.TCPZoneMesh, route.Zone)
+}
+
+// 0.0.0.0:5432 and 100.64.0.1:5432 collide, and a route that fails to bind
+// months later because of a zone is worse than a refused form.
+func TestPortsStayUniqueAcrossZones(t *testing.T) {
+	e := newTCPEnv(t)
+
+	_, err := e.create(5555, service.CreateTCPRouteInput{TargetIP: "127.0.0.1", TargetPort: 3580})
+	require.NoError(t, err)
+
+	_, err = e.svcs.TCPRoutes.Create(context.Background(), service.CreateTCPRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID, GatewayPort: 5555,
+		Zone:     meshdb.TCPZoneLocal,
+		TargetIP: "127.0.0.1", TargetPort: 3581,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already routed")
+}
+
+func TestAnUnknownZoneIsRefused(t *testing.T) {
+	e := newTCPEnv(t)
+
+	_, err := e.create(5556, service.CreateTCPRouteInput{
+		Zone: "internal", TargetIP: "127.0.0.1", TargetPort: 3580,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "public, mesh or local")
+}

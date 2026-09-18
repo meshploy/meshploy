@@ -32,13 +32,16 @@ const ZONE_STYLES: Record<string, string> = {
   preview:  "bg-violet-500/10 text-violet-400 border-violet-500/20",
 }
 
-type TargetMode = "service" | "node" | "redirect"
+// "address" names something outside Meshploy that no service or node can:
+// the proxy runs on the gateway with its network, so loopback is fair game.
+type TargetMode = "service" | "node" | "address" | "redirect"
 
 interface TargetFormState {
   mode: TargetMode
   serviceId: string
   servicePortId: string  // "" = primary port (auto)
   nodeId: string
+  targetIp: string
   port: string
   path: string
   stripPath: boolean
@@ -51,6 +54,7 @@ const BLANK_FORM: TargetFormState = {
   serviceId: "",
   servicePortId: "",
   nodeId: "",
+  targetIp: "",
   port: "",
   path: "/",
   stripPath: false,
@@ -120,6 +124,8 @@ function RouteDetailPage() {
         if (add.servicePortId) body.service_port_id = add.servicePortId
       } else if (add.mode === "node") {
         body.node_id = add.nodeId; body.port = parseInt(add.port, 10)
+      } else if (add.mode === "address") {
+        body.target_ip = add.targetIp; body.port = parseInt(add.port, 10)
       } else if (add.mode === "redirect") {
         body.redirect_route_id = add.redirectRouteId; body.redirect_code = add.redirectCode
       }
@@ -153,6 +159,7 @@ function RouteDetailPage() {
     add.path.trim().startsWith("/") && (
       add.mode === "service"  ? add.serviceId.length > 0 :
       add.mode === "node"     ? add.nodeId.length > 0 && add.port.trim().length > 0 :
+      add.mode === "address"  ? add.targetIp.length > 0 && add.port.trim().length > 0 :
       /* redirect */            add.redirectRouteId.length > 0
     )
 
@@ -332,6 +339,7 @@ function TargetForm({
     form.path.trim().startsWith("/") && (
       form.mode === "service"  ? form.serviceId.length > 0 :
       form.mode === "node"     ? form.nodeId.length > 0 && form.port.trim().length > 0 :
+      form.mode === "address"  ? form.targetIp.length > 0 && form.port.trim().length > 0 :
       /* redirect */             form.redirectRouteId.length > 0
     )
 
@@ -340,10 +348,11 @@ function TargetForm({
       <div className="flex items-center gap-2">
         <SegmentedControl
           value={form.mode}
-          onValueChange={(v) => onChange({ mode: v as TargetMode, serviceId: "", nodeId: "", port: "", redirectRouteId: "" })}
+          onValueChange={(v) => onChange({ mode: v as TargetMode, serviceId: "", nodeId: "", targetIp: "", port: "", redirectRouteId: "" })}
           options={[
             { value: "service",  label: "Service" },
             { value: "node",     label: "Node + port" },
+            { value: "address",  label: "Address" },
             ...(zone !== "internal" ? [{ value: "redirect", label: "Redirect" }] : []),
           ]}
           className="text-xs shrink-0"
@@ -457,6 +466,29 @@ function TargetForm({
             placeholder="8080"
           />
         </div>
+      ) : form.mode === "address" ? (
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-[1fr_100px] gap-2">
+            <Input
+              value={form.targetIp}
+              onChange={(e) => onChange({ targetIp: e.target.value.trim() })}
+              placeholder="127.0.0.1"
+              className="font-mono"
+            />
+            <Input
+              type="number"
+              min={1}
+              max={65535}
+              value={form.port}
+              onChange={(e) => onChange({ port: e.target.value })}
+              placeholder="8080"
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+            An address the gateway itself can reach: its own loopback, the Docker bridge, or a machine on
+            your mesh or LAN. Pointed at a public address, the gateway becomes a proxy for it.
+          </p>
+        </div>
       ) : (
         <div className="flex items-center gap-2">
           <Select value={form.redirectRouteId} onValueChange={(v) => onChange({ redirectRouteId: v ?? "" })}>
@@ -504,12 +536,19 @@ function TargetForm({
 // ─── Target item (view + inline edit) ────────────────────────────────────────
 
 function targetToForm(target: ApiRouteTarget): TargetFormState {
-  const mode: TargetMode = target.redirect_route_id ? "redirect" : target.node_id ? "node" : "service"
+  const mode: TargetMode = target.redirect_route_id
+    ? "redirect"
+    : target.node_id
+      ? "node"
+      : target.service_id
+        ? "service"
+        : "address"
   return {
     mode,
     serviceId: target.service_id ?? "",
     servicePortId: "",  // not stored on the target; user can re-select on edit
     nodeId: target.node_id ?? "",
+    targetIp: target.service_id || target.node_id ? "" : (target.target_ip ?? ""),
     port: target.target_port ? String(target.target_port) : "",
     path: target.path,
     stripPath: target.strip_path ?? false,
@@ -563,6 +602,8 @@ function TargetItem({
       if (editForm.mode === "service") {
         body.service_id = editForm.serviceId
         if (editForm.servicePortId) body.service_port_id = editForm.servicePortId
+      } else if (editForm.mode === "address") {
+        body.target_ip = editForm.targetIp; body.port = parseInt(editForm.port, 10)
       } else if (editForm.mode === "node") {
         body.node_id = editForm.nodeId; body.port = parseInt(editForm.port, 10)
       } else if (editForm.mode === "redirect") {

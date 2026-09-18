@@ -52,6 +52,7 @@ function tcpRoute(gatewayPort: number, over: Record<string, unknown>) {
     organization_id: seed.DEMO_ORG_ID,
     project_id: projectId,
     gateway_port: gatewayPort,
+    zone: "public",
     service_id: null,
     service_port: 0,
     node_id: null,
@@ -120,6 +121,17 @@ export const db: Record<string, DemoRecord[]> = {
       target_port: 9000,
       allowed_cidrs: ["203.0.113.0/24", "10.0.0.0/8"],
       host_firewall: firewall("blocked"),
+    }),
+    // A container running outside Meshploy on the gateway, published to the
+    // mesh: the case an address target and a zone exist for.
+    tcpRoute(3580, {
+      zone: "mesh",
+      target_ip: "127.0.0.1",
+      target_port: 3580,
+      host_firewall: {
+        state: "open",
+        reason: "this port is bound to the mesh address, so the host firewall does not apply to it",
+      },
     }),
   ],
   "variable-groups": [

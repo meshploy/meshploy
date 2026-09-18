@@ -952,6 +952,21 @@ const (
 // has neither, so the gateway port is the whole address and is unique across
 // the gateway rather than per project. HTTP keeps its own path, where a
 // hostname distinguishes routes sharing port 443.
+// TCPRouteZone is where a forwarded port is reachable from.
+type TCPRouteZone string
+
+const (
+	// TCPZonePublic binds every interface: the internet, subject to the host
+	// firewall and the route's allowlist.
+	TCPZonePublic TCPRouteZone = "public"
+	// TCPZoneMesh binds the gateway's mesh address alone. Its use is a port
+	// bound to loopback on the gateway, which nothing on the mesh can reach.
+	TCPZoneMesh TCPRouteZone = "mesh"
+	// TCPZoneLocal binds loopback alone: reachable through an SSH tunnel to the
+	// gateway, and from nowhere else.
+	TCPZoneLocal TCPRouteZone = "local"
+)
+
 type TCPRoute struct {
 	Base
 	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index" json:"organization_id"`
@@ -971,6 +986,12 @@ type TCPRoute struct {
 	// denormalised for the proxy's hot path, as a route target is.
 	TargetIP   string `gorm:"not null;default:''" json:"target_ip"`
 	TargetPort int    `gorm:"not null;default:0"  json:"target_port"`
+
+	// Zone is where the gateway binds the port: every interface (public), the
+	// mesh address alone, or loopback alone. It decides who can reach the port
+	// at all, where AllowedCIDRs decides who may connect once they can.
+	// Existing rows are public, which is what they have always been.
+	Zone TCPRouteZone `gorm:"type:varchar(10);not null;default:'public'" json:"zone"`
 
 	// AllowedCIDRs restricts who may connect. Empty means anyone who can reach
 	// the port, which on the gateway is the internet.

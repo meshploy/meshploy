@@ -25,6 +25,17 @@ type TCPRouteService struct {
 
 // withHostFirewall reads the host agent's last report once and says, for each
 // route, what the host firewall does with its port.
+// zoneAddressName names what a zone binds, for a sentence.
+func zoneAddressName(z db.TCPRouteZone) string {
+	switch z {
+	case db.TCPZoneMesh:
+		return "the mesh address"
+	case db.TCPZoneLocal:
+		return "this machine's loopback"
+	}
+	return "every interface"
+}
+
 func (s *TCPRouteService) withHostFirewall(routes []db.TCPRoute) {
 	if s.hostDir == "" || len(routes) == 0 {
 		return
@@ -32,6 +43,16 @@ func (s *TCPRouteService) withHostFirewall(routes []db.TCPRoute) {
 	agent, fw, err := hostagent.ReadState(s.hostDir)
 	now := time.Now()
 	for i := range routes {
+		// A port that was never on a public interface cannot be blocked by the
+		// host firewall, and saying it is would send someone to open a hole
+		// they do not need. The zone is the answer, not the firewall.
+		if routes[i].Zone == db.TCPZoneMesh || routes[i].Zone == db.TCPZoneLocal {
+			routes[i].HostFirewall = &db.PortFirewall{
+				State:  hostagent.PortOpen,
+				Reason: "this port is bound to " + zoneAddressName(routes[i].Zone) + ", so the host firewall does not apply to it",
+			}
+			continue
+		}
 		var v hostagent.PortVerdict
 		if err != nil {
 			v = hostagent.PortVerdict{State: hostagent.PortUnknown, Reason: "the host agent's report could not be read"}
@@ -57,11 +78,19 @@ type CreateTCPRouteInput struct {
 	ProjectID   uuid.UUID
 	GatewayPort int
 
-	// The target: a service's published port, or a port on a node.
+	// The target: a service's published port, a port on a node, or an address
+	// the gateway can reach - which is the only way to name something bound to
+	// the gateway's loopback, since the proxy shares its network namespace.
 	ServiceID   *uuid.UUID
 	ServicePort int // container port; 0 = the service's own published port
 	NodeID      *uuid.UUID
 	NodePort    int // the port on that node
+	TargetIP    string
+	TargetPort  int
+
+	// Zone is where the gateway binds the port. Empty means public, which is
+	// what every route was before there was a choice.
+	Zone db.TCPRouteZone
 
 	AllowedCIDRs []string
 
@@ -121,8 +150,21 @@ func (s *TCPRouteService) Get(ctx context.Context, routeID, projectID uuid.UUID)
 	return &route, err
 }
 
+// validZone defaults an empty zone to public, which is what a route was before
+// there was a choice, and refuses anything else it does not know.
+func validZone(z db.TCPRouteZone) (db.TCPRouteZone, error) {
+	switch z {
+	case "":
+		return db.TCPZonePublic, nil
+	case db.TCPZonePublic, db.TCPZoneMesh, db.TCPZoneLocal:
+		return z, nil
+	}
+	return "", fmt.Errorf("a zone is public, mesh or local, not %q", z)
+}
+
 func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*db.TCPRoute, error) {
-	if err := s.checkPort(ctx, in.GatewayPort, uuid.Nil); err != nil {
+	zone, err := validZone(in.Zone)
+	if err != nil {
 		return nil, err
 	}
 	cidrs, err := parseCIDRs(in.AllowedCIDRs)
@@ -130,10 +172,22 @@ func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*
 		return nil, err
 	}
 
+	// A port that was asked for is checked before anything else, so "that port
+	// is the gateway's own" is what comes back rather than a complaint about
+	// the target.
+	if in.GatewayPort != 0 {
+		if err := s.checkPort(ctx, in.GatewayPort, uuid.Nil); err != nil {
+			return nil, err
+		}
+	} else if zone == db.TCPZonePublic {
+		return nil, fmt.Errorf("a public route needs a gateway port")
+	}
+
 	route := &db.TCPRoute{
 		OrganizationID: in.OrgID,
 		ProjectID:      in.ProjectID,
 		GatewayPort:    in.GatewayPort,
+		Zone:           zone,
 		ServiceID:      in.ServiceID,
 		NodeID:         in.NodeID,
 		AllowedCIDRs:   cidrs,
@@ -141,6 +195,15 @@ func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*
 	}
 	if err := s.resolveTarget(ctx, route, in); err != nil {
 		return nil, err
+	}
+	// Off the public interface, the listening port may simply be the target's:
+	// the addresses differ, so the numbers need not, and one number is easier
+	// to hold than two.
+	if route.GatewayPort == 0 {
+		route.GatewayPort = route.TargetPort
+		if err := s.checkPort(ctx, route.GatewayPort, uuid.Nil); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(route).Error; err != nil {
@@ -269,6 +332,21 @@ func (s *TCPRouteService) checkPort(ctx context.Context, port int, exceptID uuid
 // so kube-proxy spreads connections across replicas wherever they run.
 func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute, in CreateTCPRouteInput) error {
 	switch {
+	case in.TargetIP != "":
+		// Taken as written: the proxy runs on the gateway with its network
+		// namespace, so anything the gateway can reach is fair, loopback
+		// included. Refusing what we cannot verify would rule out the one case
+		// this mode exists for.
+		if net.ParseIP(in.TargetIP) == nil {
+			return fmt.Errorf("%q is not an address", in.TargetIP)
+		}
+		if in.TargetPort < 1 || in.TargetPort > 65535 {
+			return fmt.Errorf("a target port must be between 1 and 65535")
+		}
+		route.TargetIP = in.TargetIP
+		route.TargetPort = in.TargetPort
+		return nil
+
 	case in.NodeID != nil:
 		var node db.Node
 		if err := s.db.WithContext(ctx).First(&node, "id = ?", *in.NodeID).Error; err != nil {
@@ -300,7 +378,7 @@ func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute,
 		route.TargetPort = nodePort
 		return nil
 	}
-	return fmt.Errorf("a route needs a target: a service or a node")
+	return fmt.Errorf("a route needs a target: a service, a node or an address")
 }
 
 // servicePort picks which port of a service to route, and returns it with the

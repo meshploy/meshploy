@@ -9,7 +9,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,9 +92,16 @@ func (f *Forwarder) sync() {
 
 	for port, route := range wanted {
 		if l, ok := f.listeners[port]; ok {
-			l.retarget(route)
-			f.setStatus(route, db.TCPRouteOpen, "")
-			continue
+			// Retargeting keeps the socket, which is right for a new NodePort
+			// and wrong for a new zone: the address is the socket.
+			if l.bind == bindFor(f.bind, route) {
+				l.retarget(route)
+				f.setStatus(route, db.TCPRouteOpen, "")
+				continue
+			}
+			l.close()
+			delete(f.listeners, port)
+			log.Printf("tcp: rebinding :%d to %s", port, bindFor(f.bind, route))
 		}
 		l, err := listen(f.bind, route)
 		if err != nil {
@@ -102,7 +111,7 @@ func (f *Forwarder) sync() {
 		}
 		f.listeners[port] = l
 		f.setStatus(route, db.TCPRouteOpen, "")
-		log.Printf("tcp: listening on :%d → %s:%d", port, route.TargetIP, route.TargetPort)
+		log.Printf("tcp: listening on %s → %s:%d", net.JoinHostPort(bindFor(f.bind, route), strconv.Itoa(port)), route.TargetIP, route.TargetPort)
 	}
 }
 
@@ -122,7 +131,8 @@ func (f *Forwarder) setStatus(route db.TCPRoute, status db.TCPRouteStatus, lastE
 // ── One published port ────────────────────────────────────────────────────────
 
 type listener struct {
-	ln net.Listener
+	ln   net.Listener
+	bind string
 
 	mu         sync.RWMutex
 	targetIP   string
@@ -131,14 +141,46 @@ type listener struct {
 }
 
 func listen(bind string, route db.TCPRoute) (*listener, error) {
-	ln, err := net.Listen("tcp", net.JoinHostPort(bind, strconv.Itoa(route.GatewayPort)))
+	ln, err := net.Listen("tcp", net.JoinHostPort(bindFor(bind, route), strconv.Itoa(route.GatewayPort)))
 	if err != nil {
 		return nil, err
 	}
-	l := &listener{ln: ln}
+	l := &listener{ln: ln, bind: bindFor(bind, route)}
 	l.retarget(route)
 	go l.accept()
 	return l, nil
+}
+
+// bindFor is the address a route's listener binds.
+//
+// A public route binds whatever the gateway was started with, which is every
+// interface unless it was given one. The other zones name their own address:
+// the mesh one because the point of it is a port the mesh can reach and the
+// internet cannot, loopback because the point of it is a port only this machine
+// can reach, through a tunnel.
+func bindFor(bind string, route db.TCPRoute) string {
+	switch route.Zone {
+	case db.TCPZoneMesh:
+		return meshBind(route)
+	case db.TCPZoneLocal:
+		return "127.0.0.1"
+	default:
+		return bind
+	}
+}
+
+// meshBind is the gateway's own mesh address. It is read from MESH_IP, which
+// the installer writes, because the proxy has no node table of its own and a
+// mesh route that binds every interface would be a public port wearing the
+// wrong label.
+func meshBind(route db.TCPRoute) string {
+	if ip := strings.TrimSpace(os.Getenv("MESH_IP")); ip != "" {
+		return ip
+	}
+	// Without one, fall back to loopback rather than every interface: a port
+	// the operator asked to keep off the internet stays off it.
+	log.Printf("tcp: MESH_IP is not set; binding route on port %d to loopback instead of the mesh", route.GatewayPort)
+	return "127.0.0.1"
 }
 
 func (l *listener) retarget(route db.TCPRoute) {

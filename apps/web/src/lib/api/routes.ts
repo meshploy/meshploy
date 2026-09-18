@@ -41,6 +41,9 @@ export type TargetBody = {
   service_id?: string
   service_port_id?: string
   node_id?: string
+  /** An address the gateway can reach, loopback included - for something
+   *  running outside Meshploy that no service or node target can name. */
+  target_ip?: string
   port?: number
   redirect_route_id?: string
   redirect_code?: number
@@ -134,11 +137,16 @@ export interface ApiPortFirewall {
 }
 
 /** A TCP route publishes one port on the gateway and forwards it over the mesh. */
+/** Where a forwarded port is reachable from. */
+export type TCPZone = "public" | "mesh" | "local"
+
 export interface ApiTCPRoute {
   id: string
   organization_id: string
   project_id: string
   gateway_port: number
+  /** Absent from an API older than zones, where every route was public. */
+  zone?: TCPZone
   service_id: string | null
   service_port: number
   node_id: string | null
@@ -160,11 +168,16 @@ export interface ApiTCPRoute {
 }
 
 export type TCPRouteBody = {
+  /** Off the public zone it may be left out, and the target's port is used. */
   gateway_port: number
+  zone?: TCPZone
   service_id?: string
   service_port?: number
   node_id?: string
   node_port?: number
+  /** An address the gateway can reach, loopback included. */
+  target_ip?: string
+  target_port?: number
   allowed_cidrs?: string[]
 }
 

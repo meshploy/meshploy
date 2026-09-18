@@ -124,3 +124,36 @@ func TestPermitted(t *testing.T) {
 		t.Error("an address outside the range should not be")
 	}
 }
+
+// A zone decides the address a route binds. Public keeps whatever the gateway
+// was started with; the other two name their own, because a port asked to stay
+// off the internet must not quietly be on it.
+func TestZoneDecidesTheBindAddress(t *testing.T) {
+	t.Setenv("MESH_IP", "100.64.0.1")
+
+	for _, c := range []struct {
+		zone db.TCPRouteZone
+		bind string
+		want string
+	}{
+		{db.TCPZonePublic, "", ""},
+		{db.TCPZonePublic, "203.0.113.10", "203.0.113.10"},
+		{db.TCPZoneMesh, "", "100.64.0.1"},
+		{db.TCPZoneLocal, "", "127.0.0.1"},
+		{"", "", ""}, // a route stored before zones existed
+	} {
+		if got := bindFor(c.bind, db.TCPRoute{Zone: c.zone}); got != c.want {
+			t.Errorf("zone %q with bind %q: got %q, want %q", c.zone, c.bind, got, c.want)
+		}
+	}
+}
+
+// Without MESH_IP there is no mesh address to bind. Falling back to every
+// interface would publish to the internet a port the operator asked to keep on
+// the mesh, so it falls back to loopback instead.
+func TestAMeshRouteWithoutAMeshAddressStaysLocal(t *testing.T) {
+	t.Setenv("MESH_IP", "")
+	if got := bindFor("", db.TCPRoute{Zone: db.TCPZoneMesh, GatewayPort: 5432}); got != "127.0.0.1" {
+		t.Errorf("got %q, want loopback", got)
+	}
+}

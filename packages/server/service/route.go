@@ -471,6 +471,23 @@ func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.
 		}
 		t.TargetIP = node.TailscaleIP
 		t.TargetPort = in.Port
+	} else if in.TargetIP != "" {
+		// An address, taken as written. The proxy runs on the gateway with its
+		// network namespace, so anything the gateway reaches is fair - loopback
+		// included, which is the only way to name a container bound to it.
+		if net.ParseIP(in.TargetIP) == nil {
+			return nil, huma.Error400BadRequest(in.TargetIP + " is not an address")
+		}
+		if t.TargetPort == 0 {
+			t.TargetPort = in.Port
+		}
+		if t.TargetPort < 1 || t.TargetPort > 65535 {
+			return nil, huma.Error400BadRequest("a target port must be between 1 and 65535")
+		}
+	} else {
+		// Nothing to dial. This used to be accepted, and produced a route that
+		// answered every request with a proxy error.
+		return nil, huma.Error400BadRequest("a target needs a service, a node, an address, or a route to redirect to")
 	}
 
 	return t, nil

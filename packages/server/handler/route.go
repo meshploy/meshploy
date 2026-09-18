@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	svc "github.com/meshploy/packages/server/service"
 	"github.com/meshploy/packages/db"
+	svc "github.com/meshploy/packages/server/service"
 )
 
 // ── Path params ───────────────────────────────────────────────────────────────
@@ -56,6 +56,7 @@ type CreateRouteInput struct {
 			ServiceID       *string `json:"service_id,omitempty"`
 			ServicePortID   *string `json:"service_port_id,omitempty"` // which port to route to; nil = primary
 			NodeID          *string `json:"node_id,omitempty"`
+			TargetIP        *string `json:"target_ip,omitempty"`
 			Port            *int    `json:"port,omitempty"`
 			RedirectRouteID *string `json:"redirect_route_id,omitempty"`
 			RedirectCode    *int    `json:"redirect_code,omitempty"`
@@ -77,6 +78,7 @@ type UpsertTargetInput struct {
 		ServiceID       *string `json:"service_id,omitempty"`
 		ServicePortID   *string `json:"service_port_id,omitempty"`
 		NodeID          *string `json:"node_id,omitempty"`
+		TargetIP        *string `json:"target_ip,omitempty"`
 		Port            *int    `json:"port,omitempty"`
 		RedirectRouteID *string `json:"redirect_route_id,omitempty"`
 		RedirectCode    *int    `json:"redirect_code,omitempty"`
@@ -96,6 +98,7 @@ type UpdateTargetInput struct {
 		ServiceID       *string `json:"service_id,omitempty"`
 		ServicePortID   *string `json:"service_port_id,omitempty"`
 		NodeID          *string `json:"node_id,omitempty"`
+		TargetIP        *string `json:"target_ip,omitempty"`
 		Port            *int    `json:"port,omitempty"`
 		RedirectRouteID *string `json:"redirect_route_id,omitempty"`
 		RedirectCode    *int    `json:"redirect_code,omitempty"`
@@ -250,7 +253,7 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 
 	targets := make([]svc.TargetInput, 0, len(input.Body.Targets))
 	for _, t := range input.Body.Targets {
-		ti, err := parseTargetBody(t.Path, t.StripPath, t.ServiceID, t.ServicePortID, t.NodeID, t.RedirectRouteID, t.Port, t.RedirectCode)
+		ti, err := parseTargetBody(t.Path, t.StripPath, t.ServiceID, t.ServicePortID, t.NodeID, t.TargetIP, t.RedirectRouteID, t.Port, t.RedirectCode)
 		if err != nil {
 			return nil, err
 		}
@@ -335,7 +338,7 @@ func (h *Handler) AddRouteTarget(ctx context.Context, input *AddTargetInput) (*G
 	if err != nil {
 		return nil, err
 	}
-	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.ServicePortID, input.Body.NodeID, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
+	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.ServicePortID, input.Body.NodeID, input.Body.TargetIP, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +358,7 @@ func (h *Handler) UpdateRouteTarget(ctx context.Context, input *UpdateTargetInpu
 	if err != nil {
 		return nil, err
 	}
-	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.ServicePortID, input.Body.NodeID, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
+	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.ServicePortID, input.Body.NodeID, input.Body.TargetIP, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +383,7 @@ func (h *Handler) DeleteRouteTarget(ctx context.Context, input *RouteTargetPathI
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
 
-func parseTargetBody(path string, stripPath bool, serviceID, servicePortID, nodeID, redirectRouteID *string, port, redirectCode *int) (svc.TargetInput, error) {
+func parseTargetBody(path string, stripPath bool, serviceID, servicePortID, nodeID, targetIP, redirectRouteID *string, port, redirectCode *int) (svc.TargetInput, error) {
 	ti := svc.TargetInput{Path: path, StripPath: stripPath}
 	if serviceID != nil {
 		id, err := parseUUID(*serviceID)
@@ -402,6 +405,9 @@ func parseTargetBody(path string, stripPath bool, serviceID, servicePortID, node
 			return ti, huma.Error400BadRequest("invalid node_id")
 		}
 		ti.NodeID = &id
+	}
+	if targetIP != nil {
+		ti.TargetIP = *targetIP
 	}
 	if redirectRouteID != nil {
 		id, err := parseUUID(*redirectRouteID)

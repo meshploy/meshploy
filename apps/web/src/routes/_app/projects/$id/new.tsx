@@ -71,6 +71,7 @@ import { inputCls, Section, Field, NodeCard } from "@/components/services/form-p
 import { Input } from "@/components/ui/input"
 import { CronScheduleBlock } from "@/components/jobs/cron-schedule-block"
 import { SegmentedControl } from "@/components/ui/segmented-control"
+import type { TCPZone } from "@/lib/api/routes"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
 
 // ─── Route ───────────────────────────────────────────────────────────────────
@@ -1421,6 +1422,12 @@ function RouteForm({ projectId }: { projectId: string }) {
 
 // A TCP route needs three things the domain form has no room for: which port
 // the gateway should listen on, what it forwards to, and who may connect.
+const ZONE_HELP: Record<TCPZone, string> = {
+  public: "The gateway's public address. The host firewall, and a cloud security group if there is one, must allow the port too.",
+  mesh: "The gateway's mesh address only. Any machine on your WireGuard network can connect; the internet cannot, whatever the firewall says.",
+  local: "The gateway's loopback only. Reachable through an SSH tunnel to the gateway, and from nowhere else.",
+}
+
 function TCPRouteFields({ projectId }: { projectId: string }) {
   const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
@@ -1428,10 +1435,13 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const [mode, setMode] = useState<"service" | "node">("service")
+  const [mode, setMode] = useState<"service" | "node" | "address">("service")
   const [serviceId, setServiceId] = useState("")
   const [nodeId, setNodeId] = useState("")
   const [nodePort, setNodePort] = useState("")
+  const [targetIp, setTargetIp] = useState("")
+  const [targetPort, setTargetPort] = useState("")
+  const [zone, setZone] = useState<TCPZone>("public")
   const [gatewayPort, setGatewayPort] = useState("")
   const [allowFrom, setAllowFrom] = useState("")
 
@@ -1502,9 +1512,42 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
     }
   }
 
+  const targetHasPort =
+    mode === "service" ? serviceId.length > 0 :
+    mode === "node"    ? nodeId.length > 0 && parseInt(nodePort, 10) > 0 :
+                         targetIp.length > 0 && parseInt(targetPort, 10) > 0
+  // Off the public interface the listener may take the target's port, so the
+  // field is optional there.
+  const portOptional = zone !== "public" && mode !== "service"
+  // 100.64.0.0/10 is the mesh's own range: an address in it is reachable from
+  // the mesh already.
+  const meshRangeTarget = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(targetIp)
+  const targetPortNumber =
+    mode === "node" ? parseInt(nodePort, 10) || 0 :
+    mode === "address" ? parseInt(targetPort, 10) || 0 :
+    servicePort ?? 0
+
+  // The whole path in one line, because "gateway port" and "target" describe
+  // two ends of something nobody can see.
+  const routePreview = (() => {
+    const listenPort = gatewayPort || (portOptional && targetPortNumber ? String(targetPortNumber) : "?")
+    const from =
+      zone === "public" ? `internet :${listenPort}` :
+      zone === "mesh" ? `mesh <gateway>:${listenPort}` :
+      `127.0.0.1:${listenPort}`
+    const to =
+      mode === "service"
+        ? selected
+          ? `${selected.name} → its NodePort on the mesh`
+          : "a service"
+        : mode === "node"
+          ? `${onlineNodes.find((n) => n.id === nodeId)?.tailscale_ip ?? "<node>"}:${nodePort || "?"}`
+          : `${targetIp || "<address>"}:${targetPort || "?"}`
+    return `${from}  →  ${to}`
+  })()
   const canCreate =
-    port > 0 && port < 65536 && !portError &&
-    (mode === "service" ? serviceId.length > 0 : nodeId.length > 0 && parseInt(nodePort, 10) > 0)
+    targetHasPort && !portError &&
+    (portOptional ? gatewayPort === "" || (port > 0 && port < 65536) : port > 0 && port < 65536)
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -1512,11 +1555,14 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
         orgId,
         projectId,
         {
-          gateway_port: port,
+          gateway_port: gatewayPort === "" ? 0 : port,
+          zone,
           allowed_cidrs: allowFrom.split(/[\s,]+/).filter(Boolean),
           ...(mode === "service"
             ? { service_id: serviceId }
-            : { node_id: nodeId, node_port: parseInt(nodePort, 10) }),
+            : mode === "node"
+              ? { node_id: nodeId, node_port: parseInt(nodePort, 10) }
+              : { target_ip: targetIp, target_port: parseInt(targetPort, 10) }),
         },
         token
       ),
@@ -1531,13 +1577,47 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
 
   return (
     <>
+      <Section title="Zone" subtitle="Where this port is reachable from.">
+        <SegmentedControl
+          value={zone}
+          onValueChange={(v) => setZone(v as TCPZone)}
+          options={[
+            { value: "public", label: "Public" },
+            // Mesh only for an address: a service is already on the mesh at its
+            // NodePort, and a node's port at that node's own address. A
+            // listener in front of either is a hop for nothing.
+            ...(mode === "address" ? [{ value: "mesh", label: "Mesh" }] : []),
+            { value: "local",  label: "This machine" },
+          ]}
+          className="text-sm mb-3"
+        />
+        <p className="text-xs text-muted-foreground">{ZONE_HELP[zone]}</p>
+        {mode !== "address" && (
+          <p className="text-xs text-muted-foreground mt-2">
+            {mode === "service"
+              ? "The mesh already reaches this service at its own NodePort, so there is nothing for a mesh route to add."
+              : "The mesh already reaches that node at its own address, so there is nothing for a mesh route to add."}
+          </p>
+        )}
+        {mode === "address" && zone === "mesh" && meshRangeTarget && (
+          <p className="text-xs text-amber-400 mt-2">
+            {targetIp} is already a mesh address, so this only fixes the port and restricts who may connect.
+          </p>
+        )}
+      </Section>
+
       <Section title="Target" subtitle="What the gateway forwards connections to.">
         <SegmentedControl
           value={mode}
-          onValueChange={(v) => setMode(v as "service" | "node")}
+          onValueChange={(v) => {
+            const next = v as "service" | "node" | "address"
+            setMode(next)
+            if (next !== "address" && zone === "mesh") setZone("public")
+          }}
           options={[
             { value: "service", label: "Service" },
             { value: "node",    label: "Node + port" },
+            { value: "address", label: "Address" },
           ]}
           className="text-sm mb-4"
         />
@@ -1566,7 +1646,7 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
               to have mesh access before it can be routed.
             </p>
           </>
-        ) : (
+        ) : mode === "node" ? (
           <div className="flex items-center gap-2">
             <Select value={nodeId} onValueChange={(v) => setNodeId(v ?? "")}>
               {/* flex-1 rather than w-full: both children carry a width from
@@ -1594,10 +1674,41 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
               onChange={(e) => setNodePort(e.target.value.replace(/[^0-9]/g, ""))}
             />
           </div>
+        ) : null}
+
+        {mode === "address" && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                className={cn(inputCls, "flex-1 min-w-0 font-mono")}
+                value={targetIp}
+                placeholder="127.0.0.1"
+                onChange={(e) => setTargetIp(e.target.value.trim())}
+              />
+              <input
+                className={cn(inputCls, "w-28! shrink-0")}
+                value={targetPort}
+                inputMode="numeric"
+                placeholder="Port"
+                onChange={(e) => setTargetPort(e.target.value.replace(/[^0-9]/g, ""))}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              An address the gateway itself can reach: its own loopback, the Docker bridge, or a machine on your
+              mesh or LAN. The proxy shares the gateway's network, so anything the gateway reaches, this reaches.
+            </p>
+          </div>
         )}
       </Section>
 
-      <Section title="Gateway port" subtitle="The port clients connect to, on the gateway's public address.">
+      <Section
+        title={zone === "public" ? "Gateway port" : zone === "mesh" ? "Mesh port" : "Local port"}
+        subtitle={
+          zone === "public"
+            ? "The port clients connect to, on the gateway's public address."
+            : `The port the gateway listens on, at ${zone === "mesh" ? "its mesh address" : "127.0.0.1"}.`
+        }
+      >
         <div className="flex items-center gap-2">
           <input
             className={cn(inputCls, "flex-1 min-w-0")}
@@ -1613,12 +1724,20 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
         </div>
         {portError ? (
           <p className="text-xs text-destructive mt-2">{portError}</p>
+        ) : portOptional ? (
+          <p className="text-xs text-muted-foreground mt-2">
+            Leave it empty to listen on the target's own port{targetPortNumber ? ` (${targetPortNumber})` : ""}: the
+            addresses differ, so the numbers need not.
+          </p>
         ) : (
           <p className="text-xs text-muted-foreground mt-2">
             It cannot be one the gateway uses for itself, and the host firewall, with a cloud security group if there
             is one, must allow it too.
           </p>
         )}
+        <p className="mt-3 rounded-md bg-muted/30 px-2.5 py-2 text-[11px] font-mono text-muted-foreground">
+          {routePreview}
+        </p>
       </Section>
 
       <Section title="Allow from" subtitle="Who may connect. Left empty, anyone on the internet.">
