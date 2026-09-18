@@ -40,10 +40,18 @@ LISTEN 0 4096 127.0.0.1:80 0.0.0.0:* users:(("nginx",pid=12,fd=3))`
 }
 
 func TestBindSourcesAndSharing(t *testing.T) {
-	binds := ParseBindSources("/api.1.x|/home/ubuntu/app/storage;/etc/dokploy/applications/x;\n/pgadmin|\n")
+	// The inspect line is name|network mode|bind sources.
+	const out = "/api.1.x|bridge|/home/ubuntu/app/storage;/etc/dokploy/applications/x;\n/pgadmin|bridge|\n/vpn|host|\n"
+	binds := ParseBindSources(out)
 	c := Container{Name: "api.1.x", BindSources: binds["api.1.x"]}
 	if len(c.BindSources) != 2 || len(binds["pgadmin"]) != 0 {
 		t.Fatalf("got %v", binds)
+	}
+	// A container on the host's network cannot be reproduced by a Kubernetes
+	// Deployment, so the mode has to survive the read.
+	details := ParseInspect(out)
+	if details["vpn"].NetworkMode != "host" || details["api.1.x"].NetworkMode != "bridge" {
+		t.Errorf("network modes: %+v", details)
 	}
 	for path, want := range map[string]bool{"/home/ubuntu/app/storage": true, "/home/ubuntu/app": true, "/home/ubuntu/app/storage/img": true, "/home/ubuntu/other": false} {
 		if c.MountsPath(path) != want {

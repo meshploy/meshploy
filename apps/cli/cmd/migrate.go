@@ -223,6 +223,9 @@ func printPlan(w io.Writer, p dokploy.Plan) {
 		fmt.Fprintf(w, "\nNot managed by Dokploy (%d)\n", len(p.Unmanaged))
 		for _, u := range p.Unmanaged {
 			fmt.Fprintf(w, "  ? %s (%s, %d of %d running) → %s\n", u.Name, u.Kind, u.Running, u.Total, u.MapsTo)
+			if u.Note != "" {
+				fmt.Fprintf(w, "      %s\n", u.Note)
+			}
 		}
 	}
 	fmt.Fprintln(w, "\n✔ moves   ! needs you   ✗ not moved   ? offered for import")

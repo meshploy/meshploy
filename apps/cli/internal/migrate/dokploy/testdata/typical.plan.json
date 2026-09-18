@@ -25,11 +25,11 @@
     "available_mb": 5200,
     "disk_free_mb": 64000,
     "docker_volume_mb": 1300,
-    "workload_memory_mb": 2436
+    "workload_memory_mb": 2516
   },
   "mode": {
     "choice": "side_by_side",
-    "reason": "5200 MB of memory free covers Meshploy and a second copy of the workloads (3972 MB), and 64000 MB of disk the data twice: both can run until everything is ready"
+    "reason": "5200 MB of memory free covers Meshploy and a second copy of the workloads (4052 MB), and 64000 MB of disk the data twice: both can run until everything is ready"
   },
   "items": [
     {
@@ -420,6 +420,15 @@
     }
   ],
   "unmanaged": [
+    {
+      "name": "vpn",
+      "kind": "compose-project",
+      "images": "mysteriumnetwork/myst:latest",
+      "running": 1,
+      "total": 1,
+      "maps_to": "Leave it running here",
+      "note": "vpn-node runs on the host's network, which a Meshploy service does not: leave it as a Docker container here, or move it only if publishing its ports is enough for it"
+    },
     {
       "name": "watchtower",
       "kind": "container",

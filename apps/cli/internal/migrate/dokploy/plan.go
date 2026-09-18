@@ -92,6 +92,8 @@ type Unmanaged struct {
 	Running int    `json:"running"`
 	Total   int    `json:"total"`
 	MapsTo  string `json:"maps_to"`
+	// Note says what would be lost by importing it, when something would be.
+	Note string `json:"note,omitempty"`
 }
 
 // BuildPlan maps what was read into a plan. It changes nothing.
@@ -748,13 +750,22 @@ func unmanaged(src Source, owned map[string]bool) []Unmanaged {
 			if !strings.Contains(u.Images, c.Image) {
 				u.Images = strings.TrimPrefix(u.Images+", "+c.Image, ", ")
 			}
+			if c.NetworkMode == "host" {
+				u.Note = hostNetworkNote(c.Name)
+				u.MapsTo = "Leave it running here"
+			}
 			continue
 		}
 		running := 0
 		if c.State == "running" {
 			running = 1
 		}
-		out = append(out, Unmanaged{Name: c.Name, Kind: "container", Images: c.Image, Running: running, Total: 1, MapsTo: "Service, through the Docker importer"})
+		u := Unmanaged{Name: c.Name, Kind: "container", Images: c.Image, Running: running, Total: 1, MapsTo: "Service, through the Docker importer"}
+		if c.NetworkMode == "host" {
+			u.Note = hostNetworkNote(c.Name)
+			u.MapsTo = "Leave it running here"
+		}
+		out = append(out, u)
 	}
 	for _, u := range projects {
 		out = append(out, *u)
@@ -767,6 +778,19 @@ func unmanaged(src Source, owned map[string]bool) []Unmanaged {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// hostNetworkNote says why a container on the host's network is not offered for
+// import.
+//
+// Meshploy runs workloads as Kubernetes Deployments on a mesh, and has no host
+// networking for them: a VPN node, a DNS server or anything else that wants the
+// host's own stack cannot be reproduced by moving it. Importing it silently
+// would produce something that starts and does not work, which is worse than
+// leaving it where it is.
+func hostNetworkNote(name string) string {
+	return name + " runs on the host's network, which a Meshploy service does not: " +
+		"leave it as a Docker container here, or move it only if publishing its ports is enough for it"
 }
 
 // chooseMode picks how the move runs from the host's room to spare.

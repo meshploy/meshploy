@@ -59,6 +59,9 @@ type Container struct {
 	MemoryMB int `json:"memory_mb,omitempty"`
 	// BindSources are the host paths bind-mounted into it.
 	BindSources []string `json:"bind_sources,omitempty"`
+	// NetworkMode is docker's: bridge, host, a compose network's name, or
+	// container:<id>. "host" is the one that matters here.
+	NetworkMode string `json:"network_mode,omitempty"`
 }
 
 // MountsPath reports whether the container bind-mounts path, or a folder
@@ -107,11 +110,12 @@ func ReadDocker(r Runner) (Docker, error) {
 
 	// Bind mounts, for whether a host path an app mounts is shared.
 	if ids, err := r.Output("docker", "ps", "-aq"); err == nil && strings.TrimSpace(ids) != "" {
-		args := append([]string{"inspect", "--format", `{{.Name}}|{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}};{{end}}{{end}}`}, strings.Fields(ids)...)
+		args := append([]string{"inspect", "--format", `{{.Name}}|{{.HostConfig.NetworkMode}}|{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}};{{end}}{{end}}`}, strings.Fields(ids)...)
 		if out, err := r.Output("docker", args...); err == nil {
-			binds := ParseBindSources(out)
+			details := ParseInspect(out)
 			for i, c := range d.Containers {
-				d.Containers[i].BindSources = binds[c.Name]
+				d.Containers[i].BindSources = details[c.Name].BindSources
+				d.Containers[i].NetworkMode = details[c.Name].NetworkMode
 			}
 		}
 	}
@@ -172,18 +176,40 @@ func parseLabels(s string) map[string]string {
 }
 
 // ParseBindSources reads `docker inspect --format '{{.Name}}|<sources;>'`.
-func ParseBindSources(out string) map[string][]string {
-	binds := map[string][]string{}
+// ContainerDetail is what one `docker inspect` line carries beyond `docker ps`.
+type ContainerDetail struct {
+	NetworkMode string
+	BindSources []string
+}
+
+// ParseInspect reads `docker inspect --format
+// '{{.Name}}|{{.HostConfig.NetworkMode}}|{{bind sources}}'`.
+func ParseInspect(out string) map[string]ContainerDetail {
+	details := map[string]ContainerDetail{}
 	for _, line := range strings.Split(out, "\n") {
-		name, sources, ok := strings.Cut(strings.TrimSpace(line), "|")
+		name, rest, ok := strings.Cut(strings.TrimSpace(line), "|")
 		if !ok {
 			continue
 		}
+		mode, sources, _ := strings.Cut(rest, "|")
 		name = strings.TrimPrefix(name, "/")
+		d := ContainerDetail{NetworkMode: mode}
 		for _, s := range strings.Split(sources, ";") {
 			if s != "" {
-				binds[name] = append(binds[name], s)
+				d.BindSources = append(d.BindSources, s)
 			}
+		}
+		details[name] = d
+	}
+	return details
+}
+
+// ParseBindSources is ParseInspect's bind mounts alone.
+func ParseBindSources(out string) map[string][]string {
+	binds := map[string][]string{}
+	for name, d := range ParseInspect(out) {
+		if len(d.BindSources) > 0 {
+			binds[name] = d.BindSources
 		}
 	}
 	return binds

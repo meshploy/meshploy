@@ -1,107 +1,312 @@
 {
   "detection": {
     "dokploy": true,
-    "signals": ["dokploy-postgres container", "/etc/dokploy"],
+    "signals": [
+      "dokploy-postgres container",
+      "/etc/dokploy"
+    ],
     "image_tag": "v0.30.5",
     "version": "v0.30.5",
     "migrations": 191,
     "supported": true
   },
   "rows": {
-    "project": [{ "projectId": "p1", "name": "Shop" }],
+    "project": [
+      {
+        "projectId": "p1",
+        "name": "Shop"
+      }
+    ],
     "environment": [
-      { "environmentId": "e1", "projectId": "p1", "name": "production", "isDefault": true },
-      { "environmentId": "e2", "projectId": "p1", "name": "staging", "isDefault": false }
+      {
+        "environmentId": "e1",
+        "projectId": "p1",
+        "name": "production",
+        "isDefault": true
+      },
+      {
+        "environmentId": "e2",
+        "projectId": "p1",
+        "name": "staging",
+        "isDefault": false
+      }
     ],
     "application": [
       {
-        "applicationId": "a1", "name": "web", "appName": "shop-web-a1b2c3", "environmentId": "e1",
-        "sourceType": "gitlab", "buildType": "railpack", "gitlabPathNamespace": "shop/web",
-        "gitlabBranch": "main", "replicas": 2, "applicationStatus": "done",
+        "applicationId": "a1",
+        "name": "web",
+        "appName": "shop-web-a1b2c3",
+        "environmentId": "e1",
+        "sourceType": "gitlab",
+        "buildType": "railpack",
+        "gitlabPathNamespace": "shop/web",
+        "gitlabBranch": "main",
+        "replicas": 2,
+        "applicationStatus": "done",
         "env": "API_URL=https://api.shop.example\nLOG_LEVEL=info"
       },
       {
-        "applicationId": "a2", "name": "api", "appName": "shop-api-d4e5f6", "environmentId": "e1",
-        "sourceType": "github", "buildType": "dockerfile", "owner": "shop", "repository": "api",
-        "branch": "main", "replicas": 1, "applicationStatus": "done",
+        "applicationId": "a2",
+        "name": "api",
+        "appName": "shop-api-d4e5f6",
+        "environmentId": "e1",
+        "sourceType": "github",
+        "buildType": "dockerfile",
+        "owner": "shop",
+        "repository": "api",
+        "branch": "main",
+        "replicas": 1,
+        "applicationStatus": "done",
         "env": "DATABASE_URL=postgres://shop:pw@shop-db-g7h8i9:5432/shop"
       },
       {
-        "applicationId": "a3", "name": "admin", "appName": "shop-admin-k1l2m3", "environmentId": "e2",
-        "sourceType": "bitbucket", "buildType": "nixpacks", "bitbucketOwner": "shop",
-        "bitbucketRepository": "admin", "bitbucketBranch": "main", "applicationStatus": "done"
+        "applicationId": "a3",
+        "name": "admin",
+        "appName": "shop-admin-k1l2m3",
+        "environmentId": "e2",
+        "sourceType": "bitbucket",
+        "buildType": "nixpacks",
+        "bitbucketOwner": "shop",
+        "bitbucketRepository": "admin",
+        "bitbucketBranch": "main",
+        "applicationStatus": "done"
       }
     ],
     "compose": [
       {
-        "composeId": "c1", "name": "analytics", "appName": "shop-analytics-n4o5p6", "environmentId": "e1",
-        "sourceType": "raw", "composeType": "docker-compose", "composePath": "./docker-compose.yml",
-        "composeStatus": "done", "composeFile": "services:\n  metabase:\n    image: metabase/metabase:latest\n    environment:\n      MB_DB_HOST: shop-db-g7h8i9\n"
+        "composeId": "c1",
+        "name": "analytics",
+        "appName": "shop-analytics-n4o5p6",
+        "environmentId": "e1",
+        "sourceType": "raw",
+        "composeType": "docker-compose",
+        "composePath": "./docker-compose.yml",
+        "composeStatus": "done",
+        "composeFile": "services:\n  metabase:\n    image: metabase/metabase:latest\n    environment:\n      MB_DB_HOST: shop-db-g7h8i9\n"
       }
     ],
     "postgres": [
       {
-        "postgresId": "d1", "name": "db", "appName": "shop-db-g7h8i9", "environmentId": "e1",
-        "dockerImage": "postgres:16", "databaseName": "shop", "externalPort": 5432
+        "postgresId": "d1",
+        "name": "db",
+        "appName": "shop-db-g7h8i9",
+        "environmentId": "e1",
+        "dockerImage": "postgres:16",
+        "databaseName": "shop",
+        "externalPort": 5432
       }
     ],
     "redis": [
-      { "redisId": "d2", "name": "cache", "appName": "shop-cache-q7r8s9", "environmentId": "e1", "dockerImage": "redis:7" }
+      {
+        "redisId": "d2",
+        "name": "cache",
+        "appName": "shop-cache-q7r8s9",
+        "environmentId": "e1",
+        "dockerImage": "redis:7"
+      }
     ],
     "mount": [
-      { "mountId": "m1", "type": "bind", "hostPath": "/home/ubuntu/shop/uploads", "applicationId": "a2" }
+      {
+        "mountId": "m1",
+        "type": "bind",
+        "hostPath": "/home/ubuntu/shop/uploads",
+        "applicationId": "a2"
+      }
     ],
     "domain": [
-      { "domainId": "dm1", "host": "shop.example", "path": "/", "https": true, "certificateType": "letsencrypt", "applicationId": "a1", "domainType": "application" },
-      { "domainId": "dm2", "host": "www.shop.example", "path": "/", "https": true, "certificateType": "letsencrypt", "applicationId": "a1", "domainType": "application" },
-      { "domainId": "dm3", "host": "api.shop.example", "path": "/", "https": true, "certificateType": "letsencrypt", "applicationId": "a2", "domainType": "application" },
-      { "domainId": "dm4", "host": "analytics.shop.example", "path": "/", "https": true, "certificateType": "none", "composeId": "c1", "serviceName": "metabase", "domainType": "compose" }
+      {
+        "domainId": "dm1",
+        "host": "shop.example",
+        "path": "/",
+        "https": true,
+        "certificateType": "letsencrypt",
+        "applicationId": "a1",
+        "domainType": "application"
+      },
+      {
+        "domainId": "dm2",
+        "host": "www.shop.example",
+        "path": "/",
+        "https": true,
+        "certificateType": "letsencrypt",
+        "applicationId": "a1",
+        "domainType": "application"
+      },
+      {
+        "domainId": "dm3",
+        "host": "api.shop.example",
+        "path": "/",
+        "https": true,
+        "certificateType": "letsencrypt",
+        "applicationId": "a2",
+        "domainType": "application"
+      },
+      {
+        "domainId": "dm4",
+        "host": "analytics.shop.example",
+        "path": "/",
+        "https": true,
+        "certificateType": "none",
+        "composeId": "c1",
+        "serviceName": "metabase",
+        "domainType": "compose"
+      }
     ],
     "redirect": [
-      { "redirectId": "r1", "applicationId": "a1", "regex": "^https?://www\\.shop\\.example(.*)$", "replacement": "https://shop.example$1", "permanent": true }
+      {
+        "redirectId": "r1",
+        "applicationId": "a1",
+        "regex": "^https?://www\\.shop\\.example(.*)$",
+        "replacement": "https://shop.example$1",
+        "permanent": true
+      }
     ],
     "port": [
-      { "portId": "pt1", "applicationId": "a2", "publishedPort": 9100, "targetPort": 9100, "protocol": "tcp" }
+      {
+        "portId": "pt1",
+        "applicationId": "a2",
+        "publishedPort": 9100,
+        "targetPort": 9100,
+        "protocol": "tcp"
+      }
     ],
     "git_provider": [
-      { "gitProviderId": "g1", "name": "shop-gitlab", "providerType": "gitlab" },
-      { "gitProviderId": "g2", "name": "shop-github", "providerType": "github" },
-      { "gitProviderId": "g3", "name": "shop-bitbucket", "providerType": "bitbucket" }
+      {
+        "gitProviderId": "g1",
+        "name": "shop-gitlab",
+        "providerType": "gitlab"
+      },
+      {
+        "gitProviderId": "g2",
+        "name": "shop-github",
+        "providerType": "github"
+      },
+      {
+        "gitProviderId": "g3",
+        "name": "shop-bitbucket",
+        "providerType": "bitbucket"
+      }
     ],
     "registry": [
-      { "registryId": "rg1", "registryName": "ghcr", "registryUrl": "ghcr.io" }
+      {
+        "registryId": "rg1",
+        "registryName": "ghcr",
+        "registryUrl": "ghcr.io"
+      }
     ],
     "destination": [
-      { "destinationId": "ds1", "name": "backups", "provider": "s3", "bucket": "shop-backups", "endpoint": "https://s3.example" }
+      {
+        "destinationId": "ds1",
+        "name": "backups",
+        "provider": "s3",
+        "bucket": "shop-backups",
+        "endpoint": "https://s3.example"
+      }
     ],
     "backup": [
-      { "backupId": "b1", "databaseType": "postgres", "schedule": "0 3 * * *", "keepLatestCount": 7, "enabled": true }
+      {
+        "backupId": "b1",
+        "databaseType": "postgres",
+        "schedule": "0 3 * * *",
+        "keepLatestCount": 7,
+        "enabled": true
+      }
     ]
   },
   "docker": {
     "containers": [
-      { "name": "dokploy-traefik", "image": "traefik:v3.6", "state": "running", "ports": "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp" },
-      { "name": "shop-analytics-n4o5p6-metabase-1", "image": "metabase/metabase:latest", "state": "running", "compose_project": "shop-analytics-n4o5p6", "memory_mb": 900 },
-      { "name": "watchtower", "image": "containrrr/watchtower:latest", "state": "running" }
+      {
+        "name": "dokploy-traefik",
+        "image": "traefik:v3.6",
+        "state": "running",
+        "ports": "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp"
+      },
+      {
+        "name": "shop-analytics-n4o5p6-metabase-1",
+        "image": "metabase/metabase:latest",
+        "state": "running",
+        "compose_project": "shop-analytics-n4o5p6",
+        "memory_mb": 900
+      },
+      {
+        "name": "watchtower",
+        "image": "containrrr/watchtower:latest",
+        "state": "running"
+      },
+      {
+        "name": "vpn-node",
+        "image": "mysteriumnetwork/myst:latest",
+        "state": "running",
+        "compose_project": "vpn",
+        "network_mode": "host",
+        "memory_mb": 80
+      }
     ],
     "services": [
-      { "name": "shop-web-a1b2c3", "image": "shop/web:latest", "running": 2, "desired": 2 },
-      { "name": "shop-api-d4e5f6", "image": "shop/api:latest", "running": 1, "desired": 1 },
-      { "name": "shop-db-g7h8i9", "image": "postgres:16", "running": 1, "desired": 1 },
-      { "name": "shop-cache-q7r8s9", "image": "redis:7", "running": 1, "desired": 1 }
+      {
+        "name": "shop-web-a1b2c3",
+        "image": "shop/web:latest",
+        "running": 2,
+        "desired": 2
+      },
+      {
+        "name": "shop-api-d4e5f6",
+        "image": "shop/api:latest",
+        "running": 1,
+        "desired": 1
+      },
+      {
+        "name": "shop-db-g7h8i9",
+        "image": "postgres:16",
+        "running": 1,
+        "desired": 1
+      },
+      {
+        "name": "shop-cache-q7r8s9",
+        "image": "redis:7",
+        "running": 1,
+        "desired": 1
+      }
     ],
     "volumes": [
-      { "name": "shop-db-g7h8i9-data", "mb": 1200 },
-      { "name": "shop-cache-q7r8s9-data", "mb": 30 }
+      {
+        "name": "shop-db-g7h8i9-data",
+        "mb": 1200
+      },
+      {
+        "name": "shop-cache-q7r8s9-data",
+        "mb": 30
+      }
     ]
   },
   "listeners": [
-    { "port": 80, "address": "0.0.0.0", "process": "docker-proxy" },
-    { "port": 443, "address": "0.0.0.0", "process": "docker-proxy" },
-    { "port": 9100, "address": "0.0.0.0", "process": "docker-proxy" }
+    {
+      "port": 80,
+      "address": "0.0.0.0",
+      "process": "docker-proxy"
+    },
+    {
+      "port": 443,
+      "address": "0.0.0.0",
+      "process": "docker-proxy"
+    },
+    {
+      "port": 9100,
+      "address": "0.0.0.0",
+      "process": "docker-proxy"
+    }
   ],
-  "resources": { "cores": 4, "memory_mb": 7900, "available_mb": 5200, "disk_free_mb": 64000, "docker_volume_mb": 1300, "workload_memory_mb": 1536 },
+  "resources": {
+    "cores": 4,
+    "memory_mb": 7900,
+    "available_mb": 5200,
+    "disk_free_mb": 64000,
+    "docker_volume_mb": 1300,
+    "workload_memory_mb": 1536
+  },
   "dynamic_files": 4,
   "acme_bytes": 24576,
-  "path_mb": { "/home/ubuntu/shop/uploads": 340 }
+  "path_mb": {
+    "/home/ubuntu/shop/uploads": 340
+  }
 }
