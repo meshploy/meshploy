@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Rocket, RotateCcw, ScrollText, Trash2, X } from "lucide-react"
 import { services as servicesApi, buildConfigs as buildConfigsApi } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { DeployWebhookURL } from "@/components/services/deploy-webhook"
 import { Button } from "@/components/ui/button"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -112,6 +113,19 @@ function DeploymentsTab() {
         <MetricTile icon={Loader2} label="In progress" value={isLoading ? "…" : deploymentList.filter(d => ACTIVE_STATUSES.has(d.status)).length} detail="Queued, building or rolling out" />
         <MetricTile icon={RotateCcw} label="Rollback" value={<span className="text-xl">{rollbackEnabled ? "Enabled" : "Disabled"}</span>} detail="Configured in build settings" />
       </div>
+      {!isDatabase && bc?.deploy_token && orgId && (
+        <div className="rounded-xl bg-card ring-1 ring-foreground/10 p-4 flex flex-col gap-2">
+          <h2 className="text-sm font-medium">Deploy webhook URL</h2>
+          <DeployWebhookURL
+            orgId={orgId}
+            projectId={projectId}
+            serviceId={serviceId}
+            deployToken={bc.deploy_token}
+            description="Call this to build and roll out this service from a git provider, a CI job or anything else. Deploy-on-push is set up in the build configuration."
+          />
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium">Deployments</h2>

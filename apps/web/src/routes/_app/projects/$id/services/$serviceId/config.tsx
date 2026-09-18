@@ -40,6 +40,7 @@ import { nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
+import { DeployWebhookURL } from "@/components/services/deploy-webhook"
 import { Input } from "@/components/ui/input"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
 
@@ -779,14 +780,12 @@ function AutoDeploySection({
 }) {
   const token = useAuthStore((s) => s.token)!
   const qc = useQueryClient()
-  const [copied, setCopied] = useState(false)
   const [copiedHook, setCopiedHook] = useState<"url" | "secret" | null>(null)
   const [showSecret, setShowSecret] = useState(false)
   // Both shut by default. The toggle is what this section is about; the two
   // URLs are for the times it needs setting up by hand, and side by side in
   // the open they read as a choice to make rather than fallbacks.
   const [showHook, setShowHook] = useState(false)
-  const [showDeployURL, setShowDeployURL] = useState(false)
 
   // Which provider this service builds from decides how a push reaches
   // Meshploy: GitHub's App delivers on its own, the others need a webhook on
@@ -827,25 +826,9 @@ function AutoDeploySection({
     },
   })
 
-  const regenMut = useMutation({
-    mutationFn: () => buildConfigsApi.regenerateDeployToken(orgId, projectId, serviceId, token),
-    onSuccess: (updated) => {
-      qc.setQueryData(["build-config", orgId, projectId, serviceId], updated)
-    },
-  })
-
   if (!bc) return null
 
   const deployToken = bc.deploy_token
-  // Shown whole, the way it has to be pasted: a path alone is no use in a
-  // provider's webhook box or a curl.
-  const webhookURL = `${window.location.origin}/api/v1/webhooks/deploy/${serviceId}?token=${deployToken}`
-
-  function copyWebhook() {
-    navigator.clipboard.writeText(webhookURL)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
 
   return (
     <Section
@@ -993,48 +976,18 @@ function AutoDeploySection({
         )}
 
         {/* The per-service deploy token: nothing to do with a git connection,
-            which is the point of it. Also shut. */}
-        <div className="rounded-lg border border-border/40">
-          <Button
-            variant="ghost"
-            onClick={() => setShowDeployURL(!showDeployURL)}
-            aria-expanded={showDeployURL}
-            aria-controls="deploy-webhook-url"
-            className="w-full flex items-center justify-between px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <span className="font-medium">Build this service from anything else</span>
-            <ChevronDown className={cn("h-4 w-4 transition-transform", showDeployURL ? "rotate-180" : "")} />
-          </Button>
-          {showDeployURL && (
-            <div id="deploy-webhook-url" className="flex flex-col gap-3 border-t border-border/40 p-4">
-              <p className="text-xs text-muted-foreground">
-                A URL that builds this one service, whoever calls it: a public repository with no connection, a
-                CI job, a cron. The token in it is the only thing guarding it, so treat it as a credential.
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 min-w-0 text-[11px] font-mono bg-muted/30 border border-border/40 rounded px-2.5 py-1.5 text-foreground/70 truncate">
-                  POST {webhookURL}
-                </code>
-                <Button size="icon-sm" variant="outline" onClick={copyWebhook} title="Copy full webhook URL">
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="outline"
-                  onClick={() => regenMut.mutate()}
-                  disabled={regenMut.isPending}
-                  title="Regenerate token — invalidates the current URL"
-                >
-                  {regenMut.isPending
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <Zap className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-              {regenMut.isError && (
-                <p className="text-xs text-destructive">{(regenMut.error as Error).message}</p>
-              )}
-            </div>
-          )}
+            which is the point of it. */}
+        <div className="flex flex-col gap-3">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Zap className="h-3 w-3" /> Deploy webhook URL
+          </label>
+          <DeployWebhookURL
+            orgId={orgId}
+            projectId={projectId}
+            serviceId={serviceId}
+            deployToken={deployToken}
+            description="A URL that builds this one service, whoever calls it: a public repository with no connection, a CI job, a cron. The token in it is the only thing guarding it, so treat it as a credential."
+          />
         </div>
       </div>
     </Section>
