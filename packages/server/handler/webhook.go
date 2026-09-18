@@ -19,6 +19,29 @@ type gitHubPushPayload struct {
 	Repository struct {
 		FullName string `json:"full_name"` // e.g. "owner/repo"
 	} `json:"repository"`
+	// GitHub sends at most 20 commits, so a big push comes through with its
+	// file list cut short. changedFiles treats that as "cannot tell", which
+	// builds - see pushTouches.
+	Commits []commitFiles `json:"commits"`
+}
+
+// commitFiles is the part of a commit that says what it touched. GitLab and
+// Gitea spell it the same way.
+type commitFiles struct {
+	Added    []string `json:"added"`
+	Modified []string `json:"modified"`
+	Removed  []string `json:"removed"`
+}
+
+// changedFiles flattens what a push touched, for watched-path matching.
+func changedFiles(commits []commitFiles) []string {
+	var out []string
+	for _, c := range commits {
+		out = append(out, c.Added...)
+		out = append(out, c.Modified...)
+		out = append(out, c.Removed...)
+	}
+	return out
 }
 
 // GitHubWebhook handles POST /api/v1/webhooks/github/{integrationId}.
@@ -73,7 +96,7 @@ func (h *Handler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.svc.Deployments.FindAndTriggerForPush(r.Context(), integrationID, payload.Repository.FullName, branch)
+	h.svc.Deployments.FindAndTriggerForPush(r.Context(), integrationID, payload.Repository.FullName, branch, changedFiles(payload.Commits))
 	w.WriteHeader(http.StatusOK)
 }
 

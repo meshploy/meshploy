@@ -973,6 +973,7 @@ type UpdateBuildConfigInput struct {
 	RollbackEnabled       *bool
 	ImageRetention        *int
 	AutoDeploy            *bool
+	WatchPaths            *[]string
 }
 
 // UpsertBuildConfig creates or updates the BuildConfig for a service.
@@ -1036,6 +1037,15 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.ImageRetention != nil {
 		bc.ImageRetention = *in.ImageRetention
+	}
+	if in.WatchPaths != nil {
+		paths := make(db.StringArray, 0, len(*in.WatchPaths))
+		for _, p := range *in.WatchPaths {
+			if p = strings.Trim(strings.TrimSpace(p), "/"); p != "" {
+				paths = append(paths, p)
+			}
+		}
+		bc.WatchPaths = paths
 	}
 	if in.AutoDeploy != nil {
 		bc.AutoDeploy = *in.AutoDeploy

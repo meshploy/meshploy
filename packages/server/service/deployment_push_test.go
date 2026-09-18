@@ -39,3 +39,33 @@ func TestRepositoriesMatchHoweverTheyWereWritten(t *testing.T) {
 		}
 	}
 }
+
+// In a monorepo, a push that touches the docs should not rebuild three
+// services. Watched paths say which part of the repository a service is built
+// from.
+func TestWatchedPathsDecideWhetherAPushBuilds(t *testing.T) {
+	cases := []struct {
+		name    string
+		watch   []string
+		changed []string
+		build   bool
+	}{
+		{"no paths watched builds on anything", nil, []string{"docs/readme.md"}, true},
+		{"a touched folder builds", []string{"apps/api"}, []string{"apps/api/main.go"}, true},
+		{"an untouched folder does not", []string{"apps/api"}, []string{"apps/web/index.html"}, false},
+		{"the folder itself counts", []string{"apps/api"}, []string{"apps/api"}, true},
+		{"a prefix that is not a path boundary does not", []string{"apps/api"}, []string{"apps/api-docs/x.md"}, false},
+		{"any one of several paths is enough", []string{"apps/api", "packages/db"}, []string{"packages/db/models.go"}, true},
+		{"leading slashes are noise", []string{"/apps/api/"}, []string{"/apps/api/main.go"}, true},
+		{"a watched file builds when it changes", []string{"go.mod"}, []string{"go.mod"}, true},
+		// Bitbucket sends no file list, and GitHub truncates a large push.
+		// Treating "cannot tell" as "nothing changed" would quietly stop
+		// deploying the moment someone merged a big branch.
+		{"an unknown file list builds", []string{"apps/api"}, nil, true},
+	}
+	for _, c := range cases {
+		if got := pushTouches(c.watch, c.changed); got != c.build {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.build)
+		}
+	}
+}

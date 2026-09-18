@@ -31,7 +31,8 @@ func deliver(provider string, body string, headers map[string]string) (gitPushEv
 }
 
 func TestGitLabPushIsTakenOnItsToken(t *testing.T) {
-	body := `{"ref":"refs/heads/main","project":{"path_with_namespace":"group/sub/app"}}`
+	body := `{"ref":"refs/heads/main","project":{"path_with_namespace":"group/sub/app"},
+		"commits":[{"added":["apps/api/main.go"],"modified":["go.mod"],"removed":[]}]}`
 
 	if _, ok := deliver("gitlab", body, map[string]string{
 		"X-Gitlab-Token": "not-the-secret", "X-Gitlab-Event": "Push Hook",
@@ -50,8 +51,12 @@ func TestGitLabPushIsTakenOnItsToken(t *testing.T) {
 	}
 	// The whole path, subgroups included: that is what the repository picker
 	// stores and what the deploy matcher compares against.
-	if len(event.refs) != 1 || event.refs[0] != (gitPushRef{"group/sub/app", "main"}) {
+	if len(event.refs) != 1 || event.refs[0].repo != "group/sub/app" || event.refs[0].branch != "main" {
 		t.Errorf("got %+v", event.refs)
+	}
+	// And what the push touched, for services that watch part of a repository.
+	if got := event.refs[0].changed; len(got) != 2 || got[0] != "apps/api/main.go" || got[1] != "go.mod" {
+		t.Errorf("changed files: %+v", got)
 	}
 }
 
@@ -71,7 +76,7 @@ func TestGiteaAndForgejoPushAreVerifiedByTheirSignature(t *testing.T) {
 	event, ok := deliver("gitea", body, map[string]string{
 		"X-Gitea-Signature": good, "X-Gitea-Event": "push",
 	})
-	if !ok || len(event.refs) != 1 || event.refs[0] != (gitPushRef{"team/app", "release"}) {
+	if !ok || len(event.refs) != 1 || event.refs[0].repo != "team/app" || event.refs[0].branch != "release" {
 		t.Fatalf("gitea: ok=%v refs=%+v", ok, event.refs)
 	}
 
@@ -80,7 +85,7 @@ func TestGiteaAndForgejoPushAreVerifiedByTheirSignature(t *testing.T) {
 	event, ok = deliver("gitea", body, map[string]string{
 		"X-Forgejo-Signature": good, "X-Forgejo-Event": "push",
 	})
-	if !ok || len(event.refs) != 1 || event.refs[0] != (gitPushRef{"team/app", "release"}) {
+	if !ok || len(event.refs) != 1 || event.refs[0].repo != "team/app" || event.refs[0].branch != "release" {
 		t.Fatalf("forgejo: ok=%v refs=%+v", ok, event.refs)
 	}
 }
@@ -107,9 +112,14 @@ func TestBitbucketPushIsVerifiedByItsSignature(t *testing.T) {
 	}
 	// One delivery, several branches - and a tag is not a branch.
 	if len(event.refs) != 2 ||
-		event.refs[0] != (gitPushRef{"workspace/app", "main"}) ||
-		event.refs[1] != (gitPushRef{"workspace/app", "staging"}) {
+		event.refs[0].branch != "main" || event.refs[1].branch != "staging" ||
+		event.refs[0].repo != "workspace/app" {
 		t.Errorf("got %+v", event.refs)
+	}
+	// Bitbucket names no files, so a watched-path service builds on any push
+	// to the branch rather than never building.
+	if event.refs[0].changed != nil {
+		t.Errorf("bitbucket sends no file list: %+v", event.refs[0].changed)
 	}
 }
 

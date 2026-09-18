@@ -448,6 +448,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     builderCPULimit: "",
     builderMemoryLimit: "",
     autoDeploy: false,
+    watchPaths: "",
     nodeId: "",
     replicas: 1,
     cpuRequest: "100m",
@@ -480,6 +481,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       builderCPULimit: bc?.builder_cpu_limit ?? "",
       builderMemoryLimit: bc?.builder_memory_limit ?? "",
       autoDeploy: bc?.auto_deploy ?? false,
+      watchPaths: (bc?.watch_paths ?? []).join("\n"),
       nodeId: service.node_id ?? "",
       replicas: service.replicas,
       cpuRequest: service.cpu_request,
@@ -537,6 +539,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           builder_cpu_limit: form.builderCPULimit,
           builder_memory_limit: form.builderMemoryLimit,
           auto_deploy: form.autoDeploy,
+          watch_paths: form.watchPaths.split(/[\s,]+/).filter(Boolean),
         }, token)
       }
       return updatedSvc
@@ -625,6 +628,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           bc={bc}
           autoDeploy={form.autoDeploy}
           onToggle={(v) => patch({ autoDeploy: v })}
+          watchPaths={form.watchPaths}
+          onWatchPaths={(v) => patch({ watchPaths: v })}
           orgId={orgId}
           projectId={projectId}
           serviceId={serviceId}
@@ -767,12 +772,16 @@ function AutoDeploySection({
   bc,
   autoDeploy,
   onToggle,
+  watchPaths,
+  onWatchPaths,
   orgId,
   projectId,
   serviceId,
 }: {
   bc: ApiBuildConfig | undefined
   autoDeploy: boolean
+  watchPaths: string
+  onWatchPaths: (v: string) => void
   onToggle: (v: boolean) => void
   orgId: string
   projectId: string
@@ -857,6 +866,23 @@ function AutoDeploySection({
             </p>
           )}
         </Field>
+
+        {autoDeploy && (
+          <Field label="Only when these paths change">
+            <textarea
+              className={cn(inputCls, "min-h-[62px] font-mono text-xs py-2")}
+              value={watchPaths}
+              placeholder={"apps/api\npackages/db"}
+              onChange={(e) => onWatchPaths(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground mt-1.5">
+              One path per line, relative to the repository root. Empty means every push to {bc.branch} builds this
+              service - which is what you want unless the repository holds more than one.
+              {integration?.provider === "bitbucket" &&
+                " Bitbucket's push payload names no files, so every push builds whatever is listed here."}
+            </p>
+          </Field>
+        )}
 
         {/* The repository webhook, for the providers that keep one per repo.
             What is shown depends on what is actually on the repository, because

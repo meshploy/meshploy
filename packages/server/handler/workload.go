@@ -568,6 +568,7 @@ type PatchBuildConfigInput struct {
 		RollbackEnabled       *bool   `json:"rollback_enabled,omitempty"`
 		ImageRetention        *int    `json:"image_retention,omitempty"`
 		AutoDeploy            *bool   `json:"auto_deploy,omitempty"`
+		WatchPaths            *[]string `json:"watch_paths,omitempty" doc:"Deploy on push only when one of these paths changed. Empty means every push"`
 	}
 }
 
@@ -595,6 +596,7 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		RollbackEnabled:      input.Body.RollbackEnabled,
 		ImageRetention:       input.Body.ImageRetention,
 		AutoDeploy:           input.Body.AutoDeploy,
+		WatchPaths:           input.Body.WatchPaths,
 	}
 	if input.Body.GitIntegrationID != nil {
 		id, err := parseUUID(*input.Body.GitIntegrationID)

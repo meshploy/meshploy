@@ -83,13 +83,17 @@ func (h *Handler) GitWebhook(w http.ResponseWriter, r *http.Request) {
 		if ref.repo == "" || ref.branch == "" {
 			continue
 		}
-		h.svc.Deployments.FindAndTriggerForPush(r.Context(), integrationID, ref.repo, ref.branch)
+		h.svc.Deployments.FindAndTriggerForPush(r.Context(), integrationID, ref.repo, ref.branch, ref.changed)
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-// gitPushRef is one repository and branch that was pushed to.
-type gitPushRef struct{ repo, branch string }
+// gitPushRef is one repository and branch that was pushed to, with the files
+// the push touched where the provider says.
+type gitPushRef struct {
+	repo, branch string
+	changed      []string
+}
 
 // gitPushEvent is what a delivery amounts to: the pushed branches. Bitbucket
 // sends several in one delivery when several are pushed at once.
@@ -115,11 +119,12 @@ func parseGitPush(provider string, r *http.Request, body []byte, secret string) 
 			Project struct {
 				PathWithNamespace string `json:"path_with_namespace"`
 			} `json:"project"`
+			Commits []commitFiles `json:"commits"`
 		}
 		if err := json.Unmarshal(body, &p); err != nil {
 			return gitPushEvent{}, true
 		}
-		return gitPushEvent{refs: []gitPushRef{{p.Project.PathWithNamespace, branchFromRef(p.Ref)}}}, true
+		return gitPushEvent{refs: []gitPushRef{{p.Project.PathWithNamespace, branchFromRef(p.Ref), changedFiles(p.Commits)}}}, true
 
 	case "gitea":
 		// Gitea signs the body with HMAC-SHA256, hex, no prefix. Forgejo - and
@@ -144,11 +149,12 @@ func parseGitPush(provider string, r *http.Request, body []byte, secret string) 
 			Repository struct {
 				FullName string `json:"full_name"`
 			} `json:"repository"`
+			Commits []commitFiles `json:"commits"`
 		}
 		if err := json.Unmarshal(body, &p); err != nil {
 			return gitPushEvent{}, true
 		}
-		return gitPushEvent{refs: []gitPushRef{{p.Repository.FullName, branchFromRef(p.Ref)}}}, true
+		return gitPushEvent{refs: []gitPushRef{{p.Repository.FullName, branchFromRef(p.Ref), changedFiles(p.Commits)}}}, true
 
 	case "bitbucket":
 		// Bitbucket signs with HMAC-SHA256 under the WebSub spelling,
@@ -182,7 +188,9 @@ func parseGitPush(provider string, r *http.Request, body []byte, secret string) 
 			if c.New.Type != "branch" {
 				continue
 			}
-			refs = append(refs, gitPushRef{p.Repository.FullName, c.New.Name})
+			// Bitbucket's push payload names no files, so every push on a
+			// watched branch builds whatever the watched paths say.
+			refs = append(refs, gitPushRef{p.Repository.FullName, c.New.Name, nil})
 		}
 		return gitPushEvent{refs: refs}, true
 	}

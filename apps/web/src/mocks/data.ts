@@ -215,6 +215,7 @@ export const demoBuildConfig = {
   rollback_enabled: true,
   image_retention: 5,
   auto_deploy: true,
+  watch_paths: [],
   deploy_token: "dtkn-demo",
   created_at: DEMO_NOW,
   updated_at: DEMO_NOW,

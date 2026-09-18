@@ -677,7 +677,11 @@ type BuildConfig struct {
 
 	// Auto-deploy — when enabled, a push to the tracked branch triggers a new build.
 	// Works via GitHub App webhook (for private repos) or a per-service deploy token.
-	AutoDeploy  bool            `gorm:"not null;default:false" json:"auto_deploy"`
+	AutoDeploy bool `gorm:"not null;default:false" json:"auto_deploy"`
+	// WatchPaths narrows deploy-on-push to the parts of a repository this
+	// service is built from: a push that touches none of them is ignored.
+	// Empty means every push builds, which is what it did before.
+	WatchPaths  StringArray     `gorm:"type:jsonb;not null;default:'[]'" json:"watch_paths"`
 	DeployToken EncryptedString `gorm:"type:text"              json:"deploy_token"`
 
 	Service             Service              `gorm:"foreignKey:ServiceID"                                        json:"-"`

@@ -758,7 +758,7 @@ func (s *DeploymentService) resolveRegistry(ctx context.Context, bc *db.BuildCon
 // typed in by hand is often a full https URL. Comparing those literally made
 // auto-deploy do nothing at all, silently, which is the worst way for this to
 // fail.
-func (s *DeploymentService) FindAndTriggerForPush(ctx context.Context, integrationID uuid.UUID, repo, branch string) {
+func (s *DeploymentService) FindAndTriggerForPush(ctx context.Context, integrationID uuid.UUID, repo, branch string, changed []string) {
 	var configs []db.BuildConfig
 	s.db.WithContext(ctx).
 		Where("git_integration_id = ? AND branch = ? AND auto_deploy = true", integrationID, branch).
@@ -768,8 +768,45 @@ func (s *DeploymentService) FindAndTriggerForPush(ctx context.Context, integrati
 		if normalizeRepoPath(bc.GitRepo) != pushed {
 			continue
 		}
+		if !pushTouches(bc.WatchPaths, changed) {
+			continue
+		}
 		go s.Trigger(context.Background(), TriggerInput{ServiceID: bc.ServiceID})
 	}
+}
+
+// pushTouches decides whether a push is this service's business.
+//
+// With no watched paths every push builds, which is what deploy-on-push always
+// did. With some, a push builds when it touched one of them - the monorepo
+// case, where a change to the docs should not rebuild three services.
+//
+// A push whose file list is unknown builds. Bitbucket does not send one at all,
+// and GitHub truncates a large push, so treating "cannot tell" as "nothing
+// changed" would quietly stop deploying the moment somebody merged a big
+// branch. Building something that did not need it costs a build; not building
+// something that did costs a release nobody notices is missing.
+func pushTouches(watch db.StringArray, changed []string) bool {
+	if len(watch) == 0 || len(changed) == 0 {
+		return true
+	}
+	for _, w := range watch {
+		prefix := strings.Trim(strings.TrimSpace(w), "/")
+		if prefix == "" {
+			return true // a watched path of "/" is the whole repository
+		}
+		for _, file := range changed {
+			f := strings.TrimLeft(file, "/")
+			if f == prefix || strings.HasPrefix(f, prefix+"/") {
+				return true
+			}
+			// A watched file rather than a folder.
+			if strings.HasPrefix(prefix, f) && prefix == f {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // normalizeRepoPath reduces a repository to the path the provider knows it by:

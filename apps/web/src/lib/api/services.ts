@@ -110,6 +110,8 @@ export interface ApiBuildConfig {
   rollback_enabled: boolean
   image_retention: number
   auto_deploy: boolean
+  /** Deploy on push only when one of these paths changed. Empty = every push. */
+  watch_paths: string[]
   deploy_token: string
   created_at: string
   updated_at: string
@@ -187,6 +189,7 @@ export interface UpdateBuildConfigBody {
   rollback_enabled?: boolean
   image_retention?: number
   auto_deploy?: boolean
+  watch_paths?: string[]
 }
 
 export const services = {
