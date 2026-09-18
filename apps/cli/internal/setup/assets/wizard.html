@@ -3,176 +3,225 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- The native select popup, scrollbars and form controls are drawn by the
+     browser, which paints them light unless told the page is dark. -->
+<meta name="color-scheme" content="dark">
 <title>Meshploy setup</title>
 <style>
-/* Tokens lifted from meshploy-site's global.css so the installer and the
-   marketing site are visibly the same product. Values are OKLCH like the
-   original rather than converted, so a change there ports across directly.
+/* The console's design system, carried over so setup and the console it
+   installs are visibly one product: tokens, typefaces and component shapes are
+   copied from apps/web/src/index.css and components/ui, not approximated.
+   Dark only, like the console.
 
-   No @font-face and no font import: this page is served by the installer on a
-   machine whose DNS may not work yet — that is frequently why the operator is
-   here. A webfont request would hang and the page would render late or unstyled
-   at the worst possible moment. The families are named first so a host that has
-   them uses them, with a system stack behind. */
+   Fonts are served by this binary from /assets/fonts, never a CDN: this page
+   often runs on a machine whose DNS does not work yet - frequently the reason
+   the operator is here - and a webfont request that hangs would render the
+   page unstyled at the worst possible moment. */
+@font-face { font-family:"Manrope"; src:url("/assets/fonts/Manrope-400.ttf") format("truetype"); font-weight:400; font-style:normal; font-display:swap }
+@font-face { font-family:"Manrope"; src:url("/assets/fonts/Manrope-500.ttf") format("truetype"); font-weight:500; font-style:normal; font-display:swap }
+@font-face { font-family:"Manrope"; src:url("/assets/fonts/Manrope-600.ttf") format("truetype"); font-weight:600; font-style:normal; font-display:swap }
+@font-face { font-family:"Geist Mono"; src:url("/assets/fonts/GeistMono-Regular.woff2") format("woff2"); font-weight:400; font-style:normal; font-display:swap }
+
 :root {
-  --accent-h: 165;
-  --bg:        oklch(0.09 0.006 90);
-  --bg-2:      oklch(0.11 0.005 90);
-  --surface:   oklch(0.14 0.005 90);
-  --muted:     oklch(0.17 0.005 90);
-  --border:    oklch(0.26 0.005 90);
-  --border-2:  oklch(0.32 0.006 90);
-  --fg:        oklch(0.97 0.005 90);
-  --fg-2:      oklch(0.78 0.008 90);
-  --fg-3:      oklch(0.58 0.008 90);
-  --fg-4:      oklch(0.42 0.008 90);
-  --primary:   oklch(0.74 0.16 var(--accent-h));
-  --primary-2: oklch(0.66 0.17 var(--accent-h));
-  --primary-soft:   color-mix(in oklab, var(--primary) 14%, transparent);
-  --primary-border: color-mix(in oklab, var(--primary) 35%, transparent);
-  --primary-fg: #0a120d;
-  --amber: oklch(0.82 0.16 75);
-  --red:   oklch(0.72 0.18 25);
+  /* Maia: olive-tinted near-black, emerald accent. Values as in the console. */
+  --background: oklch(0.175 0.003 260);
+  --card:       oklch(0.205 0.003 260);
+  --popover:    oklch(0.235 0.004 260);
+  --muted:      oklch(0.235 0.004 260);
+  --secondary:  oklch(0.255 0.004 260);
+  --accent:     oklch(0.28 0.005 260);
+  --input:      oklch(0.3 0.004 260);
+  --border:     oklch(0.325 0.004 260);
+  --foreground: oklch(0.96 0.002 260);
+  --muted-foreground: oklch(0.74 0.006 260);
+  --primary:    oklch(0.72 0.17 160);
+  --primary-foreground: oklch(0.14 0.002 260);
+  --destructive: oklch(0.72 0.18 25);
+  --warning:     oklch(0.8 0.14 80);
+  --ring: var(--primary);
 
-  --font-sans: "Onest", ui-sans-serif, -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-xl: calc(var(--radius) * 1.4);
+
+  color-scheme: dark;
+
+  --font-sans: "Manrope", ui-sans-serif, -apple-system, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-* { box-sizing: border-box }
-html, body { margin:0; padding:0; background:var(--bg); color:var(--fg) }
+* { box-sizing:border-box; scrollbar-width:thin; scrollbar-color:var(--border) transparent }
+*::-webkit-scrollbar { width:7px; height:7px }
+*::-webkit-scrollbar-thumb { background:var(--border); border-radius:8px }
+html, body { margin:0; padding:0; background:var(--background); color:var(--foreground) }
 body {
-  font-family: var(--font-sans);
-  font-size:16px; line-height:1.55;
+  font-family:var(--font-sans); font-size:14px; line-height:1.55;
+  font-feature-settings:"ss01","ss02","cv01","cv02";
   -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   min-height:100vh;
 }
-::selection { background:var(--primary-soft); color:var(--fg) }
+::selection { background:color-mix(in oklab, var(--primary) 25%, transparent); color:var(--foreground) }
+button, a, input, select { -webkit-tap-highlight-color:transparent }
+button, a { transition:color 140ms, background-color 140ms, border-color 140ms }
+:focus-visible { outline:2px solid var(--ring); outline-offset:3px }
 
-/* The site's cross-grid, carried over but not at the site's alpha.
-   The site runs a dense page where 22% reads as texture; this one is mostly
-   empty dark space, where the same value disappears — it looked like no
-   background had been applied at all. Same idea, tuned for this canvas. */
+/* The console's sign-in backdrop, at the same weight: a 40px rule grid, barely
+   there. It is the one piece of decoration either surface has. */
 body::before {
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:0.12;
   background-image:
-    linear-gradient(oklch(0.30 0.006 90 / 0.55) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.30 0.006 90 / 0.55) 1px, transparent 1px);
+    linear-gradient(oklch(0.24 0 0) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.24 0 0) 1px, transparent 1px);
   background-size:40px 40px;
-  /* Reaches further down than the site's mask: the panel sits lower here, and a
-     grid that stops above it leaves the page looking half-painted. */
-  mask-image: radial-gradient(ellipse 900px 800px at 50% 26%, black 42%, transparent 88%);
-  -webkit-mask-image: radial-gradient(ellipse 900px 800px at 50% 26%, black 42%, transparent 88%);
-}
-/* The site's hero glow. The only decoration on the page; everything else earns
-   its place. */
-body::after {
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  background:
-    radial-gradient(ellipse 820px 520px at 50% -4%,
-      color-mix(in oklab, var(--primary) 13%, transparent) 0%, transparent 68%),
-    /* The site's structural column rules, framing the content column so the
-       empty space either side reads as deliberate rather than unused. */
-    linear-gradient(to right,
-      transparent calc(50% - 384px),
-      var(--border) calc(50% - 384px),
-      var(--border) calc(50% - 383px),
-      transparent calc(50% - 383px),
-      transparent calc(50% + 383px),
-      var(--border) calc(50% + 383px),
-      var(--border) calc(50% + 384px),
-      transparent calc(50% + 384px));
 }
 
-.page { position:relative; z-index:1; max-width:720px; margin:0 auto; padding:40px 24px 72px }
+.page { position:relative; z-index:1; max-width:720px; margin:0 auto; padding:48px 24px 72px }
 
-/* ── Masthead ─────────────────────────────────────────────────────────────── */
-.mast { display:flex; align-items:center; gap:10px; margin-bottom:44px }
+/* ── Masthead ─────────────────────────────────────────────────────────────
+   The console's sign-in header: the mark in a tinted tile, the wordmark under
+   it. The tag says which surface this is - an operator arriving on a bare IP
+   has no other way to tell the installer from the console. */
+/* One centred row: the mark, the wordmark, and the tag saying which surface
+   this is - an operator arriving on a bare IP has no other way to tell the
+   installer from the console. Stacked, the tag made the wordmark read as
+   off-centre under the mark whichever of the two it was centred on. */
+.mast { display:flex; align-items:center; justify-content:center; gap:11px; margin-bottom:40px }
+.mark-tile {
+  width:40px; height:40px; border-radius:calc(var(--radius) * 1.15); flex:0 0 auto;
+  background:color-mix(in oklab, var(--primary) 15%, transparent);
+  display:flex; align-items:center; justify-content:center;
+}
 .mark { color:var(--primary) }
-.wordmark { font-size:16px; font-weight:600; letter-spacing:-0.02em }
-/* Says which surface this is. An operator arriving on a bare IP has no other
-   way to tell the installer from the console. */
+.wordmark { font-size:22px; font-weight:600; letter-spacing:-0.025em; line-height:1 }
 .mast-tag {
-  font-family:var(--font-mono); font-size:11px; color:var(--fg-3);
-  border:1px solid var(--border); border-radius:5px; padding:2px 7px;
+  font-family:var(--font-mono); font-size:11px; color:var(--muted-foreground); white-space:nowrap;
+  border:1px solid var(--border); border-radius:var(--radius-sm); padding:3px 7px; line-height:1;
 }
 
-h1 { font-size:30px; font-weight:600; letter-spacing:-0.022em; line-height:1.1; margin:0 0 8px }
-.lede { margin:0 0 36px; font-size:15.5px; color:var(--fg-2); max-width:56ch }
+/* The head block is centred under the masthead; the forms below stay
+   left-aligned, because that is how a form reads. */
+.head { text-align:center; margin:0 0 32px }
+h1 { font-size:27px; font-weight:600; letter-spacing:-0.035em; line-height:1.25; margin:0 0 8px }
+.lede { margin:0 auto; font-size:14px; color:var(--muted-foreground); line-height:1.75; max-width:56ch }
 
 /* ── Progress rail ────────────────────────────────────────────────────────
    The content genuinely is a sequence, so it is numbered. State is carried by
-   fill rather than colour alone: a done step is solid, the active one is ringed,
-   and the rest stay quiet. The previous version bordered all four in green,
-   which read as "all complete" while still on step one. */
-.rail { display:flex; align-items:flex-start; margin:0 0 32px }
-.rstep { display:flex; flex-direction:column; align-items:center; gap:8px; flex:0 0 auto; width:88px }
+   fill rather than colour alone: a done step is solid, the active one is
+   ringed, and the rest stay quiet. */
+.rail { display:flex; align-items:flex-start; margin:0 0 28px }
+.step { display:flex; flex-direction:column; align-items:center; gap:8px; flex:0 0 auto; width:88px }
 .rline { flex:1 1 auto; height:1px; background:var(--border); margin-top:13px }
 .rdot {
   width:26px; height:26px; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
   font-size:12px; font-family:var(--font-mono);
-  border:1px solid var(--border-2); background:var(--bg-2); color:var(--fg-4);
-  transition:background .15s, border-color .15s, color .15s;
+  border:1px solid var(--border); background:var(--card); color:var(--muted-foreground);
+  transition:background 140ms, border-color 140ms, color 140ms;
 }
-.rlabel { font-size:12.5px; color:var(--fg-4); transition:color .15s }
-.step.active .rdot { border-color:var(--primary); color:var(--primary); background:var(--primary-soft);
-                     box-shadow:0 0 0 4px color-mix(in oklab, var(--primary) 10%, transparent) }
-.step.active .rlabel { color:var(--fg) }
+.rlabel { font-size:12.5px; color:var(--muted-foreground); transition:color 140ms }
+.step.active .rdot { border-color:var(--primary); color:var(--primary);
+                     background:color-mix(in oklab, var(--primary) 12%, transparent);
+                     box-shadow:0 0 0 3px color-mix(in oklab, var(--primary) 20%, transparent) }
+.step.active .rlabel { color:var(--foreground) }
 .step.done .rdot { background:var(--primary); border-color:var(--primary); color:transparent; position:relative }
-.step.done .rdot::after { content:"✓"; position:absolute; inset:0;
+.step.done .rdot::after { content:"\2713"; position:absolute; inset:0;
                           display:flex; align-items:center; justify-content:center;
-                          color:var(--primary-fg); font-family:var(--font-sans); font-size:13px }
-.step.done .rlabel { color:var(--fg-2) }
+                          color:var(--primary-foreground); font-family:var(--font-sans); font-size:13px }
+.step.done .rlabel { color:var(--foreground) }
 
-/* ── Panel ────────────────────────────────────────────────────────────────── */
-.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px }
+/* ── Card ─────────────────────────────────────────────────────────────────
+   The console's Card: no border, a hairline ring, extra-large radius. */
+.card {
+  background:var(--card); border-radius:var(--radius-xl); padding:20px;
+  box-shadow:0 0 0 1px color-mix(in oklab, var(--foreground) 10%, transparent);
+}
 .row { margin-bottom:16px }
-label { display:block; font-size:12.5px; color:var(--fg-2); margin:0 0 6px; font-weight:500 }
+label { display:block; font-size:13px; color:var(--foreground); margin:0 0 6px; font-weight:500 }
 input, select {
-  width:100%; height:38px; padding:0 11px; border-radius:8px;
-  border:1px solid var(--border-2); background:var(--bg-2); color:var(--fg);
-  font-size:14px; font-family:var(--font-sans);
+  width:100%; height:34px; padding:0 10px; border-radius:var(--radius);
+  border:1px solid var(--input); background:color-mix(in oklab, var(--input) 30%, transparent);
+  color:var(--foreground); font-size:14px; font-family:var(--font-sans);
+  transition:border-color 140ms, box-shadow 140ms; outline:none;
 }
+/* ── Select ───────────────────────────────────────────────────────────────
+   A native select's open list is drawn by the operating system: CSS cannot
+   reach it, so it arrives in the system palette however dark the page is. The
+   script replaces each one with this, the console's Select - a panel of items
+   with a check on the chosen one - and keeps the real select in the DOM,
+   hidden, holding the value. Without the script, the native control is still
+   there and still works. */
+.sel { position:relative }
+select.enhanced {
+  position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;
+  padding:0; border:0; margin:0;
+}
+.sel-trigger {
+  width:100%; height:34px; padding:0 10px; justify-content:space-between;
+  background:color-mix(in oklab, var(--input) 30%, transparent);
+  border:1px solid var(--input); color:var(--foreground);
+  font-size:14px; font-weight:400; text-align:left;
+}
+.sel-trigger:hover { background:color-mix(in oklab, var(--input) 50%, transparent) }
+.sel-trigger[aria-expanded="true"] { border-color:var(--ring);
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent) }
+.sel-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.sel-chevron { color:var(--muted-foreground); flex:0 0 auto }
+.sel-panel {
+  position:absolute; z-index:20; top:calc(100% + 6px); left:0; right:0;
+  background:var(--popover); border:1px solid var(--border);
+  border-radius:var(--radius); padding:4px; max-height:280px; overflow:auto;
+  box-shadow:0 14px 34px rgb(0 0 0 / 0.5);
+}
+.sel-item {
+  display:flex; align-items:center; gap:8px; padding:7px 9px; cursor:pointer;
+  border-radius:var(--radius-md); font-size:14px; color:var(--foreground); line-height:1.45;
+}
+.sel-item:hover, .sel-item.here { background:var(--accent) }
+.sel-check { flex:0 0 auto; width:14px; color:var(--primary); visibility:hidden }
+.sel-item[aria-selected="true"] .sel-check { visibility:visible }
 input.mono { font-family:var(--font-mono); font-size:13px }
-input:focus, select:focus {
-  outline:none; border-color:var(--primary);
-  box-shadow:0 0 0 3px color-mix(in oklab, var(--primary) 16%, transparent);
+input:focus-visible, select:focus-visible, input:focus, select:focus {
+  outline:none; border-color:var(--ring);
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
 }
-input::placeholder { color:var(--fg-4) }
-.hint { font-size:12px; color:var(--fg-3); margin-top:7px; line-height:1.5 }
+input::placeholder { color:var(--muted-foreground) }
+.hint { font-size:12.5px; color:var(--muted-foreground); margin-top:7px; line-height:1.6 }
 
 button {
-  display:inline-flex; align-items:center; gap:7px;
-  height:38px; padding:0 16px; border-radius:8px; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  height:32px; padding:0 12px; border-radius:var(--radius); cursor:pointer;
   font-family:var(--font-sans); font-size:14px; font-weight:500; line-height:1;
-  border:1px solid transparent; background:var(--primary); color:var(--primary-fg);
-  transition:background .12s, border-color .12s;
+  border:1px solid transparent; background:var(--primary); color:var(--primary-foreground);
+  transition:background 140ms, border-color 140ms, color 140ms;
 }
-button:hover { background:var(--primary-2) }
-button.ghost { background:transparent; color:var(--fg); border-color:var(--border-2) }
-button.ghost:hover { background:var(--muted); border-color:var(--border-2) }
-button:disabled { opacity:.45; cursor:not-allowed }
-button:focus-visible, .domain-link:focus-visible, a:focus-visible {
-  outline:2px solid var(--primary); outline-offset:2px;
-}
-.actions { display:flex; gap:9px; align-items:center; margin-top:18px; flex-wrap:wrap }
+button:hover { background:color-mix(in oklab, var(--primary) 80%, transparent) }
+button:active:not(:disabled) { transform:translateY(1px) }
+/* The console's outline button. */
+button.ghost { background:color-mix(in oklab, var(--input) 30%, transparent);
+               color:var(--foreground); border-color:var(--input) }
+button.ghost:hover { background:color-mix(in oklab, var(--input) 50%, transparent) }
+button:disabled { opacity:.5; cursor:not-allowed }
+button:focus-visible { outline:none; border-color:var(--ring);
+                       box-shadow:0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent) }
+.actions { display:flex; gap:8px; align-items:center; margin-top:18px; flex-wrap:wrap }
 
 .records { margin:10px 0 0 }
 .rec {
   display:grid; grid-template-columns:20px 1fr auto minmax(0,1fr);
   gap:10px; align-items:baseline;
-  background:var(--bg); border:1px solid var(--border);
+  background:var(--background); border:1px solid var(--border);
   padding:10px 12px; font-family:var(--font-mono); font-size:12.5px;
 }
-.rec:first-of-type { border-radius:8px 8px 0 0 }
-.rec:last-of-type  { border-radius:0 0 8px 8px; border-top:0 }
-.rec-n    { color:var(--fg-4) }
-.rec-name { color:var(--fg); overflow-wrap:anywhere }
+.rec:first-of-type { border-radius:var(--radius) var(--radius) 0 0 }
+.rec:last-of-type  { border-radius:0 0 var(--radius) var(--radius); border-top:0 }
+.rec-n    { color:var(--muted-foreground) }
+.rec-name { color:var(--foreground); overflow-wrap:anywhere }
 .rec-type { color:var(--primary); font-weight:500 }
-.rec-val  { color:var(--fg-2); overflow-wrap:anywhere }
-.rec-why  { grid-column:2 / -1; font-family:var(--font-sans); font-size:11.5px;
-            color:var(--fg-3); margin-top:3px }
-.rec-head { font-size:12px; color:var(--fg-3); margin:0 0 7px }
+.rec-val  { color:var(--muted-foreground); overflow-wrap:anywhere }
+.rec-why  { grid-column:2 / -1; font-family:var(--font-sans); font-size:12px;
+            color:var(--muted-foreground); margin-top:3px }
+.rec-head { font-size:12.5px; color:var(--muted-foreground); margin:0 0 7px }
 
 .check { display:flex; gap:9px; align-items:baseline; padding:7px 0;
          border-bottom:1px solid var(--border); font-size:13px }
@@ -181,44 +230,88 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
    no spaces to break on, so without these it overflows the row and paints over
    the hostnames beside it. */
 .chk-l { flex:0 0 auto }
-.chk-d { flex:1; min-width:0; color:var(--muted); overflow-wrap:anywhere }
-.ok { color:var(--primary) } .bad { color:var(--red) } .wait { color:var(--amber) }
+.chk-d { flex:1; min-width:0; color:var(--muted-foreground); overflow-wrap:anywhere }
+.ok { color:var(--primary) } .bad { color:var(--destructive) } .wait { color:var(--warning) }
 .mono { font-family:var(--font-mono) }
 
 #log {
-  background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:13px;
-  height:300px; overflow:auto; white-space:pre-wrap; color:var(--fg-2);
+  background:var(--background); border:1px solid var(--border); border-radius:var(--radius); padding:13px;
+  height:300px; overflow:auto; white-space:pre-wrap; color:var(--muted-foreground);
   font-family:var(--font-mono); font-size:12.5px; line-height:1.65;
 }
-.err { color:var(--red); font-size:13px; margin-top:12px }
+.err { color:var(--destructive); font-size:13px; margin-top:12px }
 .hide { display:none }
+
+
+/* ── Migration ────────────────────────────────────────────────────────────
+   Reviewing what would move is the one screen here that shows a list rather
+   than a form, so it borrows the console's list shapes: a tinted panel per
+   group, quiet rows inside it. */
+.panel { background:var(--background); border:1px solid var(--border);
+         border-radius:var(--radius); padding:14px 16px; margin-bottom:12px }
+.panel-title { font-size:14px; font-weight:600; letter-spacing:-0.01em; margin:0 0 4px }
+.panel-sub { font-size:12.5px; color:var(--muted-foreground); margin:0; line-height:1.6 }
+.found { display:flex; align-items:center; gap:11px; margin-bottom:14px }
+.found-dot { width:32px; height:32px; border-radius:50%; flex:0 0 auto; font-size:15px;
+             display:flex; align-items:center; justify-content:center;
+             background:color-mix(in oklab, var(--primary) 15%, transparent); color:var(--primary) }
+.found-title { font-size:16px; font-weight:600; letter-spacing:-0.02em }
+.found-sub { font-size:13px; color:var(--muted-foreground) }
+.pills { display:flex; gap:7px; flex-wrap:wrap; margin:0 0 14px }
+.pill { font-size:12px; font-family:var(--font-mono); padding:3px 9px; border-radius:999px;
+        border:1px solid var(--border); color:var(--muted-foreground); background:var(--background) }
+.pill.good { color:var(--primary); border-color:color-mix(in oklab, var(--primary) 35%, transparent) }
+.pill.warn { color:var(--warning); border-color:color-mix(in oklab, var(--warning) 35%, transparent) }
+.section-title { font-size:12.5px; color:var(--muted-foreground); margin:18px 0 8px }
+.group-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px }
+.member { display:flex; gap:8px; align-items:baseline; font-size:13px; padding:5px 0 }
+.member + .member { border-top:1px solid var(--border) }
+.member-kind { font-family:var(--font-mono); font-size:11px; color:var(--muted-foreground);
+               border:1px solid var(--border); border-radius:var(--radius-sm); padding:1px 6px; flex:0 0 auto }
+.member-name { color:var(--foreground); overflow-wrap:anywhere }
+.member-to { color:var(--muted-foreground); font-size:12.5px }
+.gdata { font-size:12.5px; color:var(--muted-foreground); margin-top:8px; line-height:1.7 }
+.gdown { font-size:12px; color:var(--muted-foreground); font-family:var(--font-mono); flex:0 0 auto }
+.decision { margin-top:12px; padding-top:12px; border-top:1px solid var(--border) }
+.decision:first-child { margin-top:0; padding-top:0; border-top:0 }
+.dq { font-size:13px; margin:0 0 7px; line-height:1.6 }
+.dq b { font-weight:600 }
+.dec { max-width:520px }
+.blocker { font-size:12.5px; color:var(--warning); margin-top:8px }
+.gnote { font-size:12.5px; color:var(--muted-foreground); margin-top:8px; line-height:1.6 }
+.excl { display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted-foreground);
+        margin-top:10px; cursor:pointer }
+.excl input { width:auto; height:auto; accent-color:var(--primary) }
+.panel.left-out { opacity:.55 }
+.mig-busy { font-size:13px; color:var(--muted-foreground); margin-top:12px }
 
 /* ── Ready ────────────────────────────────────────────────────────────────── */
 .ready { display:flex; gap:13px; align-items:center; margin-bottom:18px }
 .tick { width:34px; height:34px; border-radius:50%; flex:0 0 auto;
-        background:var(--primary-soft); border:1px solid var(--primary-border);
+        background:color-mix(in oklab, var(--primary) 15%, transparent);
         color:var(--primary); display:flex; align-items:center; justify-content:center; font-size:16px }
-.ready-title { font-size:17px; font-weight:600; letter-spacing:-0.015em }
-.ready-sub { font-size:13.5px; color:var(--fg-3) }
+.ready-title { font-size:17px; font-weight:600; letter-spacing:-0.02em }
+.ready-sub { font-size:13px; color:var(--muted-foreground) }
 /* The link is the page's one job at this point, so it is sized like it. */
 .domain-link {
   display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:15px 17px; border:1px solid var(--primary-border); border-radius:10px;
-  background:var(--primary-soft); color:var(--fg); text-decoration:none;
+  padding:14px 16px; border-radius:var(--radius);
+  border:1px solid color-mix(in oklab, var(--primary) 35%, transparent);
+  background:color-mix(in oklab, var(--primary) 12%, transparent);
+  color:var(--foreground); text-decoration:none;
   font-family:var(--font-mono); font-size:15px; margin-bottom:20px;
-  transition:background .12s, border-color .12s;
 }
 .domain-link:hover { background:color-mix(in oklab, var(--primary) 20%, transparent);
                      border-color:var(--primary) }
 .domain-link .arrow { color:var(--primary); font-size:17px; font-family:var(--font-sans) }
 .next { border-top:1px solid var(--border); padding-top:14px; margin-top:14px;
-        font-size:13px; color:var(--fg-3); line-height:1.6 }
-.next-title { color:var(--fg); font-weight:600; margin:0 0 5px; font-size:13px }
+        font-size:13px; color:var(--muted-foreground); line-height:1.7 }
+.next-title { color:var(--foreground); font-weight:600; margin:0 0 4px; font-size:13px }
 .next p { margin:0 }
 .next #finalChecks { margin-top:8px }
 
 @media (max-width:560px) {
-  .rstep { width:64px } .rlabel { font-size:11px } .page { padding:28px 16px 56px }
+  .step { width:64px } .rlabel { font-size:11px } .page { padding:32px 16px 56px }
 }
 @media (prefers-reduced-motion:reduce) { * { transition:none !important } }
 </style>
@@ -227,36 +320,42 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
 <div class="page">
 
   <div class="mast">
-    <svg class="mark" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7"
-         stroke-linecap="round" stroke-linejoin="round" width="22" height="22" aria-hidden="true">
-      <polyline points="18,78 18,22 50,58 82,22 82,78"/>
-      <line x1="18" y1="78" x2="50" y2="58" opacity="0.45"/>
-      <line x1="82" y1="78" x2="50" y2="58" opacity="0.45"/>
-      <circle cx="18" cy="78" r="7" fill="currentColor" stroke="none"/>
-      <circle cx="18" cy="22" r="7" fill="currentColor" stroke="none"/>
-      <circle cx="50" cy="58" r="7" fill="currentColor" stroke="none"/>
-      <circle cx="82" cy="22" r="7" fill="currentColor" stroke="none"/>
-      <circle cx="82" cy="78" r="7" fill="currentColor" stroke="none"/>
-    </svg>
+    <div class="mark-tile">
+      <svg class="mark" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5"
+           stroke-linecap="round" stroke-linejoin="round" width="20" height="20" aria-hidden="true">
+        <polyline points="18,78 18,22 50,58 82,22 82,78"/>
+        <line x1="18" y1="78" x2="50" y2="58" opacity="0.45"/>
+        <line x1="82" y1="78" x2="50" y2="58" opacity="0.45"/>
+        <circle cx="18" cy="78" r="5.5" fill="currentColor" stroke="none"/>
+        <circle cx="18" cy="22" r="5.5" fill="currentColor" stroke="none"/>
+        <circle cx="50" cy="58" r="5.5" fill="currentColor" stroke="none"/>
+        <circle cx="82" cy="22" r="5.5" fill="currentColor" stroke="none"/>
+        <circle cx="82" cy="78" r="5.5" fill="currentColor" stroke="none"/>
+      </svg>
+    </div>
     <span class="wordmark">meshploy</span>
     <span class="mast-tag">installer</span>
   </div>
 
-  <h1>Set up your gateway</h1>
-  <p class="lede">
-    This page installs Meshploy and checks your DNS as it goes, so a wrong answer
-    shows up here rather than ten minutes from now. It stays reachable until your
-    console is up.
-  </p>
+  <div class="head">
+    <h1>Set up your gateway</h1>
+    <p class="lede">
+      This page installs Meshploy and checks your DNS as it goes, so a wrong answer
+      shows up here rather than ten minutes from now. It stays reachable until your
+      console is up.
+    </p>
+  </div>
 
   <div class="rail">
     <div class="step" id="s1"><div class="rdot">1</div><div class="rlabel">Token</div></div>
     <div class="rline"></div>
     <div class="step" id="s2"><div class="rdot">2</div><div class="rlabel">Domain</div></div>
+    <div class="rline mig-only hide" id="l3"></div>
+    <div class="step mig-only hide" id="s3"><div class="rdot">3</div><div class="rlabel">Migrate</div></div>
     <div class="rline"></div>
-    <div class="step" id="s3"><div class="rdot">3</div><div class="rlabel">Install</div></div>
+    <div class="step" id="s4"><div class="rdot">4</div><div class="rlabel">Install</div></div>
     <div class="rline"></div>
-    <div class="step" id="s4"><div class="rdot">4</div><div class="rlabel">Ready</div></div>
+    <div class="step" id="s5"><div class="rdot">5</div><div class="rlabel">Ready</div></div>
   </div>
 
   <!-- Step 1 -->
@@ -286,9 +385,14 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
     </div>
     <div class="row">
       <label for="mode">How you want DNS handled</label>
+      <!-- Keeping DNS where it is comes first, and so is the default: it works
+           with every provider, including the ones that cannot delegate a
+           subdomain, and it is the answer that cannot be wrong. Delegation is
+           the better setup where the registrar supports it, which is why it is
+           offered, not assumed. -->
       <select id="mode">
-        <option value="delegation">Point the domain at this server — one certificate covers everything</option>
-        <option value="ondemand">Keep DNS with your provider — a certificate per hostname</option>
+        <option value="ondemand">Keep DNS with your provider - a certificate per hostname</option>
+        <option value="delegation">Manage DNS here (NS delegation) - one certificate covers everything</option>
       </select>
       <p class="hint" id="modeHint"></p>
       <div class="records" id="records"></div>
@@ -310,8 +414,24 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
     <div class="err hide" id="domainErr"></div>
   </div>
 
-  <!-- Step 3 -->
+  <!-- Step 3 — only when another platform is already on this machine. Nothing
+       here changes it: this reads the server and records what you decide, and
+       the move itself runs from the console after Meshploy is up. -->
   <div class="card hide" id="c3">
+    <div id="migFound"></div>
+    <div id="migPlan"></div>
+    <p class="mig-busy hide" id="migBusy">Reading the server. On a busy one this takes a minute.</p>
+    <div class="actions">
+      <button class="ghost" id="migBackBtn">Back</button>
+      <button id="migPlanBtn">Show me what would move</button>
+      <button class="hide" id="migSaveBtn">Save and install</button>
+      <button class="ghost" id="migSkipBtn">Install without migrating</button>
+    </div>
+    <div class="err hide" id="migErr"></div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="card hide" id="c4">
     <div id="log"></div>
     <div class="err hide" id="installErr"></div>
     <div class="actions hide" id="retryWrap">
@@ -320,8 +440,8 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
     </div>
   </div>
 
-  <!-- Step 4 -->
-  <div class="card hide" id="c4">
+  <!-- Step 5 -->
+  <div class="card hide" id="c5">
     <div class="ready">
       <div class="tick">✓</div>
       <div>
@@ -339,8 +459,13 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
       <p class="next-title">Create your account</p>
       <p>
         The console opens on a registration form. Use the same setup token you entered
-        here — the first account created owns this instance.
+        here: the first account created owns this instance.
       </p>
+    </div>
+
+    <div class="next hide" id="migNext">
+      <p class="next-title">Your migration is waiting in the console</p>
+      <p id="migNextText"></p>
     </div>
 
     <div class="next">
@@ -370,13 +495,27 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
 <script>
 (function () {
   var token = "";
+  // Set once the server reports another platform here that has not been dealt
+  // with. It adds a step, so everything that moves between steps reads it.
+  var hasMigration = false;
+  var plan = null;
+  // What the operator settled on, for the note on the last step.
+  var migration = null;
   var $ = function (id) { return document.getElementById(id); };
   var show = function (el, on) { el.classList.toggle("hide", !on); };
 
+  // The migrate step is only in the rail when another platform is on this
+  // machine, so the numbers are written here rather than in the markup:
+  // without it, Install is step 3, not 4.
   function step(n) {
-    [1,2,3,4].forEach(function (i) {
+    var num = 0;
+    [1,2,3,4,5].forEach(function (i) {
       var s = $("s"+i), c = $("c"+i);
+      if (i === 3 && !hasMigration) { show(s, false); show($("l3"), false); show(c, false); return; }
+      show(s, true);
+      if (i === 3) show($("l3"), true);
       s.className = "step" + (i === n ? " active" : (i < n ? " done" : ""));
+      s.querySelector(".rdot").textContent = String(++num);
       show(c, i === n);
     });
   }
@@ -393,6 +532,110 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
       });
     });
   }
+
+  // ── Select ──────────────────────────────────────────────────────────────
+  //
+  // Replaces a native select with the console's: the select stays in the DOM,
+  // hidden, so everything that reads .value or listens for change is unchanged,
+  // and it is still what the form is made of if this never runs.
+  var CHEVRON = '<svg class="sel-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="m6 9 6 6 6-6"/></svg>';
+  var CHECK = '<svg class="sel-check" width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M20 6 9 17l-5-5"/></svg>';
+  var openSel = null;
+
+  function enhanceSelects(root) {
+    var list = (root || document).querySelectorAll("select:not(.enhanced)");
+    Array.prototype.forEach.call(list, enhanceSelect);
+  }
+
+  function enhanceSelect(sel) {
+    sel.classList.add("enhanced");
+
+    var wrap = document.createElement("div");
+    wrap.className = "sel";
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+
+    var trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "ghost sel-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.innerHTML = '<span class="sel-label"></span>' + CHEVRON;
+    wrap.appendChild(trigger);
+
+    var panel = document.createElement("div");
+    panel.className = "sel-panel hide";
+    panel.setAttribute("role", "listbox");
+    wrap.appendChild(panel);
+
+    function label() {
+      var o = sel.options[sel.selectedIndex];
+      trigger.querySelector(".sel-label").textContent = o ? o.textContent : "";
+    }
+
+    function paint() {
+      panel.innerHTML = "";
+      Array.prototype.forEach.call(sel.options, function (o, i) {
+        var item = document.createElement("div");
+        item.className = "sel-item";
+        item.setAttribute("role", "option");
+        item.setAttribute("aria-selected", i === sel.selectedIndex ? "true" : "false");
+        item.innerHTML = CHECK + "<span></span>";
+        item.lastChild.textContent = o.textContent;
+        item.onclick = function () {
+          sel.selectedIndex = i;
+          label();
+          close();
+          // The page listens on the select, not on this, so a change made here
+          // has to look like one made by the operator on the control itself.
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+        panel.appendChild(item);
+      });
+    }
+
+    function open() {
+      if (openSel && openSel !== close) openSel();
+      paint();
+      show(panel, true);
+      trigger.setAttribute("aria-expanded", "true");
+      openSel = close;
+    }
+
+    function close() {
+      show(panel, false);
+      trigger.setAttribute("aria-expanded", "false");
+      if (openSel === close) openSel = null;
+    }
+
+    trigger.onclick = function (e) {
+      e.stopPropagation();
+      if (panel.classList.contains("hide")) open(); else close();
+    };
+    trigger.onkeydown = function (e) {
+      if (e.key === "Escape") close();
+      else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        var next = sel.selectedIndex + (e.key === "ArrowDown" ? 1 : -1);
+        if (next < 0 || next >= sel.options.length) return;
+        sel.selectedIndex = next;
+        label();
+        if (!panel.classList.contains("hide")) paint();
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+    // Disabling the select - what excluding a group does - has to reach the
+    // control the operator can actually click.
+    sel.addEventListener("meshploy:disabled", function () { trigger.disabled = sel.disabled; });
+    label();
+  }
+
+  document.addEventListener("click", function () { if (openSel) openSel(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && openSel) openSel(); });
 
   function answers() {
     return {
@@ -505,11 +748,15 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
       // Phase is authoritative; a transcript only says an install has run at
       // some point. Testing the log first parked a *finished* install on the
       // Install step, staring at a completed log with no way forward.
-      if (st.phase === "verify" || st.phase === "complete") { step(4); verify(); return; }
+      // A reload after the install still has to say where the migration went,
+      // so take it from the saved state rather than from this page's memory.
+      if (st.migration) migration = { skipped: !!st.migration.skipped };
+
+      if (st.phase === "verify" || st.phase === "complete") { step(5); verify(); return; }
 
       if (st.phase === "install" || (st.log || []).length) {
         $("log").textContent = (st.log || []).join("\n");
-        step(3);
+        step(4);
         // Resuming means no stream is attached to this page, so always offer a
         // way on. An install interrupted by a restart leaves the phase at
         // "install" with no recorded failure — without these buttons that is a
@@ -519,8 +766,247 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
         return;
       }
       step(2);
+      loadMigration();
     }).catch(function (e) { fail($("tokenErr"), e.message); });
   };
+
+  // ── Migration ───────────────────────────────────────────────────────────
+  //
+  // A server being installed may already run another platform. This step reads
+  // it and records what the operator decides; nothing here changes it. The move
+  // itself runs later, from the console.
+  function loadMigration() {
+    api("migration").then(function (m) {
+      // Already answered on an earlier run: leave the step out rather than ask
+      // again, and let the console pick the migration up from there.
+      if (m.choices) { hasMigration = false; return; }
+      if (!m.platform) return;
+      hasMigration = true;
+      renderFound(m);
+      $("installBtn").textContent = "Continue";
+      step(2);
+    }).catch(function () { /* a platform we cannot read is not a reason to stop an install */ });
+  }
+
+  function renderFound(m) {
+    var sub = m.supported
+      ? "Meshploy can move its projects, apps, databases and domains across."
+      : "This version is outside what Meshploy has been tested against, so what it reads may be incomplete.";
+    var html =
+      '<div class="found"><div class="found-dot">↗</div><div>' +
+        '<div class="found-title">' + esc(m.platform) + " " + esc(m.version || "") + " is on this server</div>" +
+        '<div class="found-sub">' + esc(sub) + "</div>" +
+      "</div></div>";
+    if (m.note) html += '<p class="panel-sub">' + esc(m.note) + "</p>";
+    if (!plan) {
+      html += '<p class="panel-sub" style="margin-top:12px">' +
+        "Meshploy installs beside it and takes nothing over until you say so. " +
+        "Reading the server changes nothing on it." + "</p>";
+    }
+    $("migFound").innerHTML = html;
+  }
+
+  var MODE_TITLE = {
+    side_by_side: "Both can run at once",
+    hand_over: "Dokploy hands the ports over",
+    move_to_node: "Move the workloads to another node"
+  };
+
+  function renderPlan(p) {
+    var sum = p.summary || {};
+    var html = '<div class="pills">' +
+      pill("good", (sum.moves || 0) + " move") +
+      (sum.needs_you ? pill("warn", sum.needs_you + " need you") : "") +
+      (sum.not_moved ? pill("", sum.not_moved + " stay behind") : "") +
+      "</div>";
+
+    html += '<div class="panel"><p class="panel-title">' +
+      esc(MODE_TITLE[p.mode.choice] || p.mode.choice) + "</p>" +
+      '<p class="panel-sub">' + esc(p.mode.reason) + "</p></div>";
+
+    // Groups are the unit that moves, because a database and the apps that use
+    // it cannot be in two places at once.
+    (p.groups || []).forEach(function (g) { html += groupPanel(g, p); });
+
+    // Decisions on things that are not in a group: domains, integrations.
+    var loose = (p.items || []).filter(function (it) {
+      return (it.decisions || []).length && !inGroup(p, it.id);
+    });
+    if (loose.length) {
+      html += '<p class="section-title">Also needs you</p>';
+      loose.forEach(function (it) {
+        html += '<div class="panel"><p class="panel-title">' + esc(it.name) + "</p>" +
+          decisionsHTML(it) + "</div>";
+      });
+    }
+
+    // Everything else that moves - projects, domains, volumes - as compact
+    // rows: no questions to answer, but the operator should see the hostnames
+    // in the list before agreeing to any of it.
+    var also = (p.items || []).filter(function (it) {
+      return !(it.decisions || []).length && !inGroup(p, it.id) && it.verdict !== "not_moved";
+    });
+    if (also.length) {
+      html += '<p class="section-title">Moves with them</p><div class="panel">';
+      also.forEach(function (it) { html += memberRow(it.kind, it.name, it.maps_to); });
+      html += "</div>";
+    }
+
+    var stays = (p.items || []).filter(function (it) { return it.verdict === "not_moved"; });
+    if (stays.length) {
+      html += '<p class="section-title">Stays behind</p><div class="panel">';
+      stays.forEach(function (it) {
+        html += memberRow(it.kind, it.name, (it.reasons || [])[0] || "");
+      });
+      html += "</div>";
+    }
+
+    if ((p.unmanaged || []).length) {
+      html += '<p class="section-title">Running here, but not Dokploy\'s</p><div class="panel">';
+      p.unmanaged.forEach(function (u) {
+        html += memberRow(u.kind, u.name, u.maps_to || "left alone");
+      });
+      html += '<p class="gnote">Meshploy leaves these alone. They keep running.</p></div>';
+    }
+    $("migPlan").innerHTML = html;
+  }
+
+  function memberRow(kind, name, to) {
+    return '<div class="member"><span class="member-kind">' + esc(kind) + "</span>" +
+      '<span class="member-name">' + esc(name) + "</span>" +
+      '<span class="member-to">' + esc(to || "") + "</span></div>";
+  }
+
+  function inGroup(p, id) {
+    return (p.groups || []).some(function (g) {
+      return (g.members || []).some(function (m) { return m.id === id; });
+    });
+  }
+
+  function groupPanel(g, p) {
+    var ids = (g.members || []).map(function (m) { return m.id; }).join(",");
+    var html = '<div class="panel" data-group="' + esc(g.id) + '">' +
+      '<div class="group-head"><p class="panel-title">' + esc(g.name) + "</p>" +
+      '<span class="gdown">' + esc(g.downtime) + "</span></div>";
+    (g.members || []).forEach(function (m) {
+      var it = itemOf(p, m.id);
+      html += memberRow(m.kind, m.name, it ? it.maps_to : "");
+    });
+    (g.data || []).forEach(function (d) {
+      html += '<p class="gdata">' + esc(d.name) + ": " + mb(d.mb) + ", " + esc(d.move) + "</p>";
+    });
+    (g.notes || []).forEach(function (n) { html += '<p class="gnote">' + esc(n) + "</p>"; });
+    (g.blockers || []).forEach(function (b) { html += '<p class="blocker">' + esc(b) + "</p>"; });
+    (g.members || []).forEach(function (m) {
+      var it = itemOf(p, m.id);
+      if (it && (it.decisions || []).length) html += decisionsHTML(it);
+    });
+    html += '<label class="excl"><input type="checkbox" class="gexclude" data-members="' +
+      esc(ids) + '"> Leave this behind for now</label>';
+    return html + "</div>";
+  }
+
+  // A decision is a question with a safe answer already chosen where one
+  // exists; where none does, it has to be answered before the plan can be
+  // saved, which the server checks again.
+  function decisionsHTML(it) {
+    var html = "";
+    (it.decisions || []).forEach(function (d) {
+      html += '<div class="decision"><p class="dq"><b>' + esc(it.name) + "</b> - " + esc(d.question) + "</p>" +
+        '<select class="dec" data-item="' + esc(it.id) + '" data-decision="' + esc(d.id) + '">';
+      if (!d.default) html += '<option value="">Choose one…</option>';
+      (d.options || []).forEach(function (o) {
+        html += '<option value="' + esc(o.id) + '"' + (o.id === d.default ? " selected" : "") +
+          ">" + esc(o.label) + "</option>";
+      });
+      html += "</select></div>";
+    });
+    return html;
+  }
+
+  function itemOf(p, id) {
+    var found = null;
+    (p.items || []).forEach(function (it) { if (it.id === id) found = it; });
+    return found;
+  }
+
+  function pill(cls, text) { return '<span class="pill ' + cls + '">' + esc(text) + "</span>"; }
+
+  function mb(n) {
+    return n >= 1024 ? (Math.round(n / 102.4) / 10) + " GB" : n + " MB";
+  }
+
+  // Excluding a group greys it out, and its answers stop counting: what is left
+  // behind is not moved, so what it would have needed is moot.
+  function wireExclusions() {
+    Array.prototype.forEach.call(document.querySelectorAll(".gexclude"), function (box) {
+      box.onchange = function () {
+        var panel = box.closest(".panel");
+        panel.classList.toggle("left-out", box.checked);
+        Array.prototype.forEach.call(panel.querySelectorAll(".dec"), function (sel) {
+          sel.disabled = box.checked;
+          sel.dispatchEvent(new Event("meshploy:disabled"));
+        });
+      };
+    });
+  }
+
+  function choices() {
+    var out = { decisions: {}, exclude: [] };
+    Array.prototype.forEach.call(document.querySelectorAll(".gexclude"), function (box) {
+      if (!box.checked) return;
+      (box.getAttribute("data-members") || "").split(",").forEach(function (id) {
+        if (id) out.exclude.push(id);
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".dec"), function (sel) {
+      if (sel.disabled || !sel.value) return;
+      var item = sel.getAttribute("data-item");
+      out.decisions[item] = out.decisions[item] || {};
+      out.decisions[item][sel.getAttribute("data-decision")] = sel.value;
+    });
+    return out;
+  }
+
+  $("migPlanBtn").onclick = function () {
+    var btn = this;
+    show($("migErr"), false);
+    show($("migBusy"), true);
+    btn.disabled = true;
+    api("migration/plan", {})
+      .then(function (m) {
+        plan = m.plan;
+        renderFound(m);
+        renderPlan(plan);
+        enhanceSelects($("migPlan"));
+        wireExclusions();
+        show($("migPlanBtn"), false);
+        show($("migSaveBtn"), true);
+      })
+      .catch(function (e) { fail($("migErr"), e.message); btn.disabled = false; })
+      .then(function () { show($("migBusy"), false); });
+  };
+
+  $("migSaveBtn").onclick = function () {
+    show($("migErr"), false);
+    var btn = this;
+    btn.disabled = true;
+    api("migration", choices())
+      .then(function (m) { migration = { platform: m.platform }; startInstall(); })
+      .catch(function (e) { fail($("migErr"), e.message); })
+      .then(function () { btn.disabled = false; });
+  };
+
+  // Skipping is a recorded answer, not an omission: the console then knows the
+  // operator saw what was here and chose to install beside it.
+  $("migSkipBtn").onclick = function () {
+    show($("migErr"), false);
+    api("migration", { skipped: true })
+      .then(function () { migration = { skipped: true }; startInstall(); })
+      .catch(function (e) { fail($("migErr"), e.message); });
+  };
+
+  $("migBackBtn").onclick = function () { step(2); };
 
   ["domain", "publicIP"].forEach(function (id) { $(id).oninput = renderRecords; });
   $("mode").onchange = renderRecords;
@@ -553,7 +1039,7 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
     show($("installErr"), false);
     show($("retryWrap"), false);
     api("answers", answers()).then(function () {
-      step(3);
+      step(4);
       $("log").textContent = "";
       // Read the SSE stream with fetch rather than EventSource.
       //
@@ -592,7 +1078,7 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
             $("log").textContent += data + "\n";
             $("log").scrollTop = $("log").scrollHeight;
           } else if (ev === "done") {
-            step(4); verify();
+            step(5); verify();
           } else if (ev === "failed") {
             fail($("installErr"), data);
             show($("retryWrap"), true);
@@ -608,11 +1094,24 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
     }).catch(function (e) { fail($("domainErr"), e.message); });
   }
 
-  $("installBtn").onclick = startInstall;
+  $("installBtn").onclick = function () {
+    if (hasMigration) { step(3); return; }
+    startInstall();
+  };
   $("retryBtn").onclick = startInstall;
   $("backBtn").onclick = function () { step(2); };
 
   function verify() {
+    // Nothing has moved at this point: setup only recorded what should. Say so
+    // and say where it continues, or the operator is left wondering whether
+    // their apps have already been touched.
+    if (migration && !migration.skipped) {
+      $("migNextText").textContent =
+        "Nothing on " + (migration.platform || "the other platform") +
+        " has changed. Your console opens on the migration, which moves one group " +
+        "at a time, when you start it.";
+      show($("migNext"), true);
+    }
     var host = "console." + $("domain").value.trim();
     $("consoleHost").textContent = host;
     $("consoleBtn").href = "https://" + host;
@@ -642,6 +1141,7 @@ button:focus-visible, .domain-link:focus-visible, a:focus-visible {
   // on a re-run.
   $("editBtn").onclick = function () { step(2); };
 
+  enhanceSelects();
   step(1);
   $("token").focus();
 })();
