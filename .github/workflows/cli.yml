@@ -100,22 +100,58 @@ jobs:
             echo "is_release=false" >> $GITHUB_OUTPUT
           fi
 
+      # Uploaded with gh rather than an action, the way the tagged release
+      # below is. The action deletes every asset before re-uploading, so one
+      # stalled upload leaves the edge release missing a binary - which is
+      # exactly what happened on 2026-09-17: arm64 landed, amd64 timed out, and
+      # `get.sh` on amd64 got a 404 until the job was re-run. `--clobber`
+      # replaces in place, so a failed attempt leaves the previous binary
+      # standing, and a retry costs seconds.
       - name: Publish edge release (cli-latest)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: cli-latest
-          name: "meshploy CLI (edge)"
-          body: |
-            Rolling build from `main`. Updated automatically on every change.
-            Use `meshploy update --edge` to install this build.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<'EOF'
+          Rolling build from `main`. Updated automatically on every change.
+          Use `meshploy update --edge` to install this build.
 
-            **Install stable instead:**
-            ```bash
-            sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
-            ```
-          files: dist/*
-          make_latest: false
-          prerelease: true
+          **Install stable instead:**
+          ```bash
+          sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh)"
+          ```
+          EOF
+          )
+          if gh release view cli-latest >/dev/null 2>&1; then
+            gh release edit cli-latest --title "meshploy CLI (edge)" --notes "$NOTES" --prerelease
+          else
+            gh release create cli-latest --title "meshploy CLI (edge)" --notes "$NOTES" --prerelease
+          fi
+
+          # One file at a time, three tries each. --clobber removes the old
+          # asset just before uploading its replacement, so keeping that window
+          # to a single file means a stalled upload costs that one binary for
+          # seconds rather than leaving the release short of it until someone
+          # notices.
+          failed=""
+          for file in dist/*; do
+            name=$(basename "$file")
+            for attempt in 1 2 3; do
+              if gh release upload cli-latest "$file" --clobber; then
+                name=""
+                break
+              fi
+              echo "::warning::upload of ${name} failed (attempt ${attempt})"
+              sleep $((attempt * 10))
+            done
+            if [ -n "$name" ]; then
+              failed="${failed} ${name}"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::could not upload:${failed}"
+            exit 1
+          fi
 
       - name: Attach CLI binaries to existing release
         if: steps.detect.outputs.is_release == 'true'
