@@ -1,0 +1,445 @@
+{
+  "generated_at": "2026-01-02T03:04:05Z",
+  "detection": {
+    "dokploy": true,
+    "signals": [
+      "/etc/dokploy exists",
+      "Swarm service dokploy",
+      "container dokploy-postgres.1.n74kl3ty29g8evkn4k7mmxh3u"
+    ],
+    "image_tag": "dokploy/dokploy:v0.30.7",
+    "version": "v0.30.7",
+    "migrations": 196,
+    "supported": true
+  },
+  "edge": {
+    "kind": "custom",
+    "holders": [
+      "caddy"
+    ],
+    "traefik": "0.0.0.0:6080-\u003e80/tcp, 0.0.0.0:6443-\u003e443/tcp, 0.0.0.0:6443-\u003e443/udp",
+    "dynamic_files": 0,
+    "acme_bytes": 0,
+    "note": "ports 80 and 443 are held by caddy, not by Dokploy's Traefik: its configuration is read and handed over separately"
+  },
+  "resources": {
+    "cores": 4,
+    "memory_mb": 7940,
+    "available_mb": 5064,
+    "disk_free_mb": 217143,
+    "docker_volume_mb": 479,
+    "workload_memory_mb": 1094
+  },
+  "mode": {
+    "choice": "side_by_side",
+    "reason": "5064 MB of memory free covers Meshploy and a second copy of the workloads (2630 MB), and 217143 MB of disk the data twice: both can run until everything is ready"
+  },
+  "items": [
+    {
+      "kind": "project",
+      "id": "id-2",
+      "name": "project-1",
+      "maps_to": "Project",
+      "verdict": "moves",
+      "details": {
+        "dokploy_environment": "environment-1",
+        "dokploy_project": "project-1"
+      }
+    },
+    {
+      "kind": "application",
+      "id": "id-1",
+      "name": "application-1",
+      "project": "project-1",
+      "maps_to": "Service built from git (nixpacks)",
+      "verdict": "moves",
+      "reasons": [
+        "runs the image it runs now until GitHub is reconnected in Meshploy; builds and deploys on push resume then, with no further setup",
+        "starts from the image running now; the next deploy builds from its source"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-1",
+        "branch": "main",
+        "build": "nixpacks",
+        "replicas": "1",
+        "repository": "application-2/application-1",
+        "source": "github",
+        "status": "done"
+      }
+    },
+    {
+      "kind": "application",
+      "id": "id-4",
+      "name": "application-3",
+      "project": "project-1",
+      "maps_to": "Image service",
+      "verdict": "moves",
+      "reasons": [
+        "published ports become TCP routes on the gateway"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-2",
+        "build": "nixpacks",
+        "image": "image-1:latest",
+        "published_ports": "3789/tcp",
+        "replicas": "1",
+        "source": "docker",
+        "status": "done"
+      }
+    },
+    {
+      "kind": "compose",
+      "id": "id-5",
+      "name": "compose-1",
+      "project": "project-1",
+      "maps_to": "Stack from the stored compose file",
+      "verdict": "moves",
+      "reasons": [
+        "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains"
+      ],
+      "details": {
+        "app_name": "container-3",
+        "compose_path": "/srv/path-1",
+        "isolated": "true",
+        "source": "raw",
+        "status": "idle",
+        "type": "docker-compose",
+        "variables": "4"
+      }
+    },
+    {
+      "kind": "compose",
+      "id": "id-6",
+      "name": "compose-2",
+      "project": "project-1",
+      "maps_to": "Stack from the stored compose file",
+      "verdict": "moves",
+      "reasons": [
+        "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-4",
+        "compose_path": "/srv/path-1",
+        "containers": "1 of 1 running",
+        "isolated": "true",
+        "source": "raw",
+        "status": "done",
+        "type": "docker-compose",
+        "variables": "14"
+      }
+    },
+    {
+      "kind": "compose",
+      "id": "id-7",
+      "name": "compose-3",
+      "project": "project-1",
+      "maps_to": "Stack from the stored compose file",
+      "verdict": "moves",
+      "reasons": [
+        "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-5",
+        "compose_path": "/srv/path-1",
+        "containers": "2 of 2 running",
+        "isolated": "true",
+        "source": "raw",
+        "status": "done",
+        "type": "docker-compose",
+        "variables": "7"
+      }
+    },
+    {
+      "kind": "compose",
+      "id": "id-8",
+      "name": "compose-4",
+      "project": "project-1",
+      "maps_to": "Stack from the stored compose file",
+      "verdict": "moves",
+      "reasons": [
+        "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-6",
+        "compose_path": "/srv/path-1",
+        "containers": "1 of 1 running",
+        "source": "raw",
+        "status": "done",
+        "type": "docker-compose"
+      }
+    },
+    {
+      "kind": "database",
+      "id": "id-19",
+      "name": "postgres-1",
+      "project": "project-1",
+      "maps_to": "Managed Postgres",
+      "verdict": "moves",
+      "reasons": [
+        "published on port 25432: becomes a TCP route on the gateway"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-11",
+        "database": "postgres-3",
+        "engine": "Postgres",
+        "external_port": "25432",
+        "image": "postgres:17.4",
+        "status": "done"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "id-11",
+      "name": "host-1.apps.example/",
+      "maps_to": "Route to compose-2 / container-7",
+      "verdict": "moves",
+      "details": {
+        "certificate": "none",
+        "https": "false",
+        "port": "8080"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "id-12",
+      "name": "host-2.apps.example/",
+      "maps_to": "Route to compose-1 / container-8",
+      "verdict": "moves",
+      "details": {
+        "certificate": "none",
+        "https": "false",
+        "port": "80"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "id-13",
+      "name": "host-3-192-0-2-1.traefik.me/",
+      "maps_to": "Route to compose-3 / container-9",
+      "verdict": "not_moved",
+      "reasons": [
+        "a throwaway traefik.me host Dokploy generates"
+      ],
+      "details": {
+        "certificate": "none",
+        "https": "false",
+        "port": "5678"
+      }
+    },
+    {
+      "kind": "domain",
+      "id": "id-14",
+      "name": "host-4.apps.example/",
+      "maps_to": "Route to compose-3 / container-9",
+      "verdict": "moves",
+      "details": {
+        "certificate": "none",
+        "https": "false",
+        "port": "5678"
+      }
+    },
+    {
+      "kind": "git_provider",
+      "id": "id-17",
+      "name": "git_provider-1",
+      "maps_to": "Git integration, waiting to be reconnected",
+      "verdict": "moves",
+      "reasons": [
+        "GitHub is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+      ],
+      "details": {
+        "provider": "github"
+      }
+    },
+    {
+      "kind": "git_provider",
+      "id": "id-18",
+      "name": "git_provider-2",
+      "maps_to": "Git integration, waiting to be reconnected",
+      "verdict": "moves",
+      "reasons": [
+        "GitHub is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+      ],
+      "details": {
+        "provider": "github"
+      }
+    },
+    {
+      "kind": "destination",
+      "id": "id-9",
+      "name": "destination-2",
+      "maps_to": "Storage integration",
+      "verdict": "moves",
+      "details": {
+        "bucket": "destination-1",
+        "endpoint": "https://storage.example",
+        "provider": "Cloudflare"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-9ba332f2",
+      "name": "project-1 / application-1",
+      "members": [
+        {
+          "kind": "application",
+          "id": "id-1",
+          "name": "application-1",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true
+    },
+    {
+      "id": "g-98a32e39",
+      "name": "project-1 / application-3",
+      "members": [
+        {
+          "kind": "application",
+          "id": "id-4",
+          "name": "application-3",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true
+    },
+    {
+      "id": "g-97a32ca6",
+      "name": "project-1 / compose-1",
+      "members": [
+        {
+          "kind": "compose",
+          "id": "id-5",
+          "name": "compose-1",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true
+    },
+    {
+      "id": "g-cce8f591",
+      "name": "project-1 / postgres-1",
+      "members": [
+        {
+          "kind": "database",
+          "id": "id-19",
+          "name": "postgres-1",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true,
+      "notes": [
+        "no app names postgres-1 by its Dokploy hostname; if one reaches it by address or published port, move them together"
+      ]
+    },
+    {
+      "id": "g-96a32b13",
+      "name": "project-1 / compose-2",
+      "members": [
+        {
+          "kind": "compose",
+          "id": "id-6",
+          "name": "compose-2",
+          "project": "project-1"
+        }
+      ],
+      "data": [
+        {
+          "name": "container-4_volume-9",
+          "mb": 1,
+          "move": "volume copy, stopped"
+        }
+      ],
+      "downtime": "a restart plus under a minute to copy data",
+      "can_move": true
+    },
+    {
+      "id": "g-95a32980",
+      "name": "project-1 / compose-3",
+      "members": [
+        {
+          "kind": "compose",
+          "id": "id-7",
+          "name": "compose-3",
+          "project": "project-1"
+        }
+      ],
+      "data": [
+        {
+          "name": "container-5_volume-3",
+          "mb": 66,
+          "move": "volume copy, stopped"
+        },
+        {
+          "name": "container-5_volume-10",
+          "mb": 1,
+          "move": "volume copy, stopped"
+        }
+      ],
+      "downtime": "a restart plus under a minute to copy data",
+      "can_move": true
+    },
+    {
+      "id": "g-a4a3411d",
+      "name": "project-1 / compose-4",
+      "members": [
+        {
+          "kind": "compose",
+          "id": "id-8",
+          "name": "compose-4",
+          "project": "project-1"
+        }
+      ],
+      "data": [
+        {
+          "name": "container-6_volume-1",
+          "mb": 224,
+          "move": "volume copy, stopped"
+        }
+      ],
+      "downtime": "a restart plus under a minute to copy data",
+      "can_move": true
+    }
+  ],
+  "unmanaged": [
+    {
+      "name": "container-14",
+      "kind": "compose-project",
+      "images": "image-2:latest, image-10:latest",
+      "running": 2,
+      "total": 2,
+      "maps_to": "Leave it running here",
+      "note": "container-13 runs on the host's network, which a Meshploy service does not: leave it as a Docker container here, or move it only if publishing its ports is enough for it"
+    },
+    {
+      "name": "container-16",
+      "kind": "compose-project",
+      "images": "image-3:latest, image-4:latest, image-5:latest",
+      "running": 3,
+      "total": 3,
+      "maps_to": "Leave it running here",
+      "note": "container-18 runs on the host's network, which a Meshploy service does not: leave it as a Docker container here, or move it only if publishing its ports is enough for it"
+    }
+  ],
+  "summary": {
+    "moves": 14,
+    "needs_you": 0,
+    "not_moved": 1,
+    "open_decisions": 0
+  }
+}

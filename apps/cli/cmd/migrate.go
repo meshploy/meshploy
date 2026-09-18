@@ -231,11 +231,52 @@ func printPlan(w io.Writer, p dokploy.Plan) {
 	fmt.Fprintln(w, "\n✔ moves   ! needs you   ✗ not moved   ? offered for import")
 }
 
+// migrateDokployFixtureCmd writes a scrubbed reading of this server, for the
+// golden plans in the repository.
+//
+// Every name, host, path and secret is replaced before anything is written, so
+// the file can be committed and read by anyone; what survives is the structure
+// a plan is built from. It is the honest way to test the reader against real
+// servers without carrying anyone's data around.
+var migrateDokployFixtureCmd = &cobra.Command{
+	Use:   "fixture",
+	Short: "Write a scrubbed reading of this server, for use as a test fixture",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if os.Getuid() != 0 {
+			return fmt.Errorf("migrate dokploy fixture requires root: it reads Docker and Dokploy's database; re-run with sudo")
+		}
+		src, err := dokploy.Collect(migrate.ExecRunner{})
+		if err != nil {
+			return err
+		}
+		if !src.Detection.Dokploy {
+			return fmt.Errorf("Dokploy was not found on this server")
+		}
+		scrubbed := dokploy.Scrub(src)
+
+		out, _ := cmd.Flags().GetString("out")
+		if out == "" {
+			return writeJSON(cmd.OutOrStdout(), scrubbed)
+		}
+		f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err := writeJSON(f, scrubbed); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", out)
+		return nil
+	},
+}
+
 func init() {
 	migrateDokployDetectCmd.Flags().Bool("json", false, "Print the result as JSON")
+	migrateDokployFixtureCmd.Flags().String("out", "", "Write the scrubbed reading to this file (created readable by root only)")
 	migrateDokployPlanCmd.Flags().Bool("json", false, "Print the plan as JSON")
 	migrateDokployPlanCmd.Flags().String("out", "", "Also write the plan as JSON to this file (created readable by root only)")
-	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd)
+	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployFixtureCmd)
 	migrateCmd.AddCommand(migrateDokployCmd)
 	rootCmd.AddCommand(migrateCmd)
 }

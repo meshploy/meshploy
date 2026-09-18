@@ -124,6 +124,7 @@ Plans moving a server that runs Dokploy into Meshploy. It only reads: Docker, Do
 | Command | Description |
 |---|---|
 | `sudo meshploy migrate dokploy detect` | Whether Dokploy runs here, its version and schema level, what holds ports 80 and 443, resources, and how a move would run |
+| `sudo meshploy migrate dokploy fixture` | Write a scrubbed reading of this server: every name, host, path, id and secret replaced, the structure kept. For adding a real server's shape to the repository's test fixtures without carrying anyone's data |
 | `sudo meshploy migrate dokploy plan` | What each project, environment, application, compose app, database, domain and integration becomes in Meshploy: moves, needs you (with the choices and a default where one is safe), or not moved; plus containers Dokploy does not manage |
 
 | Flag (`plan`) | Description |
