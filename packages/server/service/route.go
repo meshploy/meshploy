@@ -39,6 +39,10 @@ type TargetInput struct {
 	// Pre-resolved (optional override — skips auto-resolution)
 	TargetIP   string
 	TargetPort int
+	// TargetTLS: the target speaks HTTPS, so the hop to it does too. Only
+	// meaningful with an address target: a service or node target is reached on
+	// a NodePort inside the cluster, which is plain HTTP by construction.
+	TargetTLS bool
 	// Redirect target — mutually exclusive with ServiceID / NodeID
 	RedirectRouteID *uuid.UUID
 	RedirectCode    int // 301 or 302; defaults to 301 if zero
@@ -207,7 +211,7 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 			_ = s.db.WithContext(ctx).Delete(route).Error
 			return nil, err
 		}
-		target, err := s.resolveTarget(ctx, t)
+		target, err := s.resolveTarget(ctx, route.OrganizationID, t)
 		if err != nil {
 			// Clean up the route row on target resolution failure.
 			_ = s.db.WithContext(ctx).Delete(route).Error
@@ -242,7 +246,7 @@ func (s *RouteService) AddTarget(ctx context.Context, routeID uuid.UUID, in Targ
 	if err := s.validateRedirectTarget(ctx, routeID, route.Zone, &in); err != nil {
 		return nil, err
 	}
-	target, err := s.resolveTarget(ctx, &in)
+	target, err := s.resolveTarget(ctx, route.OrganizationID, &in)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +269,7 @@ func (s *RouteService) UpdateTarget(ctx context.Context, targetID uuid.UUID, in 
 	if err := s.validateRedirectTarget(ctx, target.RouteID, route.Zone, &in); err != nil {
 		return nil, err
 	}
-	resolved, err := s.resolveTarget(ctx, &in)
+	resolved, err := s.resolveTarget(ctx, route.OrganizationID, &in)
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +280,7 @@ func (s *RouteService) UpdateTarget(ctx context.Context, targetID uuid.UUID, in 
 		"node_id":           in.NodeID,
 		"target_ip":         resolved.TargetIP,
 		"target_port":       resolved.TargetPort,
+		"target_tls":        resolved.TargetTLS,
 		"redirect_route_id": in.RedirectRouteID,
 		"redirect_code":     resolved.RedirectCode,
 	}
@@ -363,6 +368,23 @@ func (s *RouteService) SetPublished(ctx context.Context, routeID, projectID uuid
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 // validateRedirectTarget enforces zone and chain rules when a redirect target is requested.
+// serviceInOrg reports whether this service belongs to the organisation, by the
+// project that owns it. A target naming a service from elsewhere is a 404 and
+// not a 403: the caller has no business knowing the id exists.
+func (s *RouteService) serviceInOrg(ctx context.Context, orgID, serviceID uuid.UUID) error {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&db.Service{}).
+		Joins("JOIN projects ON projects.id = services.project_id").
+		Where("services.id = ? AND projects.organization_id = ?", serviceID, orgID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return huma.Error404NotFound("service not found")
+	}
+	return nil
+}
+
 func (s *RouteService) validateRedirectTarget(ctx context.Context, routeID uuid.UUID, zone db.RouteZone, in *TargetInput) error {
 	if in.RedirectRouteID == nil {
 		return nil
@@ -385,7 +407,13 @@ func (s *RouteService) validateRedirectTarget(ctx context.Context, routeID uuid.
 }
 
 // resolveTarget fills TargetIP/TargetPort from ServiceID or NodeID, or sets redirect fields.
-func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.RouteTarget, error) {
+// resolveTarget turns a target input into a stored row.
+//
+// orgID is the organisation of the route this target belongs to, and every
+// lookup here is scoped to it. Authorising the route says nothing about what it
+// may point at: without this, anyone who can edit one route could name any
+// service, node or route id in the database and have the gateway forward to it.
+func (s *RouteService) resolveTarget(ctx context.Context, orgID uuid.UUID, in *TargetInput) (*db.RouteTarget, error) {
 	code := in.RedirectCode
 	if code == 0 {
 		code = 301
@@ -397,20 +425,24 @@ func (s *RouteService) resolveTarget(ctx context.Context, in *TargetInput) (*db.
 		NodeID:          in.NodeID,
 		TargetIP:        in.TargetIP,
 		TargetPort:      in.TargetPort,
+		TargetTLS:       in.TargetTLS && in.ServiceID == nil && in.NodeID == nil,
 		RedirectRouteID: in.RedirectRouteID,
 		RedirectCode:    code,
 	}
 
 	if in.RedirectRouteID != nil {
-		// Verify the target route exists.
+		// Verify the target route exists, in this organisation.
 		var target db.Route
-		if err := s.db.WithContext(ctx).First(&target, "id = ?", *in.RedirectRouteID).Error; err != nil {
+		if err := s.db.WithContext(ctx).First(&target, "id = ? AND organization_id = ?", *in.RedirectRouteID, orgID).Error; err != nil {
 			return nil, huma.Error404NotFound("redirect target route not found")
 		}
 		return t, nil
 	}
 
 	if in.ServiceID != nil {
+		if err := s.serviceInOrg(ctx, orgID, *in.ServiceID); err != nil {
+			return nil, err
+		}
 		// Resolve to the correct ServicePort (primary if unspecified).
 		var sp db.ServicePort
 		var err error

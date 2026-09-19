@@ -42,6 +42,8 @@ interface TargetFormState {
   servicePortId: string  // "" = primary port (auto)
   nodeId: string
   targetIp: string
+  // targetTls: the target speaks HTTPS, so the hop to it does too.
+  targetTls: boolean
   port: string
   path: string
   stripPath: boolean
@@ -55,6 +57,7 @@ const BLANK_FORM: TargetFormState = {
   servicePortId: "",
   nodeId: "",
   targetIp: "",
+  targetTls: false,
   port: "",
   path: "/",
   stripPath: false,
@@ -126,6 +129,7 @@ function RouteDetailPage() {
         body.node_id = add.nodeId; body.port = parseInt(add.port, 10)
       } else if (add.mode === "address") {
         body.target_ip = add.targetIp; body.port = parseInt(add.port, 10)
+        if (add.targetTls) body.target_tls = true
       } else if (add.mode === "redirect") {
         body.redirect_route_id = add.redirectRouteId; body.redirect_code = add.redirectCode
       }
@@ -476,6 +480,18 @@ function TargetForm({
               placeholder="8080"
             />
           </div>
+          <label className="flex items-start gap-2 pt-1 text-[11px] text-muted-foreground/70 leading-relaxed">
+            <input
+              type="checkbox"
+              checked={form.targetTls}
+              onChange={(e) => onChange({ targetTls: e.target.checked })}
+              className="mt-0.5 accent-primary"
+            />
+            <span>
+              It speaks HTTPS. Meshploy terminates the certificate at the edge and re-encrypts to it; the
+              target&apos;s own certificate is not verified, having no name to verify against.
+            </span>
+          </label>
           <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
             An address the gateway itself can reach: its own loopback, the Docker bridge, or a machine on
             your mesh or LAN. Pointed at a public address, the gateway becomes a proxy for it.
@@ -541,6 +557,7 @@ function targetToForm(target: ApiRouteTarget): TargetFormState {
     servicePortId: "",  // not stored on the target; user can re-select on edit
     nodeId: target.node_id ?? "",
     targetIp: target.service_id || target.node_id ? "" : (target.target_ip ?? ""),
+    targetTls: target.target_tls ?? false,
     port: target.target_port ? String(target.target_port) : "",
     path: target.path,
     stripPath: target.strip_path ?? false,
@@ -596,6 +613,7 @@ function TargetItem({
         if (editForm.servicePortId) body.service_port_id = editForm.servicePortId
       } else if (editForm.mode === "address") {
         body.target_ip = editForm.targetIp; body.port = parseInt(editForm.port, 10)
+        if (editForm.targetTls) body.target_tls = true
       } else if (editForm.mode === "node") {
         body.node_id = editForm.nodeId; body.port = parseInt(editForm.port, 10)
       } else if (editForm.mode === "redirect") {

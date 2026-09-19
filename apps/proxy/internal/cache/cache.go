@@ -13,10 +13,12 @@ import (
 
 // TargetEntry is one path rule for a hostname.
 type TargetEntry struct {
-	Path             string
-	StripPath        bool
-	TargetIP         string
-	TargetPort       int
+	Path       string
+	StripPath  bool
+	TargetIP   string
+	TargetPort int
+	// TargetTLS: the target speaks HTTPS, so the hop to it is too.
+	TargetTLS        bool
 	RedirectHostname string // non-empty when this target is a redirect
 	RedirectCode     int    // 301 or 302
 }
@@ -102,6 +104,7 @@ func (c *Cache) load() error {
 			StripPath:  t.StripPath,
 			TargetIP:   t.TargetIP,
 			TargetPort: t.TargetPort,
+			TargetTLS:  t.TargetTLS,
 		}
 		if t.RedirectRouteID != nil && t.RedirectRoute != nil {
 			entry.RedirectHostname = t.RedirectRoute.Hostname
@@ -143,6 +146,7 @@ func (c *Cache) loadHostname(hostname string) []TargetEntry {
 			StripPath:  t.StripPath,
 			TargetIP:   t.TargetIP,
 			TargetPort: t.TargetPort,
+			TargetTLS:  t.TargetTLS,
 		}
 		if t.RedirectRouteID != nil && t.RedirectRoute != nil {
 			entry.RedirectHostname = t.RedirectRoute.Hostname

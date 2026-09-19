@@ -57,6 +57,7 @@ type CreateRouteInput struct {
 			ServicePortID   *string `json:"service_port_id,omitempty"` // which port to route to; nil = primary
 			NodeID          *string `json:"node_id,omitempty"`
 			TargetIP        *string `json:"target_ip,omitempty"`
+			TargetTLS       *bool   `json:"target_tls,omitempty" doc:"The target speaks HTTPS, so the hop to it does too. Address targets only"`
 			Port            *int    `json:"port,omitempty"`
 			RedirectRouteID *string `json:"redirect_route_id,omitempty"`
 			RedirectCode    *int    `json:"redirect_code,omitempty"`
@@ -79,6 +80,7 @@ type UpsertTargetInput struct {
 		ServicePortID   *string `json:"service_port_id,omitempty"`
 		NodeID          *string `json:"node_id,omitempty"`
 		TargetIP        *string `json:"target_ip,omitempty"`
+		TargetTLS       *bool   `json:"target_tls,omitempty" doc:"The target speaks HTTPS, so the hop to it does too. Address targets only"`
 		Port            *int    `json:"port,omitempty"`
 		RedirectRouteID *string `json:"redirect_route_id,omitempty"`
 		RedirectCode    *int    `json:"redirect_code,omitempty"`
@@ -99,6 +101,7 @@ type UpdateTargetInput struct {
 		ServicePortID   *string `json:"service_port_id,omitempty"`
 		NodeID          *string `json:"node_id,omitempty"`
 		TargetIP        *string `json:"target_ip,omitempty"`
+		TargetTLS       *bool   `json:"target_tls,omitempty" doc:"The target speaks HTTPS, so the hop to it does too. Address targets only"`
 		Port            *int    `json:"port,omitempty"`
 		RedirectRouteID *string `json:"redirect_route_id,omitempty"`
 		RedirectCode    *int    `json:"redirect_code,omitempty"`
@@ -254,6 +257,9 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 	targets := make([]svc.TargetInput, 0, len(input.Body.Targets))
 	for _, t := range input.Body.Targets {
 		ti, err := parseTargetBody(t.Path, t.StripPath, t.ServiceID, t.ServicePortID, t.NodeID, t.TargetIP, t.RedirectRouteID, t.Port, t.RedirectCode)
+		if t.TargetTLS != nil {
+			ti.TargetTLS = *t.TargetTLS
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -339,6 +345,9 @@ func (h *Handler) AddRouteTarget(ctx context.Context, input *AddTargetInput) (*G
 		return nil, err
 	}
 	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.ServicePortID, input.Body.NodeID, input.Body.TargetIP, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
+	if input.Body.TargetTLS != nil {
+		ti.TargetTLS = *input.Body.TargetTLS
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +368,9 @@ func (h *Handler) UpdateRouteTarget(ctx context.Context, input *UpdateTargetInpu
 		return nil, err
 	}
 	ti, err := parseTargetBody(input.Body.Path, input.Body.StripPath, input.Body.ServiceID, input.Body.ServicePortID, input.Body.NodeID, input.Body.TargetIP, input.Body.RedirectRouteID, input.Body.Port, input.Body.RedirectCode)
+	if input.Body.TargetTLS != nil {
+		ti.TargetTLS = *input.Body.TargetTLS
+	}
 	if err != nil {
 		return nil, err
 	}

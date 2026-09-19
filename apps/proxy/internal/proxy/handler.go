@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/meshploy/apps/proxy/internal/cache"
 )
@@ -62,8 +64,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", entry.TargetIP, entry.TargetPort))
+	scheme := "http"
+	if entry.TargetTLS {
+		scheme = "https"
+	}
+	target, _ := url.Parse(fmt.Sprintf("%s://%s:%d", scheme, entry.TargetIP, entry.TargetPort))
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	if entry.TargetTLS {
+		// The target is named by address, so its certificate has no name to be
+		// verified against - it is typically self-signed, on this machine's
+		// loopback or across the mesh, both of which are already private. TLS
+		// here is for the target's sake, because it speaks nothing else.
+		proxy.Transport = tlsBackendTransport
+	}
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		log.Printf("proxy: %s → %s error: %v", hostname, target.Host, err)
@@ -73,6 +86,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Preserve the original Host so upstreams that are host-aware still work.
 	r.Header.Set("X-Forwarded-Host", r.Host)
 	proxy.ServeHTTP(w, r)
+}
+
+// tlsBackendTransport is shared, so connections to TLS targets are pooled the
+// way the default transport pools plain ones.
+var tlsBackendTransport = &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          100,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ExpectContinueTimeout: time.Second,
+	TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 }
 
 const notFoundPage = `<!doctype html>

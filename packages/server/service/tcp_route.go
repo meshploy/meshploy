@@ -348,8 +348,11 @@ func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute,
 		return nil
 
 	case in.NodeID != nil:
+		// Scoped to the route's organisation: authorising the route says nothing
+		// about what it may point at.
 		var node db.Node
-		if err := s.db.WithContext(ctx).First(&node, "id = ?", *in.NodeID).Error; err != nil {
+		if err := s.db.WithContext(ctx).
+			First(&node, "id = ? AND organization_id = ?", *in.NodeID, route.OrganizationID).Error; err != nil {
 			return fmt.Errorf("node not found")
 		}
 		if in.NodePort < 1 || in.NodePort > 65535 {
@@ -362,7 +365,9 @@ func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute,
 	case in.ServiceID != nil:
 		var svc db.Service
 		if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").
-			First(&svc, "id = ?", *in.ServiceID).Error; err != nil {
+			Joins("JOIN projects ON projects.id = services.project_id").
+			Where("projects.organization_id = ?", route.OrganizationID).
+			First(&svc, "services.id = ?", *in.ServiceID).Error; err != nil {
 			return fmt.Errorf("service not found")
 		}
 		port, nodePort, err := s.servicePort(ctx, &svc, in.ServicePort)

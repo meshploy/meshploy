@@ -102,3 +102,34 @@ func TestTCPRoutePublishAndPause(t *testing.T) {
 	assert.True(t, published.Published)
 	assert.Equal(t, meshdb.TCPRoutePending, published.Status)
 }
+
+// The HTTP twin of TestATargetFromAnotherOrgIsNotFound: a route's targets are
+// resolved in the route's own organisation, whether the target is a service or
+// another route to redirect to.
+func TestAnHTTPTargetFromAnotherOrgIsNotFound(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+
+	other := meshdb.Organization{Name: "other-http", Slug: "other-http"}
+	require.NoError(t, e.gdb.Create(&other).Error)
+	otherProject, err := e.svcs.Projects.Create(ctx, other.ID, "other-http", "other-http")
+	require.NoError(t, err)
+	otherSvc, err := e.svcs.Workloads.Create(ctx, otherProject.ID, service.CreateWorkloadInput{
+		Name: "theirs", Type: meshdb.ServiceTypeApplication, Image: "nginx:1.27",
+	})
+	require.NoError(t, err)
+	otherRoute, err := e.svcs.Routes.Create(ctx, service.CreateRouteInput{
+		OrgID: other.ID, ProjectID: otherProject.ID, Hostname: "theirs.example.com",
+	})
+	require.NoError(t, err)
+
+	mine := e.httpRoute(t, "mine.example.com", false)
+
+	_, err = e.svcs.Routes.AddTarget(ctx, mine.ID, service.TargetInput{Path: "/x", ServiceID: &otherSvc.ID})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service not found")
+
+	_, err = e.svcs.Routes.AddTarget(ctx, mine.ID, service.TargetInput{Path: "/y", RedirectRouteID: &otherRoute.ID})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "redirect target route not found")
+}

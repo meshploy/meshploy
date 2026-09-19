@@ -8,6 +8,7 @@ export interface ApiRouteTarget {
   service_id: string | null
   node_id: string | null
   target_ip: string
+  target_tls?: boolean
   target_port: number
   redirect_route_id: string | null
   redirect_code: number
@@ -44,6 +45,9 @@ export type TargetBody = {
   /** An address the gateway can reach, loopback included - for something
    *  running outside Meshploy that no service or node target can name. */
   target_ip?: string
+  /** The target speaks HTTPS, so the hop to it does too. Address targets only;
+   *  the target's certificate is not verified, having no name to verify. */
+  target_tls?: boolean
   port?: number
   redirect_route_id?: string
   redirect_code?: number
