@@ -738,6 +738,36 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   # ── Install k3s server (control plane) ─────────────────────────────────────
   # Must happen before writing .env so K3S_TOKEN is available.
   header "Installing k3s"
+
+  # k3s wants 6443 for its API server, and on a server that already runs
+  # something this is the port most likely to be taken: a custom edge moved onto
+  # it (pnath-6-rt publishes Traefik there; sh-hg does the same). k3s would
+  # install and then fail to start, which reads like a broken machine rather
+  # than a port clash -- so refuse first, and name what is holding it.
+  if ! command -v k3s &>/dev/null || ! systemctl is-active --quiet k3s 2>/dev/null; then
+    if port_in_use 6443; then
+      PORT_HOLDER="$(ss -Hltnp "( sport = :6443 )" 2>/dev/null | sed -n 's/.*users:((\"\([^\"]*\)\".*/\1/p' | head -1)"
+      die "Port 6443 is already in use${PORT_HOLDER:+ by ${PORT_HOLDER}} and k3s needs it for its API server.
+     Free the port and re-run, or move whatever holds it. If that is a reverse
+     proxy, publishing it on another port is usually a one-line change."
+    fi
+  fi
+
+  # Let services bind an address the host does not have yet.
+  #
+  # Caddy binds MESH_IP for the internal zone and CoreDNS binds it for the mesh
+  # zone, but that address only exists once this node has joined the mesh -- and
+  # joining needs Headscale, which is served through Caddy. After a reboot that
+  # is a deadlock: Caddy exits with "cannot assign requested address", the mesh
+  # never comes up, and nothing on the machine can break the cycle. Observed on
+  # pnath-6-rt, 2026-09-19. This setting lets Caddy start first and the rest
+  # converge behind it.
+  if [[ "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo 0)" != "1" ]]; then
+    echo "net.ipv4.ip_nonlocal_bind = 1" > /etc/sysctl.d/99-meshploy-nonlocal-bind.conf
+    sysctl -q -w net.ipv4.ip_nonlocal_bind=1 || true
+    success "Allowed binding the mesh address before it exists (ip_nonlocal_bind)"
+  fi
+
   if command -v k3s &>/dev/null && systemctl is-active --quiet k3s 2>/dev/null; then
     success "k3s server already running: $(k3s --version | head -1)"
   else
