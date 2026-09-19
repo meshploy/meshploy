@@ -24,7 +24,12 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       className={cn(
-        "inline-flex items-stretch rounded-md border border-border/60 overflow-hidden text-xs",
+        // w-fit, because inline-flex is not enough: as a child of a flex column
+        // the default align-self stretches the track to the container's width
+        // while the buttons keep their own, leaving empty track to the right.
+        // An explicit width beats stretch, and in a flex row the cross axis is
+        // vertical so nothing here changes.
+        "inline-flex w-fit items-stretch rounded-md border border-border/60 overflow-hidden text-xs",
         className
       )}
     >
