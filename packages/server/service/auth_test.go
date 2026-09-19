@@ -123,3 +123,43 @@ func TestLogin(t *testing.T) {
 		assert.Contains(t, err.Error(), "invalid credentials")
 	})
 }
+
+// A new install lands in a project rather than on an empty page: everything
+// that creates something needs one, including a route from Discovery.
+func TestRegisterCreatesADefaultProject(t *testing.T) {
+	ctx := context.Background()
+	gdb := newTestDB(t)
+	svcs := newServices(gdb)
+
+	user, err := svcs.Auth.Register(ctx, service.RegisterInput{
+		Username: "owner", Email: "owner@example.com", Password: "correct horse battery",
+	})
+	require.NoError(t, err)
+
+	var member meshdb.OrganizationMember
+	require.NoError(t, gdb.First(&member, "user_id = ?", user.ID).Error)
+
+	var projects []meshdb.Project
+	require.NoError(t, gdb.Find(&projects, "organization_id = ?", member.OrganizationID).Error)
+	require.Len(t, projects, 1)
+	assert.Equal(t, service.DefaultProjectSlug, projects[0].Slug)
+	assert.Equal(t, service.DefaultProjectName, projects[0].Name)
+}
+
+// A project's slug is its namespace, and some namespaces are the cluster's.
+func TestAProjectCannotTakeAKubernetesNamespace(t *testing.T) {
+	ctx := context.Background()
+	gdb := newTestDB(t)
+	svcs := newServices(gdb)
+
+	org := meshdb.Organization{Name: "ns", Slug: "ns"}
+	require.NoError(t, gdb.Create(&org).Error)
+
+	for _, slug := range []string{"default", "kube-system"} {
+		_, err := svcs.Projects.Create(ctx, org.ID, slug, slug)
+		require.Error(t, err, slug)
+		assert.Contains(t, err.Error(), "Kubernetes namespace")
+	}
+	_, err := svcs.Projects.Create(ctx, org.ID, "Mine", "mine")
+	require.NoError(t, err)
+}

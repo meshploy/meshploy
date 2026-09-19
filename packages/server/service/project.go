@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"gorm.io/gorm"
@@ -197,12 +199,57 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 	return result, nil
 }
 
+// reservedNamespaces are namespaces Kubernetes owns. A project's slug is its
+// namespace, so a project called "kube-system" would deploy workloads into the
+// cluster's own namespace - and deleting that project would take it with them.
+// The names are the cluster's, not ours, so the check lives here rather than in
+// the handler's pattern.
+var reservedNamespaces = map[string]bool{
+	"default": true, "kube-system": true, "kube-public": true, "kube-node-lease": true,
+	"kubernetes-dashboard": true, "local-path-storage": true,
+}
+
 func (s *ProjectService) Create(ctx context.Context, orgID uuid.UUID, name, slug string) (*db.Project, error) {
 	if err := checkQuota(ctx, orgID, QuotaProject); err != nil {
 		return nil, err
 	}
+	if reservedNamespaces[slug] {
+		return nil, huma.Error422UnprocessableEntity(
+			fmt.Sprintf("%q is a Kubernetes namespace and cannot be a project slug", slug))
+	}
 	project := &db.Project{OrganizationID: orgID, Name: name, Slug: slug}
 	return project, s.db.WithContext(ctx).Create(project).Error
+}
+
+// DefaultProjectName and DefaultProjectSlug are the project a new install
+// starts with, so the console has somewhere to land and the first route or
+// import has somewhere to go. Not "default": that is a namespace Kubernetes
+// already owns.
+const (
+	DefaultProjectName = "Apps"
+	DefaultProjectSlug = "apps"
+)
+
+// CreateDefaultProject makes the starting project for a new organisation,
+// inside the caller's transaction. The slug is a namespace and namespaces are
+// cluster-wide, so a second organisation on the same install gets a numbered
+// one rather than failing to register.
+func CreateDefaultProject(tx *gorm.DB, orgID uuid.UUID) error {
+	slug := DefaultProjectSlug
+	for n := 2; ; n++ {
+		var taken int64
+		if err := tx.Model(&db.Project{}).Where("slug = ?", slug).Count(&taken).Error; err != nil {
+			return err
+		}
+		if taken == 0 {
+			break
+		}
+		if n > 50 {
+			return nil // somebody has fifty of these; they do not need ours
+		}
+		slug = fmt.Sprintf("%s-%d", DefaultProjectSlug, n)
+	}
+	return tx.Create(&db.Project{OrganizationID: orgID, Name: DefaultProjectName, Slug: slug}).Error
 }
 
 func (s *ProjectService) Update(ctx context.Context, projectID uuid.UUID, name string) (*db.Project, error) {

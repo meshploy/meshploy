@@ -116,11 +116,19 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User,
 			return err
 		}
 
-		return tx.Create(&db.OrganizationMember{
+		if err := tx.Create(&db.OrganizationMember{
 			OrganizationID: org.ID,
 			UserID:         user.ID,
 			Role:           db.RoleOwner,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+
+		// A project to land in. An empty console asks somebody to invent
+		// structure before they have anything to put in it, and everything that
+		// creates something - a service, a route from Discovery - needs a
+		// project to create it in.
+		return CreateDefaultProject(tx, org.ID)
 	})
 	if err != nil {
 		return nil, err
