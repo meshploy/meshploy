@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.16.0](https://github.com/meshploy/meshploy/compare/v0.15.0...v0.16.0) (2026-09-19)
+
+
+### Features
+
+* a host agent on the gateway that reports whether its firewall blocks a port ([c9bac12](https://github.com/meshploy/meshploy/commit/c9bac1288aa84d99eb83776b085bf14ac3dd1f74))
+* check for updates on demand from the server settings ([648f53a](https://github.com/meshploy/meshploy/commit/648f53a45e2b50218e5531d5bb4d62574cd15035))
+* **cli:** dress the browser installer in the console's design system ([abaac95](https://github.com/meshploy/meshploy/commit/abaac95fe36f26ec3b69d177e74e1eee3bcf6905))
+* **cli:** group what moves together in a Dokploy migration plan ([7bdf5e1](https://github.com/meshploy/meshploy/commit/7bdf5e1b8899c4995bb60a545d3ba74d4a2d8fda))
+* **cli:** let git connections arrive pending instead of asking, and pin plans with golden fixtures ([cee766d](https://github.com/meshploy/meshploy/commit/cee766da15567d6d7535b6a1d9186330b68bdb39))
+* **cli:** plan moving a Dokploy server, read-only ([a1c5260](https://github.com/meshploy/meshploy/commit/a1c526084bda19edce0340573c0e61ad73c88327))
+* **cli:** report a container on the host's network as one to leave running ([f29e517](https://github.com/meshploy/meshploy/commit/f29e517c2e6f177ad549042b35b1329a1d9f7abd))
+* **cli:** review and confirm a Dokploy migration during setup ([7cf0a08](https://github.com/meshploy/meshploy/commit/7cf0a082edca92a96f670710a5c7f3f6772ae5f8))
+* **cli:** write a scrubbed reading of a server, and pin a real one as a fixture ([a706b6e](https://github.com/meshploy/meshploy/commit/a706b6e52059bf47d812bb63b5cc416c82448873))
+* connect Bitbucket, and deploy on push for every git provider ([7add823](https://github.com/meshploy/meshploy/commit/7add823152325ff94d52984be7f24244d10534d0))
+* deploy on push only when a watched path changed ([c3ed380](https://github.com/meshploy/meshploy/commit/c3ed380f0080e88e9312563ed76d0b9aea179173))
+* **discovery:** show what runs on a node that Meshploy does not route ([ecae287](https://github.com/meshploy/meshploy/commit/ecae287b03e169947ec12ec041c1cde5f75c8c23))
+* let the console ask the host agent to detect and plan a Dokploy migration ([199fd3b](https://github.com/meshploy/meshploy/commit/199fd3b689c86609e0f16902a27ca095b0597b7a))
+* pause a route without deleting it, and publish it again ([f553557](https://github.com/meshploy/meshploy/commit/f553557085182b0fb80a62469fa16bee18f71f32))
+* **projects:** start an install with a project, and keep Kubernetes' own namespaces ([1df65dd](https://github.com/meshploy/meshploy/commit/1df65dd7128cfbd599a7d43f2dc59320942e2b91))
+* record every notification delivery, with a test send and retry ([1dcb20f](https://github.com/meshploy/meshploy/commit/1dcb20ff4ce794c2fd1e014cda1763484bbb96a2))
+* route to an address, and choose where a TCP port is reachable from ([e48859f](https://github.com/meshploy/meshploy/commit/e48859fdf584b48a10efdf588abcd26967516689))
+* run console upgrades through the host agent, and retire the upgrade watcher ([fc91e04](https://github.com/meshploy/meshploy/commit/fc91e042a94c78c7e920e4196ee15e6545d45a40))
+* send notifications with a console link and the failure, secrets filtered out ([137b975](https://github.com/meshploy/meshploy/commit/137b975abfff4e4e785fd652fd36f9c61a29c0f1))
+* **web:** a details page for each TCP route ([d5a1868](https://github.com/meshploy/meshploy/commit/d5a1868f64cf61bc999e3619f4d9885dc391ac75))
+* **web:** connect to a TCP port by domain, with a copyable connection URL ([3b4c756](https://github.com/meshploy/meshploy/commit/3b4c7565601f9869eac74d8e918ddf0bfb7958d7))
+* **web:** give each integrations tab its own URL ([56ebfc0](https://github.com/meshploy/meshploy/commit/56ebfc04b34f94f810b549abfecb8b578c195acb))
+* **web:** page back through a channel's deliveries, and clearer email provider hints ([4fb1dbf](https://github.com/meshploy/meshploy/commit/4fb1dbfc54f25e5caae958898fcfa27ed66b6cd8))
+* **web:** publish and pause routes, under an HTTPS routes section ([6d26aa1](https://github.com/meshploy/meshploy/commit/6d26aa1117f0f9662e06b21110f92b6679b14b01))
+* **web:** say when upgrades are on but the host agent is not running them ([e7595fc](https://github.com/meshploy/meshploy/commit/e7595fc7e5984bbc3ce9af3f178552639d7b26c4))
+* **web:** show the deploy webhook URL where people go to re-deploy ([e166db7](https://github.com/meshploy/meshploy/commit/e166db7ca6ffd6eafb6d05fd3b1fbfbb2ed6a2b4))
+* **web:** show whether the gateway's firewall blocks a TCP port, and the host agent's state ([e130b35](https://github.com/meshploy/meshploy/commit/e130b35177a2539b42855bc3cd05a052549bd9ae))
+* **web:** test a channel, see how its sends are going, and retry a failure ([db7274f](https://github.com/meshploy/meshploy/commit/db7274f8f126e7e7d5e5ebf57cfbe554caf45d8d))
+
+
+### Bug Fixes
+
+* **api:** return the build configuration created on a first save ([3c6fa42](https://github.com/meshploy/meshploy/commit/3c6fa42fdb7f2eab6bc4425bf2a9bd65dfa9862f))
+* **cli:** let an install outlive the browser that started it ([4d75d8d](https://github.com/meshploy/meshploy/commit/4d75d8d6d9fb2172d968996c0a236055955beeb2))
+* count TCP ports in a project's routes ([06bc62a](https://github.com/meshploy/meshploy/commit/06bc62aa2b0d9a078c00db0b11f0bb71940655d5))
+* **install:** refuse when 6443 is taken, and let services bind the mesh address before it exists ([d38df23](https://github.com/meshploy/meshploy/commit/d38df2316bcaeda16a27a96c82eaf47c5bfd75c9))
+* **routes:** keep a target inside the route's own org, and reach one that speaks HTTPS ([7047dfe](https://github.com/meshploy/meshploy/commit/7047dfeb3f094da4d69e017cab42d136b3c51b8e))
+* send email over STARTTLS on 587, and report a rejected message ([7eff304](https://github.com/meshploy/meshploy/commit/7eff304ef68c76cec914382d6d7be6b57a86fe3b))
+* upgrade email to STARTTLS whenever the server offers it ([60c6b3c](https://github.com/meshploy/meshploy/commit/60c6b3c9e5c052705a8814f92c32ea4394b66d89))
+* **web:** drop the count from the email provider tab ([20729ca](https://github.com/meshploy/meshploy/commit/20729ca7fe372acb31aab693bfe9b3122ca83e85))
+* **web:** line copyable fields up with their buttons, and pair the rollback fields ([8fb6133](https://github.com/meshploy/meshploy/commit/8fb61334162bd97eabc71082efdfe529b5127a39))
+* **web:** make lint run again, and clear what it found ([0ec93b1](https://github.com/meshploy/meshploy/commit/0ec93b1a85c1ba06b9f494af3dc5e5109e85c0cb))
+* **web:** mark a TCP port in the list only when its firewall needs attention ([e6aba1f](https://github.com/meshploy/meshploy/commit/e6aba1f460bdf351f28fa5ad5c20143c992aef7d))
+* **web:** one Deploy button, and no Start before a service has ever run ([c3b60a8](https://github.com/meshploy/meshploy/commit/c3b60a8b8b68119f594156b0a234c7cbee26546c))
+* **web:** order a form's outline by where its sections are ([b4c5a20](https://github.com/meshploy/meshploy/commit/b4c5a2087b329d580a8f1269e189e9c637bbdb65))
+* **web:** stop the segmented control stretching to its container ([4e417fc](https://github.com/meshploy/meshploy/commit/4e417fc91a9b5d8012e8738bef5d1f57d7791044))
+
 ## [0.15.0](https://github.com/meshploy/meshploy/compare/v0.14.2...v0.15.0) (2026-09-16)
 
 
