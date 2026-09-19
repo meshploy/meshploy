@@ -563,12 +563,12 @@ type Service struct {
 	// nil = public image (no pull credentials needed).
 	PullRegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"pull_registry_integration_id,omitempty"`
 
-	Status   ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
+	Status ServiceStatus `gorm:"type:varchar(10);not null;default:'stopped'" json:"status"`
 	// DeployedAt is when this service last finished deploying. Nil means it
 	// never has, which is what tells a stopped service that has run apart from
 	// one that was only ever created: only the first can be started.
 	DeployedAt *time.Time `json:"deployed_at"`
-	Replicas int           `gorm:"not null;default:1"                          json:"replicas"`
+	Replicas   int        `gorm:"not null;default:1"                          json:"replicas"`
 
 	// K8s resource spec (standard K8s quantity strings)
 	CPURequest    string `gorm:"not null;default:'100m'"  json:"cpu_request"`
@@ -886,6 +886,34 @@ type Domain struct {
 	Routes []Route `gorm:"foreignKey:DomainID;constraint:OnDelete:RESTRICT" json:"-"`
 }
 
+// IgnoredEndpoint is a discovered endpoint somebody has decided about: known,
+// correct as it is, leave it alone.
+//
+// Keyed on the node, address and port rather than on a container: the unit
+// Discovery lists is a port, and the container behind it can be recreated with
+// a new id without changing the decision. Org-scoped, because a discovered
+// endpoint belongs to no project - only the route it might lead to does.
+//
+// Not surfaced in the console today. Discovery is a view of what a server runs,
+// not a list to be cleared, so nothing there asks to dismiss a row. The table
+// and its endpoints stay for the case that earns them: a "new endpoint appeared
+// on this node" notification, which needs a baseline of known ones to compare
+// against.
+type IgnoredEndpoint struct {
+	Base
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index"                            json:"organization_id"`
+	NodeID         uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_ignored_endpoint" json:"node_id"`
+	Address        string    `gorm:"not null;uniqueIndex:idx_ignored_endpoint"           json:"address"`
+	Port           int       `gorm:"not null;uniqueIndex:idx_ignored_endpoint"           json:"port"`
+	// Note is why, in the operator's words.
+	Note string `gorm:"not null;default:''" json:"note"`
+	// IgnoredBy is who decided, so the reason has an author.
+	IgnoredBy *uuid.UUID `gorm:"type:uuid" json:"ignored_by"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+	Node         Node         `gorm:"foreignKey:NodeID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
 // ---------------------------------------------------------------------------
 // Traffic
 // ---------------------------------------------------------------------------
@@ -925,13 +953,19 @@ type Route struct {
 // RouteTarget maps one path prefix on a Route to a backend service or node.
 type RouteTarget struct {
 	Base
-	RouteID         uuid.UUID  `gorm:"type:uuid;not null;index"  json:"route_id"`
-	Path            string     `gorm:"not null;default:'/'"      json:"path"`
-	StripPath       bool       `gorm:"not null;default:false"    json:"strip_path"`
-	ServiceID       *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"`
-	NodeID          *uuid.UUID `gorm:"type:uuid;index"           json:"node_id"`
-	TargetIP        string     `gorm:"not null;default:''"       json:"target_ip"`
-	TargetPort      int        `gorm:"not null;default:0"        json:"target_port"`
+	RouteID    uuid.UUID  `gorm:"type:uuid;not null;index"  json:"route_id"`
+	Path       string     `gorm:"not null;default:'/'"      json:"path"`
+	StripPath  bool       `gorm:"not null;default:false"    json:"strip_path"`
+	ServiceID  *uuid.UUID `gorm:"type:uuid;index"           json:"service_id"`
+	NodeID     *uuid.UUID `gorm:"type:uuid;index"           json:"node_id"`
+	TargetIP   string     `gorm:"not null;default:''"       json:"target_ip"`
+	TargetPort int        `gorm:"not null;default:0"        json:"target_port"`
+	// TargetTLS makes the hop to the target HTTPS instead of HTTP, for
+	// something that only speaks TLS - another Caddy, a Home Assistant, an
+	// appliance. The certificate is not verified: the target is named by
+	// address, on this machine or across the mesh, so there is no name to
+	// verify it against and the hop is already carried by WireGuard.
+	TargetTLS       bool       `gorm:"not null;default:false" json:"target_tls"`
 	RedirectRouteID *uuid.UUID `gorm:"type:uuid;index"           json:"redirect_route_id"`
 	RedirectCode    int        `gorm:"not null;default:301"      json:"redirect_code"`
 

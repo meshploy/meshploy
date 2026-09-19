@@ -71,7 +71,8 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | Table | Purpose |
 |---|---|
 | `routes` | Hostname → service routing rule |
-| `route_targets` | Target service + path-strip config per route |
+| `ignored_endpoints` | Discovered endpoints recorded as known and correct (org-scoped: node + address + port). Written by the API, not yet by the console |
+| `route_targets` | Target per route: a service, a node port, an address (with `target_tls` when it speaks HTTPS), or a redirect |
 | `tcp_routes` | A port the gateway publishes and forwards over the mesh |
 
 ### Deployment History

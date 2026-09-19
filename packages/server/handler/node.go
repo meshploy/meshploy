@@ -444,6 +444,15 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetNodeMetrics)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-node-containers",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/nodes/{nodeId}/containers",
+		Summary:     "List containers running on a node that Meshploy does not manage",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListNodeContainers)
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -1026,6 +1035,30 @@ func (h *Handler) GetNodeMetrics(ctx context.Context, input *NodePathInput) (*No
 		return nil, huma.Error422UnprocessableEntity("node metrics unavailable — install node_exporter: sudo meshploy install node-exporter")
 	}
 	return &NodeMetricsOutput{Body: m}, nil
+}
+
+type NodeContainersOutput struct {
+	Body service.HostContainers
+}
+
+// ListNodeContainers reports what else runs on a node.
+//
+// Read-only, and gateway-only: the host agent runs on the gateway, so any
+// other node answers "not available here" rather than an empty list that would
+// read as "nothing else is running".
+func (h *Handler) ListNodeContainers(ctx context.Context, input *NodePathInput) (*NodeContainersOutput, error) {
+	_, _, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	if node.K3sRole != db.K3sRoleServer {
+		return &NodeContainersOutput{Body: service.HostContainers{Containers: []service.HostContainer{}, Groups: []service.HostContainerGroup{}}}, nil
+	}
+	return &NodeContainersOutput{Body: h.svc.System.HostContainers()}, nil
 }
 
 // ServeInstallScript serves deploy/install.sh (mounted at /opt/meshploy/install.sh) to authenticated users.

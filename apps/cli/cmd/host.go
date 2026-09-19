@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/meshploy/apps/cli/internal/dockerapi"
+	"github.com/meshploy/apps/cli/internal/hostnet"
 	"github.com/meshploy/packages/hostagent"
 	"github.com/spf13/cobra"
 )
@@ -160,6 +162,12 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		}
 	}()
 
+	// The container inventory rides with the firewall report. Its stats cost
+	// about a second per running container, so they are read on their own
+	// slower beat and carried over in between.
+	var lastDocker *hostagent.Docker
+	var lastStats time.Time
+
 	tick := func() {
 		fw := collectFirewall()
 		task := hostagent.Task{OK: fw.Error == "", Error: fw.Error, At: fw.CheckedAt}
@@ -170,6 +178,42 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 			fmt.Fprintf(logw, "firewall: %s\n", task.Error)
 		}
 		setTask("firewall", task)
+
+		// Bounded, so a runtime that answers slowly delays one report rather
+		// than stopping the firewall one behind it.
+		withStats := time.Since(lastStats) >= hostagent.DockerStatsInterval
+		dctx, cancel := context.WithTimeout(ctx, hostagent.DockerInterval-5*time.Second)
+		inventory := dockerapi.CarryStats(dockerapi.Collect(dctx, withStats), lastDocker)
+		cancel()
+		if withStats && inventory.Error == "" {
+			lastStats = time.Now()
+		}
+		dockerTask := hostagent.Task{OK: inventory.Error == "", Error: inventory.Error, At: inventory.CheckedAt}
+		// A pass that failed where the last one worked - a busy host, a runtime
+		// being restarted - leaves the last good reading in place to go stale on
+		// its own timestamp, rather than emptying the console's list over one
+		// hiccup. The failure is still reported, as this task.
+		keep := inventory.Error != "" && lastDocker != nil && lastDocker.Error == ""
+		if !keep {
+			if err := writeHostJSON(filepath.Join(state, hostagent.DockerFile), inventory); err != nil {
+				dockerTask = hostagent.Task{Error: err.Error(), At: time.Now().UTC()}
+			}
+			lastDocker = &inventory
+		}
+		setTask("containers", dockerTask)
+
+		// What listens on the host, with the containers just read, so a port a
+		// container published is one endpoint and not two.
+		listeners := hostnet.Collect(lastDocker.Containers)
+		listenerTask := hostagent.Task{OK: listeners.Error == "", Error: listeners.Error, At: listeners.CheckedAt}
+		if err := writeHostJSON(filepath.Join(state, hostagent.ListenersFile), listeners); err != nil {
+			listenerTask = hostagent.Task{Error: err.Error(), At: time.Now().UTC()}
+		}
+		if listenerTask.Error != "" {
+			fmt.Fprintf(logw, "listeners: %s\n", listenerTask.Error)
+		}
+		setTask("listeners", listenerTask)
+
 		writeAgent()
 	}
 
@@ -387,6 +431,12 @@ Restart=always
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
+# Ceilings. This runs on machines we do not own and must never be the reason
+# one runs out of memory or disk: the agent is killed and restarted rather than
+# growing, and its journal is capped rather than filling /var.
+MemoryMax=256M
+LogRateLimitIntervalSec=30
+LogRateLimitBurst=200
 
 [Install]
 WantedBy=multi-user.target

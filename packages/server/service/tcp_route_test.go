@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
@@ -248,4 +249,127 @@ func TestAnUnknownZoneIsRefused(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "public, mesh or local")
+}
+
+// Authorising a route says nothing about what it may point at. Before this,
+// resolving a target looked the service or node up by id alone, so anyone who
+// could edit one route could name any id in the database - another org's
+// service included - and have the gateway forward to it.
+func TestATargetFromAnotherOrgIsNotFound(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+
+	// A second org with its own published database and its own node.
+	other := meshdb.Organization{Name: "other", Slug: "other"}
+	require.NoError(t, e.gdb.Create(&other).Error)
+	otherProject, err := e.svcs.Projects.Create(ctx, other.ID, "other", "other")
+	require.NoError(t, err)
+	otherDB, err := e.svcs.Workloads.Create(ctx, otherProject.ID, service.CreateWorkloadInput{
+		Name: "Their DB", Type: meshdb.ServiceTypeDatabase, Engine: meshdb.DatabasePostgres,
+		DBName: "app", DBUser: "app", DBPassword: "pass",
+	})
+	require.NoError(t, err)
+	on := true
+	_, err = e.svcs.Workloads.UpdateDatabaseConfig(ctx, otherDB.ID, service.UpdateDatabaseConfigInput{MeshExposed: &on})
+	require.NoError(t, err)
+	require.NoError(t, e.gdb.Model(&meshdb.DatabaseConfig{}).
+		Where("service_id = ?", otherDB.ID).Update("node_port", 31999).Error)
+
+	otherNode := meshdb.Node{OrganizationID: other.ID, Name: "theirs", TailscaleIP: "100.64.9.9", Status: "online"}
+	require.NoError(t, e.gdb.Create(&otherNode).Error)
+
+	_, err = e.create(15432, service.CreateTCPRouteInput{ServiceID: &otherDB.ID})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service not found")
+
+	_, err = e.create(15433, service.CreateTCPRouteInput{NodeID: &otherNode.ID, NodePort: 8080})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "node not found")
+}
+
+// Discovery reads the routes an org already has, to mark an endpoint as
+// decided. The query runs against the real schema here, which is the only place
+// a wrong column name shows up.
+func TestDiscoveryReadsExistingRoutesWithoutAHostAgent(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+
+	var gateway meshdb.Node
+	require.NoError(t, e.gdb.First(&gateway, "name = ?", "gateway").Error)
+	_, err := e.svcs.Routes.Create(ctx, service.CreateRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID, Hostname: "outside.example.com",
+		Targets: []service.TargetInput{{Path: "/", TargetIP: "127.0.0.1", TargetPort: 3001}},
+	})
+	require.NoError(t, err)
+	_, err = e.create(15999, service.CreateTCPRouteInput{TargetIP: "127.0.0.1", TargetPort: 9000})
+	require.NoError(t, err)
+
+	got, err := e.svcs.System.GetDiscovery(ctx, e.org.ID)
+	require.NoError(t, err)
+	// No host directory is configured in tests, so nothing reports and the
+	// gateway is named as silent rather than left out.
+	assert.Empty(t, got.Nodes)
+	require.Len(t, got.Silent, 1)
+	assert.Equal(t, "gateway", got.Silent[0].Name)
+}
+
+// Ignoring an endpoint is how the list shrinks: sshd and node_exporter are
+// correct as they are, and saying so is what makes a new endpoint visible among
+// the ones already decided about.
+func TestIgnoringAnEndpoint(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	var gateway meshdb.Node
+	require.NoError(t, e.gdb.First(&gateway, "name = ?", "gateway").Error)
+	me := uuid.New()
+
+	row, err := e.svcs.System.IgnoreEndpoint(ctx, e.org.ID, gateway.ID, me, "0.0.0.0", 22, "sshd, on purpose")
+	require.NoError(t, err)
+	assert.Equal(t, "sshd, on purpose", row.Note)
+
+	// Twice is the same decision with a new reason, not a second row.
+	again, err := e.svcs.System.IgnoreEndpoint(ctx, e.org.ID, gateway.ID, me, "0.0.0.0", 22, "still on purpose")
+	require.NoError(t, err)
+	assert.Equal(t, row.ID, again.ID)
+	assert.Equal(t, "still on purpose", again.Note)
+
+	var count int64
+	require.NoError(t, e.gdb.Model(&meshdb.IgnoredEndpoint{}).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
+
+	require.NoError(t, e.svcs.System.UnignoreEndpoint(ctx, e.org.ID, row.ID))
+	require.NoError(t, e.gdb.Model(&meshdb.IgnoredEndpoint{}).Count(&count).Error)
+	assert.EqualValues(t, 0, count)
+
+	// Gone already is a 404, not a silent success.
+	require.Error(t, e.svcs.System.UnignoreEndpoint(ctx, e.org.ID, row.ID))
+}
+
+// A node from another organisation is not one you may decide about.
+func TestIgnoringAnEndpointOnAnotherOrgsNode(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+
+	other := meshdb.Organization{Name: "other-ignore", Slug: "other-ignore"}
+	require.NoError(t, e.gdb.Create(&other).Error)
+	theirs := meshdb.Node{OrganizationID: other.ID, Name: "theirs", TailscaleIP: "100.64.7.7"}
+	require.NoError(t, e.gdb.Create(&theirs).Error)
+
+	_, err := e.svcs.System.IgnoreEndpoint(ctx, e.org.ID, theirs.ID, uuid.New(), "0.0.0.0", 22, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "node not found")
+}
+
+// An address and a port is what an endpoint is; anything else is a mistake
+// worth naming rather than a row nothing will ever match.
+func TestIgnoringNeedsAnAddressAndAPort(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	var gateway meshdb.Node
+	require.NoError(t, e.gdb.First(&gateway, "name = ?", "gateway").Error)
+
+	_, err := e.svcs.System.IgnoreEndpoint(ctx, e.org.ID, gateway.ID, uuid.New(), "", 22, "")
+	require.Error(t, err)
+	_, err = e.svcs.System.IgnoreEndpoint(ctx, e.org.ID, gateway.ID, uuid.New(), "0.0.0.0", 0, "")
+	require.Error(t, err)
 }

@@ -95,6 +95,9 @@ func Migrate(db *gorm.DB) error {
 		&ConfigFile{},
 		&ServiceConfigFile{},
 
+		// Discovery
+		&IgnoredEndpoint{},
+
 		// Traffic (Domain must migrate before Route; Route before RouteTarget)
 		&Route{},
 		&RouteTarget{},

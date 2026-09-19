@@ -16,6 +16,7 @@ import {
   Server,
   Settings,
   Users,
+  Radar,
 } from "lucide-react"
 import { useUIStore } from "@/store/ui-store"
 import { useIsAdmin } from "@/store/org-store"
@@ -51,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/projects", icon: FolderKanban, label: "Projects", exact: false },
       { href: "/templates", icon: LayoutTemplate, label: "Templates", exact: false },
       { href: "/nodes", icon: Server, label: "Nodes", exact: false },
+      { href: "/discovery", icon: Radar, label: "Discovery", exact: false },
       { href: "/cluster", icon: Network, label: "Cluster", exact: false, adminOnly: true },
     ],
   },

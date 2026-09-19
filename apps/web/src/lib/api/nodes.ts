@@ -50,6 +50,55 @@ export interface ApiNodeMetrics {
   net_tx_bytes: number
 }
 
+/** One container running on a node that Meshploy does not manage. */
+export interface ApiHostContainer {
+  id: string
+  name: string
+  image: string
+  state: string
+  status?: string
+  health?: string
+  restart_count?: number
+  created_at?: string
+  started_at?: string
+  ports?: { host_ip?: string; host_port: number; port: number; protocol?: string }[]
+  network_mode?: string
+  bind_sources?: string[]
+  volumes?: string[]
+  compose_project?: string
+  compose_service?: string
+  swarm_service?: string
+  memory_mb?: number
+  cpu_percent?: number
+  host_network: boolean
+  group?: string
+  kind: "compose" | "swarm" | "standalone"
+}
+
+export interface ApiHostContainerGroup {
+  name: string
+  kind: "compose" | "swarm"
+  count: number
+  running: number
+  host_network: boolean
+}
+
+/** What else runs on a node. Available is false where there is no agent, no
+ *  runtime or no report yet, and the console shows nothing rather than an
+ *  empty list implying something is missing. */
+export interface ApiHostContainers {
+  available: boolean
+  runtime?: string
+  version?: string
+  containers: ApiHostContainer[]
+  groups: ApiHostContainerGroup[]
+  checked_at?: string
+  stats_at?: string
+  stale: boolean
+  mine: number
+  error?: string
+}
+
 function parseTimestamp(s: string | null | undefined): Date | null {
   if (!s) return null
   const d = new Date(s)
@@ -110,6 +159,9 @@ export const nodes = {
 
   getMetrics: (orgId: string, nodeId: string, token: string) =>
     apiFetch<ApiNodeMetrics>(`/api/v1/orgs/${orgId}/nodes/${nodeId}/metrics`, {}, token),
+
+  listContainers: (orgId: string, nodeId: string, token: string) =>
+    apiFetch<ApiHostContainers>(`/api/v1/orgs/${orgId}/nodes/${nodeId}/containers`, {}, token),
 
   getRegistrationToken: (orgId: string, token: string) =>
     apiFetch<{ token: string }>(`/api/v1/orgs/${orgId}/node-registration-token`, {}, token),

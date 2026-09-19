@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { demoNodeGateway, demoNodeWorker, demoNodeMetrics } from "../data"
+import { demoNodeGateway, demoNodeWorker, demoNodeMetrics, demoHostContainers, demoDiscovery, DEMO_ORG_ID } from "../data"
 
 const nodes = [demoNodeGateway, demoNodeWorker]
 
@@ -23,6 +23,26 @@ export const nodesHandlers = [
 
   http.get("/api/v1/orgs/:orgId/nodes/:nodeId/metrics", () =>
     HttpResponse.json(demoNodeMetrics)
+  ),
+
+  // Gateway-only, like the real one: the host agent reports there.
+  http.get("/api/v1/orgs/:orgId/nodes/:nodeId/containers", ({ params }) =>
+    HttpResponse.json(
+      params.nodeId === demoNodeGateway.id
+        ? demoHostContainers
+        : { available: false, containers: [], groups: [], stale: false, mine: 0 }
+    )
+  ),
+
+  http.get("/api/v1/orgs/:orgId/discovery", () => HttpResponse.json(demoDiscovery)),
+
+  http.post("/api/v1/orgs/:orgId/discovery/ignores", async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>
+    return HttpResponse.json({ id: crypto.randomUUID(), organization_id: DEMO_ORG_ID, note: "", ...body })
+  }),
+
+  http.delete("/api/v1/orgs/:orgId/discovery/ignores/:ignoreId", () =>
+    new HttpResponse(null, { status: 204 })
   ),
 
   http.get("/api/v1/orgs/:orgId/nodes/registration-token", () =>

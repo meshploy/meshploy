@@ -217,6 +217,10 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | DELETE | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Remove a node from Headscale, the cluster and Meshploy, in that order. 200 `{"removed": true}` when it is gone; 202 `{"removed": false, "error": ...}` while Headscale has not confirmed the peer is removed, which is retried every minute. Calling it again retries at once |
 | POST | `/orgs/{orgId}/nodes/{nodeId}/cancel-removal` | ✓ | Stop a node removal that is waiting for Headscale; 409 if none is |
 | GET | `/orgs/{orgId}/nodes/{nodeId}/metrics` | ✓ | Get live resource metrics for a node (requires node_exporter) |
+| GET | `/orgs/{orgId}/nodes/{nodeId}/containers` | ✓ | List containers running on a node that Meshploy does not manage |
+| GET | `/orgs/{orgId}/discovery` | ✓ | List endpoints and containers on this org's nodes that Meshploy does not route |
+| POST | `/orgs/{orgId}/discovery/ignores` | ✓ | Record that a discovered endpoint is known and correct as it is. Not called by the console: Discovery is a view of a machine, not a list to clear. Kept for a future "new endpoint appeared" notification, which needs a baseline |
+| DELETE | `/orgs/{orgId}/discovery/ignores/{ignoreId}` | ✓ | Remove that record |
 
 ### Services
 

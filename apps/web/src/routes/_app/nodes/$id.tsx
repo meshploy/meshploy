@@ -18,6 +18,7 @@ import {
   SquareTerminal,
   Network,
 } from "lucide-react"
+import { HostContainers } from "@/components/nodes/host-containers"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -499,6 +500,11 @@ function NodeDetailPage() {
       }
 
       </aside></div>
+      {/* What else this machine runs - a line, with the list itself on the
+          Discovery page. Gateway-only: the host agent reports there, and it
+          hides itself anywhere else. */}
+      <HostContainers orgId={orgId!} nodeId={node.id} token={token} />
+
       {/* Active Projects */}
       {node.activeProjects.length > 0 && (
         <section className="space-y-3">

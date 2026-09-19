@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { demoRoute } from "../data"
+import { demoRoute, DEMO_NOW } from "../data"
 
 export const routesHandlers = [
   http.get("/api/v1/orgs/:orgId/projects/:projectId/routes", () =>
@@ -37,6 +37,19 @@ export const routesHandlers = [
 
   // Domains
   http.get("/api/v1/orgs/:orgId/domains", () => HttpResponse.json([])),
+
+  // A TCP route created from Discovery, so the dialog can be tried offline.
+  http.post("/api/v1/orgs/:orgId/projects/:projectId/tcp-routes", async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>
+    return HttpResponse.json({
+      id: crypto.randomUUID(),
+      status: "pending",
+      allowed_cidrs: [],
+      created_at: DEMO_NOW,
+      updated_at: DEMO_NOW,
+      ...body,
+    })
+  }),
 
   // Variable groups
   http.get("/api/v1/orgs/:orgId/projects/:projectId/variable-groups", () =>
