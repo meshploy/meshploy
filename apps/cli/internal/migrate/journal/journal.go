@@ -45,6 +45,12 @@ type Entry struct {
 	Target string `json:"target,omitempty"`
 	Result string `json:"result"`
 	Error  string `json:"error,omitempty"`
+	// Created is the id of the thing this step made, where it made one.
+	//
+	// Without it a resumed run knows a project was created but not which one,
+	// and everything that belongs inside it fails. The journal has to carry
+	// enough to carry on, not only enough to undo.
+	Created string `json:"created,omitempty"`
 	// Undo is how to reverse this step. Absent when there is nothing to undo -
 	// a read, or a step that made no change.
 	Undo *Undo `json:"undo,omitempty"`
@@ -80,10 +86,11 @@ const (
 
 // Journal is an open journal file.
 type Journal struct {
-	mu   sync.Mutex
-	dir  string
-	file *os.File
-	done map[string]bool
+	mu      sync.Mutex
+	dir     string
+	file    *os.File
+	done    map[string]bool
+	created map[string]string
 }
 
 // Open reads the journal in dir and opens it for appending, creating the
@@ -100,10 +107,13 @@ func Open(dir string) (*Journal, error) {
 	if err != nil {
 		return nil, err
 	}
-	j := &Journal{dir: dir, file: f, done: map[string]bool{}}
+	j := &Journal{dir: dir, file: f, done: map[string]bool{}, created: map[string]string{}}
 	for _, e := range entries {
 		if e.Result == OK || e.Result == Skipped {
 			j.done[e.Step] = true
+			if e.Created != "" {
+				j.created[e.Step] = e.Created
+			}
 		}
 	}
 	return j, nil
@@ -135,8 +145,12 @@ func (j *Journal) Append(e Entry) error {
 	switch e.Result {
 	case OK, Skipped:
 		j.done[e.Step] = true
+		if e.Created != "" {
+			j.created[e.Step] = e.Created
+		}
 	default:
 		delete(j.done, e.Step)
+		delete(j.created, e.Step)
 	}
 	return nil
 }
@@ -146,6 +160,14 @@ func (j *Journal) Done(step string) bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.done[step]
+}
+
+// CreatedBy returns what a step made, for a resumed run that skips it but still
+// needs the id.
+func (j *Journal) CreatedBy(step string) string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.created[step]
 }
 
 // Backup stores content beside the journal and returns the path, for an undo

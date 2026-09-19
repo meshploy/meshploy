@@ -543,6 +543,14 @@ func (b *builder) domains() {
 		}
 		it := Item{Kind: "domain", ID: r.Str("domainId"), Name: host + r.Str("path"), MapsTo: "Route to " + target, Verdict: Moves,
 			Details: map[string]string{"https": r.Str("https"), "certificate": r.Str("certificateType"), "port": r.Str("port")}}
+		// Which workload it points at, so stage 1 can attach the route to the
+		// service it creates rather than matching on a display name.
+		if id := r.Str("applicationId"); id != "" {
+			it.Details["application_id"] = id
+		}
+		if id := r.Str("composeId"); id != "" {
+			it.Details["compose_id"] = id
+		}
 		switch {
 		case r.Str("previewDeploymentId") != "" || r.Str("domainType") == "preview":
 			it.Verdict, it.Reasons = NotMoved, []string{"a preview deployment's domain"}

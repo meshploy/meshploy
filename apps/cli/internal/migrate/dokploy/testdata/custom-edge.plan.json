@@ -201,6 +201,7 @@
       "verdict": "moves",
       "details": {
         "certificate": "none",
+        "compose_id": "id-6",
         "https": "false",
         "port": "8080"
       }
@@ -213,6 +214,7 @@
       "verdict": "moves",
       "details": {
         "certificate": "none",
+        "compose_id": "id-5",
         "https": "false",
         "port": "80"
       }
@@ -228,6 +230,7 @@
       ],
       "details": {
         "certificate": "none",
+        "compose_id": "id-7",
         "https": "false",
         "port": "5678"
       }
@@ -240,6 +243,7 @@
       "verdict": "moves",
       "details": {
         "certificate": "none",
+        "compose_id": "id-7",
         "https": "false",
         "port": "5678"
       }

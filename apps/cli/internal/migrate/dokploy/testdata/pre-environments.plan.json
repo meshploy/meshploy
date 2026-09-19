@@ -144,6 +144,7 @@
       "maps_to": "Route to site",
       "verdict": "needs_you",
       "details": {
+        "application_id": "a1",
         "certificate": "custom",
         "https": "true"
       },
@@ -175,6 +176,7 @@
         "a throwaway traefik.me host Dokploy generates"
       ],
       "details": {
+        "application_id": "a1",
         "https": "false"
       }
     }
