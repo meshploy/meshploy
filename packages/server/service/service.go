@@ -218,11 +218,12 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	workloads.deployment = deployments
 
 	entitlements := &EntitlementService{db: db, domain: entitlementDomain(c)}
+	agents := &AgentService{db: db, notif: notif}
 
 	svc := &Services{
 		Auth:            auth,
 		Entitlements:    entitlements,
-		Agents:          &AgentService{db: db, notif: notif},
+		Agents:          agents,
 		Orgs:            &OrgService{db: db, notif: notif},
 		Permissions:     &PermissionService{db: db},
 		Projects:        &ProjectService{db: db},
@@ -240,7 +241,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
 		Backups:         backups,
-		System:          &SystemService{db: db, cfg: c, ent: entitlements},
+		System:          &SystemService{db: db, cfg: c, ent: entitlements, agents: agents},
 		Notifications:   notif,
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,

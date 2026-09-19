@@ -11,6 +11,7 @@ import (
 
 	"github.com/meshploy/apps/cli/internal/migrate"
 	"github.com/meshploy/apps/cli/internal/migrate/dokploy"
+	"github.com/meshploy/packages/client"
 	"github.com/meshploy/packages/hostagent"
 )
 
@@ -30,6 +31,11 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 		body, err := json.Marshal(map[string]any{"generated_at": plan.GeneratedAt, "detection": plan.Detection,
 			"edge": plan.Edge, "resources": plan.Resources, "mode": plan.Mode})
 		return hostagent.DetectFile, body, 0o644, err
+	case hostagent.RequestMigrateCredential:
+		body, err := takeMigrationCredential()
+		// Kept beside the plan, readable by root only: it is a credential that
+		// can act on the whole organisation until finish revokes it.
+		return migrateCredentialFile, body, 0o600, err
 	case hostagent.RequestMigratePlan:
 		src, err := dokploy.Collect(migrate.ExecRunner{})
 		if err != nil {
@@ -68,6 +74,9 @@ func (rr *requestRunner) check(report func(hostagent.Task)) {
 		path := filepath.Join(inbox, e.Name())
 		if e.Name()[0] == '.' {
 			continue // a request still being written, under a temporary name
+		}
+		if e.Name() == hostagent.CredentialFile {
+			continue // the migration's token, taken by the request that needs it
 		}
 		req, err := hostagent.ReadRequestFile(path)
 		if err != nil {
@@ -129,4 +138,26 @@ func runHostRequest(req hostagent.Request) hostagent.Task {
 	}
 	_ = writeHostJSON(statusPath, status)
 	return hostagent.Task{OK: err == nil, Error: status.Error, At: finished}
+}
+
+// migrateCredentialFile is where the agent keeps the migration's token, under
+// state/migrate/. The API mounts state/ read-only, so what the agent writes
+// here it cannot read back.
+const migrateCredentialFile = "dokploy-credential.json"
+
+// takeMigrationCredential consumes the token the API left in the inbox and
+// checks the API accepts it, so a credential that would fail later fails now,
+// while somebody is watching.
+func takeMigrationCredential() ([]byte, error) {
+	cred, err := hostagent.TakeCredential(hostDir)
+	if err != nil {
+		return nil, err
+	}
+	if cred == nil {
+		return nil, fmt.Errorf("no credential was left for this request")
+	}
+	if _, err := client.New(cred.BaseURL, cred.Token).ListOrgs(); err != nil {
+		return nil, fmt.Errorf("the API did not accept the migration credential: %w", err)
+	}
+	return json.Marshal(cred)
 }

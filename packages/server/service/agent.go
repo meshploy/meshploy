@@ -326,3 +326,76 @@ func isUniqueViolation(err error) bool {
 		strings.Contains(msg, "duplicate key") ||
 		strings.Contains(msg, "UNIQUE")
 }
+
+// ── The migration's own principal ────────────────────────────────────────────
+
+// MigrationAgentName is the agent the Dokploy migration acts as.
+//
+// A name, not a random one, so an operator looking at the Agents page can see
+// exactly what is holding a credential on their server and revoke it.
+const MigrationAgentName = "dokploy-migration"
+
+// EnsureMigrationAgent returns a fresh token for the migration's agent,
+// creating the agent on first use.
+//
+// The migrator runs as root on the host and creates everything through the API,
+// so it needs an identity. An agent is the right one: it does not expire, which
+// matters for a migration that runs over days; every resource it creates is
+// attributable to it rather than to a person; and revoking it at finish kills
+// every credential the migration ever held in one action.
+//
+// Admin, never owner - `normalizeAgentRole` refuses owner anyway. Admin is what
+// creating projects, services, routes and integrations needs, and it stops
+// short of handing the organisation away.
+//
+// Called again, it mints a *new* token rather than failing: the old one may be
+// on a host that no longer has it, and the caller is the instance owner asking
+// for a migration to proceed.
+func (s *AgentService) EnsureMigrationAgent(ctx context.Context, orgID, createdBy uuid.UUID) (agentID, tokenID uuid.UUID, token string, err error) {
+	var existing db.User
+	err = s.db.WithContext(ctx).
+		Joins("JOIN organization_members ON organization_members.user_id = users.id").
+		Where("users.username = ? AND users.kind = ? AND organization_members.organization_id = ?",
+			MigrationAgentName, db.UserAgent, orgID).
+		First(&existing).Error
+
+	switch {
+	case err == nil:
+		plaintext, tok, addErr := s.AddToken(ctx, orgID, existing.ID, "migration", nil, createdBy)
+		if addErr != nil {
+			return uuid.Nil, uuid.Nil, "", addErr
+		}
+		return existing.ID, tok.ID, plaintext, nil
+
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		view, plaintext, createErr := s.CreateAgent(ctx, orgID, MigrationAgentName, db.RoleAdmin, "migration", nil, createdBy)
+		if createErr != nil {
+			return uuid.Nil, uuid.Nil, "", createErr
+		}
+		var tok db.AgentToken
+		if err := s.db.WithContext(ctx).Where("agent_id = ?", view.ID).Order("created_at DESC").First(&tok).Error; err != nil {
+			return uuid.Nil, uuid.Nil, "", err
+		}
+		return view.ID, tok.ID, plaintext, nil
+	}
+	return uuid.Nil, uuid.Nil, "", err
+}
+
+// RevokeMigrationAgent removes the migration's principal and every token it
+// holds. Called by finish; idempotent, because an operator may well have
+// deleted it themselves.
+func (s *AgentService) RevokeMigrationAgent(ctx context.Context, orgID uuid.UUID) error {
+	var agent db.User
+	err := s.db.WithContext(ctx).
+		Joins("JOIN organization_members ON organization_members.user_id = users.id").
+		Where("users.username = ? AND users.kind = ? AND organization_members.organization_id = ?",
+			MigrationAgentName, db.UserAgent, orgID).
+		First(&agent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.DeleteAgent(ctx, orgID, agent.ID)
+}

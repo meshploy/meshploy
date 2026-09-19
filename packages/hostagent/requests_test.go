@@ -79,3 +79,69 @@ func TestReadResultPassesJSONThrough(t *testing.T) {
 		t.Error("accepted invalid JSON")
 	}
 }
+
+// The credential crosses this boundary once: the agent takes it and the copy
+// in the inbox is gone.
+func TestCredentialIsConsumedOnce(t *testing.T) {
+	dir := t.TempDir()
+	want := Credential{Token: "magt-abcdef", OrgID: "org-1", AgentID: "a-1", TokenID: "t-1", BaseURL: "http://127.0.0.1:4000"}
+	if err := WriteCredential(dir, want); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(InboxDir(dir), CredentialFile)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("credential is %v, want 0600: it is a token on disk", perm)
+	}
+
+	got, err := TakeCredential(dir)
+	if err != nil || got == nil || got.Token != want.Token || got.OrgID != want.OrgID {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("the credential should be gone from the inbox once taken")
+	}
+
+	// Asked again, there is nothing - which the caller reports rather than
+	// crashing on.
+	again, err := TakeCredential(dir)
+	if err != nil || again != nil {
+		t.Errorf("second take: %+v, %v", again, err)
+	}
+}
+
+// A malformed credential is removed as well as refused: leaving it would mean a
+// later run finds a token-shaped file it cannot use.
+func TestAMalformedCredentialIsRemoved(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(InboxDir(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(InboxDir(dir), CredentialFile)
+	if err := os.WriteFile(path, []byte(`{"token":""}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TakeCredential(dir); err == nil {
+		t.Error("a credential with no token should be refused")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("it should not be left behind")
+	}
+}
+
+// The credential sits in the inbox beside requests, and must not be mistaken
+// for one.
+func TestTheCredentialIsNotARequestType(t *testing.T) {
+	for _, typ := range RequestTypes {
+		if typ == CredentialFile {
+			t.Fatalf("%q is both a request type and the credential file", typ)
+		}
+	}
+	if err := ValidateRequest(Request{Type: CredentialFile, ID: "00000000-0000-0000-0000-000000000000"}, ""); err == nil {
+		t.Error("the credential file name must not validate as a request")
+	}
+}

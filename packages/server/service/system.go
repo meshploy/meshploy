@@ -75,6 +75,9 @@ type SystemService struct {
 	// state the exposure advisory reads. Nil in tests and wherever New() was
 	// called without a config.
 	cfg *config.Config
+	// agents mints the migration's own principal. Nil where a server was built
+	// without one, which is every test that does not need it.
+	agents *AgentService
 
 	// upgradeMu serialises upgrade requests, so two clicks cannot both pass the
 	// "nothing queued" check.

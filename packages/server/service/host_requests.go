@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
+	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/hostagent"
 )
 
@@ -68,11 +70,23 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 		reqType = hostagent.RequestMigrateDetect
 	case "plan":
 		reqType = hostagent.RequestMigratePlan
+	case "credential":
+		reqType = hostagent.RequestMigrateCredential
 	default:
 		return HostRequestState{}, ErrUnknownHostRequest
 	}
 	if s.hostDir() == "" || !s.HostAgentStatus().Reporting {
 		return HostRequestState{}, ErrHostAgentNotReporting
+	}
+
+	// The migrator creates everything through the API, so it needs an identity.
+	// It is minted here and left in the inbox, which is the only part of the
+	// host directory this container can write; state/ is mounted read-only, so
+	// the token cannot be read back once the agent has taken it.
+	if reqType == hostagent.RequestMigrateCredential {
+		if err := s.issueMigrationCredential(ctx, userID); err != nil {
+			return HostRequestState{}, err
+		}
 	}
 
 	req := hostagent.Request{ID: uuid.NewString(), Type: reqType, RequestedBy: userID.String(), RequestedAt: time.Now().UTC()}
@@ -170,4 +184,50 @@ func trimJSON(name string) string {
 		return name[:len(name)-5]
 	}
 	return name
+}
+
+// issueMigrationCredential mints the migration agent's token and leaves it for
+// the host agent to take.
+func (s *SystemService) issueMigrationCredential(ctx context.Context, userID uuid.UUID) error {
+	if s.agents == nil {
+		return errors.New("this server cannot mint a migration credential")
+	}
+	orgID, err := s.instanceOrg(ctx)
+	if err != nil {
+		return err
+	}
+	agentID, tokenID, token, err := s.agents.EnsureMigrationAgent(ctx, orgID, userID)
+	if err != nil {
+		return err
+	}
+	return hostagent.WriteCredential(s.hostDir(), hostagent.Credential{
+		Token:     token,
+		OrgID:     orgID.String(),
+		AgentID:   agentID.String(),
+		TokenID:   tokenID.String(),
+		BaseURL:   s.apiBaseURL(),
+		WrittenAt: time.Now().UTC(),
+	})
+}
+
+// instanceOrg is the organisation a migration creates into. CE is single-org by
+// design, so it is the one there is; a server with none has nothing to migrate
+// into yet, which is a clearer error than a nil id.
+func (s *SystemService) instanceOrg(ctx context.Context) (uuid.UUID, error) {
+	var org meshdb.Organization
+	if err := s.db.WithContext(ctx).Order("created_at ASC").First(&org).Error; err != nil {
+		return uuid.Nil, errors.New("no organisation exists yet: register first, then start the migration")
+	}
+	return org.ID, nil
+}
+
+// apiBaseURL is where the agent reaches the API from the host. Not the public
+// URL: the agent is on the same machine, and the loopback address needs no DNS,
+// no certificate and no edge to be working.
+func (s *SystemService) apiBaseURL() string {
+	port := 4000
+	if s.cfg != nil && s.cfg.APIPort != 0 {
+		port = s.cfg.APIPort
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }

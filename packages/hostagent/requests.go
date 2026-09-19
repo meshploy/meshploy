@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,10 +20,14 @@ import (
 const (
 	RequestMigrateDetect = "migrate.detect"
 	RequestMigratePlan   = "migrate.plan"
+	// RequestMigrateCredential hands the agent the token it will use against
+	// the API for the rest of the migration. Its own step, so the secret
+	// crosses this boundary exactly once: every later request carries none.
+	RequestMigrateCredential = "migrate.credential"
 )
 
 // RequestTypes is every type the agent accepts.
-var RequestTypes = []string{RequestMigrateDetect, RequestMigratePlan}
+var RequestTypes = []string{RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential}
 
 const (
 	// MaxRequestBytes bounds a request file.
@@ -30,6 +35,12 @@ const (
 
 	requestsDir = "requests"
 	migrateDir  = "migrate"
+	// CredentialFile is where the API leaves the migration's token, in the
+	// inbox. The agent takes it and deletes it; nothing reads it twice.
+	//
+	// Deliberately unlike RequestMigrateCredential: a file whose name is also a
+	// request type invites being read as one, and this one holds a secret.
+	CredentialFile = "migration-token.json"
 	// DetectFile and PlanFile are the latest results, under state/migrate/.
 	DetectFile = "dokploy-detect.json"
 	PlanFile   = "dokploy-plan.json"
@@ -158,4 +169,87 @@ func ReadResult(dir, file string) (json.RawMessage, *time.Time, error) {
 	}
 	at := info.ModTime().UTC()
 	return b, &at, nil
+}
+
+// ── The migration's credential ───────────────────────────────────────────────
+//
+// The migrator runs as root on the host and creates everything in Meshploy
+// through the API, which means it needs to authenticate. It is given an agent
+// principal's token: a first-class, attributable, revocable identity that does
+// not expire, so it survives a migration that runs over days.
+//
+// The API writes this file into the inbox. The agent reads it once, keeps it
+// where only root can read it, and deletes this copy. The inbox is the only
+// part of the host directory the API can write, and state/ is mounted into the
+// API read-only, so the API can never read the token back.
+
+// Credential is inbox/migrate.credential.
+type Credential struct {
+	// Token is the agent token, "magt-…".
+	Token string `json:"token"`
+	// OrgID is the organisation the migration creates into.
+	OrgID string `json:"org_id"`
+	// AgentID and TokenID are what finish revokes.
+	AgentID string `json:"agent_id"`
+	TokenID string `json:"token_id"`
+	// BaseURL is where the API answers from the host.
+	BaseURL   string    `json:"base_url"`
+	WrittenAt time.Time `json:"written_at"`
+}
+
+// WriteCredential leaves a credential in the inbox for the agent, written under
+// a temporary name and renamed so the agent never reads half of it.
+func WriteCredential(dir string, c Credential) error {
+	inbox := InboxDir(dir)
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(inbox, ".credential-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(inbox, CredentialFile))
+}
+
+// TakeCredential reads the credential and removes it, so it is consumed once.
+// A missing file returns nil: the agent was asked for something it was never
+// given, which the caller reports rather than crashing on.
+func TakeCredential(dir string) (*Credential, error) {
+	path := filepath.Join(InboxDir(dir), CredentialFile)
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Removed before it is parsed: a malformed credential must not be left
+	// lying about for a later run to find.
+	if err := os.Remove(path); err != nil {
+		return nil, err
+	}
+	var c Credential
+	if err := json.Unmarshal(b, &c); err != nil {
+		return nil, fmt.Errorf("read credential: %w", err)
+	}
+	if c.Token == "" || c.OrgID == "" {
+		return nil, errors.New("credential is missing its token or organisation")
+	}
+	return &c, nil
 }

@@ -2,12 +2,13 @@ package service_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/meshploy/packages/server/service"
 	meshdb "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -191,4 +192,70 @@ func TestAgentIsAPrincipal(t *testing.T) {
 	require.NoError(t, svcs.Permissions.Grant(ctx, org, agent.ID, project.ID, meshdb.ResourceProject, meshdb.ActionDeploy))
 	err = svcs.Permissions.CheckAccess(ctx, org, agent.ID, project.ID, meshdb.ResourceProject, meshdb.ActionDeploy, &project.ID)
 	require.NoError(t, err)
+}
+
+// The migration needs an identity to create things through the API. It gets an
+// agent: attributable, revocable, and with no expiry, because a migration runs
+// over days.
+func TestMigrationAgentIsMintedOnceAndReusedWithAFreshToken(t *testing.T) {
+	ctx := context.Background()
+	gdb := newTestDB(t)
+	svcs := newServices(gdb)
+
+	org := meshdb.Organization{Name: "mig", Slug: "mig"}
+	require.NoError(t, gdb.Create(&org).Error)
+	owner := meshdb.User{Username: "owner", Email: "owner@example.com"}
+	require.NoError(t, gdb.Create(&owner).Error)
+
+	agentID, tokenID, token, err := svcs.Agents.EnsureMigrationAgent(ctx, org.ID, owner.ID)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(token, "magt-"), "token = %q", token)
+	assert.NotEqual(t, uuid.Nil, agentID)
+	assert.NotEqual(t, uuid.Nil, tokenID)
+
+	// Admin, never owner: enough to create projects, services and routes, and
+	// short of handing the organisation away.
+	var member meshdb.OrganizationMember
+	require.NoError(t, gdb.First(&member, "user_id = ?", agentID).Error)
+	assert.Equal(t, meshdb.RoleAdmin, member.Role)
+
+	// The API accepts it as a principal.
+	resolved, ok := svcs.Agents.ResolveToken(ctx, token)
+	require.True(t, ok)
+	assert.Equal(t, agentID, resolved)
+
+	// Asked again, the same agent gets a new token rather than the call failing
+	// - the old one may be on a host that no longer has it.
+	againID, _, second, err := svcs.Agents.EnsureMigrationAgent(ctx, org.ID, owner.ID)
+	require.NoError(t, err)
+	assert.Equal(t, agentID, againID)
+	assert.NotEqual(t, token, second)
+
+	var agents int64
+	require.NoError(t, gdb.Model(&meshdb.User{}).Where("kind = ?", meshdb.UserAgent).Count(&agents).Error)
+	assert.EqualValues(t, 1, agents, "a second agent should not have been created")
+}
+
+// Finish revokes it, and every token it held stops working.
+func TestRevokingTheMigrationAgent(t *testing.T) {
+	ctx := context.Background()
+	gdb := newTestDB(t)
+	svcs := newServices(gdb)
+
+	org := meshdb.Organization{Name: "mig2", Slug: "mig2"}
+	require.NoError(t, gdb.Create(&org).Error)
+	owner := meshdb.User{Username: "owner2", Email: "owner2@example.com"}
+	require.NoError(t, gdb.Create(&owner).Error)
+
+	_, _, token, err := svcs.Agents.EnsureMigrationAgent(ctx, org.ID, owner.ID)
+	require.NoError(t, err)
+	_, ok := svcs.Agents.ResolveToken(ctx, token)
+	require.True(t, ok)
+
+	require.NoError(t, svcs.Agents.RevokeMigrationAgent(ctx, org.ID))
+	if _, ok := svcs.Agents.ResolveToken(ctx, token); ok {
+		t.Error("the token still works after the agent was revoked")
+	}
+	// Idempotent: an operator may well have deleted it themselves.
+	require.NoError(t, svcs.Agents.RevokeMigrationAgent(ctx, org.ID))
 }
