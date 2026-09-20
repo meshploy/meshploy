@@ -190,7 +190,11 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT:-5433}/${POSTGRES_DB:-meshploy}?sslmode=disable
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       PROXY_PORT: 8081
-      PROXY_BIND: 127.0.0.1
+      # Loopback for Caddy, plus the node's mesh address, which is how a
+      # container on this host reaches the proxy - what a migration needs while
+      # the platform being replaced still holds 443.
+      PROXY_BIND: ${PROXY_BIND:-127.0.0.1}
+      MESH_IP: ${MESH_IP:-}
       # Where TCP routes listen. Empty publishes them on every interface, which
       # is the point of a route on the gateway.
       TCP_BIND: ""
