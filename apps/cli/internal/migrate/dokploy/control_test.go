@@ -208,3 +208,58 @@ func mustRead(t *testing.T, j *journal.Journal) []journal.Entry {
 	}
 	return entries
 }
+
+// A container Docker was told to always restart comes back on the next reboot,
+// stopped or not. Dokploy's Traefik is one, so after a cutover it restarted and
+// raced Meshploy's edge for 80 and 443. The policy is cleared before the stop
+// and carried in the undo, so putting it back puts all of it back.
+func TestStoppingAnAlwaysRestartingContainerClearsItsPolicy(t *testing.T) {
+	r := &fakeRunner{replies: map[string]string{
+		"docker inspect dokploy-traefik --format {{.State.Running}}":                 "true\n",
+		"docker inspect dokploy-traefik --format {{.HostConfig.RestartPolicy.Name}}": "always\n",
+	}}
+	c, j := newControl(t, r)
+
+	if err := c.Stop("cutover/stop-edge", "", Workload{Name: "dokploy-traefik"}); err != nil {
+		t.Fatal(err)
+	}
+	if !r.didRun("docker update --restart=no dokploy-traefik") {
+		t.Fatalf("the policy should have been cleared: %v", r.ran)
+	}
+	stop, update := -1, -1
+	for i, cmd := range r.ran {
+		switch cmd {
+		case "docker stop dokploy-traefik":
+			stop = i
+		case "docker update --restart=no dokploy-traefik":
+			update = i
+		}
+	}
+	if update > stop {
+		t.Errorf("the policy must be cleared before the stop, not after: %v", r.ran)
+	}
+	e := mustRead(t, j)[0]
+	if e.Undo == nil || e.Undo.Args["restart"] != "always" {
+		t.Errorf("undo = %+v, want the policy to put back", e.Undo)
+	}
+}
+
+// A container with no restart policy has nothing to clear, and its undo says so
+// - starting it must not invent a policy it never had.
+func TestStoppingAContainerWithNoRestartPolicy(t *testing.T) {
+	r := &fakeRunner{replies: map[string]string{
+		"docker inspect wakapi --format {{.State.Running}}":                 "true\n",
+		"docker inspect wakapi --format {{.HostConfig.RestartPolicy.Name}}": "no\n",
+	}}
+	c, j := newControl(t, r)
+
+	if err := c.Stop("move/g1/stop/wakapi", "g1", Workload{Name: "wakapi"}); err != nil {
+		t.Fatal(err)
+	}
+	if r.didRun("docker update --restart=no wakapi") {
+		t.Errorf("nothing to clear: %v", r.ran)
+	}
+	if e := mustRead(t, j)[0]; e.Undo.Args["restart"] != "" {
+		t.Errorf("undo = %+v, want no policy", e.Undo)
+	}
+}

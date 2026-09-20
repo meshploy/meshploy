@@ -274,7 +274,7 @@ func (d MoveDeps) undo() error {
 	if err != nil {
 		return err
 	}
-	res := Rollback{Runner: d.Control.Runner, Meshploy: moveRollback{d.API}}.
+	res := Rollback{Runner: d.Control.Runner, Meshploy: moveRollback{d.API}, Journal: d.Journal}.
 		Replay(journal.Undoable(entries, d.Group.ID))
 	failures := res.Failures
 

@@ -153,3 +153,64 @@ func TestBackupKeepsNestedPaths(t *testing.T) {
 		t.Errorf("got %q, %v", got, err)
 	}
 }
+
+// A rollback records what it reversed, and what was reversed is no longer done:
+// a group that was put back and moved again must start its copies over rather
+// than wait forever for services nothing restarted.
+func TestAnUndoneStepIsNotDone(t *testing.T) {
+	dir := t.TempDir()
+	j, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := Entry{Step: "move/g1/start/s1", Group: "g1", Action: "start-service", Result: OK,
+		Created: "svc-1", Undo: &Undo{Kind: UndoStopService}}
+	if err := j.Append(start); err != nil {
+		t.Fatal(err)
+	}
+	if !j.Done(start.Step) || j.CreatedBy(start.Step) != "svc-1" {
+		t.Fatal("the step should be done after it succeeded")
+	}
+	if err := j.Append(Entry{Step: start.Step, Group: "g1", Action: "undo stop-service", Result: Undone}); err != nil {
+		t.Fatal(err)
+	}
+	if j.Done(start.Step) {
+		t.Error("an undone step must run again, not be skipped")
+	}
+	if j.CreatedBy(start.Step) != "" {
+		t.Error("an undone step created nothing that still stands")
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// And the same after a restart, which reads the record rather than holding it.
+	again, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if again.Done(start.Step) {
+		t.Error("a reopened journal must also see the step as undone")
+	}
+}
+
+// Undoing twice is not undoing again: a second rollback, or a rollback of
+// everything after one group was already put back, has nothing left to do.
+func TestUndoableSkipsWhatWasAlreadyUndone(t *testing.T) {
+	entries := []Entry{
+		{Step: "1", Group: "g1", Action: "stop", Result: OK, Undo: &Undo{Kind: UndoScaleService}},
+		{Step: "2", Group: "g1", Action: "start", Result: OK, Undo: &Undo{Kind: UndoStopService}},
+		{Step: "1", Group: "g1", Action: "undo scale-service", Result: Undone},
+	}
+	got := Undoable(entries, "g1")
+	if len(got) != 1 {
+		t.Fatalf("expected the one step still standing, got %d", len(got))
+	}
+	if got[0].Step != "2" {
+		t.Errorf("expected step 2, got %s", got[0].Step)
+	}
+	if len(Undoable(append(entries, Entry{Step: "2", Group: "g1", Result: Undone}), "g1")) != 0 {
+		t.Error("with both reversed there is nothing left to undo")
+	}
+}

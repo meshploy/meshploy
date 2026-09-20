@@ -74,11 +74,37 @@ func (c Control) Stop(step, group string, w Workload) error {
 		entry.Result = journal.Skipped
 		return c.append(entry)
 	}
+	// Stopping is not enough for a container Docker was told to always restart.
+	// Dokploy's Traefik is one, so after a reboot it came back and raced
+	// Meshploy's edge for 80 and 443 - and whichever won, one of them was
+	// serving every domain on the server. So the policy is recorded and
+	// cleared before the stop, and put back by the undo.
+	policy, err := c.restartPolicy(w.Name)
+	if err != nil {
+		return c.fail(entry, "stop-container", err)
+	}
+	undoArgs := map[string]string{"container": w.Name}
+	if policy != "" && policy != "no" {
+		if _, err := c.Runner.Output("docker", "update", "--restart=no", w.Name); err != nil {
+			return c.fail(entry, "stop-container", err)
+		}
+		undoArgs["restart"] = policy
+	}
 	if _, err := c.Runner.Output("docker", "stop", w.Name); err != nil {
 		return c.fail(entry, "stop-container", err)
 	}
-	entry.Undo = &journal.Undo{Kind: journal.UndoStartContainer, Args: map[string]string{"container": w.Name}}
+	entry.Undo = &journal.Undo{Kind: journal.UndoStartContainer, Args: undoArgs}
 	return c.append(entry)
+}
+
+// restartPolicy is what Docker does with this container when the daemon starts.
+// Empty where the container does not say, which is the same as "no".
+func (c Control) restartPolicy(name string) (string, error) {
+	out, err := c.Runner.Output("docker", "inspect", name, "--format", "{{.HostConfig.RestartPolicy.Name}}")
+	if err != nil {
+		return "", fmt.Errorf("read %s restart policy: %w", name, err)
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // Start puts a workload back, for a rollback that is not replaying the journal

@@ -142,7 +142,7 @@ func runMigrateRollback(groupID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := dokploy.Rollback{Runner: migrate.ExecRunner{}, Meshploy: rt.api}.
+	res := dokploy.Rollback{Runner: migrate.ExecRunner{}, Meshploy: rt.api, Journal: rt.journal}.
 		Replay(journal.Undoable(entries, groupID))
 	body, marshalErr := json.Marshal(res)
 	if len(res.Failures) > 0 {
@@ -243,6 +243,10 @@ func caddyDataDir() string {
 	}
 	return "/var/lib/docker/volumes/meshploy_caddy_data/_data"
 }
+
+// meshployCaddyContainer is Meshploy's edge, named by its compose project -
+// the install directory, which is always this one.
+const meshployCaddyContainer = "meshploy-caddy-1"
 
 // startMeshployEdge brings Meshploy's Caddy up on 80 and 443.
 func startMeshployEdge() error {

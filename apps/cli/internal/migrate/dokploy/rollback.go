@@ -24,6 +24,10 @@ type Rollback struct {
 	// only has to touch the host, and any such step is then reported as one
 	// the caller must do.
 	Meshploy MeshploySide
+	// Journal records each reversal, so the step is no longer done: a group
+	// that was put back and is moved again has to do the work over, not skip it
+	// as already finished. Nil records nothing, which is only right in a test.
+	Journal *journal.Journal
 }
 
 // MeshploySide is the part of a rollback that talks to Meshploy's API.
@@ -50,6 +54,12 @@ func (r Rollback) Replay(entries []journal.Entry) Result {
 		if err := r.one(e); err != nil {
 			out.Failures = append(out.Failures, fmt.Sprintf("%s (%s): %v", e.Action, e.Target, err))
 			continue
+		}
+		if r.Journal != nil {
+			_ = r.Journal.Append(journal.Entry{
+				Step: e.Step, Group: e.Group, Action: "undo " + e.Undo.Kind,
+				Target: e.Target, Result: journal.Undone,
+			})
 		}
 		out.Undone++
 	}
@@ -87,7 +97,18 @@ func (r Rollback) one(e journal.Entry) error {
 		return err
 
 	case journal.UndoStartContainer:
+		// The policy first: a container put back without the one it had would
+		// stay down after the next reboot, which is not what was there before.
+		if p := u.Args["restart"]; p != "" {
+			if _, err := r.Runner.Output("docker", "update", "--restart="+p, u.Args["container"]); err != nil {
+				return err
+			}
+		}
 		_, err := r.Runner.Output("docker", "start", u.Args["container"])
+		return err
+
+	case journal.UndoStopContainer:
+		_, err := r.Runner.Output("docker", "stop", u.Args["container"])
 		return err
 
 	case journal.UndoStopService:

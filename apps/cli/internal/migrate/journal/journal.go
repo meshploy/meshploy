@@ -29,6 +29,11 @@ const (
 	OK      = "ok"
 	Failed  = "failed"
 	Skipped = "skipped"
+	// Undone marks a step a rollback reversed. It clears the step's done mark,
+	// so a later run does the work again rather than skipping what is no longer
+	// there - a move that was rolled back and tried again waited forever for a
+	// service it never restarted.
+	Undone = "undone"
 )
 
 // Entry is one step the migration took.
@@ -77,6 +82,10 @@ const (
 	UndoScaleService = "scale-service"
 	// UndoStartContainer starts container Args["container"] again.
 	UndoStartContainer = "start-container"
+	// UndoStopContainer stops container Args["container"], for one the
+	// migration started - Meshploy's own edge, which has to come off the ports
+	// before the old one can go back on them.
+	UndoStopContainer = "stop-container"
 	// UndoStopService stops the Meshploy service Args["service_id"] in project
 	// Args["project_id"] - its copy, left in place so a second attempt reuses it.
 	UndoStopService = "stop-service"
@@ -111,13 +120,10 @@ func Open(dir string) (*Journal, error) {
 		return nil, err
 	}
 	j := &Journal{dir: dir, file: f, done: map[string]bool{}, created: map[string]string{}}
+	// Last entry wins, exactly as Append decides it: a step that succeeded and
+	// was then undone, or succeeded and later failed, is not done.
 	for _, e := range entries {
-		if e.Result == OK || e.Result == Skipped {
-			j.done[e.Step] = true
-			if e.Created != "" {
-				j.created[e.Step] = e.Created
-			}
-		}
+		j.mark(e)
 	}
 	return j, nil
 }
@@ -145,6 +151,13 @@ func (j *Journal) Append(e Entry) error {
 	if err := j.file.Sync(); err != nil {
 		return err
 	}
+	j.mark(e)
+	return nil
+}
+
+// mark records what an entry means for a resume. Called under the lock by
+// Append, and by Open while nothing else holds the journal.
+func (j *Journal) mark(e Entry) {
 	switch e.Result {
 	case OK, Skipped:
 		j.done[e.Step] = true
@@ -155,7 +168,6 @@ func (j *Journal) Append(e Entry) error {
 		delete(j.done, e.Step)
 		delete(j.created, e.Step)
 	}
-	return nil
 }
 
 // Done reports whether this step already succeeded, so a resumed run skips it.
@@ -227,9 +239,17 @@ func Read(dir string) ([]Entry, error) {
 // rolling back one group means.
 func Undoable(entries []Entry, group string) []Entry {
 	var out []Entry
+	undone := map[string]bool{}
 	for i := len(entries) - 1; i >= 0; i-- {
 		e := entries[i]
-		if e.Result != OK || e.Undo == nil {
+		// Newest first, so a step's reversal is seen before the step itself: a
+		// rollback that ran already must not run again, on a second rollback or
+		// on a rollback of everything after one group was put back.
+		if e.Result == Undone {
+			undone[e.Step] = true
+			continue
+		}
+		if e.Result != OK || e.Undo == nil || undone[e.Step] {
 			continue
 		}
 		if group != "" && e.Group != group {

@@ -40,6 +40,10 @@ type CutoverDeps struct {
 	CaddyData string
 	// StartCaddy brings Meshploy's edge up on 80 and 443.
 	StartCaddy func() error
+	// CaddyContainer is what StartCaddy started, so a rollback can take it off
+	// the ports again. Without it, rolling a cutover back started the old edge
+	// against ports Meshploy's was still holding, and neither served.
+	CaddyContainer string
 
 	Now func() time.Time
 }
