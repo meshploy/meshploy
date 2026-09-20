@@ -46,8 +46,8 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 		OperationID:   "request-dokploy-migration",
 		Method:        "POST",
 		Path:          "/api/v1/system/migrate/dokploy/{kind}",
-		Summary:       "Ask the host agent to detect Dokploy, plan moving it, or take its credential",
-		Description:   "detect and plan are read-only on the host. credential mints the migration's agent token and leaves it for the agent to take, which it does once. Queues the request; follow it with GET /system/migrate/dokploy.",
+		Summary:       "Ask the host agent to detect Dokploy, plan moving it, take its credential, or prepare",
+		Description:   "detect and plan are read-only on the host. credential mints the migration's agent token and leaves it for the agent to take, which it does once. prepare is stage 1: it builds the Meshploy side with everything stopped and every route paused, and still touches nothing of Dokploy's. Queues the request; follow it with GET /system/migrate/dokploy.",
 		Tags:          []string{"System"},
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: 202,
@@ -170,7 +170,7 @@ func (h *Handler) GetDokployMigration(ctx context.Context, _ *struct{}) (*struct
 }
 
 func (h *Handler) RequestDokployMigration(ctx context.Context, in *struct {
-	Kind string `path:"kind" enum:"detect,plan,credential"`
+	Kind string `path:"kind" enum:"detect,plan,credential,prepare"`
 }) (*struct{ Body service.HostRequestState }, error) {
 	userID, err := requireUser(ctx)
 	if err != nil {

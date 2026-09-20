@@ -33,6 +33,9 @@ type MigrationState struct {
 	DetectAt *time.Time      `json:"detect_at,omitempty"`
 	Plan     json.RawMessage `json:"plan"`
 	PlanAt   *time.Time      `json:"plan_at,omitempty"`
+	// Prepare is what stage 1 created, once it has run.
+	Prepare   json.RawMessage `json:"prepare"`
+	PrepareAt *time.Time      `json:"prepare_at,omitempty"`
 	// Requests is the latest request of each type, by type.
 	Requests map[string]HostRequestState `json:"requests"`
 }
@@ -72,6 +75,8 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 		reqType = hostagent.RequestMigratePlan
 	case "credential":
 		reqType = hostagent.RequestMigrateCredential
+	case "prepare":
+		reqType = hostagent.RequestMigratePrepare
 	default:
 		return HostRequestState{}, ErrUnknownHostRequest
 	}
@@ -134,6 +139,9 @@ func (s *SystemService) GetMigrationState(ctx context.Context, userID uuid.UUID)
 	}
 	out.AgentReporting = s.HostAgentStatus().Reporting
 	if out.Detect, out.DetectAt, err = hostagent.ReadResult(dir, hostagent.DetectFile); err != nil {
+		return out, err
+	}
+	if out.Prepare, out.PrepareAt, err = hostagent.ReadResult(dir, hostagent.PrepareFile); err != nil {
 		return out, err
 	}
 	if out.Plan, out.PlanAt, err = hostagent.ReadResult(dir, hostagent.PlanFile); err != nil {

@@ -239,6 +239,12 @@ type CreateServiceBody struct {
 	Engine        string  `json:"engine,omitempty"`
 	Version       string  `json:"version,omitempty"`
 	StorageGB     int     `json:"storage_gb,omitempty"`
+	// Database credentials. Left empty the API names them after the service
+	// and generates a password; a migration sends the ones the data already
+	// uses, because the dump it will restore expects them.
+	DBName     string `json:"db_name,omitempty"`
+	DBUser     string `json:"db_user,omitempty"`
+	DBPassword string `json:"db_password,omitempty"`
 }
 
 type UpdateServiceBody struct {

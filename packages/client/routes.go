@@ -29,6 +29,11 @@ type CreateRouteBody struct {
 	// Direct override (bypass resolution)
 	TargetIP   *string `json:"target_ip,omitempty"`
 	TargetPort *int    `json:"target_port,omitempty"`
+
+	// Published false creates the route paused: it exists, serves nothing and
+	// gets no certificate. A migration creates every route this way and
+	// publishes each as its group moves.
+	Published *bool `json:"published,omitempty"`
 }
 
 func (c *Client) ListRoutes(orgID, projectID string) ([]Route, error) {

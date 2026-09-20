@@ -467,7 +467,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | POST | `/system/upgrade` | ✓ | Queue an upgrade of this server to the latest build on its channel, a switch to the other channel (`{"channel": "edge"}`), or a switch to the Enterprise images the active licence grants (`{"edition": "enterprise"}`). Instance owner only |
 | GET | `/system/version` | ✓ | Get current and latest platform version |
 | GET | `/system/migrate/dokploy` | ✓ | Instance owner: the host agent's latest Dokploy detection and plan, and the state of each request |
-| POST | `/system/migrate/dokploy/{kind}` | ✓ | Instance owner: ask the host agent to `detect` Dokploy, `plan` moving it (both read-only on the host), or take its `credential` - the migration agent's token, minted here and left in the inbox for the agent to take once; 409 when the agent is not reporting |
+| POST | `/system/migrate/dokploy/{kind}` | ✓ | Instance owner: ask the host agent to `detect` Dokploy, `plan` moving it (both read-only on the host), take its `credential` - the migration agent's token, minted here and left in the inbox for the agent to take once - or `prepare`, stage 1, which creates the Meshploy side with services stopped and routes paused and still touches nothing of Dokploy's; 409 when the agent is not reporting |
 | GET | `/system/host-agent` | ✓ | Whether the gateway's host agent is reporting, its version and the firewall it found |
 | POST | `/system/check-updates` | ✓ | Ask GitHub for the newest release or build now, past the caches; at most one real check every 30 seconds |
 

@@ -24,6 +24,11 @@ var migrationDir = "/var/lib/meshploy/migrate/dokploy"
 
 const migrationPlanFile = "plan.json"
 
+// MigrationDir is where the confirmed plan, the journal and the migration's
+// credential live. Root-only: the plan names every app, domain and path on the
+// server, and the credential can act on the whole organisation.
+func MigrationDir() string { return migrationDir }
+
 // Planner detects another platform on this host and plans moving it.
 type Planner interface {
 	// Detect is the quick look: is it there, which version, can it be planned.

@@ -24,10 +24,13 @@ const (
 	// the API for the rest of the migration. Its own step, so the secret
 	// crosses this boundary exactly once: every later request carries none.
 	RequestMigrateCredential = "migrate.credential"
+	// RequestMigratePrepare is stage 1: build the Meshploy side, with nothing
+	// serving. No downtime, and Dokploy is not touched.
+	RequestMigratePrepare = "migrate.prepare"
 )
 
 // RequestTypes is every type the agent accepts.
-var RequestTypes = []string{RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential}
+var RequestTypes = []string{RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential, RequestMigratePrepare}
 
 const (
 	// MaxRequestBytes bounds a request file.
@@ -44,6 +47,8 @@ const (
 	// DetectFile and PlanFile are the latest results, under state/migrate/.
 	DetectFile = "dokploy-detect.json"
 	PlanFile   = "dokploy-plan.json"
+	// PrepareFile is what stage 1 did, for the console to read.
+	PrepareFile = "dokploy-prepare.json"
 )
 
 // InboxDir is where the API writes requests.

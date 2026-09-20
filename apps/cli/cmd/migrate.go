@@ -32,6 +32,8 @@ var migrateDokployCmd = &cobra.Command{
            and 443, and what the server has to spare
   plan     what each project, application, compose app, database, domain and
            integration becomes in Meshploy, and what needs you
+  prepare  stage 1: create the Meshploy side of a confirmed plan, with services
+           stopped and routes paused. Dokploy keeps serving
 
 Run it on the Dokploy server, as root: it reads Docker and Dokploy's database.
 Secrets are read only in memory and never printed or written.`,
@@ -238,6 +240,35 @@ func printPlan(w io.Writer, p dokploy.Plan) {
 // the file can be committed and read by anyone; what survives is the structure
 // a plan is built from. It is the honest way to test the reader against real
 // servers without carrying anyone's data around.
+var migrateDokployPrepareCmd = &cobra.Command{
+	Use:   "prepare",
+	Short: "Stage 1: build the Meshploy side of a confirmed plan, with nothing serving",
+	Long: `Creates projects, workloads and routes in Meshploy from the confirmed plan.
+
+Everything is created inert: services stopped, routes paused. Dokploy keeps
+serving, nothing of its is stopped or changed, and no data is copied - that is
+stage 2, one group at a time.
+
+Safe to run again: each step is journalled, so an interrupted run carries on
+rather than creating a second copy.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if os.Getuid() != 0 {
+			return fmt.Errorf("migrate dokploy prepare requires root: it reads Dokploy's database and the migration's credential; re-run with sudo")
+		}
+		body, err := runMigratePrepare()
+		if err != nil {
+			return err
+		}
+		var result dokploy.PrepareResult
+		if err := json.Unmarshal(body, &result); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Created %d, skipped %d (already done).\n", result.Created, result.Skipped)
+		fmt.Fprintf(cmd.OutOrStdout(), "Nothing is serving yet: services are stopped and routes are paused.\n")
+		return nil
+	},
+}
+
 var migrateDokployFixtureCmd = &cobra.Command{
 	Use:   "fixture",
 	Short: "Write a scrubbed reading of this server, for use as a test fixture",
@@ -276,7 +307,7 @@ func init() {
 	migrateDokployFixtureCmd.Flags().String("out", "", "Write the scrubbed reading to this file (created readable by root only)")
 	migrateDokployPlanCmd.Flags().Bool("json", false, "Print the plan as JSON")
 	migrateDokployPlanCmd.Flags().String("out", "", "Also write the plan as JSON to this file (created readable by root only)")
-	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployFixtureCmd)
+	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployPrepareCmd, migrateDokployFixtureCmd)
 	migrateCmd.AddCommand(migrateDokployCmd)
 	rootCmd.AddCommand(migrateCmd)
 }

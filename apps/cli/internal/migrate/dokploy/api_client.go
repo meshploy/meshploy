@@ -1,0 +1,98 @@
+package dokploy
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/meshploy/packages/client"
+)
+
+// The real Meshploy behind the API the migration engine writes to.
+//
+// Thin on purpose: the engine decides what to create and in what order, and
+// this only translates. Anything that needs a decision belongs in the engine,
+// where it can be tested without a server.
+
+// ClientAPI implements API against a running Meshploy.
+type ClientAPI struct {
+	C     *client.Client
+	OrgID string
+}
+
+// CreateProject returns the id of a project with this name, making one if there
+// is none.
+//
+// Reused rather than duplicated, because stage 1 may be run again after a
+// failure and a second "Acme" project would split the server in half. The
+// existing one is matched on name, which is what an operator sees.
+func (a ClientAPI) CreateProject(name string) (string, error) {
+	existing, err := a.C.ListProjects(a.OrgID)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range existing {
+		if strings.EqualFold(p.Name, name) {
+			return p.ID, nil
+		}
+	}
+	p, err := a.C.CreateProject(a.OrgID, name)
+	if err != nil {
+		return "", err
+	}
+	return p.ID, nil
+}
+
+// CreateService creates a workload, stopped.
+//
+// Creating does not deploy: a service is born stopped and only a deploy starts
+// it, which is exactly what stage 1 wants. Stage 2 starts the ones whose group
+// is moving.
+func (a ClientAPI) CreateService(projectID string, spec ServiceSpec) (string, error) {
+	body := client.CreateServiceBody{
+		Name:    spec.Name,
+		Image:   spec.Image,
+		Type:    spec.Type,
+		GitRepo: spec.GitRepo,
+		Branch:  spec.Branch,
+		EnvVars: spec.EnvVars,
+	}
+	if spec.Type == "database" {
+		// The credentials the data already uses: a dump restored into a
+		// database with a different user or name would not be the same
+		// database, and the app's connection string names both.
+		body.Engine, body.Version = spec.Engine, spec.Version
+		body.DBName, body.DBUser, body.DBPassword = spec.DBName, spec.DBUser, spec.Password
+	}
+	svc, err := a.C.CreateService(a.OrgID, projectID, body)
+	if err != nil {
+		return "", err
+	}
+	return svc.ID, nil
+}
+
+func (a ClientAPI) SetEnvVars(projectID, serviceID, env string) error {
+	return a.C.SetEnvVars(a.OrgID, projectID, serviceID, env)
+}
+
+// CreateRoute creates a route paused: it exists, serves nothing, and gets no
+// certificate until its group moves and the console publishes it.
+func (a ClientAPI) CreateRoute(projectID string, spec RouteSpec) (string, error) {
+	if spec.Hostname == "" {
+		return "", fmt.Errorf("a route needs a hostname")
+	}
+	paused := false
+	body := client.CreateRouteBody{
+		Hostname:  &spec.Hostname,
+		ServiceID: &spec.ServiceID,
+		Published: &paused,
+	}
+	if spec.Port != 0 {
+		port := spec.Port
+		body.Port = &port
+	}
+	r, err := a.C.CreateRoute(a.OrgID, projectID, body)
+	if err != nil {
+		return "", err
+	}
+	return r.ID, nil
+}

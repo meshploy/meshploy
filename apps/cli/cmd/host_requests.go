@@ -6,11 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/meshploy/apps/cli/internal/migrate"
 	"github.com/meshploy/apps/cli/internal/migrate/dokploy"
+	"github.com/meshploy/apps/cli/internal/migrate/journal"
+	"github.com/meshploy/apps/cli/internal/setup"
 	"github.com/meshploy/packages/client"
 	"github.com/meshploy/packages/hostagent"
 )
@@ -31,6 +34,9 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 		body, err := json.Marshal(map[string]any{"generated_at": plan.GeneratedAt, "detection": plan.Detection,
 			"edge": plan.Edge, "resources": plan.Resources, "mode": plan.Mode})
 		return hostagent.DetectFile, body, 0o644, err
+	case hostagent.RequestMigratePrepare:
+		body, err := runMigratePrepare()
+		return hostagent.PrepareFile, body, 0o600, err
 	case hostagent.RequestMigrateCredential:
 		body, err := takeMigrationCredential()
 		// Kept beside the plan, readable by root only: it is a credential that
@@ -160,4 +166,79 @@ func takeMigrationCredential() ([]byte, error) {
 		return nil, fmt.Errorf("the API did not accept the migration credential: %w", err)
 	}
 	return json.Marshal(cred)
+}
+
+// runMigratePrepare builds the Meshploy side of a confirmed plan.
+//
+// Stage 1 touches nothing of Dokploy's: it creates projects, workloads and
+// routes, all inert, so it can be run, interrupted and run again while Dokploy
+// keeps serving.
+func runMigratePrepare() ([]byte, error) {
+	plan, _, err := setup.ReadConfirmedPlan()
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("no confirmed migration plan on this server: review and confirm one first")
+	}
+	// A migration that creates most of an application is worse than one that
+	// will not start, so what this stage cannot carry yet stops it here.
+	if missing := dokploy.Unsupported(*plan); len(missing) > 0 {
+		return nil, fmt.Errorf("this plan needs what stage 1 does not carry yet:\n  %s", strings.Join(missing, "\n  "))
+	}
+
+	cred, err := readMigrationCredential()
+	if err != nil {
+		return nil, err
+	}
+	// Re-read Dokploy now rather than trusting the plan: it holds no secrets by
+	// design, and the server may have changed since the plan was made.
+	src, err := dokploy.Collect(migrate.ExecRunner{})
+	if err != nil {
+		return nil, err
+	}
+
+	j, err := journal.Open(setup.MigrationDir())
+	if err != nil {
+		return nil, err
+	}
+	defer j.Close()
+
+	result, err := dokploy.Prepare(dokploy.PrepareDeps{
+		Plan:    *plan,
+		Source:  src,
+		API:     dokploy.ClientAPI{C: client.New(cred.BaseURL, cred.Token), OrgID: cred.OrgID},
+		Journal: j,
+	})
+	if err != nil {
+		return nil, err
+	}
+	body, marshalErr := json.Marshal(result)
+	if len(result.Failures) > 0 {
+		// Reported as a failure so the console does not show a green stage that
+		// created half a server, but the result is still written.
+		_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.PrepareFile), body, 0o600)
+		return nil, fmt.Errorf("%d of %d steps failed; the first was: %s",
+			len(result.Failures), result.Created+len(result.Failures), result.Failures[0])
+	}
+	return body, marshalErr
+}
+
+// readMigrationCredential reads the token the agent took from the inbox.
+func readMigrationCredential() (*hostagent.Credential, error) {
+	b, err := os.ReadFile(filepath.Join(hostagent.MigrateDir(hostDir), migrateCredentialFile))
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("this server has no migration credential yet: start the migration from the console")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var cred hostagent.Credential
+	if err := json.Unmarshal(b, &cred); err != nil {
+		return nil, err
+	}
+	if cred.Token == "" || cred.OrgID == "" {
+		return nil, fmt.Errorf("the stored migration credential is incomplete")
+	}
+	return &cred, nil
 }
