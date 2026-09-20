@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -61,7 +62,13 @@ func WatchRollout(
 	defer ticker.Stop()
 
 	for {
-		podNames := emitNewPodEvents(ctx, client, name, namespace, seen, emit)
+		// Only the pods of the revision being rolled out. A previous revision
+		// left crash-looping is still there, still emitting BackOff events and
+		// still pulling its own image, and reporting those as this rollout's
+		// made a new deploy fail because the old one was broken - the very
+		// situation a deploy is meant to fix.
+		selector := rolloutPodSelector(ctx, client, name, namespace)
+		podNames := emitNewPodEvents(ctx, client, selector, namespace, seen, emit)
 
 		dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil && !k8serrors.IsNotFound(err) {
@@ -110,12 +117,12 @@ func WatchRollout(
 func emitNewPodEvents(
 	ctx context.Context,
 	client kubernetes.Interface,
-	name, namespace string,
+	selector, namespace string,
 	seen map[string]bool,
 	emit func(string),
 ) []string {
 	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("app=%s,managed-by=meshploy", name),
+		LabelSelector: selector,
 	})
 	if err != nil {
 		return nil
@@ -203,4 +210,57 @@ func terminalPodFailure(
 		}
 	}
 	return "", "", false
+}
+
+// rolloutPodSelector narrows the deployment's pods to the revision being rolled
+// out.
+//
+// Kubernetes labels each ReplicaSet's pods with a pod-template-hash, so the new
+// revision's pods can be told from the previous one's. The current ReplicaSet is
+// the one the deployment's own revision annotation points at.
+//
+// Without this, a previous revision stuck in CrashLoopBackOff fails every
+// subsequent deploy: its pods match the deployment's labels, its BackOff events
+// are reported as the new rollout's, and terminalPodFailure gives up on a
+// container that the deploy was replacing. Stopping the service first made the
+// deploy work, which is the symptom that points straight here.
+//
+// Falls back to the deployment-wide selector when the ReplicaSet cannot be
+// identified: reporting a superset of the pods is worse than reporting none.
+func rolloutPodSelector(ctx context.Context, client kubernetes.Interface, name, namespace string) string {
+	base := fmt.Sprintf("app=%s,managed-by=meshploy", name)
+
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return base
+	}
+	revision := dep.Annotations["deployment.kubernetes.io/revision"]
+	if revision == "" {
+		return base
+	}
+	sets, err := client.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{LabelSelector: base})
+	if err != nil {
+		return base
+	}
+	for _, rs := range sets.Items {
+		if rs.Annotations["deployment.kubernetes.io/revision"] != revision {
+			continue
+		}
+		if !ownedBy(rs.OwnerReferences, dep.UID) {
+			continue
+		}
+		if hash := rs.Labels["pod-template-hash"]; hash != "" {
+			return base + ",pod-template-hash=" + hash
+		}
+	}
+	return base
+}
+
+func ownedBy(refs []metav1.OwnerReference, uid types.UID) bool {
+	for _, r := range refs {
+		if r.UID == uid {
+			return true
+		}
+	}
+	return false
 }
