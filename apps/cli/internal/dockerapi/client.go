@@ -24,13 +24,19 @@ import (
 
 // Sockets are where a runtime listens, in the order they are tried: docker
 // first, then podman's system service, then podman's rootless socket.
+//
+// DOCKER_HOST is not one more candidate but the answer: somebody who names a
+// socket means that runtime and no other, and searching on past it would
+// report the containers of a daemon they did not ask about. A DOCKER_HOST that
+// is not a unix socket is not something this speaks, so the search runs as if
+// it were unset.
 func Sockets() []string {
+	if host := os.Getenv("DOCKER_HOST"); strings.HasPrefix(host, "unix://") {
+		return []string{strings.TrimPrefix(host, "unix://")}
+	}
 	paths := []string{"/var/run/docker.sock", "/run/docker.sock", "/run/podman/podman.sock"}
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
 		paths = append(paths, dir+"/podman/podman.sock")
-	}
-	if host := os.Getenv("DOCKER_HOST"); strings.HasPrefix(host, "unix://") {
-		paths = append([]string{strings.TrimPrefix(host, "unix://")}, paths...)
 	}
 	return paths
 }
