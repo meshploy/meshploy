@@ -78,6 +78,14 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		return nil, fmt.Errorf("no group %q in the confirmed plan", groupID)
 	}
 
+	// What the group carries is read from Dokploy now rather than from the
+	// plan: plan.json holds no credentials by design, and a database is
+	// reached with the ones the data already uses.
+	data, err := moveDataMover(rt, group)
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := dokploy.Move(dokploy.MoveDeps{
 		Plan:    *rt.plan,
 		Group:   group,
@@ -85,6 +93,7 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		Edge:    dokploy.EdgeSwitcher{Target: dokploy.ProxyTarget(proxyHostAddr(), 0), Journal: rt.journal},
 		Control: dokploy.Control{Runner: migrate.ExecRunner{}, Journal: rt.journal},
 		Probe:   dokploy.HTTPProbe{Addr: probeAddr()},
+		Data:    data,
 		Journal: rt.journal,
 	})
 	body, marshalErr := json.Marshal(result)
@@ -93,6 +102,33 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		return nil, err
 	}
 	return body, marshalErr
+}
+
+// moveDataMover is what copies a group's data, or nil for a group that carries
+// none - a stateless application needs no cluster access, and asking for it
+// would fail a move that never had to touch the cluster directly.
+func moveDataMover(rt *migrationRuntime, group dokploy.Group) (*dokploy.DataMover, error) {
+	if len(group.Data) == 0 {
+		return nil, nil
+	}
+	src, err := dokploy.Collect(migrate.ExecRunner{})
+	if err != nil {
+		return nil, err
+	}
+	kube, err := migrate.FindKube(migrate.ExecStreamer{})
+	if err != nil {
+		return nil, err
+	}
+	return &dokploy.DataMover{
+		Runner:  migrate.ExecRunner{},
+		Stream:  migrate.ExecStreamer{},
+		Kube:    kube,
+		API:     rt.api,
+		Journal: rt.journal,
+		Plan:    *rt.plan,
+		Source:  src,
+		Dir:     rt.journal.Dir(),
+	}, nil
 }
 
 // runMigrateCutover hands over ports 80 and 443: stage 3.

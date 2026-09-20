@@ -203,6 +203,77 @@ func (a ClientAPI) PauseRoute(projectID, routeID string) error {
 	return err
 }
 
+// ── Stage 2: data ────────────────────────────────────────────────────────────
+
+// ProjectSlug is the Kubernetes namespace a project's workloads run in.
+func (a ClientAPI) ProjectSlug(projectID string) (string, error) {
+	projects, err := a.C.ListProjects(a.OrgID)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range projects {
+		if p.ID == projectID {
+			return p.Slug, nil
+		}
+	}
+	return "", fmt.Errorf("project %s is no longer in Meshploy", projectID)
+}
+
+// DatabaseSlug is what a managed database's objects are named from, which is
+// not the service's own slug: its claim is this name with "-data".
+func (a ClientAPI) DatabaseSlug(projectID, serviceID string) (string, error) {
+	dc, err := a.C.GetDatabaseConfig(a.OrgID, projectID, serviceID)
+	if err != nil {
+		return "", err
+	}
+	if dc.Slug == "" {
+		return "", fmt.Errorf("this database has no cluster name yet")
+	}
+	return dc.Slug, nil
+}
+
+// VolumeSlug is the claim a volume's data lives in.
+func (a ClientAPI) VolumeSlug(projectID, volumeID string) (string, error) {
+	v, err := a.C.GetVolume(a.OrgID, projectID, volumeID)
+	if err != nil {
+		return "", err
+	}
+	if v.Slug == "" {
+		return "", fmt.Errorf("volume %s has no claim yet", v.Name)
+	}
+	return v.Slug, nil
+}
+
+// ServiceImage is what Meshploy runs this workload from - the registry name,
+// where a locally built image was carried into the built-in registry.
+func (a ClientAPI) ServiceImage(projectID, serviceID string) (string, error) {
+	svc, err := a.C.GetService(a.OrgID, projectID, serviceID)
+	if err != nil {
+		return "", err
+	}
+	if svc.Image == "" {
+		return "", fmt.Errorf("%s has no image", svc.Name)
+	}
+	return svc.Image, nil
+}
+
+// RunningPod is the pod a service is running right now.
+//
+// Ready, not merely present: a restore executed in a container that is still
+// starting fails in ways that read like a broken dump.
+func (a ClientAPI) RunningPod(projectID, serviceID string) (string, error) {
+	pods, err := a.C.ListPods(a.OrgID, projectID, serviceID)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range pods {
+		if p.Ready && p.Phase == "Running" {
+			return p.Name, nil
+		}
+	}
+	return "", fmt.Errorf("no ready pod to restore into yet")
+}
+
 // HTTPProbe checks a moved domain answers through the edge that is still
 // terminating TLS for it - Dokploy's, until cutover.
 //

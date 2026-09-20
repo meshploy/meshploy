@@ -507,9 +507,14 @@ func (b *builder) databases() {
 			}
 			if mb := b.src.Docker.VolumeMB(name + "-data"); mb >= 0 {
 				it.Details["data_mb"] = fmt.Sprint(mb)
-				if mb < logicalDumpLimitMB {
+				switch {
+				case e.table == "redis":
+					// Redis has no dump worth taking: it writes its own
+					// snapshot, and that file is the database.
+					it.Details["data_move"] = "volume copy, stopped"
+				case mb < logicalDumpLimitMB:
 					it.Details["data_move"] = "dump and restore"
-				} else {
+				default:
 					it.Details["data_move"] = "volume copy, stopped"
 					it.Reasons = append(it.Reasons, fmt.Sprintf("%d MB of data: moved by copying the volume with the database stopped", mb))
 				}

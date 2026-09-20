@@ -212,12 +212,13 @@ func TestADomainThatDoesNotAnswerFailsTheMove(t *testing.T) {
 	}
 }
 
-// A group carrying data is refused rather than moved without it.
-func TestAGroupWithDataIsRefused(t *testing.T) {
+// A group carrying data is refused when the move has no way to copy it, rather
+// than moving the application away from its database.
+func TestAGroupWithDataIsRefusedWithoutAWayToCopyIt(t *testing.T) {
 	d, _, _, _ := movable(t)
 	d.Group.Data = []GroupData{{Name: "db", MB: 120, Move: "dump"}}
 
-	if _, err := Move(d); err == nil || !strings.Contains(err.Error(), "does not copy yet") {
+	if _, err := Move(d); err == nil || !strings.Contains(err.Error(), "no way to copy it") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -276,5 +277,61 @@ func TestMoveIsResumable(t *testing.T) {
 	}
 	if len(runner.ran) != ranBefore {
 		t.Errorf("touched Docker again: %v", runner.ran[ranBefore:])
+	}
+}
+
+// A group carrying data moves in one order and only that order: the
+// application stops before anything is read, the database is dumped while it
+// is still running, it stops only then, and Meshploy's database is running
+// before the application that reads it comes up.
+func TestAStatefulGroupMovesInTheOnlySafeOrder(t *testing.T) {
+	d, _, runner, _ := movable(t)
+	mover, _, stream, kube, _ := statefulGroup(t)
+
+	// One group holding both: the application of the move fixture, and the
+	// database of the data fixture.
+	d.Group = Group{ID: "g-shop", Name: "shop", CanMove: true,
+		Members: []GroupMember{
+			{Kind: "application", ID: "a1", Name: "web", Project: "Acme · production"},
+			{Kind: "database", ID: "d1", Name: "db", Project: "Acme · production"},
+		},
+		Data: []GroupData{{Name: "db", MB: 120, Move: "dump and restore"}}}
+
+	// The mover works against the move's own journal and ids, as the command
+	// wires it.
+	mover.Journal, mover.Dir = d.Journal, d.Journal.Dir()
+	mover.Plan = d.Plan
+	for i := range mover.Plan.Items {
+		if mover.Plan.Items[i].ID == "d1" {
+			mover.Plan.Items[i].Details["data_mb"] = "120"
+			mover.Plan.Items[i].Details["data_move"] = "dump and restore"
+		}
+	}
+	mover.IDs = d.meshployIDs
+	d.Data = &mover
+	runner.replies["docker service inspect db-xyz --format {{.Spec.Mode.Replicated.Replicas}}"] = "1\n"
+
+	if _, err := Move(d); err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// The journal is one ordered record of everything that happened, across
+	// Docker, the data step and Meshploy - so it is what the order is asserted
+	// on, rather than three fakes that cannot be compared with each other.
+	var steps []string
+	for _, e := range mustRead(t, d.Journal) {
+		if e.Group == "g-shop" && e.Result == journal.OK {
+			steps = append(steps, strings.TrimPrefix(e.Step, "move/g-shop/"))
+		}
+	}
+	want := []string{"stop/a1", "dump/d1", "stop/d1", "start/d1", "data/d1", "start/a1"}
+	if got := strings.Join(steps, " "); !strings.HasPrefix(got, strings.Join(want, " ")) {
+		t.Fatalf("the group moved in the wrong order:\n got %s\nwant %s first", got, strings.Join(want, " "))
+	}
+	if !stream.didRun("pg_dump") || !kube.didRun("pg_restore") {
+		t.Errorf("the data did not move: %v / %v", stream.ran, kube.ran)
+	}
+	if !runner.didRun("docker service scale --detach db-xyz=0") {
+		t.Errorf("Dokploy's database was not stopped: %v", runner.ran)
 	}
 }

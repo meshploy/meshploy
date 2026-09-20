@@ -49,6 +49,9 @@ type MoveDeps struct {
 	Edge    EdgeSwitcher
 	Control Control
 	Probe   Prober
+	// Data copies what the group carries. Nil refuses a group with data rather
+	// than moving an application away from it.
+	Data    *DataMover
 	Journal *journal.Journal
 	// HealthTimeout bounds the wait for Meshploy's copies to come up. A group
 	// that will not start must fail while the operator is watching, not hang.
@@ -72,9 +75,9 @@ type MoveResult struct {
 
 // Move runs stage 2 for one group.
 //
-// Stateless only for now: a group carrying data needs the dump-and-restore and
-// volume-copy step, which is build order 5. A group with data is refused here
-// rather than moved without its data.
+// A group carrying data moves the same way, with the copy in the middle: its
+// applications stop, its databases are read, both sides change hands, and
+// nothing serves until what arrived has been checked against what was read.
 func Move(d MoveDeps) (MoveResult, error) {
 	out := MoveResult{Group: d.Group.ID}
 	if d.API == nil || d.Journal == nil {
@@ -83,8 +86,8 @@ func Move(d MoveDeps) (MoveResult, error) {
 	if !d.Group.CanMove {
 		return out, fmt.Errorf("%s cannot move yet: %s", d.Group.Name, strings.Join(d.Group.Blockers, "; "))
 	}
-	if len(d.Group.Data) > 0 {
-		return out, fmt.Errorf("%s carries data, which this stage does not copy yet", d.Group.Name)
+	if len(d.Group.Data) > 0 && d.Data == nil {
+		return out, fmt.Errorf("%s carries data, and this move was given no way to copy it", d.Group.Name)
 	}
 	now := d.Now
 	if now == nil {
@@ -110,9 +113,10 @@ func Move(d MoveDeps) (MoveResult, error) {
 }
 
 func (d MoveDeps) run() error {
-	// 1. Stop writes: Dokploy's copies stop before Meshploy's start, so the
-	// same application is never running twice against the same data.
-	for _, m := range d.Group.Members {
+	// 1. Stop writes, applications first. A database is stopped after the
+	// things that write to it, and only once nothing needs to read it either -
+	// which for a group carrying a dump is after the dump.
+	for _, m := range d.applications() {
 		w, ok := d.workloadFor(m)
 		if !ok {
 			continue
@@ -122,29 +126,57 @@ func (d MoveDeps) run() error {
 		}
 	}
 
-	// 2. Start Meshploy's copies and wait for them.
-	for _, m := range d.Group.Members {
-		serviceID, projectID := d.meshployIDs(m)
-		if serviceID == "" {
-			return fmt.Errorf("%s has no Meshploy copy: run prepare first", m.Name)
-		}
-		step := d.step(m.ID, "start")
-		if !d.Journal.Done(step) {
-			if err := d.API.StartService(projectID, serviceID); err != nil {
-				return d.record(step, "start-service", m.Name, err, nil)
-			}
-			_ = d.Journal.Append(journal.Entry{Step: step, Group: d.Group.ID, Action: "start-service",
-				Target: m.Name, Result: journal.OK, Created: serviceID, Undo: &journal.Undo{
-					Kind: journal.UndoStopService,
-					Args: map[string]string{"project_id": projectID, "service_id": serviceID},
-				}})
-		}
-		if err := d.waitHealthy(projectID, serviceID, m.Name); err != nil {
+	// 2. Read the data out of Dokploy's databases, which are still running
+	// with nothing writing to them.
+	if d.Data != nil {
+		if err := d.Data.Dump(d.Group, d.meshployIDs); err != nil {
 			return err
 		}
 	}
 
-	// 3. Switch the group's domains through the edge Dokploy still runs, and
+	// 3. Now the databases stop too.
+	for _, m := range d.databases() {
+		w, ok := d.workloadFor(m)
+		if !ok {
+			continue
+		}
+		if err := d.Control.Stop(d.step(m.ID, "stop"), d.Group.ID, w); err != nil {
+			return err
+		}
+	}
+
+	// 4. Files are copied with both sides down: Dokploy's so nothing is
+	// writing what is read, Meshploy's because it has not started yet and its
+	// claims are free for the copy to fill.
+	if d.Data != nil {
+		if err := d.Data.CopyFiles(d.Group, d.meshployIDs); err != nil {
+			return err
+		}
+	}
+
+	// 5. Start Meshploy's databases and wait: a restore needs somewhere to go,
+	// and an application must not come up before what it reads.
+	for _, m := range d.databases() {
+		if err := d.start(m); err != nil {
+			return err
+		}
+	}
+
+	// 6. Load the dumps, and check what arrived is what was read.
+	if d.Data != nil {
+		if err := d.Data.Restore(d.Group, d.meshployIDs); err != nil {
+			return err
+		}
+	}
+
+	// 7. Then the applications.
+	for _, m := range d.applications() {
+		if err := d.start(m); err != nil {
+			return err
+		}
+	}
+
+	// 8. Switch the group's domains through the edge Dokploy still runs, and
 	// publish their routes. Until this point nothing has changed for a visitor.
 	for _, dom := range d.domains() {
 		if err := d.switchDomain(dom); err != nil {
@@ -152,7 +184,7 @@ func (d MoveDeps) run() error {
 		}
 	}
 
-	// 4. Check each domain answers. A group that moved but does not serve is a
+	// 9. Check each domain answers. A group that moved but does not serve is a
 	// failure, not a success with a warning.
 	if d.Probe != nil {
 		for _, dom := range d.domains() {
@@ -162,6 +194,49 @@ func (d MoveDeps) run() error {
 		}
 	}
 	return nil
+}
+
+// start brings up one of Meshploy's copies and waits for it.
+func (d MoveDeps) start(m GroupMember) error {
+	serviceID, projectID := d.meshployIDs(m)
+	if serviceID == "" {
+		return fmt.Errorf("%s has no Meshploy copy: run prepare first", m.Name)
+	}
+	step := d.step(m.ID, "start")
+	if !d.Journal.Done(step) {
+		if err := d.API.StartService(projectID, serviceID); err != nil {
+			return d.record(step, "start-service", m.Name, err, nil)
+		}
+		_ = d.Journal.Append(journal.Entry{Step: step, Group: d.Group.ID, Action: "start-service",
+			Target: m.Name, Result: journal.OK, Created: serviceID, Undo: &journal.Undo{
+				Kind: journal.UndoStopService,
+				Args: map[string]string{"project_id": projectID, "service_id": serviceID},
+			}})
+	}
+	return d.waitHealthy(projectID, serviceID, m.Name)
+}
+
+// databases and applications split the group by what it stops and starts
+// first. The order is the whole reason the split exists: data is read before
+// its database stops, and an application starts after what it reads.
+func (d MoveDeps) databases() []GroupMember {
+	var out []GroupMember
+	for _, m := range d.Group.Members {
+		if m.Kind == "database" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func (d MoveDeps) applications() []GroupMember {
+	var out []GroupMember
+	for _, m := range d.Group.Members {
+		if m.Kind != "database" {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // domain is one hostname moving with the group.

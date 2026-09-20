@@ -301,6 +301,10 @@ func (c *Client) UpdateService(orgID, projectID, serviceID string, body UpdateSe
 
 type DatabaseConfig struct {
 	ServiceID string `json:"service_id"`
+	// Slug is what the database's Kubernetes objects are named from - its
+	// Deployment, its Service and its claim - which is not the service's own
+	// slug.
+	Slug string `json:"slug"`
 	Engine    string `json:"engine"`
 	Version   string `json:"version"`
 	StorageGB int    `json:"storage_gb"`

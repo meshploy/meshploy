@@ -202,7 +202,7 @@
       "details": {
         "app_name": "shop-cache-q7r8s9",
         "data_mb": "30",
-        "data_move": "dump and restore",
+        "data_move": "volume copy, stopped",
         "engine": "Redis",
         "image": "redis:7"
       }
@@ -375,7 +375,7 @@
         {
           "name": "cache",
           "mb": 30,
-          "move": "dump and restore"
+          "move": "volume copy, stopped"
         }
       ],
       "downtime": "a restart plus under a minute to copy data",
