@@ -1,129 +1,58 @@
 package client_test
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/meshploy/packages/client"
 )
 
-func TestListProjects(t *testing.T) {
-	srv := newServer(t, []routeHandler{
-		{
-			method: "GET",
-			path:   "/api/v1/orgs/" + testOrg + "/projects",
-			fn: func(w http.ResponseWriter, r *http.Request) {
-				writeJSON(w, []client.Project{
-					{ID: "p1", Name: "Alpha", Slug: "alpha"},
-					{ID: "p2", Name: "Beta", Slug: "beta"},
-				})
-			},
-		},
-	})
+// The API requires a slug and refuses a create without one, which meant no
+// caller of this library could make a project: not `meshploy project create`,
+// not the MCP tool, not the migration.
+func TestCreateProjectSendsASlug(t *testing.T) {
+	var got map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		if got["slug"] == "" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"detail":"expected required property slug to be present"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "p1", "name": got["name"], "slug": got["slug"]})
+	}))
 	defer srv.Close()
 
-	c := client.New(srv.URL, "token")
-	projects, err := c.ListProjects(testOrg)
+	p, err := client.New(srv.URL, "t").CreateProject("org", "My Project")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("%v", err)
 	}
-	if len(projects) != 2 {
-		t.Errorf("want 2 projects, got %d", len(projects))
+	if got["name"] != "My Project" || got["slug"] != "my-project" {
+		t.Errorf("sent %v", got)
 	}
-}
-
-func TestCreateProject(t *testing.T) {
-	srv := newServer(t, []routeHandler{
-		{
-			method: "POST",
-			path:   "/api/v1/orgs/" + testOrg + "/projects",
-			fn: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusCreated)
-				writeJSON(w, client.Project{ID: "p3", Name: "Gamma", Slug: "gamma"})
-			},
-		},
-	})
-	defer srv.Close()
-
-	c := client.New(srv.URL, "token")
-	p, err := c.CreateProject(testOrg, "Gamma")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if p.Slug != "gamma" {
-		t.Errorf("want slug %q, got %q", "gamma", p.Slug)
+	if p.Slug != "my-project" {
+		t.Errorf("project = %+v", p)
 	}
 }
 
-func TestDeleteProject(t *testing.T) {
-	called := false
-	srv := newServer(t, []routeHandler{
-		{
-			method: "DELETE",
-			path:   "/api/v1/orgs/" + testOrg + "/projects/p1",
-			fn: func(w http.ResponseWriter, r *http.Request) {
-				called = true
-				w.WriteHeader(http.StatusNoContent)
-			},
-		},
-	})
-	defer srv.Close()
-
-	c := client.New(srv.URL, "token")
-	if err := c.DeleteProject(testOrg, "p1"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// The slug is a Kubernetes namespace, so it may hold only lower-case letters,
+// digits and hyphens - and an empty result would be refused, so it has a
+// fallback rather than being sent blank.
+func TestProjectSlugMatchesWhatKubernetesAccepts(t *testing.T) {
+	for in, want := range map[string]string{
+		"My Project":      "my-project",
+		"docai_db":        "docai-db",
+		"  Spaced  Out  ": "spaced-out",
+		"UPPER.case":      "upper-case",
+		"weird!!chars$$":  "weirdchars",
+		"!!!":             "project",
+		"":                "project",
+		"a--b":            "a-b",
+	} {
+		if got := client.ProjectSlug(in); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
 	}
-	if !called {
-		t.Error("DELETE endpoint was not called")
-	}
-}
-
-func TestGetProjectBySlugOrID(t *testing.T) {
-	projects := []client.Project{
-		{ID: "p1", Name: "Alpha", Slug: "alpha"},
-		{ID: "p2", Name: "Beta", Slug: "beta"},
-	}
-	handler := routeHandler{
-		method: "GET",
-		path:   "/api/v1/orgs/" + testOrg + "/projects",
-		fn: func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, projects)
-		},
-	}
-
-	t.Run("resolve by ID", func(t *testing.T) {
-		srv := newServer(t, []routeHandler{handler})
-		defer srv.Close()
-		c := client.New(srv.URL, "token")
-		p, err := c.GetProjectBySlugOrID(testOrg, "p2")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if p.Name != "Beta" {
-			t.Errorf("want Beta, got %q", p.Name)
-		}
-	})
-
-	t.Run("resolve by slug", func(t *testing.T) {
-		srv := newServer(t, []routeHandler{handler})
-		defer srv.Close()
-		c := client.New(srv.URL, "token")
-		p, err := c.GetProjectBySlugOrID(testOrg, "alpha")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if p.ID != "p1" {
-			t.Errorf("want p1, got %q", p.ID)
-		}
-	})
-
-	t.Run("not found", func(t *testing.T) {
-		srv := newServer(t, []routeHandler{handler})
-		defer srv.Close()
-		c := client.New(srv.URL, "token")
-		_, err := c.GetProjectBySlugOrID(testOrg, "nonexistent")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-	})
 }

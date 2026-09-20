@@ -64,6 +64,16 @@ registry_needs_login() {
   local image="${MESHPLOY_API_IMAGE:-ghcr.io/meshploy/api}"
   local tag="${MESHPLOY_CHANNEL:-latest}"
 
+  # An image already on this machine needs no credentials to pull, because
+  # nothing will pull it. That is how an air-gapped install works, and how a
+  # build loaded with `docker load` is meant to be used; without this the
+  # installer asks for a registry password to fetch something already here.
+  if $CONTAINER_RUNTIME image inspect "${image}:${tag}" &>/dev/null; then
+    _REGISTRY_LOGIN_NEEDED="no"
+    [[ "$_REGISTRY_LOGIN_NEEDED" == "yes" ]]
+    return
+  fi
+
   # Only ghcr.io can be probed this way. Any other registry falls through to
   # asking, which is the safe direction.
   if [[ "$image" == ghcr.io/* ]]; then
@@ -352,7 +362,10 @@ port_in_use() {
 }
 
 # ── Banner ────────────────────────────────────────────────────────────────────
-clear
+# Tolerated: `clear` fails when there is no terminal to clear - an install run
+# over ssh without a tty, or from a script - and under `set -e` that ended the
+# installer before it had printed a single line.
+clear 2>/dev/null || true
 echo -e "${BOLD}${BLUE}"
 cat <<'EOF'
   __  __           _     ____  _
@@ -1021,7 +1034,11 @@ ENVEOF
   # exist until Tailscale joins the mesh. Start them in phase 2.
   header "Starting core services"
   info "Pulling images…"
-  $COMPOSE_CMD pull
+  # --ignore-pull-failures: an image already loaded onto this machine has no
+  # registry to be pulled from, and an air-gapped install has none at all. A
+  # genuinely missing image still stops the install a moment later, at `up`,
+  # with a clearer message than a pull manifest error.
+  $COMPOSE_CMD pull --ignore-pull-failures
   # The API mounts these for upgrades from the console and the host agent's
   # reports, and podman will not start a container whose bind-mount source is
   # missing.
