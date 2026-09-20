@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/meshploy/apps/cli/internal/migrate"
@@ -80,7 +82,7 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		Plan:    *rt.plan,
 		Group:   group,
 		API:     rt.api,
-		Edge:    dokploy.EdgeSwitcher{Target: dokploy.ProxyTarget(dockerBridgeIP(), 0), Journal: rt.journal},
+		Edge:    dokploy.EdgeSwitcher{Target: dokploy.ProxyTarget(proxyHostAddr(), 0), Journal: rt.journal},
 		Control: dokploy.Control{Runner: migrate.ExecRunner{}, Journal: rt.journal},
 		Probe:   dokploy.HTTPProbe{Addr: probeAddr()},
 		Journal: rt.journal,
@@ -170,13 +172,54 @@ func edgeHolderFor(plan dokploy.Plan) dokploy.EdgeHolder {
 	return dokploy.EdgeHolder{}
 }
 
-// dockerBridgeIP is how a container reaches this host. Traefik forwards a
-// switched domain to Meshploy's proxy there.
+// proxyHostAddr is where the edge still holding 443 forwards a switched domain:
+// Meshploy's proxy, reached from inside a container.
+//
+// The mesh address first, because that is where the proxy answers a caller that
+// is not in this host's network namespace. The proxy binds loopback for Caddy,
+// which a container cannot use, and it is not published on the Docker bridge -
+// a switch pointed there is refused, and the domain 502s while the move reports
+// success. MESH_IP comes from the install's own environment; the bridge remains
+// the fallback for an install without a mesh.
+func proxyHostAddr() string {
+	if v := os.Getenv("MESHPLOY_PROXY_ADDR"); v != "" {
+		return v
+	}
+	if v := meshIPFromEnvFile(); v != "" {
+		return v
+	}
+	return dockerBridgeIP()
+}
+
+// dockerBridgeIP is how a container reaches this host when there is no mesh.
 func dockerBridgeIP() string {
 	if v := os.Getenv("HOST_GATEWAY_IP"); v != "" {
 		return v
 	}
 	return "172.17.0.1"
+}
+
+// meshIPFromEnvFile reads MESH_IP from the install's environment. The CLI runs
+// as a host binary and does not inherit the API's environment, so the file the
+// installer wrote is where this lives.
+func meshIPFromEnvFile() string {
+	if v := os.Getenv("MESH_IP"); v != "" {
+		return v
+	}
+	f, err := os.Open("/opt/meshploy/.env")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if !strings.HasPrefix(line, "MESH_IP=") {
+			continue
+		}
+		return strings.Trim(strings.TrimPrefix(line, "MESH_IP="), `"'`)
+	}
+	return ""
 }
 
 // probeAddr is where a moved domain is checked.
