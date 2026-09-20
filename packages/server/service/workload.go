@@ -9,6 +9,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
@@ -390,6 +391,13 @@ func (s *WorkloadService) slugTaken(ctx context.Context, projectID uuid.UUID, ca
 func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUID, in CreateWorkloadInput) (*db.Service, error) {
 	if in.Engine == "" {
 		in.Engine = db.DatabasePostgres
+	}
+	// An engine nobody knows used to be accepted: it fell through to Postgres's
+	// image name with an empty tag, creating "postgres:" - a database that can
+	// never pull. Say which engines exist instead.
+	if defaultDBVersion(in.Engine) == "" {
+		return nil, huma.Error422UnprocessableEntity(fmt.Sprintf(
+			"%q is not a database engine Meshploy manages: postgres, mysql, redis, mongodb, dragonfly or clickhouse", in.Engine))
 	}
 	image, port := dbDefaults(in.Engine, in.Version)
 	version := in.Version
