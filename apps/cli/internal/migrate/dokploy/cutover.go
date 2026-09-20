@@ -110,11 +110,31 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		return out, fmt.Errorf("%s", out.Error)
 	}
 	out.Downtime = now().Sub(started).Round(time.Second).String()
+	if d.CaddyContainer != "" {
+		_ = d.Journal.Append(journal.Entry{Step: "cutover/start-caddy", Action: "start-container",
+			Target: d.CaddyContainer, Result: journal.OK, Undo: &journal.Undo{
+				Kind: journal.UndoStopContainer,
+				Args: map[string]string{"container": d.CaddyContainer},
+			}})
+	}
 
 	// 5. Check. A domain that does not answer is why rollback exists.
+	//
+	// The first one waits for the new edge to be ready - opening its listeners,
+	// and issuing a certificate for any name whose own did not come across. The
+	// rest do not: once one domain answers the edge is up, and a server with
+	// seventy domains cannot spend a full waiting window on each.
 	if d.Probe != nil {
+		first := true
 		for host := range WantedDomains(d.Plan) {
-			if err := d.Probe.Probe(host); err != nil {
+			var err error
+			if first {
+				err = d.Probe.Probe(host)
+				first = false
+			} else {
+				err = probeBriefly(d.Probe, host)
+			}
+			if err != nil {
 				out.Unreachable = append(out.Unreachable, host)
 			}
 		}
@@ -125,6 +145,19 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		return out, fmt.Errorf("%s", out.Error)
 	}
 	return out, nil
+}
+
+// briefProbeWindow is what a domain gets once the edge has proved it is up.
+const briefProbeWindow = 10 * time.Second
+
+// probeBriefly asks with a short window where the prober supports one, and
+// exactly once where it does not.
+func probeBriefly(p Prober, host string) error {
+	if hp, ok := p.(HTTPProbe); ok {
+		hp.Window = briefProbeWindow
+		return hp.Probe(host)
+	}
+	return p.Probe(host)
 }
 
 // backupEdge copies Traefik's configuration and its certificate store into the

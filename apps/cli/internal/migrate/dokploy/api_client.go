@@ -1,7 +1,9 @@
 package dokploy
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -209,14 +211,58 @@ func (a ClientAPI) PauseRoute(projectID, routeID string) error {
 // Meshploy's proxy. Any answer at all is a pass: a 401 or a 302 is the
 // application responding, and a migration has no business deciding which status
 // codes an app is allowed to return.
+//
+// The one answer that means nothing is the edge's own redirect to HTTPS. Every
+// hostname on a Dokploy server gets one before any backend is consulted, so a
+// probe that stopped there passed whatever happened behind it - including a
+// move that left the domain answering 502. When the edge redirects to HTTPS,
+// the probe follows it back to the same edge over TLS, which is the request
+// that actually reaches the application.
 type HTTPProbe struct {
 	// Addr is where the edge listens, "127.0.0.1:80" unless something else
 	// holds the port.
-	Addr    string
+	Addr string
+	// TLSAddr is where the same edge terminates TLS. Empty uses Addr's host on
+	// port 443.
+	TLSAddr string
 	Timeout time.Duration
+	// Window is how long a domain has to start answering. An edge that has just
+	// taken the ports is still opening listeners and may be issuing a
+	// certificate, and a proxy that has just been told about a route serves it
+	// on its next refresh - so the first request after a change is not the
+	// answer, and a single one turned "not yet" into "this move failed".
+	Window time.Duration
+	// Interval is how often it asks inside that window.
+	Interval time.Duration
 }
 
+// probeWindow and probeInterval bound the wait: long enough for an edge to come
+// up and a route cache to refresh, short enough that a domain which is really
+// down is reported while the operator is still watching.
+const (
+	probeWindow   = 90 * time.Second
+	probeInterval = 2 * time.Second
+)
+
 func (p HTTPProbe) Probe(hostname string) error {
+	window, interval := p.Window, p.Interval
+	if window == 0 {
+		window = probeWindow
+	}
+	if interval <= 0 {
+		interval = probeInterval
+	}
+	deadline := time.Now().Add(window)
+	for {
+		err := p.probeOnce(hostname)
+		if err == nil || !time.Now().Before(deadline) {
+			return err
+		}
+		time.Sleep(interval)
+	}
+}
+
+func (p HTTPProbe) probeOnce(hostname string) error {
 	addr := p.Addr
 	if addr == "" {
 		addr = "127.0.0.1:80"
@@ -236,6 +282,61 @@ func (p HTTPProbe) Probe(hostname string) error {
 		// follow: following it would test DNS and certificates, which have not
 		// moved yet.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("the edge answered %s", resp.Status)
+	}
+	if !redirectsToHTTPS(resp) {
+		return nil
+	}
+	return p.probeTLS(hostname, timeout)
+}
+
+// redirectsToHTTPS reports whether this is the edge sending the caller to TLS,
+// rather than the application redirecting somewhere of its own.
+func redirectsToHTTPS(resp *http.Response) bool {
+	if resp.StatusCode < 300 || resp.StatusCode > 399 {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(resp.Header.Get("Location")), "https://")
+}
+
+// probeTLS asks the same edge for the hostname over TLS.
+//
+// The certificate is not checked. The connection is to this host, the name is
+// carried in SNI so the edge picks the right certificate, and what is being
+// tested is whether the application answers - not whether the certificate the
+// edge already had is still valid.
+func (p HTTPProbe) probeTLS(hostname string, timeout time.Duration) error {
+	addr := p.TLSAddr
+	if addr == "" {
+		host := p.Addr
+		if host == "" {
+			host = "127.0.0.1:80"
+		}
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		addr = net.JoinHostPort(host, "443")
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://"+addr+"/", nil)
+	if err != nil {
+		return err
+	}
+	req.Host = hostname
+	resp, err := (&http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			ServerName:         hostname,
+			InsecureSkipVerify: true, //nolint:gosec // testing the app, over loopback
+		}},
 	}).Do(req)
 	if err != nil {
 		return err
