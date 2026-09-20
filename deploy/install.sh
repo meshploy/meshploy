@@ -29,6 +29,9 @@ for arg in "$@"; do
     --reinstall) REINSTALL=true ;;
     --wipe-data) WIPE_DATA=true ;;
     --auto)      AUTO_MODE=true ;;
+    # Install beside the platform this server is migrating from: it keeps 80
+    # and 443, and Meshploy's edge starts at cutover.
+    --beside-edge) EDGE_DEFERRED=true ;;
     --role=*)    NODE_ROLE_FLAG="${arg#*=}" ;;
     --dns-mode=*)
       DNS_MODE_FLAG="${arg#*=}"
@@ -323,6 +326,20 @@ configure_pod_dns() {
   success "Pod DNS upstream written to /etc/k3s-resolv.conf (no inherited search domains)"
 }
 
+# EDGE_DEFERRED means another platform holds 80 and 443 and keeps them until
+# cutover. Set by --beside-edge, or found by existing_edge_detected below.
+EDGE_DEFERRED="${EDGE_DEFERRED:-false}"
+
+# existing_edge_detected is true when what holds 80 and 443 is a platform this
+# server is being migrated from. Dokploy's Traefik is the one we know by name;
+# anything else is a conflict the operator has to decide about.
+existing_edge_detected() {
+  [[ -d /etc/dokploy ]] || return 1
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^dokploy-traefik$' && return 0
+  docker service ls --format '{{.Name}}' 2>/dev/null | grep -q 'dokploy-traefik' && return 0
+  return 1
+}
+
 port_in_use() {
   local port="$1"
   if command -v ss &>/dev/null; then
@@ -502,7 +519,16 @@ if [[ "$NODE_TYPE" == "master" ]]; then
       fi
     done
     if ! $_PORT_OK; then
-      ask_yn "Ports are in use — continue anyway?" "n" || die "Free the conflicting ports and re-run."
+      # A server being migrated is the one case where this is expected: the
+      # platform being replaced still holds 80 and 443, and has to keep them
+      # until cutover. Meshploy installs beside it and starts its own edge
+      # later, so the conflict is the plan rather than a mistake.
+      if [[ "$EDGE_DEFERRED" == "true" ]] || existing_edge_detected; then
+        EDGE_DEFERRED=true
+        info "Another platform holds 80 and 443. Installing beside it: Meshploy's edge stays down until cutover."
+      else
+        ask_yn "Ports are in use — continue anyway?" "n" || die "Free the conflicting ports and re-run."
+      fi
     fi
   fi
 
@@ -861,6 +887,9 @@ REGEOF
   cat > .env <<ENVEOF
 DOMAIN=${DOMAIN}
 DNS_MODE=${DNS_MODE}
+# EDGE_DEFERRED: another platform holds 80 and 443 until cutover, so Meshploy's
+# Caddy is not started. Cutover starts it; nothing else reads this.
+EDGE_DEFERRED=${EDGE_DEFERRED}
 PUBLIC_IP=${PUBLIC_IP}
 MESH_IP=${MESH_IP}
 GATEWAY_HOSTNAME=${GATEWAY_HOSTNAME}
@@ -1155,8 +1184,19 @@ NPEOF
   # one whose mounted Caddyfile or Corefile did. So on a re-run a new DNS mode or
   # domain was written to disk and never served. On a first install neither is
   # running and this is a plain start.
-  DOMAIN="$DOMAIN" $COMPOSE_CMD up -d --force-recreate coredns caddy
-  success "CoreDNS and Caddy started"
+  if [[ "$EDGE_DEFERRED" == "true" ]]; then
+    # Starting Caddy here would only crash-loop against the ports another
+    # platform holds. Cutover starts it, once that platform has let go.
+    DOMAIN="$DOMAIN" $COMPOSE_CMD up -d --force-recreate coredns
+    success "CoreDNS started; Meshploy's edge waits for cutover"
+    warn "Ports 80 and 443 still belong to the platform being migrated."
+    warn "Until cutover, reach the console through an SSH tunnel:"
+    warn "  ssh -L 5173:127.0.0.1:5173 -L 4000:127.0.0.1:4000 root@${PUBLIC_IP}"
+    warn "  then open http://localhost:5173"
+  else
+    DOMAIN="$DOMAIN" $COMPOSE_CMD up -d --force-recreate coredns caddy
+    success "CoreDNS and Caddy started"
+  fi
 
   # ── Upgrades from the console ───────────────────────────────────────────────
   # Lets the console upgrade the server: the API only ever queues the request,
