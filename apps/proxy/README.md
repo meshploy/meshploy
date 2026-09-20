@@ -51,6 +51,8 @@ The 30-second refresh means new routes are live within half a minute of being cr
 | `DATABASE_URL` | Yes | PostgreSQL DSN — same as the API |
 | `ENCRYPTION_KEY` | No | Required only if encrypted columns are read |
 | `PROXY_PORT` | No | Listen port (default: `8081`) |
+| `PROXY_BIND` | No | Comma-separated addresses to listen on (default: `127.0.0.1`, where Caddy reaches it). Empty means every interface |
+| `MESH_IP` | No | The node's mesh address. The proxy listens there as well, so callers outside this host's network namespace - a container, which during a migration is the edge still holding 443 - can reach it |
 
 ---
 

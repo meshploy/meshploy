@@ -113,6 +113,7 @@ Required in `.env` at the monorepo root:
 |---|---|
 | `API_PORT` | API listen port (default: `4000`) |
 | `PROXY_PORT` | Proxy listen port (default: `8081`) |
+| `PROXY_BIND` | Addresses the proxy listens on, comma-separated (default: `127.0.0.1`). It also listens on `MESH_IP`, so a container on the host - a migration's old edge - can reach it |
 | `HEADSCALE_URL` | Headscale server URL |
 | `HEADSCALE_API_KEY` | Headscale API key |
 | `KUBECONFIG` | Path to kubeconfig file (empty = in-cluster) |
