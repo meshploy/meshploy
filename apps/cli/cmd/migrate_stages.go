@@ -110,16 +110,17 @@ func runMigrateCutover() ([]byte, error) {
 	}
 
 	result, err := dokploy.Cutover(dokploy.CutoverDeps{
-		Plan:       *rt.plan,
-		Runner:     migrate.ExecRunner{},
-		Journal:    rt.journal,
-		Probe:      dokploy.HTTPProbe{Addr: probeAddr()},
-		Edge:       edgeHolderFor(*rt.plan),
-		AcmePath:   filepath.Join(dokploy.DefaultTraefikDir, "acme.json"),
-		TraefikDir: dokploy.DefaultTraefikDir,
-		CaddyData:  rt.caddyData,
-		StartCaddy: startMeshployEdge,
-		Now:        time.Now,
+		Plan:           *rt.plan,
+		Runner:         migrate.ExecRunner{},
+		Journal:        rt.journal,
+		Probe:          dokploy.HTTPProbe{Addr: probeAddr()},
+		Edge:           edgeHolderFor(*rt.plan),
+		AcmePath:       dokploy.FindAcmeStore(dokploy.DefaultTraefikDir),
+		TraefikDir:     dokploy.DefaultTraefikDir,
+		CaddyData:      rt.caddyData,
+		StartCaddy:     startMeshployEdge,
+		CaddyContainer: meshployCaddyContainer,
+		Now:            time.Now,
 	})
 	body, marshalErr := json.Marshal(result)
 	if err != nil {

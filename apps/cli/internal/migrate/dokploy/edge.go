@@ -25,6 +25,39 @@ const DefaultDynamicDir = "/etc/dokploy/traefik/dynamic"
 // cutover.
 const DefaultTraefikDir = "/etc/dokploy/traefik"
 
+// FindAcmeStore is Traefik's certificate store inside dir.
+//
+// Dokploy keeps it in the dynamic directory, not beside traefik.yml where the
+// name suggests. Looking in one place meant the store was never found, and a
+// cutover that was meant to carry every certificate across quietly imported
+// none - leaving Caddy to ask Let's Encrypt for all of them at once, which is
+// the exact thing importing exists to prevent. So look where it is, then where
+// it might be, and only then give up.
+func FindAcmeStore(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	for _, p := range []string{
+		filepath.Join(dir, "dynamic", "acme.json"),
+		filepath.Join(dir, "acme.json"),
+	} {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	var found string
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || found != "" || info.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) == "acme.json" {
+			found = path
+		}
+		return nil
+	})
+	return found
+}
+
 // EdgeSwitcher points Dokploy's domains at Meshploy, one app at a time.
 type EdgeSwitcher struct {
 	// DynamicDir is Traefik's watched directory.
