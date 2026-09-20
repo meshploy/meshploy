@@ -57,6 +57,7 @@ func (a ClientAPI) CreateService(projectID string, spec ServiceSpec) (string, er
 		GitRepo: spec.GitRepo,
 		Branch:  spec.Branch,
 		EnvVars: spec.EnvVars,
+		Ports:   servicePorts(spec.Ports),
 	}
 	if spec.Type == "database" {
 		// The credentials the data already uses: a dump restored into a
@@ -70,6 +71,23 @@ func (a ClientAPI) CreateService(projectID string, spec ServiceSpec) (string, er
 		return "", err
 	}
 	return svc.ID, nil
+}
+
+// servicePorts names the ports a migrated workload listens on. The first is
+// primary - it is the one the app's own hostname routes to - and every one is
+// public, because each exists precisely because a domain points at it.
+func servicePorts(ports []int) []client.ServicePortBody {
+	out := make([]client.ServicePortBody, 0, len(ports))
+	for i, p := range ports {
+		name := "http"
+		if i > 0 {
+			name = fmt.Sprintf("http-%d", p)
+		}
+		out = append(out, client.ServicePortBody{
+			Name: name, Port: p, IsHTTP: true, IsPrimary: i == 0, IsPublic: true,
+		})
+	}
+	return out
 }
 
 func (a ClientAPI) SetEnvVars(projectID, serviceID, env string) error {

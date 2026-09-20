@@ -63,6 +63,11 @@ type ServiceSpec struct {
 	// EnvVars is the environment block, read from Dokploy at apply time and
 	// never written to plan.json.
 	EnvVars string
+	// Ports are the container ports the workload listens on, taken from the
+	// domains Dokploy routes to it. Without them a service is created on
+	// Meshploy's default port 3000 and its route is published to a port
+	// nothing answers on.
+	Ports []int
 }
 
 // RouteSpec is one hostname to create, paused.
@@ -370,6 +375,7 @@ func (d PrepareDeps) specFor(it Item) ServiceSpec {
 		spec.Engine = it.Details["engine"]
 		spec.Version = it.Details["version"]
 	}
+	spec.Ports = d.portsFor(it)
 	for _, table := range []string{"application", "postgres", "mysql", "mariadb", "mongo", "redis", "compose"} {
 		for _, r := range d.Source.Rows[table] {
 			if idOf(r) != it.ID {
@@ -383,6 +389,35 @@ func (d PrepareDeps) specFor(it Item) ServiceSpec {
 		}
 	}
 	return spec
+}
+
+// portsFor is every container port Dokploy sends this workload's domains to.
+//
+// Dokploy records the port on the domain, not on the application, because that
+// is where its router needs it. Meshploy records it on the service, so the
+// migration moves it across: each distinct port becomes a port on the service,
+// and the first one - the port the app's own hostname uses - is primary.
+//
+// A workload with no domain keeps no ports here and is created on the API's
+// default, which is all a workload nothing routes to needs.
+func (d PrepareDeps) portsFor(it Item) []int {
+	var ports []int
+	seen := map[int]bool{}
+	for _, dom := range d.Plan.Items {
+		if dom.Kind != "domain" || dom.Verdict != Moves {
+			continue
+		}
+		if dom.Details["application_id"] != it.ID && dom.Details["compose_id"] != it.ID {
+			continue
+		}
+		port := atoiOr(dom.Details["port"], 0)
+		if port <= 0 || seen[port] {
+			continue
+		}
+		seen[port] = true
+		ports = append(ports, port)
+	}
+	return ports
 }
 
 // runningImage is the image this workload is running right now.
