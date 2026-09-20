@@ -322,7 +322,9 @@ function VolumesSection({ projectId, serviceId }: { projectId: string; serviceId
                   <label className="text-xs text-muted-foreground">Volume</label>
                   <Select value={selectedVolumeId} onValueChange={(v) => setSelectedVolumeId(v ?? "")}>
                     <SelectTrigger className="w-full! h-8 text-xs bg-muted/20 border-border/60">
-                      <SelectValue placeholder={availableVolumes.length === 0 ? "No volumes available" : "Select a volume…"} />
+                      <SelectValue placeholder={availableVolumes.length === 0 ? "No volumes available" : "Select a volume…"}>
+                        {availableVolumes.find((v) => v.id === selectedVolumeId)?.name}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {availableVolumes.map((v) => (

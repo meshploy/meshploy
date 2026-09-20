@@ -161,7 +161,11 @@ export function GroupAttachments({ owner, projectId }: { owner: GroupOwner; proj
             <div className="rounded-lg border border-border/60 bg-card p-3 space-y-3">
               <Select value={selectedGroupId} onValueChange={(v) => setSelectedGroupId(v ?? "")}>
                 <SelectTrigger className="w-full! h-8 text-xs bg-muted/20 border-border/60">
-                  <SelectValue placeholder={availableGroups.length === 0 ? "No groups available" : "Select a variable group…"} />
+                  {/* Children, or the trigger shows the id it holds - which is
+                      what somebody picking a group by name least wants to see. */}
+                  <SelectValue placeholder={availableGroups.length === 0 ? "No groups available" : "Select a variable group…"}>
+                    {availableGroups.find((g) => g.id === selectedGroupId)?.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {availableGroups.map((g) => (
@@ -256,7 +260,9 @@ export function StagedGroupPicker({ projectId, selected, onChange }: {
           <div className="rounded-lg border border-border/60 bg-card p-3 space-y-3">
             <Select value={groupId} onValueChange={(v) => setGroupId(v ?? "")}>
               <SelectTrigger className="w-full! h-8 text-xs bg-muted/20 border-border/60">
-                <SelectValue placeholder={available.length === 0 ? "No groups available" : "Select a variable group…"} />
+                <SelectValue placeholder={available.length === 0 ? "No groups available" : "Select a variable group…"}>
+                  {available.find((g) => g.id === groupId)?.name}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {available.map((g) => (

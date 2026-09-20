@@ -695,7 +695,9 @@ function ServiceForm({
             <div className="flex gap-2">
               <Select value={pendingVolumeId} onValueChange={(v) => setPendingVolumeId(v ?? "")}>
                 <SelectTrigger className={cn(inputCls, "flex-1")}>
-                  <SelectValue placeholder="Select a volume…" />
+                  <SelectValue placeholder="Select a volume…">
+                    {readyVolumes.find((v) => v.id === pendingVolumeId)?.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {readyVolumes.map((v) => (
