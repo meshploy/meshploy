@@ -303,6 +303,21 @@ func (s *RouteService) DeleteTarget(ctx context.Context, targetID uuid.UUID) err
 // ── Route delete ──────────────────────────────────────────────────────────────
 
 func (s *RouteService) Delete(ctx context.Context, routeID uuid.UUID) error {
+	// A route another route redirects to cannot simply go: the redirect would
+	// point at nothing. The database refuses it, and an operator deserves to
+	// hear which route is in the way rather than a foreign-key error.
+	var redirected []string
+	if err := s.db.WithContext(ctx).Model(&db.Route{}).
+		Joins("JOIN route_targets ON route_targets.route_id = routes.id").
+		Where("route_targets.redirect_route_id = ?", routeID).
+		Distinct().Pluck("routes.hostname", &redirected).Error; err != nil {
+		return err
+	}
+	if len(redirected) > 0 {
+		return huma.Error409Conflict(fmt.Sprintf(
+			"%s redirects here — point it somewhere else before deleting this route",
+			strings.Join(redirected, ", ")))
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceRoute, routeID).
 			Delete(&db.ResourcePermission{})

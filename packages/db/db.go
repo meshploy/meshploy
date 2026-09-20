@@ -288,6 +288,22 @@ func applyConstraints(db *gorm.DB) error {
 		{"notification_deliveries", "channel_id", "notification_channels", "CASCADE"},
 		{"domains", "organization_id", "organizations", "CASCADE"},
 		{"resource_permissions", "organization_id", "organizations", "CASCADE"},
+		// The rest of what hangs off an organisation. Left at the default these
+		// tables block the delete outright, and an operator removing an
+		// organisation gets a foreign-key error rather than an empty install.
+		{"routes", "organization_id", "organizations", "CASCADE"},
+		{"tcp_routes", "organization_id", "organizations", "CASCADE"},
+		{"templates", "organization_id", "organizations", "CASCADE"},
+		{"ignored_endpoints", "organization_id", "organizations", "CASCADE"},
+		{"node_provisioning_tokens", "organization_id", "organizations", "CASCADE"},
+		{"org_email_configs", "organization_id", "organizations", "CASCADE"},
+		{"system_backup_configs", "organization_id", "organizations", "CASCADE"},
+		{"system_backup_configs", "storage_integration_id", "storage_integrations", "CASCADE"},
+		// A membership and a permission grant describe a principal. Deleting
+		// one - a person, or an agent, which is a users row too - has to take
+		// them with it.
+		{"organization_members", "user_id", "users", "CASCADE"},
+		{"resource_permissions", "user_id", "users", "CASCADE"},
 		// Project → children CASCADE
 		{"services", "project_id", "projects", "CASCADE"},
 		{"routes", "project_id", "projects", "CASCADE"},
@@ -326,6 +342,16 @@ func applyConstraints(db *gorm.DB) error {
 		// destroy stored data or take a live hostname out of the proxy.
 		{"volumes", "stack_id", "stacks", "SET NULL"},
 		{"config_files", "project_id", "projects", "CASCADE"},
+		// A project's variable groups and TCP routes go with it, like its
+		// routes. Without these, deleting any project that ever held a service
+		// failed: creating a service creates its system-managed group.
+		{"variable_groups", "project_id", "projects", "CASCADE"},
+		{"tcp_routes", "project_id", "projects", "CASCADE"},
+		// A TCP route outlives what it points at, the way an HTTP route's
+		// target does: the gateway port stays, pointing nowhere, rather than
+		// disappearing because a service was deleted.
+		{"tcp_routes", "service_id", "services", "SET NULL"},
+		{"tcp_routes", "node_id", "nodes", "SET NULL"},
 		{"config_files", "stack_id", "stacks", "SET NULL"},
 		{"service_config_files", "service_id", "services", "CASCADE"},
 		{"service_config_files", "config_file_id", "config_files", "CASCADE"},
