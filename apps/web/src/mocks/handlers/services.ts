@@ -114,7 +114,7 @@ export const servicesHandlers = [
       engine: "postgres",
       version: "16",
       storage_gb: 20,
-      slug: "demo_db",
+      slug: "demo-db-4f21ac",
       db_name: "demo",
       db_user: "demo",
       db_password: "demo-password",

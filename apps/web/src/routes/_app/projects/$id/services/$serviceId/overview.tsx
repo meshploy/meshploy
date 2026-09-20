@@ -2,7 +2,7 @@ import { MetricTile, ResourcePanel, ResourceFact, StatusPill } from "@/component
 import { livePoll } from "@/lib/live-poll"
 import { createFileRoute, useParams, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Server, Box, ExternalLink, Copy, Check, Table2, ArrowRight, Activity, MemoryStick, ArrowUpRight } from "lucide-react"
+import { Server, Box, ExternalLink, Copy, Check, Table2, ArrowRight, Activity, MemoryStick, ArrowUpRight, Eye, EyeOff } from "lucide-react"
 import {
   services as servicesApi,
   deployments, variableGroups, stacks,
@@ -27,12 +27,42 @@ export const Route = createFileRoute(
   component: ServiceOverviewTab,
 })
 
-function CopyRow({ label, value }: { label: string; value: string }) {
+// CopyRow shows one connection detail, hiding the secret part of it.
+//
+// `secret` hides the whole value - for the password row itself. `mask` hides
+// one substring inside it, which is what a connection string needs: the host,
+// the port and the database name are what the line is read for, and the
+// password in the middle is the only part worth covering. Hiding the password
+// field while the same password sits in three URLs below it protects nothing.
+//
+// Copy always copies the real value: the common action needs no reveal.
+function CopyRow({ label, value, secret, mask }: { label: string; value: string; secret?: boolean; mask?: string }) {
   const [copied, setCopied] = useState(false)
+  const [shown, setShown] = useState(false)
+  const hidden = (secret || !!mask) && !shown
+  const display = hidden
+    ? secret
+      ? "••••••••••••"
+      : value.split(mask!).join("••••••••")
+    : value
   return (
     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 gap-3">
       <span className="text-xs text-muted-foreground shrink-0">{label}</span>
-      <code className="text-[11px] font-mono text-foreground truncate flex-1 min-w-0 text-right">{value}</code>
+      <code className="text-[11px] font-mono text-foreground truncate flex-1 min-w-0 text-right">
+        {display}
+      </code>
+      {(secret || !!mask) && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setShown((v) => !v)}
+          title={shown ? "Hide" : "Show"}
+          aria-label={shown ? `Hide ${label}` : `Show ${label}`}
+          className="text-muted-foreground/40 hover:text-muted-foreground shrink-0"
+        >
+          {shown ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="icon-sm"
@@ -191,12 +221,12 @@ function ServiceOverviewTab() {
               <div className="px-4 py-1">
                 {dc.engine !== "redis" && <CopyRow label="Database" value={dc.db_name} />}
                 {dc.engine !== "redis" && <CopyRow label="Username" value={dc.db_user} />}
-                <CopyRow label="Password" value={dc.db_password} />
+                <CopyRow label="Password" value={dc.db_password} secret />
                 <CopyRow label="Slug" value={dc.slug} />
-                {internalConnStr && <CopyRow label="Internal" value={internalConnStr} />}
-                {publicConnStr && <CopyRow label="Public" value={publicConnStr} />}
+                {internalConnStr && <CopyRow label="Internal" value={internalConnStr} mask={dc.db_password} />}
+                {publicConnStr && <CopyRow label="Public" value={publicConnStr} mask={dc.db_password} />}
                 {meshConnStr
-                  ? <CopyRow label="Mesh" value={meshConnStr} />
+                  ? <CopyRow label="Mesh" value={meshConnStr} mask={dc.db_password} />
                   : (
                     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
                       <span className="text-xs text-muted-foreground">Mesh</span>
