@@ -185,10 +185,24 @@ func (a ClientAPI) StopService(projectID, serviceID string) error {
 	return a.C.StopService(a.OrgID, projectID, serviceID)
 }
 
+// ServiceStatus is what the move waits on, and it means a workload that is
+// actually up.
+//
+// The stored status alone does not: Meshploy records "running" the moment the
+// start is accepted, which is before the cluster has scheduled anything. A
+// move that trusted it switched the domain, and restored a database, into a
+// pod that did not exist yet - so a service is only running here once one of
+// its pods is ready.
 func (a ClientAPI) ServiceStatus(projectID, serviceID string) (string, error) {
 	svc, err := a.C.GetService(a.OrgID, projectID, serviceID)
 	if err != nil {
 		return "", err
+	}
+	if svc.Status != "running" {
+		return svc.Status, nil
+	}
+	if _, err := a.RunningPod(projectID, serviceID); err != nil {
+		return "starting", nil
 	}
 	return svc.Status, nil
 }
