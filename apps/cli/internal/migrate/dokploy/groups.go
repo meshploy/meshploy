@@ -285,12 +285,44 @@ func (b *builder) appTexts() []appText {
 	}
 	var out []appText
 	for _, r := range b.rows["application"] {
-		out = append(out, appText{r.Str("applicationId"), r.Str("env") + "\n" + r.Str("buildArgs") + "\n" + shared(r)})
+		id := r.Str("applicationId")
+		out = append(out, appText{id, strings.Join([]string{
+			b.runningEnv(id), r.Str("env"), r.Str("buildArgs"), shared(r),
+		}, "\n")})
 	}
 	for _, r := range b.rows["compose"] {
-		out = append(out, appText{r.Str("composeId"), r.Str("env") + "\n" + r.Str("composeFile") + "\n" + shared(r)})
+		id := r.Str("composeId")
+		out = append(out, appText{id, strings.Join([]string{
+			b.runningEnv(id), r.Str("env"), r.Str("composeFile"), shared(r),
+		}, "\n")})
 	}
 	return out
+}
+
+// runningEnv is what this workload runs with, from Docker.
+//
+// Without it a database is never grouped with the applications that use it on
+// any Dokploy that encrypts the env column - which current ones do. The
+// grouping searches for the database's hostname in an application's
+// environment, and ciphertext contains no hostname, so every database came out
+// as a group of its own and an application could move away from its data.
+func (b *builder) runningEnv(itemID string) string {
+	name := appNameIn(b.rows, itemID)
+	if name == "" {
+		return ""
+	}
+	for _, s := range b.src.Docker.Services {
+		if s.Name == name {
+			return strings.Join(s.Env, "\n")
+		}
+	}
+	var lines []string
+	for _, c := range b.src.Docker.Containers {
+		if c.Name == name || c.Service == name || c.Project == name {
+			lines = append(lines, c.Env...)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func downtimeEstimate(copyMinutes float64, hasData bool) string {

@@ -78,12 +78,14 @@ func Scrub(src Source) Source {
 		for i, b := range c.BindSources {
 			c.BindSources[i] = s.path(b)
 		}
+		c.Env = s.env(c.Env)
 		out.Docker.Containers = append(out.Docker.Containers, c)
 	}
 	out.Docker.Services = nil
 	for _, v := range src.Docker.Services {
 		v.Name = s.keep("container", v.Name)
 		v.Image = s.image(v.Image)
+		v.Env = s.env(v.Env)
 		out.Docker.Services = append(out.Docker.Services, v)
 	}
 	out.Docker.Volumes = nil
@@ -108,6 +110,44 @@ func Scrub(src Source) Source {
 	// The detection's own strings name the server's Dokploy, not the server.
 	out.Detection.Signals = append([]string(nil), src.Detection.Signals...)
 	return out
+}
+
+// env keeps the shape of a workload's environment without its values: how many
+// variables it had and what they were called, because that is what the reader
+// branches on, and nothing of what they were set to. The value is a stand-in
+// carrying the stand-in names already used elsewhere, so an app that reached a
+// database by hostname still reaches it in the fixture.
+func (s *scrubber) env(env []string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(env))
+	for _, line := range env {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			out = append(out, s.name("env", line))
+			continue
+		}
+		out = append(out, key+"="+s.envValue(value))
+	}
+	return out
+}
+
+// envValue keeps the names of workloads a value mentions - a database host, a
+// connection string's host - and replaces everything else. Those references
+// are the whole reason this is read at all: they are what joins an application
+// to its database.
+func (s *scrubber) envValue(value string) string {
+	kept := value
+	for real, stand := range s.names {
+		if real != "" && strings.Contains(kept, real) {
+			kept = strings.ReplaceAll(kept, real, stand)
+		}
+	}
+	if kept != value {
+		return kept // it named something; the naming is what matters
+	}
+	return "scrubbed"
 }
 
 // scrubber keeps one stand-in per real value, so relationships survive: the

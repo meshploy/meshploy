@@ -62,6 +62,10 @@ type Container struct {
 	// NetworkMode is docker's: bridge, host, a compose network's name, or
 	// container:<id>. "host" is the one that matters here.
 	NetworkMode string `json:"network_mode,omitempty"`
+	// Env is what the container runs with, as Docker holds it. See the note on
+	// SwarmService.Env for why this is read from Docker and not the platform's
+	// own database.
+	Env []string `json:"env,omitempty"`
 }
 
 // MountsPath reports whether the container bind-mounts path, or a folder
@@ -84,6 +88,13 @@ type SwarmService struct {
 	Running int    `json:"running"`
 	Desired int    `json:"desired"`
 	Ports   string `json:"ports,omitempty"`
+	// Env is what the service runs with, as Docker holds it: KEY=value lines.
+	//
+	// The platform's own database is not a reliable source for this. Dokploy
+	// encrypts the column, and what is stored there is not always what is
+	// running anyway - a shared variable is resolved on deploy. What the
+	// workload runs with is the truth, the same way the image it runs is.
+	Env []string `json:"env,omitempty"`
 }
 
 // Docker is the host's containers and Swarm services.
@@ -132,7 +143,9 @@ func ReadDocker(r Runner) (Docker, error) {
 	// A host that is not a Swarm manager has no services; that is not an error.
 	if out, err := r.Output("docker", "service", "ls", "--format", "{{json .}}"); err == nil {
 		d.Services = ParseServices(out)
+		readServiceEnv(r, d.Services)
 	}
+	readContainerEnv(r, d.Containers)
 	if out, err := r.Output("sh", "-c", "du -sm /var/lib/docker/volumes/*/_data 2>/dev/null"); err == nil || out != "" {
 		d.Volumes = ParseVolumeSizes(out)
 	}
@@ -249,6 +262,43 @@ func parseSizeMB(s string) int {
 		}
 	}
 	return 0
+}
+
+// readServiceEnv fills in what each Swarm service runs with. One inspect per
+// service rather than one for all of them: a service that has gone between the
+// list and the inspect must not cost the whole reading.
+func readServiceEnv(r Runner, services []SwarmService) {
+	for i, s := range services {
+		out, err := r.Output("docker", "service", "inspect", s.Name,
+			"--format", "{{json .Spec.TaskTemplate.ContainerSpec.Env}}")
+		if err != nil {
+			continue
+		}
+		services[i].Env = parseEnvJSON(out)
+	}
+}
+
+// readContainerEnv does the same for plain containers, which is where a
+// compose app's environment is.
+func readContainerEnv(r Runner, containers []Container) {
+	for i, c := range containers {
+		if c.Name == "" || c.Service != "" {
+			continue // a Swarm task's environment belongs to its service
+		}
+		out, err := r.Output("docker", "inspect", c.Name, "--format", "{{json .Config.Env}}")
+		if err != nil {
+			continue
+		}
+		containers[i].Env = parseEnvJSON(out)
+	}
+}
+
+func parseEnvJSON(out string) []string {
+	var env []string
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &env); err != nil {
+		return nil
+	}
+	return env
 }
 
 // ParseServices reads `docker service ls --format '{{json .}}'`.
