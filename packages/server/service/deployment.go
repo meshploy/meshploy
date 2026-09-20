@@ -625,10 +625,53 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	if svc.Status != db.ServiceRunning || svc.Image == "" {
 		return nil
 	}
+	// The namespace may not exist yet: a service can be created with an image
+	// and started without ever having been deployed - what the Dokploy
+	// migration does, and what any API client can do - and then this is the
+	// first thing the project ever puts in the cluster. Every other apply path
+	// ensures it; this one has to as well, before the config-file secrets below
+	// are written into it.
+	if err := appk8s.EnsureNamespace(ctx, s.k8s, svc.Project.Slug); err != nil {
+		return err
+	}
 	if err := appk8s.ApplyDeployment(ctx, s.k8s, s.workloadParams(ctx, &svc, svc.Image, uuid.Nil)); err != nil {
 		return err
 	}
 	s.markDeployed(ctx, &svc, svc.Image)
+	// The pod alone is not reachable. A deploy follows it with the in-cluster
+	// Service and the NodePort a route target is resolved from, and a service
+	// that has never been deployed has neither - so re-applying has to publish
+	// them too, or the workload runs with nothing able to dial it.
+	return s.applyPortServices(ctx, &svc, svc.Project.Slug, svc.Ports)
+}
+
+// applyPortServices publishes a workload's ports: the in-cluster Service, and
+// the NodePort service for the ports that ask to be reachable from the mesh.
+// The NodePorts the cluster assigns are written back, because that is what a
+// route target resolves to.
+func (s *DeploymentService) applyPortServices(ctx context.Context, svc *db.Service, namespace string, ports []db.ServicePort) error {
+	if len(ports) == 0 {
+		return nil
+	}
+	specs := toPortSpecs(ports)
+	name := appK8sName(svc)
+	if err := appk8s.ApplyService(ctx, s.k8s, name, namespace, specs); err != nil {
+		return err
+	}
+	assigned, err := appk8s.ApplyNodePortService(ctx, s.k8s, name, namespace, specs)
+	if err != nil {
+		return err
+	}
+	for _, p := range ports {
+		np, ok := assigned[p.Name]
+		if !ok || np == 0 || int(np) == p.NodePort {
+			continue
+		}
+		if err := s.db.WithContext(ctx).Model(&db.ServicePort{}).Where("id = ?", p.ID).
+			Update("node_port", np).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
