@@ -35,6 +35,15 @@ func (c *Client) ListServices(orgID, projectID string) ([]Service, error) {
 	return decode[[]Service](resp)
 }
 
+// GetService reads one service by id.
+func (c *Client) GetService(orgID, projectID, serviceID string) (*Service, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID, nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Service](resp)
+}
+
 func (c *Client) Deploy(orgID, projectID, serviceID string) (*Deployment, error) {
 	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/deployments", nil)
 	if err != nil {

@@ -2,7 +2,9 @@ package dokploy
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/meshploy/packages/client"
 )
@@ -95,4 +97,78 @@ func (a ClientAPI) CreateRoute(projectID string, spec RouteSpec) (string, error)
 		return "", err
 	}
 	return r.ID, nil
+}
+
+// ── Stage 2 ──────────────────────────────────────────────────────────────────
+
+func (a ClientAPI) StartService(projectID, serviceID string) error {
+	return a.C.StartService(a.OrgID, projectID, serviceID)
+}
+
+func (a ClientAPI) StopService(projectID, serviceID string) error {
+	return a.C.StopService(a.OrgID, projectID, serviceID)
+}
+
+func (a ClientAPI) ServiceStatus(projectID, serviceID string) (string, error) {
+	svc, err := a.C.GetService(a.OrgID, projectID, serviceID)
+	if err != nil {
+		return "", err
+	}
+	return svc.Status, nil
+}
+
+func (a ClientAPI) PublishRoute(projectID, routeID string) error {
+	_, err := a.C.PublishRoute(a.OrgID, projectID, routeID)
+	return err
+}
+
+func (a ClientAPI) PauseRoute(projectID, routeID string) error {
+	_, err := a.C.PauseRoute(a.OrgID, projectID, routeID)
+	return err
+}
+
+// HTTPProbe checks a moved domain answers through the edge that is still
+// terminating TLS for it - Dokploy's, until cutover.
+//
+// It asks for the hostname over plain HTTP against the host, because that is
+// the path the switch changed: the edge terminates TLS and forwards to
+// Meshploy's proxy. Any answer at all is a pass: a 401 or a 302 is the
+// application responding, and a migration has no business deciding which status
+// codes an app is allowed to return.
+type HTTPProbe struct {
+	// Addr is where the edge listens, "127.0.0.1:80" unless something else
+	// holds the port.
+	Addr    string
+	Timeout time.Duration
+}
+
+func (p HTTPProbe) Probe(hostname string) error {
+	addr := p.Addr
+	if addr == "" {
+		addr = "127.0.0.1:80"
+	}
+	timeout := p.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/", nil)
+	if err != nil {
+		return err
+	}
+	req.Host = hostname
+	resp, err := (&http.Client{
+		Timeout: timeout,
+		// A redirect to HTTPS is the edge doing its job, not an answer to
+		// follow: following it would test DNS and certificates, which have not
+		// moved yet.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("the edge answered %s", resp.Status)
+	}
+	return nil
 }
