@@ -189,3 +189,19 @@ func TestAnUnknownEdgeRefuses(t *testing.T) {
 		t.Errorf("it touched the server anyway: %v", runner.ran)
 	}
 }
+
+// A custom edge keeps its certificates elsewhere, and a server may never have
+// had any. Nothing to copy is not a reason to refuse the cutover.
+func TestCutoverWithoutACertificateStore(t *testing.T) {
+	d, _, _ := cutoverFixture(t)
+	if err := os.Remove(d.AcmePath); err != nil {
+		t.Fatal(err)
+	}
+	out, err := Cutover(d)
+	if err != nil {
+		t.Fatalf("%v: %+v", err, out)
+	}
+	if len(out.CertificatesImported) != 0 {
+		t.Errorf("imported = %v", out.CertificatesImported)
+	}
+}

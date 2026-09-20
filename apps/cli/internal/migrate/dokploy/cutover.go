@@ -137,20 +137,31 @@ func (d CutoverDeps) backupEdge() error {
 	var copied []string
 	if d.AcmePath != "" {
 		b, err := os.ReadFile(d.AcmePath)
-		if err != nil {
+		switch {
+		case os.IsNotExist(err):
+			// A custom edge keeps its certificates elsewhere, and a server may
+			// never have had any. Nothing to copy is not a failure.
+		case err != nil:
 			return fmt.Errorf("read %s: %w", d.AcmePath, err)
+		default:
+			if _, err := d.Journal.Backup("acme.json", b); err != nil {
+				return err
+			}
+			copied = append(copied, "acme.json")
 		}
-		if _, err := d.Journal.Backup("acme.json", b); err != nil {
-			return err
-		}
-		copied = append(copied, "acme.json")
 	}
 	if d.TraefikDir != "" {
 		n, err := d.backupDir(d.TraefikDir)
+		if os.IsNotExist(err) {
+			n, err = 0, nil
+		}
 		if err != nil {
 			return err
 		}
 		copied = append(copied, fmt.Sprintf("%d configuration file(s)", n))
+	}
+	if len(copied) == 0 {
+		copied = []string{"nothing to copy"}
 	}
 	return d.Journal.Append(journal.Entry{Step: step, Action: "back-up-edge",
 		Target: strings.Join(copied, ", "), Result: journal.OK})

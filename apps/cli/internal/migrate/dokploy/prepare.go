@@ -120,6 +120,12 @@ func Unsupported(plan Plan) []string {
 		// A bind mount is a host path. Whether it moves is the operator's
 		// decision, and copying it is stage 2's data step, which does not exist
 		// yet - so a plan that carries one is refused rather than half-applied.
+		// Prepare creates what the plan says moves. An item still carrying an
+		// unanswered question is not that, and leaving it out quietly is how
+		// an operator ends up with a server missing one application.
+		if it.Verdict == NeedsYou {
+			out = append(out, fmt.Sprintf("%s (%s): it still has a question to answer", it.Name, it.Kind))
+		}
 		if it.Details["bind_mounts"] != "" {
 			out = append(out, fmt.Sprintf("%s: %s bind mount(s) from host paths - copying them is not built yet", it.Name, it.Details["bind_mounts"]))
 		}

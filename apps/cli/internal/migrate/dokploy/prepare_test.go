@@ -413,3 +413,16 @@ func TestVolumeSizeAlwaysLeavesRoom(t *testing.T) {
 		}
 	}
 }
+
+// Leaving an unanswered item out quietly is how an operator ends up with a
+// server missing one application.
+func TestAnUnansweredItemStopsPrepare(t *testing.T) {
+	plan := Plan{Items: []Item{
+		{Kind: "application", Name: "web", Verdict: NeedsYou,
+			Decisions: []Decision{{ID: "mount", Question: "copy /srv/data?"}}},
+	}}
+	missing := Unsupported(plan)
+	if len(missing) != 1 || !strings.Contains(missing[0], "question to answer") {
+		t.Fatalf("Unsupported = %v", missing)
+	}
+}

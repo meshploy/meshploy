@@ -82,7 +82,7 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		API:     rt.api,
 		Edge:    dokploy.EdgeSwitcher{Target: dokploy.ProxyTarget(dockerBridgeIP(), 0), Journal: rt.journal},
 		Control: dokploy.Control{Runner: migrate.ExecRunner{}, Journal: rt.journal},
-		Probe:   dokploy.HTTPProbe{},
+		Probe:   dokploy.HTTPProbe{Addr: probeAddr()},
 		Journal: rt.journal,
 	})
 	body, marshalErr := json.Marshal(result)
@@ -102,7 +102,7 @@ func runMigrateCutover() ([]byte, error) {
 	defer rt.journal.Close()
 
 	for _, g := range rt.plan.Groups {
-		if !rt.journal.Done(fmt.Sprintf("move/%s/done", g.ID)) && !groupMoved(rt.journal, g) {
+		if !groupMoved(rt.journal, g) {
 			return nil, fmt.Errorf("%s has not moved yet: cutover takes the ports from every domain at once", g.Name)
 		}
 	}
@@ -111,7 +111,7 @@ func runMigrateCutover() ([]byte, error) {
 		Plan:       *rt.plan,
 		Runner:     migrate.ExecRunner{},
 		Journal:    rt.journal,
-		Probe:      dokploy.HTTPProbe{},
+		Probe:      dokploy.HTTPProbe{Addr: probeAddr()},
 		Edge:       edgeHolderFor(*rt.plan),
 		AcmePath:   filepath.Join(dokploy.DefaultTraefikDir, "acme.json"),
 		TraefikDir: dokploy.DefaultTraefikDir,
@@ -177,6 +177,19 @@ func dockerBridgeIP() string {
 		return v
 	}
 	return "172.17.0.1"
+}
+
+// probeAddr is where a moved domain is checked.
+//
+// The edge that answers on 80 during stage 2 is Dokploy's, and on most servers
+// it holds 80 directly. Where something else does - a host Caddy in front of
+// Traefik, as on one of the reference servers - the port differs and the
+// operator says so.
+func probeAddr() string {
+	if v := os.Getenv("MESHPLOY_MIGRATE_PROBE_ADDR"); v != "" {
+		return v
+	}
+	return "127.0.0.1:80"
 }
 
 // caddyDataDir is where Meshploy's Caddy volume is mounted on the host.
