@@ -733,17 +733,30 @@ func dokployOwn(name string) bool {
 	return false
 }
 
+// meshployOwn is the platform doing the migrating.
+//
+// It is installed on this host as a compose project, so it turned up in the
+// plan as something to import - Meshploy offering to run itself as one of its
+// own workloads. Its project name, and its containers by name for an install
+// laid out differently.
+func meshployOwn(name string) bool {
+	if name == "meshploy" {
+		return true
+	}
+	return strings.HasPrefix(name, "meshploy-") || strings.HasPrefix(name, "meshploy_")
+}
+
 // unmanaged lists what runs on the host that no Dokploy row owns. Compose
 // containers group by project; Swarm tasks belong to their service.
 func unmanaged(src Source, owned map[string]bool) []Unmanaged {
 	projects := map[string]*Unmanaged{}
 	out := []Unmanaged{}
 	for _, c := range src.Docker.Containers {
-		if c.Service != "" || dokployOwn(c.Name) {
+		if c.Service != "" || dokployOwn(c.Name) || meshployOwn(c.Name) {
 			continue
 		}
 		if c.Project != "" {
-			if owned[c.Project] {
+			if owned[c.Project] || meshployOwn(c.Project) {
 				continue
 			}
 			u := projects[c.Project]
@@ -779,7 +792,7 @@ func unmanaged(src Source, owned map[string]bool) []Unmanaged {
 		out = append(out, *u)
 	}
 	for _, s := range src.Docker.Services {
-		if dokployOwn(s.Name) || owned[s.Name] {
+		if dokployOwn(s.Name) || meshployOwn(s.Name) || owned[s.Name] {
 			continue
 		}
 		out = append(out, Unmanaged{Name: s.Name, Kind: "swarm-service", Images: s.Image, Running: s.Running, Total: s.Desired, MapsTo: "Service, through the Docker importer"})

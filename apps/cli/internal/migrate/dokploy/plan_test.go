@@ -454,3 +454,21 @@ func TestSupportRange(t *testing.T) {
 		}
 	}
 }
+
+// Meshploy installs itself on this host as a compose project, so without a
+// filter of its own it turned up in the plan as something to import: the
+// platform offering to run itself as one of its own workloads.
+func TestThePlanDoesNotOfferToImportMeshployItself(t *testing.T) {
+	src := Source{Docker: migrate.Docker{
+		Containers: []migrate.Container{
+			{Name: "meshploy-api-1", Project: "meshploy", Image: "ghcr.io/meshploy/api", State: "running"},
+			{Name: "meshploy-postgres-1", Project: "meshploy", Image: "postgres:17", State: "running"},
+			{Name: "dokploy-traefik", Image: "traefik:v3", State: "running"},
+			{Name: "wakapi", Image: "wakapi:latest", State: "running"},
+		},
+	}}
+	got := unmanaged(src, map[string]bool{})
+	if len(got) != 1 || got[0].Name != "wakapi" {
+		t.Fatalf("unmanaged = %+v, want only the one workload that is not a platform", got)
+	}
+}
