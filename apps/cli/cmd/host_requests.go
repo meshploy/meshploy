@@ -37,6 +37,15 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 	case hostagent.RequestMigratePrepare:
 		body, err := runMigratePrepare()
 		return hostagent.PrepareFile, body, 0o600, err
+	case hostagent.RequestMigrateMove:
+		body, err := runMigrateMove(req.Args["group"])
+		return hostagent.MoveFile, body, 0o600, err
+	case hostagent.RequestMigrateCutover:
+		body, err := runMigrateCutover()
+		return hostagent.CutoverFile, body, 0o600, err
+	case hostagent.RequestMigrateRollback:
+		body, err := runMigrateRollback(req.Args["group"])
+		return hostagent.RollbackFile, body, 0o600, err
 	case hostagent.RequestMigrateCredential:
 		body, err := takeMigrationCredential()
 		// Kept beside the plan, readable by root only: it is a credential that

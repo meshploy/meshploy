@@ -27,10 +27,20 @@ const (
 	// RequestMigratePrepare is stage 1: build the Meshploy side, with nothing
 	// serving. No downtime, and Dokploy is not touched.
 	RequestMigratePrepare = "migrate.prepare"
+	// RequestMigrateMove is stage 2 for one group, named in Args["group"].
+	RequestMigrateMove = "migrate.move"
+	// RequestMigrateCutover is stage 3: hand over ports 80 and 443.
+	RequestMigrateCutover = "migrate.cutover"
+	// RequestMigrateRollback undoes one group, or everything when Args["group"]
+	// is empty.
+	RequestMigrateRollback = "migrate.rollback"
 )
 
 // RequestTypes is every type the agent accepts.
-var RequestTypes = []string{RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential, RequestMigratePrepare}
+var RequestTypes = []string{
+	RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential,
+	RequestMigratePrepare, RequestMigrateMove, RequestMigrateCutover, RequestMigrateRollback,
+}
 
 const (
 	// MaxRequestBytes bounds a request file.
@@ -47,8 +57,12 @@ const (
 	// DetectFile and PlanFile are the latest results, under state/migrate/.
 	DetectFile = "dokploy-detect.json"
 	PlanFile   = "dokploy-plan.json"
-	// PrepareFile is what stage 1 did, for the console to read.
-	PrepareFile = "dokploy-prepare.json"
+	// PrepareFile is what stage 1 did, for the console to read; MoveFile the
+	// last group moved, CutoverFile the hand-over, RollbackFile the last undo.
+	PrepareFile  = "dokploy-prepare.json"
+	MoveFile     = "dokploy-move.json"
+	CutoverFile  = "dokploy-cutover.json"
+	RollbackFile = "dokploy-rollback.json"
 )
 
 // InboxDir is where the API writes requests.
@@ -66,6 +80,10 @@ type Request struct {
 	Type        string    `json:"type"`
 	RequestedBy string    `json:"requested_by"`
 	RequestedAt time.Time `json:"requested_at"`
+	// Args are what the request applies to - a group id, so far. Bounded and
+	// validated: the agent trusts nothing about a request but its shape, and
+	// this is the only part of one the API chooses the contents of.
+	Args map[string]string `json:"args,omitempty"`
 }
 
 // Request states.
@@ -89,6 +107,7 @@ type RequestStatus struct {
 var (
 	requestID   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	requestName = regexp.MustCompile(`^([a-z]+\.[a-z]+)-([0-9a-f-]{36})\.json$`)
+	requestArg  = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 )
 
 // RequestFileName is the inbox file name for a request.
@@ -109,6 +128,16 @@ func ValidateRequest(req Request, name string) error {
 		return errors.New("request file name does not match its contents")
 	case len(req.RequestedBy) > 128:
 		return errors.New("requested_by is too long")
+	case len(req.Args) > 8:
+		return errors.New("too many arguments")
+	}
+	for k, v := range req.Args {
+		if !requestArg.MatchString(k) {
+			return fmt.Errorf("argument %q is not a name", k)
+		}
+		if len(v) > 200 {
+			return fmt.Errorf("argument %q is too long", k)
+		}
 	}
 	return nil
 }

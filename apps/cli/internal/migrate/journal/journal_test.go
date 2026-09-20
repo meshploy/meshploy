@@ -137,3 +137,19 @@ func TestBackupStoresContentBesideTheJournal(t *testing.T) {
 		t.Errorf("backup landed at %s, want it under %s", path, dir)
 	}
 }
+
+// An edge's configuration is copied with its own layout, so it can be put back
+// the way it was found.
+func TestBackupKeepsNestedPaths(t *testing.T) {
+	dir := t.TempDir()
+	j, _ := Open(dir)
+	defer j.Close()
+
+	path, err := j.Backup(filepath.Join("edge", "dynamic", "web.yml"), []byte("http: {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "http: {}\n" {
+		t.Errorf("got %q, %v", got, err)
+	}
+}

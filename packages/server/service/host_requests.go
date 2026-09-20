@@ -33,9 +33,14 @@ type MigrationState struct {
 	DetectAt *time.Time      `json:"detect_at,omitempty"`
 	Plan     json.RawMessage `json:"plan"`
 	PlanAt   *time.Time      `json:"plan_at,omitempty"`
-	// Prepare is what stage 1 created, once it has run.
+	// Prepare is what stage 1 created, Move the last group moved, Cutover the
+	// hand-over of ports 80 and 443 - each once it has run.
 	Prepare   json.RawMessage `json:"prepare"`
 	PrepareAt *time.Time      `json:"prepare_at,omitempty"`
+	Move      json.RawMessage `json:"move"`
+	MoveAt    *time.Time      `json:"move_at,omitempty"`
+	Cutover   json.RawMessage `json:"cutover"`
+	CutoverAt *time.Time      `json:"cutover_at,omitempty"`
 	// Requests is the latest request of each type, by type.
 	Requests map[string]HostRequestState `json:"requests"`
 }
@@ -59,7 +64,7 @@ func (s *SystemService) hostDir() string {
 
 // RequestMigration asks the host agent to detect or plan. Only the instance
 // owner may: the plan names every app, domain and path on the server.
-func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, kind string) (HostRequestState, error) {
+func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, kind string, args map[string]string) (HostRequestState, error) {
 	owner, err := s.IsInstanceOwner(ctx, userID)
 	if err != nil {
 		return HostRequestState{}, err
@@ -77,6 +82,12 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 		reqType = hostagent.RequestMigrateCredential
 	case "prepare":
 		reqType = hostagent.RequestMigratePrepare
+	case "move":
+		reqType = hostagent.RequestMigrateMove
+	case "cutover":
+		reqType = hostagent.RequestMigrateCutover
+	case "rollback":
+		reqType = hostagent.RequestMigrateRollback
 	default:
 		return HostRequestState{}, ErrUnknownHostRequest
 	}
@@ -94,7 +105,12 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 		}
 	}
 
-	req := hostagent.Request{ID: uuid.NewString(), Type: reqType, RequestedBy: userID.String(), RequestedAt: time.Now().UTC()}
+	req := hostagent.Request{ID: uuid.NewString(), Type: reqType, RequestedBy: userID.String(),
+		RequestedAt: time.Now().UTC(), Args: args}
+	// Stage 2 acts on one group, and the console has to say which.
+	if reqType == hostagent.RequestMigrateMove && args["group"] == "" {
+		return HostRequestState{}, errors.New("which group should move?")
+	}
 	if err := hostagent.ValidateRequest(req, ""); err != nil {
 		return HostRequestState{}, err
 	}
@@ -142,6 +158,12 @@ func (s *SystemService) GetMigrationState(ctx context.Context, userID uuid.UUID)
 		return out, err
 	}
 	if out.Prepare, out.PrepareAt, err = hostagent.ReadResult(dir, hostagent.PrepareFile); err != nil {
+		return out, err
+	}
+	if out.Move, out.MoveAt, err = hostagent.ReadResult(dir, hostagent.MoveFile); err != nil {
+		return out, err
+	}
+	if out.Cutover, out.CutoverAt, err = hostagent.ReadResult(dir, hostagent.CutoverFile); err != nil {
 		return out, err
 	}
 	if out.Plan, out.PlanAt, err = hostagent.ReadResult(dir, hostagent.PlanFile); err != nil {

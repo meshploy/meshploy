@@ -34,6 +34,10 @@ var migrateDokployCmd = &cobra.Command{
            integration becomes in Meshploy, and what needs you
   prepare  stage 1: create the Meshploy side of a confirmed plan, with services
            stopped and routes paused. Dokploy keeps serving
+  move     stage 2: move one group - stop Dokploy's copies, start Meshploy's,
+           switch that group's domains
+  cutover  stage 3: hand ports 80 and 443 to Meshploy, with the certificates
+  rollback undo one group, or everything, back to Dokploy
 
 Run it on the Dokploy server, as root: it reads Docker and Dokploy's database.
 Secrets are read only in memory and never printed or written.`,
@@ -269,6 +273,88 @@ rather than creating a second copy.`,
 	},
 }
 
+var migrateDokployMoveCmd = &cobra.Command{
+	Use:   "move <group>",
+	Short: "Stage 2: move one group into Meshploy",
+	Long: `Moves one group: stops Dokploy's copies, starts Meshploy's, switches the
+group's domains through the edge Dokploy still runs, and checks they answer.
+
+If any step fails the group puts itself back - Dokploy serving again, Meshploy's
+copies stopped, the domains restored - because a half-moved group must never
+serve.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if os.Getuid() != 0 {
+			return fmt.Errorf("migrate dokploy move requires root: it stops Docker workloads and rewrites the edge; re-run with sudo")
+		}
+		body, err := runMigrateMove(args[0])
+		if err != nil {
+			return err
+		}
+		var result dokploy.MoveResult
+		if err := json.Unmarshal(body, &result); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s moved. Its domains now answer from Meshploy; downtime was %s.\n", args[0], result.Downtime)
+		return nil
+	},
+}
+
+var migrateDokployCutoverCmd = &cobra.Command{
+	Use:   "cutover",
+	Short: "Stage 3: hand ports 80 and 443 to Meshploy",
+	Long: `Backs up the old edge and its certificates, imports the certificates for moved
+domains so HTTPS works immediately, stops the old edge and starts Meshploy's.
+
+Seconds of refused connections between the two. Every group must have moved
+first: cutover takes the ports for every domain at once.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if os.Getuid() != 0 {
+			return fmt.Errorf("migrate dokploy cutover requires root: it stops the edge and starts another; re-run with sudo")
+		}
+		body, err := runMigrateCutover()
+		if err != nil {
+			return err
+		}
+		var result dokploy.CutoverResult
+		if err := json.Unmarshal(body, &result); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Meshploy holds 80 and 443. %d certificate(s) carried over; the ports changed hands in %s.\n",
+			len(result.CertificatesImported), result.Downtime)
+		return nil
+	},
+}
+
+var migrateDokployRollbackCmd = &cobra.Command{
+	Use:   "rollback [group]",
+	Short: "Undo one group, or the whole migration, back to Dokploy",
+	Long: `Replays the journal backwards: routes paused, domains given back, Meshploy's
+copies stopped, Dokploy's started again.
+
+Data written into Meshploy after a group moved is not copied back.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if os.Getuid() != 0 {
+			return fmt.Errorf("migrate dokploy rollback requires root; re-run with sudo")
+		}
+		var group string
+		if len(args) == 1 {
+			group = args[0]
+		}
+		body, err := runMigrateRollback(group)
+		if err != nil {
+			return err
+		}
+		var result dokploy.Result
+		if err := json.Unmarshal(body, &result); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Undid %d step(s).\n", result.Undone)
+		return nil
+	},
+}
+
 var migrateDokployFixtureCmd = &cobra.Command{
 	Use:   "fixture",
 	Short: "Write a scrubbed reading of this server, for use as a test fixture",
@@ -307,7 +393,8 @@ func init() {
 	migrateDokployFixtureCmd.Flags().String("out", "", "Write the scrubbed reading to this file (created readable by root only)")
 	migrateDokployPlanCmd.Flags().Bool("json", false, "Print the plan as JSON")
 	migrateDokployPlanCmd.Flags().String("out", "", "Also write the plan as JSON to this file (created readable by root only)")
-	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployPrepareCmd, migrateDokployFixtureCmd)
+	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployPrepareCmd,
+		migrateDokployMoveCmd, migrateDokployCutoverCmd, migrateDokployRollbackCmd, migrateDokployFixtureCmd)
 	migrateCmd.AddCommand(migrateDokployCmd)
 	rootCmd.AddCommand(migrateCmd)
 }

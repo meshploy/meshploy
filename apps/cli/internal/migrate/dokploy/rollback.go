@@ -82,6 +82,10 @@ func (r Rollback) one(e journal.Entry) error {
 		_, err = r.Runner.Output("docker", "service", "scale", "--detach", fmt.Sprintf("%s=%d", u.Args["service"], n))
 		return err
 
+	case journal.UndoStartUnit:
+		_, err := r.Runner.Output("systemctl", "start", u.Args["unit"])
+		return err
+
 	case journal.UndoStartContainer:
 		_, err := r.Runner.Output("docker", "start", u.Args["container"])
 		return err

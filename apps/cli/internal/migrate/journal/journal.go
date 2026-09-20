@@ -82,6 +82,9 @@ const (
 	UndoStopService = "stop-service"
 	// UndoPauseRoute puts route Args["route_id"] back to paused.
 	UndoPauseRoute = "pause-route"
+	// UndoStartUnit starts systemd unit Args["unit"] again, for a custom edge
+	// that was stopped at cutover.
+	UndoStartUnit = "start-unit"
 )
 
 // Journal is an open journal file.
@@ -173,11 +176,12 @@ func (j *Journal) CreatedBy(step string) string {
 // Backup stores content beside the journal and returns the path, for an undo
 // that has to put a file back the way it was.
 func (j *Journal) Backup(name string, content []byte) (string, error) {
-	dir := filepath.Join(j.dir, "backup")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	path := filepath.Join(j.dir, "backup", name)
+	// name may carry directories - an edge's configuration is copied with its
+	// own layout, so it can be put back the way it was found.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		return "", err
 	}

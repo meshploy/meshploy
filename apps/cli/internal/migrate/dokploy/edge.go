@@ -21,6 +21,10 @@ import (
 // taken from its static config's file provider.
 const DefaultDynamicDir = "/etc/dokploy/traefik/dynamic"
 
+// DefaultTraefikDir is Dokploy's Traefik configuration, backed up whole before
+// cutover.
+const DefaultTraefikDir = "/etc/dokploy/traefik"
+
 // EdgeSwitcher points Dokploy's domains at Meshploy, one app at a time.
 type EdgeSwitcher struct {
 	// DynamicDir is Traefik's watched directory.

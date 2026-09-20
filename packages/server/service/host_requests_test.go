@@ -12,6 +12,7 @@ import (
 	"github.com/meshploy/packages/hostagent"
 	"github.com/meshploy/packages/server/config"
 	"github.com/meshploy/packages/server/service"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +36,7 @@ func TestRequestMigrationQueuesForTheAgent(t *testing.T) {
 	ctx := context.Background()
 	e, svc, hostDir := newMigrationEnv(t, true)
 
-	st, err := svc.System.RequestMigration(ctx, e.owner, "plan")
+	st, err := svc.System.RequestMigration(ctx, e.owner, "plan", nil)
 	require.NoError(t, err)
 	require.Equal(t, "queued", st.State)
 
@@ -70,17 +71,37 @@ func TestRequestMigrationRefusals(t *testing.T) {
 	ctx := context.Background()
 
 	e, svc, _ := newMigrationEnv(t, false)
-	_, err := svc.System.RequestMigration(ctx, e.owner, "detect")
+	_, err := svc.System.RequestMigration(ctx, e.owner, "detect", nil)
 	require.ErrorIs(t, err, service.ErrHostAgentNotReporting, "no agent would pick it up")
 
 	e, svc, _ = newMigrationEnv(t, true)
-	_, err = svc.System.RequestMigration(ctx, e.owner, "apply")
+	_, err = svc.System.RequestMigration(ctx, e.owner, "apply", nil)
 	require.ErrorIs(t, err, service.ErrUnknownHostRequest)
 
 	other := upgradeUser(t, e.db, "member", meshdb.UserHuman)
 	upgradeMember(t, e.db, e.first, other, meshdb.RoleAdmin)
-	_, err = svc.System.RequestMigration(ctx, other, "plan")
+	_, err = svc.System.RequestMigration(ctx, other, "plan", nil)
 	require.ErrorIs(t, err, service.ErrMigrationNotOwner)
 	_, err = svc.System.GetMigrationState(ctx, other)
 	require.ErrorIs(t, err, service.ErrMigrationNotOwner, "the plan names every app and domain")
+}
+
+// Stage 2 acts on one group, so the console has to say which. A move with no
+// group would otherwise queue a request the agent cannot answer.
+func TestAMoveMustNameItsGroup(t *testing.T) {
+	ctx := context.Background()
+	e, svc, hostDir := newMigrationEnv(t, true)
+
+	_, err := svc.System.RequestMigration(ctx, e.owner, "move", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "which group")
+
+	st, err := svc.System.RequestMigration(ctx, e.owner, "move", map[string]string{"group": "g-web"})
+	require.NoError(t, err)
+	assert.NotEmpty(t, st.ID)
+
+	path := filepath.Join(hostagent.InboxDir(hostDir), hostagent.RequestMigrateMove+"-"+st.ID+".json")
+	req, err := hostagent.ReadRequestFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "g-web", req.Args["group"])
 }
