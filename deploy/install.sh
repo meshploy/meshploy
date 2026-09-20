@@ -1315,10 +1315,21 @@ NEUNIT
   hr
   echo -e "  ${BOLD}${GREEN}✔  Meshploy master node is ready!${RESET}"
   hr
-  echo -e "  ${BOLD}Service URLs${RESET}"
-  echo -e "    Dashboard   ${CYAN}https://console.${DOMAIN}${RESET}"
-  echo -e "    API         ${CYAN}https://api.${DOMAIN}${RESET}"
-  echo -e "    Headscale   ${CYAN}https://headscale.${DOMAIN}${RESET}"
+  if [[ "$EDGE_DEFERRED" == "true" ]]; then
+    # Those URLs belong to the platform being migrated until cutover, so
+    # printing them as Meshploy's would send the operator to the wrong console.
+    echo -e "  ${BOLD}Reaching the console before cutover${RESET}"
+    echo -e "    Ports 80 and 443 still belong to the platform being migrated."
+    echo -e "    ${BOLD}ssh -L 5173:127.0.0.1:5173 -L 4000:127.0.0.1:4000 root@${PUBLIC_IP}${RESET}"
+    echo -e "    then open ${CYAN}http://localhost:5173${RESET}"
+    echo -e "    After cutover these become Meshploy's:"
+    echo -e "      ${CYAN}https://console.${DOMAIN}${RESET}  ${CYAN}https://api.${DOMAIN}${RESET}  ${CYAN}https://headscale.${DOMAIN}${RESET}"
+  else
+    echo -e "  ${BOLD}Service URLs${RESET}"
+    echo -e "    Dashboard   ${CYAN}https://console.${DOMAIN}${RESET}"
+    echo -e "    API         ${CYAN}https://api.${DOMAIN}${RESET}"
+    echo -e "    Headscale   ${CYAN}https://headscale.${DOMAIN}${RESET}"
+  fi
   echo
   # Shown once, and only while the server has no owner. The first account to
   # register owns the instance, so this is the credential that decides who that
@@ -1345,7 +1356,15 @@ NEUNIT
   # Mode-aware: telling a self-managed-DNS operator to add an NS record is the
   # one instruction they already said they cannot follow, and querying this
   # server for the zone only proves anything when the zone is delegated to it.
-  if [[ "$DNS_MODE" == "ondemand" ]]; then
+  # And where another platform still holds the ports, DNS and TLS checks are
+  # answered by that platform - the next steps are the migration's own.
+  if [[ "$EDGE_DEFERRED" == "true" ]]; then
+    echo -e "    1. Read the migration plan:   ${BOLD}sudo meshploy migrate dokploy plan${RESET}"
+    echo -e "    2. Move a group when ready:   ${BOLD}sudo meshploy migrate dokploy move <group>${RESET}"
+    echo -e "       Its domains keep answering through the old edge, served by Meshploy."
+    echo -e "    3. Hand over the ports:       ${BOLD}sudo meshploy migrate dokploy cutover${RESET}"
+    echo -e "    Anything can be put back:     ${BOLD}sudo meshploy migrate dokploy rollback${RESET}"
+  elif [[ "$DNS_MODE" == "ondemand" ]]; then
     echo -e "    1. Add these records at your DNS provider:"
     echo -e "         ${CYAN}*.${DOMAIN}${RESET}   A   ${PUBLIC_IP}"
     echo -e "         ${CYAN}${DOMAIN}${RESET}     A   ${PUBLIC_IP}"
@@ -1372,7 +1391,13 @@ NEUNIT
   TLS_OK=0
   TLS_SKIPPED=0
   TLS_LAST_ERR=""
-  if [[ "$DNS_MODE" == "ondemand" ]]; then
+  if [[ "$EDGE_DEFERRED" == "true" ]]; then
+    # Nothing to wait for: Meshploy's Caddy is not running, and every
+    # certificate on this server still belongs to the platform holding the
+    # ports. Cutover carries them across.
+    info "Certificates stay with the platform being migrated until cutover."
+    TLS_SKIPPED=1
+  elif [[ "$DNS_MODE" == "ondemand" ]]; then
     echo -e "  ${YELLOW}On-demand TLS: Caddy issues a certificate per hostname on first request.${RESET}"
     echo -e "  ${YELLOW}Make sure the wildcard A record is live:  *.${DOMAIN} → ${PUBLIC_IP}${RESET}"
     echo
@@ -1454,6 +1479,8 @@ NEUNIT
     warn "Certificate not confirmed yet — it will be issued on first visit once the"
     warn "wildcard A record (*.${DOMAIN} → ${PUBLIC_IP}) has propagated."
     warn "Monitor: $COMPOSE_CMD logs -f caddy"
+  elif [[ "$EDGE_DEFERRED" == "true" ]]; then
+    : # already said, and Caddy is not running to have logs worth watching
   elif [[ $TLS_SKIPPED -eq 1 ]]; then
     warn "Skipped the certificate wait. Monitor: $COMPOSE_CMD logs -f caddy"
   else
