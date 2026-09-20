@@ -13,16 +13,21 @@ import (
 
 // fakeAPI stands in for Meshploy, recording what prepare asked it to create.
 type fakeAPI struct {
-	projects map[string]string // name -> id
-	services []ServiceSpec
-	envs     map[string]string // service id -> env block
-	routes   []RouteSpec
-	fail     map[string]error // target name -> error
-	n        int
+	projects   map[string]string // name -> id
+	services   []ServiceSpec
+	envs       map[string]string // service id -> env block
+	routes     []RouteSpec
+	volumes    map[string]string // name -> id
+	volumeSize map[string]int
+	mounts     []string
+	files      []string
+	fail       map[string]error // target name -> error
+	n          int
 }
 
 func newFakeAPI() *fakeAPI {
-	return &fakeAPI{projects: map[string]string{}, envs: map[string]string{}, fail: map[string]error{}}
+	return &fakeAPI{projects: map[string]string{}, envs: map[string]string{}, fail: map[string]error{},
+		volumes: map[string]string{}, volumeSize: map[string]int{}}
 }
 
 func (f *fakeAPI) next(prefix string) string {
@@ -52,6 +57,29 @@ func (f *fakeAPI) CreateService(projectID string, spec ServiceSpec) (string, err
 
 func (f *fakeAPI) SetEnvVars(projectID, serviceID, env string) error {
 	f.envs[serviceID] = env
+	return nil
+}
+
+func (f *fakeAPI) CreateVolume(projectID, name string, storageGB int) (string, error) {
+	if err := f.fail[name]; err != nil {
+		return "", err
+	}
+	if id, ok := f.volumes[name]; ok {
+		return id, nil
+	}
+	id := f.next("vol")
+	f.volumes[name] = id
+	f.volumeSize[name] = storageGB
+	return id, nil
+}
+
+func (f *fakeAPI) AttachVolume(projectID, volumeID, serviceID, mountPath string) error {
+	f.mounts = append(f.mounts, volumeID+" -> "+serviceID+":"+mountPath)
+	return nil
+}
+
+func (f *fakeAPI) CreateConfigFile(projectID, serviceID, name, path, content string) error {
+	f.files = append(f.files, name+" at "+path+" = "+content)
 	return nil
 }
 
@@ -282,7 +310,7 @@ func TestUnsupportedNamesWhatWouldBeDropped(t *testing.T) {
 	withCompose := Plan{Items: []Item{
 		{Kind: "compose", Name: "n8n", Verdict: Moves},
 		{Kind: "registry", Name: "ghcr", Verdict: Moves},
-		{Kind: "application", Name: "web", Verdict: Moves, Details: map[string]string{"mounts": "1 volume"}},
+		{Kind: "application", Name: "web", Verdict: Moves, Details: map[string]string{"bind_mounts": "1"}},
 		{Kind: "application", Name: "gone", Verdict: NotMoved},
 	}}
 	got := Unsupported(withCompose)
@@ -322,5 +350,66 @@ func TestTheImageFallsBackToWhatDokployStored(t *testing.T) {
 	db, ok := api.service("db")
 	if !ok || db.Image != "postgres:16" {
 		t.Errorf("database image = %q", db.Image)
+	}
+}
+
+// A workload's volumes are created empty in stage 1 so the move has somewhere
+// to put the data, and its config files come with it.
+func TestPrepareCreatesVolumesAndConfigFiles(t *testing.T) {
+	plan, src := smallPlan(t)
+	src.Rows["mount"] = []Row{
+		{"mountId": "m1", "applicationId": "a1", "type": "volume", "volumeName": "web-uploads", "mountPath": "/app/uploads"},
+		{"mountId": "m2", "applicationId": "a1", "type": "file", "mountPath": "/etc/nginx/nginx.conf", "content": "server { }"},
+	}
+	src.Docker.Volumes = []migrate.Volume{{Name: "web-uploads", MB: 3000}}
+	plan = BuildPlan(src, time.Now())
+
+	api := newFakeAPI()
+	out, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Failures) != 0 {
+		t.Fatalf("failures: %v", out.Failures)
+	}
+
+	if _, ok := api.volumes["web-uploads"]; !ok {
+		t.Fatalf("volumes = %v", api.volumes)
+	}
+	// Sized with headroom: a volume restored into one exactly its own size is
+	// full the moment it arrives.
+	if got := api.volumeSize["web-uploads"]; got < 6 {
+		t.Errorf("size = %d GB for 3 GB of data, want room to grow", got)
+	}
+	if len(api.mounts) != 1 || !strings.HasSuffix(api.mounts[0], ":/app/uploads") {
+		t.Errorf("mounts = %v", api.mounts)
+	}
+	if len(api.files) != 1 || !strings.Contains(api.files[0], "/etc/nginx/nginx.conf") || !strings.Contains(api.files[0], "server { }") {
+		t.Errorf("config files = %v", api.files)
+	}
+}
+
+// A bind mount is a host path somebody chose to keep or copy, and copying is
+// stage 2's data step. A plan carrying one is refused rather than half-applied.
+func TestABindMountIsRefusedUntilItCanBeCopied(t *testing.T) {
+	src := Source{Rows: map[string][]Row{
+		"project":     {{"projectId": "p1", "name": "Acme"}},
+		"environment": {{"environmentId": "e1", "projectId": "p1", "name": "production"}},
+		"application": {{"applicationId": "a1", "name": "web", "environmentId": "e1", "appName": "web-abc"}},
+		"mount":       {{"mountId": "m1", "applicationId": "a1", "type": "bind", "hostPath": "/srv/web-data", "mountPath": "/data"}},
+	}}
+	plan := BuildPlan(src, time.Now())
+
+	missing := Unsupported(plan)
+	if len(missing) == 0 || !strings.Contains(strings.Join(missing, " "), "bind mount") {
+		t.Fatalf("Unsupported = %v", missing)
+	}
+}
+
+func TestVolumeSizeAlwaysLeavesRoom(t *testing.T) {
+	for mb, want := range map[int]int{0: 1, -1: 1, 10: 1, 600: 2, 3000: 6, 8000: 16} {
+		if got := volumeSizeGB(mb); got != want {
+			t.Errorf("%d MB -> %d GB, want %d", mb, got, want)
+		}
 	}
 }

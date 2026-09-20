@@ -28,6 +28,15 @@ func (f *fakeRunner) Output(name string, args ...string) (string, error) {
 	return "", nil
 }
 
+func (f *fakeRunner) didRunAfter(cmd string, from int) bool {
+	for _, c := range f.ran[from:] {
+		if c == cmd {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *fakeRunner) didRun(cmd string) bool {
 	for _, c := range f.ran {
 		if c == cmd {

@@ -34,6 +34,12 @@ type API interface {
 	SetEnvVars(projectID, serviceID, env string) error
 	// CreateRoute creates a route, paused.
 	CreateRoute(projectID string, spec RouteSpec) (string, error)
+	// CreateVolume makes a volume of the given size and returns its id.
+	CreateVolume(projectID, name string, storageGB int) (string, error)
+	// AttachVolume mounts a volume into a service at a path.
+	AttachVolume(projectID, volumeID, serviceID, mountPath string) error
+	// CreateConfigFile stores a file and attaches it to a service at a path.
+	CreateConfigFile(projectID, serviceID, name, path, content string) error
 }
 
 // ServiceSpec is one workload to create.
@@ -75,6 +81,9 @@ type PrepareDeps struct {
 	Source  Source
 	API     API
 	Journal *journal.Journal
+	// Images carries locally built images into the built-in registry. Nil skips
+	// that, which is right for a server whose images all came from registries.
+	Images *ImageMover
 }
 
 // PrepareResult is what stage 1 did.
@@ -108,8 +117,11 @@ func Unsupported(plan Plan) []string {
 		case "registry", "destination", "git_provider":
 			out = append(out, fmt.Sprintf("%s (%s): integrations are not created yet", it.Name, it.Kind))
 		}
-		if it.Details["mounts"] != "" {
-			out = append(out, fmt.Sprintf("%s: %s - volumes and bind mounts are not created yet", it.Name, it.Details["mounts"]))
+		// A bind mount is a host path. Whether it moves is the operator's
+		// decision, and copying it is stage 2's data step, which does not exist
+		// yet - so a plan that carries one is refused rather than half-applied.
+		if it.Details["bind_mounts"] != "" {
+			out = append(out, fmt.Sprintf("%s: %s bind mount(s) from host paths - copying them is not built yet", it.Name, it.Details["bind_mounts"]))
 		}
 	}
 	sort.Strings(out)
@@ -160,6 +172,17 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 			continue
 		}
 		spec := d.specFor(it)
+		// An image Dokploy built on this host exists nowhere else, so it is
+		// pushed into the built-in registry before anything is asked to pull
+		// it. An image from a registry is left as it is.
+		if d.Images != nil && spec.Image != "" {
+			pushed, err := d.Images.Push("prepare/image/"+it.ID, "", spec.Image)
+			if err != nil {
+				out.Failures = append(out.Failures, fmt.Sprintf("push %s: %v", it.Name, err))
+				continue
+			}
+			spec.Image = pushed
+		}
 		id, err := d.step(&out, "prepare/service/"+it.ID, "", "create-service", it.Name, func() (string, error) {
 			return d.API.CreateService(projectID, spec)
 		})
@@ -167,6 +190,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 			continue
 		}
 		out.Services[it.ID] = id
+		d.mounts(&out, it, projectID, id)
 		if spec.EnvVars != "" {
 			_, _ = d.step(&out, "prepare/env/"+it.ID, "", "set-env", it.Name, func() (string, error) {
 				return id, d.API.SetEnvVars(projectID, id, spec.EnvVars)
@@ -199,6 +223,89 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	}
 
 	return out, nil
+}
+
+// mounts creates a workload's volumes and config files and attaches them.
+//
+// A volume is created empty here and filled in stage 2, when the group moves
+// and its data is copied with the workload stopped. Creating it now means the
+// move has somewhere to put the data and nothing to invent under downtime.
+func (d PrepareDeps) mounts(out *PrepareResult, it Item, projectID, serviceID string) {
+	for _, m := range d.mountRows(it.ID) {
+		switch m.Str("type") {
+		case "volume":
+			name, path := m.Str("volumeName"), m.Str("mountPath")
+			if name == "" || path == "" {
+				continue
+			}
+			// Sized from what the volume holds now, with room to grow: a
+			// volume restored into one exactly its own size is full on arrival.
+			size := volumeSizeGB(d.Source.Docker.VolumeMB(name))
+			volumeID, err := d.step(out, "prepare/volume/"+m.Str("mountId"), "", "create-volume", name, func() (string, error) {
+				return d.API.CreateVolume(projectID, name, size)
+			})
+			if err != nil || volumeID == "" {
+				continue
+			}
+			_, _ = d.step(out, "prepare/mount/"+m.Str("mountId"), "", "attach-volume", name+" at "+path, func() (string, error) {
+				return volumeID, d.API.AttachVolume(projectID, volumeID, serviceID, path)
+			})
+
+		case "file":
+			// Dokploy keeps small files - an nginx.conf, an htpasswd - beside
+			// the workload. They are config files here, projected the same way.
+			path, content := m.Str("mountPath"), m.Str("content")
+			if path == "" {
+				continue
+			}
+			name := fileNameFor(it.Name, path)
+			_, _ = d.step(out, "prepare/file/"+m.Str("mountId"), "", "create-config-file", name, func() (string, error) {
+				return "", d.API.CreateConfigFile(projectID, serviceID, name, path, content)
+			})
+		}
+	}
+}
+
+// mountRows finds a workload's mounts, whichever column the table uses to own
+// them.
+func (d PrepareDeps) mountRows(itemID string) []Row {
+	var out []Row
+	for _, m := range d.Source.Rows["mount"] {
+		for _, key := range []string{"applicationId", "composeId", "postgresId", "mysqlId", "mariadbId", "mongoId", "redisId"} {
+			if m.Str(key) == itemID {
+				out = append(out, m)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// volumeSizeGB turns the size a volume holds into the size to create, rounded
+// up with headroom. A volume restored into one exactly its own size is full the
+// moment it arrives, and growing a PVC afterwards is not always possible.
+func volumeSizeGB(mb int) int {
+	if mb <= 0 {
+		return 1
+	}
+	gb := (mb*2 + 1023) / 1024
+	if gb < 1 {
+		return 1
+	}
+	return gb
+}
+
+// fileNameFor names a config file after the workload and the path it lands at,
+// because a project may hold several and "config" tells nobody anything.
+func fileNameFor(workload, path string) string {
+	base := path
+	if i := strings.LastIndex(base, "/"); i >= 0 && i+1 < len(base) {
+		base = base[i+1:]
+	}
+	if base == "" {
+		base = "config"
+	}
+	return workload + "-" + base
 }
 
 // step runs one piece of work, once. A step already recorded as done is

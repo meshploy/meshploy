@@ -204,11 +204,22 @@ func runMigratePrepare() ([]byte, error) {
 	}
 	defer j.Close()
 
+	api := dokploy.ClientAPI{C: client.New(cred.BaseURL, cred.Token), OrgID: cred.OrgID}
+	// Where locally built images are carried to. An install without a built-in
+	// registry leaves images as they are, which is right for a server whose
+	// images all came from registries and honest for one whose did not: the
+	// failure is then a pull that cannot find the image, not a silent rewrite.
+	registry, err := api.BuiltinRegistry()
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := dokploy.Prepare(dokploy.PrepareDeps{
 		Plan:    *plan,
 		Source:  src,
-		API:     dokploy.ClientAPI{C: client.New(cred.BaseURL, cred.Token), OrgID: cred.OrgID},
+		API:     api,
 		Journal: j,
+		Images:  &dokploy.ImageMover{Runner: migrate.ExecRunner{}, Registry: registry, Journal: j},
 	})
 	if err != nil {
 		return nil, err

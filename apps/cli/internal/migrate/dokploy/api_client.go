@@ -99,6 +99,60 @@ func (a ClientAPI) CreateRoute(projectID string, spec RouteSpec) (string, error)
 	return r.ID, nil
 }
 
+// CreateVolume makes a volume, reusing one of the same name in the project: a
+// re-run of stage 1 must not leave two volumes where the data can only go in
+// one.
+func (a ClientAPI) CreateVolume(projectID, name string, storageGB int) (string, error) {
+	existing, err := a.C.ListVolumes(a.OrgID, projectID)
+	if err != nil {
+		return "", err
+	}
+	for _, v := range existing {
+		if strings.EqualFold(v.Name, name) {
+			return v.ID, nil
+		}
+	}
+	v, err := a.C.CreateVolume(a.OrgID, projectID, client.CreateVolumeBody{Name: name, StorageGB: storageGB})
+	if err != nil {
+		return "", err
+	}
+	return v.ID, nil
+}
+
+func (a ClientAPI) AttachVolume(projectID, volumeID, serviceID, mountPath string) error {
+	_, err := a.C.AttachVolume(a.OrgID, projectID, volumeID, client.AttachVolumeBody{
+		ServiceID: serviceID, MountPath: mountPath,
+	})
+	return err
+}
+
+func (a ClientAPI) CreateConfigFile(projectID, serviceID, name, path, content string) error {
+	f, err := a.C.CreateConfigFile(a.OrgID, projectID, name, path, content)
+	if err != nil {
+		return err
+	}
+	return a.C.AttachConfigFile(a.OrgID, projectID, f.ID, serviceID)
+}
+
+// BuiltinRegistry is where locally built images are carried to: the registry
+// Meshploy runs on the gateway, seeded per organisation at install.
+//
+// Read from the API rather than from the host's .env, so the migrator uses the
+// endpoint Meshploy itself believes in. An install without one returns an empty
+// registry, and images are then left as they are.
+func (a ClientAPI) BuiltinRegistry() (Registry, error) {
+	list, err := a.C.ListRegistryIntegrations(a.OrgID)
+	if err != nil {
+		return Registry{}, err
+	}
+	for _, r := range list {
+		if r.Provider == "builtin" && r.Endpoint != "" {
+			return Registry{Endpoint: r.Endpoint}, nil
+		}
+	}
+	return Registry{}, nil
+}
+
 // ── Stage 2 ──────────────────────────────────────────────────────────────────
 
 func (a ClientAPI) StartService(projectID, serviceID string) error {
