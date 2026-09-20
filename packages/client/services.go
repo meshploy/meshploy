@@ -231,11 +231,26 @@ func (c *Client) SetBuildEnvVars(orgID, projectID, serviceID, envVars string) er
 	return nil
 }
 
+// ServicePortBody is one container port. Left empty on create, the API gives
+// the service a single HTTP port 3000, which is only right for a service that
+// happens to listen there: anything else - a migrated workload, an image that
+// listens on 80 - has to say so, or its route is published to a port nothing
+// answers on.
+type ServicePortBody struct {
+	Name      string `json:"name"`
+	Port      int    `json:"port"`
+	IsHTTP    bool   `json:"is_http"`
+	IsPrimary bool   `json:"is_primary"`
+	// IsPublic gets the port a NodePort, which is what a route target dials.
+	IsPublic bool `json:"is_public"`
+}
+
 type CreateServiceBody struct {
-	Name          string  `json:"name"`
-	Image         string  `json:"image,omitempty"`
-	NodeID        *string `json:"node_id,omitempty"`
-	EnvVars       string  `json:"env_vars,omitempty"`
+	Name          string            `json:"name"`
+	Image         string            `json:"image,omitempty"`
+	NodeID        *string           `json:"node_id,omitempty"`
+	EnvVars       string            `json:"env_vars,omitempty"`
+	Ports         []ServicePortBody `json:"ports,omitempty"`
 	Replicas      int     `json:"replicas,omitempty"`
 	CPURequest    string  `json:"cpu_request,omitempty"`
 	CPULimit      string  `json:"cpu_limit,omitempty"`
