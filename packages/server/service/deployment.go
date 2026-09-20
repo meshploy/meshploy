@@ -391,7 +391,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		RegistryHost:  a.registryHost,
 		RegistryUser:  a.registryUser,
 		RegistryPass:  a.registryPass,
-		BuildEnvVars:  string(a.bc.BuildEnvVars),
+		BuildEnvVars:  s.buildEnv(ctx, a),
 		BuilderNode:   a.bc.BuilderNode,
 		CPURequest:    a.bc.BuilderCPURequest,
 		MemoryRequest: a.bc.BuilderMemoryRequest,
@@ -1551,6 +1551,29 @@ func mergeSecretEnvs(envs []corev1.EnvVar, secrets map[string]string) []corev1.E
 //
 // Slug is empty on rows created before it existed; those keep resolving to the
 // name they were deployed under, so nothing running is renamed.
+// buildEnv is the build block with its ${…} references filled in.
+//
+// The references may name a runtime variable or one from an attached group, so
+// a build step needing a value the service already has does not mean typing it
+// twice. Only the build block's own keys reach the builder.
+func (s *DeploymentService) buildEnv(ctx context.Context, a runPipelineArgs) string {
+	block := string(a.bc.BuildEnvVars)
+	if block == "" {
+		return ""
+	}
+	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, a.svc.ID)
+	sources := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), 0), groupEnvs)
+	resolved, unresolved := resolveBuildEnv(block, sources)
+	if len(unresolved) > 0 {
+		msg := "Build variables left as written, not defined for this service: ${" +
+			strings.Join(unresolved, "}, ${") + "}"
+		log.Printf("service %s: %s", a.svc.Name, msg)
+		s.db.Model(&db.Deployment{}).Where("id = ?", a.deployment.ID).
+			Update("log", gorm.Expr("log || ?", msg+"\n"))
+	}
+	return resolved
+}
+
 func appK8sName(svc *db.Service) string {
 	if svc.Slug != "" {
 		return svc.Slug

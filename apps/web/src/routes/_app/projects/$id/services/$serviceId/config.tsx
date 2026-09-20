@@ -52,6 +52,17 @@ export const Route = createFileRoute(
 
 // ─── Env Vars section ─────────────────────────────────────────────────────────
 
+// envEditorHeight grows an editor when its content would otherwise scroll.
+//
+// Not to fit: a hundred-line block would push everything else off the page.
+// It grows to a ceiling and scrolls beyond that, which keeps a long block
+// readable without making the rest of the form unreachable.
+function envEditorHeight(value: string, base: number, max: number): string {
+  const lines = value ? value.split("\n").length : 1
+  const needed = lines * 19 + 16 // CodeMirror's line height, plus its padding
+  return `${Math.min(Math.max(base, needed), max)}px`
+}
+
 function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
@@ -76,7 +87,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
     },
   })
 
-  useConfigSave("Environment variables", draft, () => mutation.mutateAsync(), !isLoading)
+  useConfigSave("Runtime environment variables", draft, () => mutation.mutateAsync(), !isLoading)
 
   // Names a ${…} reference can use besides the service's own: its attached
   // groups' variables. The same query as the variable groups section below.
@@ -94,8 +105,8 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
 
   return (
     <Section
-      title="Environment variables"
-      subtitle="One KEY=VALUE pair per line. ${NAME} uses another variable, e.g. DATABASE_URL=${PRIMARY_PG_DB_URL} from an attached group; type ${ to pick one. Values are AES-256 encrypted at rest."
+      title="Runtime environment variables"
+      subtitle="Reach the running service, not the build. One KEY=VALUE pair per line. ${NAME} uses another variable, e.g. DATABASE_URL=${PRIMARY_PG_DB_URL} from an attached group; type ${ to pick one. Values are AES-256 encrypted at rest."
     >
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground py-4">
@@ -106,7 +117,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
         <div className="rounded-md overflow-hidden border border-border/60">
           <CodeMirror
             value={envVars}
-            height="160px"
+            height={envEditorHeight(envVars, 160, 420)}
             theme="dark"
             extensions={extensions}
             onChange={(val) => setEnvVars(val)}
@@ -731,12 +742,27 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
 
   useConfigSave("Build environment variables", draft, () => mutation.mutateAsync(), !isLoading && !isError)
 
+  // The same colouring and the same ${…} picker as the runtime block: a
+  // reference there is resolved against the runtime block and its groups when
+  // the build job is created, so the two editors behave alike.
+  const { data: attached } = useQuery<ApiVariableGroup[]>({
+    queryKey: ["service-variable-groups", orgId, projectId, serviceId],
+    queryFn: () => groupsApi.listForService(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+  const extensions = useMemo(() => {
+    const groupNames = (attached ?? []).flatMap((g) =>
+      g.items.map((i) => ({ name: i.key, source: g.name, secret: i.is_secret })),
+    )
+    return [envLanguage, envTheme, envRefAutocomplete(groupNames)]
+  }, [attached])
+
   if (isError) return null // no build config yet
 
   return (
     <Section
       title="Build environment variables"
-      subtitle="Injected at build time only — not available at runtime. One KEY=VALUE per line. For dockerfile: passed as --build-arg."
+      subtitle="Reach the build only, not the running service — a build step that needs a value has to find it here. One KEY=VALUE per line; ${NAME} may reference a runtime variable or an attached group. For dockerfile: passed as --build-arg."
     >
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground py-4">
@@ -747,8 +773,9 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
         <div className="rounded-md overflow-hidden border border-border/60">
           <CodeMirror
             value={envVars}
-            height="120px"
+            height={envEditorHeight(envVars, 120, 360)}
             theme="dark"
+            extensions={extensions}
             onChange={(val) => setEnvVars(val)}
             placeholder={"NIXPACKS_INSTALL_CMD=npm install\nNODE_ENV=production"}
             style={{ fontSize: 12 }}
@@ -1623,11 +1650,11 @@ function ConfigTab() {
   return (
     <ConfigSaveBar key={serviceId}><div className="console-page space-y-6"><ResourceIntro title="Service configuration" description="Configure the build source, environment, networking and mounted resources." /><FormLayout><div className="space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
+      <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <GroupAttachments owner={{ kind: "service", id: serviceId }} projectId={projectId} />
       <ConfigFilesSection projectId={projectId} serviceId={serviceId} />
       <PortsSection projectId={projectId} serviceId={serviceId} />
       <VolumesSection projectId={projectId} serviceId={serviceId} />
-      <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <SourceDeploySection projectId={projectId} serviceId={serviceId} />
       <RollbackSection projectId={projectId} serviceId={serviceId} />
     </div></FormLayout></div></ConfigSaveBar>

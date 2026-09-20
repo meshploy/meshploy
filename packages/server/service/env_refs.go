@@ -3,6 +3,7 @@ package service
 import (
 	"regexp"
 	"sort"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -102,4 +103,82 @@ func sortedRefNames(set map[string]bool) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// ── Build-time references ────────────────────────────────────────────────────
+
+// resolveBuildEnv fills in ${NAME} references in a service's build environment.
+//
+// The two blocks are separate on purpose - a runtime secret has no business in
+// an image layer or a build log - but a build step often needs one value the
+// service already has, and re-typing it is how the two drift apart. So a
+// reference in the build block may name a build variable, a runtime variable or
+// one from an attached group; only the build block's own keys are returned, and
+// nothing else is carried into the build.
+//
+// A name that resolves to nothing is left as written, the same as at runtime,
+// so a typo shows up in the build rather than becoming an empty value.
+func resolveBuildEnv(buildBlock string, runtime []corev1.EnvVar) (string, []string) {
+	build := parseEnvBlock(buildBlock)
+	if len(build) == 0 {
+		return buildBlock, nil
+	}
+
+	// Sources: the build block itself first, so a build variable wins over a
+	// runtime one of the same name - the build block is the more specific
+	// statement of what this build needs.
+	sources := make([]corev1.EnvVar, 0, len(build)+len(runtime))
+	sources = append(sources, build...)
+	seen := map[string]bool{}
+	for _, e := range build {
+		seen[e.Name] = true
+	}
+	for _, e := range runtime {
+		if e.ValueFrom != nil || seen[e.Name] {
+			continue // a secret reference cannot be read here, and is not needed
+		}
+		sources = append(sources, e)
+	}
+
+	resolved, unknown, looped := resolveEnvRefs(sources)
+	byName := make(map[string]string, len(resolved))
+	for _, e := range resolved {
+		byName[e.Name] = e.Value
+	}
+
+	var out strings.Builder
+	for _, e := range build {
+		out.WriteString(e.Name)
+		out.WriteString("=")
+		out.WriteString(byName[e.Name])
+		out.WriteString("\n")
+	}
+	return out.String(), append(unknown, looped...)
+}
+
+// parseEnvBlock reads KEY=VALUE lines, ignoring blanks and comments.
+func parseEnvBlock(block string) []corev1.EnvVar {
+	var out []corev1.EnvVar
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		name, value, ok := strings.Cut(line, "=")
+		name = strings.TrimSpace(name)
+		if !ok || name == "" {
+			continue
+		}
+		out = append(out, corev1.EnvVar{Name: name, Value: trimQuotes(strings.TrimSpace(value))})
+	}
+	return out
+}
+
+// trimQuotes removes one layer of matching quotes, which is how a value with
+// spaces or a "#" is written.
+func trimQuotes(v string) string {
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		return v[1 : len(v)-1]
+	}
+	return v
 }

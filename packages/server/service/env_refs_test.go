@@ -2,6 +2,7 @@ package service
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/meshploy/packages/db"
@@ -158,5 +159,73 @@ func TestDatabasePasswordsAreEnforced(t *testing.T) {
 	}
 	if dbArgs(db.DatabaseConfig{Engine: db.DatabasePostgres, DBPassword: "pw"}) != nil {
 		t.Error("postgres keeps its image's arguments")
+	}
+}
+
+// A build step often needs one value the service already has, and re-typing it
+// is how the two drift apart. A reference in the build block may name a runtime
+// variable - but only the build block's keys reach the builder.
+func TestResolveBuildEnvFillsFromRuntimeWithoutCarryingIt(t *testing.T) {
+	runtime := []corev1.EnvVar{
+		{Name: "DATABASE_URL", Value: "postgres://app:secret@db:5432/app"},
+		{Name: "SESSION_KEY", Value: "not for the build"},
+	}
+	got, unresolved := resolveBuildEnv("PRISMA_DB_URL=${DATABASE_URL}\nNODE_ENV=production\n", runtime)
+	if len(unresolved) != 0 {
+		t.Fatalf("unresolved = %v", unresolved)
+	}
+	if !strings.Contains(got, "PRISMA_DB_URL=postgres://app:secret@db:5432/app") {
+		t.Errorf("got %q", got)
+	}
+	if !strings.Contains(got, "NODE_ENV=production") {
+		t.Errorf("got %q", got)
+	}
+	// Nothing else is carried into the build: a runtime secret has no business
+	// in an image layer or a build log.
+	if strings.Contains(got, "SESSION_KEY") || strings.Contains(got, "DATABASE_URL=") {
+		t.Errorf("a runtime variable leaked into the build block: %q", got)
+	}
+}
+
+// The build block is the more specific statement of what this build needs, so
+// its own value wins over a runtime one of the same name.
+func TestABuildVariableWinsOverTheRuntimeOne(t *testing.T) {
+	runtime := []corev1.EnvVar{{Name: "NODE_ENV", Value: "production"}}
+	got, _ := resolveBuildEnv("NODE_ENV=development\n", runtime)
+	if strings.TrimSpace(got) != "NODE_ENV=development" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A name that resolves to nothing is left as written and reported, so a typo
+// shows up in the build rather than becoming an empty value.
+func TestAnUnknownBuildReferenceIsReported(t *testing.T) {
+	got, unresolved := resolveBuildEnv("API_URL=${NOT_A_THING}\n", nil)
+	if len(unresolved) != 1 || unresolved[0] != "NOT_A_THING" {
+		t.Fatalf("unresolved = %v", unresolved)
+	}
+	if !strings.Contains(got, "${NOT_A_THING}") {
+		t.Errorf("got %q, want the reference left as written", got)
+	}
+}
+
+// Quotes, comments and blank lines are how people actually write these.
+func TestParseEnvBlockReadsWhatPeopleWrite(t *testing.T) {
+	got := parseEnvBlock("# a comment\n\nA=\"with spaces\"\nB='single'\nC=plain\nnot a pair\n=novalue\n")
+	want := map[string]string{"A": "with spaces", "B": "single", "C": "plain"}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for _, e := range got {
+		if want[e.Name] != e.Value {
+			t.Errorf("%s = %q, want %q", e.Name, e.Value, want[e.Name])
+		}
+	}
+}
+
+// An empty build block stays empty rather than becoming a stray newline.
+func TestAnEmptyBuildBlockIsUnchanged(t *testing.T) {
+	if got, _ := resolveBuildEnv("", nil); got != "" {
+		t.Errorf("got %q", got)
 	}
 }
