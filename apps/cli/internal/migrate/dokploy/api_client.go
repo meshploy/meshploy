@@ -87,6 +87,8 @@ func (a ClientAPI) CreateRoute(projectID string, spec RouteSpec) (string, error)
 		Hostname:  &spec.Hostname,
 		ServiceID: &spec.ServiceID,
 		Published: &paused,
+		Path:      spec.Path,
+		StripPath: spec.StripPath,
 	}
 	if spec.Port != 0 {
 		port := spec.Port
