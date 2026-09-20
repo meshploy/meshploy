@@ -130,6 +130,36 @@ func runMigrateCutover() ([]byte, error) {
 	return body, marshalErr
 }
 
+// MovedData is data this migration already copied into Meshploy, and when.
+//
+// It is what a rollback cannot put back: Dokploy's copy is exactly as it was,
+// because the copy only ever read it, but everything written into Meshploy
+// since the group moved is in Meshploy alone. An operator has to hear that
+// before the rollback, not after.
+type MovedData struct {
+	Name string
+	At   time.Time
+}
+
+// movedData reads the journal for copies that already happened, newest first.
+func movedData(group string) ([]MovedData, error) {
+	entries, err := journal.Read(setup.MigrationDir())
+	if err != nil {
+		return nil, err
+	}
+	var out []MovedData
+	for _, e := range entries {
+		if e.Result != journal.OK || (group != "" && e.Group != group) {
+			continue
+		}
+		switch e.Action {
+		case "restore-database", "copy-volume":
+			out = append(out, MovedData{Name: e.Target, At: e.At})
+		}
+	}
+	return out, nil
+}
+
 // runMigrateRollback undoes one group, or everything.
 func runMigrateRollback(groupID string) ([]byte, error) {
 	rt, err := openMigration()

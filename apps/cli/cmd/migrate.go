@@ -342,6 +342,29 @@ Data written into Meshploy after a group moved is not copied back.`,
 		if len(args) == 1 {
 			group = args[0]
 		}
+		// Data is the one thing a rollback cannot undo. Dokploy's copy is
+		// untouched - it was only ever read - but anything written into
+		// Meshploy since the copy stays there, and going back means going back
+		// to the data as it was at the stop.
+		copied, err := movedData(group)
+		if err != nil {
+			return err
+		}
+		yes, _ := cmd.Flags().GetBool("yes")
+		if len(copied) > 0 && !yes {
+			fmt.Fprintln(cmd.OutOrStdout(), "This migration has already copied data:")
+			for _, c := range copied {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s, %s\n", c.Name, c.At.Local().Format("2 Jan 15:04"))
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Dokploy's copy is as it was at the stop. Anything written into Meshploy since then stays in Meshploy.")
+			fmt.Fprint(cmd.OutOrStdout(), "Roll back anyway? [y/N]: ")
+			var answer string
+			fmt.Scanln(&answer)
+			if answer != "y" && answer != "Y" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+				return nil
+			}
+		}
 		body, err := runMigrateRollback(group)
 		if err != nil {
 			return err
@@ -392,6 +415,7 @@ func init() {
 	migrateDokployDetectCmd.Flags().Bool("json", false, "Print the result as JSON")
 	migrateDokployFixtureCmd.Flags().String("out", "", "Write the scrubbed reading to this file (created readable by root only)")
 	migrateDokployPlanCmd.Flags().Bool("json", false, "Print the plan as JSON")
+	migrateDokployRollbackCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation about data already copied")
 	migrateDokployPlanCmd.Flags().String("out", "", "Also write the plan as JSON to this file (created readable by root only)")
 	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployPrepareCmd,
 		migrateDokployMoveCmd, migrateDokployCutoverCmd, migrateDokployRollbackCmd, migrateDokployFixtureCmd)
