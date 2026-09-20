@@ -625,6 +625,16 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	if svc.Status != db.ServiceRunning || svc.Image == "" {
 		return nil
 	}
+	// A managed database is a different workload, under a different name, with
+	// a claim and the engine's environment. Re-applying it through the
+	// application path below would deploy an empty second copy beside its data.
+	if svc.Type == db.ServiceTypeDatabase {
+		var dc db.DatabaseConfig
+		if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error; err != nil {
+			return fmt.Errorf("database config not found")
+		}
+		return s.applyDatabaseWorkload(ctx, &svc, &dc, nil)
+	}
 	// The namespace may not exist yet: a service can be created with an image
 	// and started without ever having been deployed - what the Dokploy
 	// migration does, and what any API client can do - and then this is the
@@ -1710,6 +1720,109 @@ func dbEnvVars(dc db.DatabaseConfig) []corev1.EnvVar {
 	}
 }
 
+// applyDatabaseWorkload puts a managed database into the cluster: its claim,
+// its pod, the Service its name resolves to, the alias a compose file reaches
+// it by, and its mesh exposure.
+//
+// Shared by provisioning one and by starting one that was stopped. Those have
+// to produce the same database, and for a while they did not: starting went
+// through the application path, which names the workload after the service
+// rather than the database, carries no claim and none of the engine's
+// environment - so a stopped database "started" as an empty second workload
+// beside its own data.
+//
+// log is optional; a start has nothing to write a deployment log to.
+func (s *DeploymentService) applyDatabaseWorkload(ctx context.Context, svc *db.Service, dc *db.DatabaseConfig, log func(string)) error {
+	if log == nil {
+		log = func(string) {}
+	}
+	namespace := ""
+	var project db.Project
+	if err := s.db.Where("id = ?", svc.ProjectID).First(&project).Error; err == nil {
+		namespace = project.Slug
+	}
+
+	log("Ensuring namespace " + namespace + "…")
+	if err := appk8s.EnsureNamespace(ctx, s.k8s, namespace); err != nil {
+		return fmt.Errorf("failed to ensure namespace: %w", err)
+	}
+
+	nodeName := ""
+	if svc.NodeID != nil {
+		var node db.Node
+		if err := s.db.Where("id = ?", svc.NodeID).First(&node).Error; err == nil {
+			nodeName = node.Name
+		}
+	}
+
+	slug := dc.Slug
+	if slug == "" {
+		slug = slugify(svc.Name)
+	}
+
+	// Load the service's single "db" port.
+	var dbPorts []db.ServicePort
+	s.db.Where("service_id = ?", svc.ID).Find(&dbPorts)
+	dbPort := primaryPort(dbPorts)
+
+	log("Applying database workload…")
+	dbProbe := buildProbeFromService(svc)
+	wp := appk8s.DatabaseWorkloadParams{
+		Name:           slug,
+		Namespace:      namespace,
+		Image:          svc.Image,
+		Port:           dbPort,
+		Env:            dbEnvVars(*dc),
+		Args:           dbArgs(*dc),
+		StorageGB:      dc.StorageGB,
+		DataPath:       dbDataPath(dc.Engine),
+		NodeName:       nodeName,
+		LivenessProbe:  dbProbe,
+		ReadinessProbe: dbProbe,
+	}
+	if err := appk8s.ApplyDatabaseDeployment(ctx, s.k8s, wp); err != nil {
+		return fmt.Errorf("failed to apply K8s workload: %w", err)
+	}
+	// ClusterIP service for intra-cluster access (database ports are never public-routed).
+	dbPortSpecs := toPortSpecs(dbPorts)
+	if err := appk8s.ApplyService(ctx, s.k8s, slug, namespace, dbPortSpecs); err != nil {
+		return fmt.Errorf("failed to apply K8s service: %w", err)
+	}
+	// Publish the database under its service name too. A compose spec reaches
+	// a database by the name its author wrote -- "umami-db" -- while the
+	// workload is deployed under a suffixed slug, so without this the
+	// connection string in every database-backed template resolves to nothing
+	// in the cluster. Best-effort: the suffixed name still works, and losing
+	// the alias should not fail a database that provisioned correctly.
+	if alias := slugify(svc.Name); alias != slug {
+		if err := appk8s.ApplyAliasService(ctx, s.k8s, alias, slug, namespace, dbPortSpecs); err != nil {
+			log("warning: alias service " + alias + ": " + err.Error())
+		}
+	}
+
+	// Re-publish on the mesh when the operator asked for it. An apply that
+	// skipped this would quietly withdraw a database someone exposed, since the
+	// NodePort Service belongs to the workload being replaced.
+	fresh := *svc
+	fresh.Ports = dbPorts
+	fresh.Project = project
+	if assigned, err := applyDatabaseMeshExposure(ctx, s.k8s, dc, &fresh, dc.MeshExposed, dc.NodePort); err != nil {
+		log("warning: mesh access: " + err.Error())
+	} else if assigned != dc.NodePort {
+		s.db.Model(&db.DatabaseConfig{}).Where("id = ?", dc.ID).Update("node_port", assigned)
+	}
+
+	// Regenerated on every apply, not only at creation: the group carries the
+	// connection apps use, and redeploying the database is how an operator
+	// refreshes it.
+	if s.varGroups != nil {
+		if err := s.varGroups.UpsertSystemGroup(ctx, &fresh, namespace); err != nil {
+			log("warning: refresh variables: " + err.Error())
+		}
+	}
+	return nil
+}
+
 func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Service) (*db.Deployment, error) {
 	var dc db.DatabaseConfig
 	if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err != nil {
@@ -1730,99 +1843,15 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 
 	go func() {
 		bgCtx := context.Background()
-
-		namespace := ""
-		var project db.Project
-		if err := s.db.Where("id = ?", svc.ProjectID).First(&project).Error; err == nil {
-			namespace = project.Slug
-		}
-
 		appendLog := func(msg string) {
 			s.db.Model(&db.Deployment{}).Where("id = ?", deploymentID).
 				Update("log", gorm.Expr("log || ?", msg+"\n"))
 		}
-
-		appendLog("Ensuring namespace " + namespace + "…")
-		if err := appk8s.EnsureNamespace(bgCtx, s.k8s, namespace); err != nil {
-			s.failDeployment(deploymentID, "failed to ensure namespace: "+err.Error())
+		if err := s.applyDatabaseWorkload(bgCtx, svc, &dc, appendLog); err != nil {
+			s.failDeployment(deploymentID, err.Error())
 			return
 		}
-
-		nodeName := ""
-		if svc.NodeID != nil {
-			var node db.Node
-			if err := s.db.Where("id = ?", svc.NodeID).First(&node).Error; err == nil {
-				nodeName = node.Name
-			}
-		}
-
-		slug := dc.Slug
-		if slug == "" {
-			slug = slugify(svc.Name)
-		}
-
-		// Load the service's single "db" port.
-		var dbPorts []db.ServicePort
-		s.db.Where("service_id = ?", svc.ID).Find(&dbPorts)
-		dbPort := primaryPort(dbPorts)
-
-		appendLog("Applying database workload…")
-		dbProbe := buildProbeFromService(svc)
-		wp := appk8s.DatabaseWorkloadParams{
-			Name:           slug,
-			Namespace:      namespace,
-			Image:          svc.Image,
-			Port:           dbPort,
-			Env:            dbEnvVars(dc),
-			Args:           dbArgs(dc),
-			StorageGB:      dc.StorageGB,
-			DataPath:       dbDataPath(dc.Engine),
-			NodeName:       nodeName,
-			LivenessProbe:  dbProbe,
-			ReadinessProbe: dbProbe,
-		}
-		if err := appk8s.ApplyDatabaseDeployment(bgCtx, s.k8s, wp); err != nil {
-			s.failDeployment(deploymentID, "failed to apply K8s workload: "+err.Error())
-			return
-		}
-		// ClusterIP service for intra-cluster access (database ports are never public-routed).
-		dbPortSpecs := toPortSpecs(dbPorts)
-		if err := appk8s.ApplyService(bgCtx, s.k8s, slug, namespace, dbPortSpecs); err != nil {
-			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
-			return
-		}
-		// Publish the database under its service name too. A compose spec reaches
-		// a database by the name its author wrote -- "umami-db" -- while the
-		// workload is deployed under a suffixed slug, so without this the
-		// connection string in every database-backed template resolves to nothing
-		// in the cluster. Best-effort: the suffixed name still works, and losing
-		// the alias should not fail a database that provisioned correctly.
-		if alias := slugify(svc.Name); alias != slug {
-			if err := appk8s.ApplyAliasService(bgCtx, s.k8s, alias, slug, namespace, dbPortSpecs); err != nil {
-				log.Printf("warning: alias service %s for database %s: %v", alias, slug, err)
-			}
-		}
-
-		// Re-publish on the mesh when the operator asked for it. A provision
-		// that skipped this would quietly withdraw a database someone exposed,
-		// since the NodePort Service belongs to the workload being replaced.
-		fresh := *svc
-		fresh.Ports = dbPorts
-		fresh.Project = project
-		if assigned, err := applyDatabaseMeshExposure(bgCtx, s.k8s, &dc, &fresh, dc.MeshExposed, dc.NodePort); err != nil {
-			log.Printf("warning: mesh access for database %s: %v", svc.Name, err)
-		} else if assigned != dc.NodePort {
-			s.db.Model(&db.DatabaseConfig{}).Where("id = ?", dc.ID).Update("node_port", assigned)
-		}
-
 		s.succeedDeployment(bgCtx, deploymentID, svc.ID, gorm.Expr("log || ?", "Database provisioned successfully.\n"), "")
-
-		// Regenerated on every deploy, not only at creation: the group carries
-		// the connection apps use, and redeploying the database is how an
-		// operator refreshes it.
-		if err := s.varGroups.UpsertSystemGroup(bgCtx, &fresh, namespace); err != nil {
-			log.Printf("warning: refresh variables for database %s: %v", svc.Name, err)
-		}
 	}()
 
 	return &deployment, nil
