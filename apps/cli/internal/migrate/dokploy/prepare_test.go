@@ -21,7 +21,8 @@ type fakeAPI struct {
 	volumeSize map[string]int
 	mounts     []string
 	files      []string
-	fail       map[string]error // target name -> error
+	fail       map[string]error  // target name -> error
+	hostnames  map[string]string // service id -> its name in the cluster
 	n          int
 }
 
@@ -52,7 +53,20 @@ func (f *fakeAPI) CreateService(projectID string, spec ServiceSpec) (string, err
 		return "", err
 	}
 	f.services = append(f.services, spec)
-	return f.next("svc"), nil
+	id := f.next("svc")
+	if f.hostnames == nil {
+		f.hostnames = map[string]string{}
+	}
+	// What Meshploy calls it in the cluster: its own name, without the random
+	// suffix the platform being migrated gave it.
+	f.hostnames[id] = strings.ToLower(spec.Name)
+	return id, nil
+}
+
+// ClusterHostname is what another workload's environment has to reach this one
+// by, once it lives here.
+func (f *fakeAPI) ClusterHostname(projectID, serviceID string) (string, error) {
+	return f.hostnames[serviceID], nil
 }
 
 func (f *fakeAPI) SetEnvVars(projectID, serviceID, env string) error {
@@ -424,5 +438,50 @@ func TestAnUnansweredItemStopsPrepare(t *testing.T) {
 	missing := Unsupported(plan)
 	if len(missing) != 1 || !strings.Contains(missing[0], "question to answer") {
 		t.Fatalf("Unsupported = %v", missing)
+	}
+}
+
+// A database is created on the engine Meshploy names and the tag Dokploy was
+// running. The plan shows "Postgres" to a reader; the API takes "postgres",
+// and sending the label built an image with no tag at all - a database that
+// can never pull, let alone hold the data about to be copied into it.
+func TestADatabaseKeepsItsEngineAndExactTag(t *testing.T) {
+	for _, tc := range []struct{ image, engine, version string }{
+		{"postgres:16", "postgres", "16"},
+		{"mysql:8.0.35", "mysql", "8.0.35"},
+		{"registry.example:5000/mongo", "mongodb", ""},
+	} {
+		label := map[string]string{"postgres": "Postgres", "mysql": "MySQL", "mongodb": "MongoDB"}[tc.engine]
+		it := Item{Kind: "database", Name: "db", Details: map[string]string{"engine": label, "image": tc.image}}
+		engine, version := engineAndVersion(it)
+		if engine != tc.engine || version != tc.version {
+			t.Errorf("%s → %q %q, want %q %q", tc.image, engine, version, tc.engine, tc.version)
+		}
+	}
+}
+
+// A migrated application reaches its database at the name it answers to here.
+//
+// Dokploy's hostname for a database - its appName, with a random suffix - means
+// nothing in the cluster, so an application carried across with its connection
+// string untouched comes up pointing at nothing. Carried across and rewritten,
+// it points at the database that moved with it.
+func TestAMigratedApplicationPointsAtTheMigratedDatabase(t *testing.T) {
+	plan, src := smallPlan(t)
+	// What the application runs with, which is where the environment is read
+	// from: it names the database by Dokploy's hostname.
+	src.Docker.Services[0].Env = []string{"PORT=3000", "DATABASE_URL=postgres://app:pw@db-xyz:5432/app"}
+
+	api := newFakeAPI()
+	out, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := api.envs[out.Services["a1"]]
+	if strings.Contains(env, "db-xyz") {
+		t.Errorf("the old hostname survived: %q", env)
+	}
+	if !strings.Contains(env, "postgres://app:pw@db:5432/app") {
+		t.Errorf("env = %q, want the database's name here", env)
 	}
 }

@@ -30,6 +30,9 @@ type API interface {
 	CreateProject(name string) (string, error)
 	// CreateService creates a service or database, stopped.
 	CreateService(projectID string, spec ServiceSpec) (string, error)
+	// ClusterHostname is the name a created workload answers to inside the
+	// cluster, which is what another workload's environment reaches it by.
+	ClusterHostname(projectID, serviceID string) (string, error)
 	// SetEnvVars replaces a service's environment block.
 	SetEnvVars(projectID, serviceID, env string) error
 	// CreateRoute creates a route, paused.
@@ -63,6 +66,8 @@ type ServiceSpec struct {
 	// EnvVars is the environment block, read from Dokploy at apply time and
 	// never written to plan.json.
 	EnvVars string
+	// StorageGB sizes a database's claim, from what its data measures now.
+	StorageGB int
 	// Ports are the container ports the workload listens on, taken from the
 	// domains Dokploy routes to it. Without them a service is created on
 	// Meshploy's default port 3000 and its route is published to a port
@@ -170,6 +175,8 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	}
 
 	// 2. Applications and databases, created stopped.
+	var pending []pendingEnv
+	hostnames := map[string]string{}
 	for _, it := range d.Plan.Items {
 		if it.Kind != "application" && it.Kind != "database" {
 			continue
@@ -202,11 +209,26 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		}
 		out.Services[it.ID] = id
 		d.mounts(&out, it, projectID, id)
-		if spec.EnvVars != "" {
-			_, _ = d.step(&out, "prepare/env/"+it.ID, "", "set-env", it.Name, func() (string, error) {
-				return id, d.API.SetEnvVars(projectID, id, spec.EnvVars)
-			})
+		// The environment is set in a second pass, once every workload of this
+		// migration exists: what an application reaches its database by has to
+		// be rewritten, and the new name is only known after the database has
+		// been created.
+		pending = append(pending, pendingEnv{itemID: it.ID, name: it.Name, projectID: projectID, serviceID: id, env: spec.EnvVars})
+		if host, err := d.API.ClusterHostname(projectID, id); err == nil && host != "" {
+			if from := d.appNameOf(it.ID); from != "" && from != host {
+				hostnames[from] = host
+			}
 		}
+	}
+
+	for _, p := range pending {
+		if p.env == "" {
+			continue
+		}
+		env := rewriteHostnames(p.env, hostnames)
+		_, _ = d.step(&out, "prepare/env/"+p.itemID, "", "set-env", p.name, func() (string, error) {
+			return p.serviceID, d.API.SetEnvVars(p.projectID, p.serviceID, env)
+		})
 	}
 
 	// 3. Routes, paused: they exist, serve nothing, and get no certificate
@@ -236,6 +258,29 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	return out, nil
 }
 
+// pendingEnv is one workload's environment, waiting for every name in it to be
+// known.
+type pendingEnv struct {
+	itemID, name, projectID, serviceID, env string
+}
+
+// rewriteHostnames points a migrated environment at the migrated workloads.
+//
+// An application reaches its database by the hostname the old platform gave
+// it - "shop-db-ttikjv" on Dokploy's network - and that name means nothing in
+// the cluster, so a connection string carried across verbatim resolves to
+// nothing. It is replaced by the name the same workload answers to here.
+//
+// A plain replacement, because these names are not words that occur by
+// accident: Dokploy builds every one of them as the workload's name with a
+// random suffix.
+func rewriteHostnames(env string, hostnames map[string]string) string {
+	for from, to := range hostnames {
+		env = strings.ReplaceAll(env, from, to)
+	}
+	return env
+}
+
 // mounts creates a workload's volumes and config files and attaches them.
 //
 // A volume is created empty here and filled in stage 2, when the group moves
@@ -245,6 +290,14 @@ func (d PrepareDeps) mounts(out *PrepareResult, it Item, projectID, serviceID st
 	for _, m := range d.mountRows(it.ID) {
 		switch m.Str("type") {
 		case "volume":
+			// A managed database keeps its data in a claim of its own, sized
+			// with the service. Dokploy records that same data as a mount, and
+			// creating a volume for it would be a second, empty copy of the
+			// storage - which Meshploy refuses to attach anyway, because a
+			// database is not an application.
+			if it.Kind == "database" {
+				continue
+			}
 			name, path := m.Str("volumeName"), m.Str("mountPath")
 			if name == "" || path == "" {
 				continue
@@ -372,8 +425,11 @@ func (d PrepareDeps) specFor(it Item) ServiceSpec {
 	}
 	if it.Kind == "database" {
 		spec.Type = "database"
-		spec.Engine = it.Details["engine"]
-		spec.Version = it.Details["version"]
+		spec.Engine, spec.Version = engineAndVersion(it)
+		// Room for the data that is about to be copied in, with the same
+		// headroom a volume gets: a database restored into a claim exactly its
+		// own size is full on arrival.
+		spec.StorageGB = volumeSizeGB(atoiOr(it.Details["data_mb"], 0))
 	}
 	spec.Ports = d.portsFor(it)
 	for _, table := range []string{"application", "postgres", "mysql", "mariadb", "mongo", "redis", "compose"} {
@@ -381,7 +437,10 @@ func (d PrepareDeps) specFor(it Item) ServiceSpec {
 			if idOf(r) != it.ID {
 				continue
 			}
-			spec.EnvVars = r.Str("env")
+			spec.EnvVars = d.runningEnv(it)
+			if spec.EnvVars == "" {
+				spec.EnvVars = r.Str("env")
+			}
 			if spec.Type == "database" {
 				spec.DBName, spec.DBUser = r.Str("databaseName"), r.Str("databaseUser")
 				spec.Password = r.Str("databasePassword")
@@ -448,11 +507,87 @@ func (d PrepareDeps) runningImage(it Item) string {
 	return it.Details["image"]
 }
 
+// meshployEngine maps the name the plan shows a reader to the engine name
+// Meshploy's API takes. They are not the same string, and sending the label
+// created a database on an image with no tag at all.
+var meshployEngine = map[string]string{
+	"Postgres": "postgres",
+	"MySQL":    "mysql",
+	"MongoDB":  "mongodb",
+	"Redis":    "redis",
+	"MariaDB":  "mariadb",
+}
+
+// engineAndVersion is the engine to create and the tag to create it on.
+//
+// The tag comes from the image Dokploy runs, because a database has to come up
+// on the version its files were written by: restoring a Postgres 16 cluster
+// into 15 does not work, and neither does letting Meshploy pick its default.
+func engineAndVersion(it Item) (engine, version string) {
+	engine = meshployEngine[it.Details["engine"]]
+	if engine == "" {
+		engine = strings.ToLower(it.Details["engine"])
+	}
+	if v := it.Details["version"]; v != "" {
+		return engine, v
+	}
+	return engine, imageTag(it.Details["image"])
+}
+
+// imageTag is the tag of an image reference, empty when it carries none. A
+// registry's port is not a tag: "registry:5000/postgres" has none.
+func imageTag(image string) string {
+	at := strings.LastIndex(image, ":")
+	if at < 0 || strings.Contains(image[at:], "/") {
+		return ""
+	}
+	return image[at+1:]
+}
+
+// runningEnv is the environment this workload runs with, read from Docker.
+//
+// Not the env column: current Dokploy encrypts it, so copying that across
+// would give a migrated application a block of ciphertext for its
+// environment - and even in plaintext it is not the whole truth, because a
+// shared project variable is resolved when the workload is deployed. What it
+// runs with is what it needs to keep running.
+func (d PrepareDeps) runningEnv(it Item) string {
+	name := it.Details["app_name"]
+	if name == "" {
+		name = d.appNameOf(it.ID)
+	}
+	if name == "" {
+		return ""
+	}
+	for _, s := range d.Source.Docker.Services {
+		if s.Name == name {
+			return strings.Join(s.Env, "\n")
+		}
+	}
+	for _, c := range d.Source.Docker.Containers {
+		if c.Name == name {
+			return strings.Join(c.Env, "\n")
+		}
+	}
+	return ""
+}
+
 // appNameOf is the name Dokploy gave a workload on Docker.
 func (d PrepareDeps) appNameOf(id string) string {
-	for _, rows := range d.Source.Rows {
-		for _, r := range rows {
-			if idOf(r) == id {
+	return appNameIn(d.Source.Rows, id)
+}
+
+// appNameIn finds the Docker name of the workload with this id.
+//
+// Only a row that carries one counts. A domain row holds the applicationId of
+// the workload it points at, so it answers to that id as well - and being the
+// first row visited, in a map whose order is random, it would answer with the
+// empty string it has. That silently cost a database its group: the
+// application's environment could not be found, so nothing joined the two.
+func appNameIn(rows map[string][]Row, id string) string {
+	for _, table := range rows {
+		for _, r := range table {
+			if idOf(r) == id && r.Str("appName") != "" {
 				return r.Str("appName")
 			}
 		}

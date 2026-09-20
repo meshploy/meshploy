@@ -307,7 +307,6 @@ func TestAStatefulGroupMovesInTheOnlySafeOrder(t *testing.T) {
 			mover.Plan.Items[i].Details["data_move"] = "dump and restore"
 		}
 	}
-	mover.IDs = d.meshployIDs
 	d.Data = &mover
 	runner.replies["docker service inspect db-xyz --format {{.Spec.Mode.Replicated.Replicas}}"] = "1\n"
 

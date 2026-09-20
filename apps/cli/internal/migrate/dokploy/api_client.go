@@ -67,12 +67,29 @@ func (a ClientAPI) CreateService(projectID string, spec ServiceSpec) (string, er
 		// database, and the app's connection string names both.
 		body.Engine, body.Version = spec.Engine, spec.Version
 		body.DBName, body.DBUser, body.DBPassword = spec.DBName, spec.DBUser, spec.Password
+		body.StorageGB = spec.StorageGB
 	}
 	svc, err := a.C.CreateService(a.OrgID, projectID, body)
 	if err != nil {
 		return "", err
 	}
 	return svc.ID, nil
+}
+
+// ClusterHostname is the name this workload answers to inside the cluster,
+// which is what another workload's environment has to reach it by.
+func (a ClientAPI) ClusterHostname(projectID, serviceID string) (string, error) {
+	svc, err := a.C.GetService(a.OrgID, projectID, serviceID)
+	if err != nil {
+		return "", err
+	}
+	if svc.Type == "database" {
+		return a.DatabaseSlug(projectID, serviceID)
+	}
+	if svc.Slug == "" {
+		return "", fmt.Errorf("%s has no cluster name", svc.Name)
+	}
+	return svc.Slug, nil
 }
 
 // servicePorts names the ports a migrated workload listens on. The first is

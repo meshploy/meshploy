@@ -37,6 +37,13 @@ import (
 // (under 2 GB), and a file copy of the volume for everything larger, for
 // engines with no useful dump, and for an application's own volumes.
 
+// IDLookup maps a group member to what stage 1 created for it: its Meshploy
+// service and project. It belongs to the move, which reads the journal, and is
+// passed to each phase rather than held here - held here as well, it was left
+// unset by the one caller that mattered, and every database looked as though
+// stage 1 had never run.
+type IDLookup func(GroupMember) (serviceID, projectID string)
+
 // DataAPI is what copying data needs from Meshploy, beyond what the move
 // already uses.
 type DataAPI interface {
@@ -79,9 +86,6 @@ type DataMover struct {
 	// a browser.
 	Plan   Plan
 	Source Source
-	// IDs maps a group member to what stage 1 created for it: its Meshploy
-	// service and project. Owned by the move, which reads the journal.
-	IDs func(GroupMember) (serviceID, projectID string)
 	// Dir is where dumps are written on the way through, beside the journal.
 	Dir string
 	// PodTimeout bounds the wait for a helper pod to be ready.
@@ -216,8 +220,8 @@ func mongoCountScript(c dbCreds) string {
 // Dump reads every database that moves logically into a file beside the
 // journal. Dokploy's database is still running here, with the group's
 // applications already stopped, so nothing is writing to what it reads.
-func (m DataMover) Dump(group Group, ids func(GroupMember) (string, string)) error {
-	return m.eachDatabase(group, func(member GroupMember, it Item, engine engineData, _, _ string) error {
+func (m DataMover) Dump(group Group, ids IDLookup) error {
+	return m.eachDatabase(group, ids, func(member GroupMember, it Item, engine engineData, _, _ string) error {
 		if m.byFiles(it) {
 			return nil
 		}
@@ -256,8 +260,8 @@ func (m DataMover) Dump(group Group, ids func(GroupMember) (string, string)) err
 //
 // It runs with both sides stopped - Dokploy's copy so its files are not being
 // written, Meshploy's so its claim is free for the helper pod that fills it.
-func (m DataMover) CopyFiles(group Group, ids func(GroupMember) (string, string)) error {
-	if err := m.eachDatabase(group, func(member GroupMember, it Item, engine engineData, serviceID, projectID string) error {
+func (m DataMover) CopyFiles(group Group, ids IDLookup) error {
+	if err := m.eachDatabase(group, ids, func(member GroupMember, it Item, engine engineData, serviceID, projectID string) error {
 		if !m.byFiles(it) {
 			return nil
 		}
@@ -334,8 +338,8 @@ func (m DataMover) CopyFiles(group Group, ids func(GroupMember) (string, string)
 
 // Restore loads each dump into the Meshploy database now running, and checks
 // that what arrived is what was read.
-func (m DataMover) Restore(group Group, ids func(GroupMember) (string, string)) error {
-	return m.eachDatabase(group, func(member GroupMember, it Item, engine engineData, serviceID, projectID string) error {
+func (m DataMover) Restore(group Group, ids IDLookup) error {
+	return m.eachDatabase(group, ids, func(member GroupMember, it Item, engine engineData, serviceID, projectID string) error {
 		if m.byFiles(it) {
 			return nil
 		}
@@ -382,7 +386,7 @@ func (m DataMover) Restore(group Group, ids func(GroupMember) (string, string)) 
 // eachDatabase runs fn for every database of the group that carries data,
 // turning a failure into a journalled one so the operator sees which database
 // stopped the move.
-func (m DataMover) eachDatabase(group Group, fn func(GroupMember, Item, engineData, string, string) error) error {
+func (m DataMover) eachDatabase(group Group, ids IDLookup, fn func(GroupMember, Item, engineData, string, string) error) error {
 	for _, member := range group.Members {
 		if member.Kind != "database" {
 			continue
@@ -395,7 +399,10 @@ func (m DataMover) eachDatabase(group Group, fn func(GroupMember, Item, engineDa
 		if !ok {
 			return fmt.Errorf("%s is not an engine this step can copy", it.Details["engine"])
 		}
-		serviceID, projectID := m.ids(group, member)
+		serviceID, projectID := "", ""
+		if ids != nil {
+			serviceID, projectID = ids(member)
+		}
 		if serviceID == "" {
 			return fmt.Errorf("%s has no Meshploy copy: run prepare first", member.Name)
 		}
@@ -406,15 +413,6 @@ func (m DataMover) eachDatabase(group Group, fn func(GroupMember, Item, engineDa
 		}
 	}
 	return nil
-}
-
-// ids is set by the move, which owns the mapping from a Dokploy item to what
-// stage 1 created for it.
-func (m DataMover) ids(group Group, member GroupMember) (string, string) {
-	if m.IDs == nil {
-		return "", ""
-	}
-	return m.IDs(member)
 }
 
 func (m DataMover) step(group, what, id string) string {

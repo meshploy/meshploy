@@ -143,9 +143,6 @@ func statefulGroup(t *testing.T) (DataMover, Group, *fakeStream, *fakeKube, *jou
 	m := DataMover{
 		Runner: runner, Stream: stream, Kube: kube, API: fakeDataAPI{},
 		Journal: j, Plan: plan, Source: src, Dir: dir,
-		IDs: func(gm GroupMember) (string, string) {
-			return j.CreatedBy("prepare/service/" + gm.ID), "proj-1"
-		},
 	}
 	return m, group, stream, kube, j
 }
@@ -156,7 +153,7 @@ func statefulGroup(t *testing.T) (DataMover, Group, *fakeStream, *fakeKube, *jou
 func TestDumpReadsWithDokployCredentialsAndRecordsWhatItHeld(t *testing.T) {
 	m, group, stream, _, j := statefulGroup(t)
 
-	if err := m.Dump(group, m.IDs); err != nil {
+	if err := m.Dump(group, ids(j)); err != nil {
 		t.Fatal(err)
 	}
 	if !stream.didRun("docker exec cid-db pg_dump -Fc -U app -d app") {
@@ -184,13 +181,13 @@ func TestDumpReadsWithDokployCredentialsAndRecordsWhatItHeld(t *testing.T) {
 // A copy that cannot be checked has not happened: counts that disagree fail
 // the restore, which fails the group, which undoes it.
 func TestRestoreFailsWhenWhatArrivedIsNotWhatWasRead(t *testing.T) {
-	m, group, _, kube, _ := statefulGroup(t)
-	if err := m.Dump(group, m.IDs); err != nil {
+	m, group, _, kube, j := statefulGroup(t)
+	if err := m.Dump(group, ids(j)); err != nil {
 		t.Fatal(err)
 	}
 	kube.replies["psql"] = "users 3\norders 11\n" // one row short
 
-	err := m.Restore(group, m.IDs)
+	err := m.Restore(group, ids(j))
 	if err == nil || !strings.Contains(err.Error(), "does not hold what it held") {
 		t.Fatalf("err = %v", err)
 	}
@@ -204,10 +201,10 @@ func TestRestoreFailsWhenWhatArrivedIsNotWhatWasRead(t *testing.T) {
 // a copy of the data in the clear, does not outlive it.
 func TestRestoreChecksTheCountsAndThenRemovesTheDump(t *testing.T) {
 	m, group, _, kube, j := statefulGroup(t)
-	if err := m.Dump(group, m.IDs); err != nil {
+	if err := m.Dump(group, ids(j)); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Restore(group, m.IDs); err != nil {
+	if err := m.Restore(group, ids(j)); err != nil {
 		t.Fatal(err)
 	}
 	if !kube.didRun("pg_restore -U app -d app --clean") {
@@ -226,7 +223,7 @@ func TestRestoreChecksTheCountsAndThenRemovesTheDump(t *testing.T) {
 // something mounts it, and the workload must not be running while its files
 // are replaced.
 func TestFilesAreCopiedThroughAHelperPodThatMountsTheClaim(t *testing.T) {
-	m, group, stream, kube, _ := statefulGroup(t)
+	m, group, stream, kube, j := statefulGroup(t)
 	for i := range m.Plan.Items {
 		if m.Plan.Items[i].ID == "d1" {
 			m.Plan.Items[i].Details["data_move"] = "volume copy, stopped"
@@ -241,7 +238,7 @@ func TestFilesAreCopiedThroughAHelperPodThatMountsTheClaim(t *testing.T) {
 	m.volumePath = func(string) string { return src }
 	kube.replies["wc -l"] = "2\n"
 
-	if err := m.CopyFiles(group, m.IDs); err != nil {
+	if err := m.CopyFiles(group, ids(j)); err != nil {
 		t.Fatal(err)
 	}
 	if len(kube.applied) != 1 || !strings.Contains(kube.applied[0], "claimName: db-a1b2c3-data") {
@@ -261,7 +258,7 @@ func TestFilesAreCopiedThroughAHelperPodThatMountsTheClaim(t *testing.T) {
 // What arrived is counted on both sides, and a copy that landed less than it
 // read fails rather than starting a database on half its files.
 func TestAShortFileCopyFails(t *testing.T) {
-	m, group, _, kube, _ := statefulGroup(t)
+	m, group, _, kube, j := statefulGroup(t)
 	for i := range m.Plan.Items {
 		if m.Plan.Items[i].ID == "d1" {
 			m.Plan.Items[i].Details["data_move"] = "volume copy, stopped"
@@ -276,8 +273,16 @@ func TestAShortFileCopyFails(t *testing.T) {
 	m.volumePath = func(string) string { return src }
 	kube.replies["wc -l"] = "2\n" // the directory, and one of three files
 
-	err := m.CopyFiles(group, m.IDs)
+	err := m.CopyFiles(group, ids(j))
 	if err == nil || !strings.Contains(err.Error(), "entries") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// ids is what the move passes each phase: what stage 1 created, from the
+// journal.
+func ids(j *journal.Journal) IDLookup {
+	return func(m GroupMember) (string, string) {
+		return j.CreatedBy("prepare/service/" + m.ID), "proj-1"
 	}
 }

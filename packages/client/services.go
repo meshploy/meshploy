@@ -11,8 +11,10 @@ import (
 )
 
 type Service struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Slug is the name this service answers to inside the cluster.
+	Slug      string `json:"slug,omitempty"`
 	Type      string `json:"type"`
 	Status    string `json:"status"`
 	Image     string `json:"image"`
