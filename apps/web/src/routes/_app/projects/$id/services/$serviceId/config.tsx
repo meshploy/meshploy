@@ -1334,7 +1334,22 @@ function reachPaths(reach: DBReach, opts: { dbPort: number; nodePort: string; ga
   }
 }
 
-function DatabaseNetworkSection({ projectId, serviceId, dbPort, serviceName }: { projectId: string; serviceId: string; dbPort: number; serviceName: string }) {
+// inClusterHost is the name other workloads resolve this service by.
+//
+// The slug where there is one, which is the Kubernetes object's name. A service
+// created before that column existed has none, and the same rule the server
+// applies - lower case, spaces and underscores to hyphens - gives the same
+// answer, so the fallback is the rule rather than the raw name.
+function inClusterHost(service: { name: string; slug?: string }): string {
+  if (service.slug) return service.slug
+  return service.name.toLowerCase().replace(/[ _]/g, "-")
+}
+
+// serviceHost is the name other workloads actually resolve: the slug, which is
+// the Kubernetes object's name. A service called "docai_db" answers to
+// "docai-db" - Kubernetes names cannot carry an underscore - and printing the
+// display name here sent people to a host that does not exist.
+function DatabaseNetworkSection({ projectId, serviceId, dbPort, serviceHost }: { projectId: string; serviceId: string; dbPort: number; serviceHost: string }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
@@ -1491,7 +1506,7 @@ function DatabaseNetworkSection({ projectId, serviceId, dbPort, serviceName }: {
               dbPort,
               nodePort: value.port,
               gatewayPort: value.gatewayPort,
-              name: serviceName,
+              name: serviceHost,
             }).map((line) => (
               <p key={line} className="text-[11px] font-mono text-muted-foreground">{line}</p>
             ))}
@@ -1641,7 +1656,7 @@ function ConfigTab() {
           projectId={projectId}
           serviceId={serviceId}
           dbPort={service.ports?.find((p) => p.is_primary)?.port ?? service.ports?.[0]?.port ?? 5432}
-          serviceName={service.name}
+          serviceHost={inClusterHost(service)}
         />
       </div></FormLayout></div></ConfigSaveBar>
     )

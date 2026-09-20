@@ -14,6 +14,11 @@ export interface ApiServicePort {
 export interface ApiService {
   id: string
   name: string
+  /** The Kubernetes object's name, and so the hostname other workloads resolve.
+   *  Derived from the name when the service is created and fixed thereafter, so
+   *  "docai_db" answers to "docai-db". Absent on services created before the
+   *  column existed, where the name slugified is the same thing. */
+  slug?: string
   project_id: string
   node_id: string | null
   stack_id: string | null

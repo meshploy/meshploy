@@ -163,6 +163,7 @@ export const demoServiceWeb = {
 export const demoServiceDb = {
   id: DEMO_SVC_DB,
   name: "postgres",
+  slug: "postgres",
   project_id: DEMO_PROJECT_ID,
   node_id: DEMO_NODE_W1,
   stack_id: null,
