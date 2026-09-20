@@ -260,6 +260,9 @@ func (h *Handler) CreateRoute(ctx context.Context, input *CreateRouteInput) (*Cr
 		if t.TargetTLS != nil {
 			ti.TargetTLS = *t.TargetTLS
 		}
+		// Created paused: the service it names may not have deployed yet, and
+		// a route that serves nothing needs no address until it is published.
+		ti.AllowUnresolved = input.Body.Published != nil && !*input.Body.Published
 		if err != nil {
 			return nil, err
 		}

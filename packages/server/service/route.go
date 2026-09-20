@@ -43,6 +43,9 @@ type TargetInput struct {
 	// meaningful with an address target: a service or node target is reached on
 	// a NodePort inside the cluster, which is plain HTTP by construction.
 	TargetTLS bool
+	// AllowUnresolved keeps a target whose service has no NodePort yet, for a
+	// route created paused. Publishing resolves it.
+	AllowUnresolved bool
 	// Redirect target — mutually exclusive with ServiceID / NodeID
 	RedirectRouteID *uuid.UUID
 	RedirectCode    int // 301 or 302; defaults to 301 if zero
@@ -354,6 +357,16 @@ func (s *RouteService) SetPublished(ctx context.Context, routeID, projectID uuid
 	if err != nil {
 		return nil, err
 	}
+	// A route created paused may point at a service that had not deployed yet,
+	// so its address was never worked out. Publishing is when that has to be
+	// true, so it is resolved here - and a target that still cannot be resolved
+	// stops the publish rather than serving a hostname that goes nowhere.
+	if published {
+		if err := s.resolvePausedTargets(ctx, route); err != nil {
+			return nil, err
+		}
+	}
+
 	now := time.Now()
 	if err := s.db.WithContext(ctx).Model(route).Updates(map[string]any{
 		"published":            published,
@@ -363,6 +376,27 @@ func (s *RouteService) SetPublished(ctx context.Context, routeID, projectID uuid
 		return nil, err
 	}
 	return s.Get(ctx, routeID, projectID)
+}
+
+// resolvePausedTargets fills in the address of any service target that was
+// created before its service had one.
+func (s *RouteService) resolvePausedTargets(ctx context.Context, route *db.Route) error {
+	for _, t := range route.Targets {
+		if t.ServiceID == nil || t.TargetPort != 0 {
+			continue
+		}
+		resolved, err := s.resolveTarget(ctx, route.OrganizationID, &TargetInput{
+			Path: t.Path, StripPath: t.StripPath, ServiceID: t.ServiceID,
+		})
+		if err != nil {
+			return err
+		}
+		if err := s.db.WithContext(ctx).Model(&db.RouteTarget{}).Where("id = ?", t.ID).
+			Updates(map[string]any{"target_ip": resolved.TargetIP, "target_port": resolved.TargetPort}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -483,6 +517,15 @@ func (s *RouteService) resolveTarget(ctx context.Context, orgID uuid.UUID, in *T
 			}
 		}
 		if sp.NodePort == 0 {
+			// A paused route serves nothing, so it does not need an address
+			// yet. This is how a migration prepares: services are created
+			// stopped and their routes paused, and neither has a NodePort until
+			// the group moves. The address is resolved when the route is
+			// published, which is the moment it starts to matter.
+			if in.AllowUnresolved {
+				t.TargetPort = 0
+				return t, nil
+			}
 			return nil, huma.Error422UnprocessableEntity(
 				"no NodePort is published for this service — deploy it, then add the route")
 		}

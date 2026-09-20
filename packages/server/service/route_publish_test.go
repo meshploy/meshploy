@@ -133,3 +133,54 @@ func TestAnHTTPTargetFromAnotherOrgIsNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "redirect target route not found")
 }
+
+// A migration creates services stopped and their routes paused, so neither has
+// an address until the group moves. A paused route therefore has to be
+// creatable without one, and publishing is where it has to become true.
+func TestAPausedRouteMayWaitForItsAddress(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+
+	svc, err := e.svcs.Workloads.Create(ctx, e.project.ID, service.CreateWorkloadInput{
+		Name: "web", Type: meshdb.ServiceTypeApplication, Image: "nginx:1.27",
+	})
+	require.NoError(t, err)
+
+	// Without the flag, a service that has never deployed is refused.
+	_, err = e.svcs.Routes.Create(ctx, service.CreateRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID, Hostname: "eager.example.com",
+		Targets: []service.TargetInput{{Path: "/", ServiceID: &svc.ID}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NodePort")
+
+	// Paused, it is kept with the target unresolved.
+	route, err := e.svcs.Routes.Create(ctx, service.CreateRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID, Hostname: "waiting.example.com", Paused: true,
+		Targets: []service.TargetInput{{Path: "/", ServiceID: &svc.ID, AllowUnresolved: true}},
+	})
+	require.NoError(t, err)
+	require.Len(t, route.Targets, 1)
+	assert.Equal(t, 0, route.Targets[0].TargetPort, "an unresolved target has no port yet")
+	assert.False(t, route.Published)
+
+	// Publishing it while it still cannot resolve is refused: better a failed
+	// publish than a hostname that answers nothing.
+	_, err = e.svcs.Routes.SetPublished(ctx, route.ID, e.project.ID, true, uuid.New())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NodePort")
+
+	// Once the service has a published port - which a deploy assigns - the
+	// publish resolves it.
+	var port meshdb.ServicePort
+	require.NoError(t, e.gdb.First(&port, "service_id = ?", svc.ID).Error)
+	require.NoError(t, e.gdb.Model(&meshdb.ServicePort{}).Where("id = ?", port.ID).
+		Updates(map[string]any{"node_port": 31555, "is_public": true, "is_http": true, "is_primary": true}).Error)
+
+	published, err := e.svcs.Routes.SetPublished(ctx, route.ID, e.project.ID, true, uuid.New())
+	require.NoError(t, err)
+	assert.True(t, published.Published)
+	require.Len(t, published.Targets, 1)
+	assert.Equal(t, 31555, published.Targets[0].TargetPort, "publishing resolved the address")
+	assert.NotEmpty(t, published.Targets[0].TargetIP)
+}
