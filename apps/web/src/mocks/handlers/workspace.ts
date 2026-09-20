@@ -748,6 +748,13 @@ export const workspaceHandlers = [
       return json(b.is_secret ? { ...item, value: undefined } : item)
     }
   ),
+  // A secret's value is asked for one at a time, never carried in a list.
+  http.get(`${P}/variable-groups/:groupId/items/:itemId/value`, ({ params }) => {
+    const g = find("variable-groups", params.groupId)
+    const item = g?.items.find((i: any) => i.id === params.itemId)
+    if (!item) return missing()
+    return json({ key: item.key, value: item.value ?? "demo-secret-value" })
+  }),
   http.delete(`${P}/variable-groups/:groupId/items/:itemId`, ({ params }) => {
     const g = find("variable-groups", params.groupId)
     if (!g) return missing()

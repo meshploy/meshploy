@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/meshploy/packages/server/service"
 	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 )
 
 // ─── Response types ───────────────────────────────────────────────────────────
@@ -150,6 +150,59 @@ func (h *Handler) GetVariableGroup(ctx context.Context, input *GetVariableGroupI
 		return nil, err
 	}
 	return &GetVariableGroupOutput{Body: toApiGroup(*g, false)}, nil
+}
+
+// ─── Reveal one secret ────────────────────────────────────────────────────────
+
+type RevealVariableGroupItemInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	GroupID   string `path:"groupId"`
+	ItemID    string `path:"itemId"`
+}
+
+type RevealVariableGroupItemOutput struct {
+	Body struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+}
+
+// RevealVariableGroupItem returns one item's value in the clear.
+//
+// Listing a group never includes a secret's value - a list is fetched by every
+// page that mentions the group, and a secret should not travel that often. This
+// asks for exactly one, which is the shape of the question somebody actually
+// has ("what is this password?") and the shape worth recording if that ever
+// needs auditing.
+//
+// Gated on ActionUpdate rather than ActionView: reading a secret is closer to
+// being able to change it than to being able to see that it exists.
+func (h *Handler) RevealVariableGroupItem(ctx context.Context, input *RevealVariableGroupItemInput) (*RevealVariableGroupItemOutput, error) {
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, "")
+	if err != nil {
+		return nil, err
+	}
+	groupID, err := parseUUID(input.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	itemID, err := parseUUID(input.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	g, err := h.svc.VariableGroups.Get(ctx, groupID, projectID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	for _, it := range g.Items {
+		if it.ID == itemID {
+			out := &RevealVariableGroupItemOutput{}
+			out.Body.Key, out.Body.Value = it.Key, string(it.Value)
+			return out, nil
+		}
+	}
+	return nil, huma.Error404NotFound("no such item in this group")
 }
 
 // ─── Update group ─────────────────────────────────────────────────────────────
@@ -409,6 +462,7 @@ func (h *Handler) registerVariableGroupRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "delete-variable-group", Method: "DELETE", Path: base + "/variable-groups/{groupId}", Summary: "Delete variable group", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.DeleteVariableGroup)
 
 	huma.Register(api, huma.Operation{OperationID: "upsert-variable-group-item", Method: "PUT", Path: base + "/variable-groups/{groupId}/items", Summary: "Upsert variable group item", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.UpsertVariableGroupItem)
+	huma.Register(api, huma.Operation{OperationID: "reveal-variable-group-item", Method: "GET", Path: base + "/variable-groups/{groupId}/items/{itemId}/value", Summary: "Reveal one variable group item's value", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.RevealVariableGroupItem)
 	huma.Register(api, huma.Operation{OperationID: "delete-variable-group-item", Method: "DELETE", Path: base + "/variable-groups/{groupId}/items/{itemId}", Summary: "Delete variable group item", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.DeleteVariableGroupItem)
 
 	huma.Register(api, huma.Operation{OperationID: "list-service-variable-groups", Method: "GET", Path: base + "/services/{serviceId}/variable-groups", Summary: "List variable groups attached to service", Tags: []string{tag}, Security: []map[string][]string{{"bearer": {}}}}, h.ListServiceVariableGroups)

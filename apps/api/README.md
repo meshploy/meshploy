@@ -333,6 +333,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | PATCH | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}` | ✓ | Update variable group |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}` | ✓ | Delete variable group |
 | PUT | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items` | ✓ | Upsert variable group item |
+| GET | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items/{itemId}/value` | ✓ | Reveal one item's value. A list never carries a secret's value, so reading one is its own request, gated on project update rather than view |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/variable-groups/{groupId}/items/{itemId}` | ✓ | Delete variable group item |
 
 ### Config files

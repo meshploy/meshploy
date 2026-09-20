@@ -33,8 +33,34 @@ const sanitizeKey = (v: string) =>
 
 // ─── Item row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, onDelete, isDeleting }: { item: ApiVariableGroupItem; onDelete: () => void; isDeleting: boolean }) {
-  const [revealed, setRevealed] = useState(false)
+function ItemRow({ item, onDelete, isDeleting, onReveal }: {
+  item: ApiVariableGroupItem
+  onDelete: () => void
+  isDeleting: boolean
+  onReveal: () => Promise<string>
+}) {
+  // A list never carries a secret's value, so revealing one asks for it. The
+  // value is held here and not written back to the cached list: it should stop
+  // existing when the page does.
+  const [revealed, setRevealed] = useState<string | null>(null)
+  const [revealing, setRevealing] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  async function toggle() {
+    if (revealed !== null) {
+      setRevealed(null)
+      return
+    }
+    setRevealing(true)
+    setFailed(false)
+    try {
+      setRevealed(await onReveal())
+    } catch {
+      setFailed(true)
+    } finally {
+      setRevealing(false)
+    }
+  }
 
   return (
     <div className="rounded-md border border-border/60 bg-muted/5 px-3 py-2.5 flex items-center gap-3">
@@ -42,11 +68,21 @@ function ItemRow({ item, onDelete, isDeleting }: { item: ApiVariableGroupItem; o
       <span className="text-muted-foreground/40 text-xs shrink-0">=</span>
       {item.is_secret ? (
         <div className="flex items-center gap-1 flex-1 min-w-0">
-          <code className="text-xs font-mono text-muted-foreground truncate">
-            {revealed ? (item.value ?? "••••••••") : "••••••••"}
+          <code className={`text-xs font-mono truncate ${failed ? "text-destructive" : "text-muted-foreground"}`}>
+            {failed ? "could not be read" : (revealed ?? "••••••••")}
           </code>
-          <Button variant="ghost" size="icon-sm" onClick={() => setRevealed((v) => !v)} className="text-muted-foreground/30 hover:text-muted-foreground shrink-0">
-            {revealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={toggle}
+            disabled={revealing}
+            aria-label={revealed !== null ? `Hide ${item.key}` : `Show ${item.key}`}
+            title={revealed !== null ? "Hide" : "Show"}
+            className="text-muted-foreground/30 hover:text-muted-foreground shrink-0"
+          >
+            {revealing
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : revealed !== null ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
           </Button>
         </div>
       ) : (
@@ -300,6 +336,9 @@ function GroupDetailPage() {
                 item={item}
                 onDelete={() => deleteMut.mutate(item.id)}
                 isDeleting={deleteMut.isPending && deleteMut.variables === item.id}
+                onReveal={async () =>
+                  (await groupsApi.revealItem(orgId, projectId, groupId, item.id, token)).value
+                }
               />
             ))}
 

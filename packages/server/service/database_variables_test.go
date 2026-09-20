@@ -44,3 +44,34 @@ func TestDatabaseGroupCarriesItsConnection(t *testing.T) {
 	require.Equal(t, "postgresql://app:p%40ss%3Aword@"+host+":5432/app", string(url.Value))
 	require.True(t, url.IsSecret, "the URL carries the password")
 }
+
+// A group's list never carries a secret's value - it is fetched by every page
+// that mentions the group - so the value has to be readable one at a time, and
+// it has to survive the round trip through encryption intact.
+func TestASecretItemKeepsItsValueExactly(t *testing.T) {
+	ctx := context.Background()
+	gdb := newTestDB(t)
+	svcs := newServices(gdb)
+
+	org := meshdb.Organization{Name: "secrets", Slug: "secrets"}
+	require.NoError(t, gdb.Create(&org).Error)
+	project, err := svcs.Projects.Create(ctx, org.ID, "secrets", "secrets")
+	require.NoError(t, err)
+
+	g, err := svcs.VariableGroups.Create(ctx, service.CreateGroupInput{ProjectID: project.ID, Name: "creds"})
+	require.NoError(t, err)
+
+	// A password with the characters that break URLs is exactly the kind that
+	// needs reading back.
+	const password = "Vigyan12#@/x"
+	_, err = svcs.VariableGroups.UpsertItem(ctx, g.ID, service.UpsertItemInput{
+		Key: "DB_PASSWORD", Value: password, IsSecret: true,
+	})
+	require.NoError(t, err)
+
+	got, err := svcs.VariableGroups.Get(ctx, g.ID, project.ID)
+	require.NoError(t, err)
+	require.Len(t, got.Items, 1)
+	require.True(t, got.Items[0].IsSecret)
+	require.Equal(t, password, string(got.Items[0].Value))
+}

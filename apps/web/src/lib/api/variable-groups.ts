@@ -91,6 +91,17 @@ export const variableGroups = {
       token
     ),
 
+  /** One item's value in the clear.
+   *
+   *  A list never carries a secret's value - it is fetched by every page that
+   *  mentions the group - so revealing one is its own request. */
+  revealItem: (orgId: string, projectId: string, groupId: string, itemId: string, token: string) =>
+    apiFetch<{ key: string; value: string }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/variable-groups/${groupId}/items/${itemId}/value`,
+      {},
+      token
+    ),
+
   /** A job attaches groups the same way, and reads them on its next run. */
   listForJob: (orgId: string, projectId: string, jobId: string, token: string) =>
     apiFetch<ApiVariableGroup[]>(
