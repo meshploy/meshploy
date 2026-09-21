@@ -34,6 +34,7 @@ type Rollback struct {
 type MeshploySide interface {
 	StopService(projectID, serviceID string) error
 	PauseRoute(projectID, routeID string) error
+	PauseTCPRoute(projectID, routeID string) error
 }
 
 // Result of replaying one journal.
@@ -122,6 +123,12 @@ func (r Rollback) one(e journal.Entry) error {
 			return fmt.Errorf("needs the Meshploy API, which this rollback was not given")
 		}
 		return r.Meshploy.PauseRoute(u.Args["project_id"], u.Args["route_id"])
+
+	case journal.UndoPauseTCPRoute:
+		if r.Meshploy == nil {
+			return fmt.Errorf("needs the Meshploy API, which this rollback was not given")
+		}
+		return r.Meshploy.PauseTCPRoute(u.Args["project_id"], u.Args["route_id"])
 	}
 	return fmt.Errorf("unknown undo kind %q", u.Kind)
 }

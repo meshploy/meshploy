@@ -37,6 +37,9 @@ type API interface {
 	SetEnvVars(projectID, serviceID, env string) error
 	// CreateRoute creates a route, paused.
 	CreateRoute(projectID string, spec RouteSpec) (string, error)
+	// CreateTCPRoute publishes a database's port on the gateway, paused: the
+	// Meshploy equivalent of the host port Dokploy gave it.
+	CreateTCPRoute(projectID string, spec TCPRouteSpec) (string, error)
 	// CreateVolume makes a volume of the given size and returns its id.
 	CreateVolume(projectID, name string, storageGB int) (string, error)
 	// AttachVolume mounts a volume into a service at a path.
@@ -73,6 +76,16 @@ type ServiceSpec struct {
 	// Meshploy's default port 3000 and its route is published to a port
 	// nothing answers on.
 	Ports []int
+}
+
+// TCPRouteSpec is one published database port to carry across.
+type TCPRouteSpec struct {
+	// GatewayPort is the port Dokploy published, kept so a connection string
+	// somebody has written down still works.
+	GatewayPort int
+	ServiceID   string
+	// ServicePort is the database's own port, which the gateway forwards to.
+	ServicePort int
 }
 
 // RouteSpec is one hostname to create, paused.
@@ -231,7 +244,31 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		})
 	}
 
-	// 3. Routes, paused: they exist, serve nothing, and get no certificate
+	// 3. Published database ports. Dokploy gives a database a host port; here
+	// that is a TCP route on the gateway, created closed like every other
+	// route, and keeping the same port number - a connection string in
+	// somebody's notes should not change because the platform did.
+	for _, it := range d.Plan.Items {
+		if it.Kind != "database" || it.Verdict != Moves || it.Details["external_port"] == "" {
+			continue
+		}
+		serviceID := out.Services[it.ID]
+		if serviceID == "" {
+			continue // its database was not created; the failure is already recorded
+		}
+		port := atoiOr(it.Details["external_port"], 0)
+		if port <= 0 {
+			continue
+		}
+		projectID := d.projectFor(out, it)
+		spec := TCPRouteSpec{GatewayPort: port, ServiceID: serviceID, ServicePort: enginePort(it.Details["engine"])}
+		_, _ = d.step(&out, "prepare/tcp/"+it.ID, "", "create-tcp-route",
+			fmt.Sprintf("%s on :%d", it.Name, port), func() (string, error) {
+				return d.API.CreateTCPRoute(projectID, spec)
+			})
+	}
+
+	// 4. Routes, paused: they exist, serve nothing, and get no certificate
 	// until their group moves.
 	for _, it := range d.Plan.Items {
 		if it.Kind != "domain" || it.Verdict != Moves {
@@ -256,6 +293,22 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	}
 
 	return out, nil
+}
+
+// enginePort is the port an engine listens on, which is what the gateway
+// forwards a published port to. Zero lets the API use the database's own.
+func enginePort(engine string) int {
+	switch engine {
+	case "Postgres":
+		return 5432
+	case "MySQL", "MariaDB":
+		return 3306
+	case "MongoDB":
+		return 27017
+	case "Redis":
+		return 6379
+	}
+	return 0
 }
 
 // pendingEnv is one workload's environment, waiting for every name in it to be

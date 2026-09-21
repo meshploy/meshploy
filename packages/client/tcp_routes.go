@@ -22,6 +22,12 @@ type TCPRoute struct {
 
 type CreateTCPRouteBody struct {
 	GatewayPort int `json:"gateway_port"`
+	// Zone is where the port is reachable from: public, mesh or local. Empty
+	// is public, which is what the API defaults to.
+	Zone string `json:"zone,omitempty"`
+	// Published false creates the route with its port closed, for a route that
+	// exists before it should serve - a migration creates every one this way.
+	Published *bool `json:"published,omitempty"`
 	// The target: a service's published port, or a port on a node.
 	ServiceID   *string `json:"service_id,omitempty"`
 	ServicePort *int    `json:"service_port,omitempty"`

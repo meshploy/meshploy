@@ -33,6 +33,10 @@ type MoveAPI interface {
 	PublishRoute(projectID, routeID string) error
 	// PauseRoute puts it back.
 	PauseRoute(projectID, routeID string) error
+	// PublishTCPRoute opens a published database's port on the gateway, and
+	// PauseTCPRoute closes it again.
+	PublishTCPRoute(projectID, routeID string) error
+	PauseTCPRoute(projectID, routeID string) error
 }
 
 // Prober checks that a hostname answers. Separated so a move can be tested
@@ -176,7 +180,16 @@ func (d MoveDeps) run() error {
 		}
 	}
 
-	// 8. Switch the group's domains through the edge Dokploy still runs, and
+	// 8. Open the ports the group's databases were published on. Dokploy's
+	// copies are stopped by now, so the host port it held is free for the
+	// gateway to take.
+	for _, m := range d.databases() {
+		if err := d.publishTCPRoute(m); err != nil {
+			return err
+		}
+	}
+
+	// 9. Switch the group's domains through the edge Dokploy still runs, and
 	// publish their routes. Until this point nothing has changed for a visitor.
 	for _, dom := range d.domains() {
 		if err := d.switchDomain(dom); err != nil {
@@ -184,7 +197,7 @@ func (d MoveDeps) run() error {
 		}
 	}
 
-	// 9. Check each domain answers. A group that moved but does not serve is a
+	// 10. Check each domain answers. A group that moved but does not serve is a
 	// failure, not a success with a warning.
 	if d.Probe != nil {
 		for _, dom := range d.domains() {
@@ -194,6 +207,24 @@ func (d MoveDeps) run() error {
 		}
 	}
 	return nil
+}
+
+// publishTCPRoute opens the gateway port a database was published on.
+func (d MoveDeps) publishTCPRoute(m GroupMember) error {
+	routeID := d.Journal.CreatedBy("prepare/tcp/" + m.ID)
+	step := d.step(m.ID, "tcp")
+	if routeID == "" || d.Journal.Done(step) {
+		return nil
+	}
+	_, projectID := d.meshployIDs(m)
+	if err := d.API.PublishTCPRoute(projectID, routeID); err != nil {
+		return d.record(step, "publish-tcp-route", m.Name, err, nil)
+	}
+	return d.Journal.Append(journal.Entry{Step: step, Group: d.Group.ID, Action: "publish-tcp-route",
+		Target: m.Name, Result: journal.OK, Undo: &journal.Undo{
+			Kind: journal.UndoPauseTCPRoute,
+			Args: map[string]string{"project_id": projectID, "route_id": routeID},
+		}})
 }
 
 // start brings up one of Meshploy's copies and waits for it.
@@ -381,6 +412,10 @@ func (m moveRollback) StopService(projectID, serviceID string) error {
 
 func (m moveRollback) PauseRoute(projectID, routeID string) error {
 	return m.api.PauseRoute(projectID, routeID)
+}
+
+func (m moveRollback) PauseTCPRoute(projectID, routeID string) error {
+	return m.api.PauseTCPRoute(projectID, routeID)
 }
 
 // workloadFor is the Dokploy side of a group member: the Swarm service or

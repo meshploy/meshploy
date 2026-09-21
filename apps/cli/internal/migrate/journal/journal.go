@@ -91,6 +91,8 @@ const (
 	UndoStopService = "stop-service"
 	// UndoPauseRoute puts route Args["route_id"] back to paused.
 	UndoPauseRoute = "pause-route"
+	// UndoPauseTCPRoute closes the gateway port of TCP route Args["route_id"].
+	UndoPauseTCPRoute = "pause-tcp-route"
 	// UndoStartUnit starts systemd unit Args["unit"] again, for a custom edge
 	// that was stopped at cutover.
 	UndoStartUnit = "start-unit"

@@ -213,3 +213,4 @@ type stubMeshploy struct{}
 
 func (stubMeshploy) StopService(projectID, serviceID string) error { return nil }
 func (stubMeshploy) PauseRoute(projectID, routeID string) error    { return nil }
+func (stubMeshploy) PauseTCPRoute(string, string) error            { return nil }

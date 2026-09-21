@@ -17,6 +17,7 @@ type fakeAPI struct {
 	services   []ServiceSpec
 	envs       map[string]string // service id -> env block
 	routes     []RouteSpec
+	tcpRoutes  []TCPRouteSpec
 	volumes    map[string]string // name -> id
 	volumeSize map[string]int
 	mounts     []string
@@ -95,6 +96,11 @@ func (f *fakeAPI) AttachVolume(projectID, volumeID, serviceID, mountPath string)
 func (f *fakeAPI) CreateConfigFile(projectID, serviceID, name, path, content string) error {
 	f.files = append(f.files, name+" at "+path+" = "+content)
 	return nil
+}
+
+func (f *fakeAPI) CreateTCPRoute(projectID string, spec TCPRouteSpec) (string, error) {
+	f.tcpRoutes = append(f.tcpRoutes, spec)
+	return f.next("tcp"), nil
 }
 
 func (f *fakeAPI) CreateRoute(projectID string, spec RouteSpec) (string, error) {
@@ -483,5 +489,48 @@ func TestAMigratedApplicationPointsAtTheMigratedDatabase(t *testing.T) {
 	}
 	if !strings.Contains(env, "postgres://app:pw@db:5432/app") {
 		t.Errorf("env = %q, want the database's name here", env)
+	}
+}
+
+// Dokploy publishes a database by giving it a host port; here that is a TCP
+// route on the gateway, created closed and keeping the same port number - a
+// connection string in somebody's notes should not change because the platform
+// did.
+func TestAPublishedDatabasePortBecomesATCPRoute(t *testing.T) {
+	plan, src := smallPlan(t)
+	for i := range src.Rows["postgres"] {
+		src.Rows["postgres"][i]["externalPort"] = "5433"
+	}
+	plan = BuildPlan(src, time.Now())
+
+	api := newFakeAPI()
+	out, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(api.tcpRoutes) != 1 {
+		t.Fatalf("tcp routes = %+v", api.tcpRoutes)
+	}
+	r := api.tcpRoutes[0]
+	if r.GatewayPort != 5433 {
+		t.Errorf("gateway port = %d, want the one Dokploy published", r.GatewayPort)
+	}
+	if r.ServiceID != out.Services["d1"] {
+		t.Errorf("it should point at the database that moved, got %q", r.ServiceID)
+	}
+	if r.ServicePort != 5432 {
+		t.Errorf("service port = %d, want the engine's own", r.ServicePort)
+	}
+}
+
+// A database nobody published gets no port on the gateway.
+func TestADatabaseWithNoPublishedPortGetsNoTCPRoute(t *testing.T) {
+	plan, src := smallPlan(t)
+	api := newFakeAPI()
+	if _, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.tcpRoutes) != 0 {
+		t.Errorf("tcp routes = %+v", api.tcpRoutes)
 	}
 }

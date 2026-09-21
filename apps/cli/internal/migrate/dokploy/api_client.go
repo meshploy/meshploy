@@ -138,6 +138,43 @@ func (a ClientAPI) CreateRoute(projectID string, spec RouteSpec) (string, error)
 	return r.ID, nil
 }
 
+// CreateTCPRoute publishes a database's port on the gateway, paused.
+//
+// Dokploy publishes a database by giving it a host port; Meshploy publishes one
+// by giving the gateway a TCP route. Created closed, like every other route
+// here, and opened when its group moves.
+func (a ClientAPI) CreateTCPRoute(projectID string, spec TCPRouteSpec) (string, error) {
+	if spec.GatewayPort == 0 {
+		return "", fmt.Errorf("a TCP route needs the port to publish")
+	}
+	paused := false
+	body := client.CreateTCPRouteBody{
+		GatewayPort: spec.GatewayPort,
+		ServiceID:   &spec.ServiceID,
+		Zone:        "public",
+		Published:   &paused,
+	}
+	if spec.ServicePort != 0 {
+		port := spec.ServicePort
+		body.ServicePort = &port
+	}
+	r, err := a.C.CreateTCPRoute(a.OrgID, projectID, body)
+	if err != nil {
+		return "", err
+	}
+	return r.ID, nil
+}
+
+func (a ClientAPI) PublishTCPRoute(projectID, routeID string) error {
+	_, err := a.C.PublishTCPRoute(a.OrgID, projectID, routeID)
+	return err
+}
+
+func (a ClientAPI) PauseTCPRoute(projectID, routeID string) error {
+	_, err := a.C.PauseTCPRoute(a.OrgID, projectID, routeID)
+	return err
+}
+
 // CreateVolume makes a volume, reusing one of the same name in the project: a
 // re-run of stage 1 must not leave two volumes where the data can only go in
 // one.

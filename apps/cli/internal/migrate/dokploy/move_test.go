@@ -14,12 +14,14 @@ import (
 // fakeMoveAPI is Meshploy during a move, recording the order things happened
 // in: the order is the safety property, not the individual calls.
 type fakeMoveAPI struct {
-	started   []string
-	stopped   []string
-	published []string
-	paused    []string
-	status    map[string]string
-	fail      map[string]error
+	started      []string
+	stopped      []string
+	published    []string
+	paused       []string
+	tcpPublished []string
+	tcpPaused    []string
+	status       map[string]string
+	fail         map[string]error
 }
 
 func newMoveAPI() *fakeMoveAPI {
@@ -62,6 +64,19 @@ func (f *fakeMoveAPI) PublishRoute(projectID, routeID string) error {
 
 func (f *fakeMoveAPI) PauseRoute(projectID, routeID string) error {
 	f.paused = append(f.paused, routeID)
+	return nil
+}
+
+func (f *fakeMoveAPI) PublishTCPRoute(projectID, routeID string) error {
+	if err := f.fail["publish-tcp:"+routeID]; err != nil {
+		return err
+	}
+	f.tcpPublished = append(f.tcpPublished, routeID)
+	return nil
+}
+
+func (f *fakeMoveAPI) PauseTCPRoute(projectID, routeID string) error {
+	f.tcpPaused = append(f.tcpPaused, routeID)
 	return nil
 }
 
@@ -332,5 +347,38 @@ func TestAStatefulGroupMovesInTheOnlySafeOrder(t *testing.T) {
 	}
 	if !runner.didRun("docker service scale --detach db-xyz=0") {
 		t.Errorf("Dokploy's database was not stopped: %v", runner.ran)
+	}
+}
+
+// The port a database was published on opens when its group moves, and closes
+// again if the group goes back: until then Dokploy still holds that port.
+func TestMovingAGroupOpensItsPublishedDatabasePort(t *testing.T) {
+	d, api, runner, _ := movable(t)
+	// Stage 1 created a TCP route for the database, as it does for one Dokploy
+	// published.
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/tcp/d1", Action: "create-tcp-route",
+		Target: "db on :5433", Result: journal.OK, Created: "tcp-1"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-db", Name: "db", CanMove: true,
+		Members: []GroupMember{{Kind: "database", ID: "d1", Name: "db", Project: "Acme · production"}}}
+	runner.replies["docker service inspect db-xyz --format {{.Spec.Mode.Replicated.Replicas}}"] = "1\n"
+
+	if _, err := Move(d); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.tcpPublished) != 1 || api.tcpPublished[0] != "tcp-1" {
+		t.Fatalf("published = %v", api.tcpPublished)
+	}
+
+	// And a rollback closes it.
+	entries, _ := journal.Read(d.Journal.Dir())
+	res := Rollback{Runner: runner, Meshploy: moveRollback{api}, Journal: d.Journal}.
+		Replay(journal.Undoable(entries, "g-db"))
+	if len(res.Failures) != 0 {
+		t.Fatalf("failures: %v", res.Failures)
+	}
+	if len(api.tcpPaused) != 1 || api.tcpPaused[0] != "tcp-1" {
+		t.Errorf("paused = %v", api.tcpPaused)
 	}
 }
