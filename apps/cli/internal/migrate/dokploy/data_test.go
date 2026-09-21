@@ -328,3 +328,44 @@ func TestAMongoInstanceMovesWhole(t *testing.T) {
 		t.Error("a Postgres with no database name cannot be dumped, and should say so")
 	}
 }
+
+// A host path comes across the same way a volume does, from a directory on
+// this machine rather than from Docker's - and only when the operator said so.
+func TestABindMountsContentsAreCopiedIn(t *testing.T) {
+	m, group, stream, kube, j := statefulGroup(t)
+	// A bind mount's source is a directory on this machine, so the test uses
+	// one: the copy refuses a path that is not there, which is the right
+	// answer for a path somebody moved or mistyped.
+	src, left := t.TempDir(), t.TempDir()
+	m.Source.Rows["mount"] = []Row{
+		{"mountId": "m1", "applicationId": "a1", "type": "bind", "hostPath": src, "mountPath": "/data"},
+		{"mountId": "m2", "applicationId": "a1", "type": "bind", "hostPath": left, "mountPath": "/left"},
+	}
+	group.Members = []GroupMember{{Kind: "application", ID: "a1", Name: "web", Project: "Acme · production"}}
+	// Stage 1 made a volume for the path the operator brought, and none for the
+	// one they left.
+	if err := j.Append(journal.Entry{Step: "prepare/bind/m1", Action: "create-volume",
+		Target: "web-srv-web-data", Result: journal.OK, Created: "vol-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(src, "notes.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kube.replies["wc -l"] = "2\n"
+
+	if err := m.CopyFiles(group, ids(j)); err != nil {
+		t.Fatal(err)
+	}
+	if !stream.didRun("tar -C " + src + " -cf - .") {
+		t.Fatalf("the path itself is the source: %v", stream.ran)
+	}
+	for _, cmd := range stream.ran {
+		if strings.Contains(cmd, left) {
+			t.Errorf("a path the operator left behind is not copied: %s", cmd)
+		}
+	}
+	if !kube.didRun("tar -C /meshploy-data -xf -") {
+		t.Errorf("it should land in the claim: %v", kube.ran)
+	}
+}

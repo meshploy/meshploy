@@ -186,7 +186,7 @@ func takeMigrationCredential() ([]byte, error) {
 // routes, all inert, so it can be run, interrupted and run again while Dokploy
 // keeps serving.
 func runMigratePrepare() ([]byte, error) {
-	plan, _, err := setup.ReadConfirmedPlan()
+	plan, choices, err := setup.ReadConfirmedPlan()
 	if err != nil {
 		return nil, err
 	}
@@ -235,8 +235,13 @@ func runMigratePrepare() ([]byte, error) {
 		}
 	}()
 
+	answers := map[string]map[string]string{}
+	if choices != nil {
+		answers = choices.Decisions
+	}
 	result, err := dokploy.Prepare(dokploy.PrepareDeps{
 		Plan:    *plan,
+		Answers: answers,
 		Source:  src,
 		API:     api,
 		Journal: j,

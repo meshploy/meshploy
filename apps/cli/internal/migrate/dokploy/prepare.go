@@ -130,6 +130,10 @@ type PrepareDeps struct {
 	Source  Source
 	API     API
 	Journal *journal.Journal
+	// Answers are what the operator chose, by item id and decision id. A
+	// decision nobody answered keeps its default, which is how a plan
+	// confirmed without touching anything still does the obvious thing.
+	Answers map[string]map[string]string
 	// Images carries locally built images into the built-in registry. Nil skips
 	// that, which is right for a server whose images all came from registries.
 	Images *ImageMover
@@ -164,11 +168,14 @@ func Unsupported(plan Plan) []string {
 		// Prepare creates what the plan says moves. An item still carrying an
 		// unanswered question is not that, and leaving it out quietly is how
 		// an operator ends up with a server missing one application.
-		if it.Verdict == NeedsYou {
-			out = append(out, fmt.Sprintf("%s (%s): it still has a question to answer", it.Name, it.Kind))
-		}
-		if it.Details["bind_mounts"] != "" {
-			out = append(out, fmt.Sprintf("%s: %s bind mount(s) from host paths - copying them is not built yet", it.Name, it.Details["bind_mounts"]))
+		// A question with a default is one the operator may answer; one
+		// without is one they must. Only the second stops a plan - the same
+		// rule a group uses to decide whether it can move, so an item and its
+		// group never disagree about whether it is ready.
+		for _, d := range it.Decisions {
+			if d.Default == "" {
+				out = append(out, fmt.Sprintf("%s (%s): %s", it.Name, it.Kind, d.Question))
+			}
 		}
 	}
 	sort.Strings(out)
@@ -250,7 +257,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	// 3. Compose apps, as stacks. Created and not applied: a stack that is
 	// applied is running, and nothing this stage creates runs.
 	for _, it := range d.Plan.Items {
-		if it.Kind != "compose" || it.Verdict != Moves {
+		if it.Kind != "compose" || !d.ready(it) {
 			continue
 		}
 		projectID := d.projectFor(out, it)
@@ -279,7 +286,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		if it.Kind != "application" && it.Kind != "database" {
 			continue
 		}
-		if it.Verdict != Moves {
+		if !d.ready(it) {
 			continue
 		}
 		projectID := d.projectFor(out, it)
@@ -334,7 +341,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	// route, and keeping the same port number - a connection string in
 	// somebody's notes should not change because the platform did.
 	for _, it := range d.Plan.Items {
-		if it.Kind != "database" || it.Verdict != Moves || it.Details["external_port"] == "" {
+		if it.Kind != "database" || !d.ready(it) || it.Details["external_port"] == "" {
 			continue
 		}
 		serviceID := out.Services[it.ID]
@@ -356,7 +363,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	// 6. Routes, paused: they exist, serve nothing, and get no certificate
 	// until their group moves.
 	for _, it := range d.Plan.Items {
-		if it.Kind != "domain" || it.Verdict != Moves {
+		if it.Kind != "domain" || !d.ready(it) {
 			continue
 		}
 		serviceID := out.Services[it.Details["application_id"]]
@@ -380,7 +387,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	// 7. Backup schedules, which need both the database and the store they
 	// write to, so they come after everything else.
 	for _, it := range d.Plan.Items {
-		if it.Kind != "database" || it.Verdict != Moves {
+		if it.Kind != "database" || !d.ready(it) {
 			continue
 		}
 		serviceID, projectID := out.Services[it.ID], d.projectFor(out, it)
@@ -480,6 +487,54 @@ func enginePort(engine string) int {
 	return 0
 }
 
+// ready reports whether an item can be created: it was not ruled out, and
+// every question it carries has an answer - the operator's, or the default the
+// plan offered. A question with no default is the only kind that stops it,
+// which is the same rule a group uses to decide whether it can move.
+func (d PrepareDeps) ready(it Item) bool {
+	if it.Verdict == NotMoved {
+		return false
+	}
+	for _, dec := range it.Decisions {
+		if dec.Default == "" && d.Answers[it.ID][dec.ID] == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// answer is what the operator chose for one decision, or its default.
+func (d PrepareDeps) answer(itemID, decisionID string) string {
+	if got := d.Answers[itemID][decisionID]; got != "" {
+		return got
+	}
+	for _, it := range d.Plan.Items {
+		if it.ID != itemID {
+			continue
+		}
+		for _, dec := range it.Decisions {
+			if dec.ID == decisionID {
+				return dec.Default
+			}
+		}
+	}
+	return ""
+}
+
+// bindVolumeName names the volume a host path's contents move into. The path
+// is what the operator recognises, so it is what the name is built from.
+func bindVolumeName(workload, host string) string {
+	base := strings.Trim(strings.ReplaceAll(strings.Trim(host, "/"), "/", "-"), "-")
+	if base == "" {
+		base = "data"
+	}
+	name := strings.ToLower(workload + "-" + base)
+	if len(name) > 60 {
+		name = name[:60]
+	}
+	return name
+}
+
 // pendingEnv is one workload's environment, waiting for every name in it to be
 // known.
 type pendingEnv struct {
@@ -536,6 +591,29 @@ func (d PrepareDeps) mounts(out *PrepareResult, it Item, projectID, serviceID st
 			_, _ = d.step(out, "prepare/mount/"+m.Str("mountId"), "", "attach-volume", name+" at "+path, func() (string, error) {
 				return volumeID, d.API.AttachVolume(projectID, volumeID, serviceID, path)
 			})
+
+		case "bind":
+			// A host path an application mounts. Whether it comes across is the
+			// operator's decision, because a path outside the platform's own
+			// directory may be shared with the machine; the plan asks, and
+			// "copy" is what it suggests.
+			host, path := m.Str("hostPath"), m.Str("mountPath")
+			if host == "" || path == "" || d.answer(it.ID, "mount:"+host) != "copy" {
+				continue
+			}
+			name := bindVolumeName(it.Name, host)
+			size := volumeSizeGB(d.Source.PathMB[host])
+			volumeID, err := d.step(out, "prepare/bind/"+m.Str("mountId"), "", "create-volume",
+				name+" for "+host, func() (string, error) {
+					return d.API.CreateVolume(projectID, name, size)
+				})
+			if err != nil || volumeID == "" {
+				continue
+			}
+			_, _ = d.step(out, "prepare/bind-mount/"+m.Str("mountId"), "", "attach-volume", name+" at "+path,
+				func() (string, error) {
+					return volumeID, d.API.AttachVolume(projectID, volumeID, serviceID, path)
+				})
 
 		case "file":
 			// Dokploy keeps small files - an nginx.conf, an htpasswd - beside

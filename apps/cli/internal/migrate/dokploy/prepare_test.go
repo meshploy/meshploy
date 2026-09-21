@@ -357,21 +357,21 @@ func TestUnsupportedNamesWhatWouldBeDropped(t *testing.T) {
 		t.Errorf("a plain app and database should be supported, got %v", got)
 	}
 
-	// A compose app and a registry are both carried across now; a host path
-	// nobody has decided about, and a question nobody has answered, are not.
+	// A compose app, a registry and a host path are all carried now. A question
+	// nobody has answered is not.
 	withBinds := Plan{Items: []Item{
 		{Kind: "compose", Name: "n8n", Verdict: Moves},
 		{Kind: "registry", Name: "ghcr", Verdict: Moves},
-		{Kind: "application", Name: "web", Verdict: Moves, Details: map[string]string{"bind_mounts": "1"}},
-		{Kind: "application", Name: "asked", Verdict: NeedsYou},
+		{Kind: "application", Name: "asked", Verdict: NeedsYou,
+			Decisions: []Decision{{ID: "cert", Question: "its certificate was uploaded by hand"}}},
 		{Kind: "application", Name: "gone", Verdict: NotMoved},
 	}}
 	got := Unsupported(withBinds)
-	if len(got) != 2 {
+	if len(got) != 1 {
 		t.Fatalf("got %v", got)
 	}
 	joined := strings.Join(got, "\n")
-	for _, want := range []string{"web", "asked"} {
+	for _, want := range []string{"asked"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("%q is not named: %v", want, got)
 		}
@@ -449,18 +449,50 @@ func TestPrepareCreatesVolumesAndConfigFiles(t *testing.T) {
 
 // A bind mount is a host path somebody chose to keep or copy, and copying is
 // stage 2's data step. A plan carrying one is refused rather than half-applied.
-func TestABindMountIsRefusedUntilItCanBeCopied(t *testing.T) {
+// A host path an application mounts becomes a volume with the path's contents
+// in it, at the same place inside the container. Whether it comes at all is the
+// operator's decision, because a path outside the platform's own directory may
+// be shared with the machine - and "copy" is what the plan suggests.
+func TestABindMountBecomesAVolumeWithItsContents(t *testing.T) {
 	src := Source{Rows: map[string][]Row{
 		"project":     {{"projectId": "p1", "name": "Acme"}},
 		"environment": {{"environmentId": "e1", "projectId": "p1", "name": "production"}},
 		"application": {{"applicationId": "a1", "name": "web", "environmentId": "e1", "appName": "web-abc"}},
-		"mount":       {{"mountId": "m1", "applicationId": "a1", "type": "bind", "hostPath": "/srv/web-data", "mountPath": "/data"}},
+		"mount": {
+			{"mountId": "m1", "applicationId": "a1", "type": "bind", "hostPath": "/srv/web-data", "mountPath": "/data"},
+			{"mountId": "m2", "applicationId": "a1", "type": "bind", "hostPath": "/srv/shared", "mountPath": "/shared"},
+		},
 	}}
+	src.PathMB = map[string]int{"/srv/web-data": 900}
 	plan := BuildPlan(src, time.Now())
 
-	missing := Unsupported(plan)
-	if len(missing) == 0 || !strings.Contains(strings.Join(missing, " "), "bind mount") {
+	// It no longer stops a plan: the question has a default, and the default
+	// is to bring it.
+	if missing := Unsupported(plan); len(missing) != 0 {
 		t.Fatalf("Unsupported = %v", missing)
+	}
+
+	api := newFakeAPI()
+	_, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t),
+		// One path comes, one the operator chose to leave behind.
+		Answers: map[string]map[string]string{"a1": {"mount:/srv/shared": "skip"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(api.volumes) != 1 {
+		t.Fatalf("volumes = %v, want only the path that was chosen", api.volumes)
+	}
+	name := "web-srv-web-data"
+	if _, ok := api.volumes[name]; !ok {
+		t.Errorf("the volume should be named after the path: %v", api.volumes)
+	}
+	// Sized from what the path holds, with the same headroom a volume gets.
+	if got := api.volumeSize[name]; got != 2 {
+		t.Errorf("size = %d GB for 900 MB, want room to grow", got)
+	}
+	if len(api.mounts) != 1 || !strings.HasSuffix(api.mounts[0], ":/data") {
+		t.Errorf("it should be mounted where the application expects it: %v", api.mounts)
 	}
 }
 
@@ -480,8 +512,18 @@ func TestAnUnansweredItemStopsPrepare(t *testing.T) {
 			Decisions: []Decision{{ID: "mount", Question: "copy /srv/data?"}}},
 	}}
 	missing := Unsupported(plan)
-	if len(missing) != 1 || !strings.Contains(missing[0], "question to answer") {
+	if len(missing) != 1 || !strings.Contains(missing[0], "copy /srv/data?") {
 		t.Fatalf("Unsupported = %v", missing)
+	}
+
+	// The same question with a default does not: it has an answer already, and
+	// the plan says what it is.
+	answered := Plan{Items: []Item{
+		{Kind: "application", Name: "web", Verdict: NeedsYou,
+			Decisions: []Decision{{ID: "mount", Question: "copy /srv/data?", Default: "copy"}}},
+	}}
+	if got := Unsupported(answered); len(got) != 0 {
+		t.Errorf("Unsupported = %v", got)
 	}
 }
 

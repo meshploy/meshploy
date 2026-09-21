@@ -304,6 +304,49 @@ func (m DataMover) CopyFiles(group Group, ids IDLookup) error {
 		return err
 	}
 
+	// Host paths an application mounts, where the operator chose to bring them.
+	// The same copy as a volume's, from a directory on this host rather than
+	// from Docker's.
+	for _, member := range group.Members {
+		if member.Kind == "database" {
+			continue
+		}
+		serviceID, projectID := ids(member)
+		if serviceID == "" {
+			continue
+		}
+		for _, mount := range m.bindMounts(member.ID) {
+			step := m.step(group.ID, "data", member.ID+"/bind/"+mount.mountID)
+			if m.Journal.Done(step) {
+				continue
+			}
+			volumeID := m.Journal.CreatedBy("prepare/bind/" + mount.mountID)
+			if volumeID == "" {
+				continue // the operator chose to leave this path behind
+			}
+			namespace, err := m.API.ProjectSlug(projectID)
+			if err != nil {
+				return err
+			}
+			claim, err := m.API.VolumeSlug(projectID, volumeID)
+			if err != nil {
+				return err
+			}
+			image, err := m.API.ServiceImage(projectID, serviceID)
+			if err != nil {
+				return err
+			}
+			n, err := m.copyIntoClaim(namespace, claim, image, mount.name)
+			if err != nil {
+				return fmt.Errorf("copy %s: %w", mount.name, err)
+			}
+			if err := m.Journal.Append(journal.Entry{Step: step, Group: group.ID, Action: "copy-path",
+				Target: fmt.Sprintf("%s (%d entries)", mount.name, n), Result: journal.OK}); err != nil {
+				return err
+			}
+		}
+	}
+
 	// An application's own volumes. Stage 1 created each one and attached it;
 	// what it could not do is fill it, because filling it means stopping the
 	// application that owns it.
@@ -469,6 +512,19 @@ func mountOwnedBy(r Row, itemID string) bool {
 		}
 	}
 	return false
+}
+
+// bindMounts are the host paths this workload mounts. The path itself is the
+// source, so it is carried in place of a volume name.
+func (m DataMover) bindMounts(itemID string) []volumeMount {
+	var out []volumeMount
+	for _, r := range m.Source.Rows["mount"] {
+		if r.Str("type") != "bind" || r.Str("hostPath") == "" || !mountOwnedBy(r, itemID) {
+			continue
+		}
+		out = append(out, volumeMount{mountID: r.Str("mountId"), name: r.Str("hostPath")})
+	}
+	return out
 }
 
 func (m DataMover) appName(it Item) string {
