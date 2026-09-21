@@ -92,7 +92,12 @@ type Source struct {
 	Rows      map[string][]Row   `json:"rows,omitempty"`
 	Docker    migrate.Docker     `json:"docker"`
 	Listeners []migrate.Listener `json:"listeners,omitempty"`
-	Resources migrate.Resources  `json:"resources"`
+	// EdgeHolder is what was found holding ports 80 and 443: a Swarm service, a
+	// container, a systemd unit, or a process nobody supervises. Found rather
+	// than assumed, because cutover has to stop it and the assumption only
+	// holds for a default Dokploy.
+	EdgeHolder migrate.PortHolder `json:"edge_holder,omitempty"`
+	Resources  migrate.Resources  `json:"resources"`
 	// DynamicFiles is how many route files Dokploy's Traefik has, and
 	// AcmeBytes the size of its certificate store.
 	DynamicFiles int   `json:"dynamic_files,omitempty"`

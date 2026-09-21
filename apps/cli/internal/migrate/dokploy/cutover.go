@@ -65,6 +65,10 @@ type EdgeHolder struct {
 	// Kind is "swarm", "container" or "systemd".
 	Kind string
 	Name string
+	// Note is what the host found, for the case where none of those three is
+	// what holds the ports - a process nobody supervises. Cutover cannot take
+	// the ports from it, and saying which process it is beats saying nothing.
+	Note string
 }
 
 // CutoverResult is what stage 3 did.
@@ -409,6 +413,9 @@ func (d CutoverDeps) stopEdge() error {
 		return d.Journal.Append(journal.Entry{Step: step, Action: "stop-edge", Target: d.Edge.Name,
 			Result: journal.OK, Undo: &journal.Undo{Kind: journal.UndoStartUnit,
 				Args: map[string]string{"unit": d.Edge.Name}}})
+	}
+	if d.Edge.Note != "" {
+		return fmt.Errorf("nothing here can hand over ports 80 and 443: %s", d.Edge.Note)
 	}
 	return fmt.Errorf("nothing known holds ports 80 and 443 here")
 }

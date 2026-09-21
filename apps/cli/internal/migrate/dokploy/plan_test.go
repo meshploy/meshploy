@@ -511,3 +511,43 @@ func TestAPublishedPortAlreadyInUseIsNamedInThePlan(t *testing.T) {
 		}
 	}
 }
+
+// The edge the host found holding the ports decides what cutover will stop,
+// because on a server whose edge is not the platform's there is nothing else to
+// go on.
+func TestReadEdgeUsesWhatTheHostFound(t *testing.T) {
+	cases := []struct {
+		name   string
+		holder migrate.PortHolder
+		kind   string
+	}{
+		{"the platform's own edge as a Swarm service",
+			migrate.PortHolder{Kind: "swarm", Name: "dokploy-traefik"}, "traefik-service"},
+		{"the platform's own edge as a container",
+			migrate.PortHolder{Kind: "container", Name: "dokploy-traefik"}, "traefik-container"},
+		{"a host nginx under systemd",
+			migrate.PortHolder{Kind: "systemd", Name: "nginx.service", Detail: "nginx runs under the unit nginx.service"}, "custom"},
+		{"somebody's node process",
+			migrate.PortHolder{Kind: "process", Name: "node", Detail: "node (pid 7) holds it, outside any container or unit"}, "custom"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := readEdge(Source{EdgeHolder: c.holder})
+			if got.Kind != c.kind {
+				t.Fatalf("kind: got %q, want %q", got.Kind, c.kind)
+			}
+			if got.Holder == nil || got.Holder.Name != c.holder.Name {
+				t.Fatalf("the holder was not carried into the plan: %+v", got.Holder)
+			}
+		})
+	}
+}
+
+// A holder nothing supervises is named, and the plan says the handover cannot
+// do it alone rather than promising it will.
+func TestReadEdgeSaysWhenNothingCanStopTheEdge(t *testing.T) {
+	e := readEdge(Source{EdgeHolder: migrate.PortHolder{Kind: "process", Name: "node", Detail: "node (pid 7) holds it"}})
+	if !strings.Contains(e.Note, "by hand") {
+		t.Fatalf("note: %q", e.Note)
+	}
+}

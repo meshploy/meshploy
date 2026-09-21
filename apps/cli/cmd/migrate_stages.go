@@ -298,7 +298,18 @@ func groupMoved(j *journal.Journal, g dokploy.Group) bool {
 }
 
 // edgeHolderFor reads what holds 80 and 443 from the plan's own detection.
+//
+// What the host found holding them comes first, whatever it turned out to be:
+// an edge that is not the platform's is still a Swarm service, a container or a
+// unit, and that is all cutover needs to take the ports. The names below are
+// the fallback for a plan made before the host looked.
 func edgeHolderFor(plan dokploy.Plan) dokploy.EdgeHolder {
+	if h := plan.Edge.Holder; h != nil && h.Kind != "" {
+		if h.Stoppable() {
+			return dokploy.EdgeHolder{Kind: h.Kind, Name: h.Name}
+		}
+		return dokploy.EdgeHolder{Note: h.Detail}
+	}
 	switch plan.Edge.Kind {
 	case "traefik-service":
 		return dokploy.EdgeHolder{Kind: "swarm", Name: "dokploy-traefik"}

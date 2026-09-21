@@ -376,6 +376,10 @@ type Listener struct {
 	Port    int    `json:"port"`
 	Address string `json:"address"`
 	Process string `json:"process"`
+	// PID is what holds it. Kept because the process name alone does not say
+	// what to stop: `caddy` could be a unit, a container or neither, and only
+	// the pid leads to the answer. See FindPortHolder.
+	PID int `json:"pid,omitempty"`
 }
 
 // ReadListeners lists what listens on TCP, from `ss`.
@@ -406,12 +410,16 @@ func ParseListeners(out string) []Listener {
 		if err != nil {
 			continue
 		}
-		proc := ""
+		proc, pid := "", 0
 		if j := strings.Index(line, `(("`); j >= 0 {
 			rest := line[j+3:]
-			proc, _, _ = strings.Cut(rest, `"`)
+			proc, rest, _ = strings.Cut(rest, `"`)
+			if _, after, ok := strings.Cut(rest, "pid="); ok {
+				digits, _, _ := strings.Cut(after, ",")
+				pid, _ = strconv.Atoi(digits)
+			}
 		}
-		list = append(list, Listener{Port: port, Address: local[:i], Process: proc})
+		list = append(list, Listener{Port: port, Address: local[:i], Process: proc, PID: pid})
 	}
 	return list
 }

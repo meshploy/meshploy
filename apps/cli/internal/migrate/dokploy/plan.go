@@ -70,6 +70,10 @@ type Edge struct {
 	// Kind is traefik-service, traefik-container, custom, or none.
 	Kind    string   `json:"kind"`
 	Holders []string `json:"holders"`
+	// Holder is what was found holding the ports, in the terms cutover acts on:
+	// a Swarm service, a container, a systemd unit. Absent when this reading
+	// predates discovery, and then Kind alone decides.
+	Holder *migrate.PortHolder `json:"holder,omitempty"`
 	// Traefik is where Dokploy's Traefik runs when something else holds the
 	// ports in front of it.
 	Traefik      string `json:"traefik,omitempty"`
@@ -694,6 +698,33 @@ func readEdge(src Source) Edge {
 	_, traefikService := src.Docker.Service("dokploy-traefik")
 	onDefaultPorts := traefikContainer != nil && publishes(traefikContainer.Ports, 80)
 
+	// What the host said holds the ports comes first: it is the reading that
+	// can be acted on, and the only one that is right about an edge nobody
+	// declared. The rest is the fallback for a reading taken before discovery
+	// existed - the recorded fixtures, and nothing on a live server.
+	if h := src.EdgeHolder; h.Kind != "" || h.Detail != "" {
+		holder := h
+		e.Holder = &holder
+		switch {
+		case h.Kind == "swarm" && isDokployTraefik(h.Name):
+			e.Kind = "traefik-service"
+		case h.Kind == "container" && isDokployTraefik(h.Name):
+			e.Kind = "traefik-container"
+		case h.Kind == "":
+			e.Note = h.Detail
+		default:
+			e.Kind = "custom"
+			if traefikContainer != nil {
+				e.Traefik = traefikContainer.Ports
+			}
+			e.Note = "ports 80 and 443 are held by " + h.String() + ", not by Dokploy's Traefik: " + h.Detail
+			if !h.Stoppable() {
+				e.Note += ". Nothing supervises it, so the handover has to stop it by hand"
+			}
+		}
+		return e
+	}
+
 	switch {
 	case len(e.Holders) == 0:
 		e.Note = "nothing listens on ports 80 or 443"
@@ -710,6 +741,12 @@ func readEdge(src Source) Edge {
 			", not by Dokploy's Traefik: its configuration is read and handed over separately"
 	}
 	return e
+}
+
+// isDokployTraefik reports whether a holder's name is the platform's own edge,
+// under either the service name or a task's.
+func isDokployTraefik(name string) bool {
+	return name == "dokploy-traefik" || strings.HasPrefix(name, "dokploy-traefik.")
 }
 
 func publishes(ports string, port int) bool {

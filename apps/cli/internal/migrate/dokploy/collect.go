@@ -38,6 +38,7 @@ func collect(r migrate.Runner, withRows bool) (Source, error) {
 	src.Resources = migrate.ReadResources(docker)
 	if listeners, err := migrate.ReadListeners(r); err == nil {
 		src.Listeners = listeners
+		src.EdgeHolder = migrate.FindPortHolder(r, docker, listeners, 443, 80)
 	}
 	if entries, err := os.ReadDir(traefikDir); err == nil {
 		for _, e := range entries {
