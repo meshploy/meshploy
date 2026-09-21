@@ -109,11 +109,7 @@ func (s *NodeService) FinishPendingRemovals(ctx context.Context) {
 // Headscale confirms, the node stays, with the reason recorded.
 func (s *NodeService) finishRemoval(ctx context.Context, node *db.Node, waits []time.Duration) (*RemovalResult, error) {
 	if err := s.dropPeer(ctx, node, waits); err != nil {
-		msg := fmt.Sprintf("Headscale has not removed the node's peer: %v", err)
-		if uerr := s.db.WithContext(ctx).Model(node).Update("removal_error", msg).Error; uerr != nil {
-			return nil, uerr
-		}
-		return &RemovalResult{Error: msg}, nil
+		return s.waiting(ctx, node, fmt.Sprintf("Headscale has not removed the node's peer: %v", err))
 	}
 	if s.k8s != nil && node.Name != "" && node.MeshRole != db.MeshRoleMesh {
 		// Not fatal: without its peer the machine cannot reach the cluster, so
@@ -126,12 +122,27 @@ func (s *NodeService) finishRemoval(ctx context.Context, node *db.Node, waits []
 	// Only a removal still requested: one cancelled meanwhile keeps its node.
 	res := s.db.WithContext(ctx).Where("removal_requested_at IS NOT NULL").Delete(&db.Node{}, "id = ?", node.ID)
 	if res.Error != nil {
-		return nil, res.Error
+		// Recorded and reported, not returned: a removal that cannot finish is
+		// a removal still waiting, and the operator needs to read why. Returned
+		// as an error it became "unexpected error occurred" in the console,
+		// under a banner blaming Headscale - while the real reason, something
+		// still pointing at this node, was only in the server's log.
+		return s.waiting(ctx, node, fmt.Sprintf("The node could not be removed: %v", res.Error))
 	}
 	if res.RowsAffected == 0 {
 		return &RemovalResult{Error: "the removal was cancelled"}, nil
 	}
 	return &RemovalResult{Removed: true}, nil
+}
+
+// waiting records why a removal has not finished and reports it as a removal
+// still in progress. The node stays, so the machine cannot rejoin unnoticed,
+// and the reason is on the node for the console to show.
+func (s *NodeService) waiting(ctx context.Context, node *db.Node, msg string) (*RemovalResult, error) {
+	if err := s.db.WithContext(ctx).Model(node).Update("removal_error", msg).Error; err != nil {
+		return nil, err
+	}
+	return &RemovalResult{Error: msg}, nil
 }
 
 // dropPeer removes the node's Headscale peer, trying once after each pause in

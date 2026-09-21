@@ -339,9 +339,16 @@ function NodeDetailPage() {
       {node.removalRequestedAt && (
         <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
           <div>
-            <p className="text-sm font-medium">Removing: waiting for Headscale</p>
+            {/* The reason decides the heading: a removal can also be held up by
+                something still pointing at the node, and calling that "waiting
+                for Headscale" sent people to look at the wrong thing. */}
+            <p className="text-sm font-medium">
+              {node.removalError && !node.removalError.includes("Headscale")
+                ? "Removing: not finished yet"
+                : "Removing: waiting for Headscale"}
+            </p>
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-              {node.removalError || "Headscale has not confirmed the node's peer is gone."} Meshploy retries every minute. Once Headscale drops the peer, the node leaves the cluster and Meshploy; until then it stays, so the machine cannot rejoin unnoticed.
+              {node.removalError || "Headscale has not confirmed the node's peer is gone."} Meshploy retries every minute. Until it finishes the node stays, so the machine cannot rejoin unnoticed.
             </p>
           </div>
           <div className="flex gap-2">
