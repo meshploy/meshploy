@@ -128,6 +128,16 @@ func certFilesFor(name string, c AcmeCertificate, now time.Time) ([]CertFile, st
 	}
 
 	dir := path.Join("certificates", CaddyIssuer, name)
+	// The metadata Caddy keeps beside a certificate, plus where this one came
+	// from.
+	//
+	// issuer_data is empty on purpose: Caddy caches the ACME order URL and the
+	// renewal hint there, and this certificate was ordered by somebody else.
+	// Renewal does not depend on it - Caddy renews on the certificate's own
+	// expiry, with its own account, completing the challenge on the ports it
+	// now holds. An empty one costs a full ACME order instead of a shortcut,
+	// once, and the certificate is Caddy's own from then on. Nothing of the
+	// old platform's account is carried, and nothing of it is needed.
 	meta, err := json.Marshal(map[string]any{
 		"sans":        append([]string{c.Domain.Main}, c.Domain.SANs...),
 		"issuer_data": map[string]any{},

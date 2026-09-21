@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -193,5 +194,63 @@ func TestWantedDomainsAreTheOnesThatMove(t *testing.T) {
 	got := WantedDomains(plan)
 	if len(got) != 1 || !got["a.example.com"] {
 		t.Errorf("got %v", got)
+	}
+}
+
+// Seventy domains is the size this exists for, and the size nobody can
+// rehearse: issuing seventy certificates from Let's Encrypt to prove we avoid
+// asking Let's Encrypt for seventy certificates is both absurd and
+// rate-limited. Real PEM, generated here, proves everything except their rate
+// limiter - which is the one part we never want to meet.
+func TestImportingSeventyDomains(t *testing.T) {
+	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	good := now.Add(60 * 24 * time.Hour)
+
+	var certs []AcmeCertificate
+	wanted := map[string]bool{}
+	for i := 0; i < 70; i++ {
+		name := fmt.Sprintf("site-%02d.example.com", i)
+		certs = append(certs, stored(t, name, good))
+		// Two of them are no longer served: a domain the plan drops keeps its
+		// certificate to itself.
+		if i < 68 {
+			wanted[name] = true
+		}
+	}
+	// One expiring this week, which Caddy should issue fresh instead.
+	certs = append(certs, stored(t, "expiring.example.com", now.Add(3*24*time.Hour)))
+	wanted["expiring.example.com"] = true
+
+	out, err := ImportCertificates(acmeJSON(t, certs...), wanted, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Imported) != 68 {
+		t.Fatalf("imported %d, want the 68 that move and are worth carrying", len(out.Imported))
+	}
+	if len(out.Files) != 68*3 {
+		t.Errorf("files = %d, want three per certificate", len(out.Files))
+	}
+	if reason := out.Skipped["expiring.example.com"]; !strings.Contains(reason, "too soon") {
+		t.Errorf("the expiring one should be left for Caddy: %q", reason)
+	}
+	if _, dropped := out.Skipped["site-69.example.com"]; dropped {
+		t.Error("a domain that does not move is not skipped, it is not considered")
+	}
+
+	// Every file lands where Caddy looks, and a private key is never world
+	// readable - seventy chances to get that wrong is seventy times worse.
+	seen := map[string]bool{}
+	for _, f := range out.Files {
+		if !strings.HasPrefix(f.Path, "certificates/"+CaddyIssuer+"/") {
+			t.Fatalf("outside the issuer Caddy reads: %s", f.Path)
+		}
+		if strings.HasSuffix(f.Path, ".key") && f.Mode != 0o600 {
+			t.Fatalf("%s is mode %o", f.Path, f.Mode)
+		}
+		if seen[f.Path] {
+			t.Fatalf("%s written twice", f.Path)
+		}
+		seen[f.Path] = true
 	}
 }
