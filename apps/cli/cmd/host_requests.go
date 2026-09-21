@@ -43,6 +43,9 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 	case hostagent.RequestMigrateCutover:
 		body, err := runMigrateCutover()
 		return hostagent.CutoverFile, body, 0o600, err
+	case hostagent.RequestMigrateFinish:
+		body, err := runMigrateFinish(req.Args["volumes"] == "true", req.Args["plan"] == "true")
+		return hostagent.FinishFile, body, 0o600, err
 	case hostagent.RequestMigrateRollback:
 		body, err := runMigrateRollback(req.Args["group"])
 		return hostagent.RollbackFile, body, 0o600, err

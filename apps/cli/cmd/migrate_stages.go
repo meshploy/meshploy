@@ -196,6 +196,41 @@ func movedData(group string) ([]MovedData, error) {
 	return out, nil
 }
 
+// runMigrateFinish removes what is left of the platform that was migrated:
+// stage 4. planOnly stops after working out what would go.
+func runMigrateFinish(removeVolumes, planOnly bool) ([]byte, error) {
+	rt, err := openMigration()
+	if err != nil {
+		return nil, err
+	}
+	defer rt.journal.Close()
+
+	src, err := dokploy.Collect(migrate.ExecRunner{})
+	if err != nil {
+		return nil, err
+	}
+	deps := dokploy.FinishDeps{
+		Plan:          *rt.plan,
+		Source:        src,
+		Runner:        migrate.ExecRunner{},
+		Journal:       rt.journal,
+		API:           rt.api,
+		RemoveVolumes: removeVolumes,
+		EtcDir:        dokploy.DefaultEtcDir,
+		Now:           time.Now,
+	}
+	if planOnly {
+		return json.Marshal(dokploy.FinishScope(dokploy.PlanFinish(deps)))
+	}
+	result, err := dokploy.Finish(deps)
+	body, marshalErr := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.FinishFile), body, 0o600)
+	return body, marshalErr
+}
+
 // runMigrateRollback undoes one group, or everything.
 func runMigrateRollback(groupID string) ([]byte, error) {
 	rt, err := openMigration()
@@ -204,6 +239,11 @@ func runMigrateRollback(groupID string) ([]byte, error) {
 	}
 	defer rt.journal.Close()
 
+	// Rollback is available until finish, and not after: what it would put
+	// back has been removed.
+	if dokploy.Finished(rt.journal) {
+		return nil, fmt.Errorf("this migration was finished: the platform it would go back to has been removed")
+	}
 	entries, err := journal.Read(rt.journal.Dir())
 	if err != nil {
 		return nil, err

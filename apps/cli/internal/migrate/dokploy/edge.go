@@ -25,6 +25,10 @@ const DefaultDynamicDir = "/etc/dokploy/traefik/dynamic"
 // cutover.
 const DefaultTraefikDir = "/etc/dokploy/traefik"
 
+// DefaultEtcDir is everything Dokploy keeps on this host, which finish removes
+// once the operator says the migration is over.
+const DefaultEtcDir = "/etc/dokploy"
+
 // FindAcmeStore is Traefik's certificate store inside dir.
 //
 // Dokploy keeps it in the dynamic directory, not beside traefik.yml where the

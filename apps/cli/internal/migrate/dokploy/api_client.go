@@ -234,6 +234,31 @@ func (a ClientAPI) PauseRoute(projectID, routeID string) error {
 	return err
 }
 
+// ── Stage 4 ──────────────────────────────────────────────────────────────────
+
+// MigrationAgentName is the principal the migration acts as. It matches what
+// the API creates, because finish has to find it by name to take it away.
+const MigrationAgentName = "dokploy-migration"
+
+// RevokeMigrationAgent removes the principal this migration has been acting as,
+// and with it the token on the host. Last of all, because everything else here
+// needs it.
+//
+// Idempotent: an operator may have removed it themselves, and finishing twice
+// must not fail on the second time.
+func (a ClientAPI) RevokeMigrationAgent() error {
+	agents, err := a.C.ListAgents(a.OrgID)
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if agent.Name == MigrationAgentName {
+			return a.C.DeleteAgent(a.OrgID, agent.ID)
+		}
+	}
+	return nil
+}
+
 // ── Stage 2: data ────────────────────────────────────────────────────────────
 
 // ProjectSlug is the Kubernetes namespace a project's workloads run in.

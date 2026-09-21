@@ -38,6 +38,7 @@ var migrateDokployCmd = &cobra.Command{
            switch that group's domains
   cutover  stage 3: hand ports 80 and 443 to Meshploy, with the certificates
   rollback undo one group, or everything, back to Dokploy
+  finish   remove what is left of Dokploy, once the migration is over
 
 Run it on the Dokploy server, as root: it reads Docker and Dokploy's database.
 Secrets are read only in memory and never printed or written.`,
@@ -326,6 +327,109 @@ first: cutover takes the ports for every domain at once.`,
 	},
 }
 
+var migrateDokployFinishCmd = &cobra.Command{
+	Use:   "finish",
+	Short: "Stage 4: remove what is left of the platform that was migrated",
+	Long: `Removes the old platform's workloads, its own components, its network and its
+configuration directory, once every group has moved and Meshploy holds the
+ports.
+
+It lists what will go and asks first, and it is the one stage that cannot be
+undone: after it, rollback has nothing to go back to. Volumes are kept unless
+--volumes is given, and the journal and the edge's configuration backup are
+kept either way.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if os.Getuid() != 0 {
+			return fmt.Errorf("migrate dokploy finish requires root: it removes containers and files; re-run with sudo")
+		}
+		volumes, _ := cmd.Flags().GetBool("volumes")
+		yes, _ := cmd.Flags().GetBool("yes")
+
+		// What would go, before anything does.
+		body, err := runMigrateFinish(volumes, true)
+		if err != nil {
+			return err
+		}
+		var scope dokploy.FinishScope
+		if err := json.Unmarshal(body, &scope); err != nil {
+			return err
+		}
+		out := cmd.OutOrStdout()
+		if len(scope.Blockers) > 0 {
+			fmt.Fprintln(out, "This server is not ready to finish:")
+			for _, b := range scope.Blockers {
+				fmt.Fprintf(out, "  %s\n", b)
+			}
+			return fmt.Errorf("nothing was removed")
+		}
+		printFinishScope(out, scope, volumes)
+
+		if !yes {
+			fmt.Fprint(out, "This cannot be undone. Remove them? [y/N]: ")
+			var answer string
+			fmt.Scanln(&answer)
+			if answer != "y" && answer != "Y" {
+				fmt.Fprintln(out, "Aborted. Nothing was removed.")
+				return nil
+			}
+		}
+
+		body, err = runMigrateFinish(volumes, false)
+		if err != nil {
+			return err
+		}
+		var result dokploy.FinishResult
+		if err := json.Unmarshal(body, &result); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "\nDone. %d service(s), %d container(s) and %d network(s) removed.\n",
+			len(result.Removed.Services), len(result.Removed.Containers), len(result.Removed.Networks))
+		if result.AgentGone {
+			fmt.Fprintln(out, "The migration's principal is revoked; this server can no longer act as it.")
+		}
+		if result.JournalKept != "" {
+			fmt.Fprintf(out, "The record of the migration is kept in %s.\n", result.JournalKept)
+		}
+		for _, f := range result.Failures {
+			fmt.Fprintf(out, "  could not finish: %s\n", f)
+		}
+		return nil
+	},
+}
+
+// printFinishScope shows what finish would remove, and what it would leave.
+func printFinishScope(out io.Writer, scope dokploy.FinishScope, removeVolumes bool) {
+	section := func(title string, items []string) {
+		if len(items) == 0 {
+			return
+		}
+		fmt.Fprintf(out, "%s (%d)\n", title, len(items))
+		for _, i := range items {
+			fmt.Fprintf(out, "  %s\n", i)
+		}
+	}
+	section("Swarm services", scope.Services)
+	section("Containers", scope.Containers)
+	section("Networks", scope.Networks)
+	section("Directories", scope.Paths)
+	if len(scope.Volumes) > 0 {
+		verb := "Volumes kept"
+		if removeVolumes {
+			verb = "Volumes REMOVED"
+		}
+		fmt.Fprintf(out, "%s (%d)\n", verb, len(scope.Volumes))
+		for _, v := range scope.Volumes {
+			fmt.Fprintf(out, "  %s (%d MB)\n", v.Name, v.MB)
+		}
+	}
+	if len(scope.Kept) > 0 {
+		fmt.Fprintln(out, "Left alone")
+		for _, k := range scope.Kept {
+			fmt.Fprintf(out, "  %s\n", k)
+		}
+	}
+}
+
 var migrateDokployRollbackCmd = &cobra.Command{
 	Use:   "rollback [group]",
 	Short: "Undo one group, or the whole migration, back to Dokploy",
@@ -416,9 +520,12 @@ func init() {
 	migrateDokployFixtureCmd.Flags().String("out", "", "Write the scrubbed reading to this file (created readable by root only)")
 	migrateDokployPlanCmd.Flags().Bool("json", false, "Print the plan as JSON")
 	migrateDokployRollbackCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation about data already copied")
+	migrateDokployFinishCmd.Flags().Bool("volumes", false, "Remove the old platform's volumes too (their data is gone)")
+	migrateDokployFinishCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation")
 	migrateDokployPlanCmd.Flags().String("out", "", "Also write the plan as JSON to this file (created readable by root only)")
 	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployPrepareCmd,
-		migrateDokployMoveCmd, migrateDokployCutoverCmd, migrateDokployRollbackCmd, migrateDokployFixtureCmd)
+		migrateDokployMoveCmd, migrateDokployCutoverCmd, migrateDokployRollbackCmd,
+		migrateDokployFinishCmd, migrateDokployFixtureCmd)
 	migrateCmd.AddCommand(migrateDokployCmd)
 	rootCmd.AddCommand(migrateCmd)
 }

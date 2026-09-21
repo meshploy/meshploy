@@ -34,12 +34,17 @@ const (
 	// RequestMigrateRollback undoes one group, or everything when Args["group"]
 	// is empty.
 	RequestMigrateRollback = "migrate.rollback"
+	// RequestMigrateFinish removes what is left of the platform that was
+	// migrated. Args["volumes"] = "true" takes its volumes too; Args["plan"] =
+	// "true" only reports what would go.
+	RequestMigrateFinish = "migrate.finish"
 )
 
 // RequestTypes is every type the agent accepts.
 var RequestTypes = []string{
 	RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential,
 	RequestMigratePrepare, RequestMigrateMove, RequestMigrateCutover, RequestMigrateRollback,
+	RequestMigrateFinish,
 }
 
 const (
@@ -63,6 +68,9 @@ const (
 	MoveFile     = "dokploy-move.json"
 	CutoverFile  = "dokploy-cutover.json"
 	RollbackFile = "dokploy-rollback.json"
+	// FinishFile is what stage 4 removed, kept for the operator who wants to
+	// know what a server used to run.
+	FinishFile = "dokploy-finish.json"
 )
 
 // InboxDir is where the API writes requests.
