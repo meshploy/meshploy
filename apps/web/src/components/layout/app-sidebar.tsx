@@ -46,15 +46,24 @@ type NavGroup = {
   items: NavItem[]
 }
 
+// Two different questions, so two groups: what am I running, and what is it
+// running on. The first needs no label - it is where everything starts - and
+// the second says what Nodes, Cluster and Discovery have in common, which is
+// not obvious from their names alone.
 const NAV_GROUPS: NavGroup[] = [
   {
     items: [
       { href: "/", icon: Home, label: "Overview", exact: true },
       { href: "/projects", icon: FolderKanban, label: "Projects", exact: false },
       { href: "/templates", icon: LayoutTemplate, label: "Templates", exact: false },
+    ],
+  },
+  {
+    label: "Infrastructure",
+    items: [
       { href: "/nodes", icon: Server, label: "Nodes", exact: false },
-      { href: "/discovery", icon: Radar, label: "Discovery", exact: false },
       { href: "/cluster", icon: Network, label: "Cluster", exact: false, adminOnly: true },
+      { href: "/discovery", icon: Radar, label: "Discovery", exact: false },
     ],
   },
   {
@@ -156,9 +165,11 @@ export function AppSidebar() {
   const migrating = !!migration?.plan && !migration.status?.finished
 
   const navGroups = (() => {
+    // Migration belongs with the machines, not the applications: it is about
+    // what this server used to run, and it goes when the migration is over.
     const groups = migrating
-      ? NAV_GROUPS.map((g, i) =>
-          i === 0
+      ? NAV_GROUPS.map((g) =>
+          g.label === "Infrastructure"
             ? { ...g, items: [...g.items, { href: "/migration", icon: Import, label: "Migration", exact: false, adminOnly: true }] }
             : g
         )
