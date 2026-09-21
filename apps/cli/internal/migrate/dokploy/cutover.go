@@ -40,6 +40,9 @@ type CutoverDeps struct {
 	CaddyData string
 	// StartCaddy brings Meshploy's edge up on 80 and 443.
 	StartCaddy func() error
+	// ControlPlane is the old platform's own server, stopped at cutover so it
+	// cannot recreate the edge it is losing. Empty leaves it running.
+	ControlPlane ControlPlane
 	// CaddyContainer is what StartCaddy started, so a rollback can take it off
 	// the ports again. Without it, rolling a cutover back started the old edge
 	// against ports Meshploy's was still holding, and neither served.
@@ -95,7 +98,17 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		out.CertificatesImported, out.CertificatesSkipped = imported.Imported, imported.Skipped
 	}
 
-	// 3 and 4. The ports change hands. Everything between these two lines is
+	// 3. The control plane, before its edge and before any downtime: while the
+	// old platform is running it can put its edge back. It is the thing whose
+	// job is keeping that edge alive, and a recreated edge races ours for 80
+	// and 443 on the next restart. Its data is untouched and rollback starts it
+	// again; only the console is not running between here and finish.
+	if err := d.stopControlPlane(); err != nil {
+		out.Error = err.Error()
+		return out, err
+	}
+
+	// 4 and 5. The ports change hands. Everything between these two lines is
 	// refused connections, so there is nothing between them.
 	started := now()
 	if err := d.stopEdge(); err != nil {
@@ -250,6 +263,48 @@ func (d CutoverDeps) importCertificates(now time.Time) (CertImport, error) {
 	_ = d.Journal.Append(journal.Entry{Step: "cutover/certificates", Action: "import-certificates",
 		Target: fmt.Sprintf("%d domain(s)", len(imported.Imported)), Result: journal.OK})
 	return imported, nil
+}
+
+// ControlPlane is the old platform's own server: what recreates its edge.
+type ControlPlane struct {
+	// Kind is "swarm" or "container"; empty means there is none to stop.
+	Kind string
+	Name string
+}
+
+// stopControlPlane stops the platform being replaced, so nothing puts its edge
+// back. A platform that is not there is not a failure: a server whose console
+// was already removed is exactly the state this is aiming for.
+func (d CutoverDeps) stopControlPlane() error {
+	step := "cutover/stop-control-plane"
+	if d.Journal.Done(step) || d.ControlPlane.Name == "" {
+		return nil
+	}
+	switch d.ControlPlane.Kind {
+	case "swarm":
+		if !d.swarmServiceExists(d.ControlPlane.Name) {
+			return nil
+		}
+		return Control{Runner: d.Runner, Journal: d.Journal}.
+			Stop(step, "", Workload{Name: d.ControlPlane.Name, Swarm: true})
+	case "container":
+		if !d.containerExists(d.ControlPlane.Name) {
+			return nil
+		}
+		return Control{Runner: d.Runner, Journal: d.Journal}.
+			Stop(step, "", Workload{Name: d.ControlPlane.Name})
+	}
+	return nil
+}
+
+func (d CutoverDeps) swarmServiceExists(name string) bool {
+	out, err := d.Runner.Output("docker", "service", "inspect", name, "--format", "{{.ID}}")
+	return err == nil && strings.TrimSpace(out) != ""
+}
+
+func (d CutoverDeps) containerExists(name string) bool {
+	out, err := d.Runner.Output("docker", "inspect", name, "--format", "{{.Id}}")
+	return err == nil && strings.TrimSpace(out) != ""
 }
 
 // stopEdge takes the old edge off the ports, recording how to put it back.

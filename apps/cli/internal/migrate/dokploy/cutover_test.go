@@ -205,3 +205,60 @@ func TestCutoverWithoutACertificateStore(t *testing.T) {
 		t.Errorf("imported = %v", out.CertificatesImported)
 	}
 }
+
+// The old platform's own server is stopped before its edge: while it runs it
+// can put that edge back, and a recreated edge races ours for 80 and 443 on the
+// next restart. Its data is untouched, and the undo starts it again.
+func TestCutoverStopsTheOldControlPlaneBeforeItsEdge(t *testing.T) {
+	d, runner, _ := cutoverFixture(t)
+	d.ControlPlane = ControlPlane{Kind: "swarm", Name: "dokploy"}
+	runner.replies["docker service inspect dokploy --format {{.ID}}"] = "abc123\n"
+	runner.replies["docker service inspect dokploy --format {{.Spec.Mode.Replicated.Replicas}}"] = "1\n"
+
+	if _, err := Cutover(d); err != nil {
+		t.Fatal(err)
+	}
+	stopPlane, stopEdge := -1, -1
+	for i, cmd := range runner.ran {
+		switch {
+		case strings.Contains(cmd, "service scale --detach dokploy=0"):
+			stopPlane = i
+		case strings.Contains(cmd, "dokploy-traefik"):
+			if stopEdge == -1 {
+				stopEdge = i
+			}
+		}
+	}
+	if stopPlane == -1 {
+		t.Fatalf("the control plane was not stopped: %v", runner.ran)
+	}
+	if stopEdge != -1 && stopPlane > stopEdge {
+		t.Errorf("it must stop before the edge, not after: %v", runner.ran)
+	}
+
+	// And it can be put back: the journal knows what it was.
+	entries, _ := journal.Read(d.Journal.Dir())
+	var found bool
+	for _, e := range entries {
+		if e.Step == "cutover/stop-control-plane" && e.Undo != nil && e.Undo.Args["replicas"] == "1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("stopping the control plane should be recorded with how to start it again")
+	}
+}
+
+// A server whose old console is already gone is exactly the state cutover is
+// aiming for, so there is nothing to stop and nothing to complain about.
+func TestCutoverDoesNotMindAMissingControlPlane(t *testing.T) {
+	d, runner, _ := cutoverFixture(t)
+	d.ControlPlane = ControlPlane{Kind: "swarm", Name: "dokploy"}
+	runner.errs = map[string]error{
+		"docker service inspect dokploy --format {{.ID}}": fmt.Errorf("no such service: dokploy"),
+	}
+
+	if _, err := Cutover(d); err != nil {
+		t.Fatalf("a missing control plane is not a failure: %v", err)
+	}
+}

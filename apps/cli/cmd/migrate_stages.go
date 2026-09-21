@@ -146,11 +146,13 @@ func runMigrateCutover() ([]byte, error) {
 	}
 
 	result, err := dokploy.Cutover(dokploy.CutoverDeps{
-		Plan:           *rt.plan,
-		Runner:         migrate.ExecRunner{},
-		Journal:        rt.journal,
-		Probe:          dokploy.HTTPProbe{Addr: probeAddr()},
-		Edge:           edgeHolderFor(*rt.plan),
+		Plan:    *rt.plan,
+		Runner:  migrate.ExecRunner{},
+		Journal: rt.journal,
+		Probe:   dokploy.HTTPProbe{Addr: probeAddr()},
+		Edge:    edgeHolderFor(*rt.plan),
+		// Dokploy runs its own server as a Swarm service called "dokploy".
+		ControlPlane:   dokploy.ControlPlane{Kind: "swarm", Name: "dokploy"},
 		AcmePath:       dokploy.FindAcmeStore(dokploy.DefaultTraefikDir),
 		TraefikDir:     dokploy.DefaultTraefikDir,
 		CaddyData:      rt.caddyData,
