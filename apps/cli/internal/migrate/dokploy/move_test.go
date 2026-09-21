@@ -14,18 +14,21 @@ import (
 // fakeMoveAPI is Meshploy during a move, recording the order things happened
 // in: the order is the safety property, not the individual calls.
 type fakeMoveAPI struct {
-	started      []string
-	stopped      []string
-	published    []string
-	paused       []string
-	tcpPublished []string
-	tcpPaused    []string
-	status       map[string]string
-	fail         map[string]error
+	started       []string
+	stopped       []string
+	published     []string
+	paused        []string
+	tcpPublished  []string
+	tcpPaused     []string
+	applied       []string
+	stackServices map[string][]string
+	status        map[string]string
+	fail          map[string]error
 }
 
 func newMoveAPI() *fakeMoveAPI {
-	return &fakeMoveAPI{status: map[string]string{}, fail: map[string]error{}}
+	return &fakeMoveAPI{status: map[string]string{}, fail: map[string]error{},
+		stackServices: map[string][]string{}}
 }
 
 func (f *fakeMoveAPI) StartService(projectID, serviceID string) error {
@@ -65,6 +68,24 @@ func (f *fakeMoveAPI) PublishRoute(projectID, routeID string) error {
 func (f *fakeMoveAPI) PauseRoute(projectID, routeID string) error {
 	f.paused = append(f.paused, routeID)
 	return nil
+}
+
+func (f *fakeMoveAPI) ApplyStack(projectID, stackID string) error {
+	if err := f.fail["apply:"+stackID]; err != nil {
+		return err
+	}
+	f.applied = append(f.applied, stackID)
+	return nil
+}
+
+// StackServices are what the stack created, once it has been applied.
+func (f *fakeMoveAPI) StackServices(projectID, stackID string) ([]string, error) {
+	for _, id := range f.applied {
+		if id == stackID {
+			return f.stackServices[stackID], nil
+		}
+	}
+	return nil, nil
 }
 
 func (f *fakeMoveAPI) PublishTCPRoute(projectID, routeID string) error {
@@ -380,5 +401,49 @@ func TestMovingAGroupOpensItsPublishedDatabasePort(t *testing.T) {
 	}
 	if len(api.tcpPaused) != 1 || api.tcpPaused[0] != "tcp-1" {
 		t.Errorf("paused = %v", api.tcpPaused)
+	}
+}
+
+// A compose app moves as a stack: applied rather than started, and what it
+// creates is what a rollback stops. Stopping Dokploy's copy means the whole
+// project - its containers are named for their services, so stopping the one
+// named after the project stops nothing at all.
+func TestMovingAComposeAppAppliesItsStack(t *testing.T) {
+	d, api, runner, _ := movable(t)
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "analytics",
+		Project: "Acme · production", Verdict: Moves, Details: map[string]string{"app_name": "analytics-abc"}})
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/stack/c1", Action: "create-stack",
+		Target: "analytics", Result: journal.OK, Created: "stack-1"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-an", Name: "analytics", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production"}}}
+	api.stackServices["stack-1"] = []string{"svc-web", "svc-worker"}
+	api.status["svc-web"], api.status["svc-worker"] = "running", "running"
+	runner.replies["docker ps --format {{.Names}} --filter label=com.docker.compose.project=analytics-abc"] =
+		"analytics-abc-web-1\nanalytics-abc-worker-1\n"
+
+	if _, err := Move(d); err != nil {
+		t.Fatalf("%v", err)
+	}
+	if !runner.didRun("docker stop analytics-abc-web-1") || !runner.didRun("docker stop analytics-abc-worker-1") {
+		t.Errorf("every container of the project should have stopped: %v", runner.ran)
+	}
+	if len(api.applied) != 1 || api.applied[0] != "stack-1" {
+		t.Fatalf("applied = %v", api.applied)
+	}
+
+	// Putting it back stops what the stack created, and starts the project again.
+	entries, _ := journal.Read(d.Journal.Dir())
+	res := Rollback{Runner: runner, Meshploy: moveRollback{api}, Journal: d.Journal}.
+		Replay(journal.Undoable(entries, "g-an"))
+	if len(res.Failures) != 0 {
+		t.Fatalf("failures: %v", res.Failures)
+	}
+	if len(api.stopped) != 2 {
+		t.Errorf("both of the stack's services should have stopped: %v", api.stopped)
+	}
+	if !runner.didRun("docker start analytics-abc-web-1") {
+		t.Errorf("the project should be running again: %v", runner.ran)
 	}
 }

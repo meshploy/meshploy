@@ -82,6 +82,9 @@ const (
 	UndoScaleService = "scale-service"
 	// UndoStartContainer starts container Args["container"] again.
 	UndoStartContainer = "start-container"
+	// UndoStartContainers starts every container in Args["containers"], comma
+	// separated: a compose project stops as a group and comes back as one.
+	UndoStartContainers = "start-containers"
 	// UndoStopContainer stops container Args["container"], for one the
 	// migration started - Meshploy's own edge, which has to come off the ports
 	// before the old one can go back on them.

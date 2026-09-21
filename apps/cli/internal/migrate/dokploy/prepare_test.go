@@ -22,6 +22,7 @@ type fakeAPI struct {
 	storages   []StorageSpec
 	gits       []GitSpec
 	backups    []BackupSpec
+	stacks     []StackSpec
 	volumes    map[string]string // name -> id
 	volumeSize map[string]int
 	mounts     []string
@@ -115,6 +116,11 @@ func (f *fakeAPI) CreateStorage(spec StorageSpec) (string, error) {
 func (f *fakeAPI) CreateGit(spec GitSpec) (string, error) {
 	f.gits = append(f.gits, spec)
 	return f.next("git"), nil
+}
+
+func (f *fakeAPI) CreateStack(projectID string, spec StackSpec) (string, error) {
+	f.stacks = append(f.stacks, spec)
+	return f.next("stack"), nil
 }
 
 func (f *fakeAPI) CreateBackup(projectID string, spec BackupSpec) (string, error) {
@@ -351,25 +357,29 @@ func TestUnsupportedNamesWhatWouldBeDropped(t *testing.T) {
 		t.Errorf("a plain app and database should be supported, got %v", got)
 	}
 
-	withCompose := Plan{Items: []Item{
+	// A compose app and a registry are both carried across now; a host path
+	// nobody has decided about, and a question nobody has answered, are not.
+	withBinds := Plan{Items: []Item{
 		{Kind: "compose", Name: "n8n", Verdict: Moves},
-		// A registry is carried across now, so it is not a reason to refuse.
 		{Kind: "registry", Name: "ghcr", Verdict: Moves},
 		{Kind: "application", Name: "web", Verdict: Moves, Details: map[string]string{"bind_mounts": "1"}},
+		{Kind: "application", Name: "asked", Verdict: NeedsYou},
 		{Kind: "application", Name: "gone", Verdict: NotMoved},
 	}}
-	got := Unsupported(withCompose)
+	got := Unsupported(withBinds)
 	if len(got) != 2 {
 		t.Fatalf("got %v", got)
 	}
 	joined := strings.Join(got, "\n")
-	for _, want := range []string{"n8n", "web"} {
+	for _, want := range []string{"web", "asked"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("%q is not named: %v", want, got)
 		}
 	}
-	if strings.Contains(joined, "ghcr") {
-		t.Errorf("a registry is created now and should not stop a plan: %v", got)
+	for _, gone := range []string{"n8n", "ghcr"} {
+		if strings.Contains(joined, gone) {
+			t.Errorf("%s is created now and should not stop a plan: %v", gone, got)
+		}
 	}
 	if strings.Contains(joined, "gone") {
 		t.Error("something that is not moving should not be listed")
@@ -648,5 +658,47 @@ func TestBackupSchedulesAreRecreatedAgainstTheirStore(t *testing.T) {
 	}
 	if got := retentionDays("0 * * * *", 48); got != 2 {
 		t.Errorf("hourly, keeping 48: %d days, want 2", got)
+	}
+}
+
+// A compose app becomes a stack: the file its author pasted comes across as the
+// stack's own spec, and one that reads its file from git goes on reading it
+// from git.
+func TestComposeAppsBecomeStacks(t *testing.T) {
+	plan, src := smallPlan(t)
+	src.Rows["compose"] = []Row{
+		{"composeId": "c1", "name": "analytics", "appName": "analytics-abc", "environmentId": "e1",
+			"sourceType": "raw", "composeType": "docker-compose",
+			"composeFile": "services:\n  web:\n    image: plausible\n", "env": "PORT=8000"},
+		{"composeId": "c2", "name": "wiki", "appName": "wiki-def", "environmentId": "e1",
+			"sourceType": "github", "repository": "wiki", "owner": "acme", "branch": "main",
+			"composePath": "./docker-compose.yml"},
+	}
+	plan = BuildPlan(src, time.Now())
+
+	api := newFakeAPI()
+	out, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(api.stacks) != 2 {
+		t.Fatalf("stacks = %+v (failures %v)", api.stacks, out.Failures)
+	}
+	byName := map[string]StackSpec{}
+	for _, s := range api.stacks {
+		byName[s.Name] = s
+	}
+	if got := byName["analytics"]; !strings.Contains(got.Spec, "image: plausible") || got.Repo != "" {
+		t.Errorf("a pasted compose file should come across as the spec: %+v", got)
+	}
+	if got := byName["analytics"]; got.Variables["PORT"] != "8000" {
+		t.Errorf("its environment interpolates into the file: %+v", got.Variables)
+	}
+	if got := byName["wiki"]; got.Spec != "" || got.Repo == "" || got.Path != "./docker-compose.yml" {
+		t.Errorf("a git-sourced app should keep reading from git: %+v", got)
+	}
+	// And the stack is what the move starts.
+	if out.Services["c1"] == "" {
+		t.Error("the stack should be recorded as what was created for the compose app")
 	}
 }

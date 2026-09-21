@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/meshploy/apps/cli/internal/migrate"
 	"github.com/meshploy/apps/cli/internal/migrate/journal"
@@ -107,6 +108,17 @@ func (r Rollback) one(e journal.Entry) error {
 		}
 		_, err := r.Runner.Output("docker", "start", u.Args["container"])
 		return err
+
+	case journal.UndoStartContainers:
+		for _, name := range strings.Split(u.Args["containers"], ",") {
+			if name = strings.TrimSpace(name); name == "" {
+				continue
+			}
+			if _, err := r.Runner.Output("docker", "start", name); err != nil {
+				return err
+			}
+		}
+		return nil
 
 	case journal.UndoStopContainer:
 		_, err := r.Runner.Output("docker", "stop", u.Args["container"])

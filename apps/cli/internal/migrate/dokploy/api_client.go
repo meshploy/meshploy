@@ -237,6 +237,34 @@ func (a ClientAPI) CreateGit(spec GitSpec) (string, error) {
 	return g.ID, nil
 }
 
+// CreateStack creates a compose app, not applied.
+//
+// Reusing one of the same name in the project, like every other create here: a
+// second run of stage 1 must not leave two stacks where the workloads can only
+// belong to one.
+func (a ClientAPI) CreateStack(projectID string, spec StackSpec) (string, error) {
+	existing, err := a.C.ListStacks(a.OrgID, projectID)
+	if err != nil {
+		return "", err
+	}
+	for _, st := range existing {
+		if strings.EqualFold(st.Name, spec.Name) {
+			return st.ID, nil
+		}
+	}
+	body := client.CreateStackBody{Name: spec.Name, Spec: spec.Spec, Variables: spec.Variables}
+	if spec.Repo != "" {
+		// The file lives in git and goes on living there: "repo" is a stack
+		// that reads its compose file from the repository on every deploy.
+		body.GitMode, body.GitRepo, body.GitBranch, body.GitPath = "repo", spec.Repo, spec.Branch, spec.Path
+	}
+	st, err := a.C.CreateStack(a.OrgID, projectID, body)
+	if err != nil {
+		return "", err
+	}
+	return st.ID, nil
+}
+
 // CreateBackup recreates a database's schedule.
 func (a ClientAPI) CreateBackup(projectID string, spec BackupSpec) (string, error) {
 	b, err := a.C.CreateBackupConfig(a.OrgID, projectID, spec.ServiceID, client.CreateBackupConfigBody{
@@ -380,6 +408,25 @@ func (a ClientAPI) RevokeMigrationAgent() error {
 		}
 	}
 	return nil
+}
+
+// ApplyStack starts a compose app: a stack is applied, not started.
+func (a ClientAPI) ApplyStack(projectID, stackID string) error {
+	_, err := a.C.ApplyStack(a.OrgID, projectID, stackID)
+	return err
+}
+
+// StackServices are the services a stack created.
+func (a ClientAPI) StackServices(projectID, stackID string) ([]string, error) {
+	services, err := a.C.ListStackServices(a.OrgID, projectID, stackID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(services))
+	for _, s := range services {
+		out = append(out, s.ID)
+	}
+	return out, nil
 }
 
 // ── Stage 2: data ────────────────────────────────────────────────────────────

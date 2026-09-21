@@ -21,10 +21,15 @@ import (
 
 // Workload is one thing to stop or start, as Docker sees it.
 type Workload struct {
-	// Name is the Swarm service or container name.
+	// Name is the Swarm service, container, or compose project name.
 	Name string
 	// Swarm is true for a Swarm service, false for a plain container.
 	Swarm bool
+	// Compose is true for a compose project, which is several containers that
+	// have to stop together: stopping the one container named after the
+	// project stops a fraction of the app, and usually none of it, because the
+	// containers are named for their services rather than their project.
+	Compose bool
 }
 
 // Control stops and starts Dokploy workloads, writing what it did to the
@@ -65,6 +70,10 @@ func (c Control) Stop(step, group string, w Workload) error {
 		return c.append(entry)
 	}
 
+	if w.Compose {
+		return c.stopComposeProject(entry, w.Name)
+	}
+
 	entry.Action = "stop-container"
 	running, err := c.running(w.Name)
 	if err != nil {
@@ -95,6 +104,47 @@ func (c Control) Stop(step, group string, w Workload) error {
 	}
 	entry.Undo = &journal.Undo{Kind: journal.UndoStartContainer, Args: undoArgs}
 	return c.append(entry)
+}
+
+// stopComposeProject stops every container of a compose project, and records
+// them by name so the undo starts exactly those again.
+func (c Control) stopComposeProject(entry journal.Entry, project string) error {
+	entry.Action = "stop-compose"
+	names, err := c.composeContainers(project)
+	if err != nil {
+		return c.fail(entry, "stop-compose", err)
+	}
+	if len(names) == 0 {
+		entry.Result = journal.Skipped
+		return c.append(entry)
+	}
+	for _, name := range names {
+		if _, err := c.Runner.Output("docker", "stop", name); err != nil {
+			return c.fail(entry, "stop-compose", err)
+		}
+	}
+	entry.Target = project
+	entry.Undo = &journal.Undo{Kind: journal.UndoStartContainers, Args: map[string]string{
+		"containers": strings.Join(names, ","),
+	}}
+	return c.append(entry)
+}
+
+// composeContainers are the running containers of a compose project, by the
+// label Docker puts on every one of them.
+func (c Control) composeContainers(project string) ([]string, error) {
+	out, err := c.Runner.Output("docker", "ps", "--format", "{{.Names}}",
+		"--filter", "label=com.docker.compose.project="+project)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", project, err)
+	}
+	var names []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			names = append(names, line)
+		}
+	}
+	return names, nil
 }
 
 // restartPolicy is what Docker does with this container when the daemon starts.

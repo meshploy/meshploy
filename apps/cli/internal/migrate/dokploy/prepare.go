@@ -48,6 +48,9 @@ type API interface {
 	CreateGit(spec GitSpec) (string, error)
 	// CreateBackup recreates a database's schedule, writing where it wrote.
 	CreateBackup(projectID string, spec BackupSpec) (string, error)
+	// CreateStack creates a compose app, not applied: like every workload here
+	// it arrives stopped, and its group's move is what starts it.
+	CreateStack(projectID string, spec StackSpec) (string, error)
 	// CreateVolume makes a volume of the given size and returns its id.
 	CreateVolume(projectID, name string, storageGB int) (string, error)
 	// AttachVolume mounts a volume into a service at a path.
@@ -84,6 +87,21 @@ type ServiceSpec struct {
 	// Meshploy's default port 3000 and its route is published to a port
 	// nothing answers on.
 	Ports []int
+}
+
+// StackSpec is one compose app to create.
+type StackSpec struct {
+	Name string
+	// Spec is the compose file itself, for an app whose author wrote it here.
+	Spec string
+	// Repo, Branch and Path are the other kind: the file lives in git, and the
+	// stack reads it from there as Dokploy did.
+	Repo   string
+	Branch string
+	Path   string
+	// Variables are the app's environment, which a compose file interpolates
+	// as ${NAME}.
+	Variables map[string]string
 }
 
 // TCPRouteSpec is one published database port to carry across.
@@ -139,10 +157,6 @@ func Unsupported(plan Plan) []string {
 	for _, it := range plan.Items {
 		if it.Verdict != Moves && it.Verdict != NeedsYou {
 			continue
-		}
-		switch it.Kind {
-		case "compose":
-			out = append(out, fmt.Sprintf("%s (compose app): stacks are not created yet", it.Name))
 		}
 		// A bind mount is a host path. Whether it moves is the operator's
 		// decision, and copying it is stage 2's data step, which does not exist
@@ -233,7 +247,32 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		}
 	}
 
-	// 3. Applications and databases, created stopped.
+	// 3. Compose apps, as stacks. Created and not applied: a stack that is
+	// applied is running, and nothing this stage creates runs.
+	for _, it := range d.Plan.Items {
+		if it.Kind != "compose" || it.Verdict != Moves {
+			continue
+		}
+		projectID := d.projectFor(out, it)
+		if projectID == "" {
+			out.Failures = append(out.Failures, fmt.Sprintf("%s: no project was created for %q", it.Name, it.Project))
+			continue
+		}
+		spec, ok := d.stackSpec(it)
+		if !ok {
+			out.Failures = append(out.Failures, fmt.Sprintf(
+				"%s: its compose file is not on this server and its git source is not readable from here", it.Name))
+			continue
+		}
+		id, err := d.step(&out, "prepare/stack/"+it.ID, "", "create-stack", it.Name, func() (string, error) {
+			return d.API.CreateStack(projectID, spec)
+		})
+		if err == nil {
+			out.Services[it.ID] = id
+		}
+	}
+
+	// 4. Applications and databases, created stopped.
 	var pending []pendingEnv
 	hostnames := map[string]string{}
 	for _, it := range d.Plan.Items {
@@ -290,7 +329,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		})
 	}
 
-	// 4. Published database ports. Dokploy gives a database a host port; here
+	// 5. Published database ports. Dokploy gives a database a host port; here
 	// that is a TCP route on the gateway, created closed like every other
 	// route, and keeping the same port number - a connection string in
 	// somebody's notes should not change because the platform did.
@@ -314,7 +353,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 			})
 	}
 
-	// 5. Routes, paused: they exist, serve nothing, and get no certificate
+	// 6. Routes, paused: they exist, serve nothing, and get no certificate
 	// until their group moves.
 	for _, it := range d.Plan.Items {
 		if it.Kind != "domain" || it.Verdict != Moves {
@@ -338,7 +377,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		})
 	}
 
-	// 6. Backup schedules, which need both the database and the store they
+	// 7. Backup schedules, which need both the database and the store they
 	// write to, so they come after everything else.
 	for _, it := range d.Plan.Items {
 		if it.Kind != "database" || it.Verdict != Moves {
@@ -369,6 +408,60 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 	}
 
 	return out, nil
+}
+
+// stackSpec reads a compose app from Dokploy at apply time.
+//
+// Two shapes, and they are not interchangeable. An app whose author pasted a
+// compose file has that file in Dokploy's database, and it comes across as the
+// stack's own spec. An app that reads its file from git keeps doing that: the
+// repository and branch move with it, so the next deploy reads what the
+// repository says, which is what its author expects.
+func (d PrepareDeps) stackSpec(it Item) (StackSpec, bool) {
+	for _, r := range d.Source.Rows["compose"] {
+		if r.Str("composeId") != it.ID {
+			continue
+		}
+		spec := StackSpec{Name: it.Name, Variables: envMap(d.runningEnv(it), r.Str("env"))}
+		if file := r.Str("composeFile"); r.Str("sourceType") == "raw" && strings.TrimSpace(file) != "" {
+			spec.Spec = file
+			return spec, true
+		}
+		repo, branch := gitSource(r)
+		if repo == "" {
+			return spec, false
+		}
+		spec.Repo, spec.Branch, spec.Path = repo, branch, r.Str("composePath")
+		return spec, true
+	}
+	return StackSpec{}, false
+}
+
+// envMap turns an environment block into the variables a compose file
+// interpolates. What the workload runs with is preferred, for the same reason
+// everywhere else: the stored block is encrypted on current Dokploy, and a
+// shared variable is resolved when the workload is deployed.
+func envMap(running, stored string) map[string]string {
+	block := running
+	if strings.TrimSpace(block) == "" {
+		block = stored
+	}
+	out := map[string]string{}
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || key == "" {
+			continue
+		}
+		out[strings.TrimSpace(key)] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // enginePort is the port an engine listens on, which is what the gateway

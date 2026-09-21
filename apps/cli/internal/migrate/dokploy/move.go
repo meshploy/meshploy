@@ -37,6 +37,12 @@ type MoveAPI interface {
 	// PauseTCPRoute closes it again.
 	PublishTCPRoute(projectID, routeID string) error
 	PauseTCPRoute(projectID, routeID string) error
+	// ApplyStack starts a compose app: a stack is not started but applied, and
+	// what it creates are services like any other.
+	ApplyStack(projectID, stackID string) error
+	// StackServices are the services a stack created, which is what a rollback
+	// stops and what health is waited on.
+	StackServices(projectID, stackID string) ([]string, error)
 }
 
 // Prober checks that a hostname answers. Separated so a move can be tested
@@ -229,6 +235,9 @@ func (d MoveDeps) publishTCPRoute(m GroupMember) error {
 
 // start brings up one of Meshploy's copies and waits for it.
 func (d MoveDeps) start(m GroupMember) error {
+	if m.Kind == "compose" {
+		return d.startStack(m)
+	}
 	serviceID, projectID := d.meshployIDs(m)
 	if serviceID == "" {
 		return fmt.Errorf("%s has no Meshploy copy: run prepare first", m.Name)
@@ -245,6 +254,50 @@ func (d MoveDeps) start(m GroupMember) error {
 			}})
 	}
 	return d.waitHealthy(projectID, serviceID, m.Name)
+}
+
+// startStack applies a compose app and waits for what it creates.
+//
+// A stack is not started, it is applied: what comes out are services, and they
+// are what a rollback stops - the stack itself stays, so a second attempt
+// reuses it rather than creating another.
+func (d MoveDeps) startStack(m GroupMember) error {
+	stackID, projectID := d.meshployIDs(m)
+	if stackID == "" {
+		return fmt.Errorf("%s has no Meshploy copy: run prepare first", m.Name)
+	}
+	step := d.step(m.ID, "start")
+	if !d.Journal.Done(step) {
+		if err := d.API.ApplyStack(projectID, stackID); err != nil {
+			return d.record(step, "apply-stack", m.Name, err, nil)
+		}
+		services, err := d.API.StackServices(projectID, stackID)
+		if err != nil {
+			return d.record(step, "apply-stack", m.Name, err, nil)
+		}
+		// One undo for each service the stack created, so putting the group
+		// back stops every one of them.
+		for _, id := range services {
+			_ = d.Journal.Append(journal.Entry{Step: step + "/" + id, Group: d.Group.ID, Action: "start-service",
+				Target: m.Name, Result: journal.OK, Created: id, Undo: &journal.Undo{
+					Kind: journal.UndoStopService,
+					Args: map[string]string{"project_id": projectID, "service_id": id},
+				}})
+		}
+		_ = d.Journal.Append(journal.Entry{Step: step, Group: d.Group.ID, Action: "apply-stack",
+			Target: m.Name, Result: journal.OK, Created: stackID})
+	}
+
+	services, err := d.API.StackServices(projectID, stackID)
+	if err != nil {
+		return err
+	}
+	for _, id := range services {
+		if err := d.waitHealthy(projectID, id, m.Name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // databases and applications split the group by what it stops and starts
@@ -389,11 +442,25 @@ func (d MoveDeps) undo() error {
 	// and the promise being kept here is that a half-moved group never serves.
 	// Stopping one that is already stopped costs nothing.
 	for _, m := range d.Group.Members {
-		serviceID, projectID := d.meshployIDs(m)
-		if serviceID == "" {
+		id, projectID := d.meshployIDs(m)
+		if id == "" {
 			continue
 		}
-		if err := d.API.StopService(projectID, serviceID); err != nil {
+		if m.Kind == "compose" {
+			// What a stack created is what runs, so that is what stops.
+			services, err := d.API.StackServices(projectID, id)
+			if err != nil {
+				failures = append(failures, fmt.Sprintf("read what %s created: %v", m.Name, err))
+				continue
+			}
+			for _, svc := range services {
+				if err := d.API.StopService(projectID, svc); err != nil {
+					failures = append(failures, fmt.Sprintf("stop %s: %v", m.Name, err))
+				}
+			}
+			continue
+		}
+		if err := d.API.StopService(projectID, id); err != nil {
 			failures = append(failures, fmt.Sprintf("stop %s: %v", m.Name, err))
 		}
 	}
@@ -429,14 +496,19 @@ func (d MoveDeps) workloadFor(m GroupMember) (Workload, bool) {
 	// apps as containers, which is what the plan read from Docker.
 	for _, s := range d.Plan.Items {
 		if s.ID == m.ID && s.Kind == "compose" {
-			return Workload{Name: name}, true
+			return Workload{Name: name, Compose: true}, true
 		}
 	}
 	return Workload{Name: name, Swarm: true}, true
 }
 
 func (d MoveDeps) meshployIDs(m GroupMember) (serviceID, projectID string) {
-	return d.Journal.CreatedBy("prepare/service/" + m.ID), d.projectOf(m.ID)
+	id := d.Journal.CreatedBy("prepare/service/" + m.ID)
+	if id == "" {
+		// A compose app is a stack, created under its own step.
+		id = d.Journal.CreatedBy("prepare/stack/" + m.ID)
+	}
+	return id, d.projectOf(m.ID)
 }
 
 // projectOf is the Meshploy project a Dokploy workload was created in.
