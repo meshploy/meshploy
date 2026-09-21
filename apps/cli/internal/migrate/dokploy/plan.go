@@ -504,6 +504,15 @@ func (b *builder) databases() {
 			if port := r.Str("externalPort"); port != "" {
 				it.Details["external_port"] = port
 				it.Reasons = append(it.Reasons, "published on port "+port+": becomes a TCP route on the gateway")
+				// The gateway can only publish a port nothing else holds, and
+				// Meshploy's own database sits on 5433 by default - which is
+				// exactly the kind of port another platform publishes a
+				// database on. Said here, where it can still be changed,
+				// rather than discovered as a route that will not bind.
+				if holder := b.portHolder(port); holder != "" {
+					it.Reasons = append(it.Reasons, "port "+port+" is already in use on this server by "+holder+
+						": free it, or the route will be created and stay closed")
+				}
 			}
 			if mb := b.src.Docker.VolumeMB(name + "-data"); mb >= 0 {
 				it.Details["data_mb"] = fmt.Sprint(mb)
@@ -726,6 +735,27 @@ func dedupe(in []string) []string {
 		}
 	}
 	return out
+}
+
+// portHolder is what already listens on this port, as the host reported it.
+//
+// Only the gateway's own listeners matter: a port published by the platform
+// being migrated is about to be freed, so it is not a conflict.
+func (b *builder) portHolder(port string) string {
+	want := atoiOr(port, 0)
+	if want == 0 {
+		return ""
+	}
+	for _, l := range b.src.Listeners {
+		if l.Port != want || l.Process == "" {
+			continue
+		}
+		if dokployOwn(l.Process) || strings.Contains(l.Process, "docker-proxy") {
+			continue
+		}
+		return l.Process
+	}
+	return ""
 }
 
 // dokployOwn are Dokploy's own parts, never workloads.

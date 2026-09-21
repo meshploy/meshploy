@@ -472,3 +472,42 @@ func TestThePlanDoesNotOfferToImportMeshployItself(t *testing.T) {
 		t.Fatalf("unmanaged = %+v, want only the one workload that is not a platform", got)
 	}
 }
+
+// A published database port can only be taken if nothing else on the gateway
+// holds it - and Meshploy's own database sits on 5433, which is exactly the
+// kind of port another platform publishes one on. The plan says so while it can
+// still be changed.
+func TestAPublishedPortAlreadyInUseIsNamedInThePlan(t *testing.T) {
+	src := Source{Rows: map[string][]Row{
+		"project":     {{"projectId": "p1", "name": "Shop"}},
+		"environment": {{"environmentId": "e1", "projectId": "p1", "name": "production"}},
+		"postgres": {{
+			"postgresId": "d1", "name": "ordersdb", "environmentId": "e1", "appName": "orders-db",
+			"dockerImage": "postgres:16", "databaseName": "orders", "databaseUser": "orders",
+			"externalPort": "5433",
+		}},
+	}}
+	src.Listeners = []migrate.Listener{
+		{Port: 5433, Address: "127.0.0.1", Process: "postgres"},
+		{Port: 8081, Address: "127.0.0.1", Process: "proxy"},
+	}
+
+	plan := BuildPlan(src, time.Now())
+	var reasons string
+	for _, it := range plan.Items {
+		if it.Kind == "database" {
+			reasons = strings.Join(it.Reasons, " | ")
+		}
+	}
+	if !strings.Contains(reasons, "already in use") || !strings.Contains(reasons, "postgres") {
+		t.Errorf("the collision should be named: %q", reasons)
+	}
+
+	// With the port free, there is nothing to warn about.
+	src.Listeners = []migrate.Listener{{Port: 8081, Address: "127.0.0.1", Process: "proxy"}}
+	for _, it := range BuildPlan(src, time.Now()).Items {
+		if it.Kind == "database" && strings.Contains(strings.Join(it.Reasons, " "), "already in use") {
+			t.Errorf("nothing holds the port: %v", it.Reasons)
+		}
+	}
+}
