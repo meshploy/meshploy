@@ -113,6 +113,10 @@ const (
 	BackupRunning BackupStatus = "running"
 	BackupSuccess BackupStatus = "success"
 	BackupFailed  BackupStatus = "failed"
+	// BackupSkipped is a run that had nothing to do: the database was stopped
+	// when its schedule came round. Not a failure - nobody is paged for it,
+	// and the schedule moves on to its next occurrence.
+	BackupSkipped BackupStatus = "skipped"
 )
 
 type JobStatus string

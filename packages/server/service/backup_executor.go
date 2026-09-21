@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	appk8s "github.com/meshploy/packages/server/k8s"
+	"github.com/google/uuid"
 	db "github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/google/uuid"
 )
 
 // ─── S3 helpers ───────────────────────────────────────────────────────────────
@@ -99,6 +99,17 @@ func (s *BackupService) markStart(ctx context.Context, id uuid.UUID) {
 	now := time.Now()
 	s.db.WithContext(ctx).Model(&db.BackupConfig{}).Where("id = ?", id).Updates(map[string]any{
 		"last_backup_status": db.BackupRunning,
+		"last_backup_at":     now,
+	})
+}
+
+// markSkipped records a run that had nothing to do. It moves last_backup_at on
+// like any other run, so the schedule goes to its next occurrence rather than
+// staying due and skipping again every minute.
+func (s *BackupService) markSkipped(ctx context.Context, id uuid.UUID) {
+	now := time.Now()
+	s.db.WithContext(ctx).Model(&db.BackupConfig{}).Where("id = ?", id).Updates(map[string]any{
+		"last_backup_status": db.BackupSkipped,
 		"last_backup_at":     now,
 	})
 }
@@ -209,6 +220,16 @@ func (s *BackupService) execBackup(ctx context.Context, cfgID uuid.UUID) {
 		return
 	}
 	if !cfg.Enabled {
+		return
+	}
+	// A stopped database has nothing to dump, and stopping one is something an
+	// operator chose to do. Backing it up cannot succeed, so this used to go
+	// looking for a pod, fail to find one, and report a failed backup - with a
+	// notification - every night until somebody noticed. The run is recorded as
+	// skipped and the schedule moves on.
+	if cfg.Service.Status == db.ServiceStopped {
+		log.Printf("backup %s: %s is stopped, nothing to back up", cfgID, cfg.Service.Name)
+		s.markSkipped(ctx, cfgID)
 		return
 	}
 

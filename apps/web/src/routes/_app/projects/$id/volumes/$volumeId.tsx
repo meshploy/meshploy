@@ -198,6 +198,7 @@ const BACKUP_STATUS_DOT: Record<string, string> = {
   running: "bg-yellow-400 animate-pulse",
   success: "bg-emerald-400",
   failed:  "bg-destructive",
+  skipped: "bg-muted-foreground/40",
 }
 
 // ─── Attachment section ───────────────────────────────────────────────────────

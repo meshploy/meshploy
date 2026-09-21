@@ -9,7 +9,7 @@ export interface ApiBackupConfig {
   path_prefix: string
   enabled: boolean
   last_backup_at: string | null
-  last_backup_status: "pending" | "running" | "success" | "failed" | null
+  last_backup_status: "pending" | "running" | "success" | "failed" | "skipped" | null
   created_at: string
   updated_at: string
 }

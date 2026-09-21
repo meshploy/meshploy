@@ -9,7 +9,7 @@ interface BackupCardConfig {
   path_prefix: string
   enabled: boolean
   last_backup_at: string | null
-  last_backup_status: "pending" | "running" | "success" | "failed" | null
+  last_backup_status: "pending" | "running" | "success" | "failed" | "skipped" | null
 }
 
 interface BackupCardProps {
@@ -30,6 +30,13 @@ const STATUS_DOT: Record<string, string> = {
   running: "bg-yellow-400 animate-pulse",
   success: "bg-emerald-400",
   failed:  "bg-destructive",
+  // Nothing went wrong: the database was stopped when the schedule came round.
+  skipped: "bg-muted-foreground/40",
+}
+
+// STATUS_NOTE says what a state means where the word alone does not.
+const STATUS_NOTE: Record<string, string> = {
+  skipped: "the database was stopped",
 }
 
 export function BackupCard({
@@ -120,6 +127,9 @@ export function BackupCard({
           <div className="flex items-center gap-1.5 pt-0.5">
             <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", STATUS_DOT[config.last_backup_status] ?? "bg-muted-foreground/30")} />
             <span className="capitalize">{config.last_backup_status}</span>
+            {STATUS_NOTE[config.last_backup_status] && (
+              <span className="text-muted-foreground/60">({STATUS_NOTE[config.last_backup_status]})</span>
+            )}
             {config.last_backup_at && (
               <span className="text-muted-foreground/40">· {new Date(config.last_backup_at).toLocaleString()}</span>
             )}

@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
 	appk8s "github.com/meshploy/packages/server/k8s"
-	"github.com/meshploy/packages/db"
 	cronparser "github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
@@ -124,6 +125,14 @@ func (s *BackupService) Trigger(ctx context.Context, id, serviceID uuid.UUID) (*
 	var item db.BackupConfig
 	if err := s.db.WithContext(ctx).Where("id = ? AND service_id = ?", id, serviceID).First(&item).Error; err != nil {
 		return nil, err
+	}
+	// Asked for by a person, so they get the answer now rather than a run that
+	// quietly does nothing: a stopped database cannot be dumped.
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Select("name", "status").First(&svc, "id = ?", serviceID).Error; err == nil &&
+		svc.Status == db.ServiceStopped {
+		return nil, huma.Error422UnprocessableEntity(
+			fmt.Sprintf("%s is stopped, so there is nothing to back up - start it first", svc.Name))
 	}
 	now := time.Now()
 	if err := s.db.WithContext(ctx).Model(&item).Updates(map[string]any{
