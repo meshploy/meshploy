@@ -73,6 +73,15 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 	}, h.GetExposure)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-dismissed-notices",
+		Method:      "GET",
+		Path:        "/api/v1/system/notices",
+		Summary:     "List the console advisories the current user has dismissed",
+		Tags:        []string{"System"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListDismissedNotices)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "dismiss-notice",
 		Method:      "POST",
 		Path:        "/api/v1/system/notices/{key}/dismiss",
@@ -129,6 +138,28 @@ func (h *Handler) GetExposure(ctx context.Context, _ *struct{}) (*ExposureOutput
 		return nil, huma.Error500InternalServerError("failed to read exposure state", err)
 	}
 	return &ExposureOutput{Body: &out}, nil
+}
+
+type DismissedNoticesOutput struct {
+	Body struct {
+		Dismissed []string `json:"dismissed"`
+	}
+}
+
+// ListDismissedNotices is per user, like dismissing one: an advisory somebody
+// else waved away is still news to the person reading the console now.
+func (h *Handler) ListDismissedNotices(ctx context.Context, _ *struct{}) (*DismissedNoticesOutput, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := h.svc.System.DismissedNotices(ctx, userID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to read dismissed notices", err)
+	}
+	out := &DismissedNoticesOutput{}
+	out.Body.Dismissed = keys
+	return out, nil
 }
 
 type DismissNoticeInput struct {

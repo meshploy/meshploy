@@ -104,6 +104,10 @@ export interface HostAgentStatus {
 /** Stable slug for the host-exposure advisory. */
 export const NOTICE_HOST_EXPOSURE = "host-exposure"
 
+/** The overview's "start here" panel. It hides itself once a service has a
+ *  route, so dismissing it is only for someone who would rather not read it. */
+export const NOTICE_GETTING_STARTED = "getting-started"
+
 /**
  * Upgrading the server from the console. The API only queues a request; a
  * systemd unit on the gateway runs the upgrade and reports progress back.
@@ -190,6 +194,10 @@ export const system = {
 
   exposure: (token: string) =>
     apiFetch<Exposure>("/api/v1/system/exposure", {}, token),
+
+  /** Every advisory the current user has dismissed. One call for all of them. */
+  dismissedNotices: (token: string) =>
+    apiFetch<{ dismissed: string[] }>("/api/v1/system/notices", {}, token),
 
   dismissNotice: (key: string, token: string) =>
     apiFetch<void>(`/api/v1/system/notices/${key}/dismiss`, { method: "POST" }, token),

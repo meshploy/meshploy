@@ -15,16 +15,26 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import type { Node, Project } from "@/types"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { projectColorHue } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 import { ExposureNotice } from "@/components/system/exposure-notice"
+import { StartHere } from "@/components/system/start-here"
 
 export const Route = createFileRoute("/_app/")({
+  // `?start` renders the getting-started panel on a workspace that is past it.
+  // Not a debug flag so much as the only way to look at the first-run screen
+  // without emptying a real workspace, and something a support answer can point
+  // someone at.
+  validateSearch: (search: Record<string, unknown>): { start?: true } =>
+    search.start === true || search.start === "1" || search.start === "true"
+      ? { start: true }
+      : {},
   component: OverviewPage,
 })
 
 function OverviewPage() {
+  const { start } = Route.useSearch()
   const isAdmin = useIsAdmin()
   const token = useAuthStore((s) => s.token)!
   const org = useOrgStore((s) => s.currentOrg)
@@ -68,9 +78,12 @@ function OverviewPage() {
         </Button>}
       </div>
 
+      <StartHere nodes={nodeList} projects={projectList} forced={start} />
+
       {!nodesError && nodeList.some(n => n.status !== "online") && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-5 py-4"><AlertCircle className="size-5 text-amber-400"/><div className="flex-1"><p className="text-sm font-medium">{nodeList.length-onlineNodes} nodes need attention</p><p className="text-xs text-muted-foreground mt-1">{nodeList.filter(n=>n.status !== "online").map(n=>n.name).join(", ")}</p></div><Link to="/nodes" className="text-xs text-primary">Review nodes →</Link></div>}
-      {/* Stat cards */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      {/* Stat cards. Held back on an empty workspace: four zeros say nothing that
+          the panel above has not said better. */}
+      {projectList.length > 0 && <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={<Server className="h-3.5 w-3.5" />}
           label="Nodes online"
@@ -97,7 +110,7 @@ function OverviewPage() {
           value={String(totalRoutes)}
           sub="public and internal access"
         />
-      </div>
+      </div>}
 
       <div className="flex items-center justify-between"><h2 className="text-base font-semibold">{org?.name ?? "Your workspace"}</h2>{isAdmin && <Link to="/cluster" className="text-sm text-muted-foreground hover:text-primary">View cluster →</Link>}</div>
       {/* Mesh topology + Projects */}

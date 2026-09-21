@@ -15,6 +15,19 @@ import (
 // rewritten without silently un-dismissing it for everyone.
 const NoticeHostExposure = "host-exposure"
 
+// NoticeGettingStarted keys the overview's "start here" panel. It hides itself
+// once the workspace has a service with a route, so this is only for the
+// operator who knows what they are doing and would rather not read it first.
+const NoticeGettingStarted = "getting-started"
+
+// dismissibleNotices are the keys a user may dismiss. An allowlist rather than
+// free text, so the table stays something we can reason about instead of
+// whatever a client decided to POST.
+var dismissibleNotices = map[string]bool{
+	NoticeHostExposure:   true,
+	NoticeGettingStarted: true,
+}
+
 // ExposedPort is one port Meshploy itself publishes on all interfaces.
 type ExposedPort struct {
 	Port    int    `json:"port"`
@@ -101,12 +114,33 @@ func (s *SystemService) DismissNotice(ctx context.Context, userID uuid.UUID, key
 	if s.db == nil {
 		return errors.New("no database")
 	}
-	if key != NoticeHostExposure {
+	if !dismissibleNotices[key] {
 		return errors.New("unknown notice")
 	}
 	return s.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&meshdb.DismissedNotice{UserID: userID, Key: key}).Error
+}
+
+// DismissedNotices is every advisory this user has already dismissed.
+//
+// One call rather than one per notice: the console asks once on load, and a
+// panel that has to know whether it was dismissed should not be a round trip of
+// its own.
+func (s *SystemService) DismissedNotices(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	out := []string{}
+	if s.db == nil {
+		return out, nil
+	}
+	var rows []meshdb.DismissedNotice
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+		return out, err
+	}
+	for _, r := range rows {
+		out = append(out, r.Key)
+	}
+	return out, nil
 }
 
 func (s *SystemService) noticeDismissed(ctx context.Context, userID uuid.UUID, key string) (bool, error) {

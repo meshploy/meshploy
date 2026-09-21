@@ -1090,6 +1090,10 @@ export const workspaceHandlers = [
   http.get("/api/v1/system/exposure", () =>
     json({ firewall_state: "ufw", checked_at: "2026-09-10T08:00:00Z", ports: [], dismissed: true })
   ),
+  // Nothing dismissed, so the demo can be pointed at /?start=1 to see the
+  // getting-started panel the way a fresh install gets it.
+  http.get("/api/v1/system/notices", () => json({ dismissed: [] })),
+  http.post("/api/v1/system/notices/:key/dismiss", ok),
   http.get("/api/v1/system/channels", () =>
     json({
       current: { version: "v0.11.0-demo", channel: "", commit: "" },

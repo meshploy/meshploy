@@ -111,3 +111,26 @@ func TestDismissNoticeRejectsUnknownKey(t *testing.T) {
 	err := svc.System.DismissNotice(context.Background(), uuid.New(), "not-a-notice")
 	require.Error(t, err)
 }
+
+// The console asks once for everything this user has waved away, so a panel
+// that hides itself does not need a round trip of its own.
+func TestDismissedNoticesListsWhatThisUserDismissed(t *testing.T) {
+	svc := service.New(newTestDB(t), gatewayCfg("none"))
+	ctx := context.Background()
+	alice, bob := uuid.New(), uuid.New()
+
+	keys, err := svc.System.DismissedNotices(ctx, alice)
+	require.NoError(t, err)
+	require.Empty(t, keys)
+
+	require.NoError(t, svc.System.DismissNotice(ctx, alice, service.NoticeGettingStarted))
+	require.NoError(t, svc.System.DismissNotice(ctx, alice, service.NoticeHostExposure))
+
+	keys, err = svc.System.DismissedNotices(ctx, alice)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{service.NoticeGettingStarted, service.NoticeHostExposure}, keys)
+
+	keys, err = svc.System.DismissedNotices(ctx, bob)
+	require.NoError(t, err)
+	require.Empty(t, keys, "one user's dismissal is not another's")
+}
