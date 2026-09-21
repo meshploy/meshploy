@@ -147,6 +147,15 @@ func (a ClientAPI) CreateTCPRoute(projectID string, spec TCPRouteSpec) (string, 
 	if spec.GatewayPort == 0 {
 		return "", fmt.Errorf("a TCP route needs the port to publish")
 	}
+	// A database Meshploy keeps to itself cannot be routed to: the gateway
+	// forwards to a NodePort, and an in-cluster database has none. Dokploy
+	// published this one on a host port, so publishing it here is carrying
+	// across a decision the operator already made, not making a new one.
+	exposed := true
+	if _, err := a.C.UpdateDatabaseConfig(a.OrgID, projectID, spec.ServiceID,
+		client.UpdateDatabaseConfigBody{MeshExposed: &exposed}); err != nil {
+		return "", fmt.Errorf("give %s mesh access: %w", spec.ServiceID, err)
+	}
 	paused := false
 	body := client.CreateTCPRouteBody{
 		GatewayPort: spec.GatewayPort,

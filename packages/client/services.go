@@ -346,6 +346,24 @@ type QueryResult struct {
 	Count   int             `json:"count"`
 }
 
+// UpdateDatabaseConfigBody changes a database's network access. A nil field
+// keeps what it has.
+type UpdateDatabaseConfigBody struct {
+	// MeshExposed publishes the database's port on every node, which is what a
+	// TCP route to it needs.
+	MeshExposed *bool `json:"mesh_exposed,omitempty"`
+	// NodePort is the port to answer on; 0 asks the cluster to choose.
+	NodePort *int `json:"node_port,omitempty"`
+}
+
+func (c *Client) UpdateDatabaseConfig(orgID, projectID, serviceID string, body UpdateDatabaseConfigBody) (*DatabaseConfig, error) {
+	resp, err := c.do("PATCH", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/database-config", body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[DatabaseConfig](resp)
+}
+
 func (c *Client) DBQuery(orgID, projectID, serviceID, query string, readOnly bool) (*QueryResult, error) {
 	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/services/"+serviceID+"/db/query",
 		map[string]any{"query": query, "read_only": readOnly})
