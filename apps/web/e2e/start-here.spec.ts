@@ -67,6 +67,17 @@ test.describe("Overview", () => {
     await expect(runRow).toHaveAttribute("href", /\/jobs\/.+\/runs$/)
   })
 
+  test("reports what the mesh is actually using", async ({ page }) => {
+    await goto(page, "/")
+    // The sidebar has a group with the same word, so this is the panel's heading.
+    await expect(page.getByRole("heading", { name: "Infrastructure" })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByText(/Memory/).first()).toBeVisible()
+    await expect(page.getByText(/Disk/).first()).toBeVisible()
+    await expect(page.getByText("38%").first()).toBeVisible()
+  })
+
   // Both lists grow on their own - more deployments, more projects - and a row
   // of panels that changes shape as the workspace fills reads as broken.
   test("holds both panels to one height, and scrolls inside them", async ({ page }) => {

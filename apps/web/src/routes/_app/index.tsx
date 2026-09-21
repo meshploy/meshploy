@@ -20,6 +20,8 @@ import { projectColorHue } from "@/lib/utils"
 import { ExposureNotice } from "@/components/system/exposure-notice"
 import { StartHere } from "@/components/system/start-here"
 import { RecentActivity } from "@/components/system/recent-activity"
+import { MeshLoadSummary, NodeLoadBars } from "@/components/system/mesh-load"
+import { useMeshLoad } from "@/components/system/use-mesh-load"
 
 export const Route = createFileRoute("/_app/")({
   // `?start` renders the getting-started panel on a workspace that is past it.
@@ -55,6 +57,7 @@ function OverviewPage() {
   })
 
   const onlineNodes = nodeList.filter((n) => n.status === "online").length
+  const load = useMeshLoad(nodeList)
   const totalServices = projectList.reduce((s, p) => s + p.servicesCount, 0)
   const totalRoutes = projectList.reduce((s, p) => s + p.routesCount, 0)
 
@@ -144,8 +147,8 @@ function OverviewPage() {
         </div>
       </div>
       <div className="quiet-surface rounded-xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 className="text-sm font-semibold">Infrastructure</h2><p className="mt-1 text-xs text-muted-foreground">Connectivity and capacity across your mesh</p></div><Link to="/nodes" className="text-xs text-muted-foreground hover:text-primary">Manage nodes →</Link></div>
-        {nodeList.length === 0 ? <p className="p-6 text-sm text-muted-foreground">Connect your first node to start deploying workloads.</p> : nodeList.map(n => <Link key={n.id} to="/nodes/$id" params={{ id: n.id }} className="flex flex-wrap items-center gap-4 px-5 py-4 border-b border-border/50 last:border-0 hover:bg-secondary/40"><div className="flex items-center gap-3 min-w-40 flex-1"><Server className="size-4 text-muted-foreground" /><div><p className="text-sm font-medium">{n.name}</p><p className="text-xs text-muted-foreground mt-1">{n.k3sRole === "server" ? "Control plane" : "Worker"} · {n.tailscaleIP}</p></div></div><div className="text-xs text-muted-foreground">{n.cpuCores} CPU · {n.memoryGB} GB memory</div><span className="flex items-center gap-2 text-xs capitalize min-w-20"><NodeStatusDot status={n.status} />{n.status}</span><ChevronRight className="size-4 text-muted-foreground" /></Link>)}
+        <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 className="text-sm font-semibold">Infrastructure</h2><div className="mt-1">{load.reporting > 0 ? <MeshLoadSummary load={load} /> : <p className="text-xs text-muted-foreground">Connectivity and capacity across your mesh</p>}</div></div><Link to="/nodes" className="text-xs text-muted-foreground hover:text-primary">Manage nodes →</Link></div>
+        {nodeList.length === 0 ? <p className="p-6 text-sm text-muted-foreground">Connect your first node to start deploying workloads.</p> : nodeList.map(n => <Link key={n.id} to="/nodes/$id" params={{ id: n.id }} className="flex flex-wrap items-center gap-4 px-5 py-4 border-b border-border/50 last:border-0 hover:bg-secondary/40"><div className="flex items-center gap-3 min-w-40 flex-1"><Server className="size-4 text-muted-foreground" /><div><p className="text-sm font-medium">{n.name}</p><p className="text-xs text-muted-foreground mt-1">{n.k3sRole === "server" ? "Control plane" : "Worker"} · {n.tailscaleIP}</p></div></div>{n.status === "online" ? <NodeLoadBars load={load.byNode[n.id]} /> : <div className="text-xs text-muted-foreground">{n.cpuCores} CPU · {n.memoryGB} GB memory</div>}<span className="flex items-center gap-2 text-xs capitalize min-w-20"><NodeStatusDot status={n.status} />{n.status}</span><ChevronRight className="size-4 text-muted-foreground" /></Link>)}
       </div>
     </div>
   )
