@@ -640,6 +640,12 @@ func applyDatabaseMeshExposure(ctx context.Context, k8s kubernetes.Interface, dc
 	if name == "" {
 		name = "db"
 	}
+	// The namespace may not exist yet: a database can be given mesh access
+	// before it has ever been deployed - which is what a migration does, so
+	// the port it was published on is ready the moment it moves.
+	if err := appk8s.EnsureNamespace(ctx, k8s, svc.Project.Slug); err != nil {
+		return 0, fmt.Errorf("publish %s on the mesh: %w", svc.Name, err)
+	}
 	assigned, err := appk8s.ApplyNodePortService(ctx, k8s, slug, svc.Project.Slug, []appk8s.PortSpec{{
 		Name: name, Port: int32(row.Port), IsPublic: exposed, NodePort: int32(want),
 	}})
