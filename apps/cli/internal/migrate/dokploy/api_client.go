@@ -175,6 +175,92 @@ func (a ClientAPI) PauseTCPRoute(projectID, routeID string) error {
 	return err
 }
 
+// CreateRegistry carries a registry connection across, reusing one of the same
+// name: a second run of stage 1 must not leave two.
+func (a ClientAPI) CreateRegistry(spec RegistrySpec) (string, error) {
+	existing, err := a.C.ListRegistryIntegrations(a.OrgID)
+	if err != nil {
+		return "", err
+	}
+	for _, r := range existing {
+		if strings.EqualFold(r.Name, spec.Name) {
+			return r.ID, nil
+		}
+	}
+	reg, err := a.C.CreateRegistryIntegration(a.OrgID, client.CreateRegistryBody{
+		Name: spec.Name, Provider: "custom", Endpoint: spec.Endpoint,
+		Namespace: spec.Namespace, Username: spec.Username, Password: spec.Password,
+	})
+	if err != nil {
+		return "", err
+	}
+	return reg.ID, nil
+}
+
+// CreateStorage carries an object store across, reusing one of the same name.
+func (a ClientAPI) CreateStorage(spec StorageSpec) (string, error) {
+	existing, err := a.C.ListStorageIntegrations(a.OrgID)
+	if err != nil {
+		return "", err
+	}
+	for _, s := range existing {
+		if strings.EqualFold(s.Name, spec.Name) {
+			return s.ID, nil
+		}
+	}
+	st, err := a.C.CreateStorageIntegration(a.OrgID, client.CreateStorageBody{
+		Name: spec.Name, Provider: spec.Provider, Endpoint: spec.Endpoint, Region: spec.Region,
+		Bucket: spec.Bucket, AccessKeyID: spec.AccessKey, SecretAccessKey: spec.SecretKey,
+	})
+	if err != nil {
+		return "", err
+	}
+	return st.ID, nil
+}
+
+// CreateGit carries a git connection whose credentials are the account's rather
+// than the server's - which in practice means Bitbucket.
+func (a ClientAPI) CreateGit(spec GitSpec) (string, error) {
+	existing, err := a.C.ListGitIntegrations(a.OrgID)
+	if err != nil {
+		return "", err
+	}
+	for _, g := range existing {
+		if strings.EqualFold(g.Name, spec.Name) {
+			return g.ID, nil
+		}
+	}
+	g, err := a.C.CreatePATIntegration(a.OrgID, spec.Provider, spec.Name, spec.BaseURL, spec.Groups, spec.Token)
+	if err != nil {
+		return "", err
+	}
+	return g.ID, nil
+}
+
+// CreateBackup recreates a database's schedule.
+func (a ClientAPI) CreateBackup(projectID string, spec BackupSpec) (string, error) {
+	b, err := a.C.CreateBackupConfig(a.OrgID, projectID, spec.ServiceID, client.CreateBackupConfigBody{
+		StorageIntegrationID: spec.StorageID,
+		Schedule:             spec.Schedule,
+		RetentionDays:        spec.Retention,
+		PathPrefix:           spec.Prefix,
+	})
+	if err != nil {
+		return "", err
+	}
+	// A schedule Dokploy had turned off stays off here: it is a decision
+	// somebody made, and a migration that quietly starts backing up again is
+	// writing to somebody's bucket without being asked.
+	if !spec.Enabled {
+		off := false
+		if _, err := a.C.UpdateBackupConfig(a.OrgID, projectID, spec.ServiceID, b.ID,
+			client.UpdateBackupConfigBody{Enabled: &off}); err != nil {
+			return b.ID, err
+		}
+	}
+	return b.ID, nil
+}
+
 // CreateVolume makes a volume, reusing one of the same name in the project: a
 // re-run of stage 1 must not leave two volumes where the data can only go in
 // one.

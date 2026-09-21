@@ -40,6 +40,14 @@ type API interface {
 	// CreateTCPRoute publishes a database's port on the gateway, paused: the
 	// Meshploy equivalent of the host port Dokploy gave it.
 	CreateTCPRoute(projectID string, spec TCPRouteSpec) (string, error)
+	// CreateRegistry, CreateStorage and CreateGit carry the platform's
+	// connections to the outside world, with the credentials that belong to
+	// the operator rather than to the server.
+	CreateRegistry(spec RegistrySpec) (string, error)
+	CreateStorage(spec StorageSpec) (string, error)
+	CreateGit(spec GitSpec) (string, error)
+	// CreateBackup recreates a database's schedule, writing where it wrote.
+	CreateBackup(projectID string, spec BackupSpec) (string, error)
 	// CreateVolume makes a volume of the given size and returns its id.
 	CreateVolume(projectID, name string, storageGB int) (string, error)
 	// AttachVolume mounts a volume into a service at a path.
@@ -135,10 +143,6 @@ func Unsupported(plan Plan) []string {
 		switch it.Kind {
 		case "compose":
 			out = append(out, fmt.Sprintf("%s (compose app): stacks are not created yet", it.Name))
-		case "backup":
-			out = append(out, fmt.Sprintf("%s: backup schedules are not created yet", it.Name))
-		case "registry", "destination", "git_provider":
-			out = append(out, fmt.Sprintf("%s (%s): integrations are not created yet", it.Name, it.Kind))
 		}
 		// A bind mount is a host path. Whether it moves is the operator's
 		// decision, and copying it is stage 2's data step, which does not exist
@@ -174,7 +178,49 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		byID[it.ID] = it
 	}
 
-	// 1. Projects, so everything below has somewhere to go.
+	// 1. The connections everything else refers to: a service names a registry
+	// to pull from, a schedule names an object store to write to. A failure
+	// here is collected like any other - a registry that could not be created
+	// leaves the workloads that used it pulling by hand, which is something to
+	// fix rather than a reason to stop.
+	storages := map[string]string{}
+	for _, it := range d.Plan.Items {
+		switch it.Kind {
+		case "registry":
+			for _, r := range d.Source.Rows["registry"] {
+				if r.Str("registryId") != it.ID {
+					continue
+				}
+				spec := registrySpec(r)
+				_, _ = d.step(&out, "prepare/registry/"+it.ID, "", "create-registry", it.Name, func() (string, error) {
+					return d.API.CreateRegistry(spec)
+				})
+			}
+		case "destination":
+			for _, r := range d.Source.Rows["destination"] {
+				if r.Str("destinationId") != it.ID {
+					continue
+				}
+				spec := storageSpec(r)
+				id, err := d.step(&out, "prepare/storage/"+it.ID, "", "create-storage", it.Name, func() (string, error) {
+					return d.API.CreateStorage(spec)
+				})
+				if err == nil && id != "" {
+					storages[it.ID] = id
+				}
+			}
+		case "git_provider":
+			spec, ok := gitSpec(d.Source, it.ID, it.Name)
+			if !ok {
+				continue // its credentials belong to the server being replaced
+			}
+			_, _ = d.step(&out, "prepare/git/"+it.ID, "", "create-git-integration", it.Name, func() (string, error) {
+				return d.API.CreateGit(spec)
+			})
+		}
+	}
+
+	// 2. Projects, so everything below has somewhere to go.
 	for _, it := range d.Plan.Items {
 		if it.Kind != "project" || it.Verdict != Moves {
 			continue
@@ -187,7 +233,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		}
 	}
 
-	// 2. Applications and databases, created stopped.
+	// 3. Applications and databases, created stopped.
 	var pending []pendingEnv
 	hostnames := map[string]string{}
 	for _, it := range d.Plan.Items {
@@ -244,7 +290,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		})
 	}
 
-	// 3. Published database ports. Dokploy gives a database a host port; here
+	// 4. Published database ports. Dokploy gives a database a host port; here
 	// that is a TCP route on the gateway, created closed like every other
 	// route, and keeping the same port number - a connection string in
 	// somebody's notes should not change because the platform did.
@@ -268,7 +314,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 			})
 	}
 
-	// 4. Routes, paused: they exist, serve nothing, and get no certificate
+	// 5. Routes, paused: they exist, serve nothing, and get no certificate
 	// until their group moves.
 	for _, it := range d.Plan.Items {
 		if it.Kind != "domain" || it.Verdict != Moves {
@@ -290,6 +336,36 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		_, _ = d.step(&out, "prepare/route/"+it.ID, "", "create-route", spec.Hostname, func() (string, error) {
 			return d.API.CreateRoute(projectID, spec)
 		})
+	}
+
+	// 6. Backup schedules, which need both the database and the store they
+	// write to, so they come after everything else.
+	for _, it := range d.Plan.Items {
+		if it.Kind != "database" || it.Verdict != Moves {
+			continue
+		}
+		serviceID, projectID := out.Services[it.ID], d.projectFor(out, it)
+		if serviceID == "" || projectID == "" {
+			continue
+		}
+		for _, r := range backupSpecs(d.Source, it.ID) {
+			storageID := storages[r.Str("destinationId")]
+			if storageID == "" {
+				out.Failures = append(out.Failures, fmt.Sprintf(
+					"%s: its backup schedule writes to a destination that was not created", it.Name))
+				continue
+			}
+			spec := BackupSpec{
+				ServiceID: serviceID, StorageID: storageID,
+				Schedule:  r.Str("schedule"),
+				Retention: retentionDays(r.Str("schedule"), atoiOr(r.Str("keepLatestCount"), 0)),
+				Prefix:    backupPrefix(r, it.Name),
+				Enabled:   r.Str("enabled") != "false",
+			}
+			_, _ = d.step(&out, "prepare/backup/"+r.Str("backupId"), "", "create-backup", it.Name, func() (string, error) {
+				return d.API.CreateBackup(projectID, spec)
+			})
+		}
 	}
 
 	return out, nil

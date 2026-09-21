@@ -18,6 +18,10 @@ type fakeAPI struct {
 	envs       map[string]string // service id -> env block
 	routes     []RouteSpec
 	tcpRoutes  []TCPRouteSpec
+	registries []RegistrySpec
+	storages   []StorageSpec
+	gits       []GitSpec
+	backups    []BackupSpec
 	volumes    map[string]string // name -> id
 	volumeSize map[string]int
 	mounts     []string
@@ -96,6 +100,26 @@ func (f *fakeAPI) AttachVolume(projectID, volumeID, serviceID, mountPath string)
 func (f *fakeAPI) CreateConfigFile(projectID, serviceID, name, path, content string) error {
 	f.files = append(f.files, name+" at "+path+" = "+content)
 	return nil
+}
+
+func (f *fakeAPI) CreateRegistry(spec RegistrySpec) (string, error) {
+	f.registries = append(f.registries, spec)
+	return f.next("reg"), nil
+}
+
+func (f *fakeAPI) CreateStorage(spec StorageSpec) (string, error) {
+	f.storages = append(f.storages, spec)
+	return f.next("store"), nil
+}
+
+func (f *fakeAPI) CreateGit(spec GitSpec) (string, error) {
+	f.gits = append(f.gits, spec)
+	return f.next("git"), nil
+}
+
+func (f *fakeAPI) CreateBackup(projectID string, spec BackupSpec) (string, error) {
+	f.backups = append(f.backups, spec)
+	return f.next("backup"), nil
 }
 
 func (f *fakeAPI) CreateTCPRoute(projectID string, spec TCPRouteSpec) (string, error) {
@@ -329,19 +353,23 @@ func TestUnsupportedNamesWhatWouldBeDropped(t *testing.T) {
 
 	withCompose := Plan{Items: []Item{
 		{Kind: "compose", Name: "n8n", Verdict: Moves},
+		// A registry is carried across now, so it is not a reason to refuse.
 		{Kind: "registry", Name: "ghcr", Verdict: Moves},
 		{Kind: "application", Name: "web", Verdict: Moves, Details: map[string]string{"bind_mounts": "1"}},
 		{Kind: "application", Name: "gone", Verdict: NotMoved},
 	}}
 	got := Unsupported(withCompose)
-	if len(got) != 3 {
+	if len(got) != 2 {
 		t.Fatalf("got %v", got)
 	}
 	joined := strings.Join(got, "\n")
-	for _, want := range []string{"n8n", "ghcr", "web"} {
+	for _, want := range []string{"n8n", "web"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("%q is not named: %v", want, got)
 		}
+	}
+	if strings.Contains(joined, "ghcr") {
+		t.Errorf("a registry is created now and should not stop a plan: %v", got)
 	}
 	if strings.Contains(joined, "gone") {
 		t.Error("something that is not moving should not be listed")
@@ -532,5 +560,93 @@ func TestADatabaseWithNoPublishedPortGetsNoTCPRoute(t *testing.T) {
 	}
 	if len(api.tcpRoutes) != 0 {
 		t.Errorf("tcp routes = %+v", api.tcpRoutes)
+	}
+}
+
+// What a platform is connected to comes across with the credentials that are
+// the operator's: a registry's login, an object store's keys. What is bound to
+// the server being replaced does not, and is reported rather than refused.
+func TestIntegrationsComeAcrossWithTheCredentialsThatTravel(t *testing.T) {
+	plan, src := smallPlan(t)
+	src.Rows["registry"] = []Row{{
+		"registryId": "r1", "registryName": "ghcr", "registryUrl": "ghcr.io",
+		"username": "acme", "password": "ghp_secret", "imagePrefix": "acme",
+	}}
+	src.Rows["destination"] = []Row{{
+		"destinationId": "s1", "name": "backups", "provider": "s3", "bucket": "acme-backups",
+		"endpoint": "https://s3.example", "region": "eu-west-1",
+		"accessKey": "AKIA", "secretAccessKey": "shh",
+	}}
+	src.Rows["git_provider"] = []Row{
+		{"gitProviderId": "gp1", "name": "acme on Bitbucket", "providerType": "bitbucket"},
+		{"gitProviderId": "gp2", "name": "acme on GitHub", "providerType": "github"},
+	}
+	src.Rows["bitbucket"] = []Row{{
+		"bitbucketId": "b1", "gitProviderId": "gp1", "bitbucketUsername": "acme-bot",
+		"apiToken": "atl-token", "bitbucketWorkspaceName": "acme",
+	}}
+	src.Rows["github"] = []Row{{"githubId": "gh1", "gitProviderId": "gp2", "githubAppId": "12345"}}
+	plan = BuildPlan(src, time.Now())
+
+	api := newFakeAPI()
+	if _, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(api.registries) != 1 || api.registries[0].Password != "ghp_secret" || api.registries[0].Endpoint != "ghcr.io" {
+		t.Fatalf("registries = %+v", api.registries)
+	}
+	if len(api.storages) != 1 || api.storages[0].SecretKey != "shh" || api.storages[0].Bucket != "acme-backups" {
+		t.Fatalf("storages = %+v", api.storages)
+	}
+	// Bitbucket's token belongs to the account, so it travels. The GitHub App
+	// is registered against this server's callback and does not.
+	if len(api.gits) != 1 {
+		t.Fatalf("git integrations = %+v", api.gits)
+	}
+	if api.gits[0].Provider != "bitbucket" || !strings.Contains(api.gits[0].Token, "atl-token") {
+		t.Errorf("git = %+v", api.gits[0])
+	}
+	if api.gits[0].Groups != "acme" {
+		t.Errorf("the workspace scopes what it can list: %+v", api.gits[0])
+	}
+}
+
+// A schedule is recreated against the store it wrote to, and one the operator
+// had turned off stays off: starting to write to somebody's bucket unasked is
+// not a migration, it is a surprise.
+func TestBackupSchedulesAreRecreatedAgainstTheirStore(t *testing.T) {
+	plan, src := smallPlan(t)
+	src.Rows["destination"] = []Row{{
+		"destinationId": "s1", "name": "backups", "provider": "s3", "bucket": "b",
+		"accessKey": "AKIA", "secretAccessKey": "shh",
+	}}
+	src.Rows["backup"] = []Row{{
+		"backupId": "bk1", "postgresId": "d1", "destinationId": "s1",
+		"schedule": "0 2 * * *", "keepLatestCount": "7", "prefix": "db/", "enabled": "true",
+	}}
+	plan = BuildPlan(src, time.Now())
+
+	api := newFakeAPI()
+	out, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: newJournal(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(api.backups) != 1 {
+		t.Fatalf("backups = %+v (failures %v)", api.backups, out.Failures)
+	}
+	b := api.backups[0]
+	if b.ServiceID != out.Services["d1"] {
+		t.Errorf("it should back up the database that moved: %+v", b)
+	}
+	if b.Schedule != "0 2 * * *" || b.Prefix != "db" {
+		t.Errorf("schedule = %+v", b)
+	}
+	// Seven daily copies is a week; the same count on an hourly schedule is not.
+	if b.Retention != 7 {
+		t.Errorf("retention = %d days, want 7", b.Retention)
+	}
+	if got := retentionDays("0 * * * *", 48); got != 2 {
+		t.Errorf("hourly, keeping 48: %d days, want 2", got)
 	}
 }
