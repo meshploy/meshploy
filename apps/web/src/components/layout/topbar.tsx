@@ -24,6 +24,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   projects:     "Projects",
   nodes:        "Nodes",
   cluster:      "Cluster",
+  migration:    "Migration",
   integrations: "Integrations",
   git: "Git sources",
   registries: "Registries",

@@ -226,6 +226,15 @@ func runMigratePrepare() ([]byte, error) {
 		return nil, err
 	}
 
+	// The console follows the stages through this summary, so prepare publishes
+	// one too - it is the stage that decides whether anything can move at all.
+	defer func() {
+		status := dokploy.Progress(*plan, j, time.Now())
+		if body, mErr := json.Marshal(status); mErr == nil {
+			_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.StatusFile), body, 0o644)
+		}
+	}()
+
 	result, err := dokploy.Prepare(dokploy.PrepareDeps{
 		Plan:    *plan,
 		Source:  src,

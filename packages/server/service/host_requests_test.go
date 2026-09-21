@@ -105,3 +105,61 @@ func TestAMoveMustNameItsGroup(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "g-web", req.Args["group"])
 }
+
+// The console follows a migration through the summary the host writes from its
+// journal - which the API cannot read itself, and has no business reading.
+func TestMigrationStateCarriesTheHostsProgress(t *testing.T) {
+	ctx := context.Background()
+	e, svc, hostDir := newMigrationEnv(t, true)
+	require.NoError(t, os.MkdirAll(hostagent.MigrateDir(hostDir), 0o755))
+
+	moved := time.Now().UTC()
+	status, err := json.Marshal(hostagent.MigrationStatus{
+		UpdatedAt: moved, Prepared: true,
+		Groups: []hostagent.GroupProgress{
+			{ID: "g1", Name: "shop", Moved: true, MovedAt: &moved, CanMove: true},
+			{ID: "g2", Name: "docs", CanMove: false, Blockers: []string{"its certificate was uploaded by hand"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.StatusFile), status, 0o644))
+
+	state, err := svc.System.GetMigrationState(ctx, e.owner)
+	require.NoError(t, err)
+	require.NotNil(t, state.Status)
+	require.True(t, state.Status.Prepared)
+	require.Len(t, state.Status.Groups, 2)
+	assert.True(t, state.Status.Groups[0].Moved)
+	assert.False(t, state.Status.Groups[1].CanMove)
+	assert.Equal(t, "its certificate was uploaded by hand", state.Status.Groups[1].Blockers[0])
+}
+
+// A summary that cannot be read is not worth failing the page for: everything
+// else the console shows is still true.
+func TestAnUnreadableProgressSummaryDoesNotFailTheState(t *testing.T) {
+	ctx := context.Background()
+	e, svc, hostDir := newMigrationEnv(t, true)
+	require.NoError(t, os.MkdirAll(hostagent.MigrateDir(hostDir), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.StatusFile),
+		[]byte("{not json"), 0o644))
+
+	state, err := svc.System.GetMigrationState(ctx, e.owner)
+	require.NoError(t, err)
+	assert.Nil(t, state.Status)
+	assert.True(t, state.AgentReporting)
+}
+
+// Finishing is a stage like any other from here: queued for the agent, with
+// what the operator chose about the old platform's volumes.
+func TestFinishIsQueuedWithWhatWasChosenAboutVolumes(t *testing.T) {
+	ctx := context.Background()
+	e, svc, hostDir := newMigrationEnv(t, true)
+
+	st, err := svc.System.RequestMigration(ctx, e.owner, "finish", map[string]string{"volumes": "true"})
+	require.NoError(t, err)
+
+	path := filepath.Join(hostagent.InboxDir(hostDir), hostagent.RequestMigrateFinish+"-"+st.ID+".json")
+	req, err := hostagent.ReadRequestFile(path)
+	require.NoError(t, err, "the agent must accept what the API writes")
+	assert.Equal(t, "true", req.Args["volumes"])
+}

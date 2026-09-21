@@ -71,6 +71,15 @@ const (
 	// FinishFile is what stage 4 removed, kept for the operator who wants to
 	// know what a server used to run.
 	FinishFile = "dokploy-finish.json"
+	// StatusFile is where the migration has got to: which stages have run and
+	// which groups have moved.
+	//
+	// The journal on the host is the record of all that, and the API cannot
+	// read it - it has no business reading a file the root migrator writes and
+	// reads back. So the host writes this summary after every stage, from the
+	// journal, and the console reads it like any other result. It is also what
+	// makes a migration driven from a terminal show up in the browser.
+	StatusFile = "dokploy-status.json"
 )
 
 // InboxDir is where the API writes requests.
@@ -100,6 +109,39 @@ const (
 	RequestSucceeded = "succeeded"
 	RequestFailed    = "failed"
 )
+
+// MigrationStatus is where a migration has got to, as the console follows it.
+type MigrationStatus struct {
+	UpdatedAt time.Time `json:"updated_at"`
+	// Prepared, CutOver and Finished are the stages that have happened. After
+	// Finished there is nothing left to undo.
+	Prepared bool `json:"prepared"`
+	CutOver  bool `json:"cut_over"`
+	Finished bool `json:"finished"`
+	// Groups is every group in the confirmed plan, in the order it would move.
+	Groups []GroupProgress `json:"groups"`
+}
+
+// GroupProgress is one group of the plan and where it has got to.
+type GroupProgress struct {
+	ID      string     `json:"id"`
+	Name    string     `json:"name"`
+	Members []string   `json:"members,omitempty"`
+	Moved   bool       `json:"moved"`
+	MovedAt *time.Time `json:"moved_at,omitempty"`
+	// Error is why the last attempt stopped, when one did. A group that failed
+	// put itself back, so this is a reason to read rather than damage to
+	// repair.
+	Error string `json:"error,omitempty"`
+	// CanMove is false while one of its members has a question nobody has
+	// answered; Blockers says which.
+	CanMove  bool     `json:"can_move"`
+	Blockers []string `json:"blockers,omitempty"`
+	// Data is what the group carries, and Downtime how long its applications
+	// are expected to be unavailable while it moves.
+	Data     []string `json:"data,omitempty"`
+	Downtime string   `json:"downtime,omitempty"`
+}
 
 // RequestStatus is state/requests/<id>.json.
 type RequestStatus struct {

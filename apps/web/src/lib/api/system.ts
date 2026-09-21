@@ -28,6 +28,65 @@ export interface Exposure {
   dismissed: boolean
 }
 
+/** A stage of the migration, in the order they run. */
+export type MigrationStage =
+  | "detect" | "plan" | "credential" | "prepare" | "move" | "cutover" | "rollback" | "finish"
+
+/** One group of the plan and where it has got to. */
+export interface GroupProgress {
+  id: string
+  name: string
+  members?: string[]
+  moved: boolean
+  moved_at?: string
+  /** Why the last attempt stopped. The group put itself back, so this is a
+   *  reason to read rather than damage to repair. */
+  error?: string
+  can_move: boolean
+  blockers?: string[]
+  data?: string[]
+  downtime?: string
+}
+
+/** Where the migration has got to, summarised on the host from its journal. */
+export interface MigrationStatus {
+  updated_at: string
+  prepared: boolean
+  cut_over: boolean
+  finished: boolean
+  groups: GroupProgress[]
+}
+
+/** A request the console queued for the host agent. */
+export interface HostRequestState {
+  id: string
+  state: "queued" | "running" | "succeeded" | "failed"
+  requested_at: string
+  finished_at?: string
+  error?: string
+}
+
+export interface MigrationState {
+  agent_reporting: boolean
+  detect: unknown | null
+  detect_at?: string
+  plan: unknown | null
+  plan_at?: string
+  prepare: unknown | null
+  prepare_at?: string
+  move: unknown | null
+  move_at?: string
+  cutover: unknown | null
+  cutover_at?: string
+  rollback: unknown | null
+  rollback_at?: string
+  finish: unknown | null
+  finish_at?: string
+  status: MigrationStatus | null
+  status_at?: string
+  requests: Record<string, HostRequestState>
+}
+
 /** Whether the gateway's host agent is reporting. */
 export interface HostAgentStatus {
   reporting: boolean
@@ -151,6 +210,21 @@ export const system = {
 
   hostAgent: (token: string) =>
     apiFetch<HostAgentStatus>("/api/v1/system/host-agent", {}, token),
+
+  /** Where migrating this server off another platform has got to. */
+  migration: (token: string) =>
+    apiFetch<MigrationState>("/api/v1/system/migrate/dokploy", {}, token),
+
+  /**
+   * Ask the host agent to run a stage. It is queued, not run here: the API has
+   * no access to the host, and the agent on the gateway does the work.
+   */
+  requestMigration: (token: string, kind: MigrationStage, body?: { group?: string; volumes?: boolean }) =>
+    apiFetch<HostRequestState>(
+      `/api/v1/system/migrate/dokploy/${kind}`,
+      { method: "POST", body: JSON.stringify(body ?? {}) },
+      token
+    ),
 
   channels: (token: string) =>
     apiFetch<Channels>("/api/v1/system/channels", {}, token),

@@ -41,6 +41,17 @@ type MigrationState struct {
 	MoveAt    *time.Time      `json:"move_at,omitempty"`
 	Cutover   json.RawMessage `json:"cutover"`
 	CutoverAt *time.Time      `json:"cutover_at,omitempty"`
+	// Rollback is the last undo and Finish the removal of what was migrated
+	// from - the one stage that cannot be undone.
+	Rollback   json.RawMessage `json:"rollback"`
+	RollbackAt *time.Time      `json:"rollback_at,omitempty"`
+	Finish     json.RawMessage `json:"finish"`
+	FinishAt   *time.Time      `json:"finish_at,omitempty"`
+	// Status is where the migration has got to: which stages have run and which
+	// groups have moved, summarised on the host from its journal. Null before
+	// anything has run.
+	Status   *hostagent.MigrationStatus `json:"status"`
+	StatusAt *time.Time                 `json:"status_at,omitempty"`
 	// Requests is the latest request of each type, by type.
 	Requests map[string]HostRequestState `json:"requests"`
 }
@@ -88,6 +99,8 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 		reqType = hostagent.RequestMigrateCutover
 	case "rollback":
 		reqType = hostagent.RequestMigrateRollback
+	case "finish":
+		reqType = hostagent.RequestMigrateFinish
 	default:
 		return HostRequestState{}, ErrUnknownHostRequest
 	}
@@ -168,6 +181,21 @@ func (s *SystemService) GetMigrationState(ctx context.Context, userID uuid.UUID)
 	}
 	if out.Plan, out.PlanAt, err = hostagent.ReadResult(dir, hostagent.PlanFile); err != nil {
 		return out, err
+	}
+	if out.Rollback, out.RollbackAt, err = hostagent.ReadResult(dir, hostagent.RollbackFile); err != nil {
+		return out, err
+	}
+	if out.Finish, out.FinishAt, err = hostagent.ReadResult(dir, hostagent.FinishFile); err != nil {
+		return out, err
+	}
+	// The summary the host keeps of its own journal. Unreadable or malformed is
+	// not an error worth failing the page for: the rest of the state is still
+	// true, and the console says the progress is not known.
+	if raw, at, rErr := hostagent.ReadResult(dir, hostagent.StatusFile); rErr == nil && raw != nil {
+		var status hostagent.MigrationStatus
+		if json.Unmarshal(raw, &status) == nil {
+			out.Status, out.StatusAt = &status, at
+		}
 	}
 
 	latest := func(kind string, st HostRequestState) {

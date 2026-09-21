@@ -17,6 +17,7 @@ import {
   Settings,
   Users,
   Radar,
+  Import,
 } from "lucide-react"
 import { useUIStore } from "@/store/ui-store"
 import { useIsAdmin } from "@/store/org-store"
@@ -141,9 +142,29 @@ export function AppSidebar() {
         }
       : null
 
-  const navGroups = eeGroup && eeGroup.items.length > 0
-    ? [...NAV_GROUPS, eeGroup]
-    : NAV_GROUPS
+  // Migration is a page a server has for a few days of its life, so the link
+  // appears only while there is a migration to see: one was planned, and it has
+  // not been finished. Owner-only, like the page.
+  const { data: migration } = useQuery({
+    queryKey: ["migration"],
+    queryFn: () => system.migration(token!),
+    enabled: !!token && isAdmin,
+    staleTime: 60 * 1000,
+    retry: false,
+    throwOnError: false,
+  })
+  const migrating = !!migration?.plan && !migration.status?.finished
+
+  const navGroups = (() => {
+    const groups = migrating
+      ? NAV_GROUPS.map((g, i) =>
+          i === 0
+            ? { ...g, items: [...g.items, { href: "/migration", icon: Import, label: "Migration", exact: false, adminOnly: true }] }
+            : g
+        )
+      : NAV_GROUPS
+    return eeGroup && eeGroup.items.length > 0 ? [...groups, eeGroup] : groups
+  })()
 
   return (
     <aside aria-label="Main navigation"

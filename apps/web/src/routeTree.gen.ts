@@ -20,6 +20,7 @@ import { Route as AppTemplatesIndexRouteImport } from './routes/_app/templates/i
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
+import { Route as AppMigrationIndexRouteImport } from './routes/_app/migration/index'
 import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrations/index'
 import { Route as AppDiscoveryIndexRouteImport } from './routes/_app/discovery/index'
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
@@ -131,6 +132,11 @@ const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
 const AppNodesIndexRoute = AppNodesIndexRouteImport.update({
   id: '/nodes/',
   path: '/nodes/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMigrationIndexRoute = AppMigrationIndexRouteImport.update({
+  id: '/migration/',
+  path: '/migration/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
@@ -485,6 +491,7 @@ export interface FileRoutesByFullPath {
   '/cluster/': typeof AppClusterIndexRoute
   '/discovery/': typeof AppDiscoveryIndexRoute
   '/integrations/': typeof AppIntegrationsIndexRoute
+  '/migration/': typeof AppMigrationIndexRoute
   '/nodes/': typeof AppNodesIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
@@ -553,6 +560,7 @@ export interface FileRoutesByTo {
   '/agents': typeof AppAgentsIndexRoute
   '/cluster': typeof AppClusterIndexRoute
   '/discovery': typeof AppDiscoveryIndexRoute
+  '/migration': typeof AppMigrationIndexRoute
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
@@ -622,6 +630,7 @@ export interface FileRoutesById {
   '/_app/cluster/': typeof AppClusterIndexRoute
   '/_app/discovery/': typeof AppDiscoveryIndexRoute
   '/_app/integrations/': typeof AppIntegrationsIndexRoute
+  '/_app/migration/': typeof AppMigrationIndexRoute
   '/_app/nodes/': typeof AppNodesIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
@@ -694,6 +703,7 @@ export interface FileRouteTypes {
     | '/cluster/'
     | '/discovery/'
     | '/integrations/'
+    | '/migration/'
     | '/nodes/'
     | '/projects/'
     | '/settings/'
@@ -762,6 +772,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/cluster'
     | '/discovery'
+    | '/migration'
     | '/nodes'
     | '/projects'
     | '/settings'
@@ -830,6 +841,7 @@ export interface FileRouteTypes {
     | '/_app/cluster/'
     | '/_app/discovery/'
     | '/_app/integrations/'
+    | '/_app/migration/'
     | '/_app/nodes/'
     | '/_app/projects/'
     | '/_app/settings/'
@@ -966,6 +978,13 @@ declare module '@tanstack/react-router' {
       path: '/nodes'
       fullPath: '/nodes/'
       preLoaderRoute: typeof AppNodesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/migration/': {
+      id: '/_app/migration/'
+      path: '/migration'
+      fullPath: '/migration/'
+      preLoaderRoute: typeof AppMigrationIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/integrations/': {
@@ -1572,6 +1591,7 @@ interface AppRouteChildren {
   AppClusterIndexRoute: typeof AppClusterIndexRoute
   AppDiscoveryIndexRoute: typeof AppDiscoveryIndexRoute
   AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute
+  AppMigrationIndexRoute: typeof AppMigrationIndexRoute
   AppNodesIndexRoute: typeof AppNodesIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
@@ -1594,6 +1614,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppClusterIndexRoute: AppClusterIndexRoute,
   AppDiscoveryIndexRoute: AppDiscoveryIndexRoute,
   AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
+  AppMigrationIndexRoute: AppMigrationIndexRoute,
   AppNodesIndexRoute: AppNodesIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,

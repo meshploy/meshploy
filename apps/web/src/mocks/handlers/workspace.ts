@@ -1026,6 +1026,57 @@ export const workspaceHandlers = [
       firewall: "ufw",
     })
   ),
+  // A server part-way through migrating: prepared, one group moved, one still
+  // to go. Enough to see every state the page has.
+  http.get("/api/v1/system/migrate/dokploy", () =>
+    json({
+      agent_reporting: true,
+      detect: { dokploy: true, version: "v0.30.7" },
+      plan: { generated_at: now() },
+      prepare: { created: 9, skipped: 0 },
+      prepare_at: now(),
+      move: { group: "g-shop", moved: true, downtime: "13s" },
+      move_at: now(),
+      cutover: null,
+      rollback: null,
+      finish: null,
+      status: {
+        updated_at: now(),
+        prepared: true,
+        cut_over: false,
+        finished: false,
+        groups: [
+          {
+            id: "g-shop", name: "shop / shopdb with shop-admin",
+            members: ["application shop-admin", "database shopdb"],
+            data: ["shopdb (dump and restore)"],
+            moved: true, moved_at: now(), can_move: true,
+            downtime: "a restart plus under a minute to copy data",
+          },
+          {
+            id: "g-docs", name: "shop / docs",
+            members: ["application docs"],
+            moved: false, can_move: true,
+            downtime: "a restart, usually under a minute",
+          },
+          {
+            id: "g-legacy", name: "shop / legacy",
+            members: ["application legacy"],
+            moved: false, can_move: false,
+            blockers: ["legacy: its certificate was uploaded by hand - upload it here, or let Meshploy issue one"],
+            downtime: "a restart, usually under a minute",
+          },
+        ],
+      },
+      status_at: now(),
+      requests: {
+        "migrate.prepare": { id: "req-1", state: "succeeded", requested_at: now() },
+      },
+    })
+  ),
+  http.post("/api/v1/system/migrate/dokploy/:kind", () =>
+    json({ id: "req-demo", state: "queued", requested_at: now() }, 202)
+  ),
   http.post("/api/v1/system/check-updates", () =>
     json({
       current: "v0.11.0-demo",

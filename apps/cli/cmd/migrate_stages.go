@@ -57,6 +57,21 @@ func openMigration() (*migrationRuntime, error) {
 	}, nil
 }
 
+// publishProgress summarises the journal where the console can read it.
+//
+// Called at the end of every stage, whichever way the stage was asked for: a
+// migration driven from a terminal has to show the same state in the browser
+// as it does in the shell, and the journal it is read from is not something the
+// API may read for itself.
+func (rt *migrationRuntime) publishProgress() {
+	status := dokploy.Progress(*rt.plan, rt.journal, time.Now())
+	body, err := json.Marshal(status)
+	if err != nil {
+		return
+	}
+	_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.StatusFile), body, 0o644)
+}
+
 // runMigrateMove moves one group: stage 2.
 func runMigrateMove(groupID string) ([]byte, error) {
 	if groupID == "" {
@@ -97,6 +112,7 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		Journal: rt.journal,
 	})
 	body, marshalErr := json.Marshal(result)
+	defer rt.publishProgress()
 	if err != nil {
 		_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.MoveFile), body, 0o600)
 		return nil, err
@@ -161,6 +177,7 @@ func runMigrateCutover() ([]byte, error) {
 		Now:            time.Now,
 	})
 	body, marshalErr := json.Marshal(result)
+	defer rt.publishProgress()
 	if err != nil {
 		_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.CutoverFile), body, 0o600)
 		return nil, err
@@ -225,6 +242,7 @@ func runMigrateFinish(removeVolumes, planOnly bool) ([]byte, error) {
 		return json.Marshal(dokploy.FinishScope(dokploy.PlanFinish(deps)))
 	}
 	result, err := dokploy.Finish(deps)
+	defer rt.publishProgress()
 	body, marshalErr := json.Marshal(result)
 	if err != nil {
 		return nil, err
@@ -252,6 +270,7 @@ func runMigrateRollback(groupID string) ([]byte, error) {
 	}
 	res := dokploy.Rollback{Runner: migrate.ExecRunner{}, Meshploy: rt.api, Journal: rt.journal}.
 		Replay(journal.Undoable(entries, groupID))
+	defer rt.publishProgress()
 	body, marshalErr := json.Marshal(res)
 	if len(res.Failures) > 0 {
 		_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.RollbackFile), body, 0o600)
