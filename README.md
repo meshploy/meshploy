@@ -5,7 +5,7 @@
 <h1 align="center">Meshploy</h1>
 
 <p align="center">
-  <strong>Your servers. One connected application platform.</strong><br>
+  <strong>Your machines. One connected application platform.</strong><br>
   Managed by you and your AI agents.
 </p>
 
