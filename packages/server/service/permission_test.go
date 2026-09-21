@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/meshploy/packages/server/service"
 	meshdb "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

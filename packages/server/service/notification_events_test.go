@@ -15,7 +15,7 @@ func TestEveryDispatchedEventIsInTheCatalogue(t *testing.T) {
 		"deploy.success", "deploy.failed",
 		"service.crashed", "service.recovered",
 		"job.success", "job.failed",
-		"backup.success", "backup.failed",
+		"backup.success", "backup.failed", "backup.skipped",
 		"restore.success", "restore.failed",
 		"node.offline", "node.online",
 		"member.joined", "agent.token_created",
@@ -46,12 +46,14 @@ func TestEveryEventHasATitleToneAndDescription(t *testing.T) {
 }
 
 // The default selection is what a channel starts with, so it has to be the set
-// that means something needs attention.
-func TestRecommendedIsTheFailureSet(t *testing.T) {
+// that means something needs attention. Not only failures: backups that are
+// not running because a database is stopped is silence, and silence is the one
+// thing nobody notices on their own.
+func TestRecommendedIsWhatNeedsAttention(t *testing.T) {
 	want := map[string]bool{
 		"deploy.failed": true, "service.crashed": true, "job.failed": true,
-		"backup.failed": true, "restore.failed": true, "node.offline": true,
-		"member.joined": true, "agent.token_created": true,
+		"backup.failed": true, "backup.skipped": true, "restore.failed": true,
+		"node.offline": true, "member.joined": true, "agent.token_created": true,
 	}
 	for _, d := range eventCatalogue {
 		if d.Recommended != want[d.Event] {

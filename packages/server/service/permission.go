@@ -123,10 +123,10 @@ func (s *PermissionService) ListForUser(ctx context.Context, orgID, userID uuid.
 // ListForResource returns all users with any permission grant on a specific resource.
 func (s *PermissionService) ListForResource(ctx context.Context, orgID uuid.UUID, resourceType db.ResourceType, resourceID uuid.UUID) ([]PermissionWithUser, error) {
 	var rows []struct {
-		UserID    uuid.UUID
-		Username  string
-		Email     string
-		Action    db.ResourceAction
+		UserID   uuid.UUID
+		Username string
+		Email    string
+		Action   db.ResourceAction
 	}
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT rp.user_id, u.username, u.email, rp.action

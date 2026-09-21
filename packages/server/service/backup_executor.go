@@ -106,12 +106,34 @@ func (s *BackupService) markStart(ctx context.Context, id uuid.UUID) {
 // markSkipped records a run that had nothing to do. It moves last_backup_at on
 // like any other run, so the schedule goes to its next occurrence rather than
 // staying due and skipping again every minute.
-func (s *BackupService) markSkipped(ctx context.Context, id uuid.UUID) {
+//
+// It tells the operator once. A database stopped and forgotten would otherwise
+// go unbacked-up in silence, and a nightly reminder that nothing happened is
+// how people learn to ignore the notifications that matter - so the notice is
+// sent on the first skip after a run that did something, and not again until
+// the database has run a backup since.
+func (s *BackupService) markSkipped(ctx context.Context, cfg *db.BackupConfig) {
+	first := firstSkip(cfg.LastBackupStatus)
 	now := time.Now()
-	s.db.WithContext(ctx).Model(&db.BackupConfig{}).Where("id = ?", id).Updates(map[string]any{
+	s.db.WithContext(ctx).Model(&db.BackupConfig{}).Where("id = ?", cfg.ID).Updates(map[string]any{
 		"last_backup_status": db.BackupSkipped,
 		"last_backup_at":     now,
 	})
+	if first && s.notif != nil {
+		s.notif.Dispatch(ctx, cfg.Service.Project.OrganizationID, "backup.skipped", NotificationData{
+			ServiceName: cfg.Service.Name,
+			ProjectName: cfg.Service.Project.Name,
+			Link:        backupsLink(cfg.Service),
+		})
+	}
+}
+
+// firstSkip reports whether this skipped run is the one worth telling the
+// operator about: the first since a run that did something. A database that
+// stays stopped goes on skipping quietly, and one started and stopped again
+// gets a fresh notice, because by then the silence means something new.
+func firstSkip(previous *db.BackupStatus) bool {
+	return previous == nil || *previous != db.BackupSkipped
 }
 
 func (s *BackupService) markEnd(ctx context.Context, id uuid.UUID, status db.BackupStatus) {
@@ -229,7 +251,7 @@ func (s *BackupService) execBackup(ctx context.Context, cfgID uuid.UUID) {
 	// skipped and the schedule moves on.
 	if cfg.Service.Status == db.ServiceStopped {
 		log.Printf("backup %s: %s is stopped, nothing to back up", cfgID, cfg.Service.Name)
-		s.markSkipped(ctx, cfgID)
+		s.markSkipped(ctx, &cfg)
 		return
 	}
 

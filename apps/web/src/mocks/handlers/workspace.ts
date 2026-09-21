@@ -480,6 +480,7 @@ export const workspaceHandlers = [
       { event: "job.failed", group: "Job", title: "Job failed", description: "A job run exited non-zero, or could not start.", tone: "bad", recommended: true },
       { event: "backup.success", group: "Backup", title: "Backup succeeded", description: "A scheduled or manual backup was written to storage.", tone: "good", recommended: false },
       { event: "backup.failed", group: "Backup", title: "Backup failed", description: "A backup did not reach storage. The last good copy is older than you think.", tone: "bad", recommended: true },
+      { event: "backup.skipped", group: "Backup", title: "Backups not running", description: "A schedule came round for a database that is stopped, so there was nothing to back up. Sent once, not every night.", tone: "warning", recommended: true },
       { event: "restore.success", group: "Backup", title: "Restore succeeded", description: "A restore finished and the data is back.", tone: "good", recommended: false },
       { event: "restore.failed", group: "Backup", title: "Restore failed", description: "A restore did not finish. The service may be holding partial data.", tone: "bad", recommended: true },
       { event: "member.joined", group: "Organization", title: "Member joined", description: "Someone accepted an invitation and can now sign in to this organization.", tone: "warning", recommended: true },

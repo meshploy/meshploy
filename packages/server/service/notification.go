@@ -505,6 +505,7 @@ var eventCatalogue = []EventDef{
 
 	{"backup.success", "Backup", "Backup succeeded", "A scheduled or manual backup was written to storage.", ToneGood, false},
 	{"backup.failed", "Backup", "Backup failed", "A backup did not reach storage. The last good copy is older than you think.", ToneBad, true},
+	{"backup.skipped", "Backup", "Backups not running", "A schedule came round for a database that is stopped, so there was nothing to back up. Sent once, not every night.", ToneWarning, true},
 	{"restore.success", "Backup", "Restore succeeded", "A restore finished and the data is back.", ToneGood, false},
 	{"restore.failed", "Backup", "Restore failed", "A restore did not finish. The service may be holding partial data.", ToneBad, true},
 

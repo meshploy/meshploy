@@ -22,8 +22,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/meshploy/packages/server/config"
 	db "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/config"
 	"gorm.io/gorm"
 )
 
@@ -67,12 +67,12 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 	base := s.cfg.FrontendURL
 	apiBase := s.cfg.APIBaseURL
 	m := map[string]any{
-		"name":         "Meshploy",
-		"url":          base,
-		"redirect_url": apiBase + "/api/v1/github/app-callback",
+		"name":          "Meshploy",
+		"url":           base,
+		"redirect_url":  apiBase + "/api/v1/github/app-callback",
 		"callback_urls": []string{apiBase + "/api/v1/github/callback"},
-		"setup_url":    apiBase + "/api/v1/github/callback",
-		"public":       false,
+		"setup_url":     apiBase + "/api/v1/github/callback",
+		"public":        false,
 		"default_permissions": map[string]string{
 			"contents":      "read",
 			"metadata":      "read",
@@ -528,7 +528,7 @@ func (s *GitIntegrationService) HandleGitLabOAuthCallback(ctx context.Context, c
 	}
 
 	updates := map[string]any{
-		"installation_id":    db.EncryptedString(tok.AccessToken),
+		"installation_id":      db.EncryptedString(tok.AccessToken),
 		"o_auth_refresh_token": db.EncryptedString(tok.RefreshToken),
 		"o_auth_token_expiry":  tok.Expiry,
 	}

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	appk8s "github.com/meshploy/packages/server/k8s"
 	db "github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
 )
