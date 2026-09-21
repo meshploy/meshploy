@@ -119,6 +119,11 @@ func (s *NodeService) finishRemoval(ctx context.Context, node *db.Node, waits []
 			log.Printf("warning: delete k8s node %s: %v", node.Name, err)
 		}
 	}
+	// Ports that forwarded to this node, before the row goes and takes the link
+	// with it.
+	if err := s.withdrawTCPRoutes(ctx, node); err != nil {
+		return s.waiting(ctx, node, fmt.Sprintf("The ports forwarding to this node could not be withdrawn: %v", err))
+	}
 	// Only a removal still requested: one cancelled meanwhile keeps its node.
 	res := s.db.WithContext(ctx).Where("removal_requested_at IS NOT NULL").Delete(&db.Node{}, "id = ?", node.ID)
 	if res.Error != nil {
@@ -133,6 +138,49 @@ func (s *NodeService) finishRemoval(ctx context.Context, node *db.Node, waits []
 		return &RemovalResult{Error: "the removal was cancelled"}, nil
 	}
 	return &RemovalResult{Removed: true}, nil
+}
+
+// withdrawTCPRoutes takes the gateway off the ports that forwarded to this node.
+//
+// Such a port has nowhere to go once the node is gone: the gateway would keep
+// listening and hand every connection to an address that answers nothing, or -
+// worse - to whatever machine is given that mesh address next. So the route is
+// paused, which is what makes the gateway close the listener, and its target is
+// cleared.
+//
+// Paused, not deleted. The port number, the zone and the allowlist are the
+// operator's decisions, and they are still good: pointing the route at another
+// node is one edit, where recreating it is a small archaeology. The reason is
+// written where the console shows it, because a port that stops answering
+// without saying why is the worst of both.
+func (s *NodeService) withdrawTCPRoutes(ctx context.Context, node *db.Node) error {
+	q := s.db.WithContext(ctx).Model(&db.TCPRoute{}).Where("node_id = ?", node.ID)
+	if node.TailscaleIP != "" {
+		// And any route aimed at its address by hand: a mesh address outlives
+		// the machine that held it and can be handed to another, so a route
+		// left pointing at one would quietly forward somewhere new.
+		q = q.Or("node_id IS NULL AND target_ip = ?", node.TailscaleIP)
+	}
+	reason := fmt.Sprintf("%s was removed, so this port had nowhere to forward to. "+
+		"Point it at another node or a service, then publish it again.", nodeLabel(node))
+	return q.Updates(map[string]any{
+		"published":   false,
+		"status":      db.TCPRoutePaused,
+		"target_ip":   "",
+		"target_port": 0,
+		"last_error":  reason,
+	}).Error
+}
+
+// nodeLabel is what to call a node in something a person reads.
+func nodeLabel(node *db.Node) string {
+	if node.Name != "" {
+		return node.Name
+	}
+	if node.TailscaleIP != "" {
+		return "the node at " + node.TailscaleIP
+	}
+	return "the node"
 }
 
 // waiting records why a removal has not finished and reports it as a removal

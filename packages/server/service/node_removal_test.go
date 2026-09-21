@@ -211,3 +211,54 @@ func TestGatewayNodeCannotBeRemoved(t *testing.T) {
 	_, err := e.svcs.Nodes.Remove(context.Background(), gw.ID)
 	assert.ErrorIs(t, err, service.ErrGatewayNode)
 }
+
+// A port that forwarded to a removed node has nowhere to go, and the gateway
+// must not keep listening on it: it would answer nothing, or - once a mesh
+// address is handed to the next machine - answer as something else entirely.
+func TestRemovingANodeWithdrawsThePortsThatForwardedToIt(t *testing.T) {
+	ctx := context.Background()
+	e := setupRemoval(t)
+	node := e.node(t, "worker-1", "100.64.0.3", "8")
+	e.hs.set(func(f *fakeHeadscale) { f.peers["8"] = "100.64.0.3" })
+
+	project := meshdb.Project{OrganizationID: e.org.ID, Name: "shop", Slug: "shop"}
+	require.NoError(t, e.db.Create(&project).Error)
+	// One route pointing at the node, one at its address by hand, and one that
+	// has nothing to do with it.
+	byNode := meshdb.TCPRoute{OrganizationID: e.org.ID, ProjectID: project.ID, GatewayPort: 10000,
+		NodeID: &node.ID, TargetIP: "100.64.0.3", TargetPort: 8302, Published: true,
+		Status: meshdb.TCPRouteOpen, Zone: meshdb.TCPZonePublic, AllowedCIDRs: meshdb.StringArray{"10.0.0.0/8"}}
+	byAddress := meshdb.TCPRoute{OrganizationID: e.org.ID, ProjectID: project.ID, GatewayPort: 10001,
+		TargetIP: "100.64.0.3", TargetPort: 5432, Published: true, Status: meshdb.TCPRouteOpen, Zone: meshdb.TCPZonePublic}
+	elsewhere := meshdb.TCPRoute{OrganizationID: e.org.ID, ProjectID: project.ID, GatewayPort: 10002,
+		TargetIP: "100.64.0.9", TargetPort: 5432, Published: true, Status: meshdb.TCPRouteOpen, Zone: meshdb.TCPZonePublic}
+	for _, r := range []*meshdb.TCPRoute{&byNode, &byAddress, &elsewhere} {
+		require.NoError(t, e.db.Create(r).Error)
+	}
+
+	res, err := e.svcs.Nodes.Remove(ctx, node.ID)
+	require.NoError(t, err)
+	require.True(t, res.Removed, res.Error)
+
+	// Kept, not deleted: the port, the zone and the allowlist are decisions
+	// that are still good, and re-pointing the route is one edit.
+	var after meshdb.TCPRoute
+	require.NoError(t, e.db.First(&after, "id = ?", byNode.ID).Error)
+	assert.False(t, after.Published)
+	assert.Equal(t, meshdb.TCPRoutePaused, after.Status)
+	assert.Equal(t, 10000, after.GatewayPort)
+	assert.Equal(t, meshdb.StringArray{"10.0.0.0/8"}, after.AllowedCIDRs)
+	// Nothing left pointing at a machine that is gone.
+	assert.Empty(t, after.TargetIP)
+	assert.Zero(t, after.TargetPort)
+	assert.Contains(t, after.LastError, "worker-1")
+
+	var aimedByHand meshdb.TCPRoute
+	require.NoError(t, e.db.First(&aimedByHand, "id = ?", byAddress.ID).Error)
+	assert.False(t, aimedByHand.Published, "a route aimed at the node's address is withdrawn too")
+
+	var untouched meshdb.TCPRoute
+	require.NoError(t, e.db.First(&untouched, "id = ?", elsewhere.ID).Error)
+	assert.True(t, untouched.Published, "a route to another node is left alone")
+	assert.Equal(t, "100.64.0.9", untouched.TargetIP)
+}
