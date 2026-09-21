@@ -32,6 +32,10 @@ type CutoverDeps struct {
 
 	// Edge is what holds 80 and 443 now.
 	Edge EdgeHolder
+	// CertDir is a directory of PEM certificate and key pairs, read when there
+	// is no acme.json: an edge that is not Traefik keeps them as files. See
+	// ImportCertificateDir.
+	CertDir string
 	// AcmePath is Traefik's certificate store, copied and read.
 	AcmePath string
 	// TraefikDir is Traefik's configuration, copied whole before anything.
@@ -320,16 +324,17 @@ func (d CutoverDeps) backupDir(dir string) (int, error) {
 	return n, err
 }
 
-// importCertificates writes Traefik's certificates where Caddy will look.
+// importCertificates writes the old edge's certificates where Caddy will look.
+//
+// Traefik's store first, then a directory of PEM files, because a server whose
+// edge is not Traefik has no acme.json and its certificates are worth just as
+// much: without them Caddy asks Let's Encrypt for every domain at once, in the
+// one window where the operator is watching.
 func (d CutoverDeps) importCertificates(now time.Time) (CertImport, error) {
-	if d.AcmePath == "" || d.CaddyData == "" {
+	if d.CaddyData == "" || (d.AcmePath == "" && d.CertDir == "") {
 		return CertImport{}, fmt.Errorf("no certificate store to import from")
 	}
-	acme, err := os.ReadFile(d.AcmePath)
-	if err != nil {
-		return CertImport{}, err
-	}
-	imported, err := ImportCertificates(acme, WantedDomains(d.Plan), now)
+	imported, err := d.readCertificates(now)
 	if err != nil {
 		return CertImport{}, err
 	}
@@ -346,6 +351,19 @@ func (d CutoverDeps) importCertificates(now time.Time) (CertImport, error) {
 	_ = d.Journal.Append(journal.Entry{Step: "cutover/certificates", Action: "import-certificates",
 		Target: fmt.Sprintf("%d domain(s)", len(imported.Imported)), Result: journal.OK})
 	return imported, nil
+}
+
+// readCertificates reads whichever store this host has.
+func (d CutoverDeps) readCertificates(now time.Time) (CertImport, error) {
+	wanted := WantedDomains(d.Plan)
+	if d.AcmePath == "" {
+		return ImportCertificateDir(d.CertDir, wanted, now)
+	}
+	acme, err := os.ReadFile(d.AcmePath)
+	if err != nil {
+		return CertImport{}, err
+	}
+	return ImportCertificates(acme, wanted, now)
 }
 
 // ControlPlane is the old platform's own server: what recreates its edge.

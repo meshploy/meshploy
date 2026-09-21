@@ -178,6 +178,7 @@ func runMigrateCutover() ([]byte, error) {
 		// Dokploy runs its own server as a Swarm service called "dokploy".
 		ControlPlane:   dokploy.ControlPlane{Kind: "swarm", Name: "dokploy"},
 		AcmePath:       dokploy.FindAcmeStore(dokploy.DefaultTraefikDir),
+		CertDir:        dokploy.FindCertificateDir(),
 		TraefikDir:     dokploy.DefaultTraefikDir,
 		CaddyData:      rt.caddyData,
 		StartCaddy:     startMeshployEdge,

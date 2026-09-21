@@ -116,6 +116,13 @@ func certFilesFor(name string, c AcmeCertificate, now time.Time) ([]CertFile, st
 	if err != nil || len(key) == 0 {
 		return nil, "its private key could not be read"
 	}
+	return certFiles(name, chain, key, append([]string{c.Domain.Main}, c.Domain.SANs...), now)
+}
+
+// certFiles is the part that does not care where the certificate came from:
+// Traefik's store and a directory of PEM files end here, and the checks that
+// decide whether carrying it helps are the same either way.
+func certFiles(name string, chain, key []byte, sans []string, now time.Time) ([]CertFile, string) {
 	leaf, err := leafOf(chain)
 	if err != nil {
 		return nil, err.Error()
@@ -139,7 +146,7 @@ func certFilesFor(name string, c AcmeCertificate, now time.Time) ([]CertFile, st
 	// once, and the certificate is Caddy's own from then on. Nothing of the
 	// old platform's account is carried, and nothing of it is needed.
 	meta, err := json.Marshal(map[string]any{
-		"sans":        append([]string{c.Domain.Main}, c.Domain.SANs...),
+		"sans":        sans,
 		"issuer_data": map[string]any{},
 		"imported_by": "meshploy-migration",
 		"imported_at": now.UTC().Format(time.RFC3339),

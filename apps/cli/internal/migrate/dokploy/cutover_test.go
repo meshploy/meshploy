@@ -357,3 +357,34 @@ func TestCutoverPutsTheOldEdgeBackIfOursNeverListens(t *testing.T) {
 		t.Errorf("the old edge should be serving again: %v", runner.ran)
 	}
 }
+
+// A server whose edge is not Traefik has no acme.json, and its certificates are
+// worth exactly as much: without them Caddy asks Let's Encrypt for every domain
+// at once, in the window the operator is watching.
+func TestCutoverImportsCertificatesFromADirectory(t *testing.T) {
+	d, _, caddy := cutoverFixture(t)
+	d.AcmePath = ""
+	d.Edge = EdgeHolder{Kind: "systemd", Name: "nginx.service"}
+
+	certs := t.TempDir()
+	crt, key := issue(t, "web.example.com", time.Now().Add(60*24*time.Hour))
+	if err := os.WriteFile(filepath.Join(certs, "web.example.com.crt"), crt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(certs, "web.example.com.key"), key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.CertDir = certs
+
+	out, err := Cutover(d)
+	if err != nil {
+		t.Fatalf("%v: %+v", err, out)
+	}
+	if len(out.CertificatesImported) != 1 {
+		t.Fatalf("imported = %v, skipped = %v", out.CertificatesImported, out.CertificatesSkipped)
+	}
+	written := filepath.Join(CaddyDataDir(caddy), "certificates", CaddyIssuer, "web.example.com", "web.example.com.crt")
+	if _, err := os.Stat(written); err != nil {
+		t.Fatalf("certificate not written: %v", err)
+	}
+}
