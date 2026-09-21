@@ -1,0 +1,25 @@
+{/* Default to Meshploy's dark product theme while preserving an explicit user choice. */}
+<script is:inline>
+	window.StarlightThemeProvider = (() => {
+		if (
+			typeof localStorage !== 'undefined' &&
+			localStorage.getItem('starlight-theme') === null
+		) {
+			localStorage.setItem('starlight-theme', 'dark');
+		}
+		const storedTheme = localStorage.getItem('starlight-theme');
+		const theme = storedTheme === '' ? 'auto' : storedTheme || 'dark';
+		const resolvedTheme =
+			theme === 'auto'
+				? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+				: theme;
+		document.documentElement.dataset.theme = resolvedTheme;
+		return {
+			updatePickers(nextTheme = theme) {
+				document.dispatchEvent(
+					new CustomEvent('starlight-theme-change', { detail: { theme: nextTheme } })
+				);
+			},
+		};
+	})();
+</script>

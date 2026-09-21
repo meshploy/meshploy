@@ -1,110 +1,84 @@
-# Meshploy
+<p align="center">
+  <a href="https://meshploy.com"><img src="docs/assets/meshploy-mark.svg" width="64" height="64" alt="Meshploy logo"></a>
+</p>
 
-[![ci](https://img.shields.io/github/actions/workflow/status/meshploy/meshploy/pr.yml?label=ci)](https://github.com/meshploy/meshploy/actions/workflows/pr.yml)
-[![release](https://img.shields.io/github/v/release/meshploy/meshploy)](https://github.com/meshploy/meshploy/releases)
-[![docs](https://img.shields.io/badge/docs-site-blue)](https://docs.meshploy.com)
+<h1 align="center">Meshploy</h1>
 
-**Your servers. Private by default. PaaS simplicity.**
+<p align="center">
+  <strong>Your servers. One connected application platform.</strong><br>
+  Managed by you and your AI agents.
+</p>
 
-Meshploy is a self-hosted PaaS that orchestrates multi-node deployments across a WireGuard mesh network, powered by K3s. Worker nodes are completely dark to the public internet — no open ports, no exposed services. The only public-facing component is the Meshploy Edge Gateway.
+<p align="center">
+  <a href="https://github.com/meshploy/meshploy/actions/workflows/pr.yml"><img src="https://img.shields.io/github/actions/workflow/status/meshploy/meshploy/pr.yml?label=ci" alt="CI status"></a>
+  <a href="https://github.com/meshploy/meshploy/releases"><img src="https://img.shields.io/github/v/release/meshploy/meshploy" alt="Latest release"></a>
+  <a href="https://docs.meshploy.com"><img src="https://img.shields.io/badge/docs-site-blue" alt="Documentation"></a>
+</p>
 
-Deploy apps, provision managed databases, and ship to a global distributed cluster with a Vercel-like developer experience backed by enterprise-grade infrastructure.
+<p align="center">
+  <a href="https://meshploy.com">Website</a> ·
+  <a href="https://meshploy.com/playground/">Playground</a> ·
+  <a href="https://docs.meshploy.com">Documentation</a> ·
+  <a href="#self-hosting">Install</a> ·
+  <a href="./TODO.md">Roadmap</a>
+</p>
 
----
+Meshploy is a self-hosted application platform that connects your servers over a private WireGuard mesh. Deploy applications and databases, bring existing services to your domains, and manage the platform through the console, CLI, API, or an AI agent with scoped permissions.
 
-## Documentation
+Build on a machine you choose. Run workloads on connected workers. Keep control of where your applications and data live.
 
-### For users
+[![Meshploy console showing projects, node health, and a private mesh topology](docs/assets/console-overview.png)](https://meshploy.com/playground/)
 
-| Document | Description |
+<p align="center"><em>The Meshploy console with sample data. Explore it in the browser playground; no server is required.</em></p>
+
+## What you can do
+
+| | |
 |---|---|
-| [How it works](./HOW_IT_WORKS.md) | Why NS delegation, why dark workers, how TLS works, CLI vs dashboard, MCP server — the questions that come up when you're setting up or evaluating Meshploy |
-| [Self-hosting guide](#self-hosting) | Install, DNS setup, supported distros, managing your installation |
-| [API reference](./apps/api/README.md) | All REST routes — useful when scripting against the API directly |
-| [CLI reference](./apps/cli/README.md) | All CLI commands, config file, node workflows |
+| **Build here. Run there.** | Deploy from Git or a container image. Choose build placement separately from where workloads run. |
+| **Connect existing services.** | Route to services already running on your machines through the gateway and private mesh. |
+| **Work your way.** | Use the console, automate through the CLI and API, or connect an agent through MCP with project and resource permissions. |
+| **Operate your applications.** | Manage databases, Compose stacks, scheduled jobs, logs, metrics, configuration, and persistent volumes. |
+| **Use your own integrations.** | Connect Git providers, container registries, S3-compatible backup storage, and notification destinations. |
 
-### For contributors & engineers
+Meshploy uses K3s for workloads and WireGuard for communication between connected machines. You remain responsible for the hosts, their firewalls, availability, and data recovery. See [how it works](https://docs.meshploy.com/architecture/how-it-works/) for the architecture and [the backup guide](https://docs.meshploy.com/guides/database-backup-and-restore/) for engine-specific recovery support.
 
-| Document | Description |
+## Get started
+
+1. [Install Meshploy](#self-hosting) on a supported Linux server.
+2. [Deploy your first application](https://docs.meshploy.com/guides/deploy-first-application/).
+3. [Configure node roles and build placement](https://docs.meshploy.com/guides/node-roles-and-build-placement/) as you add machines.
+
+Want to explore first? [Open the playground](https://meshploy.com/playground/) to try the console with sample data.
+
+## Guides and references
+
+| Guide | What you will learn |
 |---|---|
-| [CONCEPTS.md](./CONCEPTS.md) | Architectural decisions — why each technical choice was made and what the alternative was |
-| [CONTRIBUTING.md](./CONTRIBUTING.md) | Dev setup, coding guidelines, local vs VPS testing, PR process |
-| [CLAUDE.md](./CLAUDE.md) | Coding standards, repo layout, safety guardrails — read before making changes |
-| [packages/db/README.md](./packages/db/README.md) | Shared DB models — schema, migrations, encryption |
-| [apps/proxy/README.md](./apps/proxy/README.md) | Edge proxy internals — route cache, "Ask & Resolve" pattern |
-| [apps/web/AGENTS.md](./apps/web/AGENTS.md) | Frontend coding rules — @base-ui/react patterns, TanStack Router conventions |
+| [Route an existing service](https://docs.meshploy.com/guides/route-existing-service/) | Bring an application you already run behind the gateway. |
+| [Domains and TLS](https://docs.meshploy.com/guides/domains-and-tls/) | Set up DNS, hostnames, and certificates. |
+| [Connect an agent](https://docs.meshploy.com/guides/scoped-agent-access/) | Choose an identity, grant access, and connect through MCP. |
+| [Back up and restore databases](https://docs.meshploy.com/guides/database-backup-and-restore/) | Configure storage, schedules, and supported restore workflows. |
+| [CLI reference](https://docs.meshploy.com/cli/reference/) | Commands, flags, authentication, and node workflows. |
+| [API reference](https://docs.meshploy.com/api/reference/) | REST routes for integrations and automation. |
+| [Architecture](https://docs.meshploy.com/architecture/how-it-works/) | Understand the gateway, control plane, workers, and mesh. |
 
----
+## Contribute and follow along
+
+Read the [contributing guide](./CONTRIBUTING.md) for development setup and the [roadmap](./TODO.md) for work in progress and future directions. Report bugs through [GitHub Issues](https://github.com/meshploy/meshploy/issues); report vulnerabilities using the [security policy](./SECURITY.md).
+
+For implementation details, see [design decisions](./CONCEPTS.md), [database models](./packages/db/README.md), [proxy internals](./apps/proxy/README.md), and the [repository rules](./CLAUDE.md).
 
 ## Stack
 
 | Component | Technology |
 |---|---|
-| `apps/api` | Go · Chi · Huma (OpenAPI 3.1) |
-| `apps/proxy` | Go · `net/http` |
-| `apps/web` | Vite · React 19 · TanStack Router · Tailwind · shadcn/ui |
-| `apps/cli` | Go · Cobra — static binary for node & cluster management |
-| `packages/db` | Go · GORM · PostgreSQL |
-| Infrastructure | Headscale · K3s · CoreDNS · Caddy |
-
----
-
-## CLI
-
-The `meshploy` CLI lets you manage nodes and authenticate from the terminal without the web dashboard. It is installed automatically by `get.sh` and lives at `/usr/local/bin/meshploy`.
-
-```bash
-# Authenticate against your instance
-meshploy auth login --api-url https://api.your-domain.com
-
-# Manage nodes
-meshploy node list
-meshploy node delete <id>
-meshploy node token get
-
-# Install/uninstall a node (requires root, shells out to install.sh / uninstall.sh)
-sudo meshploy node install
-sudo meshploy node uninstall
-
-# Print the setup token for creating the first account (on the gateway)
-sudo meshploy setup-token show
-
-# Update the CLI binary (preferred)
-meshploy update
-
-# Or re-fetch from the install script
-sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)" _ --cli-only
-```
-
-See [**apps/cli/README.md**](./apps/cli/README.md) for the full command reference.
-
----
-
-## Features
-
-- **Application deployments**: Nixpacks, Railpack, or Dockerfile; pre-built images also supported; any language or framework
-- **Managed databases**: PostgreSQL, MySQL, Redis, MongoDB, Dragonfly, ClickHouse as K8s workloads
-- **Docker Compose**: native Compose file support via compose-go; lift-and-shift existing stacks
-- **AI-native**: MCP server with 90+ tools — Claude Code can deploy, query, manage, and monitor your platform without leaving your editor
-- **WireGuard mesh networking**: workers are dark to the public internet; all traffic routes over the mesh
-- **Multi-node K3s cluster**: unlimited workers; builds and jobs run as ephemeral K8s Jobs
-- **Git integrations**: GitHub (App), GitLab, Gitea/Forgejo (including Codeberg) and Bitbucket; deploy on push on all of them; auto-detect build context
-- **Jobs & cron**: one-off and scheduled jobs with full run history
-- **Automated backups**: scheduled to any S3-compatible storage (R2, MinIO, AWS); restore from dashboard
-- **Real-time monitoring**: node and container CPU / memory / network metrics
-- **Web terminal**: SSH into any node or exec into any pod from the browser
-- **DB Explorer**: run live queries and browse schema from the dashboard
-- **Notifications**: Slack, Discord, email, or generic webhooks on deploy events
-- **RBAC**: organizations, projects, Owner / Admin / Member roles, per-resource permissions
-- **CLI**: manage nodes, deployments, and services from the terminal
-
----
-
-## Who is this for?
-
-- **Solo developers and small teams** who want Render or Railway-level simplicity but on their own servers — no per-seat pricing, no vendor lock-in
-- **Teams with compliance or data residency requirements** — every workload runs on your infrastructure, nothing leaves it
-- **Engineers running multi-cloud or bare-metal** — mix Hetzner, AWS spot instances, and home servers in one cluster without cloud VPC complexity
+| API | Go · Chi · Huma |
+| Console | React · Vite · TanStack Router |
+| CLI and MCP | Go · Cobra · shared API client |
+| Platform database | PostgreSQL · GORM |
+| Workloads | K3s |
+| Networking | WireGuard · Headscale · Caddy · CoreDNS |
 
 ---
 

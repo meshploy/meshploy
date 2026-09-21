@@ -1,0 +1,104 @@
+---
+import { Icon } from '@astrojs/starlight/components';
+---
+
+<mesh-theme-select data-current="dark">
+	<button class="theme-trigger" type="button" aria-haspopup="menu" aria-expanded="false">
+		<span class="theme-icon" data-icon="dark"><Icon name="moon" /></span>
+		<span class="theme-icon" data-icon="light"><Icon name="sun" /></span>
+		<span class="theme-icon" data-icon="auto"><Icon name="laptop" /></span>
+		<span class="theme-label">Dark</span>
+		<Icon name="down-caret" class="theme-caret" />
+	</button>
+	<div class="theme-menu" role="menu" hidden>
+		<button type="button" role="menuitemradio" data-theme-option="dark">
+			<Icon name="moon" /><span>Dark</span><Icon name="check" class="theme-check" />
+		</button>
+		<button type="button" role="menuitemradio" data-theme-option="light">
+			<Icon name="sun" /><span>Light</span><Icon name="check" class="theme-check" />
+		</button>
+		<button type="button" role="menuitemradio" data-theme-option="auto">
+			<Icon name="laptop" /><span>System</span><Icon name="check" class="theme-check" />
+		</button>
+	</div>
+</mesh-theme-select>
+
+<script>
+	type Theme = 'dark' | 'light' | 'auto';
+
+	const labels: Record<Theme, string> = { dark: 'Dark', light: 'Light', auto: 'System' };
+	const parseTheme = (value: string | null): Theme =>
+		value === 'light' || value === 'auto' ? value : 'dark';
+	const storedTheme = (): Theme => {
+		const value = localStorage.getItem('starlight-theme');
+		return value === '' ? 'auto' : parseTheme(value);
+	};
+	const resolvedTheme = (theme: Theme) =>
+		theme === 'auto'
+			? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+			: theme;
+
+	class MeshThemeSelect extends HTMLElement {
+		trigger: HTMLButtonElement | null;
+		menu: HTMLElement | null;
+
+		constructor() {
+			super();
+			this.trigger = this.querySelector('.theme-trigger');
+			this.menu = this.querySelector('.theme-menu');
+			this.setTheme(storedTheme(), false);
+			this.trigger?.addEventListener('click', () => this.toggleMenu());
+			this.querySelectorAll<HTMLButtonElement>('[data-theme-option]').forEach((option) => {
+				option.addEventListener('click', () => {
+					this.setTheme(parseTheme(option.dataset.themeOption || null));
+					this.closeMenu();
+					this.trigger?.focus();
+				});
+			});
+			document.addEventListener('click', (event) => {
+				if (!this.contains(event.target as Node)) this.closeMenu();
+			});
+			this.addEventListener('keydown', (event) => {
+				if (event.key === 'Escape') {
+					this.closeMenu();
+					this.trigger?.focus();
+				}
+			});
+		}
+
+		setTheme(theme: Theme, persist = true) {
+			this.dataset.current = theme;
+			const label = this.querySelector('.theme-label');
+			if (label) label.textContent = labels[theme];
+			this.querySelectorAll<HTMLButtonElement>('[data-theme-option]').forEach((option) => {
+				option.setAttribute('aria-checked', String(option.dataset.themeOption === theme));
+			});
+			document.documentElement.dataset.theme = resolvedTheme(theme);
+			if (persist) localStorage.setItem('starlight-theme', theme === 'auto' ? '' : theme);
+		}
+
+		toggleMenu() {
+			if (!this.menu || !this.trigger) return;
+			const willOpen = this.menu.hidden;
+			this.menu.hidden = !willOpen;
+			this.trigger.setAttribute('aria-expanded', String(willOpen));
+		}
+
+		closeMenu() {
+			if (!this.menu || !this.trigger) return;
+			this.menu.hidden = true;
+			this.trigger.setAttribute('aria-expanded', 'false');
+		}
+	}
+
+	if (!customElements.get('mesh-theme-select')) {
+		customElements.define('mesh-theme-select', MeshThemeSelect);
+	}
+
+	matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+		if (storedTheme() !== 'auto') return;
+		document.querySelectorAll<MeshThemeSelect>('mesh-theme-select').forEach((picker) => {
+			picker.setTheme('auto', false);
+		});
+	});
+</script>
