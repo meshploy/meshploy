@@ -98,8 +98,15 @@ func (c *Client) ListStackServices(orgID, projectID, stackID string) ([]Service,
 	return decode[[]Service](resp)
 }
 
+// ApplyStack reconciles a stack and rolls out what it changed.
+//
+// The empty body is not optional: the API takes an object of options - env
+// overrides, whether to roll out - and refuses a request without one. Sending
+// nil got "request body is required", which is a confusing thing to read when
+// the call takes no arguments.
 func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, error) {
-	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/stacks/"+stackID+"/apply", nil)
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/stacks/"+stackID+"/apply",
+		struct{}{})
 	if err != nil {
 		return nil, err
 	}
