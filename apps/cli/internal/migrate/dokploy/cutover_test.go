@@ -3,6 +3,7 @@ package dokploy
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,16 @@ func cutoverFixture(t *testing.T) (CutoverDeps, *fakeRunner, string) {
 		"docker service inspect dokploy-traefik --format {{.Spec.Mode.Replicated.Replicas}}": "1\n",
 	}}
 
+	// Something has to be listening where Meshploy's edge would be: cutover
+	// checks that it took the ports, whatever the plan's domains say.
+	edge, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { edge.Close() })
+
 	return CutoverDeps{
+		EdgeAddr: edge.Addr().String(),
 		Plan: Plan{Items: []Item{
 			{Kind: "domain", Name: "web.example.com", Verdict: Moves},
 		}},
@@ -324,5 +334,26 @@ func TestGroupDomainsReadsThePlan(t *testing.T) {
 	got := GroupDomains(d.Plan, d.Plan.Groups[1])
 	if len(got) != 1 || got[0] != "legacy.example.com" {
 		t.Errorf("got %v", got)
+	}
+}
+
+// Starting our edge is not the same as our edge serving. `docker compose up`
+// succeeds when the container is created, and on a server whose plan has no
+// domains that was the only thing cutover checked before saying the ports had
+// changed hands - so an edge that never listened was reported as a success.
+func TestCutoverPutsTheOldEdgeBackIfOursNeverListens(t *testing.T) {
+	d, runner, _ := cutoverFixture(t)
+	// Nothing is listening where our edge should be.
+	d.EdgeAddr, d.EdgeUpWindow = "127.0.0.1:1", 200*time.Millisecond
+
+	out, err := Cutover(d)
+	if err == nil || !strings.Contains(err.Error(), "did not take the ports") {
+		t.Fatalf("err = %v", err)
+	}
+	if !out.RolledBack {
+		t.Error("the old edge should have been put back rather than left stopped")
+	}
+	if !runner.didRun("docker service scale --detach dokploy-traefik=1") {
+		t.Errorf("the old edge should be serving again: %v", runner.ran)
 	}
 }

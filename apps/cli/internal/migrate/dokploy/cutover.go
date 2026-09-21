@@ -2,6 +2,7 @@ package dokploy
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,13 @@ type CutoverDeps struct {
 	// ControlPlane is the old platform's own server, stopped at cutover so it
 	// cannot recreate the edge it is losing. Empty leaves it running.
 	ControlPlane ControlPlane
+	// EdgeAddr is where Meshploy's own edge should answer once it holds the
+	// ports. Empty means 127.0.0.1:443.
+	EdgeAddr string
+	// EdgeUpWindow is how long it has to start listening. Zero means the
+	// default; a test uses its own so the suite does not wait a minute to
+	// learn what it already knows.
+	EdgeUpWindow time.Duration
 	// CaddyContainer is what StartCaddy started, so a rollback can take it off
 	// the ports again. Without it, rolling a cutover back started the old edge
 	// against ports Meshploy's was still holding, and neither served.
@@ -143,6 +151,20 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		}
 		return out, fmt.Errorf("%s", out.Error)
 	}
+	// Our edge has to be holding the ports, whatever the plan's domains say.
+	// `docker compose up` succeeding means the container was created, not that
+	// anything is listening - and on a server with no domains to probe, that
+	// was the only thing cutover checked before declaring the ports handed
+	// over.
+	if err := d.edgeIsUp(); err != nil {
+		out.Error = err.Error()
+		if undoErr := d.restoreEdge(); undoErr == nil {
+			out.RolledBack = true
+		} else {
+			out.Error += "; and the old edge could not be restarted: " + undoErr.Error()
+		}
+		return out, fmt.Errorf("%s", out.Error)
+	}
 	out.Downtime = now().Sub(started).Round(time.Second).String()
 	if d.CaddyContainer != "" {
 		_ = d.Journal.Append(journal.Entry{Step: "cutover/start-caddy", Action: "start-container",
@@ -187,6 +209,39 @@ func plural(n int, one, many string) string {
 	}
 	return many
 }
+
+// edgeIsUp waits for something to answer on the ports the old edge just gave
+// up. A TCP connection and nothing more: what answers is Caddy's business, and
+// at this moment the only question is whether the server still has an edge.
+func (d CutoverDeps) edgeIsUp() error {
+	addr := d.EdgeAddr
+	if addr == "" {
+		addr = "127.0.0.1:443"
+	}
+	window := d.EdgeUpWindow
+	if window == 0 {
+		window = edgeUpWindow
+	}
+	deadline := time.Now().Add(window)
+	var err error
+	for {
+		var conn net.Conn
+		conn, err = net.DialTimeout("tcp", addr, 5*time.Second)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("nothing is listening on %s: Meshploy's edge did not take the ports", addr)
+		}
+		time.Sleep(min(time.Second, window/4))
+	}
+}
+
+// edgeUpWindow is how long the new edge has to start listening. Long enough
+// for a container to come up, short enough that a server with no edge is put
+// back while the operator is still watching.
+const edgeUpWindow = 60 * time.Second
 
 // briefProbeWindow is what a domain gets once the edge has proved it is up.
 const briefProbeWindow = 10 * time.Second
