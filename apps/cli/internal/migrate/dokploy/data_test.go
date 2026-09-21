@@ -286,3 +286,45 @@ func ids(j *journal.Journal) IDLookup {
 		return j.CreatedBy("prepare/service/" + m.ID), "proj-1"
 	}
 }
+
+// A Mongo instance holds whatever databases the application made, and the
+// platform records none of them - only a root user. So the whole instance
+// moves, and asking for a database name that was never recorded would refuse a
+// migration that is perfectly able to proceed.
+func TestAMongoInstanceMovesWhole(t *testing.T) {
+	m, _, _, _, _ := statefulGroup(t)
+	m.Source.Rows["mongo"] = []Row{{
+		"mongoId": "m1", "name": "eventsdb", "appName": "events-db",
+		"databaseUser": "events", "databasePassword": "ev3nts",
+	}}
+	it := Item{Kind: "database", ID: "m1", Name: "eventsdb",
+		Details: map[string]string{"engine": "MongoDB", "app_name": "events-db", "data_mb": "301"}}
+
+	creds, err := m.creds(it)
+	if err != nil {
+		t.Fatalf("a Mongo with no database name is still movable: %v", err)
+	}
+	if creds.User != "events" || creds.DB != "" {
+		t.Errorf("creds = %+v", creds)
+	}
+
+	engine := engineByLabel["MongoDB"]
+	dump := strings.Join(engine.Dump(creds), " ")
+	if strings.Contains(dump, "-d ") {
+		t.Errorf("the whole instance is dumped, not one database: %q", dump)
+	}
+	restore := strings.Join(engine.Restore(creds), " ")
+	for _, keep := range []string{"admin.*", "config.*", "local.*"} {
+		if !strings.Contains(restore, keep) {
+			t.Errorf("%s belongs to the instance and must not be restored over: %q", keep, restore)
+		}
+	}
+
+	// An engine that does have a database name still requires one.
+	pg := Item{Kind: "database", ID: "d2", Name: "nameless",
+		Details: map[string]string{"engine": "Postgres", "app_name": "db-xyz"}}
+	m.Source.Rows["postgres"] = []Row{{"postgresId": "d2", "databaseUser": "app"}}
+	if _, err := m.creds(pg); err == nil {
+		t.Error("a Postgres with no database name cannot be dumped, and should say so")
+	}
+}

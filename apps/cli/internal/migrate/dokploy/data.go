@@ -127,6 +127,11 @@ type engineData struct {
 	// VolumeOnly is true for an engine with no dump worth doing: Redis holds a
 	// cache and writes its own snapshot, so its files are the honest copy.
 	VolumeOnly bool
+	// WholeServer is true for an engine whose instance holds databases the
+	// platform never named. Dokploy's Mongo is one: it records a root user and
+	// nothing else, because an application creates whatever databases it
+	// likes inside it. Dumping "the database" would dump nothing.
+	WholeServer bool
 }
 
 // engineByLabel is keyed by the plan's engine label, which is what the item
@@ -164,17 +169,19 @@ var engineByLabel = map[string]engineData{
 		},
 	},
 	"MongoDB": {
-		DumpExt:  "archive",
-		DataPath: "/data/db",
+		DumpExt:     "archive",
+		DataPath:    "/data/db",
+		WholeServer: true,
 		Dump: func(c dbCreds) []string {
-			return []string{"mongodump", "--quiet", "--archive", "-d", c.DB,
+			return []string{"mongodump", "--quiet", "--archive",
 				"-u", c.User, "-p", c.Password, "--authenticationDatabase", "admin"}
 		},
 		Restore: func(c dbCreds) []string {
-			// nsInclude rather than --db: the archive already holds one
-			// database, and naming it again is what mongorestore refuses.
+			// Everything the instance held, except what belongs to the
+			// instance itself: restoring admin over the copy that is already
+			// running would replace the credentials it was started with.
 			return []string{"mongorestore", "--quiet", "--archive", "--drop",
-				"--nsInclude", c.DB + ".*",
+				"--nsExclude", "admin.*", "--nsExclude", "config.*", "--nsExclude", "local.*",
 				"-u", c.User, "-p", c.Password, "--authenticationDatabase", "admin"}
 		},
 		Count: func(c dbCreds) []string {
@@ -204,10 +211,16 @@ func mysqlCountScript(c dbCreds) string {
 		" | while read t; do n=$(mysql " + auth + " -N -B -e \"SELECT COUNT(*) FROM \\`" + c.DB + "\\`.\\`$t\\`\"); echo \"$t $n\"; done"
 }
 
+// mongoCountScript counts every collection of every database the instance
+// holds, because that is what was dumped: Dokploy records a Mongo's root user
+// and no database name at all.
 func mongoCountScript(c dbCreds) string {
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-	eval := "db.getCollectionNames().sort().forEach(function(c){ print(c + ' ' + db[c].countDocuments({})) })"
-	args := " --quiet -u " + q(c.User) + " -p " + q(c.Password) + " --authenticationDatabase admin " + q(c.DB) + " --eval " + q(eval)
+	eval := "db.getMongo().getDBNames()" +
+		".filter(function(n){ return ['admin','config','local'].indexOf(n) < 0 }).sort()" +
+		".forEach(function(n){ var d = db.getSiblingDB(n);" +
+		" d.getCollectionNames().sort().forEach(function(c){ print(n + '.' + c + ' ' + d[c].countDocuments({})) }) })"
+	args := " --quiet -u " + q(c.User) + " -p " + q(c.Password) + " --authenticationDatabase admin --eval " + q(eval)
 	// mongosh in current images, mongo in older ones. Both take the same shape.
 	return "if command -v mongosh >/dev/null 2>&1; then mongosh" + args + "; else mongo" + args + "; fi"
 }
@@ -699,8 +712,14 @@ func (m DataMover) creds(it Item) (dbCreds, error) {
 			if c.DB == "" {
 				c.DB = it.Details["database"]
 			}
-			if c.User == "" || c.DB == "" {
-				return c, fmt.Errorf("%s has no user or database name recorded in Dokploy", it.Name)
+			if c.User == "" {
+				return c, fmt.Errorf("%s has no user recorded in Dokploy", it.Name)
+			}
+			// A database name is only needed by an engine that has one. Mongo
+			// does not: its instance holds whatever databases the application
+			// made, and the whole instance is what moves.
+			if e, ok := engineByLabel[it.Details["engine"]]; (!ok || !e.WholeServer) && c.DB == "" {
+				return c, fmt.Errorf("%s has no database name recorded in Dokploy", it.Name)
 			}
 			return c, nil
 		}
