@@ -137,6 +137,9 @@ type GroupProgress struct {
 	// answered; Blockers says which.
 	CanMove  bool     `json:"can_move"`
 	Blockers []string `json:"blockers,omitempty"`
+	// Domains are the hostnames this group serves. A group that cannot move
+	// keeps them until the ports change hands, and loses them at that moment.
+	Domains []string `json:"domains,omitempty"`
 	// Data is what the group carries, and Downtime how long its applications
 	// are expected to be unavailable while it moves.
 	Data     []string `json:"data,omitempty"`

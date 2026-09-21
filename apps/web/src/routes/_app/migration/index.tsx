@@ -33,6 +33,7 @@ function MigrationPage() {
   const token = useAuthStore((s) => s.token)!
   const qc = useQueryClient()
   const [confirmFinish, setConfirmFinish] = useState(false)
+  const [confirmCutover, setConfirmCutover] = useState(false)
   const [takeVolumes, setTakeVolumes] = useState(false)
   const [rollbackGroup, setRollbackGroup] = useState<GroupProgress | null>(null)
 
@@ -76,7 +77,14 @@ function MigrationPage() {
   const status = data.status
   const groups = status?.groups ?? []
   const moved = groups.filter((g) => g.moved).length
-  const allMoved = groups.length > 0 && moved === groups.length
+  // A group that can still move holds the cutover up; one that cannot is left
+  // where it is, and loses its domains when the ports change hands. Refusing
+  // for those turned one unanswerable question into a migration that could
+  // never finish.
+  const waiting = groups.filter((g) => !g.moved && g.can_move)
+  const stuck = groups.filter((g) => !g.moved && !g.can_move)
+  const goingDark = stuck.flatMap((g) => g.domains ?? [])
+  const readyToCutOver = groups.length > 0 && waiting.length === 0
   const busy = run.isPending || Object.values(data.requests ?? {}).some((r) => r.state === "queued" || r.state === "running")
 
   return (
@@ -155,15 +163,22 @@ function MigrationPage() {
             description="Carries the certificates across, stops the old edge and starts Meshploy's on 80 and 443. Seconds of refused connections, and every group must have moved first."
             action={
               <Button size="sm" variant={status?.cut_over ? "outline" : "default"}
-                disabled={busy || !allMoved || !data.agent_reporting || status?.cut_over}
-                onClick={() => run.mutate({ stage: "cutover" })}>
+                disabled={busy || !readyToCutOver || !data.agent_reporting || status?.cut_over}
+                onClick={() => (goingDark.length > 0 ? setConfirmCutover(true) : run.mutate({ stage: "cutover" }))}>
                 {status?.cut_over ? "Done" : "Cut over"}
               </Button>
             }
           />
-          {!allMoved && groups.length > 0 && (
+          {waiting.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              {groups.length - moved} {groups.length - moved === 1 ? "group has" : "groups have"} not moved yet.
+              {waiting.length === 1 ? `${waiting[0].name} can still move: move it first.`
+                : `${waiting.length} groups can still move: move them first.`}
+            </p>
+          )}
+          {waiting.length === 0 && goingDark.length > 0 && !status?.cut_over && (
+            <p className="text-xs text-amber-400/80">
+              {goingDark.length === 1 ? "1 domain stops" : `${goingDark.length} domains stop`} being served when the
+              ports change hands: what they point at could not move.
             </p>
           )}
           <RequestLine state={data.requests?.["migrate.cutover"]} />
@@ -216,6 +231,34 @@ function MigrationPage() {
           Read from the gateway {formatRelativeTime(new Date(status.updated_at))}.
         </p>
       )}
+
+      {/* What a workload that could not move loses, said before it loses it. */}
+      <Dialog open={confirmCutover} onOpenChange={setConfirmCutover}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Some domains stop being served</DialogTitle>
+            <DialogDescription>
+              The old platform's edge serves these, and it stops when Meshploy takes the ports. What they
+              point at did not move, so Meshploy has no route for them.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="text-sm space-y-1">
+            {goingDark.map((d) => (
+              <li key={d} className="font-mono text-xs text-amber-300">{d}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            Their workloads keep running on the old platform, and Finish will not remove them while they
+            are there.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmCutover(false)}>Cancel</Button>
+            <Button onClick={() => { run.mutate({ stage: "cutover" }); setConfirmCutover(false) }}>
+              Hand over the ports
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Finishing is the one thing that cannot be undone, so it is spelled out. */}
       <Dialog open={confirmFinish} onOpenChange={setConfirmFinish}>
@@ -320,6 +363,9 @@ function GroupRow({ group, busy, onMove, onRollback }: {
           </div>
           {group.members && group.members.length > 0 && (
             <p className="text-xs text-muted-foreground mt-1">{group.members.join(", ")}</p>
+          )}
+          {group.domains && group.domains.length > 0 && (
+            <p className="text-xs text-muted-foreground/70 mt-1">serves {group.domains.join(", ")}</p>
           )}
           {group.data && group.data.length > 0 && (
             <p className="text-xs text-muted-foreground/70 mt-1">carries {group.data.join(", ")}</p>

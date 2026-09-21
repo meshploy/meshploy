@@ -44,6 +44,9 @@ export interface GroupProgress {
   error?: string
   can_move: boolean
   blockers?: string[]
+  /** The hostnames this group serves. A group that cannot move loses them when
+   *  the ports change hands. */
+  domains?: string[]
   data?: string[]
   downtime?: string
 }

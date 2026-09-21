@@ -1049,19 +1049,19 @@ export const workspaceHandlers = [
           {
             id: "g-shop", name: "shop / shopdb with shop-admin",
             members: ["application shop-admin", "database shopdb"],
-            data: ["shopdb (dump and restore)"],
+            domains: ["shop.example.com"], data: ["shopdb (dump and restore)"],
             moved: true, moved_at: now(), can_move: true,
             downtime: "a restart plus under a minute to copy data",
           },
           {
             id: "g-docs", name: "shop / docs",
-            members: ["application docs"],
+            members: ["application docs"], domains: ["docs.example.com"],
             moved: false, can_move: true,
             downtime: "a restart, usually under a minute",
           },
           {
             id: "g-legacy", name: "shop / legacy",
-            members: ["application legacy"],
+            members: ["application legacy"], domains: ["legacy.example.com", "old.example.com"],
             moved: false, can_move: false,
             blockers: ["legacy: its certificate was uploaded by hand - upload it here, or let Meshploy issue one"],
             downtime: "a restart, usually under a minute",

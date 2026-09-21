@@ -313,6 +313,26 @@ first: cutover takes the ports for every domain at once.`,
 		if os.Getuid() != 0 {
 			return fmt.Errorf("migrate dokploy cutover requires root: it stops the edge and starts another; re-run with sudo")
 		}
+		// A workload that could not move keeps running where it is, but the
+		// edge that served it is about to stop. That is a decision, so it is
+		// put in front of the operator before the ports change hands.
+		if dark, err := unservedAtCutover(); err == nil && len(dark) > 0 {
+			yes, _ := cmd.Flags().GetBool("yes")
+			fmt.Fprintln(cmd.OutOrStdout(), "These domains stop being served, because what they point at did not move:")
+			for _, d := range dark {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", d)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Their workloads keep running on the old platform, and finish will not remove them.")
+			if !yes {
+				fmt.Fprint(cmd.OutOrStdout(), "Hand over the ports anyway? [y/N]: ")
+				var answer string
+				fmt.Scanln(&answer)
+				if answer != "y" && answer != "Y" {
+					fmt.Fprintln(cmd.OutOrStdout(), "Aborted. The ports did not change hands.")
+					return nil
+				}
+			}
+		}
 		body, err := runMigrateCutover()
 		if err != nil {
 			return err
@@ -323,6 +343,9 @@ first: cutover takes the ports for every domain at once.`,
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Meshploy holds 80 and 443. %d certificate(s) carried over; the ports changed hands in %s.\n",
 			len(result.CertificatesImported), result.Downtime)
+		for _, d := range result.Unserved {
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s is no longer served: its workload did not move.\n", d)
+		}
 		return nil
 	},
 }
@@ -520,6 +543,7 @@ func init() {
 	migrateDokployFixtureCmd.Flags().String("out", "", "Write the scrubbed reading to this file (created readable by root only)")
 	migrateDokployPlanCmd.Flags().Bool("json", false, "Print the plan as JSON")
 	migrateDokployRollbackCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation about data already copied")
+	migrateDokployCutoverCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation about domains that stop being served")
 	migrateDokployFinishCmd.Flags().Bool("volumes", false, "Remove the old platform's volumes too (their data is gone)")
 	migrateDokployFinishCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation")
 	migrateDokployPlanCmd.Flags().String("out", "", "Also write the plan as JSON to this file (created readable by root only)")

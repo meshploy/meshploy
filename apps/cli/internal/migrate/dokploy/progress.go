@@ -71,6 +71,7 @@ func Progress(plan Plan, j *journal.Journal, now time.Time) hostagent.MigrationS
 		for _, d := range g.Data {
 			p.Data = append(p.Data, d.Name+" ("+d.Move+")")
 		}
+		p.Domains = GroupDomains(plan, g)
 		if at, ok := movedAt[g.ID]; ok && p.Moved {
 			at := at.UTC()
 			p.MovedAt = &at

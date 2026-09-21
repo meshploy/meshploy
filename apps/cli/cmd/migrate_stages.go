@@ -147,6 +147,17 @@ func moveDataMover(rt *migrationRuntime, group dokploy.Group) (*dokploy.DataMove
 	}, nil
 }
 
+// unservedAtCutover is the domains that stop being served when the ports change
+// hands, because what they point at could not move.
+func unservedAtCutover() ([]string, error) {
+	rt, err := openMigration()
+	if err != nil {
+		return nil, err
+	}
+	defer rt.journal.Close()
+	return dokploy.PendingAtCutover(*rt.plan, rt.journal).StuckDomains, nil
+}
+
 // runMigrateCutover hands over ports 80 and 443: stage 3.
 func runMigrateCutover() ([]byte, error) {
 	rt, err := openMigration()
@@ -155,11 +166,8 @@ func runMigrateCutover() ([]byte, error) {
 	}
 	defer rt.journal.Close()
 
-	for _, g := range rt.plan.Groups {
-		if !groupMoved(rt.journal, g) {
-			return nil, fmt.Errorf("%s has not moved yet: cutover takes the ports from every domain at once", g.Name)
-		}
-	}
+	// What has not moved is Cutover's own rule now: it refuses while anything
+	// can still move, and names what cannot.
 
 	result, err := dokploy.Cutover(dokploy.CutoverDeps{
 		Plan:    *rt.plan,

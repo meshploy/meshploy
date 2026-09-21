@@ -262,3 +262,67 @@ func TestCutoverDoesNotMindAMissingControlPlane(t *testing.T) {
 		t.Fatalf("a missing control plane is not a failure: %v", err)
 	}
 }
+
+// planWith is a plan of two groups: one that can move, one that cannot.
+func planWith(t *testing.T, movableMoved bool) (CutoverDeps, *fakeRunner) {
+	t.Helper()
+	d, runner, _ := cutoverFixture(t)
+	d.Plan.Items = append(d.Plan.Items,
+		Item{Kind: "domain", Name: "shop.example.com/", Verdict: Moves, Details: map[string]string{"application_id": "a1"}},
+		Item{Kind: "domain", Name: "legacy.example.com/", Verdict: NeedsYou, Details: map[string]string{"application_id": "a2"}},
+	)
+	d.Plan.Groups = []Group{
+		{ID: "g1", Name: "shop", CanMove: true, Members: []GroupMember{{Kind: "application", ID: "a1", Name: "shop"}}},
+		{ID: "g2", Name: "legacy", CanMove: false, Members: []GroupMember{{Kind: "application", ID: "a2", Name: "legacy"}},
+			Blockers: []string{"its certificate was uploaded by hand"}},
+	}
+	if movableMoved {
+		if err := d.Journal.Append(journal.Entry{Step: "move/g1/start/a1", Group: "g1",
+			Action: "start-service", Result: journal.OK}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return d, runner
+}
+
+// A group that can still move has no business being left behind: moving it
+// costs only the downtime it already carries.
+func TestCutoverRefusesWhileAnythingCanStillMove(t *testing.T) {
+	d, runner := planWith(t, false)
+
+	_, err := Cutover(d)
+	if err == nil || !strings.Contains(err.Error(), "shop can still move") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(runner.ran) != 0 {
+		t.Errorf("nothing should have happened: %v", runner.ran)
+	}
+}
+
+// A group that cannot move is left where it is, and the domains it loses are
+// named rather than refused - one unanswerable question used to mean a
+// migration that could never finish.
+func TestCutoverNamesTheDomainsThatStopBeingServed(t *testing.T) {
+	d, runner := planWith(t, true)
+
+	out, err := Cutover(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Unserved) != 1 || out.Unserved[0] != "legacy.example.com" {
+		t.Fatalf("unserved = %v", out.Unserved)
+	}
+	if !runner.didRun("docker service scale --detach dokploy-traefik=0") {
+		t.Errorf("the ports should still have changed hands: %v", runner.ran)
+	}
+}
+
+// The domains of a group are what it serves, whatever the verdict on them: a
+// workload left behind keeps its hostnames until the ports change hands.
+func TestGroupDomainsReadsThePlan(t *testing.T) {
+	d, _ := planWith(t, true)
+	got := GroupDomains(d.Plan, d.Plan.Groups[1])
+	if len(got) != 1 || got[0] != "legacy.example.com" {
+		t.Errorf("got %v", got)
+	}
+}

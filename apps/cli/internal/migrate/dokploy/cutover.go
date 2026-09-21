@@ -65,6 +65,10 @@ type CutoverResult struct {
 	CertificatesSkipped  map[string]string `json:"certificates_skipped,omitempty"`
 	// Unreachable are domains that did not answer once Caddy held the ports.
 	Unreachable []string `json:"unreachable,omitempty"`
+	// Unserved are domains of workloads that never moved. They stop being
+	// served here - the edge that served them is stopped - and their workloads
+	// keep running on the old platform, which finish still refuses to remove.
+	Unserved []string `json:"unserved,omitempty"`
 	// RolledBack is true when the old edge was put back because domains did
 	// not answer.
 	RolledBack bool   `json:"rolled_back,omitempty"`
@@ -82,6 +86,19 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 	if now == nil {
 		now = time.Now
 	}
+
+	// A group that can still move has no business being left behind: moving it
+	// costs only the downtime it already carries, and cutting over without it
+	// takes its domains down for nothing.
+	pending := PendingAtCutover(d.Plan, d.Journal)
+	if len(pending.Movable) > 0 {
+		out.Error = fmt.Sprintf("%s can still move: move %s first, or answer what is holding %s back",
+			strings.Join(pending.Movable, ", "),
+			plural(len(pending.Movable), "it", "them"), plural(len(pending.Movable), "it", "them"))
+		return out, fmt.Errorf("%s", out.Error)
+	}
+	// What cannot move is left where it is, named rather than refused.
+	out.Unserved = pending.StuckDomains
 
 	// 1. Back up what is about to change. Before anything else, because the
 	// value of a backup is entirely in having taken it early.
@@ -162,6 +179,13 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		return out, fmt.Errorf("%s", out.Error)
 	}
 	return out, nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // briefProbeWindow is what a domain gets once the edge has proved it is up.
