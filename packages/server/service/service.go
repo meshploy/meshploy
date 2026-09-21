@@ -33,6 +33,7 @@ type Services struct {
 	Routes          *RouteService
 	TCPRoutes       *TCPRouteService
 	Deployments     *DeploymentService
+	Activity        *ActivityService
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
 	Storage         *StorageService
@@ -237,6 +238,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Routes:          routes,
 		TCPRoutes:       tcpRoutes,
 		Deployments:     deployments,
+		Activity:        &ActivityService{db: db},
 		GitIntegrations: gitSvc,
 		Registries:      registries,
 		Storage:         &StorageService{db: db},

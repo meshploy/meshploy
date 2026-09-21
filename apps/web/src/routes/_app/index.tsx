@@ -17,9 +17,9 @@ import type { Node, Project } from "@/types"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { Button } from "@/components/ui/button"
 import { projectColorHue } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
 import { ExposureNotice } from "@/components/system/exposure-notice"
 import { StartHere } from "@/components/system/start-here"
+import { RecentActivity } from "@/components/system/recent-activity"
 
 export const Route = createFileRoute("/_app/")({
   // `?start` renders the getting-started panel on a workspace that is past it.
@@ -69,7 +69,7 @@ function OverviewPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Workspace overview</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Your projects, deployments, and mesh in one place.
+            Your projects, deployments, and nodes in one place.
           </p>
         </div>
         {isAdmin && <Button size="sm" render={<Link to="/projects/new" />}>
@@ -114,25 +114,23 @@ function OverviewPage() {
 
       <div className="flex items-center justify-between"><h2 className="text-base font-semibold">{org?.name ?? "Your workspace"}</h2>{isAdmin && <Link to="/cluster" className="text-sm text-muted-foreground hover:text-primary">View cluster →</Link>}</div>
       {/* Mesh topology + Projects */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="quiet-surface lg:col-span-2 rounded-xl border border-border/60 bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">Mesh topology</p>
-            <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4.5">WireGuard</Badge>
-          </div>
-          <div className="p-4">
-            <MeshGraph nodes={nodeList} height={250} />
-          </div>
+      {/* Both panels are held to one height and scroll inside it. Either list
+          grows without warning - eight deployments, twenty projects - and a row
+          of panels that changes shape as the workspace fills reads as broken
+          rather than as full. */}
+      <div className="grid gap-4 lg:grid-cols-3 lg:h-[21rem]">
+        <div className="lg:col-span-2 min-h-0 h-[21rem] lg:h-auto">
+          <RecentActivity />
         </div>
 
-        <div className="quiet-surface rounded-xl border border-border/60 bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
+        <div className="quiet-surface flex h-[21rem] lg:h-auto min-h-0 flex-col rounded-xl border border-border/60 bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between shrink-0">
             <p className="text-sm font-semibold text-foreground">Projects</p>
             <Link to="/projects" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
               All →
             </Link>
           </div>
-          <div className="p-2">
+          <div className="flex-1 min-h-0 overflow-y-auto p-2">
             {projectList.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">No projects yet</div>
             ) : (

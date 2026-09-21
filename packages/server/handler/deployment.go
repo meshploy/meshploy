@@ -34,6 +34,15 @@ type GetDeploymentOutput struct {
 	Body *db.Deployment
 }
 
+type ListActivityInput struct {
+	OrgID string `path:"orgId"`
+	Limit int    `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"How many to return, newest first"`
+}
+
+type ListActivityOutput struct {
+	Body []service.ActivityEntry
+}
+
 func (h *Handler) registerDeploymentRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "trigger-deployment",
@@ -44,6 +53,15 @@ func (h *Handler) registerDeploymentRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: 202,
 	}, h.TriggerDeployment)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-activity",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/activity",
+		Summary:     "List what ran lately - deployments and job runs - across the projects the caller can see",
+		Tags:        []string{"Deployments"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListActivity)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-deployments",
@@ -108,6 +126,42 @@ func (h *Handler) TriggerDeployment(ctx context.Context, input *ListDeploymentsI
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &GetDeploymentOutput{Body: deployment}, nil
+}
+
+// ListActivity is the workspace overview's feed: deployments and job runs,
+// interleaved.
+//
+// Scoped the way the project list is scoped, and for the same reason: a feed
+// that showed every project's activity would tell a member with access to one
+// project the names of all the others, and what they run.
+func (h *Handler) ListActivity(ctx context.Context, input *ListActivityInput) (*ListActivityOutput, error) {
+	callerID, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	visibleIDs, isAdmin, err := h.svc.Permissions.VisibleProjectIDs(ctx, orgID, callerID)
+	if err != nil {
+		return nil, err
+	}
+	var projectIDs []uuid.UUID
+	if isAdmin {
+		projects, err := h.svc.Projects.List(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range projects {
+			projectIDs = append(projectIDs, p.ID)
+		}
+	} else {
+		for id := range visibleIDs {
+			projectIDs = append(projectIDs, id)
+		}
+	}
+	out, err := h.svc.Activity.ListRecent(ctx, projectIDs, input.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return &ListActivityOutput{Body: out}, nil
 }
 
 func (h *Handler) ListDeployments(ctx context.Context, input *ListDeploymentsInput) (*ListDeploymentsOutput, error) {

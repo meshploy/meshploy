@@ -573,6 +573,55 @@ export const workspaceHandlers = [
   http.get(`${S}/deployments`, ({ params }) =>
     json(db.deployments.filter((d) => d.service_id === params.serviceId))
   ),
+  // The overview's activity feed: deployments and job runs across projects,
+  // joined to the names it shows and interleaved by time. The real one is
+  // scoped to what the caller can see; in the demo there is one member and they
+  // can see everything.
+  http.get(`${O}/activity`, ({ request }) => {
+    const limit = Number(new URL(request.url).searchParams.get("limit") ?? 20)
+
+    const deployments = db.deployments.map((d) => {
+      const svc = find("services", d.service_id)
+      const project = svc ? find("projects", svc.project_id) : null
+      return {
+        kind: "deployment",
+        id: d.id,
+        status: d.status,
+        detail: d.image,
+        created_at: d.created_at,
+        finished_at: d.deployed_at ?? null,
+        resource_id: d.service_id,
+        resource_name: svc?.name ?? "unknown",
+        resource_type: svc?.type ?? "application",
+        project_id: project?.id ?? "",
+        project_name: project?.name ?? "unknown",
+      }
+    })
+
+    const runs = db.runs.map((r: DemoRecord) => {
+      const job = find("jobs", r.job_id)
+      const project = job ? find("projects", job.project_id) : null
+      return {
+        kind: "job_run",
+        id: r.id,
+        status: r.status,
+        detail: job?.schedule ?? "",
+        created_at: r.created_at,
+        finished_at: r.finished_at ?? null,
+        resource_id: r.job_id,
+        resource_name: job?.name ?? "unknown",
+        resource_type: "job",
+        project_id: project?.id ?? "",
+        project_name: project?.name ?? "unknown",
+      }
+    })
+
+    const rows = [...deployments, ...runs]
+      .filter((e) => e.project_id !== "")
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+      .slice(0, limit)
+    return json(rows)
+  }),
   http.post(`${S}/deployments`, ({ params }) => {
     const d = deploy(String(params.serviceId))
     return d ? json(d, 201) : missing()

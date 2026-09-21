@@ -349,6 +349,25 @@ export const buildConfigs = {
     ),
 }
 
+/** One thing that ran: a deployment or a job run. Carries enough of what it ran
+ *  for and where that lives to be read and linked without asking for either. */
+export interface ApiActivityEntry {
+  kind: "deployment" | "job_run"
+  id: string
+  /** The record's own status. A deployment's and a job run's vocabularies
+   *  overlap on success and failed and differ elsewhere, so read it by kind. */
+  status: string
+  /** The image a deployment used, or a job's schedule. */
+  detail?: string
+  created_at: string
+  finished_at?: string | null
+  resource_id: string
+  resource_name: string
+  resource_type: "application" | "database" | "job"
+  project_id: string
+  project_name: string
+}
+
 export const deployments = {
   list: (orgId: string, projectId: string, serviceId: string, token: string) =>
     apiFetch<ApiDeployment[]>(
@@ -398,4 +417,11 @@ export const deployments = {
       { method: "POST" },
       token
     ),
+}
+
+/** What ran lately across the workspace: deployments and job runs, interleaved
+ *  and scoped server-side to the projects the caller can see. */
+export const activity = {
+  recent: (orgId: string, token: string, limit = 8) =>
+    apiFetch<ApiActivityEntry[]>(`/api/v1/orgs/${orgId}/activity?limit=${limit}`, {}, token),
 }
