@@ -128,6 +128,7 @@ Required in `.env` at the monorepo root:
 | `HOST_GATEWAY_IP` | Docker bridge gateway IP — used to reach node_exporter from inside the API container |
 | `FIREWALL_STATE` | What `install.sh` saw on the host: `none`, `ufw` or `firewalld`. Read-only record — the API container cannot inspect the host firewall itself. Drives the console's exposure notice |
 | `FIREWALL_CHECKED_AT` | RFC3339 UTC timestamp of that check, so the notice never reads as live state |
+| `DNS_MODE` | `delegation` (the gateway runs authoritative DNS and holds a wildcard) or `ondemand` (DNS stays with the operator's provider). Read-only record from `install.sh`. An internal route on an `ondemand` gateway is served with a certificate from Caddy's own CA, which the console says on the route form |
 | `NODEPORT_ADDRESSES` | The CIDR kube-proxy binds published ports to, e.g. `100.64.0.0/10` for the mesh. Empty means every interface, which the console warns about when a database is published |
 | `BUILTIN_REGISTRY_ENDPOINT` | Seeds a built-in registry row per org (format: `<host>:<port>`) |
 | `TEMPLATE_DIR` | Local one-click template catalog dir (`<dir>/<id>/...`). Set = offline/air-gapped source; overrides the remote repo |

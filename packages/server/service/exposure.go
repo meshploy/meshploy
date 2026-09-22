@@ -58,6 +58,13 @@ type Exposure struct {
 	Ports []ExposedPort `json:"ports"`
 	// Dismissed reports whether the current user has already dismissed this.
 	Dismissed bool `json:"dismissed"`
+	// DNSMode is how this gateway gets its certificates: "delegation" or
+	// "ondemand". It rides along here because it is the same kind of fact as
+	// the firewall state above - something install.sh recorded that the API
+	// cannot work out for itself, and that the console has to reflect rather
+	// than promise around. An internal route on an ondemand gateway is served
+	// with a certificate from Caddy's own CA, and the console says so.
+	DNSMode string `json:"dns_mode"`
 }
 
 // publishedPorts are the ports Meshploy binds on all interfaces on a gateway.
@@ -88,6 +95,7 @@ func (s *SystemService) GetExposure(ctx context.Context, userID uuid.UUID) (Expo
 	if s.cfg == nil {
 		return out, nil
 	}
+	out.DNSMode = s.cfg.DNSMode
 	if s.cfg.PublicIP == "" && s.cfg.GatewayIP == "" && s.cfg.GatewayHostname == "" {
 		return out, nil
 	}
@@ -96,6 +104,7 @@ func (s *SystemService) GetExposure(ctx context.Context, userID uuid.UUID) (Expo
 		out.FirewallState = s.cfg.FirewallState
 	}
 	out.CheckedAt = s.cfg.FirewallCheckedAt
+	out.DNSMode = s.cfg.DNSMode
 	if out.FirewallState == "none" {
 		out.Ports = publishedPorts()
 	}

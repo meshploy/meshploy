@@ -14,6 +14,13 @@ type Config struct {
 	HeadscaleURL  string
 	HeadscaleKey  string
 	HeadscaleUser string // HEADSCALE_USER  Headscale user preauth keys are created under (default: "meshploy")
+	// DNSMode is how this gateway gets certificates: "delegation" when it runs
+	// its own authoritative DNS and takes a wildcard by DNS-01, "ondemand" when
+	// DNS stays with the operator's provider and Caddy issues per hostname.
+	// It changes what an internal route can be promised, so the console needs
+	// it. Written by install.sh; anything unrecognised is treated as the
+	// default, since an old server predates the variable entirely.
+	DNSMode       string
 	JWTSecret     string
 	EncryptionKey string
 
@@ -123,6 +130,12 @@ func Load() (*Config, error) {
 		APIPort:      port,
 		HeadscaleURL: os.Getenv("HEADSCALE_URL"),
 		HeadscaleKey: os.Getenv("HEADSCALE_API_KEY"),
+		DNSMode: func() string {
+			if os.Getenv("DNS_MODE") == "ondemand" {
+				return "ondemand"
+			}
+			return "delegation"
+		}(),
 		HeadscaleUser: func() string {
 			if v := os.Getenv("HEADSCALE_USER"); v != "" {
 				return v

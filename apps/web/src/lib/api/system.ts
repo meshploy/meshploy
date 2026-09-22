@@ -26,6 +26,10 @@ export interface Exposure {
   /** Populated only when firewall_state is "none". */
   ports: ExposedPort[]
   dismissed: boolean
+  /** How this gateway gets certificates: "delegation" when it runs its own
+   *  authoritative DNS and holds a wildcard, "ondemand" when DNS stays with
+   *  the operator's provider. An internal route differs between the two. */
+  dns_mode?: "delegation" | "ondemand"
 }
 
 /** A stage of the migration, in the order they run. */

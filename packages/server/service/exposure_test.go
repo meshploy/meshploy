@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/server/config"
 	"github.com/meshploy/packages/server/service"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -133,4 +134,38 @@ func TestDismissedNoticesListsWhatThisUserDismissed(t *testing.T) {
 	keys, err = svc.System.DismissedNotices(ctx, bob)
 	require.NoError(t, err)
 	require.Empty(t, keys, "one user's dismissal is not another's")
+}
+
+// The console cannot see the host, so it can only say what install.sh
+// recorded. The DNS mode decides whether an internal route gets a real
+// certificate or one from Caddy's own CA, which is a difference worth showing
+// rather than promising around.
+func TestExposureCarriesTheDNSMode(t *testing.T) {
+	ctx := context.Background()
+	user := uuid.New()
+
+	t.Run("a gateway that manages its own DNS", func(t *testing.T) {
+		cfg := gatewayCfg("ufw")
+		cfg.DNSMode = "ondemand"
+		got, err := service.New(newTestDB(t), cfg).System.GetExposure(ctx, user)
+		require.NoError(t, err)
+		assert.Equal(t, "ondemand", got.DNSMode)
+	})
+
+	t.Run("a delegated one", func(t *testing.T) {
+		cfg := gatewayCfg("ufw")
+		cfg.DNSMode = "delegation"
+		got, err := service.New(newTestDB(t), cfg).System.GetExposure(ctx, user)
+		require.NoError(t, err)
+		assert.Equal(t, "delegation", got.DNSMode)
+	})
+
+	// A machine that is not a gateway returns early, and still has to answer:
+	// the console asks the same question everywhere.
+	t.Run("a machine that is not a gateway", func(t *testing.T) {
+		cfg := &config.Config{DNSMode: "ondemand"}
+		got, err := service.New(newTestDB(t), cfg).System.GetExposure(ctx, user)
+		require.NoError(t, err)
+		assert.Equal(t, "ondemand", got.DNSMode)
+	})
 }

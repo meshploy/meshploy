@@ -40,3 +40,39 @@ test.describe("Projects", () => {
     await expect(page.getByText("uploads", { exact: true }).first()).toBeVisible({ timeout: 10_000 })
   })
 })
+
+// An internal route on a gateway that manages its own DNS gets a certificate
+// from Caddy's own CA, because there is no zone to prove control of. The route
+// works either way, so this is a notice and not a block - but it belongs
+// before the route is made, not at the first certificate warning.
+test.describe("Internal routes on a self-managed-DNS gateway", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsDemo(page)
+    await goto(page, "/projects/00000000-0000-0000-0000-000000000003/new?type=route")
+    await expect(page.getByText("Where is this route exposed?")).toBeVisible({ timeout: 10_000 })
+  })
+
+  test("says nothing while the route is public", async ({ page }) => {
+    await expect(page.getByText(/self-signed certificate/)).toHaveCount(0)
+  })
+
+  test("explains the certificate, and why, once it is internal", async ({ page }) => {
+    await page.getByRole("button", { name: "Internal", exact: true }).click()
+
+    const notice = page.getByText(/Internal routes on this server use a self-signed certificate/)
+    await expect(notice).toBeVisible()
+
+    const panel = page.locator("div").filter({ hasText: /^Internal routes on this server/ }).first()
+    const text = (await panel.textContent()) ?? ""
+    // The reason, not just the fact.
+    // Named the way install.sh and the docs name it, so it matches the choice
+    // the operator actually made.
+    expect(text).toContain("NS delegation")
+    // Both halves of why, since either alone sounds like a defect.
+    expect(text).toMatch(/no\s+DNS zone here to prove control of/)
+    expect(text).toMatch(/does not answer from the internet/)
+    // And what it does and does not cost.
+    expect(text).toMatch(/still encrypted/)
+    expect(text).toMatch(/public routes are\s+unaffected/)
+  })
+})

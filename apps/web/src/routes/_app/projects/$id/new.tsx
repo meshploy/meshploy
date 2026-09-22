@@ -1,4 +1,5 @@
 import { FormLayout } from "@/components/layout/form-layout"
+import { SelfSignedNotice } from "@/components/domains/self-signed-notice"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { SiPostgresql, SiMysql, SiRedis, SiMongodb, SiClickhouse } from "@icons-pack/react-simple-icons"
 import { createFileRoute, useNavigate, useParams, useBlocker } from "@tanstack/react-router"
@@ -1274,6 +1275,7 @@ function RouteForm({ projectId }: { projectId: string }) {
             ? "Accessible from the internet via your public domain."
             : "Only accessible within the mesh network via an internal subdomain."}
         </p>
+        {rf.zone === "internal" && <SelfSignedNotice />}
       </Section>
 
       {/* ── Section: Domain ─────────────────────────────────── */}

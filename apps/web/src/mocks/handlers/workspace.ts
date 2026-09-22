@@ -1137,7 +1137,15 @@ export const workspaceHandlers = [
     })
   ),
   http.get("/api/v1/system/exposure", () =>
-    json({ firewall_state: "ufw", checked_at: "2026-09-10T08:00:00Z", ports: [], dismissed: true })
+    json({
+      firewall_state: "ufw",
+      checked_at: "2026-09-10T08:00:00Z",
+      ports: [],
+      dismissed: true,
+      // The demo gateway manages its own DNS, so the internal-route notice is
+      // reachable here instead of only on a real ondemand server.
+      dns_mode: "ondemand",
+    })
   ),
   // Nothing dismissed, so the demo can be pointed at /?start=1 to see the
   // getting-started panel the way a fresh install gets it.

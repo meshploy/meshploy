@@ -133,6 +133,9 @@ services:
       FIREWALL_STATE: ${FIREWALL_STATE:-}
       FIREWALL_CHECKED_AT: ${FIREWALL_CHECKED_AT:-}
       NODEPORT_ADDRESSES: ${NODEPORT_ADDRESSES:-}
+      # delegation or ondemand. Decides whether an internal route gets a real
+      # certificate or one from Caddy's own CA, which the console has to say.
+      DNS_MODE: ${DNS_MODE:-delegation}
     extra_hosts:
       - "host.meshploy.internal:${HOST_GATEWAY_IP}"
     volumes:
