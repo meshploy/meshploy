@@ -139,6 +139,10 @@ meshploy/
 
 ### Install
 
+Two ways to do the same install. Run it yourself, or hand it to an agent - the agent runs the same script and stops at the same questions.
+
+#### Run it yourself
+
 ```bash
 sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)"
 ```
@@ -146,6 +150,143 @@ sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)"
 The script installs Docker (if needed), downloads Meshploy to `/opt/meshploy`, walks you through an interactive setup (domain, IP, secrets), and starts the full stack. Select **Master** for the gateway node or **Worker** to join an existing mesh.
 
 Before the first question, the installer offers to continue in a browser instead. Say yes and it prints a setup token and an address on port 9000, where the same setup runs as a web page that checks your DNS as you go and streams the install. Port 9000 has to be reachable from wherever your browser is.
+
+#### Hand it to an agent
+
+If you work through Claude Code, Codex or a similar agent with a terminal, give it the prompt below instead of running the command yourself. It carries no secret, so it is safe to copy anywhere.
+
+The agent stops where the decisions are yours: it will not choose your domain, and it does not need your DNS provider's password.
+
+````markdown collapse={8-126}
+# Install Meshploy on my server
+
+Set up a Meshploy gateway on a Linux server I own, and leave me at the setup
+page with the install running.
+
+## Work out how to reach the machine
+
+Look before you ask. Read my SSH config for hosts I have already set up:
+
+```
+grep -iE '^host ' ~/.ssh/config 2>/dev/null
+```
+
+Then ask me one question, not four:
+
+- If that listed candidates, show them and ask which one this is - or whether
+  it is a machine not in there.
+- If it listed nothing, or I say it is a new machine, ask for the address. The
+  user is **root** unless I say otherwise; only ask about the port and key if
+  the defaults do not work.
+
+Confirm it works **without anything being typed**, and stop if it does not:
+
+```
+ssh -o BatchMode=yes -o ConnectTimeout=8 <host> 'hostname; id -u'
+```
+
+`BatchMode=yes` is not optional. Without it, a server that wants a password
+leaves this command waiting for input you cannot give, and it looks to me like
+you are still working.
+
+If it fails, do **not** ask me for a password, and do **not** use `sshpass`:
+
+- **SSH wants a password.** I run `ssh-copy-id <host>` once, and you carry on.
+- **It cannot connect at all.** Give me the error; the address or the port is
+  probably wrong.
+
+If it answered but `id -u` was not `0`, you are not root. Check whether that
+account can become root without typing anything:
+
+```
+ssh -o BatchMode=yes <host> 'sudo -n true' && echo "sudo ok"
+```
+
+If that fails, stop and tell me - I will either give you a root login or run
+the install myself and tell you when the setup page is up.
+
+Use whatever I gave you as `<host>` from here on - an alias from my config if
+that is what it was, and `user@address` if not.
+
+## Check the machine is one we can use
+
+```
+ssh <host> 'cat /etc/os-release | head -2; systemctl --version | head -1; df -h / | tail -1; ls /opt/meshploy 2>/dev/null'
+```
+
+- Ubuntu 20.04+, Debian 11+, Fedora 38+, RHEL/Rocky/Alma 8+, CentOS Stream 9+,
+  openSUSE, or Arch. **Alpine and anything without systemd will not work** -
+  stop and tell me.
+- At least 5 GB free on `/`.
+- If `/opt/meshploy` already exists, this server already has Meshploy. Stop and
+  ask me whether I want to reinstall or upgrade instead.
+
+Also check nothing already holds the ports Meshploy needs:
+
+```
+ssh <host> 'ss -Hltnp "sport = :80" ; ss -Hltnp "sport = :443" ; ss -Hltnp "sport = :53"'
+```
+
+If something does, tell me what it is and stop. Do not stop or remove it.
+
+## Get my approval
+
+Show me this and wait for a yes:
+
+```
+Server:   <host>
+Installs: Docker (if missing), k3s, Headscale, CoreDNS, Caddy, Meshploy
+Opens:    80, 443, and 53 unless I choose self-managed DNS
+Needs:    root (sudo), a domain I control, and about 10 minutes
+```
+
+Ask me which domain I will use, and tell me I will need to add DNS records for
+it partway through. Do not pick a domain for me.
+
+## Run it
+
+```
+ssh -t <host> 'bash -c "$(curl -fsSL https://meshploy.com/install.sh)"'
+```
+
+As root that is all it needs. On a non-root login that could become root above,
+put `sudo` in front of `bash`.
+
+When it offers to continue in a browser, say **yes**. It prints a setup token
+and an address on port 9000.
+
+## Open the setup page for me
+
+Port 9000 is usually closed to the internet, so tunnel it rather than asking me
+to open a firewall:
+
+```
+ssh -N -L 9000:127.0.0.1:9000 <host>
+```
+
+Leave that running, open `http://localhost:9000` in my browser, and give me the
+setup token. Then stop and let me take over: the domain, the DNS records and
+the owner account are mine to enter.
+
+## If it fails
+
+- Port 53 is taken on Ubuntu: that is `systemd-resolved`. Tell me, and mention
+  that `--dns-mode=ondemand` avoids needing port 53 at all. Do not disable it
+  yourself.
+- Unsupported distro, too little disk, or Meshploy already installed: stop and
+  tell me. Do not work around it.
+- Anything else: show me the output and stop. Do not re-run the installer.
+
+## Rules
+
+- Do not choose or register a domain for me.
+- Do not change firewall rules, DNS records, or anything else on the server.
+- Do not read or print my environment files.
+
+Docs: https://docs.meshploy.com/self-hosting/
+````
+
+Adding a **worker** later needs no prompt of this size: the console's **Cluster → Add a node** gives you a one-line command carrying a single-use token, and a matching prompt beside it.
 
 ### DNS setup
 

@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import { pluginCollapsibleSections } from '@expressive-code/plugin-collapsible-sections';
 
 export default defineConfig({
 	site: 'https://docs.meshploy.com',
@@ -9,6 +10,12 @@ export default defineConfig({
 	},
 	integrations: [
 		starlight({
+			// Long prompts are shown as a few lines with the rest behind a
+			// click, so a page of instructions does not push everything else
+			// off the screen.
+			expressiveCode: {
+				plugins: [pluginCollapsibleSections()],
+			},
 			title: 'meshploy',
 			description: 'Documentation for Meshploy, the open-source application platform for your own servers and private mesh.',
 			logo: {
