@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/meshploy/packages/server/middleware"
 )
 
 // The install script is served with this gateway's own address written into it,
@@ -87,4 +92,57 @@ func TestTheInstallerTakesTheJoinTokenFromRegistration(t *testing.T) {
 	if !strings.Contains(script, "No k3s join token came back from the gateway") {
 		t.Error("install.sh has no answer for a provisioned node with no join token")
 	}
+}
+
+// The whole chain for the install command's URL, wired as production wires it.
+//
+// Four things have to agree for `curl https://api.<domain>/install.sh` to work,
+// and three of them are invisible from any one file: Caddy sends everything on
+// the api subdomain to this API (deploy/caddy/Caddyfile has no path filter on
+// that block), the route is registered outside Huma, RequireAuth exempts it,
+// and the handler no longer asks for a user. Removing only the handler check
+// would have looked right and still answered 401.
+func TestInstallScriptIsReachableWithoutASession(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "install.sh")
+	if err := os.WriteFile(path, []byte("#!/usr/bin/env bash\n"+apiBaseLine+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := installScriptPath
+	installScriptPath = path
+	t.Cleanup(func() { installScriptPath = old })
+
+	h := New(nil, nil)
+	r := chi.NewRouter()
+	r.Use(middleware.RequireAuth)
+	h.RegisterRaw(r)
+
+	t.Run("the installer needs no session", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/install.sh", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("anonymous GET /install.sh = %d, want 200", rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "text/x-shellscript" {
+			t.Errorf("content type = %q", ct)
+		}
+	})
+
+	// Removing a server is not the same question as installing one.
+	t.Run("the uninstaller still does", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/uninstall.sh", nil))
+		if rec.Code == http.StatusOK {
+			t.Fatal("anonymous GET /uninstall.sh was served")
+		}
+	})
+
+	// And the method matters: the exemption is for fetching it.
+	t.Run("only for GET", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/install.sh", nil))
+		if rec.Code == http.StatusOK {
+			t.Fatal("POST /install.sh was served")
+		}
+	})
 }
