@@ -68,4 +68,29 @@ test.describe("Add a node", () => {
     expect(text).toMatch(/single-use/)
     expect(text).toMatch(/do not echo it back/)
   })
+
+  // The role is minted into the token, so a token on screen belongs to the
+  // role that was chosen when it was made. Changing the choice afterwards must
+  // not leave a command that quietly does something else.
+  test("drops a token that no longer matches the chosen role", async ({ page }) => {
+    await expect(page.getByText(/curl -fsSL .*\/install\.sh/)).toBeVisible({ timeout: 10_000 })
+
+    const group = page.getByRole("radiogroup", { name: "What this node is for" })
+    await group.getByRole("radio", { name: /Builds only/ }).click()
+
+    await expect(page.getByText(/curl -fsSL .*\/install\.sh/)).toHaveCount(0)
+    await expect(page.getByText(/made for the role you had chosen before/)).toBeVisible()
+
+    // And generating again gives a command for the role now chosen.
+    await page.getByRole("button", { name: /New token|Generate token/ }).click()
+    await expect(page.getByText(/curl -fsSL .*\/install\.sh/)).toBeVisible()
+    await expect(group.getByRole("radio", { name: /Builds only/ })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+  })
+
+  test("says how long the token is good for", async ({ page }) => {
+    await expect(page.getByText(/Good for one machine, for an hour/)).toBeVisible({ timeout: 10_000 })
+  })
 })

@@ -102,3 +102,24 @@ func TestProvisioningDoesNotConsumeTheToken(t *testing.T) {
 	_, err = svcs.Nodes.Provision(ctx, tok)
 	require.ErrorContains(t, err, "already used")
 }
+
+// A provisioning token joins a machine to the mesh and is meant to be pasted
+// within the minute. One generated and then abandoned - a wrong role picked, a
+// tab closed - used to stay valid for ever, unlisted and unrevokable.
+func TestAProvisioningTokenExpiresEvenWhenNobodySaidSo(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	svcs := newServices(db)
+	orgID := seedOrg(t, db, "acme", nil)
+
+	_, row, err := svcs.Nodes.CreateProvisioningToken(ctx, orgID, "forgot to say", nil)
+	require.NoError(t, err)
+	require.NotNil(t, row.ExpiresAt, "a token with no expiry given must still get one")
+	assert.WithinDuration(t, time.Now().Add(time.Hour), *row.ExpiresAt, time.Minute)
+
+	// A caller who genuinely wants longer is still obeyed.
+	far := time.Now().Add(30 * 24 * time.Hour)
+	_, long, err := svcs.Nodes.CreateProvisioningToken(ctx, orgID, "a month", &far)
+	require.NoError(t, err)
+	assert.WithinDuration(t, far, *long.ExpiresAt, time.Second)
+}

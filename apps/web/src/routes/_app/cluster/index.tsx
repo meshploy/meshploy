@@ -369,6 +369,21 @@ function ProvisioningTokensPanel() {
   const [promptOpen, setPromptOpen] = useState(false)
   // What the machine becomes. Decided here, so the machine is asked nothing.
   const [role, setRole] = useState<MeshRole>("workload_builder")
+  const [staleRole, setStaleRole] = useState(false)
+
+  // The role is minted into the token, so a token already on screen was made
+  // for the role that was chosen at the time. Changing the choice afterwards
+  // does not change that token, and leaving it there would show a command that
+  // quietly does something else - so the token goes and says why.
+  const pickRole = (next: MeshRole) => {
+    if (next === role) return
+    setRole(next)
+    if (provToken) {
+      setProvToken("")
+      setPromptOpen(false)
+      setStaleRole(true)
+    }
+  }
 
   const { mutate: generate, isPending: generating } = useMutation({
     mutationFn: () =>
@@ -377,6 +392,7 @@ function ProvisioningTokensPanel() {
       setProvToken(res.token)
       setVisible(true)
       setError(null)
+      setStaleRole(false)
     },
     // Without this a failure is silent: the spinner stops and no token appears,
     // which reads as the button doing nothing.
@@ -447,7 +463,7 @@ function ProvisioningTokensPanel() {
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                onClick={() => setRole(r.value)}
+                onClick={() => pickRole(r.value)}
                 className={cn(
                   "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
                   selected ? "border-primary bg-primary/5" : "border-border/60 bg-card",
@@ -476,7 +492,9 @@ function ProvisioningTokensPanel() {
         )}
         {!provToken ? (
           <p className="text-sm text-muted-foreground">
-            Generate a single-use token to get the install command.
+            {staleRole
+              ? "That token was made for the role you had chosen before. Generate another for this one."
+              : "Generate a single-use token to get the install command."}
           </p>
         ) : (
           <>
@@ -484,7 +502,8 @@ function ProvisioningTokensPanel() {
             <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
               <ShieldAlert className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-300/90">
-                Shown once — copy before leaving. Auto-invalidates after the node registers.
+                Shown once - copy before leaving. Good for one machine, for an hour, and spent
+                as soon as that machine registers.
               </p>
             </div>
 

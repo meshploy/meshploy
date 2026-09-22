@@ -318,6 +318,17 @@ func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UU
 	}
 	plaintext := "mprov-" + hex.EncodeToString(raw)
 
+	// A token with no expiry given gets one anyway.
+	//
+	// This is a credential that joins a machine to the mesh, and it is made to
+	// be pasted into a terminal within the minute. Before this, one generated
+	// and then abandoned - a wrong role picked, a tab closed - stayed valid for
+	// ever, unlisted and unrevokable. A caller who genuinely needs longer says
+	// so; nobody who forgot has to.
+	if expiresAt == nil {
+		at := time.Now().Add(provisioningTokenTTL)
+		expiresAt = &at
+	}
 	row := db.NodeProvisioningToken{
 		OrganizationID: orgID,
 		TokenHash:      hashToken(plaintext),
@@ -416,6 +427,9 @@ func (s *NodeService) Provision(ctx context.Context, token string) (*Provisionin
 // travels in a command line that will outlive its usefulness in somebody's
 // shell history.
 const preAuthKeyTTL = time.Hour
+
+// provisioningTokenTTL is how long an unexpiring request gets instead.
+const provisioningTokenTTL = time.Hour
 
 // RegisterWithProvisioningToken validates a single-use provisioning token and
 // creates the node. On success it:
