@@ -76,7 +76,13 @@ test.describe("Add a node", () => {
     await expect(prompt).toBeVisible({ timeout: 10_000 })
     const text = (await prompt.textContent()) ?? ""
 
-    expect(text).toMatch(/Do not guess a host/)
+    // It looks in my SSH config before asking me anything.
+    expect(text).toContain("~/.ssh/config")
+    expect(text).toMatch(/one question, not four/)
+    // BatchMode is the difference between a clean refusal and a hung agent on
+    // a password-only server.
+    expect(text).toContain("BatchMode=yes")
+    expect(text).toMatch(/do not use sshpass/)
     // Already a node: stop rather than register it twice.
     expect(text).toContain("/etc/meshploy/node.conf")
     expect(text).toMatch(/wait for a yes/)
