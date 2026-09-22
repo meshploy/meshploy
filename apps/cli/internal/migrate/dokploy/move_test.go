@@ -447,3 +447,55 @@ func TestMovingAComposeAppAppliesItsStack(t *testing.T) {
 		t.Errorf("the project should be running again: %v", runner.ran)
 	}
 }
+
+// A compose app that was moved, put back, and moved again.
+//
+// Found on a real server: the apply was journalled without an undo, so a
+// rollback left it recorded as done while the services it had started were
+// stopped by their own undos. The second attempt then skipped straight to
+// waiting, and sat there for three minutes while the stack's deployment stayed
+// at zero replicas. Applying a stack reconciles its shape, not its power state,
+// so the services have to be started explicitly and that start has to happen
+// again on a second attempt.
+func TestMovingAComposeAppAgainStartsItsServices(t *testing.T) {
+	d, api, runner, _ := movable(t)
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "analytics",
+		Project: "Acme · production", Verdict: Moves, Details: map[string]string{"app_name": "analytics-abc"}})
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/stack/c1", Action: "create-stack",
+		Target: "analytics", Result: journal.OK, Created: "stack-1"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-an", Name: "analytics", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production"}}}
+	api.stackServices["stack-1"] = []string{"svc-web", "svc-worker"}
+	api.status["svc-web"], api.status["svc-worker"] = "running", "running"
+	runner.replies["docker ps --format {{.Names}} --filter label=com.docker.compose.project=analytics-abc"] =
+		"analytics-abc-web-1\nanalytics-abc-worker-1\n"
+
+	if _, err := Move(d); err != nil {
+		t.Fatalf("first move: %v", err)
+	}
+	if len(api.started) != 2 {
+		t.Fatalf("the stack's services should have been started, not just applied: %v", api.started)
+	}
+
+	entries, _ := journal.Read(d.Journal.Dir())
+	res := Rollback{Runner: runner, Meshploy: moveRollback{api}, Journal: d.Journal}.
+		Replay(journal.Undoable(entries, "g-an"))
+	if len(res.Failures) != 0 {
+		t.Fatalf("rollback failures: %v", res.Failures)
+	}
+
+	api.started = nil
+	if _, err := Move(d); err != nil {
+		t.Fatalf("second move: %v", err)
+	}
+	if len(api.started) != 2 {
+		t.Fatalf("a second move must start the stack's services again, which the rollback stopped: %v", api.started)
+	}
+	// The stack itself is applied once: it was never undone, and re-applying
+	// would be work for nothing.
+	if len(api.applied) != 1 {
+		t.Errorf("applied = %v, the stack should not be applied twice", api.applied)
+	}
+}

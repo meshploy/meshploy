@@ -256,11 +256,22 @@ func (d MoveDeps) start(m GroupMember) error {
 	return d.waitHealthy(projectID, serviceID, m.Name)
 }
 
-// startStack applies a compose app and waits for what it creates.
+// startStack applies a compose app, starts what it creates, and waits for it.
 //
 // A stack is not started, it is applied: what comes out are services, and they
 // are what a rollback stops - the stack itself stays, so a second attempt
 // reuses it rather than creating another.
+//
+// Each of those services is then started explicitly, and that is not
+// belt-and-braces. Applying a stack reconciles its shape, not its power state,
+// so a service prepare created stopped stays stopped; and after a rollback has
+// stopped them, re-applying does not bring them back either. Relying on the
+// apply to start them left a stack's deployment at zero replicas while the move
+// waited three minutes for a workload nothing had asked to run - found on a
+// real server, on a group that had been moved and rolled back once already.
+//
+// The apply is guarded by the journal because it only needs doing once. The
+// starts are not: they are idempotent, and they are the part a rollback undid.
 func (d MoveDeps) startStack(m GroupMember) error {
 	stackID, projectID := d.meshployIDs(m)
 	if stackID == "" {
@@ -271,19 +282,6 @@ func (d MoveDeps) startStack(m GroupMember) error {
 		if err := d.API.ApplyStack(projectID, stackID); err != nil {
 			return d.record(step, "apply-stack", m.Name, err, nil)
 		}
-		services, err := d.API.StackServices(projectID, stackID)
-		if err != nil {
-			return d.record(step, "apply-stack", m.Name, err, nil)
-		}
-		// One undo for each service the stack created, so putting the group
-		// back stops every one of them.
-		for _, id := range services {
-			_ = d.Journal.Append(journal.Entry{Step: step + "/" + id, Group: d.Group.ID, Action: "start-service",
-				Target: m.Name, Result: journal.OK, Created: id, Undo: &journal.Undo{
-					Kind: journal.UndoStopService,
-					Args: map[string]string{"project_id": projectID, "service_id": id},
-				}})
-		}
 		_ = d.Journal.Append(journal.Entry{Step: step, Group: d.Group.ID, Action: "apply-stack",
 			Target: m.Name, Result: journal.OK, Created: stackID})
 	}
@@ -291,6 +289,21 @@ func (d MoveDeps) startStack(m GroupMember) error {
 	services, err := d.API.StackServices(projectID, stackID)
 	if err != nil {
 		return err
+	}
+	for _, id := range services {
+		// One entry per service, each with its own undo, so putting the group
+		// back stops every one of them.
+		svcStep := step + "/" + id
+		if !d.Journal.Done(svcStep) {
+			if err := d.API.StartService(projectID, id); err != nil {
+				return d.record(svcStep, "start-service", m.Name, err, nil)
+			}
+			_ = d.Journal.Append(journal.Entry{Step: svcStep, Group: d.Group.ID, Action: "start-service",
+				Target: m.Name, Result: journal.OK, Created: id, Undo: &journal.Undo{
+					Kind: journal.UndoStopService,
+					Args: map[string]string{"project_id": projectID, "service_id": id},
+				}})
+		}
 	}
 	for _, id := range services {
 		if err := d.waitHealthy(projectID, id, m.Name); err != nil {
