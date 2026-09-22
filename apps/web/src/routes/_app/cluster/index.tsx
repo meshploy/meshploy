@@ -12,7 +12,6 @@ import {
   RefreshCw,
   Terminal,
   Bot,
-  ChevronRight,
   Check,
   Loader2,
   ShieldAlert,
@@ -366,7 +365,6 @@ function ProvisioningTokensPanel() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const [error, setError] = useState<string | null>(null)
-  const [promptOpen, setPromptOpen] = useState(false)
   // What the machine becomes. Decided here, so the machine is asked nothing.
   const [role, setRole] = useState<MeshRole>("workload_builder")
   const [staleRole, setStaleRole] = useState(false)
@@ -380,7 +378,6 @@ function ProvisioningTokensPanel() {
     setRole(next)
     if (provToken) {
       setProvToken("")
-      setPromptOpen(false)
       setStaleRole(true)
     }
   }
@@ -548,19 +545,11 @@ function ProvisioningTokensPanel() {
               </p>
             </div>
 
-            {/* The same thing, for an agent rather than a terminal. Folded by
-                default: it is several lines of prose, and the command above is
-                what most people came for. */}
+            {/* The same thing, for an agent rather than a terminal. Shown, not
+                folded: it is one of the two ways to do this, and a way nobody
+                opens is a way nobody knows about. */}
             <div className="space-y-1.5">
-              <button
-                type="button"
-                onClick={() => setPromptOpen((v) => !v)}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium hover:text-foreground"
-              >
-                <ChevronRight className={`h-3 w-3 transition-transform ${promptOpen ? "rotate-90" : ""}`} />
-                Or hand it to an agent
-              </button>
-              {promptOpen && <>
+              <p className="text-xs text-muted-foreground font-medium">Or hand it to an agent</p>
               <div className="relative group">
                 <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
                   <Bot className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
@@ -582,7 +571,6 @@ function ProvisioningTokensPanel() {
                 carries the token, so it lands in that agent&rsquo;s history - which is why the token
                 is single-use and expires.
               </p>
-              </>}
             </div>
           </>
         )}

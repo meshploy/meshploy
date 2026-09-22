@@ -23,7 +23,9 @@ test.describe("Add a node", () => {
   })
 
   test("gives one command, carrying only the token", async ({ page }) => {
-    const cmd = page.getByText(/curl -fsSL .*\/install\.sh/)
+    // The command appears twice: on its own, and again inside the agent
+    // prompt. The first is the one to read.
+    const cmd = page.getByText(/curl -fsSL .*\/install\.sh/).first()
     await expect(cmd).toBeVisible({ timeout: 10_000 })
 
     const text = (await cmd.textContent()) ?? ""
@@ -53,14 +55,11 @@ test.describe("Add a node", () => {
     await expect(group.getByRole("radio", { name: /Mesh only/ })).toHaveAttribute("aria-checked", "true")
   })
 
-  // The same install, handed to an agent instead of a terminal. Folded away,
-  // because the command above is what most people came for.
-  test("hides an agent prompt behind a disclosure", async ({ page }) => {
-    await expect(page.getByText(/Add a Meshploy worker to my cluster/)).toHaveCount(0)
-
-    await page.getByRole("button", { name: /hand it to an agent/ }).click()
+  // The same install, handed to an agent instead of a terminal. Shown beside
+  // the command rather than folded away: it is one of the two ways to do this.
+  test("shows an agent prompt beside the command", async ({ page }) => {
     const prompt = page.getByText(/Add a Meshploy worker to my cluster/)
-    await expect(prompt).toBeVisible()
+    await expect(prompt).toBeVisible({ timeout: 10_000 })
 
     const text = (await prompt.textContent()) ?? ""
     expect(text).toContain("--token=mprov-")
@@ -73,7 +72,7 @@ test.describe("Add a node", () => {
   // role that was chosen when it was made. Changing the choice afterwards must
   // not leave a command that quietly does something else.
   test("drops a token that no longer matches the chosen role", async ({ page }) => {
-    await expect(page.getByText(/curl -fsSL .*\/install\.sh/)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/curl -fsSL .*\/install\.sh/).first()).toBeVisible({ timeout: 10_000 })
 
     const group = page.getByRole("radiogroup", { name: "What this node is for" })
     await group.getByRole("radio", { name: /Builds only/ }).click()
@@ -83,7 +82,7 @@ test.describe("Add a node", () => {
 
     // And generating again gives a command for the role now chosen.
     await page.getByRole("button", { name: /New token|Generate token/ }).click()
-    await expect(page.getByText(/curl -fsSL .*\/install\.sh/)).toBeVisible()
+    await expect(page.getByText(/curl -fsSL .*\/install\.sh/).first()).toBeVisible()
     await expect(group.getByRole("radio", { name: /Builds only/ })).toHaveAttribute(
       "aria-checked",
       "true"
