@@ -11,6 +11,8 @@ import {
   EyeOff,
   RefreshCw,
   Terminal,
+  Bot,
+  ChevronRight,
   Check,
   Loader2,
   ShieldAlert,
@@ -25,6 +27,7 @@ import { Switch } from "@/components/ui/switch"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
 import type { MeshHealth, OrphanWorkload } from "@/lib/api/cluster"
+import type { MeshRole } from "@/types"
 import { formatRelativeTime } from "@/lib/utils"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
@@ -297,11 +300,16 @@ function ClusterPage() {
         </div>
       </div>
 
-      {/* Tokens row */}
+      {/* Tokens row. Adding a node is the path with a command worth reading, so
+          it gets the width; the two beside it are the by-hand fallbacks. */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <ProvisioningTokensPanel />
-        <HeadscalePreAuthKeyPanel />
-        <K3sJoinTokenPanel />
+        <div className="lg:col-span-2">
+          <ProvisioningTokensPanel />
+        </div>
+        <div className="space-y-4">
+          <HeadscalePreAuthKeyPanel />
+          <K3sJoinTokenPanel />
+        </div>
       </div>
     </div>
   )
@@ -311,6 +319,29 @@ function ClusterPage() {
 
 const MESH_API_URL = "http://100.64.0.1:4000"
 
+/**
+ * Where this gateway's API answers from outside the mesh.
+ *
+ * Read from the address the console is being served on rather than from an
+ * endpoint: accurate by construction, and it is the same host the machine
+ * running the install command will fetch the script from. On a dev server it
+ * has no useful answer, so the command falls back to naming the placeholder.
+ */
+function gatewayAPIBase(): string {
+  if (typeof window === "undefined") return "https://api.your-domain"
+  const host = window.location.hostname
+  if (host === "localhost" || host === "127.0.0.1") return "https://api.your-domain"
+  return "https://api." + (host.startsWith("console.") ? host.slice("console.".length) : host)
+}
+
+/** The four things a node can be, as the installer names them. */
+const NODE_ROLES = [
+  { value: "workload_builder", label: "Both", detail: "Runs services and build jobs." },
+  { value: "workload", label: "Workloads", detail: "Runs services only; builds go elsewhere." },
+  { value: "builder", label: "Builds", detail: "Build jobs only, tainted so services never land here." },
+  { value: "mesh", label: "Mesh only", detail: "Joins the mesh but not the cluster. Nothing runs on it; routes can reach its ports." },
+] as const
+
 function ProvisioningTokensPanel() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
@@ -319,11 +350,13 @@ function ProvisioningTokensPanel() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const [error, setError] = useState<string | null>(null)
-  // Mesh only: the machine joins the mesh but not the cluster.
-  const [kind, setKind] = useState<"cluster" | "mesh">("cluster")
+  const [promptOpen, setPromptOpen] = useState(false)
+  // What the machine becomes. Decided here, so the machine is asked nothing.
+  const [role, setRole] = useState<MeshRole>("workload_builder")
 
   const { mutate: generate, isPending: generating } = useMutation({
-    mutationFn: () => nodesApi.createProvisioningToken(orgId!, kind === "mesh" ? "mesh" : "worker", null, token),
+    mutationFn: () =>
+      nodesApi.createProvisioningToken(orgId!, NODE_ROLES.find((r) => r.value === role)!.label.toLowerCase(), null, token, role),
     onSuccess: (res) => {
       setProvToken(res.token)
       setVisible(true)
@@ -341,8 +374,29 @@ function ProvisioningTokensPanel() {
     setTimeout(() => setCopiedField(null), 2000)
   }
 
+  // One command, and the only thing in it is the token. The script is fetched
+  // from this gateway on purpose: it is where the machine learns which Meshploy
+  // it is joining, and it is the version that matches the server being joined.
+  const apiBase = gatewayAPIBase()
   const curlCommand = provToken
-    ? `curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/deploy/install.sh | \\\n  MESHPLOY_API_URL="${MESH_API_URL}" MESHPLOY_TOKEN="${provToken}"${kind === "mesh" ? ' MESHPLOY_NODE_ROLE="mesh"' : ""} bash`
+    ? `curl -fsSL ${apiBase}/install.sh | sudo sh -s -- --token=${provToken}`
+    : ""
+
+  // The same install, handed to an agent instead of a terminal. It is a task
+  // with a credential in it, so it says what the credential is and what not to
+  // do with it.
+  const agentPrompt = provToken
+    ? [
+        `Add a Meshploy ${role === "mesh" ? "mesh-only node" : "worker"} to my cluster.`,
+        ``,
+        `The machine is <host> and I can reach it over SSH. Run this on it:`,
+        ``,
+        `  ${curlCommand}`,
+        ``,
+        `That token is single-use and short-lived: do not echo it back, write it`,
+        `to a file, or put it in a commit. When the install finishes, check the`,
+        `node appears in Meshploy and is online, and tell me its name and role.`,
+      ].join("\n")
     : ""
 
   return (
@@ -367,14 +421,12 @@ function ProvisioningTokensPanel() {
       <div className="p-4 space-y-4">
         <div className="space-y-2">
           <SegmentedControl
-            value={kind}
-            onValueChange={setKind}
-            options={[{ value: "cluster", label: "Cluster worker" }, { value: "mesh", label: "Mesh only" }]}
+            value={role}
+            onValueChange={(v) => setRole(v as MeshRole)}
+            options={NODE_ROLES.map((r) => ({ value: r.value, label: r.label }))}
           />
           <p className="text-xs text-muted-foreground">
-            {kind === "mesh"
-              ? "Joins the mesh but not the cluster. Nothing runs on it; routes can reach its ports."
-              : "Joins the mesh and the cluster, and runs services and builds."}
+            {NODE_ROLES.find((r) => r.value === role)?.detail}
           </p>
         </div>
         {error && (
@@ -433,8 +485,46 @@ function ProvisioningTokensPanel() {
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground/60">
-                Connects over the WireGuard mesh ({MESH_API_URL}) — no public internet needed after joining Headscale.
+                Asks this gateway for its mesh credentials, then talks to it over WireGuard
+                ({MESH_API_URL}). Nothing else to type.
               </p>
+            </div>
+
+            {/* The same thing, for an agent rather than a terminal. Folded by
+                default: it is several lines of prose, and the command above is
+                what most people came for. */}
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={() => setPromptOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium hover:text-foreground"
+              >
+                <ChevronRight className={`h-3 w-3 transition-transform ${promptOpen ? "rotate-90" : ""}`} />
+                Or hand it to an agent
+              </button>
+              {promptOpen && <>
+              <div className="relative group">
+                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
+                  <Bot className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                  <code className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
+                    {agentPrompt}
+                  </code>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => copy(agentPrompt, "prompt")}
+                >
+                  {copiedField === "prompt" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground/60">
+                Paste into Claude Code, Codex or your own agent, and replace &lt;host&gt;. The prompt
+                carries the token, so it lands in that agent&rsquo;s history - which is why the token
+                is single-use and expires.
+              </p>
+              </>}
             </div>
           </>
         )}

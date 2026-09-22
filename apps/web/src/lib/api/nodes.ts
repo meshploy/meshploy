@@ -184,10 +184,25 @@ export const nodes = {
   cancelRemoval: (orgId: string, nodeId: string, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}/cancel-removal`, { method: "POST" }, token),
 
-  createProvisioningToken: (orgId: string, label: string, expiresAt: string | null, token: string) =>
+  /** Mint a single-use token. The role travels with it, so the machine running
+   *  the install command is asked nothing at all. */
+  createProvisioningToken: (
+    orgId: string,
+    label: string,
+    expiresAt: string | null,
+    token: string,
+    meshRole?: MeshRole
+  ) =>
     apiFetch<ProvisioningTokenCreated>(
       `/api/v1/orgs/${orgId}/node-provisioning-tokens`,
-      { method: "POST", body: JSON.stringify({ label, ...(expiresAt ? { expires_at: expiresAt } : {}) }) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          label,
+          ...(expiresAt ? { expires_at: expiresAt } : {}),
+          ...(meshRole ? { mesh_role: meshRole } : {}),
+        }),
+      },
       token
     ),
 }
