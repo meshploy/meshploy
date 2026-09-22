@@ -220,3 +220,63 @@ func TestFinishCarriesOnPastAFailureAndReportsIt(t *testing.T) {
 		t.Error("the configuration directory should still have been removed")
 	}
 }
+
+// A workload whose plan verdict is needs_you but which moved anyway.
+//
+// needs_you means a question with a default, not a refusal - every bind mount
+// raises one - and such a workload moves perfectly well. Counting only the
+// verdict left the stopped Dokploy copy of anything with a bind mount behind
+// after a completed migration, found on a real server where finish offered to
+// remove six of the seven services it had replaced.
+func TestFinishRemovesWhatMovedEvenWhenThePlanCallsItNeedsYou(t *testing.T) {
+	d, runner, _ := finishable(t)
+	for i, it := range d.Plan.Items {
+		if it.ID == "a1" {
+			d.Plan.Items[i].Verdict = NeedsYou
+			d.Plan.Items[i].Reasons = []string{"a host path can be brought across as a volume"}
+		}
+	}
+
+	scope := PlanFinish(d)
+	if len(scope.Blockers) != 0 {
+		t.Fatalf("blockers: %v", scope.Blockers)
+	}
+	var found bool
+	for _, s := range scope.Services {
+		if s == "web-abc" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the copy of a workload that moved should go, whatever the verdict says: %v", scope.Services)
+	}
+
+	if _, err := Finish(d); err != nil {
+		t.Fatal(err)
+	}
+	if !runner.didRun("docker service rm web-abc") {
+		t.Errorf("it was left behind: %v", runner.ran)
+	}
+}
+
+// And the other direction: a workload the journal never started is not the
+// migration's to remove, whatever the plan hoped for it.
+func TestFinishLeavesAWorkloadTheJournalNeverMoved(t *testing.T) {
+	d, _, _ := finishable(t)
+	d.Plan.Groups = append(d.Plan.Groups, Group{ID: "g2", Name: "legacy",
+		Members: []GroupMember{{Kind: "application", ID: "a9", Name: "legacy"}}})
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "application", ID: "a9", Name: "legacy",
+		Verdict: Moves, Details: map[string]string{"app_name": "legacy-zzz"}})
+	d.Source.Docker.Services = append(d.Source.Docker.Services,
+		migrate.SwarmService{Name: "legacy-zzz", Running: 1, Desired: 1})
+
+	scope := PlanFinish(d)
+	for _, s := range scope.Services {
+		if s == "legacy-zzz" {
+			t.Fatalf("a workload that never moved must not be removed: %v", scope.Services)
+		}
+	}
+	if len(scope.Blockers) == 0 {
+		t.Error("finish should refuse while a group has not moved")
+	}
+}

@@ -101,6 +101,7 @@ func PlanFinish(d FinishDeps) FinishScope {
 	// workload of somebody else's from one of the platform's, and without it
 	// every migrated workload was counted as a stranger in the summary.
 	owned := map[string]bool{}
+	byID := map[string]Item{}
 	for _, it := range d.Plan.Items {
 		switch it.Kind {
 		case "application", "database", "compose":
@@ -109,8 +110,30 @@ func PlanFinish(d FinishDeps) FinishScope {
 				continue
 			}
 			owned[name] = true
-			if it.Verdict == Moves {
+			byID[it.ID] = it
+			// The plan's verdict is what a workload *could* do, and it is only
+			// the answer here when there is no journal to ask. A verdict of
+			// needs_you means a question with a default - every bind mount
+			// raises one - and such a workload moves perfectly well. Counting
+			// only Moves left the stopped Dokploy copy of anything with a bind
+			// mount behind after a completed migration, which is how this was
+			// found.
+			if d.Journal == nil && it.Verdict == Moves {
 				moved[name] = true
+			}
+		}
+	}
+
+	// What actually moved, which is the journal's to say and nothing else's.
+	if d.Journal != nil {
+		for _, g := range d.Plan.Groups {
+			for _, m := range g.Members {
+				if !d.Journal.Done(fmt.Sprintf("move/%s/start/%s", g.ID, m.ID)) {
+					continue
+				}
+				if name := itemAppName(byID[m.ID]); name != "" {
+					moved[name] = true
+				}
 			}
 		}
 	}
