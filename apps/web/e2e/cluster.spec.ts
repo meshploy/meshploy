@@ -36,15 +36,21 @@ test.describe("Add a node", () => {
 
   // The role is chosen when the token is minted, so the machine is asked
   // nothing at all - which is the only way a one-liner can be one line.
-  test("offers the four roles a node can have", async ({ page }) => {
-    // SegmentedControl renders plain buttons, so scope by the panel rather
-    // than by a role it does not have.
-    const panel = page.locator("div").filter({ hasText: /^Add a node/ }).first()
-    for (const label of ["Both", "Workloads", "Builds", "Mesh only"]) {
-      await expect(panel.getByRole("button", { name: label, exact: true })).toBeVisible()
+  test("offers the four roles a node can have, each saying what it means", async ({ page }) => {
+    const group = page.getByRole("radiogroup", { name: "What this node is for" })
+    await expect(group.getByRole("radio")).toHaveCount(4)
+
+    for (const label of ["Services and builds", "Services only", "Builds only", "Mesh only"]) {
+      await expect(group.getByRole("radio", { name: new RegExp(label) })).toBeVisible()
     }
-    await panel.getByRole("button", { name: "Mesh only", exact: true }).click()
-    await expect(page.getByText(/Joins the mesh but not the cluster/)).toBeVisible()
+    // The default is the one that runs both, and it is marked as chosen.
+    await expect(group.getByRole("radio", { name: /Services and builds/ })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+
+    await group.getByRole("radio", { name: /Mesh only/ }).click()
+    await expect(group.getByRole("radio", { name: /Mesh only/ })).toHaveAttribute("aria-checked", "true")
   })
 
   // The same install, handed to an agent instead of a terminal. Folded away,
