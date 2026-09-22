@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.17.0](https://github.com/meshploy/meshploy/compare/v0.16.0...v0.17.0) (2026-09-22)
+
+
+### Features
+
+* **backups:** tell the operator once when a stopped database stops being backed up ([3198598](https://github.com/meshploy/meshploy/commit/3198598619359cd81d3fb8cb1018da9ff55ba05c))
+* **console:** give one install command and a prompt to hand an agent ([0282be1](https://github.com/meshploy/meshploy/commit/0282be1eda1c77450be4cc8f79bf2d3d11949580))
+* **console:** have the node prompt find ssh access before asking for it ([0e5841b](https://github.com/meshploy/meshploy/commit/0e5841b2d388565c07a171a03bb97e50d5b45ad0))
+* **console:** pick a node's role from what each one means ([e2903ac](https://github.com/meshploy/meshploy/commit/e2903ac48e4466a12b2e17811f75d9c15713780e))
+* **console:** replace the overview's mesh diagram with what ran lately ([cd71688](https://github.com/meshploy/meshploy/commit/cd7168823dbf6b3e3491fef187c038cad5f52598))
+* **console:** report what the mesh is using beside what it can hold ([0891a9d](https://github.com/meshploy/meshploy/commit/0891a9dd0677e39a54a9f81634d6c9199aa6f491))
+* **console:** say what to do first on a workspace that has not deployed yet ([0303e11](https://github.com/meshploy/meshploy/commit/0303e1164328e0e10adb62d96630696cfa067ad8))
+* **console:** show the agent prompt beside the command, not behind a toggle ([7335d7e](https://github.com/meshploy/meshploy/commit/7335d7ed0eebcc40f87c82321367b613baf83d97))
+* **migrate:** bring a host path across as a volume with its contents ([3b65545](https://github.com/meshploy/meshploy/commit/3b6554595ca682c9cb48e5c1eaebbf68720a9a14))
+* **migrate:** carry a compose app across as a stack ([602487e](https://github.com/meshploy/meshploy/commit/602487e951e3ec6320306d0e068309807f061b42))
+* **migrate:** carry a published database port across as a gateway port ([f7f5c08](https://github.com/meshploy/meshploy/commit/f7f5c081aab20a79fb2cbb55e00fd2b03b32fef6))
+* **migrate:** carry certificates from an edge that keeps them as files ([9a96dc0](https://github.com/meshploy/meshploy/commit/9a96dc0baa4be41bd3536a95df986866822b299d))
+* **migrate:** carry the platform's registries, object stores, git tokens and backup schedules ([73eb3da](https://github.com/meshploy/meshploy/commit/73eb3da3cc809971ef7b6045e7663ab67b7bd337))
+* **migrate:** cut over past a workload that cannot move, naming what it costs ([e835e0d](https://github.com/meshploy/meshploy/commit/e835e0d4bc015d1b962788549c99fca327ff0fda))
+* **migrate:** find what holds the ports instead of assuming Traefik ([5aa67d0](https://github.com/meshploy/meshploy/commit/5aa67d0c26d6351cc14d0b65230a449926607efb))
+* **migrate:** follow and drive a migration from the console ([919ac24](https://github.com/meshploy/meshploy/commit/919ac2491a6daf8cfa30f5b4f1274f02d88b0fb6))
+* **migrate:** remove what is left of the old platform when the migration is over ([9dd5813](https://github.com/meshploy/meshploy/commit/9dd58136330dbaef3e846cc4e8b363afbd0b2056))
+* **migrate:** say when a published database port is already taken on the gateway ([ee08a62](https://github.com/meshploy/meshploy/commit/ee08a628ebaed7c8ec3bfec6204fec3a9cd5ce21))
+* **nodes:** let a machine join the mesh with nothing but a provisioning token ([1f9283b](https://github.com/meshploy/meshploy/commit/1f9283b826021d28b3bcfd4eb69544332a24f51e))
+* **routes:** say when an internal route gets a self-signed certificate, and why ([e83c7c9](https://github.com/meshploy/meshploy/commit/e83c7c9ba0e5b0281b1f3541dae60d0c2c7970ab))
+* **web:** group the sidebar by what you are running and what it runs on ([72a2a2e](https://github.com/meshploy/meshploy/commit/72a2a2ebd8465781826a4001622cfc0366aef297))
+
+
+### Bug Fixes
+
+* **api:** create the namespace when a database is published on the mesh ([2fee64e](https://github.com/meshploy/meshploy/commit/2fee64ece797bce2c2adba80a7c5c8bd36cd96a8))
+* **backups:** skip a scheduled backup of a stopped database instead of failing it ([7bdc0fb](https://github.com/meshploy/meshploy/commit/7bdc0fb4cae8779667bb817848c3947c0f8d25cd))
+* **client:** send the body applying a stack requires ([a44ef02](https://github.com/meshploy/meshploy/commit/a44ef02c7f6588ff4114a4780735f142d642d998))
+* **console:** repair the route target row and the add-node panel ([f492716](https://github.com/meshploy/meshploy/commit/f492716d4962d1ae5c83d9d4ab1b96dfd034b0e9))
+* **migrate:** check our own edge took the ports before calling the cutover done ([7c0afdd](https://github.com/meshploy/meshploy/commit/7c0afdd6b0fc4cca68e764954ad3e9592858f0bd))
+* **migrate:** give a published database the mesh access its gateway port needs ([78c2294](https://github.com/meshploy/meshploy/commit/78c2294e46bfe1964ee8dd99202648b1eb7bbf28))
+* **migrate:** move a Mongo instance whole, since the platform names no database in it ([9f39ea4](https://github.com/meshploy/meshploy/commit/9f39ea44655d7adb42683401e33b0e53d8095f87))
+* **migrate:** refuse a cutover that did not actually take the ports ([cdb48bf](https://github.com/meshploy/meshploy/commit/cdb48bf2a5664f6f215282097286db35142e1d65))
+* **migrate:** remove the copy of every workload that moved, not only the ones with no questions ([83dee90](https://github.com/meshploy/meshploy/commit/83dee90bbb47cbe9bcde19dc88b612ceb1b787da))
+* **migrate:** start a stack's services when a compose group moves ([d316b3d](https://github.com/meshploy/meshploy/commit/d316b3d5b0a3bc45b5d04e48465f7bc5c64bbe5d))
+* **migrate:** stop the old platform at cutover, so it cannot take its ports back ([06581b6](https://github.com/meshploy/meshploy/commit/06581b697857a4e4df0feeed4339a3d4a15c9ecf))
+* **nodes:** do not leave a token on screen that was minted for another role ([ce0b993](https://github.com/meshploy/meshploy/commit/ce0b99363335d965569149c245e5a2efac8715af))
+* **nodes:** hand a provisioned node the cluster token it was about to be asked for ([ee9a497](https://github.com/meshploy/meshploy/commit/ee9a4973ec08fd874e488fd1a8101dbaaf29b86a))
+* **nodes:** say why a node removal has not finished, instead of blaming Headscale ([ba0033f](https://github.com/meshploy/meshploy/commit/ba0033fa9bbacd37dc635787db68a30dbc3a29d4))
+* **nodes:** stop a role change from silently leaving nothing able to build ([c332dd7](https://github.com/meshploy/meshploy/commit/c332dd708981df02fdb4095a960f357384927073))
+* **nodes:** take the gateway off ports that forwarded to a removed node ([865589c](https://github.com/meshploy/meshploy/commit/865589cb6446f357f1abe9175d3797178fbfb778))
+
 ## [0.16.0](https://github.com/meshploy/meshploy/compare/v0.15.0...v0.16.0) (2026-09-21)
 
 
