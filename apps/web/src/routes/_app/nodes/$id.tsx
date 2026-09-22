@@ -22,15 +22,15 @@ import { HostContainers } from "@/components/nodes/host-containers"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Card, CardContent } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { SegmentedControl } from "@/components/ui/segmented-control"
 import { nodes as nodesApi, toNode, type ApiNodeMetrics } from "@/lib/api"
 import type { MeshRole } from "@/types"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { useMetricsStore, type RawSample } from "@/store/metrics-store"
+import { CLUSTER_ROLES, RolePicker } from "@/components/nodes/role-picker"
+import { RoleChangeDialog } from "@/components/nodes/role-change-dialog"
 import { formatRelativeTime } from "@/lib/utils"
 import { useState, useEffect, useRef, useMemo, useId } from "react"
 import { AreaChart, Area, YAxis, ResponsiveContainer, Tooltip } from "recharts"
@@ -537,6 +537,16 @@ function NodeDetailPage() {
 function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toNode>; orgId: string; token: string }) {
   const queryClient = useQueryClient()
   const isBuilder = node.meshRole === "workload_builder" || node.meshRole === "builder"
+  // Turning this off is the same change a worker's picker makes, and can leave
+  // the cluster with nowhere to build - which on a single-server install is the
+  // common case. It gets the same confirmation.
+  const [proposed, setProposed] = useState<MeshRole | null>(null)
+
+  const { data: rawNodes = [] } = useQuery({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId, token),
+    enabled: !!orgId,
+  })
 
   const { mutate: toggle, isPending } = useMutation({
     mutationFn: (enable: boolean) =>
@@ -548,16 +558,11 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
   })
 
   return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Build node</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Allow build jobs to schedule on this gateway node. On by default, so a single server can build;
-          turn it off to keep builds on your other nodes.
-        </p>
-      </div>
-      <Card>
-        <CardContent className="flex items-center justify-between py-3">
+    <ResourcePanel
+      title="Build node"
+      description="Allow build jobs to schedule on this gateway node. On by default, so a single server can build; turn it off to keep builds on your other nodes."
+    >
+      <div className="flex items-center justify-between">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <p className="text-xs font-medium text-foreground">Act as build node</p>
@@ -575,12 +580,24 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
           <div className="ml-4 shrink-0">
             {isPending
               ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              : <Switch checked={isBuilder} onCheckedChange={(val) => toggle(val)} />
+              : <Switch
+                  checked={isBuilder}
+                  onCheckedChange={(val) => (val ? toggle(true) : setProposed("workload"))}
+                />
             }
           </div>
-        </CardContent>
-      </Card>
-    </section>
+      </div>
+      <RoleChangeDialog
+        node={node}
+        to={proposed}
+        nodes={rawNodes.map(toNode)}
+        onCancel={() => setProposed(null)}
+        onConfirm={() => {
+          toggle(false)
+          setProposed(null)
+        }}
+      />
+    </ResourcePanel>
   )
 }
 
@@ -596,43 +613,39 @@ function NodeRoleSummary({ node }: { node: ReturnType<typeof toNode> }) {
       ? "Workloads only"
       : "Workloads and builds"
   return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Node role</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Controls which workloads this node accepts.</p>
-      </div>
+    <ResourcePanel title="Node role">
       <p className="text-sm font-medium text-foreground">{label}</p>
-      <p className="text-xs text-muted-foreground">An administrator can change this.</p>
-    </section>
+      <p className="mt-1 text-xs text-muted-foreground">An administrator can change this.</p>
+    </ResourcePanel>
   )
 }
 
 function MeshOnlyRole() {
   return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Node role</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Controls which workloads this node accepts.</p>
-      </div>
+    <ResourcePanel title="Node role">
       <p className="text-sm font-medium text-foreground">Mesh only</p>
-      <p className="text-xs text-muted-foreground">
+      <p className="mt-1 text-xs text-muted-foreground">
         On the mesh, not in the cluster: nothing is scheduled here, and routes can reach its ports. Moving it into the cluster means installing K3s on the machine.
       </p>
-    </section>
+    </ResourcePanel>
   )
 }
 
 // ─── Node role picker ─────────────────────────────────────────────────────────
 
-const MESH_ROLES: { value: MeshRole; label: string; description: string }[] = [
-  { value: "workload_builder", label: "Worker + Builder", description: "Runs deployed services and builds images." },
-  { value: "workload",         label: "Worker",           description: "Runs deployed services only. Build jobs won't schedule here." },
-  { value: "builder",          label: "Builder",          description: "Dedicated to building images. A NoSchedule taint keeps services off this node." },
-]
-
 function NodeRolePicker({ node, orgId, token }: { node: ReturnType<typeof toNode>; orgId: string; token: string }) {
   const queryClient = useQueryClient()
   const [pending, setPending] = useState<MeshRole | null>(null)
+  // The role a click asked for, held until the consequences have been read.
+  const [proposed, setProposed] = useState<MeshRole | null>(null)
+
+  // What else the cluster has. The dialog's sharpest line - "this is the only
+  // node that can build" - is about the others, not this one.
+  const { data: rawNodes = [] } = useQuery({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId, token),
+    enabled: !!orgId,
+  })
 
   const { mutate: updateRole } = useMutation({
     mutationFn: (role: MeshRole) => nodesApi.update(orgId, node.id, { mesh_role: role }, token),
@@ -644,30 +657,33 @@ function NodeRolePicker({ node, orgId, token }: { node: ReturnType<typeof toNode
     },
   })
 
-  const current = node.meshRole
-  const selectedRole = MESH_ROLES.find((r) => r.value === current)
-
   return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-sm font-medium text-foreground">Node role</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Controls which workloads this node accepts.</p>
-      </div>
-      <div className="flex items-center gap-3">
-        <SegmentedControl
-          value={current}
-          onValueChange={(role) => !pending && updateRole(role)}
-          options={MESH_ROLES.map(({ value, label }) => ({ value, label }))}
-        />
-        {pending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-      </div>
-      {selectedRole && (
-        <p className="text-xs text-muted-foreground">{selectedRole.description}</p>
-      )}
+    // The same block the panels beside it use, so a setting does not read as
+    // loose text floating next to cards.
+    <ResourcePanel title="Node role">
+      {/* The same picker the cluster page mints a token with, so the choice is
+          described the same way whether it is made before the machine joins or
+          changed afterwards. */}
+      <RolePicker
+        value={node.meshRole}
+        onChange={(role) => !pending && role !== node.meshRole && setProposed(role)}
+        options={CLUSTER_ROLES}
+        busy={pending}
+      />
+      <RoleChangeDialog
+        node={node}
+        to={proposed}
+        nodes={rawNodes.map(toNode)}
+        onCancel={() => setProposed(null)}
+        onConfirm={() => {
+          if (proposed) updateRole(proposed)
+          setProposed(null)
+        }}
+      />
       {!node.k8sMember && (
-        <p className="text-xs text-amber-400">Not in the cluster: the role takes effect once this node joins.</p>
+        <p className="mt-3 text-xs text-amber-400">Not in the cluster: the role takes effect once this node joins.</p>
       )}
-    </section>
+    </ResourcePanel>
   )
 }
 

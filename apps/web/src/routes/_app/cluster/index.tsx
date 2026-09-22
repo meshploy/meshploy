@@ -26,7 +26,7 @@ import { Switch } from "@/components/ui/switch"
 import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/lib/api"
 import type { MeshHealth, OrphanWorkload } from "@/lib/api/cluster"
 import type { MeshRole } from "@/types"
-import { cn } from "@/lib/utils"
+import { NODE_ROLES, RolePicker } from "@/components/nodes/role-picker"
 import { formatRelativeTime } from "@/lib/utils"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
@@ -336,29 +336,6 @@ function gatewayAPIBase(): string {
   return "https://api." + (host.startsWith("console.") ? host.slice("console.".length) : host)
 }
 
-/** The four things a node can be, as the installer names them. */
-const NODE_ROLES: { value: MeshRole; label: string; detail: string }[] = [
-  {
-    value: "workload_builder",
-    label: "Services and builds",
-    detail: "The default. Runs your applications and the build jobs that produce them.",
-  },
-  {
-    value: "workload",
-    label: "Services only",
-    detail: "Runs applications. Builds are kept off it, so a build cannot crowd out what is serving.",
-  },
-  {
-    value: "builder",
-    label: "Builds only",
-    detail: "Tainted, so nothing of yours is ever scheduled here. For a machine bought to compile.",
-  },
-  {
-    value: "mesh",
-    label: "Mesh only",
-    detail: "Joins the WireGuard mesh but not the cluster. Nothing runs on it; routes can still reach its ports.",
-  },
-]
 
 function ProvisioningTokensPanel() {
   const token = useAuthStore((s) => s.token)!
@@ -521,39 +498,7 @@ function ProvisioningTokensPanel() {
       </div>
 
       <div className="p-4 space-y-4">
-        {/* The same shape a database's network access uses: the choices side by
-            side with what each one means, rather than four words and a line of
-            prose that changes under them. */}
-        <div className="space-y-2" role="radiogroup" aria-label="What this node is for">
-          {NODE_ROLES.map((r) => {
-            const selected = role === r.value
-            return (
-              <button
-                key={r.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => pickRole(r.value)}
-                className={cn(
-                  "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
-                  selected ? "border-primary bg-primary/5" : "border-border/60 bg-card",
-                  !selected && "hover:border-border hover:bg-muted/20"
-                )}
-              >
-                <span
-                  className={cn(
-                    "mt-0.5 size-3.5 shrink-0 rounded-full border-2",
-                    selected ? "border-primary bg-primary/30" : "border-border"
-                  )}
-                />
-                <span className="min-w-0 space-y-0.5">
-                  <span className="block text-xs font-medium text-foreground">{r.label}</span>
-                  <span className="block text-xs text-muted-foreground">{r.detail}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        <RolePicker value={role} onChange={pickRole} />
         {error && (
           <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
             <ShieldAlert className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
