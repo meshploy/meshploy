@@ -1,0 +1,1190 @@
+{
+  "detection": {
+    "dokploy": true,
+    "signals": [
+      "/etc/dokploy exists",
+      "Swarm service dokploy",
+      "container dokploy-postgres.1.kht9i3v4myxpqd6bacs83h7kh"
+    ],
+    "image_tag": "dokploy/dokploy:v0.30.7",
+    "version": "v0.30.7",
+    "migrations": 196,
+    "supported": true
+  },
+  "rows": {
+    "application": [
+      {
+        "appName": "container-1",
+        "applicationId": "id-2",
+        "applicationStatus": "done",
+        "args": null,
+        "autoDeploy": true,
+        "bitbucketBranch": null,
+        "bitbucketBuildPath": "/",
+        "bitbucketId": null,
+        "bitbucketOwner": null,
+        "bitbucketRepository": null,
+        "bitbucketRepositorySlug": null,
+        "branch": null,
+        "buildArgs": null,
+        "buildPath": "/",
+        "buildRegistryId": null,
+        "buildSecrets": null,
+        "buildServerId": null,
+        "buildType": "nixpacks",
+        "certificateType": "none",
+        "cleanCache": false,
+        "command": null,
+        "cpuLimit": null,
+        "cpuReservation": null,
+        "createEnvFile": true,
+        "createdAt": "2026-09-21T12:58:35.079Z",
+        "customGitBranch": null,
+        "customGitBuildPath": null,
+        "customGitSSHKeyId": null,
+        "customGitUrl": null,
+        "description": "",
+        "detachDokployNetwork": false,
+        "dockerBuildStage": null,
+        "dockerContextPath": null,
+        "dockerImage": "image-1:alpine",
+        "dockerfile": "Dockerfile",
+        "dropBuildPath": null,
+        "enableSubmodules": false,
+        "enabled": null,
+        "endpointSpecSwarm": null,
+        "env": null,
+        "environmentId": "id-1",
+        "giteaBranch": null,
+        "giteaBuildPath": "/",
+        "giteaId": null,
+        "giteaOwner": null,
+        "giteaRepository": null,
+        "githubId": null,
+        "gitlabBranch": null,
+        "gitlabBuildPath": "/",
+        "gitlabId": null,
+        "gitlabOwner": null,
+        "gitlabPathNamespace": null,
+        "gitlabProjectId": null,
+        "gitlabRepository": null,
+        "healthCheckSwarm": null,
+        "herokuVersion": "24",
+        "icon": null,
+        "isPreviewDeploymentsActive": false,
+        "isStaticSpa": null,
+        "labelsSwarm": null,
+        "memoryLimit": null,
+        "memoryReservation": null,
+        "modeSwarm": null,
+        "name": "application-1",
+        "networkIds": [],
+        "networkSwarm": null,
+        "owner": null,
+        "password": null,
+        "placementSwarm": null,
+        "previewBuildArgs": null,
+        "previewBuildSecrets": null,
+        "previewCustomCertResolver": null,
+        "previewEnv": null,
+        "previewHttps": false,
+        "previewLabels": null,
+        "previewLimit": 3,
+        "previewPath": "/",
+        "previewPort": 3000,
+        "previewRequireCollaboratorPermissions": true,
+        "previewWildcard": null,
+        "publishDirectory": null,
+        "railpackVersion": "0.15.4",
+        "refreshToken": "scrubbed",
+        "registryId": null,
+        "registryUrl": null,
+        "replicas": 1,
+        "repository": null,
+        "restartPolicySwarm": null,
+        "rollbackActive": false,
+        "rollbackConfigSwarm": null,
+        "rollbackRegistryId": null,
+        "serverId": null,
+        "sourceType": "docker",
+        "stopGracePeriodSwarm": null,
+        "subtitle": null,
+        "title": null,
+        "triggerType": "push",
+        "ulimitsSwarm": null,
+        "updateConfigSwarm": null,
+        "username": null,
+        "watchPaths": null
+      },
+      {
+        "appName": "container-2",
+        "applicationId": "id-3",
+        "applicationStatus": "done",
+        "args": null,
+        "autoDeploy": true,
+        "bitbucketBranch": null,
+        "bitbucketBuildPath": "/",
+        "bitbucketId": null,
+        "bitbucketOwner": null,
+        "bitbucketRepository": null,
+        "bitbucketRepositorySlug": null,
+        "branch": null,
+        "buildArgs": null,
+        "buildPath": "/",
+        "buildRegistryId": null,
+        "buildSecrets": null,
+        "buildServerId": null,
+        "buildType": "nixpacks",
+        "certificateType": "none",
+        "cleanCache": false,
+        "command": null,
+        "cpuLimit": null,
+        "cpuReservation": null,
+        "createEnvFile": true,
+        "createdAt": "2026-09-21T15:44:06.633Z",
+        "customGitBranch": null,
+        "customGitBuildPath": null,
+        "customGitSSHKeyId": null,
+        "customGitUrl": null,
+        "description": "",
+        "detachDokployNetwork": false,
+        "dockerBuildStage": null,
+        "dockerContextPath": null,
+        "dockerImage": "image-1:alpine",
+        "dockerfile": "Dockerfile",
+        "dropBuildPath": null,
+        "enableSubmodules": false,
+        "enabled": null,
+        "endpointSpecSwarm": null,
+        "env": null,
+        "environmentId": "id-1",
+        "giteaBranch": null,
+        "giteaBuildPath": "/",
+        "giteaId": null,
+        "giteaOwner": null,
+        "giteaRepository": null,
+        "githubId": null,
+        "gitlabBranch": null,
+        "gitlabBuildPath": "/",
+        "gitlabId": null,
+        "gitlabOwner": null,
+        "gitlabPathNamespace": null,
+        "gitlabProjectId": null,
+        "gitlabRepository": null,
+        "healthCheckSwarm": null,
+        "herokuVersion": "24",
+        "icon": null,
+        "isPreviewDeploymentsActive": false,
+        "isStaticSpa": null,
+        "labelsSwarm": null,
+        "memoryLimit": null,
+        "memoryReservation": null,
+        "modeSwarm": null,
+        "name": "application-2",
+        "networkIds": [],
+        "networkSwarm": null,
+        "owner": null,
+        "password": null,
+        "placementSwarm": null,
+        "previewBuildArgs": null,
+        "previewBuildSecrets": null,
+        "previewCustomCertResolver": null,
+        "previewEnv": null,
+        "previewHttps": false,
+        "previewLabels": null,
+        "previewLimit": 3,
+        "previewPath": "/",
+        "previewPort": 3000,
+        "previewRequireCollaboratorPermissions": true,
+        "previewWildcard": null,
+        "publishDirectory": null,
+        "railpackVersion": "0.15.4",
+        "refreshToken": "scrubbed",
+        "registryId": null,
+        "registryUrl": null,
+        "replicas": 1,
+        "repository": null,
+        "restartPolicySwarm": null,
+        "rollbackActive": false,
+        "rollbackConfigSwarm": null,
+        "rollbackRegistryId": null,
+        "serverId": null,
+        "sourceType": "docker",
+        "stopGracePeriodSwarm": null,
+        "subtitle": null,
+        "title": null,
+        "triggerType": "push",
+        "ulimitsSwarm": null,
+        "updateConfigSwarm": null,
+        "username": null,
+        "watchPaths": null
+      }
+    ],
+    "backup": [
+      {
+        "appName": "container-3",
+        "backupId": "id-4",
+        "backupType": "database",
+        "composeId": null,
+        "database": "orders",
+        "databaseType": "postgres",
+        "destinationId": "id-5",
+        "enabled": true,
+        "includeEncryptionKey": true,
+        "keepLatestCount": 7,
+        "libsqlId": null,
+        "mariadbId": null,
+        "metadata": null,
+        "mongoId": null,
+        "mysqlId": null,
+        "postgresId": "id-6",
+        "prefix": "orders/",
+        "schedule": "0 3 * * *",
+        "serviceName": null,
+        "userId": null
+      }
+    ],
+    "compose": [
+      {
+        "appName": "container-4",
+        "autoDeploy": true,
+        "bitbucketBranch": null,
+        "bitbucketId": null,
+        "bitbucketOwner": null,
+        "bitbucketRepository": null,
+        "bitbucketRepositorySlug": null,
+        "branch": null,
+        "command": "",
+        "composeFile": "# a compose file with 7 lines\n",
+        "composeId": "id-7",
+        "composePath": "/srv/path-1",
+        "composeStatus": "done",
+        "composeType": "docker-compose",
+        "createEnvFile": true,
+        "createdAt": "2026-09-21T12:20:47.333Z",
+        "customGitBranch": null,
+        "customGitSSHKeyId": null,
+        "customGitUrl": null,
+        "description": "",
+        "enableSubmodules": false,
+        "env": "",
+        "environmentId": "id-1",
+        "giteaBranch": null,
+        "giteaId": null,
+        "giteaOwner": null,
+        "giteaRepository": null,
+        "githubId": null,
+        "gitlabBranch": null,
+        "gitlabId": null,
+        "gitlabOwner": null,
+        "gitlabPathNamespace": null,
+        "gitlabProjectId": null,
+        "gitlabRepository": null,
+        "icon": null,
+        "isolatedDeployment": false,
+        "isolatedDeploymentsVolume": false,
+        "name": "compose-1",
+        "owner": null,
+        "randomize": false,
+        "refreshToken": "scrubbed",
+        "repository": null,
+        "serverId": null,
+        "serviceNetworks": [],
+        "sourceType": "raw",
+        "suffix": "",
+        "triggerType": "push",
+        "watchPaths": null
+      }
+    ],
+    "destination": [
+      {
+        "accessKey": "scrubbed",
+        "additionalFlags": [],
+        "bucket": "destination-1",
+        "createdAt": "2026-09-21T12:20:46.495207",
+        "destinationId": "id-5",
+        "endpoint": "https://storage.example",
+        "name": "destination-1",
+        "organizationId": "id-8",
+        "provider": "S3",
+        "region": "eu-west-1",
+        "secretAccessKey": "scrubbed"
+      }
+    ],
+    "environment": [
+      {
+        "createdAt": "2026-09-21T12:20:00.793Z",
+        "description": "environment-2",
+        "env": "",
+        "environmentId": "id-9",
+        "isDefault": true,
+        "name": "environment-1",
+        "projectId": "id-10"
+      },
+      {
+        "createdAt": "2026-09-21T12:20:07.944Z",
+        "description": "environment-2",
+        "env": "",
+        "environmentId": "id-1",
+        "isDefault": true,
+        "name": "environment-1",
+        "projectId": "id-11"
+      }
+    ],
+    "mongo": [
+      {
+        "appName": "container-5",
+        "applicationStatus": "done",
+        "args": null,
+        "command": null,
+        "cpuLimit": null,
+        "cpuReservation": null,
+        "createdAt": "2026-09-21T13:11:21.554Z",
+        "databasePassword": "scrubbed",
+        "databaseUser": "mongo-1",
+        "description": "",
+        "detachDokployNetwork": false,
+        "dockerImage": "mongo:7",
+        "endpointSpecSwarm": null,
+        "env": null,
+        "environmentId": "id-1",
+        "externalPort": null,
+        "healthCheckSwarm": null,
+        "labelsSwarm": null,
+        "memoryLimit": null,
+        "memoryReservation": null,
+        "modeSwarm": null,
+        "mongoId": "id-12",
+        "name": "mongo-2",
+        "networkIds": [],
+        "networkSwarm": null,
+        "placementSwarm": null,
+        "replicaSets": false,
+        "replicas": 1,
+        "restartPolicySwarm": null,
+        "rollbackConfigSwarm": null,
+        "serverId": null,
+        "stopGracePeriodSwarm": null,
+        "ulimitsSwarm": null,
+        "updateConfigSwarm": null
+      }
+    ],
+    "mount": [
+      {
+        "applicationId": null,
+        "composeId": null,
+        "content": null,
+        "filePath": null,
+        "hostPath": null,
+        "libsqlId": null,
+        "mariadbId": null,
+        "mongoId": null,
+        "mountId": "id-13",
+        "mountPath": "/var/lib/postgresql/data",
+        "mysqlId": null,
+        "postgresId": "id-6",
+        "redisId": null,
+        "serviceType": "postgres",
+        "type": "volume",
+        "volumeName": "container-6"
+      },
+      {
+        "applicationId": "id-2",
+        "composeId": null,
+        "content": null,
+        "filePath": null,
+        "hostPath": null,
+        "libsqlId": null,
+        "mariadbId": null,
+        "mongoId": null,
+        "mountId": "id-14",
+        "mountPath": "/usr/share/nginx/html",
+        "mysqlId": null,
+        "postgresId": null,
+        "redisId": null,
+        "serviceType": "application",
+        "type": "volume",
+        "volumeName": "container-7"
+      },
+      {
+        "applicationId": null,
+        "composeId": null,
+        "content": null,
+        "filePath": null,
+        "hostPath": null,
+        "libsqlId": null,
+        "mariadbId": null,
+        "mongoId": null,
+        "mountId": "id-15",
+        "mountPath": "/var/lib/mysql",
+        "mysqlId": "id-16",
+        "postgresId": null,
+        "redisId": null,
+        "serviceType": "mysql",
+        "type": "volume",
+        "volumeName": "container-8"
+      },
+      {
+        "applicationId": null,
+        "composeId": null,
+        "content": null,
+        "filePath": null,
+        "hostPath": null,
+        "libsqlId": null,
+        "mariadbId": null,
+        "mongoId": "id-12",
+        "mountId": "id-17",
+        "mountPath": "/data/db",
+        "mysqlId": null,
+        "postgresId": null,
+        "redisId": null,
+        "serviceType": "mongo",
+        "type": "volume",
+        "volumeName": "container-9"
+      },
+      {
+        "applicationId": "id-3",
+        "composeId": null,
+        "content": null,
+        "filePath": null,
+        "hostPath": "/srv/path-2",
+        "libsqlId": null,
+        "mariadbId": null,
+        "mongoId": null,
+        "mountId": "id-18",
+        "mountPath": "/usr/share/nginx/html/reports",
+        "mysqlId": null,
+        "postgresId": null,
+        "redisId": null,
+        "serviceType": "application",
+        "type": "bind",
+        "volumeName": null
+      }
+    ],
+    "mysql": [
+      {
+        "appName": "container-10",
+        "applicationStatus": "done",
+        "args": null,
+        "command": null,
+        "cpuLimit": null,
+        "cpuReservation": null,
+        "createdAt": "2026-09-21T13:02:46.516Z",
+        "databaseName": "mysql-2",
+        "databasePassword": "scrubbed",
+        "databaseUser": "mysql-2",
+        "description": "",
+        "detachDokployNetwork": false,
+        "dockerImage": "mysql:8.0",
+        "endpointSpecSwarm": null,
+        "env": null,
+        "environmentId": "id-1",
+        "externalPort": null,
+        "healthCheckSwarm": null,
+        "labelsSwarm": null,
+        "memoryLimit": null,
+        "memoryReservation": null,
+        "modeSwarm": null,
+        "mysqlId": "id-16",
+        "name": "mysql-1",
+        "networkIds": [],
+        "networkSwarm": null,
+        "placementSwarm": null,
+        "replicas": 1,
+        "restartPolicySwarm": null,
+        "rollbackConfigSwarm": null,
+        "rootPassword": "r00t-pass",
+        "serverId": null,
+        "stopGracePeriodSwarm": null,
+        "ulimitsSwarm": null,
+        "updateConfigSwarm": null
+      }
+    ],
+    "postgres": [
+      {
+        "appName": "container-11",
+        "applicationStatus": "done",
+        "args": null,
+        "command": null,
+        "cpuLimit": null,
+        "cpuReservation": null,
+        "createdAt": "2026-09-21T12:20:46.682Z",
+        "databaseName": "postgres-2",
+        "databasePassword": "scrubbed",
+        "databaseUser": "postgres-2",
+        "description": "",
+        "detachDokployNetwork": false,
+        "dockerImage": "postgres:16",
+        "endpointSpecSwarm": null,
+        "env": null,
+        "environmentId": "id-1",
+        "externalPort": 5433,
+        "healthCheckSwarm": null,
+        "labelsSwarm": null,
+        "memoryLimit": null,
+        "memoryReservation": null,
+        "modeSwarm": null,
+        "name": "postgres-1",
+        "networkIds": [],
+        "networkSwarm": null,
+        "placementSwarm": null,
+        "postgresId": "id-6",
+        "replicas": 1,
+        "restartPolicySwarm": null,
+        "rollbackConfigSwarm": null,
+        "serverId": null,
+        "stopGracePeriodSwarm": null,
+        "ulimitsSwarm": null,
+        "updateConfigSwarm": null
+      }
+    ],
+    "project": [
+      {
+        "createdAt": "2026-09-21T12:20:00.789Z",
+        "description": "project-2",
+        "env": "",
+        "name": "project-1",
+        "organizationId": "id-8",
+        "projectId": "id-10"
+      },
+      {
+        "createdAt": "2026-09-21T12:20:07.938Z",
+        "description": "project-2",
+        "env": "",
+        "name": "project-1",
+        "organizationId": "id-8",
+        "projectId": "id-11"
+      }
+    ],
+    "registry": [
+      {
+        "createdAt": "2026-09-21 12:35:04.991483+00",
+        "imagePrefix": "acme",
+        "organizationId": "id-8",
+        "password": "scrubbed",
+        "registryId": "id-19",
+        "registryName": "registry-1",
+        "registryUrl": "registry-3",
+        "selfHosted": "cloud",
+        "username": "registry-2"
+      }
+    ]
+  },
+  "docker": {
+    "containers": [
+      {
+        "name": "container-12",
+        "image": "postgres:16",
+        "state": "running",
+        "ports": "5432/tcp",
+        "swarm_service": "container-11",
+        "memory_mb": 25,
+        "network_mode": "bridge"
+      },
+      {
+        "name": "container-13",
+        "image": "image-1:alpine",
+        "state": "running",
+        "ports": "80/tcp",
+        "swarm_service": "container-1",
+        "memory_mb": 3,
+        "network_mode": "bridge"
+      },
+      {
+        "name": "container-14",
+        "image": "mysql:8.0",
+        "state": "running",
+        "ports": "3306/tcp, 33060/tcp",
+        "swarm_service": "container-10",
+        "memory_mb": 350,
+        "network_mode": "bridge"
+      },
+      {
+        "name": "container-15",
+        "image": "mongo:7",
+        "state": "running",
+        "ports": "27017/tcp",
+        "swarm_service": "container-5",
+        "memory_mb": 80,
+        "network_mode": "bridge"
+      },
+      {
+        "name": "dokploy.1.qk09u32qhjfl6bf3u0jscd9ri",
+        "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+        "state": "running",
+        "ports": "0.0.0.0:3000-\u003e3000/tcp, [::]:3000-\u003e3000/tcp",
+        "swarm_service": "dokploy",
+        "memory_mb": 983,
+        "bind_sources": [
+          "/srv/path-3",
+          "/etc/dokploy"
+        ],
+        "network_mode": "bridge"
+      },
+      {
+        "name": "dokploy-traefik.1.o7vfoth46o1rjw4y70bmhjfzb",
+        "image": "traefik:v3.6.7@sha256:a9890c898f379c1905ee5b28342f6b408dc863f08db2dab20e46c267d1ff463a",
+        "state": "running",
+        "ports": "0.0.0.0:80-\u003e80/tcp, [::]:80-\u003e80/tcp, 0.0.0.0:443-\u003e443/tcp, [::]:443-\u003e443/tcp",
+        "swarm_service": "dokploy-traefik",
+        "memory_mb": 39,
+        "bind_sources": [
+          "/etc/dokploy/traefik/traefik.yml",
+          "/etc/dokploy/traefik/dynamic",
+          "/srv/path-3"
+        ],
+        "network_mode": "bridge"
+      },
+      {
+        "name": "container-16",
+        "image": "image-2:rehearsal",
+        "state": "running",
+        "ports": "0.0.0.0:4000-\u003e4000/tcp, [::]:4000-\u003e4000/tcp",
+        "compose_project": "container-17",
+        "memory_mb": 35,
+        "bind_sources": [
+          "/srv/path-4",
+          "/srv/path-5",
+          "/srv/path-6",
+          "/srv/path-7",
+          "/srv/path-8",
+          "/srv/path-9",
+          "/srv/path-10",
+          "/srv/path-11"
+        ],
+        "network_mode": "container-17_default",
+        "env": [
+          "HEADSCALE_URL=scrubbed",
+          "PUBLIC_IP=scrubbed",
+          "K3S_TLS_SERVER_NAME=scrubbed",
+          "API_BASE_URL=scrubbed",
+          "DOMAIN=scrubbed",
+          "JWT_SECRET=scrubbed",
+          "API_PORT=scrubbed",
+          "KUBECONFIG=scrubbed",
+          "FRONTEND_URL=scrubbed",
+          "ENCRYPTION_KEY=scrubbed",
+          "DATABASE_URL=scrubbed",
+          "NODEPORT_ADDRESSES=scrubbed",
+          "BUILTIN_REGISTRY_ENDPOINT=scrubbed",
+          "SETUP_TOKEN=scrubbed",
+          "HOST_GATEWAY_IP=scrubbed",
+          "HEADSCALE_API_KEY=scrubbed",
+          "K3S_TOKEN=scrubbed",
+          "MESH_IP=scrubbed",
+          "K3S_SKIP_TLS_VERIFY=scrubbed",
+          "FIREWALL_CHECKED_AT=scrubbed",
+          "FIREWALL_STATE=scrubbed",
+          "K3S_SERVER_URL=scrubbed",
+          "GATEWAY_HOSTNAME=scrubbed",
+          "PATH=scrubbed"
+        ]
+      },
+      {
+        "name": "container-18",
+        "image": "image-3:rehearsal",
+        "state": "running",
+        "ports": "127.0.0.1:5173-\u003e80/tcp",
+        "compose_project": "container-17",
+        "memory_mb": 3,
+        "network_mode": "container-17_default",
+        "env": [
+          "PATH=scrubbed",
+          "NGINX_VERSION=scrubbed",
+          "PKG_RELEASE=scrubbed",
+          "DYNPKG_RELEASE=scrubbed",
+          "NJS_VERSION=scrubbed",
+          "NJS_RELEASE=scrubbed"
+        ]
+      },
+      {
+        "name": "container-19",
+        "image": "image-4:0.28.0",
+        "state": "running",
+        "ports": "127.0.0.1:9090-\u003e9090/tcp, 127.0.0.1:8085-\u003e8080/tcp",
+        "compose_project": "container-17",
+        "memory_mb": 20,
+        "bind_sources": [
+          "/srv/path-12",
+          "/srv/path-13"
+        ],
+        "network_mode": "container-17_default",
+        "env": [
+          "PATH=scrubbed",
+          "SSL_CERT_FILE=scrubbed",
+          "KO_DATA_PATH=scrubbed"
+        ]
+      },
+      {
+        "name": "container-20",
+        "image": "image-5:2",
+        "state": "running",
+        "ports": "0.0.0.0:5000-\u003e5000/tcp, [::]:5000-\u003e5000/tcp",
+        "compose_project": "container-17",
+        "memory_mb": 7,
+        "network_mode": "container-17_default",
+        "env": [
+          "REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=scrubbed",
+          "REGISTRY_STORAGE_DELETE_ENABLED=scrubbed",
+          "PATH=scrubbed"
+        ]
+      },
+      {
+        "name": "container-21",
+        "image": "image-6:17-alpine",
+        "state": "running",
+        "ports": "127.0.0.1:5433-\u003e5432/tcp",
+        "compose_project": "container-17",
+        "memory_mb": 38,
+        "network_mode": "container-17_default",
+        "env": [
+          "POSTGRES_USER=scrubbed",
+          "POSTGRES_PASSWORD=scrubbed",
+          "POSTGRES_DB=scrubbed",
+          "PATH=scrubbed",
+          "GOSU_VERSION=scrubbed",
+          "LANG=scrubbed",
+          "PG_MAJOR=scrubbed",
+          "PG_VERSION=scrubbed",
+          "PG_SHA256=scrubbed",
+          "DOCKER_PG_LLVM_DEPS=scrubbed",
+          "PGDATA=scrubbed"
+        ]
+      },
+      {
+        "name": "container-22",
+        "image": "image-7:latest",
+        "state": "running",
+        "ports": "0.0.0.0:32770-\u003e5678/tcp, [::]:32770-\u003e5678/tcp",
+        "compose_project": "container-4",
+        "memory_mb": 2,
+        "network_mode": "container-4_default",
+        "env": [
+          "PATH=scrubbed",
+          "SSL_CERT_FILE=scrubbed",
+          "ECHO_TEXT=scrubbed"
+        ]
+      },
+      {
+        "name": "dokploy-postgres.1.kht9i3v4myxpqd6bacs83h7kh",
+        "image": "postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6",
+        "state": "running",
+        "ports": "5432/tcp",
+        "swarm_service": "dokploy-postgres",
+        "memory_mb": 48,
+        "network_mode": "bridge"
+      },
+      {
+        "name": "container-23",
+        "image": "image-8:rehearsal",
+        "state": "running",
+        "compose_project": "container-17",
+        "memory_mb": 8,
+        "network_mode": "host",
+        "env": [
+          "MESH_IP=scrubbed",
+          "TCP_BIND=scrubbed",
+          "DATABASE_URL=scrubbed",
+          "ENCRYPTION_KEY=scrubbed",
+          "PROXY_PORT=scrubbed",
+          "PROXY_BIND=scrubbed",
+          "PATH=scrubbed"
+        ]
+      },
+      {
+        "name": "container-24",
+        "image": "image-9:latest",
+        "state": "running",
+        "compose_project": "container-17",
+        "memory_mb": 16,
+        "bind_sources": [
+          "/srv/path-14",
+          "/srv/path-15"
+        ],
+        "network_mode": "host",
+        "env": [
+          "PATH=scrubbed",
+          "SSL_CERT_FILE=scrubbed"
+        ]
+      }
+    ],
+    "services": [
+      {
+        "name": "container-10",
+        "image": "mysql:8.0",
+        "running": 1,
+        "desired": 1,
+        "env": [
+          "MYSQL_USER=scrubbed",
+          "MYSQL_DATABASE=scrubbed",
+          "MYSQL_PASSWORD=scrubbed",
+          "MYSQL_ROOT_PASSWORD=scrubbed"
+        ]
+      },
+      {
+        "name": "dokploy",
+        "image": "dokploy/dokploy:v0.30.7",
+        "running": 1,
+        "desired": 1,
+        "env": [
+          "RELEASE_TAG=scrubbed",
+          "POSTGRES_PASSWORD_FILE=scrubbed",
+          "BETTER_AUTH_SECRET_FILE=scrubbed"
+        ]
+      },
+      {
+        "name": "dokploy-postgres",
+        "image": "postgres:16",
+        "running": 1,
+        "desired": 1,
+        "env": [
+          "POSTGRES_USER=scrubbed",
+          "POSTGRES_DB=scrubbed",
+          "POSTGRES_PASSWORD_FILE=scrubbed"
+        ]
+      },
+      {
+        "name": "dokploy-traefik",
+        "image": "traefik:v3.6.7",
+        "running": 1,
+        "desired": 1
+      },
+      {
+        "name": "container-5",
+        "image": "mongo:7",
+        "running": 1,
+        "desired": 1,
+        "env": [
+          "MONGO_INITDB_ROOT_USERNAME=scrubbed",
+          "MONGO_INITDB_ROOT_PASSWORD=scrubbed"
+        ]
+      },
+      {
+        "name": "container-1",
+        "image": "image-1:alpine",
+        "running": 1,
+        "desired": 1
+      },
+      {
+        "name": "container-11",
+        "image": "postgres:16",
+        "running": 1,
+        "desired": 1,
+        "env": [
+          "POSTGRES_DB=scrubbed",
+          "POSTGRES_USER=scrubbed",
+          "POSTGRES_PASSWORD=scrubbed"
+        ]
+      },
+      {
+        "name": "container-2",
+        "image": "image-1:alpine",
+        "running": 0,
+        "desired": 0
+      }
+    ],
+    "volumes": [
+      {
+        "name": "container-7",
+        "mb": 1802
+      },
+      {
+        "name": "container-9",
+        "mb": 306
+      },
+      {
+        "name": "container-8",
+        "mb": 202
+      },
+      {
+        "name": "volume-1",
+        "mb": 67
+      },
+      {
+        "name": "container-17_volume-2",
+        "mb": 66
+      },
+      {
+        "name": "container-6",
+        "mb": 47
+      },
+      {
+        "name": "volume-3",
+        "mb": 47
+      },
+      {
+        "name": "volume-4",
+        "mb": 1
+      },
+      {
+        "name": "volume-5",
+        "mb": 1
+      },
+      {
+        "name": "container-17_volume-6",
+        "mb": 1
+      },
+      {
+        "name": "container-17_volume-7",
+        "mb": 1
+      },
+      {
+        "name": "container-17_volume-8",
+        "mb": 1
+      }
+    ]
+  },
+  "listeners": [
+    {
+      "port": 4000,
+      "address": "0.0.0.0",
+      "process": "docker-proxy",
+      "pid": 376092
+    },
+    {
+      "port": 8081,
+      "address": "100.64.0.1",
+      "process": "proxy",
+      "pid": 2071
+    },
+    {
+      "port": 10010,
+      "address": "127.0.0.1",
+      "process": "containerd",
+      "pid": 2098
+    },
+    {
+      "port": 8085,
+      "address": "127.0.0.1",
+      "process": "docker-proxy",
+      "pid": 365362
+    },
+    {
+      "port": 8081,
+      "address": "127.0.0.1",
+      "process": "proxy",
+      "pid": 2071
+    },
+    {
+      "port": 5173,
+      "address": "127.0.0.1",
+      "process": "docker-proxy",
+      "pid": 365644
+    },
+    {
+      "port": 5433,
+      "address": "127.0.0.1",
+      "process": "docker-proxy",
+      "pid": 364666
+    },
+    {
+      "port": 58436,
+      "address": "100.64.0.1",
+      "process": "tailscaled",
+      "pid": 801
+    },
+    {
+      "port": 53,
+      "address": "198.51.100.10",
+      "process": "coredns",
+      "pid": 1604
+    },
+    {
+      "port": 3000,
+      "address": "0.0.0.0",
+      "process": "docker-proxy",
+      "pid": 458185
+    },
+    {
+      "port": 5000,
+      "address": "0.0.0.0",
+      "process": "docker-proxy",
+      "pid": 365446
+    },
+    {
+      "port": 9090,
+      "address": "127.0.0.1",
+      "process": "docker-proxy",
+      "pid": 365367
+    },
+    {
+      "port": 53,
+      "address": "198.51.100.10",
+      "process": "systemd-resolve",
+      "pid": 475
+    },
+    {
+      "port": 10259,
+      "address": "127.0.0.1",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 10258,
+      "address": "127.0.0.1",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 10257,
+      "address": "127.0.0.1",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 10256,
+      "address": "127.0.0.1",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 10249,
+      "address": "127.0.0.1",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 10248,
+      "address": "127.0.0.1",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 443,
+      "address": "0.0.0.0",
+      "process": "docker-proxy",
+      "pid": 458137
+    },
+    {
+      "port": 32770,
+      "address": "0.0.0.0",
+      "process": "docker-proxy",
+      "pid": 458247
+    },
+    {
+      "port": 6444,
+      "address": "127.0.0.1",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 22,
+      "address": "0.0.0.0",
+      "process": "sshd",
+      "pid": 1798
+    },
+    {
+      "port": 53,
+      "address": "100.64.0.1",
+      "process": "coredns",
+      "pid": 1604
+    },
+    {
+      "port": 80,
+      "address": "0.0.0.0",
+      "process": "docker-proxy",
+      "pid": 458116
+    },
+    {
+      "port": 53,
+      "address": "198.51.100.10",
+      "process": "systemd-resolve",
+      "pid": 475
+    },
+    {
+      "port": 7946,
+      "address": "198.51.100.10",
+      "process": "dockerd",
+      "pid": 953
+    },
+    {
+      "port": 4000,
+      "address": "[::]",
+      "process": "docker-proxy",
+      "pid": 376097
+    },
+    {
+      "port": 3000,
+      "address": "[::]",
+      "process": "docker-proxy",
+      "pid": 458194
+    },
+    {
+      "port": 5000,
+      "address": "[::]",
+      "process": "docker-proxy",
+      "pid": 365451
+    },
+    {
+      "port": 9100,
+      "address": "198.51.100.10",
+      "process": "node_exporter",
+      "pid": 789
+    },
+    {
+      "port": 59780,
+      "address": "198.51.100.10",
+      "process": "tailscaled",
+      "pid": 801
+    },
+    {
+      "port": 6443,
+      "address": "198.51.100.10",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 2377,
+      "address": "198.51.100.10",
+      "process": "dockerd",
+      "pid": 953
+    },
+    {
+      "port": 443,
+      "address": "[::]",
+      "process": "docker-proxy",
+      "pid": 458146
+    },
+    {
+      "port": 10250,
+      "address": "198.51.100.10",
+      "process": "k3s-server",
+      "pid": 857
+    },
+    {
+      "port": 32770,
+      "address": "[::]",
+      "process": "docker-proxy",
+      "pid": 458258
+    },
+    {
+      "port": 22,
+      "address": "[::]",
+      "process": "sshd",
+      "pid": 1798
+    },
+    {
+      "port": 80,
+      "address": "[::]",
+      "process": "docker-proxy",
+      "pid": 458127
+    }
+  ],
+  "edge_holder": {
+    "kind": "swarm",
+    "name": "dokploy-traefik",
+    "process": "dokploy-traefik.1.o7vfoth46o1rjw4y70bmhjfzb",
+    "detail": "the Swarm service dokploy-traefik publishes port 443"
+  },
+  "resources": {
+    "cores": 2,
+    "memory_mb": 3915,
+    "available_mb": 1151,
+    "disk_free_mb": 60211,
+    "docker_volume_mb": 2542,
+    "workload_memory_mb": 0
+  },
+  "path_mb": {
+    "/srv/path-2": 1
+  }
+}

@@ -1,0 +1,356 @@
+{
+  "generated_at": "2026-01-02T03:04:05Z",
+  "detection": {
+    "dokploy": true,
+    "signals": [
+      "/etc/dokploy exists",
+      "Swarm service dokploy",
+      "container dokploy-postgres.1.kht9i3v4myxpqd6bacs83h7kh"
+    ],
+    "image_tag": "dokploy/dokploy:v0.30.7",
+    "version": "v0.30.7",
+    "migrations": 196,
+    "supported": true
+  },
+  "edge": {
+    "kind": "traefik-service",
+    "holders": [
+      "docker-proxy"
+    ],
+    "holder": {
+      "kind": "swarm",
+      "name": "dokploy-traefik",
+      "process": "dokploy-traefik.1.o7vfoth46o1rjw4y70bmhjfzb",
+      "detail": "the Swarm service dokploy-traefik publishes port 443"
+    },
+    "dynamic_files": 0,
+    "acme_bytes": 0
+  },
+  "resources": {
+    "cores": 2,
+    "memory_mb": 3915,
+    "available_mb": 1151,
+    "disk_free_mb": 60211,
+    "docker_volume_mb": 2542,
+    "workload_memory_mb": 587
+  },
+  "mode": {
+    "choice": "hand_over",
+    "reason": "1151 MB of memory free is less than Meshploy and a second copy of the workloads need (2123 MB): Dokploy's own UI stops first, then workloads move one at a time"
+  },
+  "items": [
+    {
+      "kind": "project",
+      "id": "id-9",
+      "name": "project-1",
+      "maps_to": "Project",
+      "verdict": "moves",
+      "details": {
+        "dokploy_environment": "environment-1",
+        "dokploy_project": "project-1"
+      }
+    },
+    {
+      "kind": "project",
+      "id": "id-1",
+      "name": "project-1",
+      "maps_to": "Project",
+      "verdict": "moves",
+      "details": {
+        "dokploy_environment": "environment-1",
+        "dokploy_project": "project-1"
+      }
+    },
+    {
+      "kind": "application",
+      "id": "id-2",
+      "name": "application-1",
+      "project": "project-1",
+      "maps_to": "Image service",
+      "verdict": "moves",
+      "running": true,
+      "details": {
+        "app_name": "container-1",
+        "build": "nixpacks",
+        "image": "image-1:alpine",
+        "replicas": "1",
+        "source": "docker",
+        "status": "done",
+        "volumes": "1"
+      }
+    },
+    {
+      "kind": "application",
+      "id": "id-3",
+      "name": "application-2",
+      "project": "project-1",
+      "maps_to": "Image service",
+      "verdict": "needs_you",
+      "reasons": [
+        "stopped in Dokploy: created stopped"
+      ],
+      "running": false,
+      "details": {
+        "app_name": "container-2",
+        "bind_mounts": "1",
+        "build": "nixpacks",
+        "image": "image-1:alpine",
+        "replicas": "1",
+        "source": "docker",
+        "status": "done"
+      },
+      "decisions": [
+        {
+          "id": "mount:/srv/path-2",
+          "question": "Bind mount of /srv/path-2, 1 MB",
+          "options": [
+            {
+              "id": "copy",
+              "label": "Copy its contents into a Meshploy volume"
+            },
+            {
+              "id": "skip",
+              "label": "Leave the mount out"
+            }
+          ],
+          "default": "copy"
+        }
+      ]
+    },
+    {
+      "kind": "compose",
+      "id": "id-7",
+      "name": "compose-1",
+      "project": "project-1",
+      "maps_to": "Stack from the stored compose file",
+      "verdict": "moves",
+      "reasons": [
+        "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-4",
+        "compose_path": "/srv/path-1",
+        "containers": "1 of 1 running",
+        "source": "raw",
+        "status": "done",
+        "type": "docker-compose"
+      }
+    },
+    {
+      "kind": "database",
+      "id": "id-6",
+      "name": "postgres-1",
+      "project": "project-1",
+      "maps_to": "Managed Postgres",
+      "verdict": "moves",
+      "reasons": [
+        "published on port 5433: becomes a TCP route on the gateway"
+      ],
+      "running": true,
+      "details": {
+        "app_name": "container-11",
+        "database": "postgres-2",
+        "engine": "Postgres",
+        "external_port": "5433",
+        "image": "postgres:16",
+        "status": "done"
+      }
+    },
+    {
+      "kind": "database",
+      "id": "id-16",
+      "name": "mysql-1",
+      "project": "project-1",
+      "maps_to": "Managed MySQL",
+      "verdict": "moves",
+      "running": true,
+      "details": {
+        "app_name": "container-10",
+        "database": "mysql-2",
+        "engine": "MySQL",
+        "image": "mysql:8.0",
+        "status": "done"
+      }
+    },
+    {
+      "kind": "database",
+      "id": "id-12",
+      "name": "mongo-2",
+      "project": "project-1",
+      "maps_to": "Managed MongoDB",
+      "verdict": "moves",
+      "running": true,
+      "details": {
+        "app_name": "container-5",
+        "engine": "MongoDB",
+        "image": "mongo:7",
+        "status": "done"
+      }
+    },
+    {
+      "kind": "registry",
+      "id": "id-19",
+      "name": "registry-1",
+      "maps_to": "Registry integration",
+      "verdict": "moves",
+      "details": {
+        "url": "registry-3"
+      }
+    },
+    {
+      "kind": "destination",
+      "id": "id-5",
+      "name": "destination-1",
+      "maps_to": "Storage integration",
+      "verdict": "moves",
+      "details": {
+        "bucket": "destination-1",
+        "endpoint": "https://storage.example",
+        "provider": "S3"
+      }
+    },
+    {
+      "kind": "backup",
+      "id": "id-4",
+      "name": "postgres backup, 0 3 * * *",
+      "maps_to": "Backup schedule to the same storage",
+      "verdict": "moves",
+      "details": {
+        "enabled": "true",
+        "keep": "7",
+        "schedule": "0 3 * * *"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-95a32980",
+      "name": "project-1 / compose-1",
+      "members": [
+        {
+          "kind": "compose",
+          "id": "id-7",
+          "name": "compose-1",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true
+    },
+    {
+      "id": "g-c1e8e440",
+      "name": "project-1 / mongo-2",
+      "members": [
+        {
+          "kind": "database",
+          "id": "id-12",
+          "name": "mongo-2",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true,
+      "notes": [
+        "no app names mongo-2 by its Dokploy hostname; if one reaches it by address or published port, move them together"
+      ]
+    },
+    {
+      "id": "g-c5e8ea8c",
+      "name": "project-1 / mysql-1",
+      "members": [
+        {
+          "kind": "database",
+          "id": "id-16",
+          "name": "mysql-1",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true,
+      "notes": [
+        "no app names mysql-1 by its Dokploy hostname; if one reaches it by address or published port, move them together"
+      ]
+    },
+    {
+      "id": "g-96a32b13",
+      "name": "project-1 / postgres-1",
+      "members": [
+        {
+          "kind": "database",
+          "id": "id-6",
+          "name": "postgres-1",
+          "project": "project-1"
+        }
+      ],
+      "data": [],
+      "downtime": "a restart, usually under a minute",
+      "can_move": true,
+      "notes": [
+        "no app names postgres-1 by its Dokploy hostname; if one reaches it by address or published port, move them together"
+      ]
+    },
+    {
+      "id": "g-9aa3315f",
+      "name": "project-1 / application-1",
+      "members": [
+        {
+          "kind": "application",
+          "id": "id-2",
+          "name": "application-1",
+          "project": "project-1"
+        }
+      ],
+      "data": [
+        {
+          "name": "container-7",
+          "mb": 1802,
+          "move": "volume copy, stopped"
+        }
+      ],
+      "downtime": "a restart plus under a minute to copy data",
+      "can_move": true
+    },
+    {
+      "id": "g-99a32fcc",
+      "name": "project-1 / application-2",
+      "members": [
+        {
+          "kind": "application",
+          "id": "id-3",
+          "name": "application-2",
+          "project": "project-1"
+        }
+      ],
+      "data": [
+        {
+          "name": "/srv/path-2",
+          "mb": 1,
+          "move": "copy into a volume"
+        }
+      ],
+      "downtime": "a restart plus under a minute to copy data",
+      "can_move": true
+    }
+  ],
+  "unmanaged": [
+    {
+      "name": "container-17",
+      "kind": "compose-project",
+      "images": "image-2:rehearsal, image-3:rehearsal, image-4:0.28.0, image-5:2, image-6:17-alpine, image-8:rehearsal, image-9:latest",
+      "running": 7,
+      "total": 7,
+      "maps_to": "Leave it running here",
+      "note": "container-24 runs on the host's network, which a Meshploy service does not: leave it as a Docker container here, or move it only if publishing its ports is enough for it"
+    }
+  ],
+  "summary": {
+    "moves": 10,
+    "needs_you": 1,
+    "not_moved": 0,
+    "open_decisions": 0
+  }
+}
