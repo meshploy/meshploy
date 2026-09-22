@@ -302,10 +302,13 @@ function ClusterPage() {
       {/* Tokens row. Adding a node is the path with a command worth reading, so
           it gets the width; the two beside it are the by-hand fallbacks. */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        {/* min-w-0 on both: a grid item defaults to min-width:auto, so one long
+            unbreakable token in a panel widens the whole row and pushes the
+            page sideways on a narrow screen. */}
+        <div className="lg:col-span-2 min-w-0">
           <ProvisioningTokensPanel />
         </div>
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <HeadscalePreAuthKeyPanel />
           <K3sJoinTokenPanel />
         </div>
@@ -594,7 +597,7 @@ function ProvisioningTokensPanel() {
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium">Run on the worker machine</p>
               <div className="relative group">
-                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
+                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded pl-3 pr-11 py-2.5">
                   <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                   <code className="text-xs font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed">
                     {curlCommand}
@@ -603,7 +606,7 @@ function ProvisioningTokensPanel() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                   onClick={() => copy(curlCommand.replace(/\\\n {2}/g, " "), "cmd")}
                 >
                   {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
@@ -623,7 +626,7 @@ function ProvisioningTokensPanel() {
               <div className="relative group">
                 {/* Capped and scrolling: it is a page of instructions, and a
                     panel that grows to fit it buries everything below. */}
-                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5 max-h-64 overflow-y-auto">
+                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded pl-3 pr-11 py-2.5 max-h-64 overflow-y-auto">
                   <Bot className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5 sticky top-0" />
                   <code className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
                     {agentPrompt}
@@ -632,7 +635,7 @@ function ProvisioningTokensPanel() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                   onClick={() => copy(agentPrompt, "prompt")}
                 >
                   {copiedField === "prompt" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
@@ -759,7 +762,7 @@ function HeadscalePreAuthKeyPanel() {
                 <div className="space-y-1.5">
                   <p className="text-xs text-muted-foreground font-medium">Run on the worker machine</p>
                   <div className="relative group">
-                    <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
+                    <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded pl-3 pr-11 py-2.5">
                       <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                       <code className="text-xs font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed">
                         {tailscaleCmd}
@@ -768,7 +771,7 @@ function HeadscalePreAuthKeyPanel() {
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-1.5 right-1.5 h-7 w-7 opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                       onClick={() => copy(tailscaleCmd.replace(/\\\n {2}/g, " "), "cmd")}
                     >
                       {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
@@ -856,7 +859,7 @@ function K3sJoinTokenPanel() {
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium">Join an existing node to the cluster</p>
               <div className="relative group">
-                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
+                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded pl-3 pr-11 py-2.5">
                   <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                   <code className="text-xs font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed">
                     {installCmd}
@@ -865,7 +868,7 @@ function K3sJoinTokenPanel() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1.5 right-1.5 h-7 w-7 opacity-60 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                   onClick={() => copy(installCmd.replace(/\\\n {2}/g, " "), "cmd")}
                 >
                   {copiedField === "cmd" ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}

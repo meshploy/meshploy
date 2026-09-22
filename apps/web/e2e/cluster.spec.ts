@@ -117,3 +117,32 @@ test.describe("Add a node", () => {
     await expect(page.getByText(/Good for one machine, for an hour/)).toBeVisible({ timeout: 10_000 })
   })
 })
+
+// Narrow screens: a panel that cannot shrink pushes the page sideways, and a
+// control that only exists on hover does not exist on a touch screen.
+test.describe("Add a node, narrow", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 900 })
+    await loginAsDemo(page)
+    await goto(page, "/cluster")
+    await expect(page.getByText("Add a node")).toBeVisible({ timeout: 10_000 })
+    await page.getByRole("button", { name: /Generate token/ }).click()
+  })
+
+  test("does not push the page sideways", async ({ page }) => {
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    )
+    expect(overflow).toBe(0)
+  })
+
+  test("shows its copy buttons without a hover to offer", async ({ page }) => {
+    const opacities = await page.evaluate(() =>
+      [...document.querySelectorAll("button.absolute")]
+        .filter((b) => b.getBoundingClientRect().width > 0)
+        .map((b) => parseFloat(getComputedStyle(b).opacity))
+    )
+    expect(opacities.length).toBeGreaterThan(0)
+    for (const o of opacities) expect(o).toBeGreaterThan(0)
+  })
+})

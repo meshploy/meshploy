@@ -1797,7 +1797,7 @@ function TargetRowField({
   return (
     <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-3">
       {/* Row 1: type toggle + path + strip path + remove */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <SegmentedControl
           value={row.targetMode}
           onValueChange={(v) => onChange({ targetMode: v as TargetMode, serviceId: "", servicePortId: "", nodeId: "", port: "", redirectRouteId: "", redirectCode: "301" })}

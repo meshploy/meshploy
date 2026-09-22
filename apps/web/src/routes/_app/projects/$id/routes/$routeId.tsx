@@ -341,7 +341,7 @@ function TargetForm({
 
   return (
     <div className="rounded-md border border-border/60 bg-muted/10 p-3 space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <SegmentedControl
           value={form.mode}
           onValueChange={(v) => onChange({ mode: v as TargetMode, serviceId: "", nodeId: "", targetIp: "", port: "", redirectRouteId: "" })}
@@ -351,7 +351,9 @@ function TargetForm({
             { value: "address",  label: "Address" },
             ...(zone !== "internal" ? [{ value: "redirect", label: "Redirect" }] : []),
           ]}
-          className="text-xs shrink-0"
+          // Matches the path input beside it, which the console holds at 38px.
+          // The creation form already did this; this one was left short.
+          className="text-xs shrink-0 h-[38px]"
         />
         <input
           value={form.path}

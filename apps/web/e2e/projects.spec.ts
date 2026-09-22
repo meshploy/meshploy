@@ -76,3 +76,28 @@ test.describe("Internal routes on a self-managed-DNS gateway", () => {
     expect(text).toMatch(/public routes are\s+unaffected/)
   })
 })
+
+// The target row puts a segmented control, a path and a checkbox on one line,
+// and every one of them refuses to shrink. On a narrow screen it has to wrap
+// rather than overflow the card it sits in.
+test("the route target row wraps instead of overflowing", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 900 })
+  await loginAsDemo(page)
+  await goto(page, "/projects/00000000-0000-0000-0000-000000000003/new?type=route")
+  await expect(page.getByText("Map path prefixes")).toBeVisible({ timeout: 10_000 })
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  )
+  expect(overflow).toBe(0)
+
+  // And the row itself is not wider than the card holding it.
+  const row = await page.evaluate(() => {
+    const el = [...document.querySelectorAll("div")].find((d) =>
+      d.className.includes("flex-wrap") && d.textContent?.includes("Strip path")
+    )
+    return el ? { client: el.clientWidth, scroll: el.scrollWidth } : null
+  })
+  expect(row).not.toBeNull()
+  expect(row.scroll).toBeLessThanOrEqual(row.client + 1)
+})
