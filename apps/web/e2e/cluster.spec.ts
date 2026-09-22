@@ -58,14 +58,32 @@ test.describe("Add a node", () => {
   // The same install, handed to an agent instead of a terminal. Shown beside
   // the command rather than folded away: it is one of the two ways to do this.
   test("shows an agent prompt beside the command", async ({ page }) => {
-    const prompt = page.getByText(/Add a Meshploy worker to my cluster/)
+    const prompt = page.getByText(/Add a machine to my Meshploy cluster/)
     await expect(prompt).toBeVisible({ timeout: 10_000 })
 
     const text = (await prompt.textContent()) ?? ""
     expect(text).toContain("--token=mprov-")
     // It carries a credential into somebody's agent history, and says so.
     expect(text).toMatch(/single-use/)
-    expect(text).toMatch(/do not echo it back/)
+    expect(text).toMatch(/[Dd]o not echo/)
+  })
+
+  // An agent has none of what a person supplies by being present: which
+  // machine, whether it is already spoken for, permission before changing it,
+  // and what to do when something goes wrong.
+  test("the prompt stops the agent guessing, acting, or retrying", async ({ page }) => {
+    const prompt = page.getByText(/Add a machine to my Meshploy cluster/)
+    await expect(prompt).toBeVisible({ timeout: 10_000 })
+    const text = (await prompt.textContent()) ?? ""
+
+    expect(text).toMatch(/Do not guess a host/)
+    // Already a node: stop rather than register it twice.
+    expect(text).toContain("/etc/meshploy/node.conf")
+    expect(text).toMatch(/wait for a yes/)
+    // A spent token cannot be fixed by trying again.
+    expect(text).toMatch(/Do not retry/)
+    // And it says what the machine is about to become.
+    expect(text).toMatch(/Tailscale/)
   })
 
   // The role is minted into the token, so a token on screen belongs to the

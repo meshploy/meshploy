@@ -1713,6 +1713,14 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
         | sudo tee /etc/meshploy/node.conf > /dev/null
       sudo chmod 600 /etc/meshploy/node.conf
       success "Node identity saved to /etc/meshploy/node.conf"
+
+      # Registration is the moment this machine has proved it is on the mesh,
+      # so it is where the cluster's join token is handed over. Without this a
+      # one-command install got the node onto the mesh and then stopped at the
+      # k3s step with nothing to answer it with.
+      K3S_JOIN_TOKEN="${K3S_JOIN_TOKEN:-$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('k3s_token',''))" 2>/dev/null || true)}"
+      _REG_K3S_URL="$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('k3s_server_url',''))" 2>/dev/null || true)"
+      [[ -n "$_REG_K3S_URL" ]] && K3S_SERVER_URL="${K3S_SERVER_URL:-$_REG_K3S_URL}"
     else
       warn "Auto-registration failed. You can register manually in the dashboard."
       warn "API response: ${_REG_RESPONSE:-<no response>}"
@@ -1723,6 +1731,12 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   echo
   if [[ "$NODE_MESH_ROLE" == "mesh" ]]; then
     info "Mesh-only node: not joining the k3s cluster. Routes can reach its ports over the mesh."
+  elif [[ -n "$PROVISION_TOKEN" && -z "${K3S_JOIN_TOKEN:-}" ]]; then
+    # Provisioned, but registration did not hand a join token back: the gateway
+    # has no cluster, or could not read its token. Saying so beats dying on a
+    # prompt nobody is there to answer.
+    warn "No k3s join token came back from the gateway, so this node stays on the mesh only."
+    warn "Join it later from the dashboard → Cluster, or re-run without --token."
   elif ask_yn "Join this node to the k3s cluster now?"; then
     ask_secret K3S_JOIN_TOKEN "k3s node token (from master summary or dashboard → Cluster)"
     K3S_SERVER_URL="${K3S_SERVER_URL:-https://100.64.0.1:6443}"

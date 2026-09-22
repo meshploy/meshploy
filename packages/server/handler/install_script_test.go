@@ -61,3 +61,30 @@ func TestTheRealInstallScriptStillHasThePlaceholder(t *testing.T) {
 		t.Error("deploy/install.sh no longer accepts --token, which is the whole one-command path")
 	}
 }
+
+// A one-command install must not stop at the last step.
+//
+// Registration is the moment the machine has proved it is on the mesh, and it
+// is where the cluster's join token is handed over - the public provisioning
+// call before it deliberately carries no such thing. Without this the installer
+// reached the k3s step under --auto with nothing to answer its prompt and died,
+// leaving a node on the mesh and out of the cluster.
+func TestTheInstallerTakesTheJoinTokenFromRegistration(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "install.sh"))
+	if err != nil {
+		t.Skipf("deploy/install.sh not readable from here: %v", err)
+	}
+	script := string(body)
+
+	if !strings.Contains(script, "k3s_token") {
+		t.Error("install.sh never reads k3s_token from the registration response")
+	}
+	if !strings.Contains(script, "k3s_server_url") {
+		t.Error("install.sh never reads k3s_server_url from the registration response")
+	}
+	// And when the gateway hands none back, it says so instead of prompting a
+	// machine nobody is watching.
+	if !strings.Contains(script, "No k3s join token came back from the gateway") {
+		t.Error("install.sh has no answer for a provisioned node with no join token")
+	}
+}

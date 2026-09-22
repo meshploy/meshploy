@@ -411,20 +411,70 @@ function ProvisioningTokensPanel() {
     ? `curl -fsSL ${apiBase}/install.sh | sudo sh -s -- --token=${provToken}`
     : ""
 
-  // The same install, handed to an agent instead of a terminal. It is a task
-  // with a credential in it, so it says what the credential is and what not to
-  // do with it.
+  // The same install, handed to an agent instead of a terminal.
+  //
+  // Longer than the command because an agent needs what a person supplies by
+  // being present: which machine, whether it is already spoken for, permission
+  // before changing it, and what to do when something goes wrong. It is also a
+  // task with a live credential in it, so it says so.
+  const roleName = NODE_ROLES.find((r) => r.value === role)!.label.toLowerCase()
   const agentPrompt = provToken
     ? [
-        `Add a Meshploy ${role === "mesh" ? "mesh-only node" : "worker"} to my cluster.`,
+        `# Add a machine to my Meshploy cluster`,
         ``,
-        `The machine is <host> and I can reach it over SSH. Run this on it:`,
+        `Join a Linux server to my Meshploy mesh as a node for **${roleName}**.`,
+        ``,
+        `## Before you touch anything`,
+        ``,
+        `Ask me which machine, and how to reach it over SSH, unless I have`,
+        `already told you. Do not guess a host.`,
+        ``,
+        `Then check whether it is already spoken for:`,
+        ``,
+        `  ssh <host> 'ls /etc/meshploy/node.conf 2>/dev/null; command -v tailscale; systemctl is-active k3s k3s-agent 2>/dev/null'`,
+        ``,
+        `If /etc/meshploy/node.conf exists, this machine is already a Meshploy`,
+        `node. Stop and tell me - re-running would register it a second time.`,
+        `If it is running something else you do not recognise, stop and ask.`,
+        ``,
+        `## Get my approval`,
+        ``,
+        `Show me this and wait for a yes:`,
+        ``,
+        `  Machine:  <host>`,
+        `  Role:     ${roleName}`,
+        `  Installs: Tailscale, joins my WireGuard mesh${role === "mesh" ? "" : ", joins the k3s cluster"}`,
+        `  Needs:    root (sudo) and outbound internet`,
+        ``,
+        `## Run it`,
         ``,
         `  ${curlCommand}`,
         ``,
-        `That token is single-use and short-lived: do not echo it back, write it`,
-        `to a file, or put it in a commit. When the install finishes, check the`,
-        `node appears in Meshploy and is online, and tell me its name and role.`,
+        `It takes a few minutes and prints its progress. Let it finish rather`,
+        `than assuming it hung.`,
+        ``,
+        `## Then check it worked`,
+        ``,
+        `  ssh <host> 'cat /etc/meshploy/node.conf; tailscale ip -4${role === "mesh" ? "" : "; systemctl is-active k3s-agent"}'`,
+        ``,
+        `Tell me the node's name and its mesh IP. If I have the meshploy CLI or`,
+        `MCP tools available to you, list my nodes and confirm it shows online.`,
+        ``,
+        `## If it fails`,
+        ``,
+        `- "The gateway refused this provisioning token": the token is spent or`,
+        `  expired. Do not retry - ask me for a fresh one from the console.`,
+        `- Cannot reach the gateway: check the machine has outbound HTTPS, then`,
+        `  tell me. Do not edit firewall rules without asking.`,
+        `- Anything else: show me the output and stop. Do not re-run the`,
+        `  installer, and do not run it on another machine to see if it works.`,
+        ``,
+        `## Rules`,
+        ``,
+        `- The token above is single-use and expires within the hour. Do not echo`,
+        `  it back, write it to a file, or put it in a commit.`,
+        `- One machine only. The token will not work twice.`,
+        `- Do not change anything else on the machine.`,
       ].join("\n")
     : ""
 
@@ -551,8 +601,10 @@ function ProvisioningTokensPanel() {
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium">Or hand it to an agent</p>
               <div className="relative group">
-                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5">
-                  <Bot className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                {/* Capped and scrolling: it is a page of instructions, and a
+                    panel that grows to fit it buries everything below. */}
+                <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded px-3 py-2.5 max-h-64 overflow-y-auto">
+                  <Bot className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5 sticky top-0" />
                   <code className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
                     {agentPrompt}
                   </code>

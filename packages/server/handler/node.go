@@ -643,6 +643,9 @@ type ClusterJoinTokenOutput struct {
 
 const k3sTokenPath = "/var/lib/rancher/k3s/server/node-token"
 
+// k3sServerURL is the cluster's API, as a node on the mesh reaches it.
+const k3sServerURL = "https://100.64.0.1:6443"
+
 // MeshHealthOutput reports the control plane's ability to reach Headscale.
 type MeshHealthOutput struct {
 	Body struct {
@@ -749,14 +752,8 @@ func (h *Handler) GetClusterJoinToken(ctx context.Context, input *ClusterPathInp
 		return nil, err
 	}
 	out := &ClusterJoinTokenOutput{}
-	// Read from filesystem at request time so rotated tokens are always current.
-	if raw, err := os.ReadFile(k3sTokenPath); err == nil {
-		out.Body.Token = strings.TrimSpace(string(raw))
-	} else if h.cfg != nil && h.cfg.K3sToken != "" {
-		// Fallback to env var (dev / non-gateway environments).
-		out.Body.Token = h.cfg.K3sToken
-	}
-	out.Body.ServerURL = "https://100.64.0.1:6443"
+	out.Body.Token = h.k3sJoinToken()
+	out.Body.ServerURL = k3sServerURL
 	return out, nil
 }
 
@@ -800,11 +797,33 @@ type SelfRegisterNodeInput struct {
 // SelfRegisterNodeOutput extends the node response with a one-time node secret.
 // node_secret is non-empty only when a provisioning token (mprov-) was used.
 // The caller must persist this secret; it is never retrievable again.
+//
+// It also carries the k3s join token, and this is the right place for it: the
+// call comes over the mesh, from a machine that has had to join it to get here,
+// with a token that is spent by this very request. The public provisioning call
+// before it deliberately hands out no such thing.
+//
+// Empty for a mesh-only node, which is not in the cluster and has nothing to
+// join.
 type SelfRegisterNodeOutput struct {
 	Body struct {
 		NodeResponse
-		NodeSecret string `json:"node_secret,omitempty"`
+		NodeSecret   string `json:"node_secret,omitempty"`
+		K3sToken     string `json:"k3s_token,omitempty"`
+		K3sServerURL string `json:"k3s_server_url,omitempty"`
 	}
+}
+
+// k3sJoinToken is the cluster's own token, read at request time so a rotated
+// one is always current.
+func (h *Handler) k3sJoinToken() string {
+	if raw, err := os.ReadFile(k3sTokenPath); err == nil {
+		return strings.TrimSpace(string(raw))
+	}
+	if h.cfg != nil {
+		return h.cfg.K3sToken
+	}
+	return ""
 }
 
 func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeInput) (*SelfRegisterNodeOutput, error) {
@@ -846,6 +865,13 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	out := &SelfRegisterNodeOutput{}
 	out.Body.NodeResponse = r
 	out.Body.NodeSecret = nodeSecret
+	// A cluster node needs one more thing, and this is where it may have it:
+	// the caller is on the mesh and has just spent a single-use token to get
+	// here. A mesh-only node is not in the cluster and has nothing to join.
+	if node.MeshRole != db.MeshRoleMesh {
+		out.Body.K3sToken = h.k3sJoinToken()
+		out.Body.K3sServerURL = k3sServerURL
+	}
 	return out, nil
 }
 
