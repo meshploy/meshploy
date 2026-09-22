@@ -48,16 +48,28 @@ func cutoverFixture(t *testing.T) (CutoverDeps, *fakeRunner, string) {
 		"docker service inspect dokploy-traefik --format {{.Spec.Mode.Replicated.Replicas}}": "1\n",
 	}}
 
-	// Something has to be listening where Meshploy's edge would be: cutover
-	// checks that it took the ports, whatever the plan's domains say.
-	edge, err := net.Listen("tcp", "127.0.0.1:0")
+	// The port, modelled the way a real handover uses it: the old edge holds it
+	// until it is stopped, and ours takes it when it starts. A fixture that
+	// simply left something listening the whole time could not tell a cutover
+	// that worked from one where the old edge never let go - which is the
+	// failure a real server produced.
+	//
+	// So take an address, free it, and let StartCaddy be the thing that binds.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { edge.Close() })
+	addr := probe.Addr().String()
+	_ = probe.Close()
+	var edge net.Listener
+	t.Cleanup(func() {
+		if edge != nil {
+			edge.Close()
+		}
+	})
 
 	return CutoverDeps{
-		EdgeAddr: edge.Addr().String(),
+		EdgeAddr: addr,
 		Plan: Plan{Items: []Item{
 			{Kind: "domain", Name: "web.example.com", Verdict: Moves},
 		}},
@@ -68,7 +80,14 @@ func cutoverFixture(t *testing.T) (CutoverDeps, *fakeRunner, string) {
 		AcmePath:   acme,
 		TraefikDir: traefik,
 		CaddyData:  caddy,
-		StartCaddy: func() error { return nil },
+		StartCaddy: func() error {
+			l, err := net.Listen("tcp", addr)
+			if err != nil {
+				return err
+			}
+			edge = l
+			return nil
+		},
 	}, runner, caddy
 }
 
@@ -78,9 +97,12 @@ func TestCutoverImportsCertificatesBeforeTakingThePorts(t *testing.T) {
 	d, runner, caddy := cutoverFixture(t)
 
 	var startedAfterStop bool
+	// Wrapped, not replaced: the fixture's StartCaddy is what binds the port,
+	// and a cutover is not finished until something of ours is on it.
+	bind := d.StartCaddy
 	d.StartCaddy = func() error {
 		startedAfterStop = runner.didRun("docker service scale --detach dokploy-traefik=0")
-		return nil
+		return bind()
 	}
 
 	out, err := Cutover(d)
@@ -386,5 +408,120 @@ func TestCutoverImportsCertificatesFromADirectory(t *testing.T) {
 	written := filepath.Join(CaddyDataDir(caddy), "certificates", CaddyIssuer, "web.example.com", "web.example.com.crt")
 	if _, err := os.Stat(written); err != nil {
 		t.Fatalf("certificate not written: %v", err)
+	}
+}
+
+// Everything after the edge check is downtime. Finding out there that our edge
+// cannot start means a server with nothing on 80 and 443 until the restore
+// runs - which is what a rehearsal found, when the image turned out not to be
+// on the host at all.
+func TestCutoverRefusesBeforeTheDowntimeWhenOurEdgeIsNotReady(t *testing.T) {
+	d, runner, _ := cutoverFixture(t)
+	d.ReadyCaddy = func() error { return fmt.Errorf("image not found") }
+	started := false
+	d.StartCaddy = func() error { started = true; return nil }
+
+	out, err := Cutover(d)
+	if err == nil {
+		t.Fatal("a cutover that cannot start our edge must refuse")
+	}
+	if !strings.Contains(out.Error, "not ready to take the ports") {
+		t.Errorf("error should say what is wrong: %q", out.Error)
+	}
+	if started {
+		t.Error("our edge should not have been started")
+	}
+	// Nothing may have been stopped: the old platform is still serving.
+	if runner.didRun("docker service scale --detach dokploy-traefik=0") {
+		t.Error("the old edge was stopped before the check that would have avoided it")
+	}
+	if runner.didRun("docker service scale --detach dokploy=0") {
+		t.Error("the control plane was stopped before the check")
+	}
+}
+
+// A cutover that failed and put the old edge back must record that it did.
+//
+// From a real server: the restore ran without a journal, so the stop stayed
+// recorded as done. The next attempt skipped stopping an edge that was back up
+// and holding 443, started ours against a bound socket, and reported that the
+// ports had changed hands.
+func TestAFailedCutoverRecordsThatItPutTheEdgeBack(t *testing.T) {
+	d, runner, _ := cutoverFixture(t)
+	d.StartCaddy = func() error { return fmt.Errorf("image not found") }
+
+	if _, err := Cutover(d); err == nil {
+		t.Fatal("a cutover whose edge will not start must fail")
+	}
+	if d.Journal.Done("cutover/stop-edge") {
+		t.Fatal("the stop is recorded as done although the edge was put back: a retry will skip it")
+	}
+	if !runner.didRun("docker service scale --detach dokploy-traefik=1") {
+		t.Fatalf("the old edge should have been restored: %v", runner.ran)
+	}
+
+	// The retry stops it again rather than starting ours against a held port.
+	from := len(runner.ran)
+	d.StartCaddy = func() error { return fmt.Errorf("still broken") }
+	if _, err := Cutover(d); err == nil {
+		t.Fatal("the second attempt must fail too")
+	}
+	if !runner.didRunAfter("docker service scale --detach dokploy-traefik=0", from) {
+		t.Errorf("the retry skipped stopping the old edge: %v", runner.ran[from:])
+	}
+}
+
+// Something listening is not the same as our edge listening. An old edge that
+// never let go answers a dial just as well, and the handover then reports
+// success while ours crash-loops behind it.
+func TestCutoverWillNotCallItDoneWhileOurEdgeIsRestarting(t *testing.T) {
+	d, runner, _ := cutoverFixture(t)
+	d.CaddyContainer = "meshploy-caddy-1"
+	d.EdgeUpWindow = 300 * time.Millisecond
+	// Our container is crash-looping; something else holds the port.
+	runner.replies["docker inspect -f {{.State.Status}} {{.State.Restarting}} meshploy-caddy-1"] =
+		"restarting true\n"
+
+	out, err := Cutover(d)
+	if err == nil {
+		t.Fatal("a cutover whose edge is not running must not report success")
+	}
+	if !strings.Contains(out.Error, "not running") {
+		t.Errorf("the error should name what is wrong: %q", out.Error)
+	}
+	if !out.RolledBack {
+		t.Error("the old edge should have been put back")
+	}
+}
+
+// The old edge is told to stop and Swarm returns before the task is gone, so
+// ours must wait for the socket rather than race it into a crash-loop.
+func TestCutoverWaitsForTheOldEdgeToLetGoOfThePort(t *testing.T) {
+	d, runner, _ := cutoverFixture(t)
+
+	d.EdgeGoneWindow = 300 * time.Millisecond
+
+	// Something is still on the port when the stop returns, and stays there.
+	squatter, err := net.Listen("tcp", d.EdgeAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer squatter.Close()
+
+	started := false
+	d.StartCaddy = func() error { started = true; return nil }
+
+	out, err := Cutover(d)
+	if err == nil {
+		t.Fatal("a cutover must not start ours while the old edge holds the port")
+	}
+	if started {
+		t.Error("ours was started against a port that was still held")
+	}
+	if !strings.Contains(out.Error, "still holding") {
+		t.Errorf("the error should say the old edge has not let go: %q", out.Error)
+	}
+	if !runner.didRun("docker service scale --detach dokploy-traefik=1") {
+		t.Errorf("the old edge should have been put back: %v", runner.ran)
 	}
 }

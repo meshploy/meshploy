@@ -181,6 +181,7 @@ func runMigrateCutover() ([]byte, error) {
 		CertDir:        dokploy.FindCertificateDir(),
 		TraefikDir:     dokploy.DefaultTraefikDir,
 		CaddyData:      rt.caddyData,
+		ReadyCaddy:     meshployEdgeReady,
 		StartCaddy:     startMeshployEdge,
 		CaddyContainer: meshployCaddyContainer,
 		Now:            time.Now,
@@ -396,6 +397,31 @@ func caddyDataDir() string {
 const meshployCaddyContainer = "meshploy-caddy-1"
 
 // startMeshployEdge brings Meshploy's Caddy up on 80 and 443.
+// meshployEdgeReady makes sure the edge's image is on this host before the
+// ports change hands.
+//
+// Local first, and a pull only when it is missing: a gateway that has the image
+// already must not be blocked by a registry it cannot reach, and one that does
+// not have it must find that out while the old edge is still serving.
+func meshployEdgeReady() error {
+	r := migrate.ExecRunner{}
+	images, err := r.Output("docker", "compose", "-f", "/opt/meshploy/docker-compose.yml", "config", "--images", "caddy")
+	if err != nil {
+		return fmt.Errorf("read the edge's image: %w (%s)", err, images)
+	}
+	for _, image := range strings.Fields(images) {
+		if _, err := r.Output("docker", "image", "inspect", image); err == nil {
+			return nil
+		}
+	}
+	out, err := r.Output("docker", "compose", "-f", "/opt/meshploy/docker-compose.yml", "pull", "caddy")
+	if err != nil {
+		return fmt.Errorf("the edge's image %s is not on this host and could not be pulled: %w (%s)",
+			strings.TrimSpace(images), err, out)
+	}
+	return nil
+}
+
 func startMeshployEdge() error {
 	out, err := migrate.ExecRunner{}.Output("docker", "compose", "-f", "/opt/meshploy/docker-compose.yml", "up", "-d", "caddy")
 	if err != nil {

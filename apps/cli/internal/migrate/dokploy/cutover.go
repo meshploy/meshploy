@@ -43,6 +43,9 @@ type CutoverDeps struct {
 	// CaddyData is where Meshploy's Caddy keeps its storage on the host - the
 	// mount point of its volume.
 	CaddyData string
+	// ReadyCaddy makes sure Meshploy's edge can start, before anything is
+	// stopped. Nil skips the check, which is only right in a test.
+	ReadyCaddy func() error
 	// StartCaddy brings Meshploy's edge up on 80 and 443.
 	StartCaddy func() error
 	// ControlPlane is the old platform's own server, stopped at cutover so it
@@ -55,6 +58,9 @@ type CutoverDeps struct {
 	// default; a test uses its own so the suite does not wait a minute to
 	// learn what it already knows.
 	EdgeUpWindow time.Duration
+	// EdgeGoneWindow is how long the old edge has to let go of the port after
+	// being told to stop. Zero means the default.
+	EdgeGoneWindow time.Duration
 	// CaddyContainer is what StartCaddy started, so a rollback can take it off
 	// the ports again. Without it, rolling a cutover back started the old edge
 	// against ports Meshploy's was still holding, and neither served.
@@ -131,7 +137,22 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		out.CertificatesImported, out.CertificatesSkipped = imported.Imported, imported.Skipped
 	}
 
-	// 3. The control plane, before its edge and before any downtime: while the
+	// 3. Check our edge can start, while the old one is still serving.
+	//
+	// Everything after this point is downtime, and finding out there that the
+	// image is missing means a server with no edge at all until the restore
+	// runs. Found on a rehearsal: the pull failed after the ports had already
+	// changed hands, and the only thing between that and an outage was the
+	// automatic restore. A cutover should fail before the downtime, not during
+	// it.
+	if d.ReadyCaddy != nil {
+		if err := d.ReadyCaddy(); err != nil {
+			out.Error = "Meshploy's edge is not ready to take the ports: " + err.Error()
+			return out, fmt.Errorf("%s", out.Error)
+		}
+	}
+
+	// 4. The control plane, before its edge and before any downtime: while the
 	// old platform is running it can put its edge back. It is the thing whose
 	// job is keeping that edge alive, and a recreated edge races ours for 80
 	// and 443 on the next restart. Its data is untouched and rollback starts it
@@ -141,12 +162,24 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		return out, err
 	}
 
-	// 4 and 5. The ports change hands. Everything between these two lines is
+	// 5 and 6. The ports change hands. Everything between these two lines is
 	// refused connections, so there is nothing between them.
 	started := now()
 	if err := d.stopEdge(); err != nil {
 		out.Error = err.Error()
 		return out, err
+	}
+	// `docker service scale` is asked to detach, so it returns once Swarm has
+	// accepted the request and not once the task is gone. Starting ours against
+	// a port the old edge has not let go of yet is a crash-loop, so wait for
+	// the socket rather than race it. This is inside the downtime because it is
+	// the downtime: nothing can serve until the port is free.
+	if err := d.waitEdgeGone(); err != nil {
+		out.Error = err.Error()
+		if undoErr := d.restoreEdge(); undoErr == nil {
+			out.RolledBack = true
+		}
+		return out, fmt.Errorf("%s", out.Error)
 	}
 	if err := d.StartCaddy(); err != nil {
 		// Ours did not come up: put the old edge back at once rather than
@@ -218,9 +251,18 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-// edgeIsUp waits for something to answer on the ports the old edge just gave
-// up. A TCP connection and nothing more: what answers is Caddy's business, and
-// at this moment the only question is whether the server still has an edge.
+// edgeIsUp waits for Meshploy's edge to be the thing holding the ports.
+//
+// Two questions, and the second is the one that was missing. Something
+// listening is not the same as our edge listening: an old edge that never
+// actually stopped answers a dial just as well, and the handover then reports
+// success while ours crash-loops behind it against a bound socket. That is not
+// a hypothetical - it is what a real cutover did, and the operator was told the
+// ports had changed hands.
+//
+// So our own container is asked whether it is running, and a container that is
+// restarting is not. What it serves is still Caddy's business; whether it is
+// the one on the port is this function's.
 func (d CutoverDeps) edgeIsUp() error {
 	addr := d.EdgeAddr
 	if addr == "" {
@@ -231,20 +273,74 @@ func (d CutoverDeps) edgeIsUp() error {
 		window = edgeUpWindow
 	}
 	deadline := time.Now().Add(window)
-	var err error
+	var last error
 	for {
-		var conn net.Conn
-		conn, err = net.DialTimeout("tcp", addr, 5*time.Second)
-		if err == nil {
-			_ = conn.Close()
-			return nil
+		if err := d.ourEdgeRunning(); err != nil {
+			last = err
+		} else {
+			conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+			if err == nil {
+				_ = conn.Close()
+				return nil
+			}
+			last = fmt.Errorf("nothing is listening on %s", addr)
 		}
 		if !time.Now().Before(deadline) {
-			return fmt.Errorf("nothing is listening on %s: Meshploy's edge did not take the ports", addr)
+			return fmt.Errorf("Meshploy's edge did not take the ports: %w", last)
 		}
 		time.Sleep(min(time.Second, window/4))
 	}
 }
+
+// ourEdgeRunning reports whether the container StartCaddy started is up.
+//
+// Empty CaddyContainer skips the check, which is what a test without a Docker
+// does; a server always names it.
+func (d CutoverDeps) ourEdgeRunning() error {
+	if d.CaddyContainer == "" {
+		return nil
+	}
+	out, err := d.Runner.Output("docker", "inspect", "-f",
+		"{{.State.Status}} {{.State.Restarting}}", d.CaddyContainer)
+	if err != nil {
+		return fmt.Errorf("%s could not be inspected: %w", d.CaddyContainer, err)
+	}
+	status, restarting, _ := strings.Cut(strings.TrimSpace(out), " ")
+	if status != "running" || restarting == "true" {
+		return fmt.Errorf("%s is %s, not running - something else is holding the ports",
+			d.CaddyContainer, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// waitEdgeGone waits for the old edge to let go of the port it was told to
+// give up.
+func (d CutoverDeps) waitEdgeGone() error {
+	addr := d.EdgeAddr
+	if addr == "" {
+		addr = "127.0.0.1:443"
+	}
+	window := d.EdgeGoneWindow
+	if window == 0 {
+		window = edgeGoneWindow
+	}
+	deadline := time.Now().Add(window)
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+		if err != nil {
+			return nil
+		}
+		_ = conn.Close()
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("the old edge is still holding %s: it was told to stop and has not", addr)
+		}
+		time.Sleep(min(500*time.Millisecond, window/4))
+	}
+}
+
+// edgeGoneWindow is how long the old edge has to release the port. Short: it
+// has already been told to stop, and every second here is downtime.
+const edgeGoneWindow = 20 * time.Second
 
 // edgeUpWindow is how long the new edge has to start listening. Long enough
 // for a container to come up, short enough that a server with no edge is put
@@ -440,6 +536,13 @@ func (d CutoverDeps) stopEdge() error {
 
 // restoreEdge puts the old edge back, for a cutover that could not bring ours
 // up.
+//
+// The journal goes in, and that is the whole point of it. Without it the
+// restore ran but was never recorded, so the stop stayed in the journal as
+// done: the next attempt skipped stopping an edge that was back up and holding
+// the ports, started ours against a bound socket, and called the handover
+// finished. Found on a real server, where the second cutover reported success
+// while Traefik still held 443 and Caddy crash-looped behind it.
 func (d CutoverDeps) restoreEdge() error {
 	entries, err := journal.Read(d.Journal.Dir())
 	if err != nil {
@@ -451,7 +554,7 @@ func (d CutoverDeps) restoreEdge() error {
 			edge = append(edge, e)
 		}
 	}
-	res := Rollback{Runner: d.Runner}.Replay(edge)
+	res := Rollback{Runner: d.Runner, Journal: d.Journal}.Replay(edge)
 	if len(res.Failures) > 0 {
 		return fmt.Errorf("%s", strings.Join(res.Failures, "; "))
 	}
