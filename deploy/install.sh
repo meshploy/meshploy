@@ -24,9 +24,18 @@ DNS_MODE_FLAG=""
 # Empty = ask, on a worker. Set by `meshploy node install --role`; node init and
 # the console's install command set MESHPLOY_NODE_ROLE instead.
 NODE_ROLE_FLAG=""
+# A provisioning token (mprov-) turns the whole worker install into one command:
+# the gateway is asked for everything the machine would otherwise be asked for.
+PROVISION_TOKEN=""
+# Where to ask. The gateway substitutes its own address here when it serves this
+# script at GET /install.sh, so the one-liner carries nothing but a token. The
+# line below is matched literally by ServeInstallScript - keep it that way.
+MESHPLOY_API_BASE="${MESHPLOY_API_BASE:-}"
 for arg in "$@"; do
   case "$arg" in
     --reinstall) REINSTALL=true ;;
+    --token=*)   PROVISION_TOKEN="${arg#*=}" ;;
+    --api=*)     MESHPLOY_API_BASE="${arg#*=}" ;;
     --wipe-data) WIPE_DATA=true ;;
     --auto)      AUTO_MODE=true ;;
     # Install beside the platform this server is migrating from: it keeps 80
@@ -43,6 +52,13 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# A provisioning token answers both of the questions that come before any
+# others: what this machine is, and whether anyone is watching.
+if [[ -n "$PROVISION_TOKEN" ]]; then
+  NODE_TYPE="worker"
+  AUTO_MODE=true
+fi
 
 # registry_needs_login reports whether the Meshploy images require credentials.
 #
@@ -1497,19 +1513,55 @@ NEUNIT
 elif [[ "$NODE_TYPE" == "worker" ]]; then
 
   header "Worker configuration"
-  ask HEADSCALE_URL  "Master's Headscale URL (e.g. https://headscale.meshploy.example.com)"
-  ask_secret PREAUTH_KEY "Pre-auth key (generated on the master node)"
 
-  echo
-  hr
-  echo -e "  ${BOLD}Summary${RESET}"
-  hr
-  echo -e "  Headscale URL  ${CYAN}${HEADSCALE_URL}${RESET}"
-  echo -e "  Pre-auth key   ${CYAN}${PREAUTH_KEY:0:8}…${RESET} (truncated for display)"
-  hr
-  echo
-  if ! ask_yn "Proceed?"; then
-    die "Aborted."
+  # ── One command, no questions ───────────────────────────────────────────────
+  #
+  # With a provisioning token the gateway is asked for what this machine needs
+  # to reach the mesh, and everything below that would have been typed is
+  # answered from that one call: where Headscale is, a key to join it with,
+  # which address the API answers on inside the mesh, and what this node is for.
+  #
+  # Only the mesh credentials come back here. The k3s join token is asked for
+  # later, from inside the mesh, where this machine has had to prove it got
+  # there - so a token that leaks costs an unknown peer on the mesh and not the
+  # cluster's own key.
+  if [[ -n "$PROVISION_TOKEN" ]]; then
+    [[ -n "$MESHPLOY_API_BASE" ]] || die "A provisioning token needs the gateway's address: pass --api=https://api.<your-domain>"
+    info "Asking ${MESHPLOY_API_BASE} for this machine's mesh credentials…"
+    _PROV="$(curl -s --max-time 20 \
+      -X POST "${MESHPLOY_API_BASE}/api/v1/nodes/provision" \
+      -H "Content-Type: application/json" \
+      -d "{\"token\":\"${PROVISION_TOKEN}\"}" 2>&1 || true)"
+
+    HEADSCALE_URL="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('headscale_url',''))" 2>/dev/null || true)"
+    PREAUTH_KEY="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('preauth_key',''))" 2>/dev/null || true)"
+    _PROV_API="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('api_mesh_url',''))" 2>/dev/null || true)"
+    _PROV_ROLE="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mesh_role',''))" 2>/dev/null || true)"
+
+    if [[ -z "$HEADSCALE_URL" || -z "$PREAUTH_KEY" ]]; then
+      # The API answers the same 401 for every bad token on purpose, so there is
+      # nothing more specific to report than what it said.
+      die "The gateway refused this provisioning token. Response: ${_PROV:-<no response>}"
+    fi
+    MESHPLOY_TOKEN="$PROVISION_TOKEN"
+    [[ -n "$_PROV_API" ]]  && MESHPLOY_API_URL="$_PROV_API"
+    [[ -n "$_PROV_ROLE" ]] && NODE_ROLE_FLAG="${NODE_ROLE_FLAG:-$_PROV_ROLE}"
+    success "Provisioned: mesh at ${HEADSCALE_URL}, joining as ${_PROV_ROLE:-workload_builder}"
+  else
+    ask HEADSCALE_URL  "Master's Headscale URL (e.g. https://headscale.meshploy.example.com)"
+    ask_secret PREAUTH_KEY "Pre-auth key (generated on the master node)"
+
+    echo
+    hr
+    echo -e "  ${BOLD}Summary${RESET}"
+    hr
+    echo -e "  Headscale URL  ${CYAN}${HEADSCALE_URL}${RESET}"
+    echo -e "  Pre-auth key   ${CYAN}${PREAUTH_KEY:0:8}…${RESET} (truncated for display)"
+    hr
+    echo
+    if ! ask_yn "Proceed?"; then
+      die "Aborted."
+    fi
   fi
 
   # ── Install Tailscale ───────────────────────────────────────────────────────
@@ -1524,20 +1576,26 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
 
   # ── Derive a hostname from the machine's hostname ───────────────────────────
   NODE_HOSTNAME="$(hostname -s | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
-  ask NODE_HOSTNAME "Hostname for this node in the mesh" "$NODE_HOSTNAME"
+  if [[ -z "$PROVISION_TOKEN" ]]; then
+    ask NODE_HOSTNAME "Hostname for this node in the mesh" "$NODE_HOSTNAME"
 
-  # ── Node registration token ─────────────────────────────────────────────────
-  # After joining the mesh, the worker can reach the master API directly over
-  # WireGuard (100.64.0.1:4000) without going through the public internet.
-  # The registration token is generated in the Meshploy dashboard → Cluster.
-  echo
-  echo -e "  ${BOLD}Node registration token${RESET}"
-  echo -e "  Find it in the Meshploy dashboard under ${CYAN}Cluster → Add a node${RESET}."
-  echo
-  ask_secret MESHPLOY_TOKEN "Node registration token (mreg-...)"
+    # ── Node registration token ───────────────────────────────────────────────
+    # After joining the mesh, the worker can reach the master API directly over
+    # WireGuard (100.64.0.1:4000) without going through the public internet.
+    # The registration token is generated in the Meshploy dashboard → Cluster.
+    echo
+    echo -e "  ${BOLD}Node registration token${RESET}"
+    echo -e "  Find it in the Meshploy dashboard under ${CYAN}Cluster → Add a node${RESET}."
+    echo
+    ask_secret MESHPLOY_TOKEN "Node registration token (mreg-...)"
 
-  MESHPLOY_API_URL="${MESHPLOY_API_URL:-http://100.64.0.1:4000}"
-  ask MESHPLOY_API_URL "Meshploy API URL (mesh)" "$MESHPLOY_API_URL"
+    MESHPLOY_API_URL="${MESHPLOY_API_URL:-http://100.64.0.1:4000}"
+    ask MESHPLOY_API_URL "Meshploy API URL (mesh)" "$MESHPLOY_API_URL"
+  else
+    # The machine names itself, and the gateway said where its API answers.
+    MESHPLOY_API_URL="${MESHPLOY_API_URL:-http://100.64.0.1:4000}"
+    info "Node name: ${BOLD}${NODE_HOSTNAME}${RESET} (this machine's hostname)"
+  fi
 
   # ── Join the mesh ───────────────────────────────────────────────────────────
   header "Joining the Meshploy mesh"

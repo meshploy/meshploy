@@ -211,6 +211,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	deployments.configFiles = configFiles
 
 	nodes.headscale = headscaleSvc
+	if c != nil {
+		nodes.headscaleURL = c.HeadscaleURL
+		nodes.headscaleUser = c.HeadscaleUser
+	}
 	nodes.notif = notif
 	nodes.k8s = k8sClient
 	// Workloads need the deployment service to re-apply a Deployment from current

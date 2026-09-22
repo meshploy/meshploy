@@ -173,19 +173,30 @@ func (h *HeadscaleService) resolveUserID(ctx context.Context, name string) (stri
 	return "", fmt.Errorf("headscale user %q not found", name)
 }
 
-// CreatePreAuthKey calls POST {url}/api/v1/preauthkey and returns a new reusable preauth key
+// CreatePreAuthKey returns a reusable key with a long life, which is what the
+// cluster page hands an operator to use on several machines by hand.
 // scoped to the given Headscale user. The key expires in 1 year.
 // Headscale v0.28+ requires the numeric user ID in the request, so we resolve it first.
 func (h *HeadscaleService) CreatePreAuthKey(ctx context.Context, user string) (*PreAuthKey, error) {
+	return h.CreatePreAuthKeyWith(ctx, user, true, 365*24*time.Hour)
+}
+
+// CreatePreAuthKeyWith is the same with the two things that matter said out
+// loud.
+//
+// A key minted for one machine joining now wants reusable=false and an hour,
+// not reusable=true and a year: it travels in a one-liner that will sit in a
+// shell history, and the machine redeems it within seconds of being handed it.
+func (h *HeadscaleService) CreatePreAuthKeyWith(ctx context.Context, user string, reusable bool, ttl time.Duration) (*PreAuthKey, error) {
 	userID, err := h.resolveUserID(ctx, user)
 	if err != nil {
 		return nil, err
 	}
 
-	expiry := time.Now().Add(365 * 24 * time.Hour)
+	expiry := time.Now().Add(ttl)
 	payload, _ := json.Marshal(map[string]any{
 		"user":       userID,
-		"reusable":   true,
+		"reusable":   reusable,
 		"ephemeral":  false,
 		"expiration": expiry.Format(time.RFC3339),
 	})

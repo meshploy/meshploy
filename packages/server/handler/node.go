@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -382,6 +383,17 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetClusterJoinToken)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "provision-node",
+		Method:      "POST",
+		Path:        "/api/v1/nodes/provision",
+		Summary:     "Exchange a provisioning token for what a machine needs to join the mesh",
+		Description: "Public by necessity: the machine has no session and no mesh address yet. " +
+			"Returns only the mesh credentials; everything else is asked for from inside the mesh.",
+		Tags:     []string{"Nodes"},
+		Security: []map[string][]string{},
+	}, h.ProvisionNode)
+
 	// Headscale preauth key — org-scoped, admin-only. Get the most recent active
 	// key, or generate a new one.
 	huma.Register(api, huma.Operation{
@@ -748,6 +760,31 @@ func (h *Handler) GetClusterJoinToken(ctx context.Context, input *ClusterPathInp
 	return out, nil
 }
 
+type ProvisionNodeInput struct {
+	Body struct {
+		Token string `json:"token" minLength:"1" doc:"A provisioning token (mprov-…)"`
+	}
+}
+
+type ProvisionNodeOutput struct {
+	Body *service.Provisioning
+}
+
+// ProvisionNode is the first half of joining, and the only half that happens
+// before the mesh exists for this machine.
+//
+// Unauthenticated, because the caller is a blank server with a token and
+// nothing else. The token is the credential, and every failure answers the same
+// 401 so a caller cannot learn from the difference between "no such token",
+// "already used" and "expired".
+func (h *Handler) ProvisionNode(ctx context.Context, input *ProvisionNodeInput) (*ProvisionNodeOutput, error) {
+	out, err := h.svc.Nodes.Provision(ctx, input.Body.Token)
+	if err != nil {
+		return nil, huma.Error401Unauthorized("this token cannot provision a machine")
+	}
+	return &ProvisionNodeOutput{Body: out}, nil
+}
+
 // SelfRegisterNode is unauthenticated — called by the worker install script
 // over the WireGuard mesh after joining Headscale.
 // Accepts both mprov- (provisioning token, one-time) and mreg- (legacy org token).
@@ -877,6 +914,9 @@ type CreateProvisioningTokenInput struct {
 	Body  struct {
 		Label     string     `json:"label"      minLength:"1" maxLength:"100"`
 		ExpiresAt *time.Time `json:"expires_at,omitempty"`
+		// MeshRole is what the machine becomes, decided here rather than asked
+		// of it. Empty means the default, workload_builder.
+		MeshRole db.MeshRole `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder,mesh"`
 	}
 }
 
@@ -892,7 +932,7 @@ func (h *Handler) CreateProvisioningToken(ctx context.Context, input *CreateProv
 	if err != nil {
 		return nil, err
 	}
-	plaintext, row, err := h.svc.Nodes.CreateProvisioningToken(ctx, orgID, input.Body.Label, input.Body.ExpiresAt)
+	plaintext, row, err := h.svc.Nodes.CreateProvisioningToken(ctx, orgID, input.Body.Label, input.Body.ExpiresAt, input.Body.MeshRole)
 	if err != nil {
 		return nil, err
 	}
@@ -1061,14 +1101,64 @@ func (h *Handler) ListNodeContainers(ctx context.Context, input *NodePathInput) 
 	return &NodeContainersOutput{Body: h.svc.System.HostContainers()}, nil
 }
 
-// ServeInstallScript serves deploy/install.sh (mounted at /opt/meshploy/install.sh) to authenticated users.
+// ServeInstallScript serves deploy/install.sh, mounted at
+// /opt/meshploy/install.sh.
+//
+// Anonymous, because it is not a secret and pretending otherwise only breaks
+// the one case that matters: a blank machine, with a provisioning token and no
+// session, fetching the script it is about to run. The Community edition's
+// repository, its images and this file are public, and meshploy.com serves the
+// same bytes to anyone who asks.
+//
+// It is the gateway's own copy that is worth fetching rather than the canonical
+// one: it is the script that matches the version of the server being joined,
+// and a worker installed by a newer script than its gateway is the kind of skew
+// nobody can reproduce afterwards.
 func (h *Handler) ServeInstallScript(w http.ResponseWriter, r *http.Request) {
-	if _, err := requireUser(r.Context()); err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	w.Header().Set("Content-Type", "text/x-shellscript")
+	body, err := os.ReadFile(installScriptPath)
+	if err != nil {
+		http.Error(w, "install script unavailable", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "text/x-shellscript")
-	http.ServeFile(w, r, "/opt/meshploy/install.sh")
+	_, _ = w.Write(withAPIBase(body, h.apiBaseURL()))
+}
+
+// installScriptPath is where docker-compose mounts deploy/install.sh. A var so
+// a test can point it somewhere else.
+var installScriptPath = "/opt/meshploy/install.sh"
+
+// apiBaseLine is the line install.sh leaves for the gateway to fill in. Matched
+// literally, so if the script changes it, this stops substituting rather than
+// substituting something wrong.
+const apiBaseLine = `MESHPLOY_API_BASE="${MESHPLOY_API_BASE:-}"`
+
+// withAPIBase writes this gateway's own address into the script it is serving.
+//
+// This is what lets the install command carry nothing but a token: the machine
+// running it has no other way to know which Meshploy it is joining, and the URL
+// it fetched the script from is the answer. A gateway that does not know its
+// own public address substitutes nothing, and the script then asks for --api.
+func withAPIBase(body []byte, base string) []byte {
+	if base == "" || !bytes.Contains(body, []byte(apiBaseLine)) {
+		return body
+	}
+	filled := fmt.Sprintf(`MESHPLOY_API_BASE="${MESHPLOY_API_BASE:-%s}"`, base)
+	return bytes.Replace(body, []byte(apiBaseLine), []byte(filled), 1)
+}
+
+// apiBaseURL is where this gateway answers from outside the mesh.
+func (h *Handler) apiBaseURL() string {
+	if h.cfg == nil {
+		return ""
+	}
+	if h.cfg.APIBaseURL != "" && !strings.Contains(h.cfg.APIBaseURL, "localhost") {
+		return strings.TrimRight(h.cfg.APIBaseURL, "/")
+	}
+	if h.cfg.Domain != "" {
+		return "https://api." + h.cfg.Domain
+	}
+	return ""
 }
 
 // ServeUninstallScript serves deploy/uninstall.sh (mounted at /opt/meshploy/uninstall.sh) to authenticated users.

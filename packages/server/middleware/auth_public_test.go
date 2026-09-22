@@ -45,6 +45,8 @@ func TestGenuinelyPublicRoutesStayPublic(t *testing.T) {
 		{http.MethodPost, "/api/v1/auth/register"},
 		{http.MethodPost, "/api/v1/auth/totp"},
 		{http.MethodPost, "/api/v1/auth/recovery"},
+		{http.MethodPost, "/api/v1/nodes/provision"},
+		{http.MethodGet, "/install.sh"},
 		{http.MethodPost, "/api/v1/nodes/self-register"},
 		{http.MethodDelete, "/api/v1/nodes/self-deregister"},
 		{http.MethodGet, "/api/v1/invitations/abc123"},
@@ -76,6 +78,7 @@ func TestExemptionsAreMethodScoped(t *testing.T) {
 		{http.MethodPost, "/health"},
 		{http.MethodGet, "/api/v1/auth/login"},
 		{http.MethodGet, "/api/v1/nodes/self-register"},
+		{http.MethodGet, "/api/v1/nodes/provision"},
 		{http.MethodGet, "/api/v1/webhooks/github/x"},
 		{http.MethodDelete, "/api/v1/invitations/abc"},
 		{http.MethodPost, "/api/v1/github/callback"},
@@ -99,6 +102,11 @@ func TestPatternsAreAnchoredNotSubstrings(t *testing.T) {
 		// "/self-register" is exact — neighbouring paths must not match.
 		{http.MethodPost, "/api/v1/nodes/self-register/all"},
 		{http.MethodPost, "/api/v1/evil/self-register"},
+		{http.MethodPost, "/api/v1/nodes/provision/all"},
+		{http.MethodPost, "/api/v1/evil/nodes/provision"},
+		// The installer is public; removing a server is not.
+		{http.MethodGet, "/uninstall.sh"},
+		{http.MethodGet, "/install.sh.bak"},
 		// Prefix rules must not match a longer, different prefix.
 		{http.MethodPost, "/api/v1/webhooksX/github/1"},
 		{http.MethodGet, "/api/v1/invitationsX/abc"},

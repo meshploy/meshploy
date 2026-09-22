@@ -41,6 +41,8 @@ type NodeService struct {
 	gatewayIP     string // gateway mesh IP (MESH_IP) — used to detect self-scrape
 	hostGatewayIP string // Docker bridge host IP (HOST_GATEWAY_IP) — used instead of gatewayIP when API is in Docker
 	headscale     *HeadscaleService
+	headscaleURL  string // HEADSCALE_URL — handed to a machine being provisioned
+	headscaleUser string // HEADSCALE_USER — whose pre-auth keys those are
 	notif         *NotificationService
 	k8s           kubernetes.Interface // nil without a cluster; removal then skips that step
 }
@@ -309,7 +311,7 @@ func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailsc
 // CreateProvisioningToken generates a single-use provisioning token for the org.
 // Format: mprov-<32 random hex bytes>. The plaintext is returned once — only
 // its SHA-256 hash is persisted.
-func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UUID, label string, expiresAt *time.Time) (string, *db.NodeProvisioningToken, error) {
+func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UUID, label string, expiresAt *time.Time, meshRole ...db.MeshRole) (string, *db.NodeProvisioningToken, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", nil, fmt.Errorf("generate provisioning token: %w", err)
@@ -322,11 +324,98 @@ func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UU
 		Label:          label,
 		ExpiresAt:      expiresAt,
 	}
+	if len(meshRole) > 0 {
+		row.MeshRole = meshRole[0]
+	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return "", nil, err
 	}
 	return plaintext, &row, nil
 }
+
+// Provisioning is what a machine is told before it can join anything.
+//
+// It is deliberately the smaller half of joining. The call is public - a
+// machine being provisioned has no session and no mesh address yet - so it
+// hands back only what is needed to reach the mesh: where Headscale is, and a
+// key to join it with. Everything else, the k3s join token included, is asked
+// for afterwards from inside the mesh, where the caller has had to prove it got
+// there. A leaked one-liner then costs an unknown peer on the mesh, which
+// Headscale can be told to drop, and not the cluster's join token.
+type Provisioning struct {
+	HeadscaleURL string      `json:"headscale_url"`
+	PreAuthKey   string      `json:"preauth_key"`
+	APIMeshURL   string      `json:"api_mesh_url"`
+	MeshRole     db.MeshRole `json:"mesh_role"`
+}
+
+// Provision validates a provisioning token and mints the mesh credentials for
+// one machine.
+//
+// It does not consume the token: registration does that, from inside the mesh,
+// once the machine has actually joined. What it does stamp is ProvisionedAt, so
+// one token cannot mint mesh credentials over and over.
+func (s *NodeService) Provision(ctx context.Context, token string) (*Provisioning, error) {
+	// The credential is checked before anything about this gateway is: a
+	// caller holding a token that is not good has no business learning how the
+	// server is configured, and a token that is spent is spent whatever the
+	// mesh looks like.
+	var row db.NodeProvisioningToken
+	if err := s.db.WithContext(ctx).Where("token_hash = ?", hashToken(token)).First(&row).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("invalid provisioning token")
+		}
+		return nil, err
+	}
+	if row.UsedAt != nil {
+		return nil, fmt.Errorf("provisioning token already used")
+	}
+	if row.ProvisionedAt != nil {
+		return nil, fmt.Errorf("provisioning token already provisioned a machine")
+	}
+	if row.ExpiresAt != nil && time.Now().After(*row.ExpiresAt) {
+		return nil, fmt.Errorf("provisioning token expired")
+	}
+
+	if s.headscale == nil {
+		return nil, fmt.Errorf("this gateway has no mesh: Headscale is not configured")
+	}
+
+	user := s.headscaleUser
+	if user == "" {
+		user = "meshploy"
+	}
+	key, err := s.headscale.CreatePreAuthKeyWith(ctx, user, false, preAuthKeyTTL)
+	if err != nil {
+		return nil, fmt.Errorf("mint a mesh key: %w", err)
+	}
+
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&row).Update("provisioned_at", &now).Error; err != nil {
+		return nil, err
+	}
+
+	role := row.MeshRole
+	if role == "" {
+		role = db.MeshRoleWorkloadBuilder
+	}
+	gateway := s.gatewayIP
+	if gateway == "" {
+		gateway = "100.64.0.1"
+	}
+	return &Provisioning{
+		HeadscaleURL: s.headscaleURL,
+		PreAuthKey:   key.Key,
+		APIMeshURL:   fmt.Sprintf("http://%s:4000", gateway),
+		MeshRole:     role,
+	}, nil
+}
+
+// preAuthKeyTTL is how long a provisioned machine has to join. Minutes, not
+// months: the machine redeems it seconds after being handed it, and the key
+// travels in a command line that will outlive its usefulness in somebody's
+// shell history.
+const preAuthKeyTTL = time.Hour
 
 // RegisterWithProvisioningToken validates a single-use provisioning token and
 // creates the node. On success it:

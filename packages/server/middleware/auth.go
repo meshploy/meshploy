@@ -157,7 +157,16 @@ var publicRules = []publicRule{
 	{Method: "POST", Path: "/api/v1/auth/totp", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/auth/recovery", Match: matchExact},
 
-	// Node self-registration presents an mreg-/mprov- token, not a JWT.
+	// Node self-registration presents an mreg-/mprov- token, not a JWT. The
+	// provisioning call comes earlier still, from a machine that is not on the
+	// mesh yet and has nothing but the token.
+	{Method: "POST", Path: "/api/v1/nodes/provision", Match: matchExact},
+
+	// The installer. Not a secret - the Community edition's repository, its
+	// images and this script are public - and the machine fetching it is a
+	// blank server with a provisioning token and no session. Its sibling
+	// /uninstall.sh stays authenticated: nothing fetches that without one.
+	{Method: "GET", Path: "/install.sh", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/nodes/self-register", Match: matchExact},
 	{Method: "DELETE", Path: "/api/v1/nodes/self-deregister", Match: matchExact},
 

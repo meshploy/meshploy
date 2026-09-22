@@ -856,6 +856,14 @@ type NodeProvisioningToken struct {
 	Label          string     `gorm:"not null"                 json:"label"`
 	UsedAt         *time.Time `                                json:"used_at"`
 	ExpiresAt      *time.Time `                                json:"expires_at"`
+	// MeshRole is what the node becomes, decided when the token is minted
+	// rather than asked of the machine. Empty means the default.
+	MeshRole MeshRole `gorm:"type:varchar(20);not null;default:''" json:"mesh_role,omitempty"`
+	// ProvisionedAt records the pre-mesh call that handed out a Headscale
+	// pre-auth key for this token. UsedAt still marks registration, which
+	// happens afterwards from inside the mesh; this stops one token from
+	// minting mesh credentials over and over.
+	ProvisionedAt *time.Time `json:"provisioned_at,omitempty"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }

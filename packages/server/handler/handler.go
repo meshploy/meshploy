@@ -60,7 +60,8 @@ func (h *Handler) Register(api huma.API) {
 // RegisterRaw wires routes that need raw http.HandlerFunc access:
 // OAuth redirects, SSE log streams, and WebSocket connections.
 func (h *Handler) RegisterRaw(r chi.Router) {
-	// Install/uninstall scripts — handlers call requireUser internally to enforce auth.
+	// The installer is public (see publicRules); the uninstaller is not, and
+	// enforces that in the handler as well as in the middleware.
 	r.Get("/install.sh", h.ServeInstallScript)
 	r.Get("/uninstall.sh", h.ServeUninstallScript)
 
