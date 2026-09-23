@@ -12,6 +12,7 @@ import {
   type ApiDomain,
   type TCPZone,
 } from "@/lib/api"
+import { usableForNewRoutes } from "@/lib/api/domains"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -102,7 +103,7 @@ export function RouteEndpointDialog({
     queryFn: () => domainsApi.list(orgId!, token),
     enabled: !!orgId && !!endpoint,
   })
-  const verified = useMemo(() => domainList.filter((d) => d.verified), [domainList])
+  const verified = useMemo(() => domainList.filter(usableForNewRoutes), [domainList])
 
   // Defaults, once the lists arrive: the only project, or the last one used.
   const chosenProject =

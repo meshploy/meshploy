@@ -28,6 +28,10 @@ import (
 
 type NotificationService struct {
 	db *gorm.DB
+	// domains gives the console's address on the primary domain, which is where
+	// a link in a notification should go: FRONTEND_URL is written once at
+	// install and keeps naming the old primary after it moves.
+	domains *DomainService
 	// consoleURL is the console's public base URL (FRONTEND_URL), for links in
 	// a notification. Empty leaves the links out.
 	consoleURL string
@@ -587,12 +591,23 @@ type notice struct {
 
 type fact struct{ Label, Value string }
 
+// consoleBase is where a notification's links point: the console on the primary
+// domain, or FRONTEND_URL on a gateway with no domain rows.
+func (s *NotificationService) consoleBase() string {
+	if s.domains != nil {
+		if u := s.domains.GatewayPlatformURL(context.Background(), "console"); u != "" {
+			return u
+		}
+	}
+	return strings.TrimRight(s.consoleURL, "/")
+}
+
 func (s *NotificationService) notice(channel, event string, data NotificationData) notice {
 	n := notice{Event: event, Title: eventTitle(event), Data: data, Channel: channel, At: time.Now()}
 	if d, ok := eventDef(event); ok {
 		n.Tone = d.Tone
 	}
-	if base := strings.TrimRight(s.consoleURL, "/"); base != "" {
+	if base := s.consoleBase(); base != "" {
 		n.ConsoleBase = base
 		if data.Link != "" {
 			n.Link = base + data.Link

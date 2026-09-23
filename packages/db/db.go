@@ -241,6 +241,26 @@ func applyConstraints(db *gorm.DB) error {
 		// Drop old single-port columns from services (idempotent — no-op when already absent)
 		`ALTER TABLE services DROP COLUMN IF EXISTS port`,
 		`ALTER TABLE services DROP COLUMN IF EXISTS node_port`,
+
+		// Exactly one primary domain per organization. Every base domain routes;
+		// primary only decides whose platform subdomains serve and what a new
+		// route defaults to, so two of them would leave that undecided.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_primary_domain_per_org
+		 ON domains (organization_id)
+		 WHERE is_primary`,
+		// Promote the seeded domain on installs that predate the column. An org
+		// had exactly one domain before this, so the oldest is the right pick;
+		// the NOT EXISTS guard makes it idempotent and stops it ever demoting or
+		// second-guessing a primary somebody has since chosen.
+		`UPDATE domains d SET is_primary = true
+		 WHERE d.id IN (
+		     SELECT DISTINCT ON (organization_id) id FROM domains
+		     ORDER BY organization_id, created_at, id
+		   )
+		   AND NOT EXISTS (
+		     SELECT 1 FROM domains p
+		     WHERE p.organization_id = d.organization_id AND p.is_primary
+		   )`,
 	}
 
 	for _, stmt := range stmts {

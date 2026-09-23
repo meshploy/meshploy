@@ -515,6 +515,14 @@ type Node struct {
 	// Public IP — set on gateway (server) nodes only; used for DNS instructions.
 	PublicIP string `gorm:"not null;default:''" json:"public_ip"`
 
+	// ControlURL is the Headscale address this machine's Tailscale client was
+	// told to use when it joined, https://headscale.<primary at the time>. It
+	// decides whether a domain can be removed: take away the name a node's
+	// control connection goes to, and that node drops off the mesh. Empty on
+	// the gateway, which reaches Headscale over loopback, and on nodes that
+	// joined before it was recorded - those joined through the install domain.
+	ControlURL string `gorm:"not null;default:''" json:"control_url,omitempty"`
+
 	// Capacity — populated by node agent heartbeat
 	CPUCores float32 `json:"cpu_cores"`
 	MemoryGB float32 `json:"memory_gb"`
@@ -691,6 +699,13 @@ type BuildConfig struct {
 	// Empty means every push builds, which is what it did before.
 	WatchPaths  StringArray     `gorm:"type:jsonb;not null;default:'[]'" json:"watch_paths"`
 	DeployToken EncryptedString `gorm:"type:text"              json:"deploy_token"`
+	// DeployHookHost is the host the deploy webhook was last called through,
+	// and DeployHookCalledAt when. The webhook URL is pasted into someone's CI,
+	// which Meshploy cannot see or change - so the only way to know a CI job
+	// still calls a domain being removed is to watch where the calls arrive.
+	// Written only for a call carrying a valid token.
+	DeployHookHost     string     `gorm:"not null;default:''" json:"deploy_hook_host,omitempty"`
+	DeployHookCalledAt *time.Time `json:"deploy_hook_called_at,omitempty"`
 
 	Service             Service              `gorm:"foreignKey:ServiceID"                                        json:"-"`
 	GitIntegration      *GitIntegration      `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL"    json:"-"`
@@ -879,11 +894,27 @@ func (NodeProvisioningToken) TableName() string { return "node_provisioning_toke
 //
 // base_domain is immutable once set — users must add a new domain and delete the old one.
 // internal_subdomain and preview_subdomain are mutable (wildcard TLS makes renames cheap).
+// DNSMode is how a base domain's DNS is arranged, which decides what an
+// internal route's certificate can be. It is per domain, not per server: two
+// base domains on one gateway can differ.
+type DNSMode string
+
+const (
+	// DNSModeDelegation — the zone is delegated here by NS, so CoreDNS is
+	// authoritative for it and Caddy can answer DNS-01 by writing into the
+	// challenge zone. Internal names get a real wildcard certificate.
+	DNSModeDelegation DNSMode = "delegation"
+	// DNSModeOnDemand — DNS stays with the operator's provider. Public names are
+	// issued per hostname over HTTP-01; internal names have no way to be
+	// validated by a public CA and are signed by Caddy's own authority.
+	DNSModeOnDemand DNSMode = "ondemand"
+)
+
 type Domain struct {
 	Base
 	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index"         json:"organization_id"`
-	// Immutable once set. Global unique index prevents cross-org domain hijacking
-	// (combined with ownership verification via DNS TXT record).
+	// Global unique index prevents cross-org domain hijacking (combined with
+	// ownership verification via DNS TXT record).
 	BaseDomain        string `gorm:"uniqueIndex;not null"             json:"base_domain"`
 	InternalSubdomain string `gorm:"not null;default:'internal'"      json:"internal_subdomain"`
 	PreviewSubdomain  string `gorm:"not null;default:'preview'"       json:"preview_subdomain"`
@@ -891,7 +922,35 @@ type Domain struct {
 	Verified bool `gorm:"default:false" json:"verified"`
 	// DNS TXT record value for ownership proof:
 	//   _meshploy-verify.{base_domain}  TXT  {verify_token}
-	VerifyToken string `gorm:"not null" json:"-"`
+	//
+	// Returned to the console because it is meant to be published: it goes into
+	// the operator's public DNS, where anyone can read it. Knowing it proves
+	// nothing - only publishing it under this domain does - so hiding it would
+	// only stop the console showing the record the operator has to add.
+	VerifyToken string `gorm:"not null" json:"verify_token,omitempty"`
+
+	// IsPrimary marks the one domain whose platform subdomains actually serve -
+	// console, api, headscale - and which a new route defaults to. Every other
+	// base domain is just as live for routing; primary is a pointer, not a tier.
+	// A partial unique index keeps it to one per org.
+	IsPrimary bool `gorm:"default:false"                    json:"is_primary"`
+	// FormerPrimary marks a domain the primary moved away from. Its platform
+	// names keep serving - the console someone is on, the headscale name
+	// workers joined through - until it is retired and removed.
+	FormerPrimary bool `gorm:"not null;default:false"           json:"former_primary"`
+	// DNSMode has no default. A row that existed before the column was added
+	// cannot say which mode it was installed in, and guessing delegation is
+	// wrong for every on-demand gateway: the edge would then be rendered for
+	// an NS delegation nobody made, and certificates would stop renewing. It
+	// arrives empty and the API fills it from the install's DNS_MODE at start.
+	DNSMode DNSMode `gorm:"not null;default:''"             json:"dns_mode"`
+	// RetiringAt is when somebody began retiring this domain. Set, it disappears
+	// from the base-domain picker so nothing new can attach to it, and the
+	// console shows what is still holding it. Everything already on it keeps
+	// serving; retiring stops new attachments, it does not switch anything off.
+	// Null means no, as elsewhere in this schema, and clearing it undoes the
+	// decision.
+	RetiringAt *time.Time `json:"retiring_at,omitempty"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID"                        json:"-"`
 	// RESTRICT: domain cannot be deleted while routes reference it.
@@ -1237,6 +1296,14 @@ type GitIntegration struct {
 	// provider that is not a GitHub App (which has its own, below). One secret
 	// per integration, shared by the repository hooks created under it.
 	WebhookSecret EncryptedString `gorm:"type:text" json:"-"`
+
+	// RegisteredAPIBase is the API address this integration gave its provider:
+	// the GitHub App's webhook, callback and setup URLs, or the address the
+	// repository push hooks deliver to. It is what the provider will call, so it
+	// decides whether a domain can be removed - take the name away and pushes
+	// stop arriving, with nothing said. Empty on integrations made before it was
+	// recorded; those registered the install's API_BASE_URL.
+	RegisteredAPIBase string `gorm:"not null;default:''" json:"-"`
 
 	// GitHub App credentials (auth_method="app" only). All encrypted at rest.
 	GHAppID         string          `gorm:"not null;default:''" json:"-"`

@@ -97,6 +97,38 @@ export const db: Record<string, DemoRecord[]> = {
         redirect_code: 301,
       })),
     },
+    // Routes on the base domains, so a domain's page has something to list and
+    // the on-demand one cannot be removed while a route holds it.
+    ...[
+      { host: "shop", domain: "00000000-0000-0000-0000-0000000000d1", zone: "public", published: true },
+      { host: "grafana", domain: "00000000-0000-0000-0000-0000000000d1", zone: "internal", published: true },
+      { host: "blog", domain: "00000000-0000-0000-0000-0000000000d2", zone: "public", published: false },
+    ].map((r, i) => ({
+      ...seed.demoRoute,
+      id: `00000000-0000-0000-0000-0000000000e${i + 1}`,
+      subdomain: r.host,
+      zone: r.zone,
+      domain_id: r.domain,
+      published: r.published,
+      hostname:
+        r.domain.endsWith("d1")
+          ? `${r.host}.${r.zone === "internal" ? "internal." : ""}demo.example.com`
+          : `${r.host}.apps.example.org`,
+      stack_id: null,
+      custom_domain_verified: false,
+      targets: [],
+    })),
+    {
+      ...seed.demoRoute,
+      id: "00000000-0000-0000-0000-0000000000e9",
+      subdomain: "",
+      hostname: "store.customer.example",
+      domain_id: null,
+      stack_id: null,
+      custom_domain_verified: false,
+      custom_domain_verify_token: "7d2e9a0c4b1f8e3a6c5d0b9f2e7a4c1d",
+      targets: [],
+    },
   ],
   // The demo database, published on the gateway, so a TCP route has a page.
   // One published port per managed database engine, so each engine's connect
@@ -254,13 +286,41 @@ export const db: Record<string, DemoRecord[]> = {
       enabled: true,
     }),
   ],
+  // Three base domains, so every state the Domains page has can be seen
+  // offline: the primary on NS delegation, a second served on-demand, and one
+  // just added that is waiting for its TXT record.
   domains: [
     record({
+      id: "00000000-0000-0000-0000-0000000000d1",
       organization_id: seed.DEMO_ORG_ID,
       base_domain: "demo.example.com",
       internal_subdomain: "internal",
       preview_subdomain: "preview",
       verified: true,
+      is_primary: true,
+      dns_mode: "delegation",
+    }),
+    record({
+      id: "00000000-0000-0000-0000-0000000000d2",
+      organization_id: seed.DEMO_ORG_ID,
+      base_domain: "apps.example.org",
+      internal_subdomain: "internal",
+      preview_subdomain: "preview",
+      verified: true,
+      is_primary: false,
+      dns_mode: "ondemand",
+      verify_token: "3f9c2a7e1b8d4c6f0a5e9b2d7c1f8a4e",
+    }),
+    record({
+      id: "00000000-0000-0000-0000-0000000000d3",
+      organization_id: seed.DEMO_ORG_ID,
+      base_domain: "shop.example.net",
+      internal_subdomain: "internal",
+      preview_subdomain: "preview",
+      verified: false,
+      is_primary: false,
+      dns_mode: "delegation",
+      verify_token: "a41e0c9d7b3f2e8a6c5d1b0f9e7a3c2d",
     }),
   ],
   deployments: [seed.demoDeployment],
@@ -272,7 +332,13 @@ export const org = { ...seed.demoOrg }
 export const user = { ...seed.demoUser }
 export const settings: Record<string, any> = {}
 export const buildConfigs: Record<string, any> = {
-  [seed.DEMO_SVC_API]: { ...seed.demoBuildConfig },
+  // A CI job deploys this one through its webhook, last via the install's API
+  // name - so moving the primary and retiring the old domain has one to show.
+  [seed.DEMO_SVC_API]: {
+    ...seed.demoBuildConfig,
+    deploy_hook_host: "api.demo.example.com",
+    deploy_hook_called_at: "2026-09-20T08:15:00Z",
+  },
   // A second one on Bitbucket, so the auto-deploy screens can be seen on more
   // than one provider without connecting anything.
   [seed.DEMO_SVC_WEB]: {

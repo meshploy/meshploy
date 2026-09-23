@@ -359,6 +359,7 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets` | ✓ | Add a path target to a route |
 | PATCH | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Update a route target |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/targets/{targetId}` | ✓ | Delete a route target |
+| POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/move` | ✓ | Move a route to another base domain, keeping its subdomain, zone and targets; `keep_redirect` leaves the old hostname answering with a 301 |
 | POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname` | ✓ | Verify DNS ownership of a custom-domain route via TXT record |
 | POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/publish` | ✓ | Serve a paused route again |
 | POST | `/orgs/{orgId}/projects/{projectId}/routes/{routeId}/pause` | ✓ | Keep a route, answer 404 and issue no certificate. Create one paused with `published: false` |
@@ -378,8 +379,26 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 |---|---|---|---|
 | GET | `/internal/domain-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS |
 | GET | `/internal/ondemand-tls-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS (self-managed DNS mode) |
-| GET | `/orgs/{orgId}/domains` | ✓ | List domains for an organization |
+| GET | `/orgs/{orgId}/domains` | ✓ | List domains for an organization (primary first) |
+| POST | `/orgs/{orgId}/domains` | ✓ | Add a base domain |
 | GET | `/orgs/{orgId}/domains/{domainId}` | ✓ | Get a domain |
+| POST | `/orgs/{orgId}/domains/{domainId}/verify` | ✓ | Check the ownership TXT record for a domain |
+| GET | `/orgs/{orgId}/domains/{domainId}/routes` | ✓ | Hostnames served under a base domain, across every project |
+| POST | `/orgs/{orgId}/domains/{domainId}/retire` | ✓ | Start retiring a base domain: no new routes, everything already on it keeps serving |
+| DELETE | `/orgs/{orgId}/domains/{domainId}/retire` | ✓ | Stop retiring a base domain |
+| POST | `/orgs/{orgId}/domains/{domainId}/make-primary` | ✓ | Move the primary here. The old primary keeps serving its console, api and headscale names until it is removed |
+| GET | `/orgs/{orgId}/domains/{domainId}/nodes` | ✓ | Nodes whose control connection goes through this domain's headscale name - what stops a former primary being removed |
+| POST | `/orgs/{orgId}/nodes/{nodeId}/control-moved` | ✓ | Record that a node now reaches Headscale through the primary. Records what the operator did on the machine; it does not move it |
+| GET | `/orgs/{orgId}/domains/{domainId}/integrations` | ✓ | Git provider registrations - a GitHub App's URLs, an OAuth redirect, repository push hooks - still pointing at this domain |
+| POST | `/orgs/{orgId}/git-integrations/{id}/move-hooks` | ✓ | Move an integration's repository push hooks to the primary's API address through the provider's API, per repository |
+| POST | `/orgs/{orgId}/git-integrations/{id}/registration-updated` | ✓ | Record that a registration was changed at the provider by hand. For an OAuth redirect, Meshploy starts sending the new URI |
+| GET | `/orgs/{orgId}/domains/{domainId}/deploy-hooks` | ✓ | Services whose CI deploy webhook was last called through this domain, as observed from where calls arrive |
+| DELETE | `/orgs/{orgId}/services/{serviceId}/deploy-hook-call` | ✓ | Forget a deploy webhook's last caller, for a CI job that no longer exists. A later call records it again |
+| GET | `/orgs/{orgId}/custom-domains` | ✓ | Hostnames that belong to a route rather than a base domain |
+| PATCH | `/orgs/{orgId}/domains/{domainId}/dns-mode` | ✓ | Change how a domain's DNS is arranged |
+| DELETE | `/orgs/{orgId}/domains/{domainId}` | ✓ | Remove a base domain. A verified one must be retiring and hold no routes; no node may still reach the mesh through it, no git provider may still call it, and no CI job may still deploy through it. An unverified one can go at once |
+
+Verifying a domain, changing its DNS mode or removing one records the new domain set in the host agent's inbox and asks it to regenerate Caddy and CoreDNS. The API writes no configuration itself and reloads nothing: it has no root on the host and no Docker socket.
 
 ### Backups
 

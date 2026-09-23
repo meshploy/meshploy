@@ -1001,13 +1001,9 @@ func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, input *ClusterPath
 		return nil, err
 	}
 	out := &HeadscalePreAuthKeyStatusOutput{}
-	if h.cfg != nil {
-		if h.cfg.Domain != "" {
-			out.Body.HeadscaleURL = "https://headscale." + h.cfg.Domain
-		} else {
-			out.Body.HeadscaleURL = h.cfg.HeadscaleURL
-		}
-	}
+	// The public name, from the primary. Never HEADSCALE_URL, which is the
+	// API's own in-network address for Headscale.
+	out.Body.HeadscaleURL = h.svc.Domains.PlatformURL(ctx, orgID, "headscale")
 
 	org, err := h.svc.Orgs.Get(ctx, orgID)
 	if err != nil {
@@ -1059,13 +1055,7 @@ func (h *Handler) CreateHeadscalePreAuthKey(ctx context.Context, input *ClusterP
 	out.Body.Key = key.Key
 	out.Body.Reusable = key.Reusable
 	out.Body.Expiration = key.Expiration
-	if h.cfg != nil {
-		if h.cfg.Domain != "" {
-			out.Body.HeadscaleURL = "https://headscale." + h.cfg.Domain
-		} else {
-			out.Body.HeadscaleURL = h.cfg.HeadscaleURL
-		}
-	}
+	out.Body.HeadscaleURL = h.svc.Domains.PlatformURL(ctx, orgID, "headscale")
 	return out, nil
 }
 
@@ -1147,7 +1137,7 @@ func (h *Handler) ServeInstallScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "install script unavailable", http.StatusNotFound)
 		return
 	}
-	_, _ = w.Write(withAPIBase(body, h.apiBaseURL()))
+	_, _ = w.Write(withAPIBase(body, h.apiBaseURL(r.Context())))
 }
 
 // installScriptPath is where docker-compose mounts deploy/install.sh. A var so
@@ -1174,15 +1164,21 @@ func withAPIBase(body []byte, base string) []byte {
 }
 
 // apiBaseURL is where this gateway answers from outside the mesh.
-func (h *Handler) apiBaseURL() string {
+//
+// The primary domain first, because it can move and API_BASE_URL is written
+// once at install: after a switch, a script still naming the old api. name
+// would join every new machine through a domain that is on its way out.
+func (h *Handler) apiBaseURL(ctx context.Context) string {
+	if h.svc != nil && h.svc.Domains != nil {
+		if u := h.svc.Domains.GatewayPlatformURL(ctx, "api"); u != "" {
+			return u
+		}
+	}
 	if h.cfg == nil {
 		return ""
 	}
 	if h.cfg.APIBaseURL != "" && !strings.Contains(h.cfg.APIBaseURL, "localhost") {
 		return strings.TrimRight(h.cfg.APIBaseURL, "/")
-	}
-	if h.cfg.Domain != "" {
-		return "https://api." + h.cfg.Domain
 	}
 	return ""
 }

@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, Copy, Loader2, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { buildConfigs as buildConfigsApi } from "@/lib/api"
+import { buildConfigs as buildConfigsApi, domains as domainsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 
 /**
@@ -31,9 +31,22 @@ export function DeployWebhookURL({
   const qc = useQueryClient()
   const [copied, setCopied] = useState(false)
 
+  // On the primary domain's API, not wherever this console happens to be open.
+  // The URL goes into someone's CI and stays there: copied from a console on a
+  // former primary, it would name a domain on its way out, and the job would
+  // break when that domain is removed. The page's own origin is the fallback
+  // for a machine with no domains - a developer's.
+  const { data: domainList = [] } = useQuery({
+    queryKey: ["domains", orgId],
+    queryFn: () => domainsApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+  const primary = domainList.find((d) => d.is_primary)
+  const base = primary ? `https://api.${primary.base_domain}` : window.location.origin
+
   // Whole, the way it has to be pasted: a path alone is no use in a provider's
   // webhook box or a curl.
-  const url = `${window.location.origin}/api/v1/webhooks/deploy/${serviceId}?token=${deployToken}`
+  const url = `${base}/api/v1/webhooks/deploy/${serviceId}?token=${deployToken}`
 
   const regenerate = useMutation({
     mutationFn: () => buildConfigsApi.regenerateDeployToken(orgId, projectId, serviceId, token),

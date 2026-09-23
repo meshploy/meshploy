@@ -137,6 +137,13 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		if !domain.Verified {
 			return nil, huma.Error422UnprocessableEntity("domain ownership not yet verified")
 		}
+		// The console hides a retiring domain from its picker; this is the same
+		// rule for every other caller. It is what makes the list of routes still
+		// holding the domain one that only shrinks.
+		if domain.RetiringAt != nil {
+			return nil, huma.Error422UnprocessableEntity(
+				fmt.Sprintf("%s is being retired, so no new routes can use it", domain.BaseDomain))
+		}
 		if platformReservedSubdomains[in.Subdomain] {
 			return nil, huma.Error422UnprocessableEntity(
 				fmt.Sprintf("subdomain %q is reserved and cannot be used", in.Subdomain))
@@ -155,14 +162,7 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 				return nil, huma.Error422UnprocessableEntity("wildcard subdomain must be in the format *.label (e.g. *.my-app)")
 			}
 		}
-		switch in.Zone {
-		case db.RouteZoneInternal:
-			hostname = fmt.Sprintf("%s.%s.%s", in.Subdomain, domain.InternalSubdomain, domain.BaseDomain)
-		case db.RouteZonePreview:
-			hostname = fmt.Sprintf("%s.%s.%s", in.Subdomain, domain.PreviewSubdomain, domain.BaseDomain)
-		default:
-			hostname = fmt.Sprintf("%s.%s", in.Subdomain, domain.BaseDomain)
-		}
+		hostname = hostnameFor(in.Zone, in.Subdomain, &domain)
 	}
 
 	route := &db.Route{
@@ -325,6 +325,129 @@ func (s *RouteService) Delete(ctx context.Context, routeID uuid.UUID) error {
 	})
 }
 
+// ── Moving a route to another base domain ─────────────────────────────────────
+
+// MoveRouteInput moves a route's hostname from one base domain to another,
+// keeping its subdomain, zone and targets.
+type MoveRouteInput struct {
+	RouteID   uuid.UUID
+	ProjectID uuid.UUID
+	DomainID  uuid.UUID
+	// KeepRedirect leaves the old hostname answering with a 301 to the new one,
+	// so links already out there keep working. The redirect is itself a route
+	// on the old domain, and holds it until it is deleted: a grace period that
+	// ends when somebody decides it has.
+	KeepRedirect bool
+}
+
+// MoveRoute is how a route gets off a domain that is being retired.
+//
+// Only a route on a base domain moves. A custom hostname is a whole name, not a
+// subdomain that could live under another zone, so there is nothing to move it
+// to.
+func (s *RouteService) MoveRoute(ctx context.Context, in MoveRouteInput) (moved *db.Route, redirect *db.Route, err error) {
+	route, err := s.Get(ctx, in.RouteID, in.ProjectID)
+	if err != nil {
+		return nil, nil, huma.Error404NotFound("route not found")
+	}
+	if route.DomainID == nil {
+		return nil, nil, huma.Error422UnprocessableEntity(
+			"a custom hostname is a whole name, not a subdomain - it cannot move to another base domain")
+	}
+	if *route.DomainID == in.DomainID {
+		return nil, nil, huma.Error422UnprocessableEntity("the route is already on that domain")
+	}
+	var target db.Domain
+	if err := s.db.WithContext(ctx).First(&target, "id = ? AND organization_id = ?", in.DomainID, route.OrganizationID).Error; err != nil {
+		return nil, nil, huma.Error404NotFound("domain not found")
+	}
+	if !target.Verified {
+		return nil, nil, huma.Error422UnprocessableEntity(fmt.Sprintf("%s is not verified yet", target.BaseDomain))
+	}
+	if target.RetiringAt != nil {
+		return nil, nil, huma.Error422UnprocessableEntity(
+			fmt.Sprintf("%s is being retired itself, so no routes can move onto it", target.BaseDomain))
+	}
+	if route.Subdomain == target.InternalSubdomain || route.Subdomain == target.PreviewSubdomain {
+		return nil, nil, huma.Error422UnprocessableEntity(
+			fmt.Sprintf("subdomain %q is reserved for zone routing on %s", route.Subdomain, target.BaseDomain))
+	}
+	if in.KeepRedirect {
+		// Redirects are an HTTP answer from the public edge, and do not chain.
+		if route.Zone != db.RouteZonePublic {
+			return nil, nil, huma.Error422UnprocessableEntity("only a public route can leave a redirect behind")
+		}
+		for _, t := range route.Targets {
+			if t.RedirectRouteID != nil {
+				return nil, nil, huma.Error422UnprocessableEntity(
+					"this route redirects itself, and redirects do not chain - move it without leaving one behind")
+			}
+		}
+	}
+
+	oldHostname, oldDomainID := route.Hostname, *route.DomainID
+	newHostname := hostnameFor(route.Zone, route.Subdomain, &target)
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The hostname is unique across the table, so the old name has to be
+		// released before a redirect can claim it.
+		if err := tx.Model(route).Updates(map[string]any{
+			"domain_id": target.ID,
+			"hostname":  newHostname,
+		}).Error; err != nil {
+			return err
+		}
+		if !in.KeepRedirect {
+			return nil
+		}
+		// Written directly rather than through Create, which refuses a retiring
+		// domain. This is the one route a retiring domain may still gain: it
+		// exists to wind the domain down, not to keep it in use.
+		redirect = &db.Route{
+			OrganizationID: route.OrganizationID,
+			ProjectID:      route.ProjectID,
+			DomainID:       &oldDomainID,
+			Zone:           route.Zone,
+			Subdomain:      route.Subdomain,
+			Hostname:       oldHostname,
+		}
+		if err := tx.Create(redirect).Error; err != nil {
+			return err
+		}
+		target := &db.RouteTarget{
+			RouteID:         redirect.ID,
+			Path:            "/",
+			RedirectRouteID: &route.ID,
+			RedirectCode:    301,
+		}
+		if err := tx.Create(target).Error; err != nil {
+			return err
+		}
+		redirect.Targets = []db.RouteTarget{*target}
+		return nil
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, nil, huma.Error409Conflict(fmt.Sprintf("%s is already routed", newHostname))
+		}
+		return nil, nil, err
+	}
+	route.DomainID, route.Hostname = &target.ID, newHostname
+	return route, redirect, nil
+}
+
+// hostnameFor is the hostname a subdomain has in a zone of a base domain.
+func hostnameFor(zone db.RouteZone, subdomain string, d *db.Domain) string {
+	switch zone {
+	case db.RouteZoneInternal:
+		return fmt.Sprintf("%s.%s.%s", subdomain, d.InternalSubdomain, d.BaseDomain)
+	case db.RouteZonePreview:
+		return fmt.Sprintf("%s.%s.%s", subdomain, d.PreviewSubdomain, d.BaseDomain)
+	default:
+		return fmt.Sprintf("%s.%s", subdomain, d.BaseDomain)
+	}
+}
+
 // ── Custom domain verification ────────────────────────────────────────────────
 
 func (s *RouteService) VerifyCustomHostname(ctx context.Context, routeID uuid.UUID) (*db.Route, error) {
@@ -337,6 +460,21 @@ func (s *RouteService) VerifyCustomHostname(ctx context.Context, routeID uuid.UU
 	}
 	if route.CustomDomainVerified {
 		return route, nil
+	}
+	// The column defaults to empty, and an empty token would be "found" in any
+	// TXT record set that happens to hold an empty string - a proof of nothing.
+	// Issue one instead, and say so: the record to add has only just come into
+	// existence.
+	if route.CustomDomainVerifyToken == "" {
+		token, err := generateVerifyToken()
+		if err != nil {
+			return nil, fmt.Errorf("generate verify token: %w", err)
+		}
+		if err := s.db.WithContext(ctx).Model(route).Update("custom_domain_verify_token", token).Error; err != nil {
+			return nil, err
+		}
+		return nil, huma.Error422UnprocessableEntity(
+			"this route had no verification record yet; one has been issued - add it and check again")
 	}
 	records, err := net.LookupTXT("_meshploy-verify." + route.Hostname)
 	if err != nil || !containsToken(records, route.CustomDomainVerifyToken) {

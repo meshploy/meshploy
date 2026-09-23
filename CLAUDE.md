@@ -40,6 +40,18 @@ meshploy/
 - **apps/web** — Vite + React 19 + TanStack Router frontend. Dark-only, Tailwind CSS v4 (CSS-first via `@tailwindcss/vite`, no config file), shadcn/ui Nova preset, `@base-ui/react` primitives.
 - **deploy/** — Headscale (WireGuard mesh), CoreDNS, Docker Compose. The gateway node is the only public-internet-facing machine; all workers are dark.
 
+### Edge configuration is generated
+
+`caddy/Caddyfile`, `coredns/Corefile`, the zone files and `headscale/config/config.yaml` are **output**, rendered by `meshploy domain apply` from an edge snapshot at `$HOST_DIR/state/edge.json`. Headscale's is generated because its split DNS must name every base domain's internal zone and its `server_url` follows the primary. They are not shipped in the deploy tarball and editing them is pointless - the next apply overwrites them. An operator's own Caddy configuration goes in `caddy/conf.d/*.caddy`, which the generated file imports and nothing writes.
+
+Templates live in `apps/cli/internal/edgeconfig/templates/`, with golden fixtures in its `testdata/`. A change to a template is therefore a change to a checked-in file a reviewer can read, and it reaches servers through `server-upgrade`, which re-renders. `install.sh` seeds the first snapshot with `--from-env`.
+
+Two snapshots, separated by who writes them: `inbox/edge.json` is what the API wants served (the one place the API can write, and leaving one there changes nothing by itself), and `state/edge.json` is what is actually installed. A `domain.apply` host-agent request is what puts the first into service and writes the second, so "the database changed" and "the gateway's edge changed" stay two visible events.
+
+The primary is a pointer. Moving it (`make-primary`) starts the platform's names on the new domain and keeps them serving on the old one, marked `former_primary`, until that domain is removed - the console in use and every worker's control URL depend on them. MagicDNS's `mesh.<domain>` stays pinned to the install domain so a switch renames no node. The platform's public URLs (the Headscale URL handed to a joining machine, the API base in the install script) come from the primary via `DomainService.PlatformURL`, never from `HEADSCALE_URL`, which is the API's in-network address for Headscale. Each node records the control URL it joined through (`nodes.control_url`), and each git integration the API address it gave its provider (`git_integrations.registered_api_base`); a former primary cannot be removed while nodes still use it or a provider still calls it. A service's CI deploy webhook is pasted into someone's CI where Meshploy cannot see it, so the webhook handler records the `Host` each authenticated call arrived through (`build_configs.deploy_hook_host`); calls still arriving through a former primary hold it too, and clear themselves once the job is updated. The console gives that URL on the primary's API, not `window.location.origin`. Repository push hooks are identified by path (`/api/v1/webhooks/git/<provider>/<id>`), not full URL, so a hook made under an earlier primary is recognised rather than duplicated. Links in notifications and the browser's return after an OAuth callback follow the primary too; the callback return honours the request's `Host` only for a domain that serves the platform.
+
+Each base domain carries its own DNS mode, so one gateway can serve a delegated domain and an on-demand one at once. A delegated domain gets its public zone plus two ACME challenge zones; an on-demand domain gets only its mesh zone, because nothing delegates here for it. **The `_acme-challenge.*` zones are seeded once and then never rewritten** - Caddy's DNS module writes challenge records straight into them.
+
 ### Mesh routing
 
 ```
@@ -114,7 +126,7 @@ Required in `.env` at the monorepo root:
 | `API_PORT` | API listen port (default: `4000`) |
 | `PROXY_PORT` | Proxy listen port (default: `8081`) |
 | `PROXY_BIND` | Addresses the proxy listens on, comma-separated (default: `127.0.0.1`). It also listens on `MESH_IP`, so a container on the host - a migration's old edge - can reach it |
-| `HEADSCALE_URL` | Headscale server URL |
+| `HEADSCALE_URL` | The API's own address for Headscale, inside the compose network (`http://headscale:8080`). Never hand it to a machine outside the gateway - the public URL comes from the primary domain |
 | `HEADSCALE_API_KEY` | Headscale API key |
 | `KUBECONFIG` | Path to kubeconfig file (empty = in-cluster) |
 | `K3S_SERVER_URL` | Override K3s API server URL (needed when API runs in Docker) |
@@ -128,7 +140,7 @@ Required in `.env` at the monorepo root:
 | `HOST_GATEWAY_IP` | Docker bridge gateway IP — used to reach node_exporter from inside the API container |
 | `FIREWALL_STATE` | What `install.sh` saw on the host: `none`, `ufw` or `firewalld`. Read-only record — the API container cannot inspect the host firewall itself. Drives the console's exposure notice |
 | `FIREWALL_CHECKED_AT` | RFC3339 UTC timestamp of that check, so the notice never reads as live state |
-| `DNS_MODE` | `delegation` (the gateway runs authoritative DNS and holds a wildcard) or `ondemand` (DNS stays with the operator's provider). Read-only record from `install.sh`. An internal route on an `ondemand` gateway is served with a certificate from Caddy's own CA, which the console says on the route form |
+| `DNS_MODE` | `delegation` (the gateway runs authoritative DNS and holds a wildcard) or `ondemand` (DNS stays with the operator's provider). Seeds the **primary** domain's mode in the edge snapshot; every base domain carries its own from then on. An internal route on an `ondemand` domain is served with a certificate from Caddy's own CA, which the console says on the route form |
 | `NODEPORT_ADDRESSES` | The CIDR kube-proxy binds published ports to, e.g. `100.64.0.0/10` for the mesh. Empty means every interface, which the console warns about when a database is published |
 | `BUILTIN_REGISTRY_ENDPOINT` | Seeds a built-in registry row per org (format: `<host>:<port>`) |
 | `TEMPLATE_DIR` | Local one-click template catalog dir (`<dir>/<id>/...`). Set = offline/air-gapped source; overrides the remote repo |
@@ -166,6 +178,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 **Partial unique indexes** (in `applyConstraints`):
 - `idx_one_owner_per_org` — exactly one owner per org
 - `idx_variable_group_service`: `variable_groups(service_id) WHERE service_id IS NOT NULL`, at most one system-managed group per service
+- `idx_one_primary_domain_per_org` — `domains(organization_id) WHERE is_primary` — every base domain routes; primary only decides whose platform subdomains serve and what a new route defaults to
 - `idx_users_email_unique` — `users(email) WHERE email <> ''` — email unique among humans only; agents (`users.kind = 'agent'`) carry an empty email so many can coexist
 
 `applyConstraints` also creates plain unique indexes (variable group item keys, job names per project, route target paths, permission grants) and runs idempotent data migrations. Domain names are unique across all orgs through the `uniqueIndex` tag on `domains.base_domain`, so one org cannot claim another's domain.

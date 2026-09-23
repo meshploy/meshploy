@@ -376,7 +376,7 @@ func (s *srv) handleListDomains(_ context.Context, _ mcp.CallToolRequest) (*mcp.
 	}
 	out := make([]MCPDomain, 0, len(domains))
 	for _, d := range domains {
-		out = append(out, MCPDomain{ID: d.ID, Domain: d.Domain, Verified: d.Verified})
+		out = append(out, MCPDomain{ID: d.ID, Domain: d.Domain, Verified: d.Verified, IsPrimary: d.IsPrimary, DNSMode: d.DNSMode})
 	}
 	return jsonResult(out)
 }

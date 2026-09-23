@@ -29,8 +29,13 @@ func (h *Handler) registerOnDemandTLSRoutes(api huma.API) {
 // before issuing a cert for any hostname matched by the wildcard or :443
 // catchall blocks. It approves:
 //
-//   - active workload subdomains under the base domain (e.g. app.<DOMAIN>)
+//   - active workload subdomains under any verified base domain (app.<domain>)
 //   - verified custom domains (reuses the existing read-only check)
+//
+// The base domains come from the table rather than from the install's DOMAIN,
+// because there can be more than one and the one install.sh recorded is only
+// the first. A gateway with a second base domain would otherwise issue nothing
+// for it, silently, and look like a certificate problem.
 //
 // Meshploy's own named subdomains (api/console/headscale) are explicit site
 // blocks in Caddyfile.ondemand and obtain HTTP-01 certs without asking, so they
@@ -38,11 +43,13 @@ func (h *Handler) registerOnDemandTLSRoutes(api huma.API) {
 func (h *Handler) OnDemandTLSCheck(ctx context.Context, input *OnDemandTLSCheckInput) (*struct{}, error) {
 	host := strings.ToLower(strings.TrimSpace(input.Domain))
 
-	// Active workload route under the base domain.
-	if base := h.cfg.Domain; base != "" && strings.HasSuffix(host, "."+base) {
-		if h.svc.Routes.HasRoute(ctx, host) {
-			return &struct{}{}, nil
-		}
+	// Active workload route under a base domain we know and have verified.
+	base, err := h.svc.Domains.BaseDomainFor(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if base != nil && h.svc.Routes.HasRoute(ctx, host) {
+		return &struct{}{}, nil
 	}
 
 	// Verified custom domain — same gate the delegation path uses.

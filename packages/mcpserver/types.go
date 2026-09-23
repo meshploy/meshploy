@@ -53,6 +53,23 @@ type MCPRoute struct {
 	Port      int    `json:"port"`
 	// Published is false for a paused route, which is kept and not served.
 	Published bool `json:"published"`
+	// CustomHostname is true when the hostname is its own, not a subdomain of a
+	// base domain. Every route create_route makes is one.
+	CustomHostname bool `json:"custom_hostname"`
+	// OwnershipVerified is whether a custom hostname has been proved. Until it
+	// is, no certificate is issued and requests fail TLS even once its DNS
+	// points at the gateway - so a route can look created and still not work.
+	OwnershipVerified bool `json:"ownership_verified"`
+	// ProveOwnership is present only while a custom hostname is unproved: the
+	// records to add at its DNS provider, after which verify_route_hostname.
+	ProveOwnership []MCPDNSRecord `json:"prove_ownership,omitempty"`
+}
+
+// MCPDNSRecord is one record for the user to add at their DNS provider.
+type MCPDNSRecord struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
 }
 
 // MCPTCPRoute is a published port as an agent sees it. Status matters here in
@@ -193,9 +210,14 @@ type MCPNotificationChannel struct {
 }
 
 type MCPDomain struct {
-	ID       string `json:"id"`
-	Domain   string `json:"domain"`
-	Verified bool   `json:"verified"`
+	ID        string `json:"id"`
+	Domain    string `json:"domain"`
+	Verified  bool   `json:"verified"`
+	IsPrimary bool   `json:"is_primary"`
+	// delegation or ondemand. It decides whether an internal route on this
+	// domain can hold a publicly trusted certificate, which an agent creating a
+	// route should know before it promises one.
+	DNSMode string `json:"dns_mode,omitempty"`
 }
 
 type MCPRegistrationToken struct {

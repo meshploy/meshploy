@@ -63,6 +63,7 @@ import {
   type ApiVolume,
   type ApiDbRoute,
 } from "@/lib/api"
+import { usableForNewRoutes } from "@/lib/api/domains"
 import { nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -1118,16 +1119,19 @@ function RouteForm({ projectId }: { projectId: string }) {
     enabled: !!orgId,
   })
 
-  const verifiedDomains = domainList.filter((d) => d.verified)
+  const verifiedDomains = domainList.filter(usableForNewRoutes)
   const allNodes = rawNodes.filter((n) => n.status === "online")
   const gatewayNode = rawNodes.find((n) => n.k3s_role === "server")
 
-  // Auto-select first verified domain
+  // Default to the first usable domain - the primary, since the API lists it
+  // first. Also when a restored draft names one that is no longer usable: a
+  // domain may have started retiring since the draft was saved, and the form
+  // would otherwise hold a choice it no longer offers, and fail on submit.
   useEffect(() => {
-    if (verifiedDomains.length > 0 && !rf.domainId) {
+    if (verifiedDomains.length > 0 && !verifiedDomains.some((d) => d.id === rf.domainId)) {
       patchRf({ domainId: verifiedDomains[0].id })
     }
-  }, [verifiedDomains.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [verifiedDomains.map((d) => d.id).join()]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedDomain = verifiedDomains.find((d) => d.id === rf.domainId)
 
@@ -1229,10 +1233,18 @@ function RouteForm({ projectId }: { projectId: string }) {
       }
       return routesApi.create(orgId, projectId, body, token)
     },
-    onSuccess: () => {
+    onSuccess: (route) => {
       draftSaved()
       qc.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
       qc.invalidateQueries({ queryKey: ["project", orgId, projectId] })
+      qc.invalidateQueries({ queryKey: ["custom-domains", orgId] })
+      // A custom hostname gets no certificate until its ownership is proved,
+      // and the record that proves it is on the route's own page: go there,
+      // rather than to a list where it looks done.
+      if (!route.domain_id) {
+        navigate({ to: "/projects/$id/routes/$routeId", params: { id: projectId, routeId: route.id } })
+        return
+      }
       navigate({ to: "/projects/$id/routes", params: { id: projectId } })
     },
   })
@@ -1317,6 +1329,10 @@ function RouteForm({ projectId }: { projectId: string }) {
                   <span className="font-mono text-foreground">{rf.customHostname || "your-domain.com"}</span> →{" "}
                   <span className="font-mono text-foreground">{gatewayNode.public_ip}</span>
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Then prove you own it: the route&apos;s page gives you a TXT record to add. No certificate is
+                  issued until it is found.
+                </p>
               </div>
             )}
           </div>
@@ -1324,6 +1340,26 @@ function RouteForm({ projectId }: { projectId: string }) {
           <div className="space-y-4">
             {verifiedDomains.length === 0 && (
               <p className="text-xs text-muted-foreground">No verified domains — add one in Domains first.</p>
+            )}
+            {/* One domain needs no picker - its name is already shown after the
+                subdomain. With more, the primary comes first and is the
+                default, and a retiring domain is not offered at all. */}
+            {verifiedDomains.length > 1 && (
+              <Field label="Domain" required>
+                <Select value={rf.domainId} onValueChange={(v) => patchRf({ domainId: v ?? "" })}>
+                  <SelectTrigger className="w-full data-[size=default]:h-9 text-sm bg-muted/20 border-border/60" aria-label="Domain">
+                    <SelectValue>{selectedDomain?.base_domain}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {verifiedDomains.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.base_domain}
+                        {d.is_primary ? " (primary)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
             )}
             <Field label="Subdomain" required>
               <div className="flex items-center gap-2">

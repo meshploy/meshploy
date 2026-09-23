@@ -24,7 +24,11 @@ export interface ApiDbRoute {
   zone: "public" | "internal" | "preview"
   subdomain: string
   hostname: string
+  /** Only meaningful when domain_id is null: a custom hostname, whose
+   *  ownership is proved by publishing this at `_meshploy-verify.<hostname>`.
+   *  Until it is, no certificate is issued for it. */
   custom_domain_verified: boolean
+  custom_domain_verify_token: string
   /** Stack that created this route. null = created directly. */
   stack_id: string | null
   /** False when paused: kept with its targets, not served. */
@@ -94,6 +98,29 @@ export const routes = {
     apiFetch<void>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}`,
       { method: "DELETE" },
+      token
+    ),
+
+  /** Moves a route to another base domain, keeping its subdomain, zone and
+   *  targets. keep_redirect leaves the old hostname answering with a 301. */
+  move: (
+    orgId: string,
+    projectId: string,
+    routeId: string,
+    body: { domain_id: string; keep_redirect?: boolean },
+    token: string
+  ) =>
+    apiFetch<{ route: ApiDbRoute; redirect?: ApiDbRoute }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/move`,
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+
+  /** Looks for the ownership TXT record of a custom hostname. */
+  verifyHostname: (orgId: string, projectId: string, routeId: string, token: string) =>
+    apiFetch<ApiDbRoute>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/routes/${routeId}/verify-hostname`,
+      { method: "POST" },
       token
     ),
 

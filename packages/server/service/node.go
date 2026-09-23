@@ -41,8 +41,8 @@ type NodeService struct {
 	gatewayIP     string // gateway mesh IP (MESH_IP) — used to detect self-scrape
 	hostGatewayIP string // Docker bridge host IP (HOST_GATEWAY_IP) — used instead of gatewayIP when API is in Docker
 	headscale     *HeadscaleService
-	headscaleURL  string // HEADSCALE_URL — handed to a machine being provisioned
-	headscaleUser string // HEADSCALE_USER — whose pre-auth keys those are
+	domains       *DomainService // where the public Headscale URL a joining machine needs comes from
+	headscaleUser string         // HEADSCALE_USER — whose pre-auth keys those are
 	notif         *NotificationService
 	k8s           kubernetes.Interface // nil without a cluster; removal then skips that step
 }
@@ -162,6 +162,12 @@ func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tails
 		TailscaleIP:    tailscaleIP,
 		Status:         status,
 		K3sRole:        k3sRole,
+	}
+	// A machine joining from elsewhere was handed the primary's headscale name,
+	// and keeps using it until it is moved. The gateway reaches Headscale over
+	// loopback and depends on no name at all.
+	if k3sRole != db.K3sRoleServer && s.domains != nil {
+		node.ControlURL = s.domains.PlatformURL(ctx, orgID, "headscale")
 	}
 	err := s.db.WithContext(ctx).Create(&node).Error
 	return &node, err
@@ -391,6 +397,15 @@ func (s *NodeService) Provision(ctx context.Context, token string) (*Provisionin
 	if s.headscale == nil {
 		return nil, fmt.Errorf("this gateway has no mesh: Headscale is not configured")
 	}
+	// The machine asking is outside the gateway, so it needs the name the
+	// internet reaches Headscale by - not the address the API uses for it.
+	controlURL := ""
+	if s.domains != nil {
+		controlURL = s.domains.PlatformURL(ctx, row.OrganizationID, "headscale")
+	}
+	if controlURL == "" {
+		return nil, fmt.Errorf("this gateway has no public domain for a machine to join through")
+	}
 
 	user := s.headscaleUser
 	if user == "" {
@@ -415,7 +430,7 @@ func (s *NodeService) Provision(ctx context.Context, token string) (*Provisionin
 		gateway = "100.64.0.1"
 	}
 	return &Provisioning{
-		HeadscaleURL: s.headscaleURL,
+		HeadscaleURL: controlURL,
 		PreAuthKey:   key.Key,
 		APIMeshURL:   fmt.Sprintf("http://%s:4000", gateway),
 		MeshRole:     role,

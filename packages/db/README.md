@@ -40,7 +40,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `nodes` | Mesh worker nodes + K3s + Headscale metadata |
 | `node_registration_tokens` | `mreg-<hex>` tokens for legacy worker self-registration |
 | `node_provisioning_tokens` | `mprov-<hex>` single-use provisioning tokens (hashed, with expiry) |
-| `domains` | Custom domains attached to an org |
+| `domains` | Base domains an org routes on. Each carries its own `dns_mode` (`delegation` or `ondemand`); `is_primary` marks the one whose platform subdomains serve and that new routes default to; `retiring_at` stops new routes attaching while everything already on it keeps serving |
 
 ### Workloads
 
@@ -130,6 +130,8 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `idx_resource_permission_grant` | No duplicate permission grants |
 
 Domain names are unique across all organisations through the `uniqueIndex` tag on `domains.base_domain`, so one org cannot claim another's domain.
+
+`idx_one_primary_domain_per_org` is a partial unique index on `domains(organization_id) WHERE is_primary`: every base domain routes, and primary only decides whose platform subdomains serve, so two of them would leave that undecided.
 
 Migrations run automatically on API startup; no migration CLI is needed.
 

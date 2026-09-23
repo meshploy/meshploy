@@ -80,7 +80,19 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		}
 	}
 
-	gitSvc := &GitIntegrationService{db: db, cfg: c}
+	// Built first: git integrations and notifications both need the primary
+	// domain's platform addresses.
+	domains := &DomainService{db: db}
+	if c != nil {
+		domains.installDomain = c.Domain
+		// Before anything reads a mode: a domain row from before the column
+		// would otherwise be served as a delegation it never was.
+		if err := domains.BackfillDNSModes(context.Background(), c.DNSMode); err != nil {
+			log.Printf("warning: backfill domain DNS modes: %v", err)
+		}
+	}
+	gitSvc := &GitIntegrationService{db: db, cfg: c, domains: domains}
+	domains.git = gitSvc
 
 	var headscaleSvc *HeadscaleService
 	if c != nil && c.HeadscaleURL != "" && c.HeadscaleKey != "" {
@@ -92,12 +104,11 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		gatewayIP = c.GatewayIP
 		hostGatewayIP = c.HostGatewayIP
 	}
-	notif := &NotificationService{db: db}
+	notif := &NotificationService{db: db, domains: domains}
 	if c != nil {
 		notif.consoleURL = c.FrontendURL
 	}
 	nodes := &NodeService{db: db, gatewayIP: gatewayIP, hostGatewayIP: hostGatewayIP}
-	domains := &DomainService{db: db}
 	auth := &AuthService{db: db}
 	if c != nil {
 		auth.setupToken = c.SetupToken
@@ -147,7 +158,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			Update("mesh_role", meshdb.MeshRoleWorkloadBuilder).Error; err != nil {
 			log.Printf("warning: default the gateway to a build node: %v", err)
 		}
-		if err := domains.CreateSeeded(ctx, orgID, c.Domain); err != nil {
+		if err := domains.CreateSeeded(ctx, orgID, c.Domain, meshdb.DNSMode(c.DNSMode)); err != nil {
 			log.Printf("warning: seed domain: %v", err)
 		}
 	}
@@ -211,8 +222,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	deployments.configFiles = configFiles
 
 	nodes.headscale = headscaleSvc
+	nodes.domains = domains
 	if c != nil {
-		nodes.headscaleURL = c.HeadscaleURL
 		nodes.headscaleUser = c.HeadscaleUser
 	}
 	nodes.notif = notif

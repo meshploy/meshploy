@@ -7,7 +7,7 @@ Commands are grouped by what they act on:
 | Group | Commands |
 |---|---|
 | [First-time setup](#first-time-setup) | `auth`, `link` |
-| [Server management](#server-management) | `node install`, `node uninstall`, `node status`, `server-upgrade`, `updater`, `setup serve`, `setup-token`, `install node-exporter`, `license` |
+| [Server management](#server-management) | `node install`, `node uninstall`, `node status`, `server-upgrade`, `updater`, `domain apply`, `setup serve`, `setup-token`, `install node-exporter`, `license` |
 | [Cluster and nodes](#cluster-and-nodes) | `node list`, `node add`, `node init`, `node remove`, `node delete`, `node token` |
 | [Projects and workloads](#projects-and-workloads) | `project`, `service`, `stack`, `apply`, `job`, `secret`, `volume`, `route` |
 | [Integrations](#integrations) | `integration git`, `integration registry`, `integration storage` |
@@ -172,13 +172,56 @@ Run it on the **gateway server**. `start`, `stop` and `run` need root. New insta
 
 ---
 
+### `meshploy domain apply`
+
+```bash
+sudo meshploy domain apply                # from the edge snapshot
+sudo meshploy domain apply --from-env     # from DOMAIN and DNS_MODE in .env
+sudo meshploy domain apply --dry-run      # show what would change, write nothing
+```
+
+Generates this gateway's Caddyfile, CoreDNS Corefile and zone files from the set
+of base domains it serves, and installs them when they differ from what is
+already there.
+
+The configuration is **output, not a file to edit**. It is rendered again
+whenever a base domain is added, removed, verified, or has its DNS mode changed,
+so an edit to `caddy/Caddyfile` or `coredns/Corefile` is lost. Put your own
+configuration in `caddy/conf.d/*.caddy`, which is imported and never written.
+
+An apply that finds nothing to do does nothing - the edge is not reloaded - so
+it is safe to run on every start and after every upgrade. When there is
+something to do, Caddy is asked to accept the new configuration **before**
+anything is written, and if the edge does not come up afterwards the previous
+configuration is put back and reloaded. A gateway that cannot serve is one
+nobody can reach to fix, including whoever ran the command.
+
+Each base domain carries its own DNS mode, so one gateway can serve a delegated
+domain and an on-demand one at the same time. A delegated domain gets its public
+zone and two ACME challenge zones; an on-demand domain gets only its mesh zone,
+because nothing delegates to this server for it and answering anyway would make
+the gateway authoritative for a name it does not hold.
+
+| Flag | Description |
+|---|---|
+| `--from-env` | Build the snapshot from `DOMAIN`, `DNS_MODE`, `PUBLIC_IP` and `MESH_IP` in `.env` and write it first. The install-time path, when there is one domain and no database to have recorded a second |
+| `--dry-run` | List the changes and write nothing |
+| `--force` | Write and reload even when nothing differs |
+| `--no-reload` | Write the files and leave the edge alone, for a caller that starts or restarts it itself. `install.sh` uses it |
+
+---
+
 ### `meshploy setup serve`
 
 ```bash
 sudo meshploy setup serve
 ```
 
-Serves the browser installer: a page on port 9000 that collects the domain and DNS mode, offers to migrate another platform already on the machine, runs the installer, and streams its output. `install.sh` starts it for you when you choose to continue setup in a browser. Run it yourself to reopen setup, for example to change the domain; it starts from the current configuration in `.env`. Requires root, and access is gated on the setup token from `/opt/meshploy/.env`. It serves plain HTTP, because no certificate exists yet.
+Serves the browser installer: a page on port 9000 that collects the domain and DNS mode, offers to migrate another platform already on the machine, runs the installer, and streams its output. `install.sh` starts it for you when you choose to continue setup in a browser. Run it yourself to reopen setup; it starts from the current configuration in `.env`. Requires root, and access is gated on the setup token from `/opt/meshploy/.env`. It serves plain HTTP, because no certificate exists yet.
+
+Re-running it is safe: the database password, the JWT and encryption keys and the setup token are read back from `.env` rather than regenerated, keys the installer does not own are left alone, and the CoreDNS and Headscale configs are rendered from saved templates so a second run does not keep the first one's domain.
+
+**Changing the domain this way is not yet complete.** It rewrites the platform's own configuration, but a worker joined the mesh with `--login-server=https://headscale.<old domain>` and keeps pointing there, and routes keep the hostnames they were created with. Re-point each worker yourself afterwards with `tailscale up --login-server=https://headscale.<new domain> --force-reauth`, and expect to recreate routes on the new name.
 
 | Flag | Description |
 |---|---|
@@ -379,7 +422,8 @@ Each compose service becomes a Meshploy service, read the way compose reads it:
 | Command | Description |
 |---|---|
 | `route list` | List HTTP routes in the project |
-| `route create --hostname <host> --service <svc>` | Map a hostname to a service |
+| `route create --hostname <host> --service <svc>` | Map a hostname to a service. Prints the DNS records that prove you own it |
+| `route verify <route-id\|hostname>` | Look for the TXT record proving you own a custom hostname, so it gets a certificate |
 | `route pause <route-id>` | Stop serving a route and keep it: visitors get a 404, no certificate is issued |
 | `route publish <route-id>` | Serve a paused route again |
 | `route delete <route-id>` | Remove a route |
@@ -388,6 +432,8 @@ Each compose service becomes a Meshploy service, read the way compose reads it:
 | `route tcp pause <route-id>` | Close a port and keep the route |
 | `route tcp publish <route-id>` | Open a paused port again |
 | `route tcp delete <route-id>` | Stop publishing a port |
+
+A route made with `--hostname` is a custom hostname: it is not a subdomain of a base domain that was proved once for the whole zone, so it is proved on its own. `route create` prints two records to add at the hostname's DNS provider - a TXT record at `_meshploy-verify.<hostname>` and an A record pointing at the gateway - and `route verify` checks for the first. **Until it is found no certificate is issued**, so requests fail the TLS handshake even once DNS points at the gateway. `route list` shows each route's ownership state. The MCP server has the same step as `verify_route_hostname`, and every route it returns carries `ownership_verified` and, while unproved, the records to add.
 
 A route carries a hostname through Caddy, with TLS, for anything that speaks HTTP. What does not - Postgres, Redis, SSH - takes a TCP route instead: the gateway listens on a port of its own and forwards it over the mesh. `--allow` restricts who may connect, by address or range, and an empty allow-list means anyone who can reach the gateway. The host firewall, and a cloud security group where there is one, must allow the port too: the gateway listens on it, but neither of those knows that. A managed database has to have mesh access before it can be published.
 

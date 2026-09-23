@@ -22,6 +22,7 @@ import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/ind
 import { Route as AppNodesIndexRouteImport } from './routes/_app/nodes/index'
 import { Route as AppMigrationIndexRouteImport } from './routes/_app/migration/index'
 import { Route as AppIntegrationsIndexRouteImport } from './routes/_app/integrations/index'
+import { Route as AppDomainsIndexRouteImport } from './routes/_app/domains/index'
 import { Route as AppDiscoveryIndexRouteImport } from './routes/_app/discovery/index'
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
 import { Route as AppAgentsIndexRouteImport } from './routes/_app/agents/index'
@@ -32,6 +33,7 @@ import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
 import { Route as AppNodesIdRouteImport } from './routes/_app/nodes/$id'
 import { Route as AppIntegrationsNewRouteImport } from './routes/_app/integrations/new'
 import { Route as AppIntegrationsTabsRouteImport } from './routes/_app/integrations/_tabs'
+import { Route as AppDomainsDomainIdRouteImport } from './routes/_app/domains/$domainId'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/_app/agents/$agentId'
 import { Route as AppProjectsIdRouteRouteImport } from './routes/_app/projects/$id/route'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/_app/projects/$id/index'
@@ -144,6 +146,11 @@ const AppIntegrationsIndexRoute = AppIntegrationsIndexRouteImport.update({
   path: '/integrations/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDomainsIndexRoute = AppDomainsIndexRouteImport.update({
+  id: '/domains/',
+  path: '/domains/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDiscoveryIndexRoute = AppDiscoveryIndexRouteImport.update({
   id: '/discovery/',
   path: '/discovery/',
@@ -192,6 +199,11 @@ const AppIntegrationsNewRoute = AppIntegrationsNewRouteImport.update({
 const AppIntegrationsTabsRoute = AppIntegrationsTabsRouteImport.update({
   id: '/integrations/_tabs',
   path: '/integrations',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDomainsDomainIdRoute = AppDomainsDomainIdRouteImport.update({
+  id: '/domains/$domainId',
+  path: '/domains/$domainId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAgentsAgentIdRoute = AppAgentsAgentIdRouteImport.update({
@@ -480,6 +492,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof AuthRegisterRoute
   '/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/domains/$domainId': typeof AppDomainsDomainIdRoute
   '/integrations': typeof AppIntegrationsTabsRouteWithChildren
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
@@ -490,6 +503,7 @@ export interface FileRoutesByFullPath {
   '/agents/': typeof AppAgentsIndexRoute
   '/cluster/': typeof AppClusterIndexRoute
   '/discovery/': typeof AppDiscoveryIndexRoute
+  '/domains/': typeof AppDomainsIndexRoute
   '/integrations/': typeof AppIntegrationsIndexRoute
   '/migration/': typeof AppMigrationIndexRoute
   '/nodes/': typeof AppNodesIndexRoute
@@ -550,6 +564,7 @@ export interface FileRoutesByTo {
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/domains/$domainId': typeof AppDomainsDomainIdRoute
   '/integrations': typeof AppIntegrationsIndexRoute
   '/integrations/new': typeof AppIntegrationsNewRoute
   '/nodes/$id': typeof AppNodesIdRoute
@@ -560,6 +575,7 @@ export interface FileRoutesByTo {
   '/agents': typeof AppAgentsIndexRoute
   '/cluster': typeof AppClusterIndexRoute
   '/discovery': typeof AppDiscoveryIndexRoute
+  '/domains': typeof AppDomainsIndexRoute
   '/migration': typeof AppMigrationIndexRoute
   '/nodes': typeof AppNodesIndexRoute
   '/projects': typeof AppProjectsIndexRoute
@@ -619,6 +635,7 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
   '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/_app/domains/$domainId': typeof AppDomainsDomainIdRoute
   '/_app/integrations/_tabs': typeof AppIntegrationsTabsRouteWithChildren
   '/_app/integrations/new': typeof AppIntegrationsNewRoute
   '/_app/nodes/$id': typeof AppNodesIdRoute
@@ -629,6 +646,7 @@ export interface FileRoutesById {
   '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
   '/_app/discovery/': typeof AppDiscoveryIndexRoute
+  '/_app/domains/': typeof AppDomainsIndexRoute
   '/_app/integrations/': typeof AppIntegrationsIndexRoute
   '/_app/migration/': typeof AppMigrationIndexRoute
   '/_app/nodes/': typeof AppNodesIndexRoute
@@ -692,6 +710,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/projects/$id'
     | '/agents/$agentId'
+    | '/domains/$domainId'
     | '/integrations'
     | '/integrations/new'
     | '/nodes/$id'
@@ -702,6 +721,7 @@ export interface FileRouteTypes {
     | '/agents/'
     | '/cluster/'
     | '/discovery/'
+    | '/domains/'
     | '/integrations/'
     | '/migration/'
     | '/nodes/'
@@ -762,6 +782,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/agents/$agentId'
+    | '/domains/$domainId'
     | '/integrations'
     | '/integrations/new'
     | '/nodes/$id'
@@ -772,6 +793,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/cluster'
     | '/discovery'
+    | '/domains'
     | '/migration'
     | '/nodes'
     | '/projects'
@@ -830,6 +852,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/projects/$id'
     | '/_app/agents/$agentId'
+    | '/_app/domains/$domainId'
     | '/_app/integrations/_tabs'
     | '/_app/integrations/new'
     | '/_app/nodes/$id'
@@ -840,6 +863,7 @@ export interface FileRouteTypes {
     | '/_app/agents/'
     | '/_app/cluster/'
     | '/_app/discovery/'
+    | '/_app/domains/'
     | '/_app/integrations/'
     | '/_app/migration/'
     | '/_app/nodes/'
@@ -994,6 +1018,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIntegrationsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/domains/': {
+      id: '/_app/domains/'
+      path: '/domains'
+      fullPath: '/domains/'
+      preLoaderRoute: typeof AppDomainsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/discovery/': {
       id: '/_app/discovery/'
       path: '/discovery'
@@ -1062,6 +1093,13 @@ declare module '@tanstack/react-router' {
       path: '/integrations'
       fullPath: '/integrations'
       preLoaderRoute: typeof AppIntegrationsTabsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/domains/$domainId': {
+      id: '/_app/domains/$domainId'
+      path: '/domains/$domainId'
+      fullPath: '/domains/$domainId'
+      preLoaderRoute: typeof AppDomainsDomainIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/agents/$agentId': {
@@ -1580,6 +1618,7 @@ interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppProjectsIdRouteRoute: typeof AppProjectsIdRouteRouteWithChildren
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
+  AppDomainsDomainIdRoute: typeof AppDomainsDomainIdRoute
   AppIntegrationsTabsRoute: typeof AppIntegrationsTabsRouteWithChildren
   AppIntegrationsNewRoute: typeof AppIntegrationsNewRoute
   AppNodesIdRoute: typeof AppNodesIdRoute
@@ -1590,6 +1629,7 @@ interface AppRouteChildren {
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
   AppDiscoveryIndexRoute: typeof AppDiscoveryIndexRoute
+  AppDomainsIndexRoute: typeof AppDomainsIndexRoute
   AppIntegrationsIndexRoute: typeof AppIntegrationsIndexRoute
   AppMigrationIndexRoute: typeof AppMigrationIndexRoute
   AppNodesIndexRoute: typeof AppNodesIndexRoute
@@ -1603,6 +1643,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppProjectsIdRouteRoute: AppProjectsIdRouteRouteWithChildren,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
+  AppDomainsDomainIdRoute: AppDomainsDomainIdRoute,
   AppIntegrationsTabsRoute: AppIntegrationsTabsRouteWithChildren,
   AppIntegrationsNewRoute: AppIntegrationsNewRoute,
   AppNodesIdRoute: AppNodesIdRoute,
@@ -1613,6 +1654,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,
   AppDiscoveryIndexRoute: AppDiscoveryIndexRoute,
+  AppDomainsIndexRoute: AppDomainsIndexRoute,
   AppIntegrationsIndexRoute: AppIntegrationsIndexRoute,
   AppMigrationIndexRoute: AppMigrationIndexRoute,
   AppNodesIndexRoute: AppNodesIndexRoute,

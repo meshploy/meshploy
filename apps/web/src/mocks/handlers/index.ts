@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw"
+import { domainsHandlers } from "./domains"
 import { workspaceHandlers } from "./workspace"
 import { streamHandlers } from "./streams"
 import { authHandlers } from "./auth"
@@ -15,6 +16,9 @@ import { clusterHandlers } from "./cluster"
 import { systemHandlers } from "./system"
 
 export const handlers = [
+  // Ahead of the generic CRUD, which would otherwise answer the domain list and
+  // delete without the rules the real API enforces.
+  ...domainsHandlers,
   ...workspaceHandlers,
   ...streamHandlers,
   ...authHandlers,

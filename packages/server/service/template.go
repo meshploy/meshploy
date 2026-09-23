@@ -160,9 +160,14 @@ func nextFreeName(base string, taken func(string) bool) string {
 	return fmt.Sprintf("%s-%d", base, time.Now().UnixMilli())
 }
 
-// orgBaseDomain returns the org's first verified domain (id + base domain) for
-// the project, falling back to the configured DOMAIN for the base name when no
-// domain record exists. A nil id means no domain-based routing is possible.
+// orgBaseDomain returns the domain a template's routes go on - the primary,
+// or failing that the oldest usable one - falling back to the configured DOMAIN
+// for the base name when no domain record exists. A nil id means no
+// domain-based routing is possible.
+//
+// Primary first because it is what a new route defaults to everywhere else,
+// and never a retiring domain: a template would only put routes on it that
+// then have to be moved off again.
 func (s *TemplateService) orgBaseDomain(ctx context.Context, projectID uuid.UUID) (*uuid.UUID, string) {
 	orgID, err := s.projectOrgID(ctx, projectID)
 	if err != nil {
@@ -170,8 +175,8 @@ func (s *TemplateService) orgBaseDomain(ctx context.Context, projectID uuid.UUID
 	}
 	var d meshdb.Domain
 	err = s.db.WithContext(ctx).
-		Where("organization_id = ? AND verified = ?", orgID, true).
-		Order("created_at ASC").First(&d).Error
+		Where("organization_id = ? AND verified = ? AND retiring_at IS NULL", orgID, true).
+		Order("is_primary DESC, created_at ASC").First(&d).Error
 	if err != nil {
 		return nil, s.cfgDomain()
 	}

@@ -30,10 +30,32 @@ import (
 // When it fails the console shows the URL and secret to paste in by hand, and
 // the receiver treats a hand-made hook exactly like one made here.
 
-// PushHookURL is where this integration's providers should deliver pushes.
+// PushHookURL is where this integration's providers should deliver pushes: the
+// primary domain's API. New hooks are created there; existing ones keep
+// whatever address they were created with until they are moved.
 func (s *GitIntegrationService) PushHookURL(integration *db.GitIntegration) string {
-	return strings.TrimRight(s.cfg.APIBaseURL, "/") +
-		"/api/v1/webhooks/git/" + integration.Provider + "/" + integration.ID.String()
+	return s.apiBase(integration.OrganizationID) + pushHookPath(integration)
+}
+
+// pushHookPath is what identifies one of this integration's hooks, whatever
+// host it was created on.
+//
+// Hooks used to be matched by their whole URL. Once the primary can move, the
+// URL a hook should have changes while the hooks already on a repository do
+// not - so an exact match would take an existing hook for someone else's,
+// create a second one beside it, and later delete neither. The path names the
+// integration; the host only says which domain it was made under.
+func pushHookPath(integration *db.GitIntegration) string {
+	return "/api/v1/webhooks/git/" + integration.Provider + "/" + integration.ID.String()
+}
+
+// isOurHook reports whether a hook on a repository is this integration's.
+func isOurHook(integration *db.GitIntegration, hookURL string) bool {
+	u, err := url.Parse(hookURL)
+	if err != nil {
+		return false
+	}
+	return strings.TrimRight(u.Path, "/") == pushHookPath(integration)
 }
 
 // errNoHookScope is what a provider refusing to list or create hooks comes back
@@ -227,8 +249,10 @@ func (s *GitIntegrationService) EnsurePushHook(ctx context.Context, integrationI
 	if err != nil {
 		return err
 	}
+	// One of ours on any host counts: a hook made under an earlier primary
+	// still delivers while that domain serves, and moving it is its own step.
 	for _, h := range existing {
-		if h.URL == hookURL {
+		if isOurHook(&integration, h.URL) {
 			return nil
 		}
 	}
@@ -372,12 +396,13 @@ func (s *GitIntegrationService) RemovePushHookIfUnused(ctx context.Context, inte
 	if err != nil {
 		return err
 	}
-	hookURL := s.PushHookURL(&integration)
 	for _, h := range hooks {
-		if h.URL != hookURL {
+		if !isOurHook(&integration, h.URL) {
 			continue
 		}
-		return gitAPI(http.MethodDelete, s.hookURL(&integration, repo, h.ID), hookAuthScheme(integration.Provider), token, nil, nil)
+		if err := gitAPI(http.MethodDelete, s.hookURL(&integration, repo, h.ID), hookAuthScheme(integration.Provider), token, nil, nil); err != nil {
+			return err
+		}
 	}
 	return nil
 }

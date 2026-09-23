@@ -16,7 +16,7 @@ import { StatusPill } from "@/components/layout/resource-workbench"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { UserMenu } from "./user-menu"
-import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, tcpRoutes as tcpRoutesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi, variableGroups, configFiles, agents } from "@/lib/api"
+import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, tcpRoutes as tcpRoutesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi, variableGroups, configFiles, agents, domains } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
@@ -62,7 +62,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "member" | "tcp-route" | "variable-group" | "config-file" | "agent" | "static" | "uuid"
+type ResourceType = "project" | "service" | "deployment" | "node" | "volume" | "route" | "job" | "stack" | "member" | "tcp-route" | "variable-group" | "config-file" | "agent" | "domain" | "static" | "uuid"
 
 interface BreadcrumbEntry {
   segment: string
@@ -113,6 +113,8 @@ function parsePath(segments: string[]): BreadcrumbEntry[] {
       entries.push({ segment, href, type: "config-file", projectId })
     } else if (prev === "agents") {
       entries.push({ segment, href, type: "agent" })
+    } else if (prev === "domains") {
+      entries.push({ segment, href, type: "domain" })
     } else if (prev === "users") {
       entries.push({ segment, href, type: "member" })
     } else {
@@ -195,10 +197,13 @@ function BreadcrumbLabel({ entry }: { entry: BreadcrumbEntry }) {
 
   const groupQuery = useQuery({ queryKey: ["variable-group", orgId, entry.projectId, entry.segment], queryFn: () => variableGroups.get(orgId!, entry.projectId!, entry.segment, token!), enabled: !!orgId && !!token && entry.type === "variable-group" })
   const fileQuery = useQuery({ queryKey: ["config-file", orgId, entry.projectId, entry.segment], queryFn: () => configFiles.get(orgId!, entry.projectId!, entry.segment, token!), enabled: !!orgId && !!token && entry.type === "config-file" })
+  // Same key as the Domains page, so the name is already in the cache.
+  const domainQuery = useQuery({ queryKey: ["domain", orgId, entry.segment], queryFn: () => domains.get(orgId!, entry.segment, token!), enabled: !!orgId && !!token && entry.type === "domain" })
   const agentQuery = useQuery({ queryKey: ["agents", orgId], queryFn: () => agents.list(orgId!, token!), enabled: !!orgId && !!token && entry.type === "agent", select: list => list.find(a => a.id === entry.segment) })
   if (entry.type === "variable-group") return <>{groupQuery.data?.name ?? "Variable group"}</>
   if (entry.type === "config-file") return <>{fileQuery.data?.name ?? "Config file"}</>
   if (entry.type === "agent") return <>{agentQuery.data?.name ?? "Agent"}</>
+  if (entry.type === "domain") return <>{domainQuery.data?.base_domain ?? "Domain"}</>
   if (entry.type === "static") return <>{SEGMENT_LABELS[entry.segment] ?? entry.segment}</>
   if (entry.type === "deployment") return <>{entry.segment.slice(0, 8)}</>
   if (entry.type === "project") return <>{projectQuery.data?.name ?? entry.segment.slice(0, 8)}</>

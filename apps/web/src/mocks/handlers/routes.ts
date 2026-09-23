@@ -35,9 +35,6 @@ export const routesHandlers = [
     new HttpResponse(null, { status: 204 })
   ),
 
-  // Domains
-  http.get("/api/v1/orgs/:orgId/domains", () => HttpResponse.json([])),
-
   // A TCP route created from Discovery, so the dialog can be tried offline.
   http.post("/api/v1/orgs/:orgId/projects/:projectId/tcp-routes", async ({ request }) => {
     const body = await request.json() as Record<string, unknown>

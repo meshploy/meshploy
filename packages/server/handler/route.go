@@ -157,6 +157,15 @@ func (h *Handler) registerRouteRoutes(api huma.API) {
 	}, h.DeleteRoute)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "move-route",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/move",
+		Summary:     "Move a route to another base domain, optionally leaving a redirect on the old hostname",
+		Tags:        []string{"Routes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.MoveRoute)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "verify-custom-hostname",
 		Method:      "POST",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/routes/{routeId}/verify-hostname",
@@ -328,6 +337,44 @@ func (h *Handler) setRoutePublished(ctx context.Context, input *RoutePathInput, 
 		return nil, notFound(err)
 	}
 	return &GetRouteOutput{Body: route}, nil
+}
+
+type MoveRouteInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	RouteID   string `path:"routeId"`
+	Body      struct {
+		DomainID     string `json:"domain_id" required:"true" doc:"The base domain to move the route to"`
+		KeepRedirect bool   `json:"keep_redirect,omitempty" doc:"Leave the old hostname answering with a 301 to the new one"`
+	}
+}
+
+type MoveRouteOutput struct {
+	Body struct {
+		Route *db.Route `json:"route"`
+		// Redirect is the route left on the old hostname, when one was asked for.
+		Redirect *db.Route `json:"redirect,omitempty"`
+	}
+}
+
+func (h *Handler) MoveRoute(ctx context.Context, input *MoveRouteInput) (*MoveRouteOutput, error) {
+	_, _, routeID, projectID, err := h.checkAccess(ctx, input.OrgID, input.RouteID, db.ResourceRoute, db.ActionUpdate, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	domainID, err := parseUUID(input.Body.DomainID)
+	if err != nil {
+		return nil, err
+	}
+	moved, redirect, err := h.svc.Routes.MoveRoute(ctx, svc.MoveRouteInput{
+		RouteID: routeID, ProjectID: *projectID, DomainID: domainID, KeepRedirect: input.Body.KeepRedirect,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := &MoveRouteOutput{}
+	out.Body.Route, out.Body.Redirect = moved, redirect
+	return out, nil
 }
 
 func (h *Handler) VerifyCustomHostname(ctx context.Context, input *RoutePathInput) (*GetRouteOutput, error) {

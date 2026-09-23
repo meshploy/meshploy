@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -117,6 +118,12 @@ func (h *Handler) DeployWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
+	}
+	// Which name the CI job called through, now that the token has vouched for
+	// it. This URL lives in someone's CI, out of Meshploy's reach; watching
+	// where calls arrive is the only way to know a domain is still in use.
+	if err := h.svc.Domains.RecordDeployHookCall(r.Context(), serviceID, r.Host); err != nil {
+		log.Printf("warning: record deploy webhook host: %v", err)
 	}
 
 	w.WriteHeader(http.StatusAccepted)

@@ -29,8 +29,60 @@ import (
 
 // GitIntegrationService handles GitHub App setup, installation flows, and repo listing.
 type GitIntegrationService struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db      *gorm.DB
+	cfg     *config.Config
+	domains *DomainService
+}
+
+// apiBase is the API address a provider should be given now: the primary
+// domain's, which can move, rather than API_BASE_URL, which is written once at
+// install.
+func (s *GitIntegrationService) apiBase(orgID uuid.UUID) string {
+	if s.domains != nil {
+		if u := s.domains.PlatformURL(context.Background(), orgID, "api"); u != "" {
+			return u
+		}
+	}
+	if s.cfg == nil {
+		return ""
+	}
+	return strings.TrimRight(s.cfg.APIBaseURL, "/")
+}
+
+// consoleBase is the console address to show a provider, on the primary.
+func (s *GitIntegrationService) consoleBase(orgID uuid.UUID) string {
+	if s.domains != nil {
+		if u := s.domains.PlatformURL(context.Background(), orgID, "console"); u != "" {
+			return u
+		}
+	}
+	if s.cfg == nil {
+		return ""
+	}
+	return strings.TrimRight(s.cfg.FrontendURL, "/")
+}
+
+// registeredBase is where this integration's provider-side registrations
+// point, taking an integration recorded before the field existed to have
+// registered the install's API_BASE_URL.
+func (s *GitIntegrationService) registeredBase(g *db.GitIntegration) string {
+	if g.RegisteredAPIBase != "" {
+		return g.RegisteredAPIBase
+	}
+	if s.cfg == nil {
+		return ""
+	}
+	// install.sh writes API_BASE_URL as https://api.<DOMAIN>. Where it is unset
+	// or still the development default, the install domain says the same thing
+	// - and a blank here would make the integration invisible to the check that
+	// stops its domain being removed.
+	if u := strings.TrimRight(s.cfg.APIBaseURL, "/"); u != "" && !strings.Contains(u, "localhost") {
+		return u
+	}
+	if s.cfg.Domain != "" {
+		return "https://api." + s.cfg.Domain
+	}
+	return ""
 }
 
 // GitRepo is a minimal repo descriptor returned to callers.
@@ -52,11 +104,13 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 	githubOrg string,
 ) (row *db.GitIntegration, githubURL, manifest string, err error) {
 	autoName := "github-" + time.Now().UTC().Format("20060102-150405")
+	apiBase := s.apiBase(orgID)
 	row = &db.GitIntegration{
-		OrganizationID: orgID,
-		Provider:       "github",
-		AuthMethod:     "app",
-		Name:           autoName,
+		OrganizationID:    orgID,
+		Provider:          "github",
+		AuthMethod:        "app",
+		Name:              autoName,
+		RegisteredAPIBase: apiBase,
 	}
 	if err = s.db.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, "", "", huma.Error500InternalServerError("failed to create git integration")
@@ -64,8 +118,7 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 
 	state := buildState(row.ID.String(), s.cfg.JWTSecret)
 
-	base := s.cfg.FrontendURL
-	apiBase := s.cfg.APIBaseURL
+	base := s.consoleBase(orgID)
 	m := map[string]any{
 		"name":          "Meshploy",
 		"url":           base,
@@ -453,6 +506,8 @@ func (s *GitIntegrationService) CreatePATIntegration(ctx context.Context, orgID 
 		BaseURL:        baseURL,
 		Groups:         groups,
 		WebhookSecret:  db.EncryptedString(newWebhookSecret()),
+		// Where the push hooks it creates will deliver.
+		RegisteredAPIBase: s.apiBase(orgID),
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, huma.Error500InternalServerError("failed to save git integration")
@@ -475,6 +530,7 @@ func (s *GitIntegrationService) InitOAuthIntegration(ctx context.Context, orgID 
 		OAuthClientSecret: db.EncryptedString(clientSecret),
 		OAuthRedirectURI:  redirectURI,
 		WebhookSecret:     db.EncryptedString(newWebhookSecret()),
+		RegisteredAPIBase: s.apiBase(orgID),
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, "", huma.Error500InternalServerError("failed to save git integration")
