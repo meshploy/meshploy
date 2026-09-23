@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.18.0](https://github.com/meshploy/meshploy/compare/v0.17.0...v0.18.0) (2026-09-23)
+
+
+### Features
+
+* **domains:** serve several base domains, with a movable primary and a retire flow ([cba55d5](https://github.com/meshploy/meshploy/commit/cba55d5cc6f6ca67adcaad1fc91e93ebb4ea98a5))
+* **edge:** generate caddy, coredns and headscale config from an edge snapshot ([5ae9e34](https://github.com/meshploy/meshploy/commit/5ae9e34bf7b821c815bdeea0710198205b6fceaa))
+* **routes:** prove a custom hostname with a TXT record in the console, cli and mcp ([e8ef4e8](https://github.com/meshploy/meshploy/commit/e8ef4e884378a9d4bd0659393116f21b81544b10))
+
+
+### Bug Fixes
+
+* **console:** show the migration card's stage as a segmented bar and pluralise agent tokens ([9d1bdba](https://github.com/meshploy/meshploy/commit/9d1bdbad4c9d45528205f04806532ff19bffe5e9))
+* **domains:** ask only for the wildcard record on an on-demand domain, and say base domain on the add button ([d002da9](https://github.com/meshploy/meshploy/commit/d002da90f2659ce45a26327c19c9bdbea9d45bff))
+* link licence enquiries to enterprise contact form ([c42cdd5](https://github.com/meshploy/meshploy/commit/c42cdd563367c07b4fd71f3766e7be043ef3ae5d))
+
 ## [0.17.0](https://github.com/meshploy/meshploy/compare/v0.16.0...v0.17.0) (2026-09-22)
 
 
