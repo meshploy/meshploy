@@ -102,11 +102,11 @@ test.describe("Domains", () => {
 
   test("adding a domain goes straight to its records", async ({ page }) => {
     await goto(page, "/domains")
-    await page.getByRole("button", { name: "Add domain" }).click()
+    await page.getByRole("button", { name: "Add base domain" }).click()
     const dialog = page.getByRole("dialog")
     await dialog.getByLabel("Domain").fill("new.example.com")
     await dialog.getByRole("radio", { name: /On-demand TLS/ }).click()
-    await dialog.getByRole("button", { name: "Add domain" }).click()
+    await dialog.getByRole("button", { name: "Add base domain" }).click()
 
     await expect(page.getByRole("heading", { name: "new.example.com" })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText("_meshploy-verify.new.example.com").locator("visible=true")).toBeVisible()
@@ -115,10 +115,10 @@ test.describe("Domains", () => {
 
   test("a name that is not a domain is refused in the dialog", async ({ page }) => {
     await goto(page, "/domains")
-    await page.getByRole("button", { name: "Add domain" }).click()
+    await page.getByRole("button", { name: "Add base domain" }).click()
     const dialog = page.getByRole("dialog")
     await dialog.getByLabel("Domain").fill("localhost")
-    await dialog.getByRole("button", { name: "Add domain" }).click()
+    await dialog.getByRole("button", { name: "Add base domain" }).click()
     await expect(dialog.getByText(/is not a domain name/)).toBeVisible()
   })
 })

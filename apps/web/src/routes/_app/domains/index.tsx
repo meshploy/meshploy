@@ -58,7 +58,7 @@ function DomainsPage() {
         {isAdmin && (
           <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs shrink-0" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" />
-            Add domain
+            Add base domain
           </Button>
         )}
       </div>
@@ -284,7 +284,7 @@ function AddDomainDialog({
             </Button>
             <Button type="submit" disabled={!name.trim() || create.isPending}>
               {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-              Add domain
+              Add base domain
             </Button>
           </DialogFooter>
         </form>

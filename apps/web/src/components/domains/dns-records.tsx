@@ -36,10 +36,9 @@ export function DnsRecords({
           { name: domain, type: "NS", value: `ns1.${domain}`, note: "At the parent zone or registrar" },
           { name: `ns1.${domain}`, type: "A", value: ip, note: "Glue record, beside the NS" },
         ]
-      : [
-          { name: domain, type: "A", value: ip },
-          { name: `*.${domain}`, type: "A", value: ip },
-        ]
+      : // The wildcard only. Every route has a subdomain, so nothing here serves
+        // the bare name, and asking for it would move a website that lives there.
+        [{ name: `*.${domain}`, type: "A", value: ip }]
 
   return (
     <ol className="space-y-5">
