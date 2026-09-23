@@ -378,7 +378,7 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 
 	ms.AddTool(
 		mcp.NewTool("create_route",
-			mcp.WithDescription("Map a hostname to a service for incoming traffic."),
+			mcp.WithDescription("Map a hostname to a service for incoming traffic. The hostname is a custom one, so it gets no certificate until ownership is proved: the result's prove_ownership lists the DNS records for the user to add, then call verify_route_hostname."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
 			mcp.WithString("hostname", mcp.Required(), mcp.Description("Full hostname, e.g. app.example.com")),
 			mcp.WithString("service_id", mcp.Required(), mcp.Description("Service ID to route traffic to")),
@@ -411,6 +411,15 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 			mcp.WithString("route_id", mcp.Required(), mcp.Description("Route ID")),
 		),
 		s.handleSetRoutePublished(true),
+	)
+
+	ms.AddTool(
+		mcp.NewTool("verify_route_hostname",
+			mcp.WithDescription("Check that the user has published the TXT record proving they own a route's custom hostname. Until it is found no certificate is issued and the route fails TLS. If it is not found yet, the error lists the records to add; DNS can take a few minutes to propagate, so tell the user and try again rather than retrying in a loop."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
+			mcp.WithString("route_id", mcp.Required(), mcp.Description("Route ID or hostname")),
+		),
+		s.handleVerifyRouteHostname,
 	)
 
 	ms.AddTool(
@@ -887,11 +896,7 @@ func (s *srv) handleCreateRoute(_ context.Context, req mcp.CallToolRequest) (*mc
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	svcID := ""
-	if route.ServiceID != nil {
-		svcID = *route.ServiceID
-	}
-	return jsonResult(MCPRoute{ID: route.ID, Hostname: route.Hostname, ServiceID: svcID, Port: route.TargetPort, Published: route.Published})
+	return jsonResult(s.toMCPRoute(*route, ""))
 }
 
 func (s *srv) handleSetRoutePublished(published bool) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -906,11 +911,7 @@ func (s *srv) handleSetRoutePublished(published bool) func(context.Context, mcp.
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		svcID := ""
-		if route.ServiceID != nil {
-			svcID = *route.ServiceID
-		}
-		return jsonResult(MCPRoute{ID: route.ID, Hostname: route.Hostname, ServiceID: svcID, Port: route.TargetPort, Published: route.Published})
+		return jsonResult(s.toMCPRoute(*route, ""))
 	}
 }
 
@@ -1371,4 +1372,62 @@ func (s *srv) handleDeleteNode(_ context.Context, req mcp.CallToolRequest) (*mcp
 		}
 	}
 	return mcp.NewToolResultError("node " + nodeRef + " not found"), nil
+}
+
+func (s *srv) handleVerifyRouteHostname(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectID := mcp.ParseString(req, "project_id", "")
+	ref := mcp.ParseString(req, "route_id", "")
+	route, err := s.c.FindRoute(s.orgID, projectID, ref)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if !route.NeedsOwnershipProof() {
+		// A subdomain of a base domain was proved with the zone, and a verified
+		// hostname stays verified: nothing to check.
+		return jsonResult(s.toMCPRoute(*route, ""))
+	}
+	verified, err := s.c.VerifyRouteHostname(s.orgID, projectID, route.ID)
+	if err != nil {
+		// The check can issue a token the route never had; read it back so the
+		// records named are the ones that will be looked for.
+		if fresh, ferr := s.c.FindRoute(s.orgID, projectID, route.ID); ferr == nil {
+			route = fresh
+		}
+		records := s.toMCPRoute(*route, "").ProveOwnership
+		lines := make([]string, 0, len(records))
+		for _, r := range records {
+			lines = append(lines, fmt.Sprintf("%s %s %s", r.Name, r.Type, r.Value))
+		}
+		return mcp.NewToolResultError(fmt.Sprintf("%v. Records to add at the DNS provider for %s:\n%s",
+			err, route.Hostname, strings.Join(lines, "\n"))), nil
+	}
+	return jsonResult(s.toMCPRoute(*verified, ""))
+}
+
+// toMCPRoute is how every tool reports a route, so an agent always learns
+// whether a custom hostname still needs proving, and what to add if it does.
+// publicIP is looked up when empty and a proof is needed.
+func (s *srv) toMCPRoute(r client.Route, publicIP string) MCPRoute {
+	out := MCPRoute{
+		ID: r.ID, Hostname: r.Hostname, Port: r.TargetPort, Published: r.Published,
+		CustomHostname:    r.IsCustomHostname(),
+		OwnershipVerified: !r.NeedsOwnershipProof(),
+	}
+	if r.ServiceID != nil {
+		out.ServiceID = *r.ServiceID
+	}
+	if r.NeedsOwnershipProof() {
+		if publicIP == "" {
+			publicIP = s.c.GatewayPublicIP(s.orgID)
+		}
+		if publicIP == "" {
+			publicIP = "<gateway public IP>"
+		}
+		if r.CustomDomainVerifyToken != "" {
+			out.ProveOwnership = append(out.ProveOwnership,
+				MCPDNSRecord{Name: r.VerifyRecordName(), Type: "TXT", Value: r.CustomDomainVerifyToken})
+		}
+		out.ProveOwnership = append(out.ProveOwnership, MCPDNSRecord{Name: r.Hostname, Type: "A", Value: publicIP})
+	}
+	return out
 }

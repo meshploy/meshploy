@@ -202,12 +202,13 @@ func (s *srv) handleListResources(_ context.Context, req mcp.CallToolRequest) (*
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		out := make([]MCPRoute, 0, len(items))
+		// Looked up once for the list rather than per unproved route.
+		publicIP := ""
 		for _, r := range items {
-			svcID := ""
-			if r.ServiceID != nil {
-				svcID = *r.ServiceID
+			if r.NeedsOwnershipProof() && publicIP == "" {
+				publicIP = s.c.GatewayPublicIP(s.orgID)
 			}
-			out = append(out, MCPRoute{ID: r.ID, Hostname: r.Hostname, ServiceID: svcID, Port: r.TargetPort, Published: r.Published})
+			out = append(out, s.toMCPRoute(r, publicIP))
 		}
 		return jsonResult(out)
 
@@ -471,11 +472,7 @@ func (s *srv) handleGetResource(_ context.Context, req mcp.CallToolRequest) (*mc
 		}
 		for _, r := range routes {
 			if r.ID == id || r.Hostname == id {
-				svcID := ""
-				if r.ServiceID != nil {
-					svcID = *r.ServiceID
-				}
-				return jsonResult(MCPRoute{ID: r.ID, Hostname: r.Hostname, ServiceID: svcID, Port: r.TargetPort, Published: r.Published})
+				return jsonResult(s.toMCPRoute(r, ""))
 			}
 		}
 		return mcp.NewToolResultError("route " + id + " not found"), nil

@@ -1,5 +1,7 @@
 package client
 
+import "fmt"
+
 type Route struct {
 	ID         string  `json:"id"`
 	Hostname   string  `json:"hostname"`
@@ -10,7 +12,29 @@ type Route struct {
 	// Published is false for a paused route: kept, not served.
 	Published bool   `json:"published"`
 	CreatedAt string `json:"created_at"`
+
+	// DomainID is set when the hostname is a subdomain of a base domain, whose
+	// ownership was proved once for the whole zone. Nil means a custom
+	// hostname, proved on its own.
+	DomainID *string `json:"domain_id"`
+	// CustomDomainVerified and CustomDomainVerifyToken matter only for a custom
+	// hostname. Until a TXT record at VerifyRecordName carrying the token is
+	// found, no certificate is issued for it, so the route fails TLS even once
+	// its DNS points at the gateway.
+	CustomDomainVerified    bool   `json:"custom_domain_verified"`
+	CustomDomainVerifyToken string `json:"custom_domain_verify_token"`
 }
+
+// IsCustomHostname reports whether the route's hostname is its own, rather
+// than a subdomain of a base domain.
+func (r Route) IsCustomHostname() bool { return r.DomainID == nil }
+
+// NeedsOwnershipProof reports whether the route will get no certificate until
+// its TXT record is found.
+func (r Route) NeedsOwnershipProof() bool { return r.IsCustomHostname() && !r.CustomDomainVerified }
+
+// VerifyRecordName is where the ownership TXT record for a custom hostname goes.
+func (r Route) VerifyRecordName() string { return "_meshploy-verify." + r.Hostname }
 
 type CreateRouteBody struct {
 	// Domain-based (preferred)
@@ -128,6 +152,31 @@ func (c *Client) PauseRoute(orgID, projectID, routeID string) (*Route, error) {
 		return nil, err
 	}
 	return decodePtr[Route](resp)
+}
+
+// VerifyRouteHostname looks for a custom hostname's ownership TXT record and,
+// once found, lets a certificate be issued for it. Verifying a verified route
+// is not an error.
+func (c *Client) VerifyRouteHostname(orgID, projectID, routeID string) (*Route, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/routes/"+routeID+"/verify-hostname", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[Route](resp)
+}
+
+// FindRoute returns one route by ID or hostname from a project.
+func (c *Client) FindRoute(orgID, projectID, ref string) (*Route, error) {
+	routes, err := c.ListRoutes(orgID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range routes {
+		if routes[i].ID == ref || routes[i].Hostname == ref {
+			return &routes[i], nil
+		}
+	}
+	return nil, fmt.Errorf("route %q not found in this project", ref)
 }
 
 func (c *Client) DeleteRoute(orgID, projectID, routeID string) error {

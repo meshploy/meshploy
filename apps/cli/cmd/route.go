@@ -31,11 +31,21 @@ var routeListCmd = &cobra.Command{
 			return nil
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tHOSTNAME\tSTATE\tTARGET\tZONE")
+		fmt.Fprintln(w, "ID\tHOSTNAME\tSTATE\tOWNERSHIP\tTARGET\tZONE")
+		unproved := 0
 		for _, r := range routes {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s:%d\t%s\n", r.ID, r.Hostname, publishState(r.Published), r.TargetIP, r.TargetPort, r.Zone)
+			if r.NeedsOwnershipProof() {
+				unproved++
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s:%d\t%s\n", r.ID, r.Hostname, publishState(r.Published), ownershipState(r), r.TargetIP, r.TargetPort, r.Zone)
 		}
-		return w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		if unproved > 0 {
+			fmt.Printf("\n%d custom hostname(s) get no certificate until proved: meshploy route verify <id>\n", unproved)
+		}
+		return nil
 	},
 }
 
@@ -131,8 +141,88 @@ Use a raw mesh IP directly:
 			return err
 		}
 		fmt.Printf("✔  Route created: %s → %s:%d (%s)\n", r.Hostname, r.TargetIP, r.TargetPort, r.ID)
+		if r.NeedsOwnershipProof() {
+			printOwnershipProof(*r, c.GatewayPublicIP(orgID()))
+		}
 		return nil
 	},
+}
+
+// A route created from here names its whole hostname, so it is always a
+// custom hostname, proved on its own. Until it is, no certificate is issued and
+// the route fails TLS even once its DNS points here - which, printed nowhere,
+// looks like a broken gateway.
+var routeVerifyCmd = &cobra.Command{
+	Use:   "verify <id|hostname>",
+	Short: "Prove you own a custom hostname, so it gets a certificate",
+	Long: `Looks for the TXT record that proves you own a route's custom hostname.
+
+A route made with --hostname is a custom hostname: it is not a subdomain of a
+base domain already proved for the whole zone, so it is proved on its own. Until
+this finds the record, no certificate is issued for it and requests fail the TLS
+handshake, even once its DNS points at the gateway.
+
+Run it once the record is published. DNS can take a few minutes to propagate;
+running it again is harmless.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := apiClient()
+		pid := resolveProjectID(routeProject)
+		route, err := c.FindRoute(orgID(), pid, args[0])
+		if err != nil {
+			return err
+		}
+		if !route.IsCustomHostname() {
+			fmt.Printf("✔  %s is on a base domain, which is already proved. Nothing to do.\n", route.Hostname)
+			return nil
+		}
+		if route.CustomDomainVerified {
+			fmt.Printf("✔  %s is already verified.\n", route.Hostname)
+			return nil
+		}
+		verified, err := c.VerifyRouteHostname(orgID(), pid, route.ID)
+		if err != nil {
+			// The check can issue a token the route never had, so read it back
+			// before printing the record to add.
+			if fresh, ferr := c.FindRoute(orgID(), pid, route.ID); ferr == nil {
+				route = fresh
+			}
+			printOwnershipProof(*route, c.GatewayPublicIP(orgID()))
+			return fmt.Errorf("%w - DNS can take a few minutes to propagate; run this again once the record is published", err)
+		}
+		fmt.Printf("✔  %s is verified. Its certificate is issued on the first request.\n", verified.Hostname)
+		return nil
+	},
+}
+
+func ownershipState(r client.Route) string {
+	switch {
+	case !r.IsCustomHostname():
+		return "-"
+	case r.CustomDomainVerified:
+		return "verified"
+	default:
+		return "unproved"
+	}
+}
+
+// printOwnershipProof prints the two records a custom hostname needs.
+func printOwnershipProof(r client.Route, publicIP string) {
+	if publicIP == "" {
+		publicIP = "<gateway public IP>"
+	}
+	fmt.Printf("\n!  %s gets no certificate until you prove you own it. Add these at its DNS provider:\n\n", r.Hostname)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "   NAME\tTYPE\tVALUE")
+	if r.CustomDomainVerifyToken != "" {
+		fmt.Fprintf(w, "   %s\tTXT\t%s\n", r.VerifyRecordName(), r.CustomDomainVerifyToken)
+	}
+	fmt.Fprintf(w, "   %s\tA\t%s\n", r.Hostname, publicIP)
+	_ = w.Flush()
+	if r.CustomDomainVerifyToken == "" {
+		fmt.Println("\n   This route predates verification records; the next verify issues one.")
+	}
+	fmt.Printf("\n   Then: meshploy route verify %s\n", r.ID)
 }
 
 func publishState(published bool) string {
@@ -218,6 +308,6 @@ func init() {
 	routeDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 	routePauseCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 
-	routeCmd.AddCommand(routeListCmd, routeCreateCmd, routePublishCmd, routePauseCmd, routeDeleteCmd)
+	routeCmd.AddCommand(routeListCmd, routeCreateCmd, routeVerifyCmd, routePublishCmd, routePauseCmd, routeDeleteCmd)
 	rootCmd.AddCommand(routeCmd)
 }

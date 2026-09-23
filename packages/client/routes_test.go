@@ -87,3 +87,44 @@ func TestDeleteRoute(t *testing.T) {
 		t.Error("DELETE endpoint was not called")
 	}
 }
+
+// The API sends a custom hostname's proof fields; dropping them would leave
+// the CLI and MCP unable to say why a new route gets no certificate.
+func TestRouteCarriesItsOwnershipProof(t *testing.T) {
+	var got client.Route
+	if err := json.Unmarshal([]byte(`{"id":"r1","hostname":"store.customer.example","domain_id":null,
+		"custom_domain_verified":false,"custom_domain_verify_token":"abc123"}`), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.IsCustomHostname() || !got.NeedsOwnershipProof() {
+		t.Fatalf("a custom hostname without proof must say so: %+v", got)
+	}
+	if got.CustomDomainVerifyToken != "abc123" || got.VerifyRecordName() != "_meshploy-verify.store.customer.example" {
+		t.Fatalf("record = %s %s", got.VerifyRecordName(), got.CustomDomainVerifyToken)
+	}
+
+	var sub client.Route
+	_ = json.Unmarshal([]byte(`{"id":"r2","hostname":"shop.example.com","domain_id":"d1"}`), &sub)
+	if sub.IsCustomHostname() || sub.NeedsOwnershipProof() {
+		t.Fatal("a route on a base domain has nothing to prove")
+	}
+}
+
+func TestVerifyRouteHostname(t *testing.T) {
+	srv := newServer(t, []routeHandler{{
+		method: "POST",
+		path:   "/api/v1/orgs/" + testOrg + "/projects/" + testProject + "/routes/r1/verify-hostname",
+		fn: func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, map[string]any{"id": "r1", "hostname": "store.customer.example", "custom_domain_verified": true})
+		},
+	}})
+	defer srv.Close()
+
+	r, err := client.New(srv.URL, "token").VerifyRouteHostname(testOrg, testProject, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.NeedsOwnershipProof() {
+		t.Fatal("a verified hostname needs no proof")
+	}
+}

@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CornerDownRight, ExternalLink, Globe, Loader2, Pencil, Plus, ServerCrash, Trash2, X } from "lucide-react"
 import { useState } from "react"
+import { CustomDomainOwnership } from "@/components/domains/custom-domain-ownership"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -207,6 +208,7 @@ function RouteDetailPage() {
         actions={<PublishToggle kind="http" routeId={route.id} projectId={projectId} published={route.published} label={route.hostname} />}
       />
       <div className="console-page space-y-6">
+        <CustomDomainOwnership route={route} orgId={orgId!} projectId={projectId} token={token} />
         <div className="routing-flow"><Globe className="size-6 text-primary" /><div><p className="text-sm font-semibold break-all">{route.hostname}</p><p className="text-xs text-muted-foreground mt-1">{route.zone === "internal" ? "Internal traffic" : "Public traffic"}</p></div><span className="routing-flow-line"/><div><p className="text-sm font-semibold">{targetCount} path rules</p><p className="text-xs text-muted-foreground mt-1">Longest matching path first</p></div></div>
         <div className="resource-overview-columns"><div className="min-w-0 space-y-6">
         {/* Targets */}
@@ -268,7 +270,7 @@ function RouteDetailPage() {
         </Section>
 
         </div><aside className="space-y-6">
-          <ResourcePanel title="Route details"><ResourceFact label="Hostname"><code>{route.hostname}</code></ResourceFact><ResourceFact label="Zone">{route.zone}</ResourceFact>{route.subdomain && <ResourceFact label="Subdomain">{route.subdomain}</ResourceFact>}<ResourceFact label="Created">{new Date(route.created_at).toLocaleDateString()}</ResourceFact></ResourcePanel>
+          <ResourcePanel title="Route details"><ResourceFact label="Hostname"><code>{route.hostname}</code></ResourceFact><ResourceFact label="Zone">{route.zone}</ResourceFact>{!route.domain_id && <ResourceFact label="Ownership">{route.custom_domain_verified ? <span className="text-emerald-400">Verified</span> : <span className="text-amber-400">Not verified</span>}</ResourceFact>}{route.subdomain && <ResourceFact label="Subdomain">{route.subdomain}</ResourceFact>}<ResourceFact label="Created">{new Date(route.created_at).toLocaleDateString()}</ResourceFact></ResourcePanel>
           <ResourcePanel title="Path matching"><p className="text-sm text-muted-foreground leading-relaxed">Requests use the most specific matching path. Each target defines where that traffic goes, including its destination and forwarding settings.</p></ResourcePanel>
         </aside></div>
         {/* Danger zone */}

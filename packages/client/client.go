@@ -141,7 +141,24 @@ type Node struct {
 	K3sRole     string `json:"k3s_role"`
 	MeshRole    string `json:"mesh_role"`
 	HeadscaleID string `json:"headscale_id"`
-	CreatedAt   string `json:"created_at"`
+	// PublicIP is set on the gateway, the one node the internet reaches.
+	PublicIP  string `json:"public_ip"`
+	CreatedAt string `json:"created_at"`
+}
+
+// GatewayPublicIP is the address a hostname's A record points at, or "" when
+// the gateway has not recorded one.
+func (c *Client) GatewayPublicIP(orgID string) string {
+	nodes, err := c.ListNodes(orgID)
+	if err != nil {
+		return ""
+	}
+	for _, n := range nodes {
+		if n.K3sRole == "server" {
+			return n.PublicIP
+		}
+	}
+	return ""
 }
 
 func (c *Client) ListNodes(orgID string) ([]Node, error) {
