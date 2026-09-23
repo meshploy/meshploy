@@ -152,7 +152,7 @@ Required in `.env` at the monorepo root:
 | `FRONTEND_URL` | Console URL (default: `http://localhost:5173`) |
 | `HEADSCALE_USER` | Headscale user pre-auth keys are created under (default: `meshploy`) |
 | `BUILDER_IMAGE` | Override the builder container image (default: `ghcr.io/meshploy/builder:latest`, or `:main` on an edge API) |
-| `HOST_DIR` | Where the host agent (`meshploy host serve`, a systemd service on the gateway) reports (default: `/var/lib/meshploy/host`). docker-compose mounts its `state/` read-only and its `inbox/` read-write for requests (Dokploy detect and plan); missing or stale reports make firewall verdicts `unknown` |
+| `HOST_DIR` | Where the host agent (`meshploy host serve`, run by `meshployd.service` on the gateway) reports (default: `/var/lib/meshploy/host`). docker-compose mounts its `state/` read-only and its `inbox/` read-write for requests (Dokploy detect and plan); missing or stale reports make firewall verdicts `unknown` |
 | `UPGRADE_DIR` | Where the console and the host-side updater meet (default: `/var/lib/meshploy/upgrade`). docker-compose mounts its `inbox/` read-write and `state/` read-only, so the API can queue an upgrade but never run one |
 
 ---

@@ -327,10 +327,13 @@ if ! $REINSTALL && { command -v node_exporter &>/dev/null || [[ -f /etc/systemd/
 fi
 
 # ── Host agent (gateway) ──────────────────────────────────────────────────────
-if ! $REINSTALL && { [[ -f /etc/systemd/system/meshploy-host.service ]] || [[ -d /var/lib/meshploy/host ]]; }; then
+# meshploy-host.service is the name it had before meshployd.
+if ! $REINSTALL && { [[ -f /etc/systemd/system/meshployd.service ]] || [[ -f /etc/systemd/system/meshploy-host.service ]] || [[ -d /var/lib/meshploy/host ]]; }; then
   header "Host agent"
+  # One unit per call: systemctl gives up on the whole list at a missing one.
+  sudo systemctl disable --now meshployd.service 2>/dev/null || true
   sudo systemctl disable --now meshploy-host.service 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/meshploy-host.service
+  sudo rm -f /etc/systemd/system/meshployd.service /etc/systemd/system/meshploy-host.service
   sudo systemctl daemon-reload 2>/dev/null || true
   sudo rm -rf /var/lib/meshploy/host
   sudo rmdir /var/lib/meshploy 2>/dev/null || true

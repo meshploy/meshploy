@@ -797,7 +797,7 @@ type updaterInfo struct {
 func collectUpdaterInfo() updaterInfo {
 	in := updaterInfo{installed: fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile))}
 	if in.installed {
-		in.watcher = systemctlState("is-active", hostUnit)
+		in.watcher = hostUnitState()
 	}
 	in.serviceActive = systemctlState("is-active", upgradeServiceUnit) == "activating"
 	_, err := os.Lstat(filepath.Join(upgradeInboxDir(), upgradeRequestFile))

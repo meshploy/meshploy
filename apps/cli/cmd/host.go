@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -26,7 +28,12 @@ import (
 //
 // It reports the host firewall, and starts the upgrades the console asks for
 // (internal-docs/plans/host-agent.md, phases 1 and 2).
-const hostUnit = "meshploy-host.service"
+const hostUnit = "meshployd.service"
+
+// legacyHostUnit is the name the agent ran under before it was meshployd.
+// hostStart retires it, so an upgraded gateway never runs two agents that
+// would race for the same inbox request.
+const legacyHostUnit = "meshploy-host.service"
 
 // Seams replaced by tests.
 var (
@@ -97,6 +104,9 @@ var hostStopCmd = &cobra.Command{
 		}
 		if err := systemctl("disable", "--now", hostUnit); err != nil {
 			return fmt.Errorf("disable %s: %w", hostUnit, err)
+		}
+		if err := retireLegacyHostUnit(); err != nil {
+			return err
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "✔  Host agent stopped. The console will say the host could not be checked.")
 		return nil
@@ -420,7 +430,7 @@ func clipLine(s string) string {
 
 func hostUnitFile(cliPath string) string {
 	return fmt.Sprintf(`[Unit]
-Description=Meshploy host agent: reports the console reads from this gateway
+Description=Meshploy host agent (meshployd): does on this gateway what the API cannot
 After=network-online.target
 Wants=network-online.target
 
@@ -464,6 +474,10 @@ func hostStart(out io.Writer) error {
 	if err := ensureHostDirs(); err != nil {
 		return err
 	}
+	// Before the new unit starts, never after: the two would both take requests.
+	if err := retireLegacyHostUnit(); err != nil {
+		return err
+	}
 	if err := writeFileAtomic(filepath.Join(systemdUnitDir, hostUnit), []byte(hostUnitFile(updaterCLIPath)), 0644); err != nil {
 		return fmt.Errorf("write %s: %w", hostUnit, err)
 	}
@@ -481,8 +495,35 @@ func hostStart(out io.Writer) error {
 	return nil
 }
 
+// retireLegacyHostUnit stops and removes meshploy-host.service. A request the
+// old agent is in the middle of is not cut short by much: an upgrade runs in
+// its own transient unit, so stopping the agent that started it leaves it be.
+func retireLegacyHostUnit() error {
+	unit := filepath.Join(systemdUnitDir, legacyHostUnit)
+	if !fileExists(unit) {
+		return nil
+	}
+	if err := systemctl("disable", "--now", legacyHostUnit); err != nil {
+		return fmt.Errorf("disable %s: %w", legacyHostUnit, err)
+	}
+	if err := os.Remove(unit); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// hostUnitState is whether the agent runs, under whichever name it has. After
+// `meshploy update` and before the server-upgrade that follows, the agent still
+// runs under its old name, and saying it had stopped would be wrong.
+func hostUnitState() string {
+	if !fileExists(filepath.Join(systemdUnitDir, hostUnit)) && fileExists(filepath.Join(systemdUnitDir, legacyHostUnit)) {
+		return systemctlState("is-active", legacyHostUnit)
+	}
+	return systemctlState("is-active", hostUnit)
+}
+
 func printHostStatus(out io.Writer, now time.Time) error {
-	fmt.Fprintf(out, "Service:   %s\n", orDash(systemctlState("is-active", hostUnit)))
+	fmt.Fprintf(out, "Service:   %s\n", orDash(hostUnitState()))
 	agent, fw, err := hostagent.ReadState(hostDir)
 	if err != nil {
 		return err

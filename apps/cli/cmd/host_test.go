@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -148,5 +150,30 @@ func TestHostStartInstallsAndStartsTheUnit(t *testing.T) {
 	want := []string{"daemon-reload", "enable " + hostUnit, "restart " + hostUnit}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("systemctl calls = %v, want %v", got, want)
+	}
+}
+
+// A gateway installed before the agent was meshployd runs meshploy-host.service.
+// Starting the agent stops and removes that first, so the two never both take
+// requests from the inbox.
+func TestHostStartRetiresTheOldUnitName(t *testing.T) {
+	fx := newUpdaterFixture(t)
+	orig := hostDir
+	hostDir = filepath.Join(fx.root, "host")
+	t.Cleanup(func() { hostDir = orig })
+	writeTestFile(t, filepath.Join(systemdUnitDir, legacyHostUnit), "[Service]\n")
+
+	if err := hostStart(io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(filepath.Join(systemdUnitDir, legacyHostUnit)) {
+		t.Error("the old unit was left installed")
+	}
+	want := [][]string{
+		{"disable", "--now", legacyHostUnit},
+		{"daemon-reload"}, {"enable", hostUnit}, {"restart", hostUnit},
+	}
+	if !reflect.DeepEqual(fx.ctl, want) {
+		t.Errorf("systemctl calls = %v, want %v", fx.ctl, want)
 	}
 }
