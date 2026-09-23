@@ -1,0 +1,71 @@
+# Meshploy CoreDNS configuration - generated, do not edit.
+#
+# Rendered by `meshploy domain apply` from the edge snapshot at
+# {{ .SnapshotPath }}.
+# Edits here are lost the next time the set of base domains changes.
+{{ range .Domains }}
+# ═══ {{ .BaseDomain }} - {{ if eq .DNSMode "delegation" }}NS delegation{{ else }}on-demand TLS{{ end }} ═══
+{{ if eq .DNSMode "delegation" }}
+# Public zone - answers internet queries (browsers, Let's Encrypt).
+{{ .BaseDomain }}:53 {
+    bind {{ $.PublicIP }}
+    file /etc/coredns/zones/{{ .BaseDomain }}
+    reload 5s
+    log
+    errors
+}
+
+# ACME challenge delegation zone. Let's Encrypt queries this during DNS-01
+# verification; the Caddy DNS module writes TXT records here and removes them
+# once the certificate is issued.
+_acme-challenge.{{ .BaseDomain }}:53 {
+    bind {{ $.PublicIP }}
+    file /etc/coredns/zones/_acme-challenge.{{ .BaseDomain }}
+    reload 2s
+    log
+    errors
+}
+
+# ACME challenge zone for the *.{{ .InternalSubdomain }} wildcard. Its own zone,
+# so CertMagic can query the authoritative server directly without CNAME
+# chasing, which authoritative-only resolvers do not perform.
+_acme-challenge.{{ .InternalSubdomain }}.{{ .BaseDomain }}:53 {
+    bind {{ $.PublicIP }}
+    file /etc/coredns/zones/_acme-challenge.{{ .InternalSubdomain }}.{{ .BaseDomain }}
+    reload 2s
+    log
+    errors
+}
+{{ else }}
+# This domain's DNS stays with the operator's provider, so nothing is served for
+# it on the public interface. Answering there would make this gateway
+# authoritative for a domain it does not hold. Only the mesh zone below is ours.
+{{ end }}
+# Private mesh zone, served only on the WireGuard interface. Mesh nodes resolve
+# every name under it to the gateway, which hands the request to the proxy; the
+# Host header decides the target from there, so creating a route writes no DNS.
+{{ .InternalSubdomain }}.{{ .BaseDomain }}:53 {
+    bind {{ $.MeshIP }}
+    file /etc/coredns/zones/{{ .InternalSubdomain }}.{{ .BaseDomain }}
+    reload 5s
+    log
+    errors
+}
+{{ end }}
+# ── Upstream forwarding ──────────────────────────────────────────────────────
+# Disabled. Gateway containers use dns: [1.1.1.1] in docker-compose.yml, and
+# mesh nodes use Headscale split DNS (global 1.1.1.1, internal → the mesh IP).
+# Restore this if the gateway needs to forward for mesh nodes.
+#
+# .:53 {
+#     bind {{ .MeshIP }}
+#     acl {
+#         allow net 100.64.0.0/10
+#         allow net 127.0.0.0/8
+#         block
+#     }
+#     local
+#     forward . 1.1.1.1 1.0.0.1
+#     cache 300
+#     errors
+# }

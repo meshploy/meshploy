@@ -1,0 +1,50 @@
+; Public zone for {{ .BaseDomain }} - generated, do not edit.
+; Rendered by `meshploy domain apply`; edits are lost when it next runs.
+;
+; CoreDNS reloads this file every 5s, so no restart is needed after a change.
+
+$TTL 300
+$ORIGIN {{ .BaseDomain }}.
+
+@   IN SOA ns1.{{ .BaseDomain }}. admin.{{ .BaseDomain }}. (
+        {{ .Serial }}  ; serial
+        3600        ; refresh
+        900         ; retry
+        604800      ; expire
+        300         ; minimum TTL
+    )
+
+; Nameserver - this server is authoritative
+@       IN NS   ns1.{{ .BaseDomain }}.
+
+; Root of {{ .BaseDomain }} → gateway public IP
+@       IN A    {{ .PublicIP }}
+
+; Named subdomains
+headscale   IN A    {{ .PublicIP }}
+api         IN A    {{ .PublicIP }}
+console     IN A    {{ .PublicIP }}
+
+; Wildcard - every other *.{{ .BaseDomain }} → gateway, routed by the proxy
+*           IN A    {{ .PublicIP }}
+
+; ── ACME challenge delegation ────────────────────────────────────────────────
+; Delegates _acme-challenge.{{ .BaseDomain }} here so CoreDNS can serve the TXT
+; records for wildcard DNS-01 verification.
+_acme-challenge IN NS ns1.{{ .BaseDomain }}.
+
+; Named subdomain challenges - CNAME to the central challenge zone. Recursive
+; resolvers follow the CNAME and Let's Encrypt verifies the TXT at the target.
+_acme-challenge.headscale   IN CNAME  _acme-challenge.{{ .BaseDomain }}.
+_acme-challenge.api         IN CNAME  _acme-challenge.{{ .BaseDomain }}.
+_acme-challenge.console     IN CNAME  _acme-challenge.{{ .BaseDomain }}.
+
+; Internal wildcard challenge - NS delegation rather than CNAME, so CertMagic
+; can query the authoritative zone directly.
+_acme-challenge.{{ .InternalSubdomain }}    IN NS     ns1.{{ .BaseDomain }}.
+
+; ── Internal blackhole, on the public internet only ──────────────────────────
+; Stops the public wildcard from resolving internal names. Mesh clients never
+; see this: they query the private zone on the mesh address.
+{{ .InternalSubdomain }}    IN A    127.0.0.1
+*.{{ .InternalSubdomain }}  IN A    127.0.0.1

@@ -15,3 +15,12 @@ jobs:
       # bit, which does not survive a Windows checkout.
       - name: Assert every workspace module is COPYed into each image
         run: sh scripts/check-workspace-dockerfiles.sh
+
+  installer-rerun:
+    name: Re-running install.sh keeps a server's secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # bash, not sh: the helpers use [[ ]] and local, as install.sh does.
+      - name: Re-running the installer preserves secrets and unknown .env keys
+        run: bash scripts/test-install-helpers.sh

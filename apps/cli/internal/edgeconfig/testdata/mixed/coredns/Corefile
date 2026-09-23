@@ -1,0 +1,84 @@
+# Meshploy CoreDNS configuration - generated, do not edit.
+#
+# Rendered by `meshploy domain apply` from the edge snapshot at
+# /var/lib/meshploy/host/state/edge.json.
+# Edits here are lost the next time the set of base domains changes.
+
+# ═══ example.com - NS delegation ═══
+
+# Public zone - answers internet queries (browsers, Let's Encrypt).
+example.com:53 {
+    bind 203.0.113.10
+    file /etc/coredns/zones/example.com
+    reload 5s
+    log
+    errors
+}
+
+# ACME challenge delegation zone. Let's Encrypt queries this during DNS-01
+# verification; the Caddy DNS module writes TXT records here and removes them
+# once the certificate is issued.
+_acme-challenge.example.com:53 {
+    bind 203.0.113.10
+    file /etc/coredns/zones/_acme-challenge.example.com
+    reload 2s
+    log
+    errors
+}
+
+# ACME challenge zone for the *.internal wildcard. Its own zone,
+# so CertMagic can query the authoritative server directly without CNAME
+# chasing, which authoritative-only resolvers do not perform.
+_acme-challenge.internal.example.com:53 {
+    bind 203.0.113.10
+    file /etc/coredns/zones/_acme-challenge.internal.example.com
+    reload 2s
+    log
+    errors
+}
+
+# Private mesh zone, served only on the WireGuard interface. Mesh nodes resolve
+# every name under it to the gateway, which hands the request to the proxy; the
+# Host header decides the target from there, so creating a route writes no DNS.
+internal.example.com:53 {
+    bind 100.64.0.1
+    file /etc/coredns/zones/internal.example.com
+    reload 5s
+    log
+    errors
+}
+
+# ═══ second.test - on-demand TLS ═══
+
+# This domain's DNS stays with the operator's provider, so nothing is served for
+# it on the public interface. Answering there would make this gateway
+# authoritative for a domain it does not hold. Only the mesh zone below is ours.
+
+# Private mesh zone, served only on the WireGuard interface. Mesh nodes resolve
+# every name under it to the gateway, which hands the request to the proxy; the
+# Host header decides the target from there, so creating a route writes no DNS.
+internal.second.test:53 {
+    bind 100.64.0.1
+    file /etc/coredns/zones/internal.second.test
+    reload 5s
+    log
+    errors
+}
+
+# ── Upstream forwarding ──────────────────────────────────────────────────────
+# Disabled. Gateway containers use dns: [1.1.1.1] in docker-compose.yml, and
+# mesh nodes use Headscale split DNS (global 1.1.1.1, internal → the mesh IP).
+# Restore this if the gateway needs to forward for mesh nodes.
+#
+# .:53 {
+#     bind 100.64.0.1
+#     acl {
+#         allow net 100.64.0.0/10
+#         allow net 127.0.0.0/8
+#         block
+#     }
+#     local
+#     forward . 1.1.1.1 1.0.0.1
+#     cache 300
+#     errors
+# }

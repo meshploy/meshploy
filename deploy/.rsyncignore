@@ -1,6 +1,10 @@
-# Files generated at install time by install.sh substituting {DOMAIN}/{PUBLIC_IP}.
-# These exist on the server with real values — never overwrite from CI.
+# Files that exist only on the server - never overwrite from CI. .env and
+# Headscale's data are the server's own; the rest is generated there by
+# `meshploy domain apply` from the base domains it serves.
 .env
-coredns/zones/*.*
+caddy/Caddyfile
+caddy/conf.d/
+coredns/Corefile
+coredns/zones/
 headscale/config/config.yaml
 headscale/data/

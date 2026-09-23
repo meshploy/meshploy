@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/meshploy/apps/cli/internal/edgeconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,16 @@ const upgradeBackupDirName = ".upgrade-previous"
 // rendered at install time, or runtime state. The tarball extraction already
 // excludes them; installStaged checks again so that guarantee does not rest on
 // tar alone.
-var protectedUpgradePaths = []string{".env", "coredns/zones", "headscale/config/config.yaml", "headscale/data"}
+//
+// caddy/Caddyfile and coredns/Corefile are here because they are generated from
+// the edge snapshot rather than shipped. A release that replaced them would put
+// a template where a rendered file belongs, and the render that follows would
+// only have to undo it.
+var protectedUpgradePaths = []string{
+	".env", "coredns/zones", "coredns/Corefile",
+	"caddy/Caddyfile", "caddy/conf.d",
+	"headscale/config/config.yaml", "headscale/data",
+}
 
 // Seams replaced by tests.
 var (
@@ -142,11 +151,6 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	restrictEnvFile()
 	runtime := detectContainerRuntime()
 
-	// What Caddy is serving now, to tell afterwards whether it must be recreated.
-	// Absent on a broken install; only ever compared, never required.
-	caddyfile := filepath.Join(meshployInstDir, "caddy", "Caddyfile")
-	caddyBefore, _ := os.ReadFile(caddyfile)
-
 	// Download into a private directory first. Nothing live has changed yet,
 	// so a failed download leaves the server exactly as it was.
 	var staged, ref string
@@ -241,6 +245,14 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	}
 
 	fail := func(err error) error {
+		// The generator keeps its own record of what it replaced, including the
+		// zone files this snapshot never knew about - it owns those files now,
+		// so it owns putting them back. A rollback that undid only the Corefile
+		// and the Caddyfile would leave CoreDNS serving zones for a
+		// configuration that is no longer in place.
+		if !o.noRollback {
+			_ = edgeconfig.Restore(meshployInstDir)
+		}
 		return rollBack(ctx, runtime, snap, images, err, o.noRollback)
 	}
 
@@ -252,26 +264,16 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 		fmt.Println("✔  Deploy configs synced")
 	}
 
-	// Rendered in place below. Saved first so a --no-sync upgrade, which
-	// installed nothing, can put them back too; a no-op when the release
-	// already replaced them.
-	for _, rel := range []string{"coredns/Corefile", "caddy/Caddyfile"} {
-		if err := snap.save(meshployInstDir, rel); err != nil {
-			return fail(err)
-		}
+	// The edge configuration is generated, not shipped, so a template change in
+	// a release reaches a server only by being rendered here: it ships as code
+	// in this binary rather than as a file in the tarball. Rendering compares
+	// with what is on disk and writes nothing when they match, so an upgrade
+	// that changed no template costs nothing.
+	fmt.Println("Generating the edge configuration…")
+	edgeChanges, err := applyEdgeConfigFromEnv(os.Stdout)
+	if err != nil {
+		return fail(fmt.Errorf("edge configuration: %w", err))
 	}
-
-	// Substitute ${DOMAIN}, ${PUBLIC_IP}, ${MESH_IP} in the Corefile using .env values.
-	fmt.Println("Configuring Corefile…")
-	if err := substituteCorefile(); err != nil {
-		return fail(fmt.Errorf("corefile substitution: %w", err))
-	}
-	fmt.Println("✔  Corefile configured")
-
-	if err := applyDNSModeCaddyfile(readEnvVar("DNS_MODE")); err != nil {
-		return fail(fmt.Errorf("caddyfile: %w", err))
-	}
-	caddyAfter, _ := os.ReadFile(caddyfile)
 
 	// docker-compose mounts the updater's folders and the host agent's
 	// reports into the API.
@@ -288,13 +290,15 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	}
 
 	// up -d recreates a container only when its compose definition changes, not
-	// when a file it mounts does, so a new Caddyfile would sit on disk unserved
-	// until Caddy next happened to restart. Certificates live in the caddy_data
-	// volume and survive the recreate.
-	if !bytes.Equal(caddyBefore, caddyAfter) {
-		fmt.Println("Recreating Caddy to load the new Caddyfile…")
-		if err := composeRun(runtime, "up", "-d", "--force-recreate", "caddy"); err != nil {
-			return fail(fmt.Errorf("recreate caddy: %w", err))
+	// when a file it mounts does, so newly generated configuration would sit on
+	// disk unserved until each service next happened to restart. Only the
+	// services whose files changed are recreated. Certificates live in the
+	// caddy_data volume and Headscale's state in its data directory; both
+	// survive the recreate.
+	for _, svc := range servicesToRecreate(edgeChanges) {
+		fmt.Printf("Recreating %s to load its new configuration…\n", svc)
+		if err := composeRun(runtime, "up", "-d", "--force-recreate", svc); err != nil {
+			return fail(fmt.Errorf("recreate %s: %w", svc, err))
 		}
 	}
 
@@ -675,30 +679,6 @@ func probeStackCheck(ctx context.Context, c *http.Client, ch stackCheck) string 
 	return ""
 }
 
-// substituteCorefile reads DOMAIN, PUBLIC_IP, MESH_IP from .env and replaces
-// the placeholder variables in the Corefile template in-place.
-func substituteCorefile() error {
-	envPath := filepath.Join(meshployInstDir, ".env")
-	corefilePath := filepath.Join(meshployInstDir, "coredns", "Corefile")
-
-	vars, err := parseEnvFile(envPath, "DOMAIN", "PUBLIC_IP", "MESH_IP")
-	if err != nil {
-		return err
-	}
-
-	content, err := os.ReadFile(corefilePath)
-	if err != nil {
-		return err
-	}
-
-	result := string(content)
-	for k, v := range vars {
-		result = strings.ReplaceAll(result, "${"+k+"}", v)
-	}
-
-	return os.WriteFile(corefilePath, []byte(result), 0644)
-}
-
 // parseEnvFile reads KEY=VALUE lines from an env file and returns the requested keys.
 func parseEnvFile(path string, keys ...string) (map[string]string, error) {
 	f, err := os.Open(path)
@@ -770,9 +750,13 @@ func resolveUpgradeRef(pat string, edge bool) (string, error) {
 func downloadDeployTarball(pat, ref, dest string) error {
 	tarURL := fmt.Sprintf("https://api.github.com/repos/%s/tarball/%s", meshployRepo, ref)
 
-	// Files already rendered with real values on disk — never overwrite.
+	// Files the server owns, or generates for itself - never overwrite. Kept
+	// in step with protectedUpgradePaths, which installStaged checks again.
 	protected := []string{
 		"*/deploy/.env",
+		"*/deploy/caddy/Caddyfile",
+		"*/deploy/caddy/conf.d",
+		"*/deploy/coredns/Corefile",
 		"*/deploy/coredns/zones",
 		"*/deploy/headscale/config/config.yaml",
 		"*/deploy/headscale/data",
@@ -817,67 +801,6 @@ func downloadDeployTarball(pat, ref, dest string) error {
 		return fmt.Errorf("extract tarball: %w", tarErr)
 	}
 	return nil
-}
-
-// applyDNSModeCaddyfile puts the Caddyfile for the gateway's DNS mode at
-// caddy/Caddyfile, the fixed path docker-compose mounts.
-//
-// The deploy tarball ships the NS-delegation config at that path and the
-// on-demand one beside it. install.sh copies the on-demand one over when
-// DNS_MODE=ondemand, but an upgrade unpacked the tarball and stopped there, so
-// an on-demand gateway came back on the delegation config the next time Caddy
-// started: DNS-01 through an NS delegation it does not have, so no new
-// certificate and no renewal. DNS_MODE is read from .env because that is the
-// one file an upgrade keeps.
-//
-// The rule mirrors install.sh, which runs in the same two situations: when
-// caddy/Caddyfile is a freshly unpacked delegation template, and when it is
-// the on-demand copy from a previous run. Writes go in place so the file keeps
-// the inode a running container's bind mount points at.
-func applyDNSModeCaddyfile(mode string) error {
-	dir := filepath.Join(meshployInstDir, "caddy")
-	live := filepath.Join(dir, "Caddyfile")
-	ondemandPath := filepath.Join(dir, "Caddyfile.ondemand")
-	backup := filepath.Join(dir, "Caddyfile.delegation.bak")
-
-	current, err := os.ReadFile(live)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", live, err)
-	}
-	ondemand, err := os.ReadFile(ondemandPath)
-	if err != nil && mode == "ondemand" {
-		return fmt.Errorf("DNS_MODE=ondemand but %s is missing: %w", ondemandPath, err)
-	}
-	isOndemandCopy := err == nil && bytes.Equal(current, ondemand)
-
-	if mode == "ondemand" {
-		if isOndemandCopy {
-			return nil
-		}
-		// current is the delegation template the tarball just unpacked. Keep it
-		// as the backup, so switching back restores this release's template and
-		// not whichever one the first install happened to have.
-		if err := os.WriteFile(backup, current, 0o644); err != nil {
-			return fmt.Errorf("save delegation Caddyfile: %w", err)
-		}
-		fmt.Println("✔  Caddyfile set to the on-demand TLS variant")
-		return os.WriteFile(live, ondemand, 0o644)
-	}
-
-	// Delegation, or unset, which is what every install before DNS modes was.
-	if !isOndemandCopy {
-		return nil
-	}
-	saved, err := os.ReadFile(backup)
-	if err != nil {
-		// Only reachable with --no-sync; a sync always unpacks the delegation
-		// template. The on-demand config works with a delegation too, so keep
-		// serving it rather than fail the upgrade.
-		fmt.Println("warning: Caddyfile is the on-demand variant and no delegation copy is saved; keeping it")
-		return nil
-	}
-	fmt.Println("✔  Caddyfile restored to the NS-delegation variant")
-	return os.WriteFile(live, saved, 0o644)
 }
 
 // syncEnvChannel sets MESHPLOY_CHANNEL in /opt/meshploy/.env, updating the
@@ -1022,4 +945,32 @@ func init() {
 	serverUpgradeCmd.Flags().Bool("ee", false, "Switch this install to the Enterprise images, API and console (requires an active licence)")
 	serverUpgradeCmd.Flags().String("ee-image", "", "Enterprise API image to use; defaults to the one the licence grants. The console image pairs with it by name")
 	rootCmd.AddCommand(serverUpgradeCmd)
+}
+
+// servicesToRecreate names the compose services whose generated configuration
+// an apply changed, in the order they are safest to bring back: DNS first,
+// then the mesh control plane, then the edge that fronts both.
+func servicesToRecreate(changes []edgeconfig.Change) []string {
+	var coredns, headscale, caddy bool
+	for _, c := range changes {
+		switch {
+		case strings.HasPrefix(c.Path, "coredns/"):
+			coredns = true
+		case c.Path == edgeconfig.HeadscaleConfig:
+			headscale = true
+		case strings.HasPrefix(c.Path, "caddy/"):
+			caddy = true
+		}
+	}
+	var out []string
+	if coredns {
+		out = append(out, "coredns")
+	}
+	if headscale {
+		out = append(out, "headscale")
+	}
+	if caddy {
+		out = append(out, "caddy")
+	}
+	return out
 }

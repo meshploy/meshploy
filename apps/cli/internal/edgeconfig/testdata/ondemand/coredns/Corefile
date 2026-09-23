@@ -1,0 +1,40 @@
+# Meshploy CoreDNS configuration - generated, do not edit.
+#
+# Rendered by `meshploy domain apply` from the edge snapshot at
+# /var/lib/meshploy/host/state/edge.json.
+# Edits here are lost the next time the set of base domains changes.
+
+# ═══ example.com - on-demand TLS ═══
+
+# This domain's DNS stays with the operator's provider, so nothing is served for
+# it on the public interface. Answering there would make this gateway
+# authoritative for a domain it does not hold. Only the mesh zone below is ours.
+
+# Private mesh zone, served only on the WireGuard interface. Mesh nodes resolve
+# every name under it to the gateway, which hands the request to the proxy; the
+# Host header decides the target from there, so creating a route writes no DNS.
+internal.example.com:53 {
+    bind 100.64.0.1
+    file /etc/coredns/zones/internal.example.com
+    reload 5s
+    log
+    errors
+}
+
+# ── Upstream forwarding ──────────────────────────────────────────────────────
+# Disabled. Gateway containers use dns: [1.1.1.1] in docker-compose.yml, and
+# mesh nodes use Headscale split DNS (global 1.1.1.1, internal → the mesh IP).
+# Restore this if the gateway needs to forward for mesh nodes.
+#
+# .:53 {
+#     bind 100.64.0.1
+#     acl {
+#         allow net 100.64.0.0/10
+#         allow net 127.0.0.0/8
+#         block
+#     }
+#     local
+#     forward . 1.1.1.1 1.0.0.1
+#     cache 300
+#     errors
+# }

@@ -309,6 +309,44 @@ ask_yn() {
   [[ "$yn" =~ ^[Yy]$ ]]
 }
 
+# read_env <key> — one value from an existing .env in the current directory, or
+# empty. Last occurrence wins, matching how a shell would read the file.
+read_env() {
+  [[ -f .env ]] || return 0
+  grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2-
+}
+
+# set_env <key> <value> — rewrite KEY=value in .env, appending it when absent.
+#
+# The counterpart of the CLI's setEnvVar, and the reason this installer no
+# longer writes .env wholesale on a server that already has one. A `cat > .env`
+# keeps only the keys listed here and drops every other one: MESHPLOY_API_IMAGE
+# and MESHPLOY_WEB_IMAGE on an Enterprise server, which then quietly goes back
+# to the Community images on its next start, GHCR_USER, and a channel pinned to
+# edge.
+#
+# Values are handed to awk through the environment rather than interpolated,
+# because a k3s token or a generated password may contain anything a pattern
+# would treat as syntax.
+set_env() {
+  local key="$1" value="$2" tmp
+  touch .env
+  tmp="$(mktemp .env.XXXXXX)"
+  chmod 600 "$tmp"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    MP_KEY="$key" MP_VALUE="$value" awk '
+      BEGIN { k = ENVIRON["MP_KEY"]; v = ENVIRON["MP_VALUE"] }
+      index($0, k "=") == 1 { print k "=" v; next }
+      { print }
+    ' .env > "$tmp"
+  else
+    cat .env > "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  fi
+  mv -f "$tmp" .env
+  chmod 600 .env
+}
+
 # port_in_use <port> — returns 0 (true) if the port is bound on any non-loopback address.
 # Ignores 127.x.x.x (e.g. systemd-resolved on 127.0.0.53) since Docker can still
 # bind the same port on 0.0.0.0 without conflict.
@@ -716,15 +754,36 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   fi
 
   ask MESH_IP      "WireGuard mesh IP for this node" "100.64.0.1"
-  ask_optional POSTGRES_PASSWORD "Postgres password (or press enter to auto-generate)"
+  # Secrets already in .env are kept. Only what is missing is generated.
+  #
+  # Minting new ones on a re-run is not a fresh start, it is a broken server,
+  # and every one of these breaks it differently:
+  #
+  #   POSTGRES_PASSWORD — the Postgres volume still holds the old one, so the
+  #     API can no longer log in to its own database.
+  #   ENCRYPTION_KEY    — every EncryptedString becomes unreadable: git tokens,
+  #     registry and storage credentials, the Headscale pre-auth key.
+  #   JWT_SECRET        — everyone is signed out. Mild beside the other two.
+  #
+  # This path is reached on purpose, not only by accident: `meshploy setup
+  # serve` re-enters this script with --auto to change a domain.
+  POSTGRES_PASSWORD="$(read_env POSTGRES_PASSWORD)"
+  JWT_SECRET="$(read_env JWT_SECRET)"
+  ENCRYPTION_KEY="$(read_env ENCRYPTION_KEY)"
 
-  if [[ -z "$POSTGRES_PASSWORD" ]]; then
-    POSTGRES_PASSWORD="$(openssl rand -hex 16)"
-    info "Generated Postgres password: ${BOLD}$POSTGRES_PASSWORD${RESET}"
+  if [[ -n "$POSTGRES_PASSWORD" ]]; then
+    info "Keeping the Postgres password already in .env"
+  else
+    ask_optional POSTGRES_PASSWORD "Postgres password (or press enter to auto-generate)"
+    if [[ -z "$POSTGRES_PASSWORD" ]]; then
+      POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+      info "Generated Postgres password: ${BOLD}$POSTGRES_PASSWORD${RESET}"
+    fi
   fi
 
-  JWT_SECRET="$(openssl rand -hex 32)"
-  ENCRYPTION_KEY="$(openssl rand -hex 16)"   # 32 hex chars = 16 bytes, stored as 32 char string
+  [[ -n "$JWT_SECRET" ]]     || JWT_SECRET="$(openssl rand -hex 32)"
+  # 32 hex chars = 16 bytes, stored as a 32 character string
+  [[ -n "$ENCRYPTION_KEY" ]] || ENCRYPTION_KEY="$(openssl rand -hex 16)"
   # The first account registered on a server becomes its owner, so claiming one
   # has to require something only whoever ran this installer has seen. Reused on
   # a re-install so an operator midway through setup is not handed a new token.
@@ -733,7 +792,11 @@ if [[ "$NODE_TYPE" == "master" ]]; then
   else
     SETUP_TOKEN="ms_$(openssl rand -hex 16)"
   fi
-  info "Auto-generated JWT_SECRET and ENCRYPTION_KEY."
+  if [[ -n "$(read_env JWT_SECRET)" ]]; then
+    info "Keeping the JWT and encryption keys already in .env."
+  else
+    info "Auto-generated JWT_SECRET and ENCRYPTION_KEY."
+  fi
 
   echo
   hr
@@ -913,6 +976,43 @@ REGEOF
   GATEWAY_HOSTNAME=$(hostname)
 
   # .env
+  #
+  # An installed server is updated key by key, so everything this installer does
+  # not own survives -- see set_env. A server without one has it written whole,
+  # which keeps the comments below where a reader will find them.
+  if [[ -f .env ]] && grep -q '^JWT_SECRET=' .env; then
+    set_env DOMAIN              "${DOMAIN}"
+    set_env DNS_MODE            "${DNS_MODE}"
+    set_env EDGE_DEFERRED       "${EDGE_DEFERRED}"
+    set_env PUBLIC_IP           "${PUBLIC_IP}"
+    set_env MESH_IP             "${MESH_IP}"
+    set_env GATEWAY_HOSTNAME    "${GATEWAY_HOSTNAME}"
+    set_env POSTGRES_PASSWORD   "${POSTGRES_PASSWORD}"
+    set_env POSTGRES_DB         "meshploy"
+    set_env POSTGRES_USER       "meshploy"
+    set_env JWT_SECRET          "${JWT_SECRET}"
+    set_env ENCRYPTION_KEY      "${ENCRYPTION_KEY}"
+    set_env SETUP_TOKEN         "${SETUP_TOKEN}"
+    set_env API_BASE_URL        "https://api.${DOMAIN}"
+    set_env FRONTEND_URL        "https://console.${DOMAIN}"
+    set_env K3S_TOKEN           "${K3S_TOKEN}"
+    set_env CONTAINER_RUNTIME   "${CONTAINER_RUNTIME}"
+    set_env HOST_GATEWAY_IP     "${HOST_GATEWAY_IP}"
+    set_env FIREWALL_STATE      "${FIREWALL_STATE:-unknown}"
+    set_env FIREWALL_CHECKED_AT "${FIREWALL_CHECKED_AT}"
+    set_env NODEPORT_ADDRESSES  "100.64.0.0/10,fd7a:115c:a1e0::/48"
+    # Only written when this run was told which channel to be on. An edge server
+    # re-running the installer must not be moved back to stable by a default.
+    if [[ -n "${MESHPLOY_CHANNEL:-}" ]]; then
+      set_env MESHPLOY_CHANNEL "${MESHPLOY_CHANNEL}"
+    else
+      grep -q '^MESHPLOY_CHANNEL=' .env || set_env MESHPLOY_CHANNEL "latest"
+    fi
+    # Added, never overwritten: it is filled in by hand after the first start.
+    grep -q '^HEADSCALE_API_KEY=' .env || set_env HEADSCALE_API_KEY ""
+    chmod 600 .env
+    success ".env updated (keys this installer does not set were left alone)"
+  else
   cat > .env <<ENVEOF
 DOMAIN=${DOMAIN}
 DNS_MODE=${DNS_MODE}
@@ -946,67 +1046,37 @@ ENVEOF
   # and encryption keys, the setup token. Readable by root alone.
   chmod 600 .env
   success ".env written"
-
-  # Helper to substitute placeholders in a file
-  substitute() {
-    sed -i \
-      "s|\${DOMAIN}|${DOMAIN}|g; s|{DOMAIN}|${DOMAIN}|g; \
-       s|\${PUBLIC_IP}|${PUBLIC_IP}|g; s|{PUBLIC_IP}|${PUBLIC_IP}|g; \
-       s|\${MESH_IP}|${MESH_IP}|g; s|{MESH_IP}|${MESH_IP}|g" \
-      "$1"
-  }
-
-  # CoreDNS Corefile
-  substitute coredns/Corefile
-  success "coredns/Corefile configured"
-
-  # Rename and populate zone files
-  for tpl in "coredns/zones/{DOMAIN}" "coredns/zones/internal.{DOMAIN}" "coredns/zones/_acme-challenge.{DOMAIN}" "coredns/zones/_acme-challenge.internal.{DOMAIN}"; do
-    if [[ -f "$tpl" ]]; then
-      target="${tpl/\{DOMAIN\}/${DOMAIN}}"
-      cp "$tpl" "$target"
-      substitute "$target"
-      success "$(basename "$target") written"
-    fi
-  done
-
-  # Headscale config
-  substitute headscale/config/config.yaml
-  success "headscale/config/config.yaml configured"
-
-  # Caddyfile uses {$DOMAIN} (Caddy env var syntax) — substitute at runtime via DOMAIN env var
-  # We export DOMAIN so Caddy can read it; no file substitution needed for Caddyfile.
-  # On-demand mode uses a separate Caddyfile (HTTP-01 + on_demand, no DNS-01).
-  #
-  # docker-compose mounts caddy/Caddyfile by a fixed path, so the selected
-  # variant is copied over it, and the delegation config is kept aside so the
-  # switch can be undone.
-  #
-  # What caddy/Caddyfile holds right now decides what to do, because this runs
-  # in two situations: straight after get.sh has unpacked a fresh deploy/, when
-  # it is the current delegation template, and on a re-run with no unpack --
-  # the browser installer's retry, a DNS mode switch -- when it is last run's
-  # on-demand copy. The backup is refreshed every time a fresh template is
-  # present; saving it only once meant switching back to delegation restored
-  # the first install's template over a newer one. `meshploy server-upgrade`
-  # applies the same rule after it unpacks a release.
-  if [[ "$DNS_MODE" == "ondemand" ]]; then
-    if ! cmp -s caddy/Caddyfile caddy/Caddyfile.ondemand; then
-      cp -f caddy/Caddyfile caddy/Caddyfile.delegation.bak
-      cp -f caddy/Caddyfile.ondemand caddy/Caddyfile
-    fi
-    success "caddy/Caddyfile set to on-demand TLS variant (self-managed DNS)"
-  elif cmp -s caddy/Caddyfile caddy/Caddyfile.ondemand; then
-    if [[ -f caddy/Caddyfile.delegation.bak ]]; then
-      cp -f caddy/Caddyfile.delegation.bak caddy/Caddyfile
-      success "caddy/Caddyfile restored to the NS-delegation variant"
-    else
-      warn "caddy/Caddyfile is the on-demand variant and no delegation copy is saved; keeping it."
-      warn "It works with NS delegation too. Re-run through get.sh to restore the delegation config."
-    fi
-  else
-    success "caddy/Caddyfile ready (uses \${DOMAIN} env var at runtime)"
   fi
+
+  # Caddy and CoreDNS are generated, not shipped.
+  #
+  # `meshploy domain apply` renders the Caddyfile, the Corefile and one set of
+  # zone files per base domain from the edge snapshot, seeded here from DOMAIN
+  # and DNS_MODE. It replaces a scheme that could hold only one DNS mode for the
+  # whole server: caddy/Caddyfile was both the delegation template and the live
+  # file, so selecting the on-demand variant destroyed the template and a backup
+  # copy existed to put it back.
+  #
+  # --from-env merges .env's domain in as the primary and keeps any others the
+  # snapshot already had, so re-running this installer on a gateway that has
+  # since added base domains does not stop serving them.
+  #
+  # --no-reload because nothing is running yet on a first install; the compose
+  # up further down starts the containers with these files already in place.
+  if [[ ! -x "$MESHPLOY_CLI" ]]; then
+    die "The meshploy CLI is needed to generate the Caddy, CoreDNS and Headscale configuration and is not at ${MESHPLOY_CLI}.
+     Install through get.sh, which installs it first:
+       sudo bash -c \"\$(curl -fsSL https://meshploy.com/install.sh)\""
+  fi
+  # Headscale's configuration is generated with the rest: its split DNS has to
+  # name every base domain's internal zone, and its server_url follows the
+  # primary domain, so it cannot be a template substituted once from DOMAIN.
+  if ! "$MESHPLOY_CLI" domain apply --from-env --no-reload; then
+    die "Could not generate the Caddy, CoreDNS and Headscale configuration. Nothing was changed."
+  fi
+  success "Caddy, CoreDNS and Headscale configuration generated"
+
+
 
   # ── Private registry login ──────────────────────────────────────────────────
   header "Container registry"
@@ -1154,7 +1224,7 @@ for u in json.load(sys.stdin):
   # ── Keep published ports on the mesh ────────────────────────────────────────
   # Without this kube-proxy binds every published port on every address of the
   # node, so a port meant for the mesh also answers on the gateway's public IP.
-  # The ranges are Headscale's (deploy/headscale/config/config.yaml); a route on
+  # The ranges are Headscale's (its generated config.yaml); a route on
   # the gateway is how something is published to the internet deliberately.
   #
   # Written beside the flannel drop-in and applied by the same restart below.

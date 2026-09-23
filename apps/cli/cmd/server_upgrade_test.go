@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/meshploy/apps/cli/internal/edgeconfig"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,9 @@ import (
 // upgradeFixture is an install directory plus a release to upgrade it to, with
 // every external command stubbed and recorded.
 type upgradeFixture struct {
+	// rendered holds each Caddyfile the upgrade asked Caddy to accept.
+	rendered []string
+
 	live       string
 	compose    []composeCall
 	tags       [][]string
@@ -40,18 +44,18 @@ var liveFiles = map[string]string{
 	"docker-compose.yml":           "old compose\n",
 	"coredns/Corefile":             "old corefile ${DOMAIN}\n",
 	"caddy/Caddyfile":              "old caddy\n",
-	"caddy/Caddyfile.ondemand":     "old ondemand\n",
 	"headscale/data/db.sqlite":     "mesh state\n",
 	"headscale/config/config.yaml": "rendered headscale config\n",
-	"coredns/zones/example.com":    "zone\n",
+	// A certificate being issued while the upgrade runs. Caddy writes the
+	// challenge straight into this file, so an upgrade that rewrote it would
+	// delete an answer Let's Encrypt is about to ask for.
+	"coredns/zones/_acme-challenge.example.com": "; seeded\n@   IN TXT  \"a-challenge-in-flight\"\n",
 }
 
 var releaseFiles = map[string]string{
-	"docker-compose.yml":       "new compose\n",
-	"coredns/Corefile":         "new corefile ${DOMAIN}\n",
-	"caddy/Caddyfile":          "new caddy\n",
-	"caddy/Caddyfile.ondemand": "new ondemand\n",
-	"added-in-release.txt":     "added\n",
+	"docker-compose.yml":   "new compose\n",
+	"coredns/Corefile":     "new corefile ${DOMAIN}\n",
+	"added-in-release.txt": "added\n",
 	// A tarball that slipped past tar's excludes must still not reach these.
 	".env":                      "CLOBBERED=1\n",
 	"headscale/data/db.sqlite":  "clobbered\n",
@@ -66,12 +70,20 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 	origRef, origFetch, origCompose := upgradeRefFor, fetchDeploy, composeExec
 	origOut, origExec, origVerify, origLook := runtimeOutput, runtimeExec, verifyStack, lookPath
 	origUpgrade, origUnits, origCtl, origHost := upgradeDir, systemdUnitDir, systemctl, hostDir
+	origValidate := validateCaddyfile
 	t.Cleanup(func() {
 		meshployInstDir, loadedCfg = origDir, origCfg
 		upgradeRefFor, fetchDeploy, composeExec = origRef, origFetch, origCompose
 		runtimeOutput, runtimeExec, verifyStack, lookPath = origOut, origExec, origVerify, origLook
 		upgradeDir, systemdUnitDir, systemctl, hostDir = origUpgrade, origUnits, origCtl, origHost
+		validateCaddyfile = origValidate
 	})
+	// An upgrade regenerates the edge configuration, which asks Caddy to accept
+	// it in a container. There is none here.
+	validateCaddyfile = func(rendered string) error {
+		fx.rendered = append(fx.rendered, rendered)
+		return nil
+	}
 	meshployInstDir = fx.live
 	loadedCfg = nil // no licence lookup against a real API
 	// Docker unless a test says otherwise, whatever this machine has on PATH.
@@ -159,7 +171,10 @@ func (fx *upgradeFixture) calls(sub string) int {
 // upgrade may change them.
 func (fx *upgradeFixture) assertProtectedUntouched(t *testing.T) {
 	t.Helper()
-	for _, rel := range []string{"headscale/data/db.sqlite", "headscale/config/config.yaml", "coredns/zones/example.com"} {
+	// Headscale's config is generated now and may be rewritten; its data -
+	// the mesh itself - never is.
+	for _, rel := range []string{"headscale/data/db.sqlite",
+		"coredns/zones/_acme-challenge.example.com"} {
 		if got := fx.file(t, rel); got != liveFiles[rel] {
 			t.Errorf("protected %s changed to %q", rel, got)
 		}
@@ -175,6 +190,12 @@ func (fx *upgradeFixture) assertPreviousVersion(t *testing.T) {
 		if got := fx.file(t, rel); got != liveFiles[rel] {
 			t.Errorf("%s = %q, want the pre-upgrade %q", rel, got, liveFiles[rel])
 		}
+	}
+	// A zone the generator created during the upgrade must not survive the
+	// rollback: CoreDNS would serve a zone for a configuration that is no
+	// longer in place.
+	if got := fx.file(t, "coredns/zones/example.com"); got != "<missing>" {
+		t.Errorf("a zone the upgrade generated was left behind: %q", got)
 	}
 	if got := fx.file(t, "added-in-release.txt"); got != "<missing>" {
 		t.Errorf("a file the release added was left behind: %q", got)
@@ -195,8 +216,15 @@ func TestServerUpgradeInstallsTheRelease(t *testing.T) {
 	if got := fx.file(t, "docker-compose.yml"); got != "new compose\n" {
 		t.Errorf("compose file = %q", got)
 	}
-	if got := fx.file(t, "coredns/Corefile"); got != "new corefile example.com\n" {
-		t.Errorf("Corefile = %q, want the release's, rendered", got)
+	// The Corefile is no longer shipped: it is generated from the base domains
+	// this gateway serves, which is how a template change in a release reaches
+	// a server at all.
+	if got := fx.file(t, "coredns/Corefile"); !strings.Contains(got, "example.com:53") ||
+		!strings.Contains(got, "generated, do not edit") {
+		t.Errorf("Corefile = %q, want the generated one", got)
+	}
+	if len(fx.rendered) != 1 {
+		t.Errorf("Caddy was asked to accept the config %d times, want once", len(fx.rendered))
 	}
 	if got := fx.file(t, "added-in-release.txt"); got != "added\n" {
 		t.Errorf("new file = %q", got)
@@ -674,5 +702,51 @@ func TestServerUpgradeMakesEnvPrivate(t *testing.T) {
 	}
 	if fi.Mode().Perm() != 0o600 {
 		t.Errorf(".env mode = %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+// A mounted file that changes does not make compose recreate the container, so
+// newly generated configuration would sit on disk unserved. The upgrade
+// recreates each service whose files changed - and only those.
+func TestServerUpgradeRecreatesWhatItsGeneratedConfigReaches(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	var recreated []string
+	for _, c := range fx.compose {
+		if len(c.args) == 4 && c.args[0] == "up" && c.args[2] == "--force-recreate" {
+			recreated = append(recreated, c.args[3])
+		}
+	}
+	// The fixture's Caddyfile, Corefile and Headscale config are all old, so
+	// all three are regenerated - DNS first, then the control plane, then the
+	// edge in front of both.
+	want := []string{"coredns", "headscale", "caddy"}
+	if strings.Join(recreated, ",") != strings.Join(want, ",") {
+		t.Fatalf("recreated %v, want %v", recreated, want)
+	}
+
+	// Run again with nothing to change: nothing is recreated.
+	fx.compose = nil
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fx.compose {
+		if len(c.args) == 4 && c.args[2] == "--force-recreate" {
+			t.Errorf("recreated %s though its configuration did not change", c.args[3])
+		}
+	}
+}
+
+func TestServicesToRecreateFollowsThePaths(t *testing.T) {
+	got := servicesToRecreate([]edgeconfig.Change{
+		{Path: "caddy/Caddyfile"}, {Path: "coredns/zones/example.com"},
+	})
+	if strings.Join(got, ",") != "coredns,caddy" {
+		t.Fatalf("got %v", got)
+	}
+	if got := servicesToRecreate(nil); len(got) != 0 {
+		t.Fatalf("no changes should recreate nothing, got %v", got)
 	}
 }

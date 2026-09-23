@@ -1,0 +1,27 @@
+; Private mesh zone for {{ .InternalSubdomain }}.{{ .BaseDomain }} - generated,
+; do not edit. Served only on the WireGuard interface.
+;
+; No per-application records are written here. The wildcard catches every
+; *.{{ .InternalSubdomain }}.{{ .BaseDomain }} and sends it to the gateway; from
+; there Caddy hands it to the proxy, which reads the Host header to find the
+; target node and port. Routes are entirely dynamic - creating one changes no
+; DNS and restarts nothing.
+
+$TTL 300
+$ORIGIN {{ .InternalSubdomain }}.{{ .BaseDomain }}.
+
+@   IN SOA ns1.{{ .BaseDomain }}. admin.{{ .BaseDomain }}. (
+        {{ .Serial }}  ; serial
+        3600        ; refresh
+        900         ; retry
+        604800      ; expire
+        300         ; minimum TTL
+    )
+
+@   IN NS  ns1.{{ .BaseDomain }}.
+
+; Gateway - the single entry point for all mesh traffic
+@   IN A   {{ .MeshIP }}
+
+; Wildcard - every *.{{ .InternalSubdomain }}.{{ .BaseDomain }} → gateway
+*   IN A   {{ .MeshIP }}

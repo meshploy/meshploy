@@ -38,13 +38,23 @@ const (
 	// migrated. Args["volumes"] = "true" takes its volumes too; Args["plan"] =
 	// "true" only reports what would go.
 	RequestMigrateFinish = "migrate.finish"
+	// RequestDomainApply regenerates the gateway's Caddy and CoreDNS
+	// configuration from the domain set the API left at EdgeDesiredFile, and
+	// puts it in service.
+	//
+	// It is a request rather than something the API does itself for the reason
+	// every other one here is: writing those files and reloading the edge needs
+	// root on the host, and the API container has neither that nor a Docker
+	// socket. Args["dry_run"] = "true" reports what would change and writes
+	// nothing.
+	RequestDomainApply = "domain.apply"
 )
 
 // RequestTypes is every type the agent accepts.
 var RequestTypes = []string{
 	RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential,
 	RequestMigratePrepare, RequestMigrateMove, RequestMigrateCutover, RequestMigrateRollback,
-	RequestMigrateFinish,
+	RequestMigrateFinish, RequestDomainApply,
 }
 
 const (
@@ -71,6 +81,9 @@ const (
 	// FinishFile is what stage 4 removed, kept for the operator who wants to
 	// know what a server used to run.
 	FinishFile = "dokploy-finish.json"
+	// DomainApplyFile is what the last domain.apply did, for the console to
+	// read back.
+	DomainApplyFile = "domain-apply.json"
 	// StatusFile is where the migration has got to: which stages have run and
 	// which groups have moved.
 	//

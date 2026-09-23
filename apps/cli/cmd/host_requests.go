@@ -54,6 +54,11 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 		// Kept beside the plan, readable by root only: it is a credential that
 		// can act on the whole organisation until finish revokes it.
 		return migrateCredentialFile, body, 0o600, err
+	case hostagent.RequestDomainApply:
+		body, err := runDomainApplyRequest(req.Args["dry_run"] == "true")
+		// Base domains and their DNS modes: no secret, but it names what this
+		// gateway serves, so it follows the other results and stays root-only.
+		return hostagent.DomainApplyFile, body, 0o600, err
 	case hostagent.RequestMigratePlan:
 		src, err := dokploy.Collect(migrate.ExecRunner{})
 		if err != nil {
@@ -278,4 +283,45 @@ func readMigrationCredential() (*hostagent.Credential, error) {
 		return nil, fmt.Errorf("the stored migration credential is incomplete")
 	}
 	return &cred, nil
+}
+
+// runDomainApply puts the domain set the API left in the inbox into service.
+//
+// The API can write that file and nothing else: it has no root on the host and
+// no Docker socket, so it cannot write the Caddyfile, the zone files, or
+// restart what reads them. Leaving a snapshot there changes nothing until this
+// request asks for it, which is what keeps "the API decided" and "the gateway's
+// edge changed" two separate, visible events.
+//
+// The snapshot is data the API chose the contents of, so it is validated here
+// like any other request: Render refuses a domain name carrying Caddy or zone
+// syntax rather than writing it into the configuration of the thing that serves
+// this machine.
+func runDomainApplyRequest(dryRun bool) ([]byte, error) {
+	desired, err := hostagent.ReadDesiredEdgeSnapshot(hostDir)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("no domain set was left at %s", hostagent.EdgeDesiredFile)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var log strings.Builder
+	if err := applyEdgeSnapshot(&log, *desired, dryRun, true); err != nil {
+		return nil, fmt.Errorf("%w\n%s", err, log.String())
+	}
+	if !dryRun {
+		// What is actually installed, for the console to read back. Written
+		// only once the edge is serving it, so state/ never claims something
+		// the gateway is not doing.
+		if err := hostagent.WriteEdgeSnapshot(hostDir, *desired); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(map[string]any{
+		"applied_at": time.Now().UTC(),
+		"dry_run":    dryRun,
+		"domains":    desired.Domains,
+		"log":        log.String(),
+	})
 }

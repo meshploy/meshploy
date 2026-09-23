@@ -62,7 +62,12 @@ services:
       PUBLIC_IP: ${PUBLIC_IP}
       GATEWAY_HOSTNAME: ${GATEWAY_HOSTNAME}
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro,z
+      # The whole directory, not just the Caddyfile: the generated config ends
+      # with `import conf.d/*.caddy`, which resolves relative to the config
+      # file. Mounting the file alone would make that import silently match
+      # nothing, so an operator's own configuration would be accepted by
+      # validation and then never loaded.
+      - ./caddy:/etc/caddy:ro,z
       - ./coredns/zones:/etc/coredns/zones:z # shared with CoreDNS for ACME TXT records
       - caddy_data:/data
       - caddy_config:/config

@@ -1,0 +1,150 @@
+# Meshploy Caddyfile - generated, do not edit.
+#
+# Rendered by `meshploy domain apply` from the edge snapshot at
+# /var/lib/meshploy/host/state/edge.json.
+# Every edit here is lost the next time a base domain is added, removed,
+# verified, or has its DNS mode changed. Put your own configuration in
+# conf.d/*.caddy, which is imported below and never written.
+#
+# Caddy runs with network_mode: host, so every reverse_proxy target is localhost.
+#
+# `tls force_automate` on a platform subdomain of an on-demand domain is not
+# decoration. That domain's wildcard is on-demand, so it is never obtained up
+# front, and Caddy prefers a covering wildcard to an individual certificate -
+# leaving the named site in a gap where nothing issues its certificate and the
+# console is unreachable over HTTPS on a fresh install. A delegated domain does
+# not need it: its wildcard is a real certificate that genuinely covers them.
+
+{
+    on_demand_tls {
+        # One ask endpoint for the whole server, because on_demand_tls is a
+        # global option and cannot vary per site. It approves an active workload
+        # route under any verified base domain, and a verified custom domain -
+        # the two things that may be issued without being named here.
+        ask http://localhost:4000/api/v1/internal/ondemand-tls-check
+    }
+}
+
+# Anything you add yourself. Imported before the site blocks, so a syntax error
+# in it fails the config outright rather than at the first request.
+import conf.d/*.caddy
+
+# ═══ example.com - NS delegation, primary ═══
+
+# ── Headscale control plane ──────────────────────────────────────────────────
+headscale.example.com {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.example.com
+        }
+    }
+    reverse_proxy localhost:8085
+}
+
+# ── Meshploy API ─────────────────────────────────────────────────────────────
+# /docs (Swagger UI), /api/v1/*, and the SSE log endpoints.
+api.example.com {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.example.com
+        }
+    }
+    reverse_proxy localhost:4000 {
+        flush_interval -1
+    }
+}
+
+# ── Meshploy console ─────────────────────────────────────────────────────────
+console.example.com {
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.example.com
+        }
+    }
+    handle /api/* {
+        reverse_proxy localhost:4000 {
+            # flush_interval -1 disables response buffering so SSE log streams
+            # reach the client immediately instead of being held until the
+            # connection closes.
+            flush_interval -1
+        }
+    }
+    # Remote MCP (Streamable HTTP). Agents connect here with a magt- token.
+    handle /mcp* {
+        reverse_proxy localhost:4000 {
+            flush_interval -1
+        }
+    }
+    handle {
+        reverse_proxy localhost:5173
+    }
+}
+
+# ── Public workload routes ───────────────────────────────────────────────────
+# The proxy reads the Host header, looks the route up, and forwards to the
+# target node over the mesh.
+*.example.com {
+    # One wildcard certificate by DNS-01, written into this domain's own
+    # challenge zone.
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.example.com
+        }
+    }
+    reverse_proxy localhost:8081
+}
+
+# ── Internal mesh traffic ────────────────────────────────────────────────────
+# Bound to the mesh address, so it is reachable only from inside the mesh.
+*.internal.example.com {
+    bind 100.64.0.1
+    # A public wildcard needs DNS-01, which needs a zone the world can query.
+    # resolvers points CertMagic at the authoritative CoreDNS directly, so no
+    # CNAME is chased and no recursive cache stands in the way.
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.internal.example.com
+        }
+        resolvers 203.0.113.10
+    }
+    reverse_proxy localhost:8081
+}
+
+# ═══ second.test - on-demand TLS ═══
+
+# The platform's own subdomains are reserved on this domain but serve nothing.
+# They follow the primary; making this domain primary is what moves them.
+
+# ── Public workload routes ───────────────────────────────────────────────────
+# The proxy reads the Host header, looks the route up, and forwards to the
+# target node over the mesh.
+*.second.test {
+    # A certificate per hostname, issued on first request once the ask endpoint
+    # confirms a route exists for it.
+    tls {
+        on_demand
+    }
+    reverse_proxy localhost:8081
+}
+
+# ── Internal mesh traffic ────────────────────────────────────────────────────
+# Bound to the mesh address, so it is reachable only from inside the mesh.
+*.internal.second.test {
+    bind 100.64.0.1
+    # Without NS delegation there is no zone here to prove control of, and an
+    # internal name does not answer from the internet to prove it another way.
+    # Caddy signs these with its own authority; clients warn until it is trusted.
+    tls internal
+    reverse_proxy localhost:8081
+}
+
+# ── Custom domains ───────────────────────────────────────────────────────────
+# Any hostname none of the blocks above matched, such as a customer's own domain
+# on a route. The ask endpoint gates issuance, so only a hostname whose
+# ownership was proved gets a certificate.
+:443 {
+    tls {
+        on_demand
+    }
+    reverse_proxy localhost:8081
+}
