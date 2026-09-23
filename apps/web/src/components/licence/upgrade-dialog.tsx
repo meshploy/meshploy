@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils"
  * The query parameter marks the highest-intent source there is — someone
  * already running Meshploy.
  */
-const LICENCE_URL = "https://meshploy.com/enterprise?src=console"
+const LICENCE_URL = "https://meshploy.com/contact?topic=enterprise&src=console"
 
 type Tier = "both" | "enterprise"
 
