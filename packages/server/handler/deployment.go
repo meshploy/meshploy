@@ -8,9 +8,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/middleware"
 	"github.com/meshploy/packages/server/service"
-	"github.com/meshploy/packages/db"
 )
 
 type DeploymentPathInput struct {

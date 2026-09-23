@@ -15,8 +15,8 @@ import (
 // PodMetrics holds current CPU and memory usage for a single pod.
 type PodMetrics struct {
 	PodName   string `json:"pod_name"`
-	CPUMillis int64  `json:"cpu_millis"`  // milli-cores (e.g. 150 = 150m = 0.15 cores)
-	MemoryMiB int64  `json:"memory_mib"`  // mebibytes
+	CPUMillis int64  `json:"cpu_millis"` // milli-cores (e.g. 150 = 150m = 0.15 cores)
+	MemoryMiB int64  `json:"memory_mib"` // mebibytes
 }
 
 // minimal structs for parsing metrics.k8s.io/v1beta1 PodMetricsList
@@ -25,7 +25,9 @@ type podMetricsList struct {
 }
 
 type podMetricsItem struct {
-	Metadata   struct{ Name string `json:"name"` }   `json:"metadata"`
+	Metadata struct {
+		Name string `json:"name"`
+	} `json:"metadata"`
 	Containers []struct {
 		Usage struct {
 			CPU    string `json:"cpu"`

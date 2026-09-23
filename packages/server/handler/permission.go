@@ -243,4 +243,3 @@ func (h *Handler) enforceAdminRole(ctx context.Context, orgID, callerID uuid.UUI
 	}
 	return nil
 }
-

@@ -70,11 +70,11 @@ var registryProviders = []struct {
 	value string
 	registryProviderMeta
 }{
-	{"ghcr",      registryProviderMeta{label: "GitHub Container Registry", needsEndpoint: false, userLabel: "GitHub username",      passLabel: "Personal access token",   namespacePlaceholder: "ghcr.io/my-org"}},
-	{"dockerhub", registryProviderMeta{label: "Docker Hub",                needsEndpoint: false, userLabel: "Docker Hub username",  passLabel: "Password or access token", namespacePlaceholder: "docker.io/my-org"}},
-	{"ecr",       registryProviderMeta{label: "Amazon ECR",                needsEndpoint: true,  endpointPlaceholder: "123456789.dkr.ecr.us-east-1.amazonaws.com", userLabel: "AWS access key ID", passLabel: "AWS secret access key", namespacePlaceholder: "123456789.dkr.ecr.us-east-1.amazonaws.com"}},
-	{"gcr",       registryProviderMeta{label: "Google Container Registry", needsEndpoint: true,  endpointPlaceholder: "gcr.io",     userLabel: "Username (_json_key)",     passLabel: "Service account JSON",     namespacePlaceholder: "gcr.io/my-project"}},
-	{"custom",    registryProviderMeta{label: "Private Registry",          needsEndpoint: true,  endpointPlaceholder: "registry.example.com", userLabel: "Username", passLabel: "Password or token", namespacePlaceholder: "registry.example.com/my-org"}},
+	{"ghcr", registryProviderMeta{label: "GitHub Container Registry", needsEndpoint: false, userLabel: "GitHub username", passLabel: "Personal access token", namespacePlaceholder: "ghcr.io/my-org"}},
+	{"dockerhub", registryProviderMeta{label: "Docker Hub", needsEndpoint: false, userLabel: "Docker Hub username", passLabel: "Password or access token", namespacePlaceholder: "docker.io/my-org"}},
+	{"ecr", registryProviderMeta{label: "Amazon ECR", needsEndpoint: true, endpointPlaceholder: "123456789.dkr.ecr.us-east-1.amazonaws.com", userLabel: "AWS access key ID", passLabel: "AWS secret access key", namespacePlaceholder: "123456789.dkr.ecr.us-east-1.amazonaws.com"}},
+	{"gcr", registryProviderMeta{label: "Google Container Registry", needsEndpoint: true, endpointPlaceholder: "gcr.io", userLabel: "Username (_json_key)", passLabel: "Service account JSON", namespacePlaceholder: "gcr.io/my-project"}},
+	{"custom", registryProviderMeta{label: "Private Registry", needsEndpoint: true, endpointPlaceholder: "registry.example.com", userLabel: "Username", passLabel: "Password or token", namespacePlaceholder: "registry.example.com/my-org"}},
 }
 
 func runRegistryAdd(_ *cobra.Command, _ []string) error {

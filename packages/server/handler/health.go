@@ -9,9 +9,9 @@ import (
 
 type HealthOutput struct {
 	Body struct {
-		Status  string `json:"status"`
-		Time    string `json:"time"`
-		DB      string `json:"db"`
+		Status string `json:"status"`
+		Time   string `json:"time"`
+		DB     string `json:"db"`
 	}
 }
 

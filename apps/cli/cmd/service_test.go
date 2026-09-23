@@ -9,14 +9,14 @@ func TestIsUUID(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"550e8400-e29b-41d4-a716-446655440000", true},  // valid v4
-		{"00000000-0000-0000-0000-000000000000", true},  // all zeros
-		{"", false},                                      // empty
-		{"not-a-uuid", false},                            // too short
-		{"550e8400e29b41d4a716446655440000", false},      // no hyphens
-		{"550e8400-e29b-41d4-a716-44665544000Z", true},  // 36 chars with dashes in right spots — heuristic passes
-		{"my-project-slug", false},                       // typical slug
-		{"proj-abc", false},                              // short slug
+		{"550e8400-e29b-41d4-a716-446655440000", true}, // valid v4
+		{"00000000-0000-0000-0000-000000000000", true}, // all zeros
+		{"", false},           // empty
+		{"not-a-uuid", false}, // too short
+		{"550e8400e29b41d4a716446655440000", false},    // no hyphens
+		{"550e8400-e29b-41d4-a716-44665544000Z", true}, // 36 chars with dashes in right spots — heuristic passes
+		{"my-project-slug", false},                     // typical slug
+		{"proj-abc", false},                            // short slug
 	}
 	for _, tc := range cases {
 		got := isUUID(tc.input)

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/meshploy/packages/server/service"
 	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 )
 
 // --- DTOs ---

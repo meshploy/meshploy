@@ -68,10 +68,10 @@ var storageProviders = []struct {
 	value string
 	storageProviderMeta
 }{
-	{"s3",    storageProviderMeta{label: "Amazon S3",     needsEndpoint: false, needsRegion: true}},
-	{"r2",    storageProviderMeta{label: "Cloudflare R2", needsEndpoint: true,  endpointPlaceholder: "https://<account-id>.r2.cloudflarestorage.com"}},
-	{"minio", storageProviderMeta{label: "MinIO",         needsEndpoint: true,  endpointPlaceholder: "https://minio.example.com"}},
-	{"b2",    storageProviderMeta{label: "Backblaze B2",  needsEndpoint: true,  endpointPlaceholder: "https://s3.us-west-004.backblazeb2.com"}},
+	{"s3", storageProviderMeta{label: "Amazon S3", needsEndpoint: false, needsRegion: true}},
+	{"r2", storageProviderMeta{label: "Cloudflare R2", needsEndpoint: true, endpointPlaceholder: "https://<account-id>.r2.cloudflarestorage.com"}},
+	{"minio", storageProviderMeta{label: "MinIO", needsEndpoint: true, endpointPlaceholder: "https://minio.example.com"}},
+	{"b2", storageProviderMeta{label: "Backblaze B2", needsEndpoint: true, endpointPlaceholder: "https://s3.us-west-004.backblazeb2.com"}},
 }
 
 func runStorageAdd(_ *cobra.Command, _ []string) error {

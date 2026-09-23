@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/meshploy/packages/server/service"
 	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 )
 
 type StackPathInput struct {
@@ -33,7 +33,7 @@ type CreateStackBody struct {
 	Spec      string            `json:"spec"`
 	Variables map[string]string `json:"variables,omitempty"`
 	// Git source
-	GitMode          string  `json:"git_mode,omitempty"`           // "" | "file" | "repo"
+	GitMode          string  `json:"git_mode,omitempty"` // "" | "file" | "repo"
 	GitRepo          string  `json:"git_repo,omitempty"`
 	GitBranch        string  `json:"git_branch,omitempty"`
 	GitPath          string  `json:"git_path,omitempty"`           // default: docker-compose.yml

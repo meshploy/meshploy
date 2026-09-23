@@ -16,9 +16,9 @@ import (
 // ── Manifest types ────────────────────────────────────────────────────────────
 
 type ServiceManifest struct {
-	Service ServiceBlock `toml:"service"`
-	Build   *BuildBlock  `toml:"build,omitempty"`
-	DB      *DBBlock     `toml:"database,omitempty"`
+	Service ServiceBlock      `toml:"service"`
+	Build   *BuildBlock       `toml:"build,omitempty"`
+	DB      *DBBlock          `toml:"database,omitempty"`
 	Env     map[string]string `toml:"env,omitempty"`
 }
 
@@ -30,14 +30,14 @@ type ServiceBlock struct {
 }
 
 type BuildBlock struct {
-	Source         string        `toml:"source"`
-	IntegrationID  string        `toml:"integration_id,omitempty"`
-	RepoURL        string        `toml:"repo_url,omitempty"`
-	Branch         string        `toml:"branch,omitempty"`
-	Builder        string        `toml:"builder,omitempty"`
-	DockerfilePath string        `toml:"dockerfile_path,omitempty"`
-	Image          string        `toml:"image,omitempty"`
-	Registry       *RegistryRef  `toml:"registry,omitempty"`
+	Source         string       `toml:"source"`
+	IntegrationID  string       `toml:"integration_id,omitempty"`
+	RepoURL        string       `toml:"repo_url,omitempty"`
+	Branch         string       `toml:"branch,omitempty"`
+	Builder        string       `toml:"builder,omitempty"`
+	DockerfilePath string       `toml:"dockerfile_path,omitempty"`
+	Image          string       `toml:"image,omitempty"`
+	Registry       *RegistryRef `toml:"registry,omitempty"`
 }
 
 type RegistryRef struct {

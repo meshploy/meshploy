@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	svc "github.com/meshploy/packages/server/service"
 	"github.com/meshploy/packages/db"
+	svc "github.com/meshploy/packages/server/service"
 )
 
 type EmailConfigOrgInput struct {
@@ -22,7 +22,7 @@ type SaveEmailConfigInput struct {
 		Host        string `json:"host"         minLength:"1"`
 		Port        int    `json:"port"         minimum:"1" maximum:"65535"`
 		Username    string `json:"username"`
-		Password    string `json:"password"`     // empty = keep existing on update
+		Password    string `json:"password"` // empty = keep existing on update
 		FromAddress string `json:"from_address" minLength:"3"`
 		FromName    string `json:"from_name"`
 		UseTLS      *bool  `json:"use_tls,omitempty" default:"true"`

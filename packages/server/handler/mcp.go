@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	mcpsdk "github.com/mark3labs/mcp-go/server"
-	"github.com/meshploy/packages/server/middleware"
-	"github.com/meshploy/packages/server/service"
 	cliclient "github.com/meshploy/packages/client"
 	"github.com/meshploy/packages/mcpserver"
+	"github.com/meshploy/packages/server/middleware"
+	"github.com/meshploy/packages/server/service"
 )
 
 // remoteExcludedTools are stripped from the MCP surface exposed over the public

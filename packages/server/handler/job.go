@@ -6,8 +6,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/meshploy/packages/server/service"
 	db "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 )
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────

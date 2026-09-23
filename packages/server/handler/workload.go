@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	db "github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	svc "github.com/meshploy/packages/server/service"
-	db "github.com/meshploy/packages/db"
 )
 
 type WorkloadPathInput struct {
@@ -34,10 +34,10 @@ type GetWorkloadOutput struct {
 // PortBody is the wire format for a single port in the create-service request.
 type PortBody struct {
 	Name      string `json:"name" minLength:"1" maxLength:"64"` // e.g. "http", "grpc"
-	Port      int    `json:"port"`                               // container port
-	IsHTTP    bool   `json:"is_http"`                            // HTTP/1.1 — routable via proxy
-	IsPrimary bool   `json:"is_primary"`                         // health check target
-	IsPublic  bool   `json:"is_public"`                          // gets a K8s NodePort
+	Port      int    `json:"port"`                              // container port
+	IsHTTP    bool   `json:"is_http"`                           // HTTP/1.1 — routable via proxy
+	IsPrimary bool   `json:"is_primary"`                        // health check target
+	IsPublic  bool   `json:"is_public"`                         // gets a K8s NodePort
 }
 
 type CreateWorkloadInput struct {
@@ -46,10 +46,10 @@ type CreateWorkloadInput struct {
 	Body      struct {
 		Name          string     `json:"name" minLength:"1" maxLength:"100"`
 		Image         string     `json:"image,omitempty"`
-		NodeID        *string    `json:"node_id,omitempty"`   // nil = auto-schedule
-		EnvVars       string     `json:"env_vars,omitempty"`  // raw .env block, encrypted at rest
-		Ports         []PortBody `json:"ports,omitempty"`     // empty = default single HTTP port 3000
-		Replicas      int        `json:"replicas,omitempty"`  // 0 = use service layer default (1)
+		NodeID        *string    `json:"node_id,omitempty"`  // nil = auto-schedule
+		EnvVars       string     `json:"env_vars,omitempty"` // raw .env block, encrypted at rest
+		Ports         []PortBody `json:"ports,omitempty"`    // empty = default single HTTP port 3000
+		Replicas      int        `json:"replicas,omitempty"` // 0 = use service layer default (1)
 		CPURequest    string     `json:"cpu_request,omitempty"`
 		CPULimit      string     `json:"cpu_limit,omitempty"`
 		MemoryRequest string     `json:"memory_request,omitempty"`
@@ -434,16 +434,16 @@ type PatchWorkloadInput struct {
 	ProjectID string `path:"projectId"`
 	ServiceID string `path:"serviceId"`
 	Body      struct {
-		Name          *string    `json:"name,omitempty"`
-		Image         *string    `json:"image,omitempty"`
+		Name  *string `json:"name,omitempty"`
+		Image *string `json:"image,omitempty"`
 		// node_id: omit = no change, "" = auto-schedule, UUID = pin to node
-		NodeID        *string    `json:"node_id,omitempty"`
-		Replicas      *int       `json:"replicas,omitempty"`
-		CPURequest    *string    `json:"cpu_request,omitempty"`
-		CPULimit      *string    `json:"cpu_limit,omitempty"`
-		MemoryRequest *string    `json:"memory_request,omitempty"`
-		MemoryLimit   *string    `json:"memory_limit,omitempty"`
-		EnvVars       *string    `json:"env_vars,omitempty"`
+		NodeID        *string     `json:"node_id,omitempty"`
+		Replicas      *int        `json:"replicas,omitempty"`
+		CPURequest    *string     `json:"cpu_request,omitempty"`
+		CPULimit      *string     `json:"cpu_limit,omitempty"`
+		MemoryRequest *string     `json:"memory_request,omitempty"`
+		MemoryLimit   *string     `json:"memory_limit,omitempty"`
+		EnvVars       *string     `json:"env_vars,omitempty"`
 		Ports         *[]PortBody `json:"ports,omitempty"` // nil = no change; replaces all ports when set
 		// pull_registry_integration_id: omit = no change, "" = clear (public image), UUID = set
 		PullRegistryIntegrationID *string `json:"pull_registry_integration_id,omitempty"`
@@ -554,20 +554,20 @@ type PatchBuildConfigInput struct {
 	ProjectID string `path:"projectId"`
 	ServiceID string `path:"serviceId"`
 	Body      struct {
-		GitIntegrationID      *string `json:"git_integration_id,omitempty"`
-		GitRepo               *string `json:"git_repo,omitempty"`
-		Branch                *string `json:"branch,omitempty"`
-		Builder               *string `json:"builder,omitempty"`
-		DockerfilePath        *string `json:"dockerfile_path,omitempty"`
-		RegistryIntegrationID *string `json:"registry_integration_id,omitempty"` // "" = clear
-		BuilderNode           *string `json:"builder_node,omitempty"`             // "" = auto-schedule
-		BuilderCPURequest     *string `json:"builder_cpu_request,omitempty"`
-		BuilderMemoryRequest  *string `json:"builder_memory_request,omitempty"`
-		BuilderCPULimit       *string `json:"builder_cpu_limit,omitempty"`    // "" = no cap
-		BuilderMemoryLimit    *string `json:"builder_memory_limit,omitempty"` // "" = 4Gi, or the request when larger
-		RollbackEnabled       *bool   `json:"rollback_enabled,omitempty"`
-		ImageRetention        *int    `json:"image_retention,omitempty"`
-		AutoDeploy            *bool   `json:"auto_deploy,omitempty"`
+		GitIntegrationID      *string   `json:"git_integration_id,omitempty"`
+		GitRepo               *string   `json:"git_repo,omitempty"`
+		Branch                *string   `json:"branch,omitempty"`
+		Builder               *string   `json:"builder,omitempty"`
+		DockerfilePath        *string   `json:"dockerfile_path,omitempty"`
+		RegistryIntegrationID *string   `json:"registry_integration_id,omitempty"` // "" = clear
+		BuilderNode           *string   `json:"builder_node,omitempty"`            // "" = auto-schedule
+		BuilderCPURequest     *string   `json:"builder_cpu_request,omitempty"`
+		BuilderMemoryRequest  *string   `json:"builder_memory_request,omitempty"`
+		BuilderCPULimit       *string   `json:"builder_cpu_limit,omitempty"`    // "" = no cap
+		BuilderMemoryLimit    *string   `json:"builder_memory_limit,omitempty"` // "" = 4Gi, or the request when larger
+		RollbackEnabled       *bool     `json:"rollback_enabled,omitempty"`
+		ImageRetention        *int      `json:"image_retention,omitempty"`
+		AutoDeploy            *bool     `json:"auto_deploy,omitempty"`
 		WatchPaths            *[]string `json:"watch_paths,omitempty" doc:"Deploy on push only when one of these paths changed. Empty means every push"`
 	}
 }

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/meshploy/packages/client"
 	"github.com/meshploy/apps/cli/internal/config"
+	"github.com/meshploy/packages/client"
 	"github.com/spf13/cobra"
 )
 
