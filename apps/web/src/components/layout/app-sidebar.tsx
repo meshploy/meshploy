@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Download,
   FolderKanban,
+  Globe,
   Home,
   LayoutTemplate,
   Loader2,
@@ -64,6 +65,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/nodes", icon: Server, label: "Nodes", exact: false },
       { href: "/cluster", icon: Network, label: "Cluster", exact: false, adminOnly: true },
       { href: "/discovery", icon: Radar, label: "Discovery", exact: false },
+      { href: "/domains", icon: Globe, label: "Domains", exact: false },
     ],
   },
   {
@@ -159,23 +161,49 @@ export function AppSidebar() {
     queryFn: () => system.migration(token!),
     enabled: !!token && isAdmin,
     staleTime: 60 * 1000,
+    refetchInterval: query => query.state.data?.plan && !query.state.data.status?.finished ? 5_000 : false,
     retry: false,
     throwOnError: false,
   })
-  const migrating = !!migration?.plan && !migration.status?.finished
-
-  const navGroups = (() => {
-    // Migration belongs with the machines, not the applications: it is about
-    // what this server used to run, and it goes when the migration is over.
-    const groups = migrating
-      ? NAV_GROUPS.map((g) =>
-          g.label === "Infrastructure"
-            ? { ...g, items: [...g.items, { href: "/migration", icon: Import, label: "Migration", exact: false, adminOnly: true }] }
-            : g
-        )
-      : NAV_GROUPS
-    return eeGroup && eeGroup.items.length > 0 ? [...groups, eeGroup] : groups
-  })()
+  const migrating = isAdmin && !!migration?.plan && !migration.status?.finished
+  const migrationStatus = migration?.status
+  const migrationGroups = migrationStatus?.groups ?? []
+  const movedGroups = migrationGroups.filter(group => group.moved).length
+  // A group that cannot move is left where it is and does not hold the cutover
+  // up (the migration page's own rule), so it is not work still to do. Counting
+  // it would leave the bar short of "ready to finish" for a step that never
+  // comes.
+  const movableGroups = migrationGroups.filter(group => group.moved || group.can_move).length
+  const waitingGroups = movableGroups - movedGroups
+  // Completed steps out of all of them - prepare, each movable group, cutover,
+  // finish - and not a time estimate. Finishing hides this card, so while it
+  // shows the bar stops one step short of full.
+  const migrationTotal = movableGroups + 3
+  const migrationDone = Number(!!migrationStatus?.prepared) + movedGroups + Number(!!migrationStatus?.cut_over)
+  // The same four stages the migration page shows, each filled 0-1. With no
+  // movable group the groups stage has nothing to do, so it fills with prepare.
+  const migrationStages = [
+    { label: "prepare", fill: migrationStatus?.prepared ? 1 : 0 },
+    { label: "groups", fill: movableGroups > 0 ? movedGroups / movableGroups : migrationStatus?.prepared ? 1 : 0 },
+    { label: "cutover", fill: migrationStatus?.cut_over ? 1 : 0 },
+    { label: "finish", fill: migrationStatus?.finished ? 1 : 0 },
+  ]
+  const migrationBusy = Object.values(migration?.requests ?? {}).some(r => r.state === "queued" || r.state === "running")
+  // What happens next, the way the migration page would say it - not a tally
+  // of what already did.
+  const migrationBlocked = !!migration && !migration.agent_reporting
+  const migrationLabel = migrationBlocked
+    ? "Host agent not reporting"
+    : migrationBusy
+      ? "Working…"
+      : !migrationStatus?.prepared
+        ? "Ready to prepare"
+        : waitingGroups > 0
+          ? `Moving groups · ${movedGroups}/${movableGroups}`
+          : !migrationStatus?.cut_over
+            ? "Ready to cut over"
+            : "Ready to finish"
+  const navGroups = eeGroup && eeGroup.items.length > 0 ? [...NAV_GROUPS, eeGroup] : NAV_GROUPS
 
   return (
     <aside aria-label="Main navigation"
@@ -196,7 +224,7 @@ export function AppSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav onClick={e => { if (!e.metaKey && !e.ctrlKey && (e.target as Element).closest("a")) useTabStore.getState().setActiveTab(null) }} className="flex flex-col p-2 flex-1 gap-4">
+      <nav onClick={e => { if (!e.metaKey && !e.ctrlKey && (e.target as Element).closest("a")) useTabStore.getState().setActiveTab(null) }} className="flex flex-col p-2 flex-1 min-h-0 overflow-y-auto gap-4">
         {navGroups.filter((g) => !g.adminOnly || isAdmin).map((group, gi) => (
           <div key={gi} className="flex flex-col gap-0.5">
             {/* Group label — only in expanded mode */}
@@ -259,6 +287,48 @@ export function AppSidebar() {
 
       {/* Bottom: version + collapse toggle */}
       <div className="p-2 shrink-0 space-y-1">
+        {migrating && (
+          <Tooltip>
+            <TooltipTrigger render={
+              <Link to="/migration" aria-label={`Migration: ${migrationLabel}`}
+                aria-current={pathname.startsWith("/migration") ? "page" : undefined}
+                onClick={event => { if (!event.metaKey && !event.ctrlKey) useTabStore.getState().setActiveTab(null) }}
+                className={cn("block rounded-md border border-sidebar-border mb-3 transition-colors hover:bg-sidebar-accent", sidebarCollapsed ? "p-2" : "p-3", pathname.startsWith("/migration") && "active-navigation")}
+              />
+            }>
+              <span className={cn("flex items-center text-sm gap-2", sidebarCollapsed && "justify-center")}>
+                <Import className="h-4 w-4 shrink-0 text-primary" />
+                {!sidebarCollapsed && <><span>Migration</span><ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></>}
+              </span>
+              {!sidebarCollapsed && (
+                <span className={cn("block text-[11px] mt-2", migrationBlocked ? "text-amber-400" : "text-muted-foreground")}>
+                  {migrationLabel}
+                </span>
+              )}
+              {/* One segment per stage, so a single step - cut over, finish -
+                  reads as its own stage rather than a notch on one long bar.
+                  The groups share one segment that fills as they move, which
+                  stays legible at twenty groups. The stage in hand pulses while
+                  its step runs, since cutover and finish are the long ones and
+                  would otherwise sit still until done. */}
+              <span role="progressbar" aria-label="Migration steps completed" aria-valuemin={0} aria-valuemax={migrationTotal} aria-valuenow={migrationDone} aria-valuetext={migrationLabel}
+                className="flex gap-0.5 mt-2">
+                {migrationStages.map((stage, i) => {
+                  const current = i === migrationStages.findIndex(st => st.fill < 1)
+                  return (
+                    <span key={stage.label} data-stage={stage.label} data-current={current || undefined}
+                      className={cn("block h-1 flex-1 rounded-full bg-sidebar-border overflow-hidden",
+                        current && migrationBusy && "animate-pulse motion-reduce:animate-none")}>
+                      <span className="block h-full bg-primary rounded-full transition-[width] duration-300 motion-reduce:transition-none"
+                        style={{ width: `${Math.round(stage.fill * 100)}%` }} />
+                    </span>
+                  )
+                })}
+              </span>
+            </TooltipTrigger>
+            {sidebarCollapsed && <TooltipContent side="right">Migration · {migrationLabel}</TooltipContent>}
+          </Tooltip>
+        )}
         <Separator className="mb-2 bg-sidebar-border" />
 
         {(upgrading || ver?.update_available) && (

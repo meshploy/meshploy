@@ -40,6 +40,9 @@ const body = async (request: Request): Promise<Record<string, any>> => {
   }
 }
 const find = (kind: string, id: unknown) => db[kind].find((r) => r.id === id)
+
+// The one migration step the demo has running, if any, and until when.
+let demoMigrationRun: { kind: string; until: number } | null = null
 // Which groups each job has attached, for the demo workspace.
 const jobGroups: Record<string, string[]> = {}
 const defaults: Record<string, any> = {
@@ -171,6 +174,15 @@ function crud(kind: string, base: string, scoped = false) {
         row.hostname =
           input.hostname ||
           `${input.subdomain}.${db.domains[0]?.base_domain || "demo.example.com"}`
+        // A custom hostname arrives unproved, with a token to publish - as the
+        // real API does - so the ownership step can be walked through offline.
+        if (!input.domain_id) {
+          row.domain_id = null
+          row.custom_domain_verified = false
+          row.custom_domain_verify_token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+            b.toString(16).padStart(2, "0")
+          ).join("")
+        }
         row.targets = (input.targets || []).map((t: any) =>
           routeTarget(t, row.id)
         )
@@ -1120,12 +1132,18 @@ export const workspaceHandlers = [
       status_at: now(),
       requests: {
         "migrate.prepare": { id: "req-1", state: "succeeded", requested_at: now() },
+        // A step started from the page runs for a few seconds, the way one on
+        // a real server takes a while, so a running step can be seen.
+        ...(demoMigrationRun && Date.now() < demoMigrationRun.until
+          ? { [`migrate.${demoMigrationRun.kind}`]: { id: "req-demo", state: "running", requested_at: now() } }
+          : {}),
       },
     })
   ),
-  http.post("/api/v1/system/migrate/dokploy/:kind", () =>
-    json({ id: "req-demo", state: "queued", requested_at: now() }, 202)
-  ),
+  http.post("/api/v1/system/migrate/dokploy/:kind", ({ params }) => {
+    demoMigrationRun = { kind: String(params.kind), until: Date.now() + 6_000 }
+    return json({ id: "req-demo", state: "queued", requested_at: now() }, 202)
+  }),
   http.post("/api/v1/system/check-updates", () =>
     json({
       current: "v0.11.0-demo",
