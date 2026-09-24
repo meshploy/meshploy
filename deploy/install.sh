@@ -1777,9 +1777,13 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     if [[ -n "$_NODE_ID" ]]; then
       success "Node '${NODE_HOSTNAME}' registered in Meshploy (role: ${NODE_MESH_ROLE})"
       # Save node identity so uninstall.sh can self-deregister via the API.
+      # A provisioning token is spent by the registration it just made, so it
+      # can never prove anything again: what proves this node later is the
+      # per-node secret that registration hands back, once.
+      _NODE_SECRET="$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('node_secret',''))" 2>/dev/null || true)"
       sudo mkdir -p /etc/meshploy
-      printf 'NODE_ID=%s\nNODE_NAME=%s\nMESHPLOY_API_URL=%s\nMESHPLOY_TOKEN=%s\n' \
-        "${_NODE_ID}" "${NODE_HOSTNAME}" "${MESHPLOY_API_URL}" "${MESHPLOY_TOKEN}" \
+      printf 'NODE_ID=%s\nNODE_NAME=%s\nMESHPLOY_API_URL=%s\nMESHPLOY_TOKEN=%s\nNODE_SECRET=%s\n' \
+        "${_NODE_ID}" "${NODE_HOSTNAME}" "${MESHPLOY_API_URL}" "${MESHPLOY_TOKEN}" "${_NODE_SECRET}" \
         | sudo tee /etc/meshploy/node.conf > /dev/null
       sudo chmod 600 /etc/meshploy/node.conf
       success "Node identity saved to /etc/meshploy/node.conf"

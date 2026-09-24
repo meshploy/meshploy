@@ -146,3 +146,25 @@ func TestInstallScriptIsReachableWithoutASession(t *testing.T) {
 		}
 	})
 }
+
+// A node joined with a provisioning token proves itself on removal with the
+// per-node secret registration handed it. The token it joined with is spent,
+// and install.sh used to save only that, so uninstall.sh sent a dead token and
+// the node stayed listed after the machine was wiped.
+func TestLinuxRemovalUsesTheNodeSecret(t *testing.T) {
+	deploy := filepath.Join("..", "..", "..", "deploy")
+	install, err := os.ReadFile(filepath.Join(deploy, "install.sh"))
+	if err != nil {
+		t.Skipf("deploy/install.sh: %v", err)
+	}
+	uninstall, err := os.ReadFile(filepath.Join(deploy, "uninstall.sh"))
+	if err != nil {
+		t.Skipf("deploy/uninstall.sh: %v", err)
+	}
+	if !strings.Contains(string(install), "get('node_secret','')") || !strings.Contains(string(install), "NODE_SECRET=%s") {
+		t.Error("install.sh does not save the node secret from registration")
+	}
+	if !strings.Contains(string(uninstall), `\"node_secret\":\"${NODE_SECRET}\"`) {
+		t.Error("uninstall.sh does not deregister with the node secret")
+	}
+}
