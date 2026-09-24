@@ -147,13 +147,21 @@ if $WORKER; then
   header "Deregistering from Meshploy"
   if sudo test -f /etc/meshploy/node.conf 2>/dev/null; then
     eval "$(sudo cat /etc/meshploy/node.conf)"
-    if [[ -n "${NODE_ID:-}" && -n "${MESHPLOY_API_URL:-}" && -n "${MESHPLOY_TOKEN:-}" ]]; then
+    # A node joined with a provisioning token proves itself with its own secret;
+    # the token it joined with was spent joining. One joined with the org's
+    # registration token uses that token, as before.
+    if [[ -n "${NODE_SECRET:-}" ]]; then
+      _DEREG_BODY="{\"node_secret\":\"${NODE_SECRET}\",\"node_id\":\"${NODE_ID:-}\"}"
+    else
+      _DEREG_BODY="{\"token\":\"${MESHPLOY_TOKEN:-}\",\"node_id\":\"${NODE_ID:-}\"}"
+    fi
+    if [[ -n "${NODE_ID:-}" && -n "${MESHPLOY_API_URL:-}" && ( -n "${NODE_SECRET:-}" || -n "${MESHPLOY_TOKEN:-}" ) ]]; then
       if confirm "Remove '${NODE_NAME:-$NODE_ID}' from Meshploy, Headscale, and k3s cluster?"; then
         _DEREG_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
           --max-time 10 \
           -X DELETE "${MESHPLOY_API_URL}/api/v1/nodes/self-deregister" \
           -H "Content-Type: application/json" \
-          -d "{\"token\":\"${MESHPLOY_TOKEN}\",\"node_id\":\"${NODE_ID}\"}" \
+          -d "$_DEREG_BODY" \
           2>/dev/null || echo "000")"
         if [[ "$_DEREG_STATUS" == "200" || "$_DEREG_STATUS" == "204" ]]; then
           success "Node deregistered — removed from Meshploy DB, Headscale, and k3s cluster"
