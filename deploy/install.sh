@@ -60,6 +60,14 @@ if [[ -n "$PROVISION_TOKEN" ]]; then
   AUTO_MODE=true
 fi
 
+# A Mac joins with its own script, as a mesh-only node. Said here, before
+# anything below that macOS's bash 3.2 or its missing systemd would trip on.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  echo "install.sh runs on Linux. To join this Mac to the mesh as a mesh-only node, run:" >&2
+  echo "  curl -fsSL ${MESHPLOY_API_BASE:-https://api.<your-domain>}/join/macos.sh | sudo bash -s -- --token=${PROVISION_TOKEN:-<token from the console>}" >&2
+  exit 1
+fi
+
 # registry_needs_login reports whether the Meshploy images require credentials.
 #
 # Answered by asking the registry, not by a flag: the images are public now, so

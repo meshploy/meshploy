@@ -16,6 +16,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// ErrNodeMetricsUnsupported is returned for a node whose exporter Meshploy
+// cannot read yet. A Windows machine runs windows_exporter, whose metric names
+// are not node_exporter's; saying so beats showing an empty machine.
+var ErrNodeMetricsUnsupported = errors.New("metrics are not collected from Windows nodes yet")
+
 // GetNodeMetrics scrapes live resource metrics from node_exporter on the node.
 // Returns a non-nil error when node_exporter is unreachable (not installed).
 func (s *NodeService) GetNodeMetrics(ctx context.Context, nodeID uuid.UUID) (*NodeMetrics, error) {
@@ -25,6 +30,9 @@ func (s *NodeService) GetNodeMetrics(ctx context.Context, nodeID uuid.UUID) (*No
 	}
 	if node.TailscaleIP == "" {
 		return nil, fmt.Errorf("node has no mesh IP")
+	}
+	if node.OS == db.NodeOSWindows {
+		return nil, ErrNodeMetricsUnsupported
 	}
 	// When the API runs in Docker it cannot reach the gateway's own Tailscale IP
 	// (a host-local interface) directly. Use the Docker bridge gateway IP instead,
@@ -289,7 +297,7 @@ func (s *NodeService) GetRegistrationToken(ctx context.Context, orgID uuid.UUID)
 // RegisterWithToken validates a node registration token and creates the node.
 // Returns the new node, or an error if the token is invalid.
 // An optional MeshRole sets the scheduling role (defaults to MeshRoleWorkloadBuilder).
-func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailscaleIP string, meshRole ...db.MeshRole) (*db.Node, error) {
+func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailscaleIP string, meshRole db.MeshRole, nodeOS db.NodeOS) (*db.Node, error) {
 	var row db.NodeRegistrationToken
 	if err := s.db.WithContext(ctx).Where("token = ?", token).First(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -297,19 +305,46 @@ func (s *NodeService) RegisterWithToken(ctx context.Context, token, name, tailsc
 		}
 		return nil, err
 	}
+	role, nodeOS, err := joinRole(meshRole, nodeOS)
+	if err != nil {
+		return nil, err
+	}
 	node, err := s.Register(ctx, row.OrganizationID, name, tailscaleIP)
 	if err != nil {
 		return nil, err
 	}
-	role := db.MeshRoleWorkloadBuilder
-	if len(meshRole) > 0 && meshRole[0] != "" {
-		role = meshRole[0]
-	}
-	if err := s.db.WithContext(ctx).Model(node).Update("mesh_role", role).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(node).Updates(map[string]any{"mesh_role": role, "os": nodeOS}).Error; err != nil {
 		return nil, err
 	}
-	node.MeshRole = role
+	node.MeshRole, node.OS = role, nodeOS
 	return node, nil
+}
+
+// ErrNonLinuxClusterRole refuses a cluster role for a machine that cannot run
+// K3s. A Windows or macOS machine joins the mesh and nothing else.
+var ErrNonLinuxClusterRole = errors.New("only a Linux machine can join the cluster: " +
+	"a Windows or macOS machine joins as a mesh-only node")
+
+// joinRole resolves the role and OS a joining machine is recorded with, and
+// refuses a cluster role for one that is not Linux. It runs before a node is
+// created or a token spent, so a refused machine costs nothing to retry.
+//
+// An empty OS is Linux: install.sh sent none before it was recorded, and it
+// runs nowhere else.
+func joinRole(requested db.MeshRole, nodeOS db.NodeOS) (db.MeshRole, db.NodeOS, error) {
+	if nodeOS == "" {
+		nodeOS = db.NodeOSLinux
+	}
+	if nodeOS != db.NodeOSLinux {
+		if requested != "" && requested != db.MeshRoleMesh {
+			return "", "", ErrNonLinuxClusterRole
+		}
+		return db.MeshRoleMesh, nodeOS, nil
+	}
+	if requested == "" {
+		requested = db.MeshRoleWorkloadBuilder
+	}
+	return requested, nodeOS, nil
 }
 
 // ─── Provisioning tokens ──────────────────────────────────────────────────────
@@ -451,7 +486,7 @@ const provisioningTokenTTL = time.Hour
 //   - stamps UsedAt on the token (preventing re-use)
 //   - generates a per-node secret (mnode-<hex>) and stores its hash on the node
 //   - returns the new node and the plaintext node secret (shown once)
-func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, name, tailscaleIP string, meshRole db.MeshRole) (*db.Node, string, error) {
+func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, name, tailscaleIP string, meshRole db.MeshRole, nodeOS db.NodeOS) (*db.Node, string, error) {
 	hash := hashToken(token)
 
 	var row db.NodeProvisioningToken
@@ -467,15 +502,14 @@ func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, 
 	if row.ExpiresAt != nil && time.Now().After(*row.ExpiresAt) {
 		return nil, "", fmt.Errorf("provisioning token expired")
 	}
-
-	node, err := s.Register(ctx, row.OrganizationID, name, tailscaleIP)
+	role, nodeOS, err := joinRole(meshRole, nodeOS)
 	if err != nil {
 		return nil, "", err
 	}
 
-	role := db.MeshRoleWorkloadBuilder
-	if meshRole != "" {
-		role = meshRole
+	node, err := s.Register(ctx, row.OrganizationID, name, tailscaleIP)
+	if err != nil {
+		return nil, "", err
 	}
 
 	// Generate per-node secret
@@ -489,6 +523,7 @@ func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, 
 	now := time.Now()
 	if err := s.db.WithContext(ctx).Model(node).Updates(map[string]any{
 		"mesh_role":        role,
+		"os":               nodeOS,
 		"node_secret_hash": hashToken(nodeSecret),
 	}).Error; err != nil {
 		return nil, "", err
@@ -497,7 +532,7 @@ func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, 
 		return nil, "", err
 	}
 
-	node.MeshRole = role
+	node.MeshRole, node.OS = role, nodeOS
 	return node, nodeSecret, nil
 }
 

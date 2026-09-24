@@ -8,11 +8,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
@@ -791,6 +793,9 @@ type SelfRegisterNodeInput struct {
 		Name        string      `json:"name"         minLength:"1" maxLength:"100"`
 		TailscaleIP string      `json:"tailscale_ip" minLength:"1"`
 		MeshRole    db.MeshRole `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder,mesh"`
+		// OS is what the join script runs on. Absent means Linux: install.sh
+		// sent none before it was recorded.
+		OS db.NodeOS `json:"os,omitempty" enum:"linux,darwin,windows"`
 	}
 }
 
@@ -832,10 +837,13 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	var err error
 
 	if strings.HasPrefix(input.Body.Token, "mprov-") {
-		node, nodeSecret, err = h.svc.Nodes.RegisterWithProvisioningToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole)
+		node, nodeSecret, err = h.svc.Nodes.RegisterWithProvisioningToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole, input.Body.OS)
 	} else {
 		// Legacy org-wide mreg- token — no node secret issued
-		node, err = h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole)
+		node, err = h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole, input.Body.OS)
+	}
+	if errors.Is(err, service.ErrNonLinuxClusterRole) {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid or unknown registration token")
@@ -1084,6 +1092,9 @@ func (h *Handler) GetNodeMetrics(ctx context.Context, input *NodePathInput) (*No
 		return nil, err
 	}
 	m, err := h.svc.Nodes.GetNodeMetrics(ctx, nodeID)
+	if errors.Is(err, service.ErrNodeMetricsUnsupported) {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
 	if err != nil {
 		if notFoundErr := notFound(err); notFoundErr != err {
 			return nil, notFoundErr
@@ -1161,6 +1172,60 @@ func withAPIBase(body []byte, base string) []byte {
 	}
 	filled := fmt.Sprintf(`MESHPLOY_API_BASE="${MESHPLOY_API_BASE:-%s}"`, base)
 	return bytes.Replace(body, []byte(apiBaseLine), []byte(filled), 1)
+}
+
+// joinScriptDir is where docker-compose mounts deploy/join/: the scripts that
+// join a machine install.sh cannot run on. A var so a test can point it
+// somewhere else.
+var joinScriptDir = "/opt/meshploy/join"
+
+// joinScripts are the files served from joinScriptDir, and the line in each
+// that the gateway fills in with its own address, as it does for install.sh.
+// Anything not listed here is not served, whatever the directory holds.
+var joinScripts = map[string]struct {
+	contentType string
+	placeholder string
+	filled      string // a format with one %s, the API base
+}{
+	"macos.sh": {
+		contentType: "text/x-shellscript",
+		placeholder: apiBaseLine,
+		filled:      `MESHPLOY_API_BASE="${MESHPLOY_API_BASE:-%s}"`,
+	},
+	"windows.ps1": {
+		contentType: "text/plain; charset=utf-8",
+		placeholder: `$DefaultApiBase = ""`,
+		filled:      `$DefaultApiBase = "%s"`,
+	},
+}
+
+// ServeJoinScript serves a mesh-only join script for a Windows or macOS
+// machine, anonymous for the same reason install.sh is: the machine fetching it
+// has a provisioning token and no session, and the script is public anyway.
+func (h *Handler) ServeJoinScript(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "script")
+	script, ok := joinScripts[name]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := os.ReadFile(filepath.Join(joinScriptDir, name))
+	if err != nil {
+		http.Error(w, "join script unavailable", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", script.contentType)
+	_, _ = w.Write(withLine(body, script.placeholder, script.filled, h.apiBaseURL(r.Context())))
+}
+
+// withLine fills in the one line a served script leaves for the gateway's
+// address. Matched literally, so a script that changes the line stops being
+// filled in rather than being filled in wrong.
+func withLine(body []byte, placeholder, format, base string) []byte {
+	if base == "" || !bytes.Contains(body, []byte(placeholder)) {
+		return body
+	}
+	return bytes.Replace(body, []byte(placeholder), []byte(fmt.Sprintf(format, base)), 1)
 }
 
 // apiBaseURL is where this gateway answers from outside the mesh.

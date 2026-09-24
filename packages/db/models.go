@@ -59,6 +59,17 @@ const (
 	MeshRoleMesh MeshRole = "mesh"
 )
 
+// NodeOS is the operating system a node runs. Only Linux can be in the K3s
+// cluster; a Windows or macOS machine joins as a mesh-only node, reached by
+// routes over the mesh.
+type NodeOS string
+
+const (
+	NodeOSLinux   NodeOS = "linux"
+	NodeOSDarwin  NodeOS = "darwin"
+	NodeOSWindows NodeOS = "windows"
+)
+
 type ServiceType string
 
 const (
@@ -511,6 +522,10 @@ type Node struct {
 	// e.g. {"meshploy.com/role": "builder", "topology.kubernetes.io/region": "us-east"}
 	MeshRole MeshRole `gorm:"type:varchar(20);not null;default:''" json:"mesh_role"`
 	// workload_builder | workload | builder — controls k8s labels/taints applied to this node
+
+	// OS is what the machine runs, reported by the join script. Every node that
+	// joined before it was recorded ran install.sh, which is Linux only.
+	OS NodeOS `gorm:"type:varchar(10);not null;default:'linux'" json:"os"`
 
 	// Public IP — set on gateway (server) nodes only; used for DNS instructions.
 	PublicIP string `gorm:"not null;default:''" json:"public_ip"`

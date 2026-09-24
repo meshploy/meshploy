@@ -167,6 +167,10 @@ var publicRules = []publicRule{
 	// blank server with a provisioning token and no session. Its sibling
 	// /uninstall.sh stays authenticated: nothing fetches that without one.
 	{Method: "GET", Path: "/install.sh", Match: matchExact},
+	// Its Windows and macOS counterparts, for mesh-only nodes. Listed one by
+	// one rather than by prefix, so nothing else under /join/ is ever public.
+	{Method: "GET", Path: "/join/macos.sh", Match: matchExact},
+	{Method: "GET", Path: "/join/windows.ps1", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/nodes/self-register", Match: matchExact},
 	{Method: "DELETE", Path: "/api/v1/nodes/self-deregister", Match: matchExact},
 

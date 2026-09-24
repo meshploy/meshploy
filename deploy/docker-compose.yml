@@ -147,6 +147,10 @@ services:
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro
       - /opt/meshploy/install.sh:/opt/meshploy/install.sh:ro
       - /opt/meshploy/uninstall.sh:/opt/meshploy/uninstall.sh:ro
+      # Mesh-only join scripts for Windows and macOS, served like install.sh.
+      # Shipped in the deploy tarball, so the directory exists on every server
+      # a compose file carrying this line reaches (podman refuses a missing one).
+      - /opt/meshploy/join:/opt/meshploy/join:ro
       - /var/lib/rancher/k3s/server/node-token:/var/lib/rancher/k3s/server/node-token:ro
       # Upgrades from the console. The API may only queue a request in inbox/;
       # the host agent starts the upgrade, which reports back in state/,

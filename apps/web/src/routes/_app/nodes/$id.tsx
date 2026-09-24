@@ -363,7 +363,7 @@ function NodeDetailPage() {
         </div>
       )}
 
-      <ResourceIntro title="Capacity and utilization" description={computed ? "Live measurements from this node. Open Metrics for detailed monitoring." : "Reported hardware capacity. Live utilization is not available yet."}/>
+      <ResourceIntro title="Capacity and utilization" description={computed ? "Live measurements from this node. Open Metrics for detailed monitoring." : node.os === "windows" ? "Metrics are not collected from Windows nodes yet." : "Reported hardware capacity. Live utilization is not available yet."}/>
       {/* Live metrics cards — only rendered when node_exporter is reachable */}
       {computed && (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -500,7 +500,7 @@ function NodeDetailPage() {
       {node.k3sRole === "server"
         ? <ServerBuildToggle node={node} orgId={orgId!} token={token} />
         : node.meshRole === "mesh"
-          ? <MeshOnlyRole />
+          ? <MeshOnlyRole os={node.os} />
           : isAdmin
             ? <NodeRolePicker node={node} orgId={orgId!} token={token} />
             : <NodeRoleSummary node={node} />
@@ -620,12 +620,16 @@ function NodeRoleSummary({ node }: { node: ReturnType<typeof toNode> }) {
   )
 }
 
-function MeshOnlyRole() {
+function MeshOnlyRole({ os }: { os: string }) {
+  const other = os === "darwin" ? "macOS" : os === "windows" ? "Windows" : ""
   return (
     <ResourcePanel title="Node role">
-      <p className="text-sm font-medium text-foreground">Mesh only</p>
+      <p className="text-sm font-medium text-foreground">Mesh only{other && ` · ${other}`}</p>
       <p className="mt-1 text-xs text-muted-foreground">
-        On the mesh, not in the cluster: nothing is scheduled here, and routes can reach its ports. Moving it into the cluster means installing K3s on the machine.
+        On the mesh, not in the cluster: nothing is scheduled here, and routes can reach its ports.{" "}
+        {other
+          ? `A ${other} machine cannot join the cluster, so it stays mesh only.`
+          : "Moving it into the cluster means installing K3s on the machine."}
       </p>
     </ResourcePanel>
   )
