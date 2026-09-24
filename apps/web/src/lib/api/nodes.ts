@@ -8,6 +8,8 @@ export interface ApiNode {
   status: "online" | "offline"
   k3s_role: "server" | "agent"
   mesh_role: MeshRole
+  /** What the machine runs. Anything but Linux is always a mesh-only node. */
+  os?: "linux" | "darwin" | "windows"
   k3s_version: string
   k3s_labels: Record<string, string>
   cpu_cores: number
@@ -130,7 +132,7 @@ export function toNode(n: ApiNode): Node {
     k3sRole: n.k3s_role,
     meshRole: n.mesh_role ?? "workload_builder",
     k3sVersion: n.k3s_version,
-    os: "",
+    os: n.os ?? "linux",
     cpuCores: n.cpu_cores,
     memoryGB: n.memory_gb,
     diskGB: n.disk_gb,

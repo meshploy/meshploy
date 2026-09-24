@@ -113,6 +113,33 @@ test.describe("Add a node", () => {
     )
   })
 
+  // A Mac or a Windows machine can only be mesh only, so the choice of OS
+  // appears with that role, and the command follows it. The token does not
+  // change: mesh only is what is minted into it, whatever the machine runs.
+  test("offers macOS and Windows for a mesh-only node, each with its own command", async ({ page }) => {
+    await expect(page.getByText(/curl -fsSL .*\/install\.sh/).first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Operating system")).toHaveCount(0)
+
+    const group = page.getByRole("radiogroup", { name: "What this node is for" })
+    await group.getByRole("radio", { name: /Mesh only/ }).click()
+    await page.getByRole("button", { name: /New token|Generate token/ }).click()
+    await expect(page.getByText("Operating system")).toBeVisible()
+
+    await page.getByRole("button", { name: "macOS", exact: true }).click()
+    const mac = page.getByText(/curl -fsSL .*\/join\/macos\.sh \| sudo bash -s -- --token=mprov-/).first()
+    await expect(mac).toBeVisible()
+    await expect(page.getByText("Run in Terminal on the Mac")).toBeVisible()
+    const token = ((await mac.textContent()) ?? "").match(/mprov-\w+/)?.[0]
+
+    await page.getByRole("button", { name: "Windows", exact: true }).click()
+    const win = page.getByText(/\/join\/windows\.ps1\)\)\) -Token mprov-/).first()
+    await expect(win).toBeVisible()
+    await expect(page.getByText("Run in PowerShell, as Administrator")).toBeVisible()
+    expect((await win.textContent()) ?? "").toContain(token!)
+    // The agent prompt is about this machine, not a server reached over SSH.
+    await expect(page.getByText(/Join this Windows machine to my Meshploy mesh/)).toBeVisible()
+  })
+
   test("says how long the token is good for", async ({ page }) => {
     await expect(page.getByText(/Good for one machine, for an hour/)).toBeVisible({ timeout: 10_000 })
   })

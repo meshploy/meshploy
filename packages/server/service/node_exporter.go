@@ -50,10 +50,20 @@ func scrapeNodeExporter(ctx context.Context, tailscaleIP string) (*NodeMetrics, 
 	return parseNodeExporterBody(body)
 }
 
+// parseNodeExporterBody reads node_exporter's text output, from Linux or macOS.
+//
+// The two expose different metrics for the same things. Memory on macOS has no
+// MemAvailable; what can be handed to a program without swapping is free plus
+// inactive plus purgeable, which is what Activity Monitor calls available. And
+// macOS mounts a small read-only system volume at /, with everything a user
+// writes on /System/Volumes/Data, so that is the disk worth reporting.
 func parseNodeExporterBody(body []byte) (*NodeMetrics, error) {
 	var m NodeMetrics
 	cpuSet := make(map[string]bool)
 	var diskSizeFound, diskAvailFound bool
+	var darwinFree, darwinInactive, darwinPurgeable int64
+	var darwinMemory bool
+	var dataSize, dataAvail int64
 
 	for _, line := range strings.Split(string(body), "\n") {
 		if len(line) == 0 || line[0] == '#' {
@@ -76,29 +86,56 @@ func parseNodeExporterBody(body []byte) (*NodeMetrics, error) {
 			m.MemoryTotalBytes = int64(val)
 		case "node_memory_MemAvailable_bytes":
 			m.MemoryAvailableBytes = int64(val)
+		case "node_memory_total_bytes":
+			m.MemoryTotalBytes = int64(val)
+		case "node_memory_free_bytes":
+			darwinFree, darwinMemory = int64(val), true
+		case "node_memory_inactive_bytes":
+			darwinInactive = int64(val)
+		case "node_memory_purgeable_bytes":
+			darwinPurgeable = int64(val)
 		case "node_filesystem_size_bytes":
+			if promLabel(labels, "mountpoint") == darwinDataVolume {
+				dataSize = int64(val)
+			}
 			if !diskSizeFound && promLabel(labels, "mountpoint") == "/" && !promVirtualFS(promLabel(labels, "fstype")) {
 				m.DiskTotalBytes = int64(val)
 				diskSizeFound = true
 			}
 		case "node_filesystem_avail_bytes":
+			if promLabel(labels, "mountpoint") == darwinDataVolume {
+				dataAvail = int64(val)
+			}
 			if !diskAvailFound && promLabel(labels, "mountpoint") == "/" && !promVirtualFS(promLabel(labels, "fstype")) {
 				m.DiskAvailBytes = int64(val)
 				diskAvailFound = true
 			}
 		case "node_network_receive_bytes_total":
-			if promLabel(labels, "device") != "lo" {
+			if !promLoopback(promLabel(labels, "device")) {
 				m.NetRxBytes += int64(val)
 			}
 		case "node_network_transmit_bytes_total":
-			if promLabel(labels, "device") != "lo" {
+			if !promLoopback(promLabel(labels, "device")) {
 				m.NetTxBytes += int64(val)
 			}
 		}
 	}
 	m.CPUCores = len(cpuSet)
+	if m.MemoryAvailableBytes == 0 && darwinMemory {
+		m.MemoryAvailableBytes = darwinFree + darwinInactive + darwinPurgeable
+	}
+	if dataSize > 0 {
+		m.DiskTotalBytes, m.DiskAvailBytes = dataSize, dataAvail
+	}
 	return &m, nil
 }
+
+// darwinDataVolume is where macOS keeps everything that is not the read-only
+// system: the disk that fills up.
+const darwinDataVolume = "/System/Volumes/Data"
+
+// promLoopback reports a loopback interface: lo on Linux, lo0 on macOS.
+func promLoopback(device string) bool { return device == "lo" || device == "lo0" }
 
 // promParseLine parses one line of Prometheus text exposition format.
 func promParseLine(line string) (name, labels string, val float64, ok bool) {

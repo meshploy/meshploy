@@ -67,6 +67,17 @@ Moving a node into or out of the mesh-only role means installing or removing K3s
 
 ---
 
+## Can a Mac or a Windows machine join?
+
+Yes, as a **mesh only** node, which is the only role either can have: K3s has no Windows agent, and macOS cannot be a Kubernetes node. Under **Cluster → Add a node**, choose **Mesh only**, then **macOS** or **Windows**, and generate a token. The command is one line:
+
+- **macOS**, in Terminal: `curl -fsSL https://api.<your-domain>/join/macos.sh | sudo bash -s -- --token=mprov-…`. It uses the Tailscale app if it is installed, and otherwise installs the open-source `tailscaled` from Homebrew as a system daemon, which keeps the Mac on the mesh with nobody logged in. It also installs `node_exporter`, listening on the mesh address only, so the node page shows metrics.
+- **Windows**, in PowerShell as Administrator: `& ([scriptblock]::Create((irm https://api.<your-domain>/join/windows.ps1))) -Token mprov-…`. It installs Tailscale silently and joins in unattended mode, so the connection survives logging out. Add `-AllowPorts 11434` (for example) to let the mesh, and only the mesh, reach those ports through Windows Firewall; run it again later with `-AllowPorts` and no token to change them. Metrics are not collected from Windows nodes yet.
+
+Either script takes `--uninstall` (macOS) or `-Uninstall` (Windows) to remove the node from Meshploy and leave the mesh. Tailscale itself is left installed. A machine that sleeps goes offline, so keep one awake if it serves anything.
+
+---
+
 ## Why K3s and not just Docker?
 
 Docker Compose works well for a single machine. Once you have multiple machines, you need something that handles:

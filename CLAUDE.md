@@ -67,7 +67,9 @@ Internet → Caddy (TLS) → apps/proxy (:8081) → WireGuard mesh → K3s worke
 Single K3s cluster spanning all mesh nodes. Control plane on gateway (`k3s_role=server`), workers join as agents. Builds run as ephemeral K8s Jobs with `meshploy.com/role=builder` node selector. The gateway is a build node by default (`mesh_role` defaults to `workload_builder` when unset); turning "Act as build node" off stores `workload`, which is kept. A deploy fails at once when no online node can build, and after a few minutes when the scheduler cannot place the pod.
 
 ### Node lifecycle
-Workers self-register via `POST /api/v1/nodes/self-register` using an `mreg-<hex>` registration token or a single-use `mprov-<hex>` provisioning token. The node ID is saved to `/etc/meshploy/node.conf`. On uninstall, `DELETE /api/v1/nodes/self-deregister` removes the node from Headscale, the k3s cluster, and the database.
+Workers self-register via `POST /api/v1/nodes/self-register` using an `mreg-<hex>` registration token or a single-use `mprov-<hex>` provisioning token. The node ID is saved to `/etc/meshploy/node.conf`, with the per-node secret (`mnode-`) a provisioning-token registration hands back; the spent `mprov-` token proves nothing later. On uninstall, `DELETE /api/v1/nodes/self-deregister` removes the node from Headscale, the k3s cluster, and the database.
+
+A Mac or a Windows machine joins as a **mesh-only** node through `deploy/join/macos.sh` or `deploy/join/windows.ps1`, served anonymously at `/join/macos.sh` and `/join/windows.ps1` with the gateway's address filled in, like `install.sh`. `nodes.os` records `linux`, `darwin` or `windows` (absent means Linux), and registration refuses any cluster role for a non-Linux machine before the token is spent. Metrics are read from `node_exporter` on Linux and macOS; Windows reports none yet.
 
 ---
 

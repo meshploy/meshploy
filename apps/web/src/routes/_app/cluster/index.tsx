@@ -27,6 +27,7 @@ import { nodes as nodesApi, cluster as clusterApi, toNode, ApiError } from "@/li
 import type { MeshHealth, OrphanWorkload } from "@/lib/api/cluster"
 import type { MeshRole } from "@/types"
 import { NODE_ROLES, RolePicker } from "@/components/nodes/role-picker"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { formatRelativeTime } from "@/lib/utils"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
@@ -337,6 +338,78 @@ function gatewayAPIBase(): string {
 }
 
 
+type JoinOS = "linux" | "darwin" | "windows"
+
+const JOIN_OS_OPTIONS: { value: JoinOS; label: string }[] = [
+  { value: "linux", label: "Linux" },
+  { value: "darwin", label: "macOS" },
+  { value: "windows", label: "Windows" },
+]
+
+/**
+ * The agent prompt for a Mac or a Windows machine.
+ *
+ * Unlike the Linux one it is not about reaching a server over SSH: these are
+ * usually the machine the agent is already running on, a laptop or a desktop
+ * with a GPU. What it has to get right is elevation, which an agent cannot
+ * grant itself, and not joining a machine twice.
+ */
+function localJoinPrompt(os: "darwin" | "windows", command: string): string {
+  const mac = os === "darwin"
+  const conf = mac ? "/etc/meshploy/node.conf" : "$env:ProgramData\\Meshploy\\node.conf"
+  return [
+    `# Join this ${mac ? "Mac" : "Windows machine"} to my Meshploy mesh`,
+    ``,
+    `Join the machine you are running on to my Meshploy mesh as a **mesh-only**`,
+    `node: it joins the WireGuard mesh so my routes can reach its ports, and`,
+    `nothing is scheduled on it. If I meant a different machine, stop and ask.`,
+    ``,
+    `## Check it is not already joined`,
+    ``,
+    mac ? `  ls /etc/meshploy/node.conf` : `  Test-Path "$env:ProgramData\\Meshploy\\node.conf"`,
+    ``,
+    `If ${conf} exists, this machine is already a Meshploy node. Stop and`,
+    `tell me: running this again would register it a second time.`,
+    ``,
+    `## Get my approval`,
+    ``,
+    `Show me this and wait for a yes:`,
+    ``,
+    `  Machine:  this one (${mac ? "scutil --get LocalHostName" : "$env:COMPUTERNAME"})`,
+    `  Role:     mesh only`,
+    `  Installs: Tailscale${mac ? " (from Homebrew, unless the Tailscale app is there)" : ""}, joins my WireGuard mesh${mac ? ", node_exporter for metrics" : ""}`,
+    `  Needs:    ${mac ? "sudo" : "an Administrator PowerShell"} and outbound internet`,
+    ``,
+    `## Run it`,
+    ``,
+    `  ${command}`,
+    ``,
+    mac
+      ? `It needs sudo. If you cannot enter my password, give me the command to run`
+      : `It must run in an Administrator PowerShell. If yours is not one, give me the`,
+    mac ? `myself instead of trying to work around it.` : `command to run myself instead of trying to work around it.`,
+    ``,
+    `## Then check it worked`,
+    ``,
+    mac ? `  cat /etc/meshploy/node.conf; tailscale ip -4` : `  Get-Content "$env:ProgramData\\Meshploy\\node.conf"; & "$env:ProgramFiles\\Tailscale\\tailscale.exe" ip -4`,
+    ``,
+    `Tell me the node's name and its mesh IP. If I have the meshploy CLI or`,
+    `MCP tools available to you, list my nodes and confirm it shows online.`,
+    ``,
+    `## If it fails`,
+    ``,
+    `- "The gateway refused this token": it is spent or expired. Do not retry;`,
+    `  ask me for a fresh command from the console.`,
+    `- Anything else: show me the output and stop. Do not re-run it.`,
+    ``,
+    `## Rules`,
+    ``,
+    `- The token above is single-use and expires within the hour. Do not echo`,
+    `  it back, write it to a file, or put it in a commit.`,
+    `- Do not change anything else on the machine${mac ? "" : ", including firewall rules"}.`,
+  ].join("\n")
+}
+
 function ProvisioningTokensPanel() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
@@ -348,6 +421,11 @@ function ProvisioningTokensPanel() {
   // What the machine becomes. Decided here, so the machine is asked nothing.
   const [role, setRole] = useState<MeshRole>("workload_builder")
   const [staleRole, setStaleRole] = useState(false)
+  // Only a mesh-only node can be something other than Linux, so the choice
+  // appears with that role. It needs no new token: the role is what is minted
+  // into one, and a mesh-only token joins any of the three.
+  const [joinOS, setJoinOS] = useState<JoinOS>("linux")
+  const os: JoinOS = role === "mesh" ? joinOS : "linux"
 
   // The role is minted into the token, so a token already on screen was made
   // for the role that was chosen at the time. Changing the choice afterwards
@@ -387,9 +465,13 @@ function ProvisioningTokensPanel() {
   // from this gateway on purpose: it is where the machine learns which Meshploy
   // it is joining, and it is the version that matches the server being joined.
   const apiBase = gatewayAPIBase()
-  const curlCommand = provToken
-    ? `curl -fsSL ${apiBase}/install.sh | sudo sh -s -- --token=${provToken}`
-    : ""
+  const curlCommand = !provToken
+    ? ""
+    : os === "darwin"
+      ? `curl -fsSL ${apiBase}/join/macos.sh | sudo bash -s -- --token=${provToken}`
+      : os === "windows"
+        ? `& ([scriptblock]::Create((irm ${apiBase}/join/windows.ps1))) -Token ${provToken}`
+        : `curl -fsSL ${apiBase}/install.sh | sudo sh -s -- --token=${provToken}`
 
   // The same install, handed to an agent instead of a terminal.
   //
@@ -398,8 +480,11 @@ function ProvisioningTokensPanel() {
   // before changing it, and what to do when something goes wrong. It is also a
   // task with a live credential in it, so it says so.
   const roleName = NODE_ROLES.find((r) => r.value === role)!.label.toLowerCase()
-  const agentPrompt = provToken
-    ? [
+  const agentPrompt = !provToken
+    ? ""
+    : os !== "linux"
+      ? localJoinPrompt(os, curlCommand)
+      : [
         `# Add a machine to my Meshploy cluster`,
         ``,
         `Join a Linux server to my Meshploy mesh as a node for **${roleName}**.`,
@@ -476,7 +561,6 @@ function ProvisioningTokensPanel() {
         `- One machine only. The token will not work twice.`,
         `- Do not change anything else on the machine.`,
       ].join("\n")
-    : ""
 
   return (
     <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
@@ -499,6 +583,18 @@ function ProvisioningTokensPanel() {
 
       <div className="p-4 space-y-4">
         <RolePicker value={role} onChange={pickRole} />
+        {role === "mesh" && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground font-medium">Operating system</p>
+            <SegmentedControl value={joinOS} onValueChange={setJoinOS} options={JOIN_OS_OPTIONS} />
+            {joinOS !== "linux" && (
+              <p className="text-[11px] text-muted-foreground/60">
+                {joinOS === "darwin" ? "A Mac" : "A Windows machine"} can only be a mesh-only node: it
+                joins the mesh, and routes reach its ports, but nothing is scheduled on it.
+              </p>
+            )}
+          </div>
+        )}
         {error && (
           <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
             <ShieldAlert className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
@@ -540,7 +636,13 @@ function ProvisioningTokensPanel() {
 
             {/* Install command */}
             <div className="space-y-1.5">
-              <p className="text-xs text-muted-foreground font-medium">Run on the worker machine</p>
+              <p className="text-xs text-muted-foreground font-medium">
+                {os === "darwin"
+                  ? "Run in Terminal on the Mac"
+                  : os === "windows"
+                    ? "Run in PowerShell, as Administrator"
+                    : "Run on the worker machine"}
+              </p>
               <div className="relative group">
                 <div className="flex items-start gap-2 bg-muted/30 border border-border/40 rounded pl-3 pr-11 py-2.5">
                   <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
@@ -560,6 +662,8 @@ function ProvisioningTokensPanel() {
               <p className="text-[11px] text-muted-foreground/60">
                 Asks this gateway for its mesh credentials, then talks to it over WireGuard
                 ({MESH_API_URL}). Nothing else to type.
+                {os === "windows" &&
+                  " Add -AllowPorts 11434 (or whichever ports it serves) to let the mesh through Windows Firewall."}
               </p>
             </div>
 

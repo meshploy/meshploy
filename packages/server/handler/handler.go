@@ -64,6 +64,8 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	// enforces that in the handler as well as in the middleware.
 	r.Get("/install.sh", h.ServeInstallScript)
 	r.Get("/uninstall.sh", h.ServeUninstallScript)
+	// Mesh-only joins for machines install.sh cannot run on, public like it.
+	r.Get("/join/{script}", h.ServeJoinScript)
 
 	// Template icons — public image bytes, served for <img src>.
 	r.Get("/api/v1/templates/{templateId}/icon", h.ServeTemplateIcon)

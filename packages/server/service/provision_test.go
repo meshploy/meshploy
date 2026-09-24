@@ -91,13 +91,13 @@ func TestProvisioningDoesNotConsumeTheToken(t *testing.T) {
 	now := time.Now()
 	require.NoError(t, db.Model(row).Update("provisioned_at", &now).Error)
 
-	node, secret, err := svcs.Nodes.RegisterWithProvisioningToken(ctx, tok, "worker-1", "100.64.0.2", meshdb.MeshRoleWorkload)
+	node, secret, err := svcs.Nodes.RegisterWithProvisioningToken(ctx, tok, "worker-1", "100.64.0.2", meshdb.MeshRoleWorkload, "")
 	require.NoError(t, err, "a provisioned token must still be able to register its node")
 	require.NotEmpty(t, secret)
 	assert.Equal(t, meshdb.MeshRoleWorkload, node.MeshRole)
 
 	// And now it is spent, for both.
-	_, _, err = svcs.Nodes.RegisterWithProvisioningToken(ctx, tok, "worker-2", "100.64.0.3", meshdb.MeshRoleWorkload)
+	_, _, err = svcs.Nodes.RegisterWithProvisioningToken(ctx, tok, "worker-2", "100.64.0.3", meshdb.MeshRoleWorkload, "")
 	require.ErrorContains(t, err, "already used")
 	_, err = svcs.Nodes.Provision(ctx, tok)
 	require.ErrorContains(t, err, "already used")
