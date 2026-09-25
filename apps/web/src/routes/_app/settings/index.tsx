@@ -1,7 +1,7 @@
 import { SettingsWorkspace } from "@/components/layout/settings-workspace"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertCircle, Check, Globe, HardDrive, Loader2, Pencil, Plus, X } from "lucide-react"
+import { AlertCircle, Check, HardDrive, Loader2, Pencil, Plus, X } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,13 +10,11 @@ import {
 } from "@/components/ui/select"
 import {
   orgs as orgsApi,
-  domains as domainsApi,
   storage as storageApi,
   backups as backupsApi,
   entitlements as entitlementsApi,
   editionOf,
   ApiError,
-  type ApiDomain,
   type ApiStorageIntegration,
   type ApiSystemBackupConfig,
 } from "@/lib/api"
@@ -68,12 +66,11 @@ function SettingsPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Manage your organization settings</p>
       </div>
 
-      <SettingsWorkspace sections={[["general", "General"], ["appearance", "Appearance"], ["domains", "Domains"], ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"]]}>
+      <SettingsWorkspace sections={[["general", "General"], ["appearance", "Appearance"], ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"]]}>
       <div id="general"><GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} /></div>
 
       <div id="appearance"><AppearanceSection /></div>
 
-      <div id="domains"><PrimaryDomainSection /></div>
 
       <div id="backups"><SystemBackupSection /></div>
 
@@ -404,78 +401,6 @@ function GeneralSection({ org, onNameUpdated }: { org: { id: string; name: strin
   )
 }
 
-function PrimaryDomainSection() {
-  const token = useAuthStore((s) => s.token)!
-  const orgId = useOrgStore((s) => s.currentOrg?.id)!
-
-  const { data: domainList = [], isLoading } = useQuery({
-    queryKey: ["domains", orgId],
-    queryFn: () => domainsApi.list(orgId, token),
-    enabled: !!orgId,
-  })
-
-  const domain = domainList[0] ?? null
-
-  return (
-    <Section
-      title="Primary Domain"
-      subtitle="DNS and TLS are managed automatically by Meshploy"
-    >
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>Loading…</span>
-        </div>
-      ) : !domain ? (
-        <p className="text-sm text-muted-foreground">
-          No domain configured yet. Add one to enable routing and automatic TLS.
-        </p>
-      ) : (
-        <DomainCard domain={domain} />
-      )}
-      <GatewayDomainNote />
-    </Section>
-  )
-}
-
-/**
- * The gateway's base domain, and how to change it.
- *
- * Distinct from the org domain records above: this is the value install.sh
- * substitutes into the CoreDNS zone files and Headscale's `server_url`, which is
- * why there is no form for it here. The API container mounts two read-only files
- * from /opt/meshploy and has no Docker socket, so it cannot rewrite those
- * configs or restart the services that read them. Giving it the access to do so
- * would hand the API root on the host.
- *
- * The domain is read from the address this console is served on rather than
- * from an endpoint — accurate by construction, and one less thing to expose.
- */
-function GatewayDomainNote() {
-  const host = typeof window === "undefined" ? "" : window.location.hostname
-  const base = host.startsWith("console.") ? host.slice("console.".length) : host
-
-  return (
-    <div className="rounded-lg border border-border/60 bg-muted/10 p-3.5 space-y-2">
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground">Gateway base domain</span>
-        <code className="text-sm font-mono text-foreground">{base || "unknown"}</code>
-      </div>
-      <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-        Set when this gateway was installed. It is baked into the DNS zone files and the
-        mesh control plane's URL, so changing it means regenerating those and restarting
-        them — run the installer again on the gateway:
-      </p>
-      <pre className="text-[11px] font-mono bg-muted/30 border border-border/40 rounded-md px-3 py-2 overflow-x-auto">
-sudo meshploy setup serve</pre>
-      <p className="text-[11px] text-muted-foreground/70">
-        It opens the same setup page with the current values filled in. Your database and
-        TLS certificates are preserved.
-      </p>
-    </div>
-  )
-}
-
 function SystemBackupSection() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
@@ -657,32 +582,3 @@ function SystemBackupSection() {
   )
 }
 
-function DomainCard({ domain }: { domain: ApiDomain }) {
-  return (
-    <div className="rounded-lg border border-border/60 px-4 py-4">
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="text-sm font-medium font-mono">{domain.base_domain}</span>
-            <span
-              className={cn(
-                "text-[11px] font-medium px-1.5 py-0.5 rounded-full border",
-                domain.verified
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-              )}
-            >
-              {domain.verified ? "verified" : "pending"}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground font-mono">
-            <span><span className="text-muted-foreground/50">internal: </span>{domain.internal_subdomain}.{domain.base_domain}</span>
-            <span><span className="text-muted-foreground/50">preview: </span>{domain.preview_subdomain}.{domain.base_domain}</span>
-            <span><span className="text-muted-foreground/50">mesh: </span>mesh.{domain.base_domain}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
