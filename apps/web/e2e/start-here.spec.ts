@@ -59,7 +59,8 @@ test.describe("Overview", () => {
     const panel = page.locator("div.quiet-surface").filter({ hasText: "Recent activity" }).first()
     await expect(panel).toBeVisible({ timeout: 10_000 })
 
-    await expect(panel.getByText(/Deployed|Deploy failed|Building|Rolling out/).first()).toBeVisible()
+    // A deployment that knows where its image came from says that instead.
+    await expect(panel.getByText(/Deployed|Deploy failed|Building|Rolling out|Built from|Promoted from/).first()).toBeVisible()
     await expect(panel.getByText(/Ran|Run failed|Running|Waiting for its schedule/).first()).toBeVisible()
 
     // A job run opens the job's runs, not a deployment page.
@@ -113,5 +114,48 @@ test.describe("Overview", () => {
   test("the mesh diagram still has a home on the cluster page", async ({ page }) => {
     await goto(page, "/cluster")
     await expect(page.getByText("gateway").first()).toBeVisible({ timeout: 10_000 })
+  })
+})
+
+test.describe("Workspace overview", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsDemo(page)
+  })
+
+  test("says what needs attention, most urgent first, and links to it", async ({ page }) => {
+    await goto(page, "/")
+    const panel = page.getByRole("region", { name: /Needs attention/ })
+    await expect(panel).toBeVisible({ timeout: 10_000 })
+    await expect(panel).toContainText("web in staging is ready for production")
+    await panel.getByRole("link", { name: /ready for production/ }).click()
+    await expect(page.getByRole("region", { name: "Environments" })).toBeVisible()
+  })
+
+  test("shows each project's levels, and a promotion waiting", async ({ page }) => {
+    await goto(page, "/")
+    const chain = page.getByTestId("level-chain").first()
+    await expect(chain).toContainText("staging", { timeout: 10_000 })
+    await expect(chain).toContainText("production")
+    await expect(page.getByText("promotion waiting")).toBeVisible()
+  })
+
+  test("says where a deployment's image came from in the activity feed", async ({ page }) => {
+    await goto(page, "/")
+    await expect(page.getByText("Promoted from staging · develop@9e3f210 Cache product images")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("in Demo Project (staging)").first()).toBeVisible()
+  })
+})
+
+test.describe("Delivery", () => {
+  test("measures production and charts two weeks, with a sparkline per project", async ({ page }) => {
+    await loginAsDemo(page)
+    await goto(page, "/")
+    const panel = page.getByRole("region", { name: "Delivery" })
+    await expect(panel).toBeVisible({ timeout: 10_000 })
+    await expect(panel.getByTestId("metric-Deploys a week")).toContainText("3.5")
+    await expect(panel.getByTestId("metric-Change failure rate")).toContainText("13%")
+    await expect(panel.getByTestId("metric-Time to recover")).toContainText("2h")
+    await expect(panel.getByTestId("metric-Staging to production")).toContainText("1d")
+    await expect(page.getByTestId("sparkline").first()).toBeVisible()
   })
 })

@@ -391,6 +391,53 @@ export interface ApiActivityEntry {
   resource_type: "application" | "database" | "job"
   project_id: string
   project_name: string
+  /** The environment level it happened in; absent in production. */
+  level?: string
+  /** Where a deployment's image came from, as the deployment records it. */
+  source?: string
+  source_branch?: string
+  source_commit?: string
+  source_commit_message?: string
+  from_level?: string
+}
+
+/** One thing on the overview that needs someone; kind decides where it links. */
+export interface ApiAttentionItem {
+  kind:
+    | "service_failed" | "database_failed" | "deploy_failed" | "job_failed"
+    | "backup_missing" | "backup_failed" | "node_offline" | "domain_unverified"
+    | "former_primary" | "promotion_waiting" | "hotfix_running"
+  severity: "critical" | "warning" | "info"
+  title: string
+  detail?: string
+  project_id?: string
+  service_id?: string
+  deployment_id?: string
+  job_id?: string
+  node_id?: string
+  domain_id?: string
+}
+
+export interface ApiOverview {
+  attention: ApiAttentionItem[]
+  /** Each count broken down across every level the caller can see. */
+  stats: Record<string, Record<string, number>>
+  delivery: ApiDelivery
+}
+
+/** How the workspace ships over the last 14 days. A number with nothing to measure it from is absent, not zero. */
+export interface ApiDelivery {
+  days: { date: string; deployed: number; deploy_failed: number; jobs_succeeded: number; jobs_failed: number }[]
+  /** Successful deploys to production. */
+  deploys_per_week: number
+  /** Share of production deploys that failed, 0-1. */
+  change_failure_rate?: number
+  /** Median from a failed production deploy to the next good one of that service. */
+  recovery_seconds?: number
+  /** Median from an image's build in a lower level to its promotion reaching production. */
+  promotion_seconds?: number
+  /** Each project's deploys per day, every level together. */
+  projects: Record<string, number[]>
 }
 
 export const deployments = {
@@ -449,4 +496,6 @@ export const deployments = {
 export const activity = {
   recent: (orgId: string, token: string, limit = 8) =>
     apiFetch<ApiActivityEntry[]>(`/api/v1/orgs/${orgId}/activity?limit=${limit}`, {}, token),
+  overview: (orgId: string, token: string) =>
+    apiFetch<ApiOverview>(`/api/v1/orgs/${orgId}/overview`, {}, token),
 }

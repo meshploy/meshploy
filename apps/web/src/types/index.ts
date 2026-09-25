@@ -67,6 +67,8 @@ export interface Project {
   stacksCount: number
   volumesCount: number
   configFilesCount: number
+  /** Environment levels below production, highest first. */
+  levels: { id: string; name: string; level: number }[]
   createdAt: Date
 }
 
