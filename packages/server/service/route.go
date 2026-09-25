@@ -498,8 +498,17 @@ func (s *RouteService) IsCustomDomainVerified(ctx context.Context, hostname stri
 // certs for active workload subdomains under the base domain. A paused route
 // gets no certificate: it is not live.
 func (s *RouteService) HasRoute(ctx context.Context, hostname string) bool {
+	// The proxy serves a.my-app.acme.dev from a route for *.my-app.acme.dev (one
+	// label up, the way its cache matches), so the certificate check has to
+	// accept it too. Matching only the exact name left every wildcard route
+	// routed and never certified: its names fell through to the on-demand
+	// catch-all, which refused them.
+	names := []string{hostname}
+	if i := strings.IndexByte(hostname, '.'); i > 0 && !strings.HasPrefix(hostname, "*.") {
+		names = append(names, "*."+hostname[i+1:])
+	}
 	var route db.Route
-	err := s.db.WithContext(ctx).Where("hostname = ? AND published = ?", hostname, true).First(&route).Error
+	err := s.db.WithContext(ctx).Where("hostname IN ? AND published = ?", names, true).First(&route).Error
 	return err == nil
 }
 
