@@ -40,6 +40,10 @@ packages/server/
 │   ├── mcp.go              # Remote MCP (Streamable HTTP) at /mcp — agent-token authed, permission-scoped
 │   ├── org.go              # Org CRUD, member management, invitations
 │   ├── project.go          # Project CRUD
+│   ├── environment.go      # Environment levels: order, create, rename (hostnames re-derived)
+│   ├── promotion.go        # Groups, lineages across levels, promotion, board, own databases
+│   ├── environment.go      # Environment levels: list, create above/below, rename
+│   ├── promotion.go        # Promotion groups, promote, board, own database, copy down, bring down
 │   ├── permission.go       # Per-resource permission grants
 │   ├── node.go             # Node CRUD, self-register, self-deregister, metrics
 │   ├── workload.go         # Service CRUD, env vars, build/db config, pods
@@ -194,6 +198,28 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | PATCH | `/orgs/{orgId}/projects/{projectId}` | ✓ | Update a project |
 | DELETE | `/orgs/{orgId}/projects/{projectId}` | ✓ | Delete a project |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/build-cache` | ✓ | Clear the buildah layer cache PVC for a project |
+
+### Environments
+
+A project is its own production level; each level below it is a project of its own (`parent_project_id`), with its own namespace, so every route above works inside a level. `{projectId}` may be any level.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/orgs/{orgId}/projects/{projectId}/environments` | ✓ | A project's levels, production first |
+| POST | `/orgs/{orgId}/projects/{projectId}/environments` | ✓ | Add a level above or below an existing one; starts empty |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/environment` | ✓ | Rename a level: its hostnames are re-derived, its namespace stays |
+| GET | `/orgs/{orgId}/projects/{projectId}/board` | ✓ | Levels, groups, and what each service runs at each level |
+| GET | `/orgs/{orgId}/projects/{projectId}/promotion-groups` | ✓ | List promotion groups |
+| POST | `/orgs/{orgId}/projects/{projectId}/promotion-groups` | ✓ | Create a group; its services are copied into the level it enters at, the only one that builds |
+| PATCH | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}` | ✓ | Rename a group |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}` | ✓ | Delete a group; its services stay where they are |
+| POST | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/services` | ✓ | Add services, merging away any single-service group they were in |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/services/{lineageId}` | ✓ | Take a service out of a group; its copies keep running |
+| POST | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/promote` | ✓ | Promote from this level to the next on the group's path, as the same images; needs update on the target level |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/copy-to-level` | ✓ | Copy a service into a lower level as a group of its own |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/bring-down` | ✓ | Run a service's current image in a lower level |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/level-copy` | ✓ | Delete this level's copy of a service and its routes; the level uses the one above, and the service leaves a group that builds here |
+| POST | `/orgs/{orgId}/projects/{projectId}/own-database` | ✓ | Give this level its own copy of a database it uses from above, `empty` or `clone` (restores the source's latest backup) |
 
 ### Nodes & cluster
 
@@ -496,7 +522,9 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/health` | public | Health check |
-| GET | `/install.sh` | ✓ | Install script |
+| GET | `/install.sh` | public | Install script, with this gateway's address filled in |
+| GET | `/join/macos.sh` | public | Join a Mac as a mesh-only node |
+| GET | `/join/windows.ps1` | public | Join a Windows machine as a mesh-only node |
 | GET/POST | `/mcp` | agent token | Remote MCP (Streamable HTTP), permission-scoped |
 | GET | `/uninstall.sh` | ✓ | Uninstall script |
 

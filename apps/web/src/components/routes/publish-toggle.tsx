@@ -10,7 +10,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 
 /** Published or paused, the same way for a hostname and a TCP port. */
-export function PublishStateBadge({ published, className }: { published: boolean; className?: string }) {
+export function PublishStateBadge({ published, awaitingDeploy, className }: { published: boolean; awaitingDeploy?: boolean; className?: string }) {
   return (
     <Badge
       className={cn(
@@ -21,7 +21,9 @@ export function PublishStateBadge({ published, className }: { published: boolean
         className
       )}
     >
-      {published ? "published" : "paused"}
+      {/* A route copied into an environment level waits for its service's
+          first deploy there, which publishes it: not paused by anyone. */}
+      {published ? "published" : awaitingDeploy ? "waits for first deploy" : "paused"}
     </Badge>
   )
 }

@@ -23,6 +23,7 @@ type Services struct {
 	Orgs            *OrgService
 	Permissions     *PermissionService
 	Projects        *ProjectService
+	Promotions      *PromotionService
 	Nodes           *NodeService
 	Workloads       *WorkloadService
 	ConfigFiles     *ConfigFileService
@@ -205,12 +206,14 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	varGroups := &VariableGroupService{db: db}
 	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups,
 		nodePortMeshOnly: c != nil && c.NodePortAddresses != ""}
+	projects := &ProjectService{db: db}
 	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups, notif: notif}
 
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
 	routes := &RouteService{db: db, k8s: k8sClient}
+	deployments.routes = routes
 	tcpRoutes := &TCPRouteService{db: db, k8s: k8sClient}
 	if c != nil {
 		tcpRoutes.hostDir = c.HostDir
@@ -242,7 +245,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Agents:          agents,
 		Orgs:            &OrgService{db: db, notif: notif},
 		Permissions:     &PermissionService{db: db},
-		Projects:        &ProjectService{db: db},
+		Projects:        projects,
+		Promotions:      &PromotionService{db: db, projects: projects, deployments: deployments, workloads: workloads, backups: backups},
 		ConfigFiles:     configFiles,
 		Orphans:         &OrphanService{db: db, k8s: k8sClient, workloads: workloads},
 		Stacks:          &StackService{db: db, git: gitSvc, workload: workloads, volumes: volumes, routes: routes, configFiles: configFiles, deployment: deployments},

@@ -171,9 +171,13 @@ function crud(kind: string, base: string, scoped = false) {
         row.user_name = input.email.split("@")[0]
       }
       if (kind === "routes") {
+        // In an environment level the level's name joins the subdomain, as
+        // the API derives it: app in staging is app-staging.
+        const level = find("projects", params.projectId)
+        const suffix = level?.parent_project_id ? `-${level.env_name}` : ""
         row.hostname =
           input.hostname ||
-          `${input.subdomain}.${db.domains[0]?.base_domain || "demo.example.com"}`
+          `${input.subdomain}${suffix}.${db.domains[0]?.base_domain || "demo.example.com"}`
         // A custom hostname arrives unproved, with a token to publish - as the
         // real API does - so the ownership step can be walked through offline.
         if (!input.domain_id) {
@@ -508,6 +512,7 @@ export const workspaceHandlers = [
       reserved: [22, 53, 80, 443, 2019, 4000, 5000, 6443, 8081, 8085, 9090, 9100, 10250],
     })
   ),
+  ...environmentHandlers(),
   ...crud("projects", `${O}/projects`),
   ...Object.keys(defaults).flatMap((kind) => crud(kind, `${P}/${kind}`, true)),
   ...[
@@ -1310,3 +1315,341 @@ db.backups.push(
     last_backup_status: "success",
   })
 )
+
+// Environment levels. A level is a project row pointing at its production
+// project, as the API stores it; these sit in front of the generic project
+// handlers so the list shows projects only, and a project with levels cannot
+// be deleted out from under them.
+function environmentHandlers() {
+  const rootOf = (id: unknown) => {
+    const p = find("projects", id)
+    return p?.parent_project_id ? find("projects", p.parent_project_id) : p
+  }
+  const chain = (root: DemoRecord) =>
+    db.projects
+      .filter((p) => p.id === root.id || p.parent_project_id === root.id)
+      .sort((a, b) => (a.env_level ?? 0) - (b.env_level ?? 0))
+  // A copy of a service in another level, with its routes under that level's
+  // name, waiting for the copy's first deploy - as the API copies them.
+  const copyInto = (src: DemoRecord, levelId: string, over: Record<string, unknown>) => {
+    const copy = record({ ...structuredClone(src), id: crypto.randomUUID(), project_id: levelId, lineage_id: src.lineage_id ?? src.id, ...over })
+    db.services.push(copy)
+    const from = find("projects", src.project_id)
+    const to = find("projects", levelId)
+    const fromSuffix = from?.parent_project_id ? `-${from.env_name}` : ""
+    const toSuffix = to?.parent_project_id ? `-${to.env_name}` : ""
+    for (const r of db.routes.filter((x) => (x.targets ?? []).some((t: any) => t.service_id === src.id))) {
+      if ((r.targets ?? []).some((t: any) => t.redirect_route_id)) continue
+      const labels = String(r.hostname).split(".")
+      const at = labels[0] === "*" ? 1 : 0
+      const base = fromSuffix && labels[at].endsWith(fromSuffix) ? labels[at].slice(0, -fromSuffix.length) : labels[at]
+      labels[at] = base + toSuffix
+      const hostname = labels.join(".")
+      if (db.routes.some((x) => x.hostname === hostname)) continue
+      db.routes.push(record({
+        ...structuredClone(r),
+        id: crypto.randomUUID(),
+        project_id: levelId,
+        hostname,
+        published: false,
+        awaiting_deploy: true,
+        targets: (r.targets ?? []).map((t: any) => ({ ...t, id: crypto.randomUUID(), service_id: t.service_id === src.id ? copy.id : t.service_id })),
+      }))
+    }
+    return copy
+  }
+  // A copy's first deploy publishes the routes that were waiting for it.
+  const publishAwaiting = (serviceId: string) => {
+    for (const r of db.routes)
+      if (r.awaiting_deploy && (r.targets ?? []).some((t: any) => t.service_id === serviceId))
+        Object.assign(r, { published: true, awaiting_deploy: false })
+  }
+  const level = (p: DemoRecord) => {
+    const counted = db.services.filter((s) => s.project_id === p.id)
+    return {
+      project_id: p.id,
+      name: p.env_name ?? "production",
+      level: p.env_level ?? 0,
+      namespace: p.slug,
+      production: !p.parent_project_id,
+      services_count: counted.filter((s) => s.type !== "database").length,
+      databases_count: counted.filter((s) => s.type === "database").length,
+    }
+  }
+  return [
+    http.get(`${O}/projects`, ({ request }) => {
+      const url = new URL(request.url)
+      const search = url.searchParams.get("search")?.toLowerCase() ?? ""
+      let list = db.projects.filter((p) => !p.parent_project_id)
+      if (search) list = list.filter((p) => `${p.name} ${p.slug}`.toLowerCase().includes(search))
+      if (url.searchParams.get("sort") === "name") list = [...list].sort((a, b) => a.name.localeCompare(b.name))
+      return json(list.map((p) => sanitize("projects", p)))
+    }),
+    http.get(`${P}/environments`, ({ params }) => {
+      const root = rootOf(params.projectId)
+      if (!root) return missing()
+      return json(chain(root).map(level))
+    }),
+    http.post(`${P}/environments`, async ({ params, request }) => {
+      const root = rootOf(params.projectId)
+      if (!root) return missing()
+      const input = await body(request)
+      const name = String(input.name ?? "")
+      if (!/^[a-z][a-z0-9-]{0,19}$/.test(name))
+        return error("a level name is lower-case letters, digits and hyphens, starting with a letter", 422)
+      if (name === "production")
+        return error("production is the project itself; name the new level something else", 422)
+      const levels = chain(root)
+      if (levels.some((l) => (l.env_name ?? "production") === name))
+        return error("this project already has a level with that name", 409)
+      const anchor = levels.find((l) => l.id === input.relative_to)
+      if (!anchor) return missing()
+      const above = input.placement === "above"
+      if (above && anchor.id === root.id)
+        return error("nothing goes above production: it is where every service ends up", 422)
+      const position = above ? anchor.env_level : anchor.env_level + 1
+      for (const l of levels) if (l.parent_project_id && l.env_level >= position) l.env_level += 1
+      const row = record({
+        ...structuredClone(root),
+        id: crypto.randomUUID(),
+        slug: `${root.slug}-${name}`,
+        parent_project_id: root.id,
+        env_name: name,
+        env_level: position,
+        created_at: now(),
+        updated_at: now(),
+      })
+      db.projects.push(row)
+      return json(level(row), 201)
+    }),
+    http.get(`${P}/board`, ({ params }) => {
+      const root = rootOf(params.projectId)
+      if (!root) return missing()
+      const levels = chain(root)
+      const ids = new Set(levels.map((l) => l.id))
+      const lineage = (s: DemoRecord) => s.lineage_id ?? s.id
+      const cell = (s: DemoRecord) => ({
+        level_id: s.project_id,
+        lineage_id: lineage(s),
+        service_id: s.id,
+        service_name: s.name,
+        type: s.type ?? "application",
+        status: s.status ?? "stopped",
+        image: s.image ?? "",
+        deployed_at: s.deployed_at ?? s.updated_at ?? null,
+        has_backup: !!s.has_backup,
+      })
+      const groups = (db["promotion-groups"] ?? []).filter((g) => g.project_id === root.id)
+      const services = db.services.filter((s) => ids.has(s.project_id)).sort((a, b) => a.name.localeCompare(b.name))
+      return json({
+        levels: levels.map(level),
+        groups: groups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          path: g.path,
+          single: !!g.single,
+          cells: services.filter((s) => g.lineages.includes(lineage(s))).map(cell),
+        })),
+        ungrouped: services.filter((s) => !groups.some((g) => g.lineages.includes(lineage(s)))).map(cell),
+      })
+    }),
+    http.post(`${P}/promotion-groups`, async ({ params, request }) => {
+      const root = rootOf(params.projectId)
+      if (!root) return missing()
+      const input = await body(request)
+      const levels = chain(root)
+      const at = (id: string) => levels.find((l) => l.id === id)?.env_level
+      const path: string[] = input.path ?? []
+      const climbs = path.length >= 2 && path.every((id, i) => at(id) !== undefined && (i === 0 || at(id)! < at(path[i - 1])!))
+      if (!climbs || at(path[path.length - 1]) !== 0)
+        return error("a group's path climbs this project's levels, ending at production", 422)
+      const picked = db.services.filter((s) => (input.service_ids ?? []).includes(s.id))
+      if (!picked.length) return error("a group needs at least one service", 422)
+      if (picked.some((s) => s.type === "database"))
+        return error("databases are not promoted: each level has its own, or uses the one above", 422)
+      const groups = db["promotion-groups"] ?? (db["promotion-groups"] = [])
+      const lineages = picked.map((s) => s.lineage_id ?? s.id)
+      if (groups.some((g) => g.project_id === root.id && g.lineages.some((l: string) => lineages.includes(l))))
+        return error("a service can be in only one group", 409)
+      const group = { id: crypto.randomUUID(), project_id: root.id, name: input.name, path, lineages }
+      groups.push(group)
+      // Into the level it enters at, copied from the highest level that has it.
+      for (const l of lineages) {
+        if (db.services.some((s) => s.project_id === path[0] && (s.lineage_id ?? s.id) === l)) continue
+        const src = levels.map((lv) => db.services.find((s) => s.project_id === lv.id && (s.lineage_id ?? s.id) === l)).find(Boolean)
+        if (src)
+          // A copy has a definition and no deployment yet, as in the API.
+          copyInto(src, path[0], { status: "stopped", image: "", deployed_at: null })
+      }
+      return json(group, 201)
+    }),
+    http.patch(`${P}/environment`, async ({ params, request }) => {
+      const level = find("projects", params.projectId)
+      if (!level) return missing()
+      if (!level.parent_project_id) return error("production is the project itself; rename the project instead", 422)
+      const name = String((await body(request)).name ?? "")
+      if (!/^[a-z][a-z0-9-]{0,19}$/.test(name))
+        return error("a level name is lower-case letters, digits and hyphens, starting with a letter", 422)
+      const root = rootOf(level.id)!
+      if (chain(root).some((l) => l.id !== level.id && (l.env_name ?? "production") === name))
+        return error("this project already has a level with that name", 409)
+      const old = level.env_name
+      level.env_name = name
+      let changed = 0
+      for (const r of db.routes.filter((r) => r.project_id === level.id && r.hostname?.includes(`-${old}.`))) {
+        r.hostname = r.hostname.replace(`-${old}.`, `-${name}.`)
+        changed++
+      }
+      return json({ hostnames_changed: changed })
+    }),
+    http.patch(`${P}/promotion-groups/:groupId`, async ({ params, request }) => {
+      const group = (db["promotion-groups"] ?? []).find((g) => g.id === params.groupId)
+      if (!group) return missing()
+      Object.assign(group, { name: (await body(request)).name, single: false })
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.post(`${P}/promotion-groups/:groupId/services`, async ({ params, request }) => {
+      const group = (db["promotion-groups"] ?? []).find((g) => g.id === params.groupId)
+      if (!group) return missing()
+      const ids: string[] = (await body(request)).service_ids ?? []
+      for (const svc of db.services.filter((x) => ids.includes(x.id))) {
+        if (svc.type === "database") return error("databases are not promoted: each level has its own, or uses the one above", 422)
+        const lineage = svc.lineage_id ?? svc.id
+        if (group.lineages.includes(lineage)) continue
+        const other = (db["promotion-groups"] ?? []).find((g) => g !== group && g.lineages.includes(lineage))
+        if (other && !other.single) return error("a service can be in only one group", 409)
+        // A single-service group is absorbed by the group it joins.
+        if (other) db["promotion-groups"] = db["promotion-groups"].filter((g) => g !== other)
+        group.lineages.push(lineage)
+        if (!db.services.some((x) => x.project_id === group.path[0] && (x.lineage_id ?? x.id) === lineage))
+          copyInto(svc, group.path[0], { status: "stopped", image: "", deployed_at: null })
+      }
+      group.single = false
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.delete(`${P}/promotion-groups/:groupId/services/:lineageId`, ({ params }) => {
+      const groups = db["promotion-groups"] ?? []
+      const group = groups.find((g) => g.id === params.groupId)
+      if (!group || !group.lineages.includes(params.lineageId)) return error("that service is not in this group", 422)
+      group.lineages = group.lineages.filter((l: string) => l !== params.lineageId)
+      const deleted = group.lineages.length === 0
+      if (deleted) db["promotion-groups"] = groups.filter((g) => g !== group)
+      return json({ group_deleted: deleted })
+    }),
+    http.post(`${P}/services/:serviceId/copy-to-level`, async ({ params, request }) => {
+      const src = find("services", params.serviceId)
+      const target = find("projects", (await body(request)).level_id)
+      if (!src || !target) return missing()
+      const root = rootOf(src.project_id)!
+      const levels = chain(root)
+      const here = levels.find((l) => l.id === src.project_id)!
+      if (target.env_level <= here.env_level) return error("copies and bring-downs go to a level below the service's own", 422)
+      const lineage = src.lineage_id ?? src.id
+      const groups = db["promotion-groups"] ?? (db["promotion-groups"] = [])
+      if (groups.some((g) => g.lineages.includes(lineage))) return error("a service can be in only one group", 409)
+      const path = [target.id, ...levels
+        .filter((l) => l.env_level < target.env_level && (l.env_level === 0 || db.services.some((s) => s.project_id === l.id && (s.lineage_id ?? s.id) === lineage)))
+        .sort((a, b) => b.env_level - a.env_level)
+        .map((l) => l.id)]
+      const group = { id: crypto.randomUUID(), project_id: root.id, name: src.name, path, lineages: [lineage], single: true }
+      groups.push(group)
+      copyInto(src, target.id, { status: "stopped", image: "", deployed_at: null })
+      return json(group, 201)
+    }),
+    http.post(`${P}/services/:serviceId/bring-down`, async ({ params, request }) => {
+      const src = find("services", params.serviceId)
+      const target = find("projects", (await body(request)).level_id)
+      if (!src || !target) return missing()
+      if (!src.image) return error(`nothing here has been deployed yet: ${src.name} has never been deployed here`, 422)
+      const lineage = src.lineage_id ?? src.id
+      let copy = db.services.find((s) => s.project_id === target.id && (s.lineage_id ?? s.id) === lineage)
+      if (!copy) copy = copyInto(src, target.id, {})
+      Object.assign(copy, { image: src.image, status: "running", deployed_at: now() })
+      publishAwaiting(copy.id)
+      return json({ id: crypto.randomUUID(), service_id: copy.id, image: src.image, status: "success" })
+    }),
+    http.delete(`${P}/services/:serviceId/level-copy`, ({ params }) => {
+      const svc = find("services", params.serviceId)
+      if (!svc || svc.project_id !== params.projectId) return missing()
+      const level = find("projects", svc.project_id)
+      if (!level?.parent_project_id) return error("this is production's copy: delete the service from its own page instead", 422)
+      const lineage = svc.lineage_id ?? svc.id
+      const before = db.routes.length
+      db.routes = db.routes.filter((r) => !(r.project_id === level.id && (r.targets ?? []).some((t: any) => t.service_id === svc.id)))
+      let left = false
+      let deleted = false
+      const group = (db["promotion-groups"] ?? []).find((g) => g.lineages.includes(lineage))
+      if (group && group.path[0] === level.id) {
+        group.lineages = group.lineages.filter((l: string) => l !== lineage)
+        left = true
+        if (!group.lineages.length) {
+          db["promotion-groups"] = db["promotion-groups"].filter((g) => g !== group)
+          deleted = true
+        }
+      }
+      db.services = db.services.filter((x) => x !== svc)
+      return json({ routes_removed: before - db.routes.length, left_group: left, group_deleted: deleted })
+    }),
+    http.post(`${P}/own-database`, async ({ params, request }) => {
+      const input = await body(request)
+      const src = find("services", input.source_service_id)
+      if (!src || src.type !== "database") return missing()
+      const lineage = src.lineage_id ?? src.id
+      if (db.services.some((s) => s.project_id === params.projectId && (s.lineage_id ?? s.id) === lineage))
+        return error("this level already has its own copy of that database", 409)
+      if (input.mode === "clone" && !src.has_backup)
+        return error(`this database has no backup yet: ${src.name} has none to clone from. Take one first, or start empty`, 422)
+      const own = record({ ...structuredClone(src), id: crypto.randomUUID(), project_id: params.projectId, lineage_id: lineage,
+        status: "running", has_backup: false, deployed_at: now() })
+      db.services.push(own)
+      return json(own, 201)
+    }),
+    http.delete(`${P}/promotion-groups/:groupId`, ({ params }) => {
+      db["promotion-groups"] = (db["promotion-groups"] ?? []).filter((g) => g.id !== params.groupId)
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.post(`${P}/promotion-groups/:groupId/promote`, ({ params }) => {
+      const group = (db["promotion-groups"] ?? []).find((g) => g.id === params.groupId)
+      if (!group) return missing()
+      const i = group.path.indexOf(params.projectId)
+      if (i < 0) return error("this group does not pass through this level", 422)
+      if (i === group.path.length - 1) return error("this level is the top of the group's path: there is nowhere to promote to", 422)
+      const next = group.path[i + 1]
+      const of = (level: string, lineage: string) => db.services.find((s) => s.project_id === level && (s.lineage_id ?? s.id) === lineage)
+      const promoted: any[] = []
+      const skipped: any[] = []
+      // The API's rule: only what is newer here than above moves.
+      for (const lineage of group.lineages) {
+        const src = of(params.projectId as string, lineage)
+        const up = of(next, lineage)
+        const name = (src ?? up ?? db.services.find((s) => (s.lineage_id ?? s.id) === lineage))?.name
+        if (!src) { skipped.push({ service_name: name, reason: "not_here" }); continue }
+        if (!src.image) { skipped.push({ service_name: name, reason: "never_built" }); continue }
+        if (up?.image && up.image === src.image) { skipped.push({ service_name: name, reason: "unchanged" }); continue }
+        if (up?.image && src.deployed_at && up.deployed_at && new Date(src.deployed_at) <= new Date(up.deployed_at)) {
+          skipped.push({ service_name: name, reason: "older" }); continue
+        }
+        let target = up
+        const created = !target
+        if (!target) target = copyInto(src, next, {})
+        Object.assign(target, { image: src.image, status: "running", deployed_at: now() })
+        publishAwaiting(target.id)
+        promoted.push({ service_name: src.name, from_service_id: src.id, to_service_id: target.id, image: src.image, created_there: created })
+      }
+      if (!promoted.length) return error("nothing to promote: nothing here is newer than what the level above runs", 422)
+      return json({ promoted, skipped })
+    }),
+    http.delete(P, ({ params }) => {
+      const row = find("projects", params.projectId)
+      if (!row) return missing()
+      if (!row.parent_project_id && db.projects.some((p) => p.parent_project_id === row.id))
+        return error("this project still has environment levels: remove them first", 409)
+      db.projects = db.projects.filter((p) => p !== row)
+      for (const key of Object.keys(defaults)) db[key] = db[key].filter((r) => r.project_id !== row.id)
+      if (row.parent_project_id)
+        for (const p of db.projects)
+          if (p.parent_project_id === row.parent_project_id && p.env_level > row.env_level) p.env_level -= 1
+      return ok()
+    }),
+  ]
+}

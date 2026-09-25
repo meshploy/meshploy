@@ -190,7 +190,7 @@ function RouteDetailPage() {
         nameClassName="font-mono"
         badge={
           <>
-            <PublishStateBadge published={route.published} className="h-4 shrink-0" />
+            <PublishStateBadge published={route.published} awaitingDeploy={route.awaiting_deploy} className="h-4 shrink-0" />
             <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${ZONE_STYLES[route.zone] ?? ""}`}>
               {route.zone}
             </Badge>

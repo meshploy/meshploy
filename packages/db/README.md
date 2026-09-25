@@ -36,8 +36,10 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 | Table | Purpose |
 |---|---|
-| `projects` | K8s namespace — slug becomes the namespace name |
-| `nodes` | Mesh worker nodes + K3s + Headscale metadata |
+| `projects` | K8s namespace: slug becomes the namespace name. A row with `parent_project_id` is an environment level of that project (`env_name`, `env_level`: 0 is production, each level below counts up), with a namespace of its own, `<project slug>-<level>` |
+| `promotion_groups` | Services that move up a project's levels together, along their own `path` of level IDs, from the one that builds to production. `single` marks one made by copying one service down |
+| `promotion_group_members` | A service lineage in a group; at most one group per lineage per project |
+| `nodes` | Mesh worker nodes + K3s + Headscale metadata. `os` is `linux`, `darwin` or `windows`; anything but Linux is always mesh only |
 | `node_registration_tokens` | `mreg-<hex>` tokens for legacy worker self-registration |
 | `node_provisioning_tokens` | `mprov-<hex>` single-use provisioning tokens (hashed, with expiry) |
 | `domains` | Base domains an org routes on. Each carries its own `dns_mode` (`delegation` or `ondemand`); `is_primary` marks the one whose platform subdomains serve and that new routes default to; `retiring_at` stops new routes attaching while everything already on it keeps serving |
@@ -47,7 +49,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | Table | Purpose |
 |---|---|
 | `stacks` | Docker Compose stacks — parsed spec + services |
-| `services` | Polymorphic workload: application or database. `slug` is the Kubernetes object name, fixed at creation and suffixed when the plain name is taken in the project; empty on pre-slug rows, which fall back to the display name |
+| `services` | Polymorphic workload: application or database. `slug` is the Kubernetes object name, fixed at creation and suffixed when the plain name is taken in the project; empty on pre-slug rows, which fall back to the display name. `lineage_id` ties the copies of one service across environment levels (a service's lineage is `COALESCE(lineage_id, id)`) |
 | `service_ports` | Exposed ports per service |
 | `build_configs` | Git source, builder type, registry target (1:1 with service) |
 | `database_configs` | Engine, version, storage size (1:1 with service) |
@@ -70,7 +72,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 | Table | Purpose |
 |---|---|
-| `routes` | Hostname → service routing rule |
+| `routes` | Hostname → service routing rule. In an environment level the hostname carries the level's name (`app-staging`) while `subdomain` stays the service's own; `awaiting_deploy` marks a route copied into a level with its service, published by that service's first deploy there |
 | `ignored_endpoints` | Discovered endpoints recorded as known and correct (org-scoped: node + address + port). Written by the API, not yet by the console |
 | `route_targets` | Target per route: a service, a node port, an address (with `target_tls` when it speaks HTTPS), or a redirect |
 | `tcp_routes` | A port the gateway publishes and forwards over the mesh |

@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { livePoll } from "@/lib/live-poll"
+import { EnvironmentSwitcher, LevelDot } from "@/components/projects/environment-switcher"
 
 export const Route = createFileRoute("/_app/projects/$id")({ component: ProjectLayout })
 function ProjectLayout() {
@@ -39,13 +40,39 @@ function ProjectLayout() {
   return <div className="project-layout">
     <aside className="project-navigation" aria-label="Project navigation">
       <Link to="/projects" className="flex items-center gap-2 px-2 text-xs text-muted-foreground"><ArrowLeft className="h-3.5 w-3.5" />Projects</Link>
-      <div className="project-identity"><p className="font-semibold text-sm">{project.name}</p><p className="text-xs text-muted-foreground mt-1 font-mono">{project.slug}</p></div>
+      <div className="project-identity"><p className="font-semibold text-sm">{project.name}</p><p className="text-xs text-muted-foreground mt-1 font-mono">{project.slug}</p>{orgId && <EnvironmentSwitcher orgId={orgId} projectId={id} section={active} token={token} />}</div>
       <nav>{tabs.map(t => <Link key={t.segment} to={destination(t.segment)} activeOptions={{ exact: true }} className={active === t.segment ? "active" : ""} aria-current={active === t.segment ? "page" : undefined}><t.icon className="h-4 w-4" />{t.label}{t.count != null && <span className="project-count">{t.count}</span>}</Link>)}</nav>
       <Button className="w-full mt-6 gap-2" variant="outline" render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="h-4 w-4" />New resource</Button>
     </aside>
     <div className="project-content">
       <div className="project-mobile-navigation"><OptionSelect label="Project section" value={active} onChange={value => navigate({ to: destination(value) })} className="w-full" options={[...tabs.map(t => ({value: t.segment,label: `${project.name} / ${t.label}${t.count != null ? ` (${t.count})` : ""}`})),{value:"new",label:"New resource"}]} /></div>
+      {/* A level looks like its project on every tab, so say which one this is. */}
+      {data.parent_project_id && <LevelBanner orgId={orgId!} projectId={id} name={data.env_name ?? ""} token={token} />}
       <Outlet />
     </div>
+  </div>
+}
+
+/**
+ * Says which level this is, since a level looks like its project on every tab,
+ * and, when it has no database of its own, whose it uses: its services write
+ * to that level's data, which is the one thing about a level that is not
+ * contained in it.
+ */
+function LevelBanner({ orgId, projectId, name, token }: { orgId: string; projectId: string; name: string; token: string }) {
+  const { data: levels = [] } = useQuery({
+    queryKey: ["environments", orgId, projectId],
+    queryFn: () => projectsApi.environments(orgId, projectId, token),
+  })
+  const here = levels.find(l => l.project_id === projectId)
+  const borrowed = here && here.databases_count === 0
+    ? levels.filter(l => l.level < here.level && l.databases_count > 0).sort((a, b) => b.level - a.level)[0]
+    : undefined
+  return <div role="status" className="mb-4 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90">
+    <span className="mt-1"><LevelDot production={false} /></span>
+    <span>
+      You are in <strong className="font-semibold">{name}</strong>. What you change here stays in {name}; production is not touched.
+      {borrowed && <> {name} has no database of its own, so it uses <strong className="font-semibold">{borrowed.name}</strong>&apos;s: writes here change {borrowed.name}&apos;s data.</>}
+    </span>
   </div>
 }

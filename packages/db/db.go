@@ -71,6 +71,8 @@ func Migrate(db *gorm.DB) error {
 
 		// Projects & Infrastructure
 		&Project{},
+		&PromotionGroup{},
+		&PromotionGroupMember{},
 		&Node{},
 		&NodeRegistrationToken{},
 		&NodeProvisioningToken{},

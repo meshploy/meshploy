@@ -66,6 +66,13 @@ Internet → Caddy (TLS) → apps/proxy (:8081) → WireGuard mesh → K3s worke
 ### K3s cluster
 Single K3s cluster spanning all mesh nodes. Control plane on gateway (`k3s_role=server`), workers join as agents. Builds run as ephemeral K8s Jobs with `meshploy.com/role=builder` node selector. The gateway is a build node by default (`mesh_role` defaults to `workload_builder` when unset); turning "Act as build node" off stores `workload`, which is kept. A deploy fails at once when no online node can build, and after a few minutes when the scheduler cannot place the pod.
 
+### Environment levels
+A project is its own **production** level. Each level below it (staging, dev, ...) is a **project row of its own** pointing at it through `parent_project_id`, with its own namespace (`<project slug>-<level>`), so everything that scopes by project works inside a level unchanged. `env_level` orders them: 0 is production. The projects list shows projects only; a grant on a project covers its levels; a project cannot be deleted while it has levels.
+
+A level holds only what has been put in it. Across levels a service is one **lineage** and several rows (`services.lineage_id`). **Promotion groups** move services up together along a path of their own: only the lowest level on the path builds (auto-deploy is off above it), and promotion deploys the image the level below last ran, as it is, for each service whose image there is newer than the level above's (the rest are skipped with a reason) (`DeploymentService.DeployImage`, shared with rollback). A service copied down with **Copy to** is a single-service group (`single`), which a named group absorbs when the service joins it. Removing a level's copy (`PromotionService.RemoveFromLevel`) deletes it and the level's routes to it, and takes it out of a group that builds in that level. Image cleanup keeps any image another service has deployed, so staging never deletes what production was promoted to.
+
+Whatever a level does not have it **borrows** from the nearest level above: a service's published variable group is resolved at every deploy to the nearest copy at or above the consumer's level (`VariableGroupService.nearestCopies`). Databases are never promoted; a level either borrows the one above (writes reach its data, which the console says) or gets its own copy, empty or cloned from the source's latest backup (`PromotionService.OwnDatabase`, `BackupService.RestoreInto`). A route in a level derives its hostname (`app` in staging is `app-staging`); a subdomain ending in a level's name is refused; renaming a level re-derives its hostnames but not its namespace.
+
 ### Node lifecycle
 Workers self-register via `POST /api/v1/nodes/self-register` using an `mreg-<hex>` registration token or a single-use `mprov-<hex>` provisioning token. The node ID is saved to `/etc/meshploy/node.conf`, with the per-node secret (`mnode-`) a provisioning-token registration hands back; the spent `mprov-` token proves nothing later. On uninstall, `DELETE /api/v1/nodes/self-deregister` removes the node from Headscale, the k3s cluster, and the database.
 
@@ -159,7 +166,7 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (45 CE tables)
+## packages/db — schema (47 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
@@ -167,6 +174,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 |---|---|
 | Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
+| Environments | `promotion_groups`, `promotion_group_members` |
 | Workloads | `stacks`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
 | Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups`, `job_variable_groups` |
 | Config Files | `config_files`, `service_config_files` |
@@ -209,6 +217,8 @@ packages/server/
 │   ├── mcp.go              # Remote MCP (Streamable HTTP) at /mcp — agent-token authed, permission-scoped
 │   ├── org.go              # Org CRUD, members, invitations
 │   ├── project.go          # Project CRUD
+│   ├── environment.go      # Environment levels: list, create above/below, rename
+│   ├── promotion.go        # Promotion groups, promote, board, own database, copy down, bring down
 │   ├── permission.go       # Per-resource permission grants
 │   ├── node.go             # Node CRUD, self-register, self-deregister, metrics
 │   ├── workload.go         # Service CRUD, env vars, build/db config, pods
@@ -240,6 +250,8 @@ packages/server/
 │   ├── agent.go            # Agent principals + agent_tokens; ResolveToken() for the auth middleware
 │   ├── org.go              # Org CRUD, members, invitations
 │   ├── project.go          # Project CRUD
+│   ├── environment.go      # Environment levels: order, create, rename (hostnames re-derived)
+│   ├── promotion.go        # Groups, lineages across levels, promotion, board, own databases
 │   ├── permission.go       # Resource permission grants
 │   ├── node.go             # Node CRUD, registration/provisioning tokens, offline monitor
 │   ├── node_exporter.go    # Live metrics scraping from node_exporter

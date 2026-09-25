@@ -196,6 +196,17 @@ func (s *PermissionService) CheckAccess(ctx context.Context, orgID, userID, reso
 		} else if ok {
 			return nil
 		}
+		// An environment level is part of its project: a grant on the project
+		// covers every level of it.
+		var level db.Project
+		if err := s.db.WithContext(ctx).Select("parent_project_id").
+			First(&level, "id = ?", *parentProjectID).Error; err == nil && level.ParentProjectID != nil {
+			if ok, err := s.hasGrant(ctx, orgID, userID, db.ResourceProject, *level.ParentProjectID, action); err != nil {
+				return err
+			} else if ok {
+				return nil
+			}
+		}
 	}
 
 	return errForbidden
@@ -252,6 +263,39 @@ func (s *PermissionService) VisibleProjectIDs(ctx context.Context, orgID, userID
 	result := make(map[uuid.UUID]bool, len(ids))
 	for _, id := range ids {
 		result[id] = true
+	}
+	if len(ids) == 0 {
+		return result, false, nil
+	}
+	// Environment levels, both ways. A grant inside a level makes its project
+	// visible, since the projects list shows projects and never levels. And a
+	// grant on the project itself reaches its levels, as CheckAccess lets it;
+	// a grant on one of its services does not.
+	var levels []db.Project
+	if err := s.db.WithContext(ctx).Select("id", "parent_project_id").
+		Where("id IN ? AND parent_project_id IS NOT NULL", ids).
+		Find(&levels).Error; err != nil {
+		return nil, false, err
+	}
+	for _, l := range levels {
+		result[*l.ParentProjectID] = true
+	}
+	var granted []uuid.UUID
+	if err := s.db.WithContext(ctx).Model(&db.ResourcePermission{}).
+		Where("organization_id = ? AND user_id = ? AND resource_type = ?", orgID, userID, db.ResourceProject).
+		Pluck("resource_id", &granted).Error; err != nil {
+		return nil, false, err
+	}
+	if len(granted) > 0 {
+		var below []uuid.UUID
+		if err := s.db.WithContext(ctx).Model(&db.Project{}).
+			Where("parent_project_id IN ?", granted).
+			Pluck("id", &below).Error; err != nil {
+			return nil, false, err
+		}
+		for _, id := range below {
+			result[id] = true
+		}
 	}
 	return result, false, nil
 }

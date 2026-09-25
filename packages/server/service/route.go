@@ -129,6 +129,16 @@ var platformReservedSubdomains = map[string]bool{
 func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Route, error) {
 	hostname := in.Hostname
 
+	level, err := s.levelOf(ctx, in.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if in.DomainID != nil {
+		if err := s.checkLevelSuffix(ctx, in.ProjectID, in.Subdomain); err != nil {
+			return nil, err
+		}
+	}
+
 	if in.DomainID != nil {
 		var domain db.Domain
 		if err := s.db.WithContext(ctx).First(&domain, "id = ?", *in.DomainID).Error; err != nil {
@@ -162,7 +172,7 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 				return nil, huma.Error422UnprocessableEntity("wildcard subdomain must be in the format *.label (e.g. *.my-app)")
 			}
 		}
-		hostname = hostnameFor(in.Zone, in.Subdomain, &domain)
+		hostname = hostnameFor(in.Zone, levelSubdomain(in.Subdomain, level), &domain)
 	}
 
 	route := &db.Route{
@@ -386,7 +396,11 @@ func (s *RouteService) MoveRoute(ctx context.Context, in MoveRouteInput) (moved 
 	}
 
 	oldHostname, oldDomainID := route.Hostname, *route.DomainID
-	newHostname := hostnameFor(route.Zone, route.Subdomain, &target)
+	level, err := s.levelOf(ctx, route.ProjectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	newHostname := hostnameFor(route.Zone, levelSubdomain(route.Subdomain, level), &target)
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// The hostname is unique across the table, so the old name has to be
@@ -434,6 +448,83 @@ func (s *RouteService) MoveRoute(ctx context.Context, in MoveRouteInput) (moved 
 	}
 	route.DomainID, route.Hostname = &target.ID, newHostname
 	return route, redirect, nil
+}
+
+// levelOf is the name of the environment level a project is, or "" for a
+// project itself (its production level).
+func (s *RouteService) levelOf(ctx context.Context, projectID uuid.UUID) (string, error) {
+	var p db.Project
+	if err := s.db.WithContext(ctx).Select("parent_project_id", "env_name").First(&p, "id = ?", projectID).Error; err != nil {
+		return "", err
+	}
+	if p.ParentProjectID == nil {
+		return "", nil
+	}
+	return p.EnvName, nil
+}
+
+// levelSubdomain is the subdomain a route has in an environment level: its own
+// with the level's name after it, so app in staging is app-staging and the
+// top level alone has the real names. One label, so it stays under the
+// domain's wildcard certificate. A wildcard subdomain carries the suffix on
+// its label: *.docs in staging is *.docs-staging.
+func levelSubdomain(subdomain, level string) string {
+	if level == "" {
+		return subdomain
+	}
+	if rest, ok := strings.CutPrefix(subdomain, "*."); ok {
+		return "*." + rest + "-" + level
+	}
+	return subdomain + "-" + level
+}
+
+// checkLevelSuffix refuses a subdomain that ends the way a level's derived
+// names do, so production's app-staging can never collide with the
+// app-staging staging derives from app. Checked against every level of the
+// project the route is in.
+func (s *RouteService) checkLevelSuffix(ctx context.Context, projectID uuid.UUID, subdomain string) error {
+	var p db.Project
+	if err := s.db.WithContext(ctx).Select("id", "parent_project_id").First(&p, "id = ?", projectID).Error; err != nil {
+		return err
+	}
+	root := p.ID
+	if p.ParentProjectID != nil {
+		root = *p.ParentProjectID
+	}
+	var names []string
+	if err := s.db.WithContext(ctx).Model(&db.Project{}).
+		Where("parent_project_id = ?", root).Pluck("env_name", &names).Error; err != nil {
+		return err
+	}
+	for _, n := range names {
+		if strings.HasSuffix(subdomain, "-"+n) {
+			return huma.Error422UnprocessableEntity(fmt.Sprintf(
+				"%q ends like the names the %s level derives (app becomes app-%s there), so it could collide with one: choose another",
+				subdomain, n, n))
+		}
+	}
+	return nil
+}
+
+// PublishAwaitingRoutes publishes the routes that were waiting for serviceID's
+// first deploy in its level: their service targets get an address, and the
+// route goes live. Called after every successful deploy; a route that is not
+// waiting is left alone, so one an operator paused stays paused.
+func (s *RouteService) PublishAwaitingRoutes(ctx context.Context, serviceID uuid.UUID) {
+	var routes []db.Route
+	if err := s.db.WithContext(ctx).Preload("Targets").
+		Where("awaiting_deploy = ? AND id IN (?)", true,
+			s.db.Model(&db.RouteTarget{}).Select("route_id").Where("service_id = ?", serviceID)).
+		Find(&routes).Error; err != nil {
+		return
+	}
+	for i := range routes {
+		r := &routes[i]
+		if err := s.resolvePausedTargets(ctx, r); err != nil {
+			continue // another target is not deployed yet; its own deploy will finish this
+		}
+		s.db.WithContext(ctx).Model(r).Updates(map[string]any{"published": true, "awaiting_deploy": false})
+	}
 }
 
 // hostnameFor is the hostname a subdomain has in a zone of a base domain.

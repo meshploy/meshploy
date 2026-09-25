@@ -249,7 +249,7 @@ function RouteRow({ route, onClick, stackNames, orgId, projectId }: {
         </div>
       </TableCell>
       <TableCell className="px-4 py-3">
-        <PublishStateBadge published={route.published} />
+        <PublishStateBadge published={route.published} awaitingDeploy={route.awaiting_deploy} />
       </TableCell>
       <TableCell className="px-4 py-3">
         <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border ${ZONE_STYLES[route.zone] ?? "bg-muted text-muted-foreground border-border"}`}>

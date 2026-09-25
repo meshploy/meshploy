@@ -48,14 +48,15 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 func (s *ProjectService) List(ctx context.Context, orgID uuid.UUID) ([]db.Project, error) {
 	projects := make([]db.Project, 0)
 	err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Find(&projects).Error
-	return projects, err
+	return projects, err // levels included: callers here want every namespace
 }
 
 // ListWithCounts returns an org's projects with resource counts embedded,
 // filtered and ordered by opts. A single SQL aggregation query fetches counts for
 // all projects at once, with no N+1.
 func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID, opts ProjectListOptions) ([]ProjectWithCounts, error) {
-	q := s.db.WithContext(ctx).Where("organization_id = ?", orgID)
+	// Projects only: a project's environment levels are reached through it.
+	q := s.db.WithContext(ctx).Where("organization_id = ? AND parent_project_id IS NULL", orgID)
 	if term := strings.TrimSpace(opts.Search); term != "" {
 		pattern := "%" + likeEscaper.Replace(term) + "%"
 		q = q.Where("(name ILIKE ? OR slug ILIKE ?)", pattern, pattern)
@@ -257,14 +258,46 @@ func (s *ProjectService) Update(ctx context.Context, projectID uuid.UUID, name s
 	if err := s.db.WithContext(ctx).First(&project, "id = ?", projectID).Error; err != nil {
 		return nil, err
 	}
-	err := s.db.WithContext(ctx).Model(&project).Update("name", name).Error
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&project).Update("name", name).Error; err != nil {
+			return err
+		}
+		// Levels carry their project's name, so the console titles them alike.
+		if project.ParentProjectID == nil {
+			return tx.Model(&db.Project{}).Where("parent_project_id = ?", project.ID).Update("name", name).Error
+		}
+		return nil
+	})
 	return &project, err
 }
 
+// Delete removes a project, or one environment level of it. A project cannot
+// go while it has levels: they are namespaces with their own services, and
+// removing a project should never quietly take a staging environment with it.
 func (s *ProjectService) Delete(ctx context.Context, projectID uuid.UUID) error {
+	project, err := s.Get(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if project.ParentProjectID == nil {
+		var levels int64
+		if err := s.db.WithContext(ctx).Model(&db.Project{}).
+			Where("parent_project_id = ?", projectID).Count(&levels).Error; err != nil {
+			return err
+		}
+		if levels > 0 {
+			return ErrProjectHasLevels
+		}
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceProject, projectID).
 			Delete(&db.ResourcePermission{})
-		return tx.Delete(&db.Project{}, "id = ?", projectID).Error
+		if err := tx.Delete(&db.Project{}, "id = ?", projectID).Error; err != nil {
+			return err
+		}
+		if project.ParentProjectID != nil {
+			return closeGap(tx, *project.ParentProjectID, project.EnvLevel)
+		}
+		return nil
 	})
 }
