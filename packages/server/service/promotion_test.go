@@ -111,7 +111,8 @@ func TestPromotionMovesTheSameImageUpThePath(t *testing.T) {
 	require.NoError(t, first(&entry, "project_id = ? AND name = ?", s2, "web"))
 	built := "registry/web:sha-abc123"
 	now := time.Now()
-	require.NoError(t, gdb.Create(&meshdb.Deployment{ServiceID: entry.ID, Status: meshdb.DeploymentSuccess, Image: built, DeployedAt: &now}).Error)
+	require.NoError(t, gdb.Create(&meshdb.Deployment{ServiceID: entry.ID, Status: meshdb.DeploymentSuccess, Image: built, DeployedAt: &now,
+		Source: meshdb.DeploySourceBuild, SourceBranch: "develop", SourceCommit: "abc1234", SourceCommitMessage: "Add checkout"}).Error)
 
 	result, err := svcs.Promotions.Promote(ctx, s2, group.ID)
 	require.NoError(t, err)
@@ -140,6 +141,24 @@ func TestPromotionMovesTheSameImageUpThePath(t *testing.T) {
 	}
 	assert.Equal(t, built, images[s2])
 	assert.Equal(t, built, images[s1], "the board shows staging1 running what staging2 built")
+
+	// Each copy says where its image came from.
+	var promoted meshdb.Deployment
+	require.NoError(t, first(&promoted, "id = ?", moved[0].Deployment.ID))
+	assert.Equal(t, meshdb.DeploySourcePromotion, promoted.Source)
+	assert.Equal(t, "staging2", promoted.FromLevel)
+	assert.Equal(t, "develop", promoted.SourceBranch, "a promotion carries the branch it was built from")
+	assert.Equal(t, "abc1234", promoted.SourceCommit)
+	assert.Equal(t, "Add checkout", promoted.SourceCommitMessage)
+	for _, c := range board.Groups[0].Cells {
+		if c.LevelID == s1 {
+			assert.Equal(t, "staging2", c.FromLevel)
+			assert.Equal(t, "develop", c.SourceBranch)
+		}
+		if c.LevelID == s2 {
+			assert.Equal(t, meshdb.DeploySourceBuild, c.Source)
+		}
+	}
 	for _, c := range board.Ungrouped {
 		assert.NotEqual(t, "web", c.ServiceName)
 	}
@@ -187,4 +206,18 @@ func TestPromotionMovesOnlyWhatIsNewer(t *testing.T) {
 
 	_, err = svcs.Promotions.Promote(ctx, s1, group.ID)
 	assert.ErrorIs(t, err, service.ErrNothingToPromote, "web is now unchanged, and api older: nothing moves")
+}
+
+// A build logs the commit it cloned; older builder images logged only the hash.
+func TestCommitFromBuildLog(t *testing.T) {
+	commit, message := service.CommitFromBuildLog("[meshploy-build] Cloned successfully (a1b2c3d)\n[meshploy-build] Commit: a1b2c3d Fix the login redirect\n")
+	assert.Equal(t, "a1b2c3d", commit)
+	assert.Equal(t, "Fix the login redirect", message)
+
+	commit, message = service.CommitFromBuildLog("[meshploy-build] Cloned successfully (a1b2c3d)\n")
+	assert.Equal(t, "a1b2c3d", commit)
+	assert.Empty(t, message)
+
+	commit, _ = service.CommitFromBuildLog("Direct image deploy\n")
+	assert.Empty(t, commit)
 }

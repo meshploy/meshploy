@@ -81,7 +81,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 | Table | Purpose |
 |---|---|
-| `deployments` | Deployment history + K8s artefacts + build log |
+| `deployments` | Deployment history + K8s artefacts + build log, and where the image came from: `source` (`build`, `promotion`, `bring_down`, `rollback`, `image`), branch, commit and its subject, and for an image moved between levels the level and deployment it came from |
 
 ### Jobs & Cron
 

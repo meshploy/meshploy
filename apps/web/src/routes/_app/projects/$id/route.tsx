@@ -45,7 +45,8 @@ function ProjectLayout() {
       <Button className="w-full mt-6 gap-2" variant="outline" render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="h-4 w-4" />New resource</Button>
     </aside>
     <div className="project-content">
-      <div className="project-mobile-navigation"><OptionSelect label="Project section" value={active} onChange={value => navigate({ to: destination(value) })} className="w-full" options={[...tabs.map(t => ({value: t.segment,label: `${project.name} / ${t.label}${t.count != null ? ` (${t.count})` : ""}`})),{value:"new",label:"New resource"}]} /></div>
+      {/* On a phone the sidebar is gone, so the level switcher sits beside the section picker. */}
+      <div className="project-mobile-navigation"><div className="flex flex-col gap-2 min-[480px]:flex-row min-[480px]:items-stretch">{orgId && <div className="min-[480px]:w-[38%] min-[480px]:min-w-[120px] min-[480px]:shrink-0"><EnvironmentSwitcher orgId={orgId} projectId={id} section={active} token={token} className="mt-0 h-full text-sm" /></div>}<OptionSelect label="Project section" value={active} onChange={value => navigate({ to: destination(value) })} className="w-full min-w-0 flex-1" options={[...tabs.map(t => ({value: t.segment,label: `${project.name} / ${t.label}${t.count != null ? ` (${t.count})` : ""}`})),{value:"new",label:"New resource"}]} /></div></div>
       {/* A level looks like its project on every tab, so say which one this is. */}
       {data.parent_project_id && <LevelBanner orgId={orgId!} projectId={id} name={data.env_name ?? ""} token={token} />}
       <Outlet />

@@ -1,7 +1,7 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowRight, ArrowUpRight, Box, Database, Loader2, Minus, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowRight, ArrowUpRight, Box, ExternalLink, Database, Loader2, Minus, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -13,6 +13,7 @@ import {
 import { projects as projectsApi, ApiError } from "@/lib/api"
 import type { Board, BoardCell, BoardGroup, EnvironmentLevel } from "@/lib/api/projects"
 import { cn, formatRelativeTime } from "@/lib/utils"
+import { OriginLine } from "@/components/services/deployment-origin"
 import { LevelDot } from "@/components/projects/environment-switcher"
 
 /**
@@ -30,6 +31,17 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
     queryFn: () => projectsApi.board(orgId, projectId, token),
   })
   const [creating, setCreating] = useState(false)
+  // Too narrow for every level side by side, the board shows one at a time.
+  const [width, setWidth] = useState(0)
+  const sectionRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = sectionRef.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [board === undefined])
+  const [shownLevel, setShownLevel] = useState<string | null>(null)
   const [owning, setOwning] = useState<{ level: EnvironmentLevel; from: EnvironmentLevel; source: BoardCell } | null>(null)
   const [removing, setRemoving] = useState<{ cell: BoardCell; group: BoardGroup | null } | null>(null)
   const qc = useQueryClient()
@@ -82,13 +94,19 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
   }
 
   // Lowest first: left to right is the way services move.
-  const columns = [...board.levels].reverse()
-  const grid = { gridTemplateColumns: `minmax(150px, 180px) repeat(${columns.length}, minmax(190px, 1fr))` }
+  const allColumns = [...board.levels].reverse()
+  const narrow = width > 0 && width < 180 + allColumns.length * 230
+  const shown = allColumns.find((l) => l.project_id === shownLevel) ?? allColumns[0]
+  const columns = narrow ? [shown] : allColumns
+  // Narrow, a row's label sits above its cards instead of beside them.
+  const grid = narrow
+    ? { gridTemplateColumns: "minmax(0, 1fr)" }
+    : { gridTemplateColumns: `minmax(150px, 180px) repeat(${columns.length}, minmax(190px, 1fr))` }
   const apps = board.ungrouped.filter((c) => c.type !== "database")
   const dbs = board.ungrouped.filter((c) => c.type === "database")
 
   return (
-    <section className="space-y-3" aria-label="Environments">
+    <section ref={sectionRef} className="space-y-3" aria-label="Environments">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">Environments</h2>
@@ -108,12 +126,34 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
         </p>
       )}
 
-      {/* Scrolls inside itself on a narrow screen, never the page. */}
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <div className="grid min-w-max gap-px bg-border/40" style={grid}>
-          <div className="bg-card" />
+      {narrow && (
+        <div role="tablist" aria-label="Level" className="quiet-surface flex gap-1 overflow-x-auto rounded-lg border border-border p-1">
+          {allColumns.map((l, i) => (
+            <button
+              key={l.project_id}
+              type="button"
+              role="tab"
+              aria-selected={l.project_id === shown.project_id}
+              onClick={() => setShownLevel(l.project_id)}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors",
+                l.project_id === shown.project_id ? "bg-secondary text-foreground" : "hover:text-foreground"
+              )}
+            >
+              {i > 0 && <ArrowRight className="-ml-1 mr-0.5 h-3 w-3 text-muted-foreground/50" />}
+              <LevelDot production={l.production} />
+              {l.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Wide enough, every level side by side; the grid never scrolls the page. */}
+      <div className="env-board overflow-x-auto rounded-xl border border-border">
+        <div className={cn("grid", !narrow && "min-w-max")} style={grid}>
+          {!narrow && <div className="env-cell env-head" />}
           {columns.map((l) => (
-            <div key={l.project_id} className="bg-card px-3 py-2.5">
+            <div key={l.project_id} className="env-cell env-head px-3 py-2.5">
               <p className="flex items-center gap-2 text-sm font-semibold">
                 <LevelDot production={l.production} />
                 {l.name}
@@ -156,7 +196,7 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
                   })
                   .filter(Boolean) as string[]
                 return (
-                  <div key={l.project_id} className="space-y-2 bg-card p-2">
+                  <div key={l.project_id} className="env-cell space-y-2 p-2">
                     {own.map((c) => (
                       <ServiceCard key={c.service_id} cell={c} actions={actionsFor(c, null)} onAction={(run) => act.mutate(run)} />
                     ))}
@@ -182,7 +222,7 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
               })
               .filter(Boolean) as { from: EnvironmentLevel; source: BoardCell }[]
             return (
-              <div key={l.project_id} className="space-y-2 bg-card p-2">
+              <div key={l.project_id} className="env-cell space-y-2 p-2">
                 {own.map((c) => (
                   <ServiceCard key={c.service_id} cell={c} actions={actionsFor(c, null)} onAction={(run) => act.mutate(run)} />
                 ))}
@@ -237,7 +277,7 @@ function nearestAboveWith(level: EnvironmentLevel, levels: EnvironmentLevel[], h
 
 function RowLabel({ title, detail, children }: { title: string; detail: string; children?: React.ReactNode }) {
   return (
-    <div className="bg-card px-3 py-3">
+    <div className="env-cell px-3 py-3">
       <p className="text-xs font-semibold">{title}</p>
       <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{detail}</p>
       {children}
@@ -286,11 +326,11 @@ function ServiceCard({
   const running = cell.status === "running"
   const sections = [...new Set(actions.map((a) => a.section))]
   return (
-    <div className="relative">
+    <div className="relative rounded-md border border-border/60 bg-background/40 transition-colors hover:border-primary/40">
       <Link
         to="/projects/$id/services/$serviceId"
         params={{ id: cell.level_id, serviceId: cell.service_id }}
-        className="block rounded-md border border-border/60 bg-background/40 px-2.5 py-2 transition-colors hover:border-primary/40"
+        className="block px-2.5 py-2"
       >
       <p className={cn("flex items-center justify-between gap-2 text-xs font-medium", actions.length > 0 && "pr-6")}>
         <span className="flex min-w-0 items-center gap-1.5">
@@ -302,12 +342,14 @@ function ServiceCard({
       <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
         {cell.image ? shortImage(cell.image) : "not deployed"}
       </p>
+      {cell.image && <OriginLine origin={cell} className="mt-0.5" />}
       {(note || (cell.image && cell.deployed_at)) && (
         <p className="mt-0.5 text-[11px] text-muted-foreground/80">
           {note ?? formatRelativeTime(new Date(cell.deployed_at!))}
         </p>
       )}
       </Link>
+      {cell.routes && cell.routes.length > 0 && <CardRoute routes={cell.routes} />}
       {actions.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -337,6 +379,41 @@ function ServiceCard({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+    </div>
+  )
+}
+
+/**
+ * The address a card opens: the service's first live route at this level,
+ * with the rest counted. A route waiting for the level's first deploy is
+ * shown, but not as a link, so nobody opens a name that serves nothing yet.
+ */
+function CardRoute({ routes }: { routes: NonNullable<BoardCell["routes"]> }) {
+  const [first, ...rest] = routes
+  const more = rest.length > 0 && (
+    <span className="shrink-0 text-muted-foreground" title={rest.map((r) => r.hostname).join("\n")}>+{rest.length}</span>
+  )
+  return (
+    <div className="-mt-1 flex min-w-0 items-center gap-1.5 px-2.5 pb-2 text-xs" data-testid="card-route">
+      {first.live ? (
+        <a
+          href={`https://${first.hostname}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex min-w-0 items-center gap-1 text-primary hover:underline"
+          aria-label={`Open ${first.hostname}`}
+        >
+          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{first.hostname}</span>
+        </a>
+      ) : (
+        <span className="flex min-w-0 items-center gap-1 text-muted-foreground" title="Goes live with this level's first deploy">
+          <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-50" />
+          <span className="truncate">{first.hostname}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground/70">after first deploy</span>
+        </span>
+      )}
+      {more}
     </div>
   )
 }
@@ -406,7 +483,7 @@ function GroupRow({
         if (at < 0) {
           const above = group.path.map((id) => byId.get(id)!).filter((p) => p && p.level < l.level).sort((a, b) => b.level - a.level)[0]
           return (
-            <div key={l.project_id} className="bg-card p-2">
+            <div key={l.project_id} className="env-cell p-2">
               <Borrowed text={`Not on this group's path: uses ${above?.name ?? "production"}'s`} />
             </div>
           )
@@ -416,7 +493,7 @@ function GroupRow({
         // moves those, and leaves the rest with the reason.
         const ahead = next ? planPromotion(group, l, next).moves.length > 0 : false
         return (
-          <div key={l.project_id} className="flex flex-col gap-2 bg-card p-2">
+          <div key={l.project_id} className="env-cell flex flex-col gap-2 p-2">
             {cells.length > 0
               ? cells.map((c) => <ServiceCard key={c.service_id} cell={c} actions={actionsFor(c)} onAction={onAction} />)
               : <Borrowed text={at === 0 ? "Not built yet" : "Not promoted here yet"} />}

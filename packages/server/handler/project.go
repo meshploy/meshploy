@@ -175,6 +175,14 @@ func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*
 	if err != nil {
 		return nil, err
 	}
+	// A level is deleted as a level: out of the cluster and out of every
+	// group's path, not only its row.
+	if p, err := h.svc.Projects.Get(ctx, projectID); err == nil && p.ParentProjectID != nil {
+		if _, err := h.svc.Promotions.DeleteLevel(ctx, projectID); err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		return nil, nil
+	}
 	if err := h.svc.Projects.Delete(ctx, projectID); err != nil {
 		if errors.Is(err, svc.ErrProjectHasLevels) {
 			return nil, huma.Error409Conflict(err.Error())

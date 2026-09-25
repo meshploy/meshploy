@@ -89,6 +89,8 @@ GIT_TERMINAL_PROMPT=0 git clone --depth=1 --branch "${GIT_BRANCH}" "${GIT_URL}" 
 unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_TOKEN
 cd "${WORKDIR}"
 log "Cloned successfully ($(git rev-parse --short HEAD))"
+# Read back by the API to record what was built: hash, then the subject line.
+log "Commit: $(git log -1 --format='%h %s')"
 
 # ── Subdirectory ──────────────────────────────────────────────────────────────
 # ROOT_DIR is set when the service's build.context points to a subdirectory.

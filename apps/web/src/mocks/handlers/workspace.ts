@@ -275,15 +275,37 @@ function routeTarget(input: Record<string, any>, routeId: string) {
     target_port: port?.port || input.port || input.target_port || 80,
   })
 }
+/** What the service last deployed successfully says about where it came from. */
+function originOf(serviceId: string) {
+  const d = db.deployments.find((d) => d.service_id === serviceId && d.status === "success")
+  if (!d) return {}
+  return {
+    source: d.source, source_branch: d.source_branch, source_commit: d.source_commit,
+    source_commit_message: d.source_commit_message, from_level: d.from_level,
+  }
+}
+/** Deploys an image as it is, as promotion and bring-down do, recording where it came from. */
+function deployAsIs(src: DemoRecord, target: DemoRecord, source: string) {
+  const fromLevel = find("projects", src.project_id)?.env_name ?? ""
+  db.deployments.unshift(record({
+    service_id: target.id, status: "success", image: src.image, build_job_name: "",
+    log: `[demo] ${source === "promotion" ? "Promoted" : "Brought down"} from ${fromLevel}`,
+    deployed_at: now(), ...originOf(src.id), source, from_level: fromLevel,
+  }))
+}
 function deploy(serviceId: string) {
   const svc = find("services", serviceId)
   if (!svc) return null
+  const bc = buildConfigs[serviceId]
   const deployment = record({
     service_id: serviceId,
     status: "pending",
     image: svc.image,
     log: "[demo] Deployment queued",
     deployed_at: null,
+    ...(bc
+      ? { source: "build", source_branch: bc.branch || "main", source_commit: Math.random().toString(16).slice(2, 9), source_commit_message: "Demo commit" }
+      : { source: "image" }),
   })
   svc.status = "deploying"
   db.deployments.unshift(deployment)
@@ -1438,6 +1460,11 @@ function environmentHandlers() {
         image: s.image ?? "",
         deployed_at: s.deployed_at ?? s.updated_at ?? null,
         has_backup: !!s.has_backup,
+        ...originOf(s.id),
+        routes: db.routes
+          .filter((r) => r.zone !== "internal" && (r.targets ?? []).some((t: DemoRecord) => t.service_id === s.id))
+          .map((r) => ({ hostname: r.hostname, live: r.published !== false && !r.awaiting_deploy }))
+          .sort((a, b) => Number(b.live) - Number(a.live)),
       })
       const groups = (db["promotion-groups"] ?? []).filter((g) => g.project_id === root.id)
       const services = db.services.filter((s) => ids.has(s.project_id)).sort((a, b) => a.name.localeCompare(b.name))
@@ -1502,6 +1529,37 @@ function environmentHandlers() {
       }
       return json({ hostnames_changed: changed })
     }),
+    // The API's rule: the level's services and routes go, groups skip it, a
+    // group that built there builds at the next level, and one left with
+    // nothing between entry and production is dissolved.
+    http.delete(`${P}/environment`, ({ params }) => {
+      const level = find("projects", params.projectId)
+      if (!level) return missing()
+      if (!level.parent_project_id) return error("production is the project itself: delete the project from its settings instead", 422)
+      const root = rootOf(level.id)!
+      const removed = db.services.filter((s) => s.project_id === level.id)
+      db.services = db.services.filter((s) => s.project_id !== level.id)
+      db.routes = db.routes.filter((r) => r.project_id !== level.id)
+      const shortened: string[] = []
+      const deleted: string[] = []
+      const dissolved = new Set<string>()
+      for (const g of (db["promotion-groups"] ?? []).filter((g) => g.project_id === root.id && g.path.includes(level.id))) {
+        const entry = g.path[0] === level.id
+        g.path = g.path.filter((id: string) => id !== level.id)
+        if (entry)
+          for (const lineage of g.lineages) {
+            const has = db.services.some((s) => s.project_id === g.path[0] && (s.lineage_id ?? s.id) === lineage)
+            const src = db.services.find((s) => (s.lineage_id ?? s.id) === lineage)
+            if (!has && src) copyInto(src, g.path[0], { status: "stopped", image: "", deployed_at: null })
+          }
+        if (g.path.length < 2) { deleted.push(g.name); dissolved.add(g.id) }
+        else shortened.push(g.name)
+      }
+      db["promotion-groups"] = (db["promotion-groups"] ?? []).filter((g) => !dissolved.has(g.id))
+      db.projects = db.projects.filter((p) => p.id !== level.id)
+      for (const p of db.projects.filter((p) => p.parent_project_id === root.id && p.env_level > level.env_level)) p.env_level--
+      return json({ services_removed: removed.length, groups_shortened: shortened, groups_deleted: deleted })
+    }),
     http.patch(`${P}/promotion-groups/:groupId`, async ({ params, request }) => {
       const group = (db["promotion-groups"] ?? []).find((g) => g.id === params.groupId)
       if (!group) return missing()
@@ -1565,6 +1623,7 @@ function environmentHandlers() {
       let copy = db.services.find((s) => s.project_id === target.id && (s.lineage_id ?? s.id) === lineage)
       if (!copy) copy = copyInto(src, target.id, {})
       Object.assign(copy, { image: src.image, status: "running", deployed_at: now() })
+      deployAsIs(src, copy, "bring_down")
       publishAwaiting(copy.id)
       return json({ id: crypto.randomUUID(), service_id: copy.id, image: src.image, status: "success" })
     }),
@@ -1633,6 +1692,7 @@ function environmentHandlers() {
         const created = !target
         if (!target) target = copyInto(src, next, {})
         Object.assign(target, { image: src.image, status: "running", deployed_at: now() })
+        deployAsIs(src, target, "promotion")
         publishAwaiting(target.id)
         promoted.push({ service_name: src.name, from_service_id: src.id, to_service_id: target.id, image: src.image, created_there: created })
       }

@@ -18,6 +18,8 @@ export interface ApiProject {
   stacks_count: number
   volumes_count: number
   config_files_count: number
+  /** Each count broken down, on a single project's read: services by status, routes by kind, and so on. */
+  stats?: Record<string, Record<string, number>>
   /** Set on an environment level: the project it is a level of. */
   parent_project_id?: string | null
   /** "production" on a project itself. */
@@ -56,6 +58,14 @@ export interface BoardCell {
   deployed_at?: string | null
   /** A database whose last backup succeeded, which a level's own copy can be cloned from. */
   has_backup?: boolean
+  /** Public addresses at this level, live ones first. */
+  routes?: { hostname: string; live: boolean }[]
+  /** Where the image came from: built here, or moved here from another level. */
+  source?: "build" | "promotion" | "bring_down" | "rollback" | "image" | ""
+  source_branch?: string
+  source_commit?: string
+  source_commit_message?: string
+  from_level?: string
 }
 
 export interface BoardGroup {
@@ -183,6 +193,14 @@ export const projects = {
     apiFetch<{ hostnames_changed: number }>(
       `/api/v1/orgs/${orgId}/projects/${levelId}/environment`,
       { method: "PATCH", body: JSON.stringify({ name }) },
+      token
+    ),
+
+  /** Deletes a level and everything in it; groups skip it from then on. */
+  deleteEnvironment: (orgId: string, levelId: string, token: string) =>
+    apiFetch<{ services_removed: number; groups_shortened: string[]; groups_deleted: string[] }>(
+      `/api/v1/orgs/${orgId}/projects/${levelId}/environment`,
+      { method: "DELETE" },
       token
     ),
 

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import { Check, ChevronsUpDown, Loader2, Pencil, Plus } from "lucide-react"
+import { Check, ChevronsUpDown, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,16 +34,19 @@ export function EnvironmentSwitcher({
   projectId,
   section,
   token,
+  className,
 }: {
   orgId: string
   projectId: string
   /** The project tab being viewed, kept when switching. */
   section: string
   token: string
+  className?: string
 }) {
   const navigate = useNavigate()
   const [adding, setAdding] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const { data: levels = [] } = useQuery({
     queryKey: ["environments", orgId, projectId],
     queryFn: () => projectsApi.environments(orgId, projectId, token),
@@ -57,7 +60,10 @@ export function EnvironmentSwitcher({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`Environment: ${current?.name ?? "production"}`}
-          className="mt-2 flex w-full items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-xs outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            "mt-2 flex w-full items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 text-xs outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring",
+            className
+          )}
         >
           <LevelDot production={current?.production ?? true} />
           <span className="flex-1 min-w-0 truncate text-left font-medium">{current?.name ?? "production"}</span>
@@ -87,8 +93,27 @@ export function EnvironmentSwitcher({
               Rename {current.name}
             </DropdownMenuItem>
           )}
+          {current && !current.production && (
+            <DropdownMenuItem onClick={() => setDeleting(true)} className="gap-2 text-sm text-destructive">
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete {current.name}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+      {deleting && current && (
+        <DeleteLevelDialog
+          orgId={orgId}
+          level={current}
+          token={token}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => {
+            setDeleting(false)
+            const production = levels.find((l) => l.production)
+            if (production) go(production)
+          }}
+        />
+      )}
       {renaming && current && (
         <RenameLevelDialog orgId={orgId} level={current} token={token} onClose={() => setRenaming(false)} />
       )}
@@ -311,6 +336,84 @@ function RenameLevelDialog({
             <Button type="submit" disabled={!name.trim() || name === level.name || rename.isPending}>
               {rename.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               Rename
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Deleting a level. Everything in it goes, from the cluster too; groups that
+ * passed through it skip it, and one that built there builds at the next
+ * level on its path. Asked for by name, since it cannot be undone.
+ */
+function DeleteLevelDialog({
+  orgId,
+  level,
+  token,
+  onClose,
+  onDeleted,
+}: {
+  orgId: string
+  level: EnvironmentLevel
+  token: string
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const qc = useQueryClient()
+  const [typed, setTyped] = useState("")
+  const remove = useMutation({
+    mutationFn: () => projectsApi.deleteEnvironment(orgId, level.project_id, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["environments", orgId] })
+      qc.invalidateQueries({ queryKey: ["board", orgId] })
+      qc.invalidateQueries({ queryKey: ["projects", orgId] })
+      onDeleted()
+    },
+  })
+  const count = level.services_count + level.databases_count
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete {level.name}</DialogTitle>
+          <DialogDescription>This cannot be undone.</DialogDescription>
+        </DialogHeader>
+        <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
+          <li>
+            {count > 0
+              ? `Its ${count} ${count === 1 ? "service" : "services"}, with their routes, volumes, jobs and data, are deleted, from the cluster too.`
+              : "It has no services; its routes, volumes and jobs are deleted with it."}
+          </li>
+          <li>Its namespace, {level.namespace}, is deleted.</li>
+          <li>Groups that pass through it skip it from now on. A group that builds here builds at the next level on its path instead.</li>
+          <li>Levels below it use what the level above has, as they do for anything a level lacks.</li>
+        </ul>
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (typed === level.name) remove.mutate()
+          }}
+        >
+          <label className="block text-xs text-muted-foreground">
+            Type <span className="font-mono text-foreground">{level.name}</span> to confirm
+            <Input value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-1.5 h-9 font-mono" autoFocus aria-label="Level name" />
+          </label>
+          {remove.error && (
+            <p className="text-xs text-destructive">
+              {remove.error instanceof ApiError ? remove.error.message : "Could not delete it."}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="destructive" disabled={typed !== level.name || remove.isPending}>
+              {remove.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Delete {level.name}
             </Button>
           </DialogFooter>
         </form>

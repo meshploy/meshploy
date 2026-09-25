@@ -1230,8 +1230,32 @@ type Deployment struct {
 	Log        string     `gorm:"type:text" json:"log"`
 	DeployedAt *time.Time `json:"deployed_at"`
 
+	// Where the image came from, so a level's board and a service's page can
+	// say whether it was built here or promoted from below, and from what.
+	// Source is build, promotion, bring_down, rollback or image (a configured
+	// image deployed as it is); empty on deployments from before it was kept.
+	// SourceBranch and SourceCommit are the build's, carried along when the
+	// image moves between levels; FromLevel and FromDeploymentID name the
+	// level and deployment a promotion or bring-down took it from.
+	Source           string     `gorm:"not null;default:''" json:"source,omitempty"`
+	SourceBranch     string     `gorm:"not null;default:''" json:"source_branch,omitempty"`
+	SourceCommit     string     `gorm:"not null;default:''" json:"source_commit,omitempty"`
+	// SourceCommitMessage is the commit's subject line.
+	SourceCommitMessage string `gorm:"not null;default:''" json:"source_commit_message,omitempty"`
+	FromLevel        string     `gorm:"not null;default:''" json:"from_level,omitempty"`
+	FromDeploymentID *uuid.UUID `gorm:"type:uuid"           json:"from_deployment_id,omitempty"`
+
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }
+
+// Deployment sources: where a deployment's image came from.
+const (
+	DeploySourceBuild     = "build"
+	DeploySourcePromotion = "promotion"
+	DeploySourceBringDown = "bring_down"
+	DeploySourceRollback  = "rollback"
+	DeploySourceImage     = "image"
+)
 
 // ---------------------------------------------------------------------------
 // Jobs
