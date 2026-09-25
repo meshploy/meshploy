@@ -45,6 +45,12 @@ export interface ApiDeployment {
   image: string
   build_job_name: string
   log: string
+  /** Where the image came from: built here, or moved here from another level. */
+  source?: "build" | "promotion" | "bring_down" | "rollback" | "image" | ""
+  source_branch?: string
+  source_commit?: string
+  source_commit_message?: string
+  from_level?: string
   deployed_at: string | null
   created_at: string
   updated_at: string

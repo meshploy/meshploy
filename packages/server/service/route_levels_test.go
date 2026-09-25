@@ -70,6 +70,19 @@ func TestACopiedServiceBringsItsRoutesAndTheyGoLiveWhenItRuns(t *testing.T) {
 	assert.Equal(t, webS2.ID, *copied.Targets[0].ServiceID, "it serves the level's own copy")
 	assert.Zero(t, copied.Targets[0].TargetPort)
 
+	// The board links each card to its level's address, the copy's not live yet.
+	cardRoutes := func() map[uuid.UUID][]service.BoardRoute {
+		board, err := svcs.Promotions.Board(ctx, prod)
+		require.NoError(t, err)
+		out := map[uuid.UUID][]service.BoardRoute{}
+		for _, c := range board.Groups[0].Cells {
+			out[c.LevelID] = c.Routes
+		}
+		return out
+	}
+	assert.Equal(t, []service.BoardRoute{{Hostname: "app.acme.dev", Live: true}}, cardRoutes()[prod])
+	assert.Equal(t, []service.BoardRoute{{Hostname: "app-staging2.acme.dev", Live: false}}, cardRoutes()[s2])
+
 	// The copy runs: a published port, and a gateway to route through.
 	require.NoError(t, gdb.Model(&meshdb.ServicePort{}).Where("service_id = ?", webS2.ID).
 		Updates(map[string]any{"node_port": 31555, "is_public": true}).Error)
@@ -81,6 +94,7 @@ func TestACopiedServiceBringsItsRoutesAndTheyGoLiveWhenItRuns(t *testing.T) {
 	assert.True(t, copied.Published)
 	assert.False(t, copied.AwaitingDeploy)
 	assert.Equal(t, 31555, copied.Targets[0].TargetPort)
+	assert.True(t, cardRoutes()[s2][0].Live, "once it runs, the card's link is live")
 
 	// A route an operator paused is not waiting, and stays paused.
 	require.NoError(t, gdb.Model(&copied).Update("published", false).Error)

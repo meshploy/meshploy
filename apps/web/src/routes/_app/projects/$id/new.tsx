@@ -77,11 +77,13 @@ import { SourceFields, type SourceState } from "@/components/services/source-fie
 // ─── Route ───────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute("/_app/projects/$id/new")({
-  validateSearch: (search: Record<string, unknown>): { type: ResourceType; template?: string } => {
+  validateSearch: (search: Record<string, unknown>): { type: ResourceType; template?: string; service?: string } => {
     const type = RESOURCE_TYPES.some(r => r.type === search.type) ? search.type as ResourceType : "service"
     const template = (search.template as string | undefined) || undefined
-    // Keep `template` optional so callers can navigate with just `{ type }`.
-    return template ? { type, template } : { type }
+    // A route started from a service's page targets that service.
+    const service = (search.service as string | undefined) || undefined
+    // Keep the rest optional so callers can navigate with just `{ type }`.
+    return { type, ...(template ? { template } : {}), ...(service ? { service } : {}) }
   },
   component: NewResourcePage,
 })
@@ -191,7 +193,7 @@ function NewResourcePage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const { type: resourceType, template: initialTemplateId } = Route.useSearch()
+  const { type: resourceType, template: initialTemplateId, service: initialServiceId } = Route.useSearch()
   const [form, setForm] = useState<FormState>(INITIAL)
 
   const patch = (partial: Partial<FormState>) =>
@@ -340,7 +342,7 @@ function NewResourcePage() {
           ) : resourceType === "database" ? (
             <DatabaseForm projectId={projectId} />
           ) : resourceType === "route" ? (
-            <RouteForm projectId={projectId} />
+            <RouteForm projectId={projectId} serviceId={initialServiceId} />
           ) : resourceType === "job" ? (
             <JobForm projectId={projectId} />
           ) : resourceType === "volume" ? (
@@ -1070,7 +1072,7 @@ function RouteKindPicker({ value, onChange }: { value: RouteKind; onChange: (v: 
   )
 }
 
-function RouteForm({ projectId }: { projectId: string }) {
+function RouteForm({ projectId, serviceId }: { projectId: string; serviceId?: string }) {
   const [kind, setKind] = useState<RouteKind>("domain")
   const draftSaved = useContext(ResourceDraftContext)
   const token = useAuthStore((s) => s.token)!
@@ -1078,7 +1080,8 @@ function RouteForm({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const [rf, setRf] = useState<RouteFormState>(ROUTE_INITIAL)
+  const [rf, setRf] = useState<RouteFormState>(() =>
+    serviceId ? { ...ROUTE_INITIAL, targets: [{ ...mkTargetRow(), serviceId }] } : ROUTE_INITIAL)
   const patchRf = (p: Partial<RouteFormState>) => setRf((s) => ({ ...s, ...p }))
 
   const { data: domainList = [] } = useQuery<ApiDomain[]>({

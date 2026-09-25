@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
 )
 
@@ -536,8 +538,11 @@ func (s *PromotionService) Promote(ctx context.Context, level, groupID uuid.UUID
 		if err != nil {
 			return result, err
 		}
+		var fromDep db.Deployment
+		_ = s.db.WithContext(ctx).First(&fromDep, "id = ?", mv.depID).Error
 		dep, err := s.deployments.DeployImage(ctx, target.ID, mv.image,
-			fmt.Sprintf("Promoted from %s (deployment %s, %s)", from, mv.depID.String()[:8], mv.image))
+			fmt.Sprintf("Promoted from %s (deployment %s, %s)", from, mv.depID.String()[:8], mv.image),
+			Provenance{Source: db.DeploySourcePromotion, FromLevel: from, From: &fromDep})
 		if err != nil {
 			return result, fmt.Errorf("promote %s to %s: %w", mv.src.Name, to, err)
 		}
@@ -582,6 +587,23 @@ type BoardCell struct {
 	// HasBackup is set on a database whose last backup succeeded: one a
 	// level's own copy can be cloned from.
 	HasBackup bool `json:"has_backup,omitempty"`
+	// Where the running image came from: built here from a branch, or moved
+	// here from another level, carrying the commit it was built from.
+	Source              string `json:"source,omitempty"`
+	SourceBranch        string `json:"source_branch,omitempty"`
+	SourceCommit        string `json:"source_commit,omitempty"`
+	SourceCommitMessage string `json:"source_commit_message,omitempty"`
+	FromLevel           string `json:"from_level,omitempty"`
+	// Routes are the service's public addresses at this level, published
+	// ones first, so the card can open what this level serves.
+	Routes []BoardRoute `json:"routes,omitempty"`
+}
+
+// BoardRoute is one address a card links to. Live is false for a route that
+// is paused, or copied into the level and waiting for its first deploy.
+type BoardRoute struct {
+	Hostname string `json:"hostname"`
+	Live     bool   `json:"live"`
 }
 
 // Board assembles the overview's view of a project.
@@ -635,6 +657,31 @@ func (s *PromotionService) Board(ctx context.Context, projectID uuid.UUID) (*Boa
 		hasBackup[id] = true
 	}
 
+	// Each service's addresses, internal ones left out: nobody opens those
+	// from a browser.
+	var routeRows []struct {
+		ServiceID      uuid.UUID
+		Hostname       string
+		Published      bool
+		AwaitingDeploy bool
+	}
+	if len(serviceIDs) > 0 {
+		if err := s.db.WithContext(ctx).Model(&db.Route{}).
+			Select("DISTINCT route_targets.service_id, routes.hostname, routes.published, routes.awaiting_deploy").
+			Joins("JOIN route_targets ON route_targets.route_id = routes.id").
+			Where("route_targets.service_id IN ? AND routes.zone <> ?", serviceIDs, db.RouteZoneInternal).
+			Order("routes.hostname").Scan(&routeRows).Error; err != nil {
+			return nil, err
+		}
+	}
+	routesOf := map[uuid.UUID][]BoardRoute{}
+	for _, r := range routeRows {
+		routesOf[r.ServiceID] = append(routesOf[r.ServiceID], BoardRoute{Hostname: r.Hostname, Live: r.Published && !r.AwaitingDeploy})
+	}
+	for id := range routesOf {
+		sort.SliceStable(routesOf[id], func(a, b int) bool { return routesOf[id][a].Live && !routesOf[id][b].Live })
+	}
+
 	grouped := map[uuid.UUID]int{}
 	board := &Board{Levels: levels, Groups: make([]BoardGroup, len(groups)), Ungrouped: []BoardCell{}}
 	for i, g := range groups {
@@ -652,9 +699,12 @@ func (s *PromotionService) Board(ctx context.Context, projectID uuid.UUID) (*Boa
 			Type:        string(sv.Type),
 			Status:      string(sv.Status),
 			HasBackup:   hasBackup[sv.ID],
+			Routes:      routesOf[sv.ID],
 		}
 		if d, ok := latest[sv.ID]; ok {
 			cell.Image, cell.DeployedAt = d.Image, d.DeployedAt
+			cell.Source, cell.SourceBranch, cell.FromLevel = d.Source, d.SourceBranch, d.FromLevel
+			cell.SourceCommit, cell.SourceCommitMessage = d.SourceCommit, d.SourceCommitMessage
 		}
 		if gi, ok := grouped[cell.LineageID]; ok {
 			board.Groups[gi].Cells = append(board.Groups[gi].Cells, cell)
@@ -1134,7 +1184,8 @@ func (s *PromotionService) BringDown(ctx context.Context, serviceID, levelID uui
 		return nil, err
 	}
 	return s.deployments.DeployImage(ctx, target.ID, last.Image,
-		fmt.Sprintf("Brought down from %s (deployment %s, %s)", fromName, last.ID.String()[:8], last.Image))
+		fmt.Sprintf("Brought down from %s (deployment %s, %s)", fromName, last.ID.String()[:8], last.Image),
+		Provenance{Source: db.DeploySourceBringDown, FromLevel: fromName, From: &last})
 }
 
 // ErrRemoveProduction refuses removing production's copy through a level
@@ -1232,6 +1283,126 @@ func (s *PromotionService) RemoveFromLevel(ctx context.Context, serviceID uuid.U
 	// The workload last, through the ordinary delete, which removes it from the
 	// cluster before the row.
 	if err := s.workloads.Delete(ctx, sv.ID); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+// ErrDeleteProduction refuses deleting production as a level: it is the
+// project, deleted from the project's settings.
+var ErrDeleteProduction = errors.New("production is the project itself: delete the project from its settings instead")
+
+// DeletedLevel says what deleting a level changed besides the level itself.
+type DeletedLevel struct {
+	ServicesRemoved int `json:"services_removed"`
+	// GroupsShortened lost this level from their path; GroupsDeleted had
+	// nothing left to promote between once it was gone.
+	GroupsShortened []string `json:"groups_shortened"`
+	GroupsDeleted   []string `json:"groups_deleted"`
+}
+
+// DeleteLevel removes a level and everything in it. Its workloads leave the
+// cluster first, through the ordinary delete, then its namespace with the
+// volumes, jobs and secrets left in it. A group whose path passed through it
+// skips it from then on; a group that built there builds at the next level
+// on its path instead, which takes over the level's auto-deploy setting, and
+// a group left with nothing between entry and production is dissolved.
+func (s *PromotionService) DeleteLevel(ctx context.Context, levelID uuid.UUID) (*DeletedLevel, error) {
+	var level db.Project
+	if err := s.db.WithContext(ctx).First(&level, "id = ?", levelID).Error; err != nil {
+		return nil, err
+	}
+	if level.ParentProjectID == nil {
+		return nil, ErrDeleteProduction
+	}
+	rootID := *level.ParentProjectID
+	out := &DeletedLevel{GroupsShortened: []string{}, GroupsDeleted: []string{}}
+
+	var services []db.Service
+	if err := s.db.WithContext(ctx).Where("project_id = ?", level.ID).Find(&services).Error; err != nil {
+		return nil, err
+	}
+	// Whether each lineage built on push here, for the level that takes over.
+	autoDeploy := map[uuid.UUID]bool{}
+	for _, sv := range services {
+		var bc db.BuildConfig
+		if s.db.WithContext(ctx).First(&bc, "service_id = ?", sv.ID).Error == nil {
+			autoDeploy[lineageOf(sv)] = bc.AutoDeploy
+		}
+	}
+	for _, sv := range services {
+		if err := s.workloads.Delete(ctx, sv.ID); err != nil {
+			return out, err
+		}
+		out.ServicesRemoved++
+	}
+	if s.workloads.k8s != nil {
+		if err := appk8s.DeleteNamespace(ctx, s.workloads.k8s, level.Slug); err != nil {
+			return out, err
+		}
+	}
+
+	levels, err := s.projects.Levels(ctx, rootID)
+	if err != nil {
+		return out, err
+	}
+	remaining := make([]EnvironmentLevel, 0, len(levels))
+	for _, l := range levels {
+		if l.ProjectID != level.ID {
+			remaining = append(remaining, l)
+		}
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var groups []db.PromotionGroup
+		if err := tx.Where("project_id = ?", rootID).Find(&groups).Error; err != nil {
+			return err
+		}
+		for _, g := range groups {
+			path := pathIDs(g.Path)
+			at := slices.Index(path, level.ID)
+			if at < 0 {
+				continue
+			}
+			path = slices.Delete(path, at, at+1)
+			if at == 0 {
+				var lineages []uuid.UUID
+				if err := tx.Model(&db.PromotionGroupMember{}).Where("group_id = ?", g.ID).
+					Pluck("lineage_id", &lineages).Error; err != nil {
+					return err
+				}
+				for _, l := range lineages {
+					sv, err := s.ensureInLevel(ctx, tx, l, path[0], remaining)
+					if err != nil {
+						return err
+					}
+					if err := tx.Model(&db.BuildConfig{}).Where("service_id = ?", sv.ID).
+						Update("auto_deploy", autoDeploy[l]).Error; err != nil {
+						return err
+					}
+				}
+			}
+			if len(path) < 2 {
+				if err := tx.Where("group_id = ?", g.ID).Delete(&db.PromotionGroupMember{}).Error; err != nil {
+					return err
+				}
+				if err := tx.Delete(&g).Error; err != nil {
+					return err
+				}
+				out.GroupsDeleted = append(out.GroupsDeleted, g.Name)
+				continue
+			}
+			if err := tx.Model(&g).Update("path", pathStrings(path)).Error; err != nil {
+				return err
+			}
+			out.GroupsShortened = append(out.GroupsShortened, g.Name)
+		}
+		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceProject, level.ID).Delete(&db.ResourcePermission{})
+		if err := tx.Delete(&db.Project{}, "id = ?", level.ID).Error; err != nil {
+			return err
+		}
+		return closeGap(tx, rootID, level.EnvLevel)
+	})
+	if err != nil {
 		return out, err
 	}
 	return out, nil

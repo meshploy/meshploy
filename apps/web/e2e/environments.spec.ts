@@ -1,5 +1,5 @@
 import { test, expect, loginAsDemo, goto } from "./fixtures"
-import { DEMO_PROJECT_ID } from "../src/mocks/data"
+import { DEMO_ORG_ID, DEMO_PROJECT_ID, DEMO_ROUTE_ID, DEMO_SVC_API, DEMO_SVC_WEB } from "../src/mocks/data"
 
 // A project's environment levels. Each level is a project of its own
 // underneath, so the console's job is to keep them presented as one project:
@@ -290,4 +290,99 @@ test("promote moves only what is newer, and says why the rest stays", async ({ p
   await dialog.getByRole("button", { name: "Promote to production" }).click()
   await expect(board.getByText("web:sha-4a1b9c2")).toHaveCount(2)
   await expect(board.getByText("api:latest")).toHaveCount(1)
+  // Production's web now says it came up from staging, built from develop.
+  await expect(board.getByTestId("origin-line").filter({ hasText: "Promoted from staging" }).filter({ hasText: "4a1b9c2" })).toBeVisible()
+})
+
+test("a card and the service page say where the running image came from", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}`)
+  const board = page.getByRole("region", { name: "Environments" })
+  const lines = board.getByTestId("origin-line")
+  await expect(lines.filter({ hasText: "Built from develop" }).filter({ hasText: "4a1b9c2" }).filter({ hasText: "Add the dark checkout page" })).toBeVisible({ timeout: 10_000 })
+  await expect(lines.filter({ hasText: "Promoted from staging" }).filter({ hasText: "develop" }).filter({ hasText: "9e3f210" }).filter({ hasText: "Cache product images" })).toBeVisible()
+
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services/${DEMO_SVC_WEB}/overview`)
+  const strip = page.getByTestId("origin-strip")
+  await expect(strip).toContainText("Promoted from staging", { timeout: 10_000 })
+  await expect(strip).toContainText("develop")
+  await expect(strip).toContainText("9e3f210")
+  await expect(strip).toContainText("Cache product images")
+})
+
+test("a card opens what its level serves, and a route waiting for a deploy is not a link", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}`)
+  const board = page.getByRole("region", { name: "Environments" })
+  await expect(board.getByRole("link", { name: "Open app-staging.demo.example.com" })).toHaveAttribute("href", "https://app-staging.demo.example.com", { timeout: 10_000 })
+  await expect(board.getByRole("link", { name: "Open app.demo.example.com" })).toBeVisible()
+})
+
+test("a service page opens its address, or offers to add one", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services/${DEMO_SVC_WEB}/overview`)
+  await expect(page.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", "https://app.demo.example.com", { timeout: 10_000 })
+
+  // Without its route, api's header offers one, aimed at api.
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services`)
+  await page.evaluate(async ([org, project, route]) => {
+    await fetch(`/api/v1/orgs/${org}/projects/${project}/routes/${route}`, { method: "DELETE" })
+  }, [DEMO_ORG_ID, DEMO_PROJECT_ID, DEMO_ROUTE_ID])
+  await page.getByRole("link", { name: /^api port/ }).click()
+  await page.getByRole("link", { name: "Add route" }).first().click()
+  await expect(page).toHaveURL(new RegExp(`type=route.*service=${DEMO_SVC_API}`))
+})
+
+test("on a phone the board shows one level at a time, chosen from tabs", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 })
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}`)
+  const board = page.getByRole("region", { name: "Environments" })
+  await expect(board.getByRole("tab", { name: /staging/ })).toHaveAttribute("aria-selected", "true", { timeout: 10_000 })
+  await expect(board.getByText("app-staging.demo.example.com")).toBeVisible()
+  await expect(board.getByText("app.demo.example.com", { exact: true })).toHaveCount(0)
+
+  await board.getByRole("tab", { name: /production/ }).click()
+  await expect(board.getByText("app.demo.example.com", { exact: true })).toBeVisible()
+  await expect(board.getByText("app-staging.demo.example.com")).toHaveCount(0)
+})
+
+test("a level can be deleted by name, and its group then has nothing to promote between", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}`)
+  await page.getByRole("button", { name: "Environment: production" }).click({ timeout: 10_000 })
+  await page.getByRole("menuitem", { name: /staging/ }).click()
+  await page.getByRole("button", { name: "Environment: staging" }).click()
+  await page.getByRole("menuitem", { name: "Delete staging" }).click()
+
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toContainText("demo-project-staging")
+  const confirm = dialog.getByRole("button", { name: "Delete staging" })
+  await expect(confirm).toBeDisabled()
+  await dialog.getByLabel("Level name").fill("staging")
+  await confirm.click()
+
+  await expect(page).toHaveURL(new RegExp(DEMO_PROJECT_ID))
+  await page.getByRole("button", { name: "Environment: production" }).click()
+  await expect(page.getByRole("menuitem", { name: /staging/ })).toHaveCount(0)
+  await expect(page.getByRole("menuitem", { name: /Delete/ })).toHaveCount(0)
+})
+
+test("on a phone the level switcher sits beside the section picker", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 })
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services`)
+  await page.getByRole("button", { name: "Environment: production" }).click({ timeout: 10_000 })
+  await page.getByRole("menuitem", { name: /staging/ }).click()
+  await expect(page).toHaveURL(/\/services/)
+  await expect(page.getByRole("button", { name: "Environment: staging" })).toBeVisible()
+})
+
+test("the overview's resource cards break their counts down", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}`)
+  const resources = page.getByRole("region", { name: "Resources" })
+  await expect(resources.getByTestId("stats-services")).toContainText("2 running", { timeout: 10_000 })
+  await expect(resources.getByTestId("stats-routes")).toContainText("HTTPS")
+  await expect(resources.getByTestId("stats-routes")).toContainText("TCP")
 })

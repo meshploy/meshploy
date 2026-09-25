@@ -12,6 +12,8 @@ interface DetailPageHeaderProps {
   badge?: React.ReactNode
   subtitle?: React.ReactNode
   actions?: React.ReactNode
+  /** Shown between the identity row and the tabs, for what matters most right now. */
+  highlight?: React.ReactNode
   children?: React.ReactNode // tab nav items
 }
 
@@ -25,6 +27,7 @@ export function DetailPageHeader({
   badge,
   subtitle,
   actions,
+  highlight,
   children,
 }: DetailPageHeaderProps) {
   return (
@@ -77,6 +80,8 @@ export function DetailPageHeader({
             </div>
           )}
         </div>
+
+        {highlight}
 
         {/* Tab nav */}
         {children && (

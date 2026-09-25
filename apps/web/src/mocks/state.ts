@@ -124,6 +124,23 @@ export const db: Record<string, DemoRecord[]> = {
   volumes: [{ ...seed.demoVolume, stack_id: null }],
   stacks: [seed.demoStack],
   routes: [
+    // web's address in production and its derived one in staging, so the
+    // board's cards have something to open.
+    ...[
+      { id: "00000000-0000-0000-0000-0000000000f1", host: "app", project: seed.demoProject.id, service: seed.demoServiceWeb.id },
+      { id: "00000000-0000-0000-0000-0000000000f2", host: "app-staging", project: stagingLevelId, service: stagingWebId },
+    ].map((r) => ({
+      ...seed.demoRoute,
+      id: r.id,
+      project_id: r.project,
+      subdomain: r.host,
+      hostname: `${r.host}.demo.example.com`,
+      domain_id: "00000000-0000-0000-0000-0000000000d1",
+      stack_id: null,
+      custom_domain_verified: false,
+      targets: [{ id: `${r.id.slice(0, -2)}a${r.id.slice(-1)}`, route_id: r.id, service_id: r.service, target_port: 3000, weight: 100,
+        path: "/", strip_path: false, node_id: null, target_ip: "100.64.0.2", redirect_route_id: null, redirect_code: 301 }],
+    })),
     {
       ...seed.demoRoute,
       stack_id: null,
@@ -364,7 +381,36 @@ export const db: Record<string, DemoRecord[]> = {
       verify_token: "a41e0c9d7b3f2e8a6c5d1b0f9e7a3c2d",
     }),
   ],
-  deployments: [seed.demoDeployment],
+  deployments: [
+    seed.demoDeployment,
+    // web in staging was built from develop; production runs an older commit
+    // of it, promoted up from staging.
+    {
+      ...seed.demoDeployment,
+      id: "00000000-0000-0000-0000-000000000043",
+      service_id: stagingWebId,
+      image: "ghcr.io/demo/web:sha-4a1b9c2",
+      build_job_name: "build-web-4a1b9c2",
+      source: "build",
+      source_branch: "develop",
+      source_commit: "4a1b9c2",
+      source_commit_message: "Add the dark checkout page",
+      deployed_at: new Date(Date.now() - 40 * 60_000).toISOString(),
+      created_at: new Date(Date.now() - 42 * 60_000).toISOString(),
+    },
+    {
+      ...seed.demoDeployment,
+      id: "00000000-0000-0000-0000-000000000044",
+      service_id: seed.demoServiceWeb.id,
+      image: seed.demoServiceWeb.image,
+      build_job_name: "",
+      source: "promotion",
+      from_level: "staging",
+      source_branch: "develop",
+      source_commit: "9e3f210",
+      source_commit_message: "Cache product images",
+    },
+  ],
   runs: [seed.demoJobRun],
   backups: [],
   permissions: [],
@@ -408,5 +454,27 @@ export function projectCounts(p: DemoRecord) {
     stacks_count: count("stacks"),
     volumes_count: count("volumes"),
     config_files_count: count("config-files"),
+    stats: projectStats(p),
   }
+}
+/** The overview cards' breakdowns, as the API computes them. */
+function projectStats(p: DemoRecord) {
+  const out: Record<string, Record<string, number>> = {}
+  const add = (kind: string, key: string) => {
+    out[kind] ??= {}
+    out[kind][key] = (out[kind][key] ?? 0) + 1
+  }
+  const mine = (kind: string) => (db[kind] ?? []).filter((r) => r.project_id === p.id)
+  for (const s of mine("services")) add(s.type === "database" ? "databases" : "services", s.status ?? "stopped")
+  for (const s of mine("stacks")) add("stacks", s.status ?? "idle")
+  for (const v of mine("volumes")) add("volumes", v.status ?? "idle")
+  for (const r of mine("routes")) add("routes", r.published === false ? "paused" : r.zone === "internal" ? "internal" : "https")
+  for (const _ of mine("tcp-routes")) add("routes", "tcp")
+  for (const j of mine("jobs")) {
+    add("jobs", j.schedule ? "scheduled" : "manual")
+    if (j.status === "failed") add("jobs", "failed")
+  }
+  for (const g of mine("variable-groups")) add("variables", g.service_id ? "published" : "shared")
+  for (const f of mine("config-files")) add("config_files", f.attached_services?.length ? "attached" : "unused")
+  return out
 }

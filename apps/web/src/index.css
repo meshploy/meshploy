@@ -1020,6 +1020,15 @@ a {
   background-image: radial-gradient(ellipse at 0% 0%, color-mix(in oklch,var(--primary) 12%,transparent), transparent 72%);
   box-shadow: inset 0 1px 0 color-mix(in oklch,var(--primary) 16%,transparent), 0 4px 14px oklch(0 0 0 / 10%);
 }
+/* The environments board: the resource cards' surface on its frame, its
+   cells flat on top of it so the board's own colours stay the signal. */
+.env-board {
+  background-color: var(--card);
+  background-image: radial-gradient(ellipse at 0% 0%, color-mix(in oklch,var(--primary) 10%,transparent), transparent 60%);
+  box-shadow: inset 0 1px 0 color-mix(in oklch,var(--primary) 16%,transparent), 0 4px 14px oklch(0 0 0 / 10%);
+}
+.env-board .env-cell { box-shadow: 0 0 0 0.5px color-mix(in oklch,var(--border) 75%,transparent); }
+.env-board .env-head { background: color-mix(in oklch,var(--primary) 4%,transparent); }
 .accent-icon-tile {
   display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px;
   border-radius:11px; color:var(--primary); background:color-mix(in oklch,var(--primary) 10%,var(--card));

@@ -27,3 +27,13 @@ func EnsureNamespace(ctx context.Context, client kubernetes.Interface, name stri
 	_, err = client.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 	return err
 }
+
+// DeleteNamespace removes the namespace and everything in it. A namespace
+// that is already gone is not an error.
+func DeleteNamespace(ctx context.Context, client kubernetes.Interface, name string) error {
+	err := client.CoreV1().Namespaces().Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}

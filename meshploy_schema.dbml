@@ -7,13 +7,14 @@ Table "public"."users" {
   "created_at"             timestamptz     [default: `NOW()`]
   "updated_at"             timestamptz     [default: `NOW()`]
   "username"               varchar(500)    [not null]
-  "email"                  varchar(500)    [not null]
+  "email"                  varchar(500)
   "password"               varchar(500)
   "totp_secret"            text
   "totp_enabled"           boolean         [not null, default: FALSE]
+  "kind"                   varchar(10)     [not null, default: 'human']
 
   Indexes {
-    "email" [unique, name: "idx_users_email"]
+    "email" [name: "idx_users_email"]
     "username" [unique, name: "idx_users_username"]
   }
 }
@@ -70,9 +71,13 @@ Table "public"."projects" {
   "name"                   varchar(500)    [not null]
   "slug"                   varchar(500)    [not null]
   "env_vars"               text
+  "parent_project_id"      uuid
+  "env_name"               varchar(500)    [not null, default: 'production']
+  "env_level"              int             [not null, default: 0]
 
   Indexes {
     "organization_id" [name: "idx_projects_organization_id"]
+    "parent_project_id" [name: "idx_projects_parent_project_id"]
     "slug" [unique, name: "idx_projects_slug"]
   }
 }
@@ -87,11 +92,15 @@ Table "public"."nodes" {
   "headscale_id"           varchar(500)
   "status"                 varchar(10)     [not null, default: 'offline']
   "last_seen_at"           timestamptz
+  "removal_requested_at"   timestamptz
+  "removal_error"          varchar(500)    [not null]
   "k3s_role"               varchar(10)     [not null, default: 'agent']
   "k3s_version"            varchar(500)
   "k3s_labels"             jsonb           [default: '{}']
   "mesh_role"              varchar(20)     [not null]
+  "os"                     varchar(10)     [not null, default: 'linux']
   "public_ip"              varchar(500)    [not null]
+  "control_url"            varchar(500)    [not null]
   "cpu_cores"              real
   "memory_gb"              real
   "disk_gb"                real
@@ -99,6 +108,7 @@ Table "public"."nodes" {
 
   Indexes {
     "organization_id" [name: "idx_nodes_organization_id"]
+    "removal_requested_at" [name: "idx_nodes_removal_requested_at"]
   }
 }
 
@@ -112,6 +122,10 @@ Table "public"."domains" {
   "preview_subdomain"      varchar(500)    [not null, default: 'preview']
   "verified"               boolean         [default: FALSE]
   "verify_token"           varchar(500)    [not null]
+  "is_primary"             boolean         [default: FALSE]
+  "former_primary"         boolean         [not null, default: FALSE]
+  "dns_mode"               varchar(500)    [not null]
+  "retiring_at"            timestamptz
 
   Indexes {
     "base_domain" [unique, name: "idx_domains_base_domain"]
@@ -128,9 +142,11 @@ Table "public"."services" {
   "node_id"                uuid            [ref: > "public"."nodes"."id"]
   "name"                   varchar(500)    [not null]
   "type"                   varchar(15)     [not null, default: 'application']
+  "slug"                   varchar(500)
   "image"                  varchar(500)
   "pull_registry_integration_id" uuid            [ref: > "public"."registry_integrations"."id"]
   "status"                 varchar(10)     [not null, default: 'stopped']
+  "deployed_at"            timestamptz
   "replicas"               int             [not null, default: 1]
   "cpu_request"            varchar(500)    [not null, default: '100m']
   "cpu_limit"              varchar(500)    [not null, default: '500m']
@@ -142,10 +158,16 @@ Table "public"."services" {
   "healthcheck_timeout_secs" int             [default: 0]
   "healthcheck_retries"    int             [default: 0]
   "healthcheck_start_period_secs" int             [default: 0]
+  "command"                jsonb           [not null, default: '[]']
+  "args"                   jsonb           [not null, default: '[]']
+  "deployed_spec_hash"     varchar(500)    [not null]
+  "lineage_id"             uuid
 
   Indexes {
+    "lineage_id" [name: "idx_services_lineage_id"]
     "node_id" [name: "idx_services_node_id"]
     "project_id" [name: "idx_services_project_id"]
+    "slug" [name: "idx_services_slug"]
     "stack_id" [name: "idx_services_stack_id"]
   }
 }
@@ -166,13 +188,18 @@ Table "public"."build_configs" {
   "builder_node"           varchar(500)    [not null]
   "builder_cpu_request"    varchar(500)    [not null]
   "builder_memory_request" varchar(500)    [not null]
+  "builder_cpu_limit"      varchar(500)    [not null]
+  "builder_memory_limit"   varchar(500)    [not null]
   "registry_integration_id" uuid            [ref: > "public"."registry_integrations"."id"]
   "last_built_image"       varchar(500)
   "last_built_at"          timestamptz
   "rollback_enabled"       boolean         [not null, default: FALSE]
   "image_retention"        int             [not null, default: 5]
   "auto_deploy"            boolean         [not null, default: FALSE]
+  "watch_paths"            jsonb           [not null, default: '[]']
   "deploy_token"           text
+  "deploy_hook_host"       varchar(500)    [not null]
+  "deploy_hook_called_at"  timestamptz
 
   Indexes {
     "service_id" [unique, name: "idx_build_configs_service_id"]
@@ -191,6 +218,7 @@ Table "public"."database_configs" {
   "db_name"                varchar(500)    [not null]
   "db_user"                varchar(500)    [not null]
   "db_password"            text
+  "mesh_exposed"           boolean         [not null, default: FALSE]
   "node_port"              int             [default: 0]
 
   Indexes {
@@ -210,12 +238,18 @@ Table "public"."routes" {
   "hostname"               varchar(500)    [not null]
   "custom_domain_verified" boolean         [default: FALSE]
   "custom_domain_verify_token" varchar(500)    [not null]
+  "stack_id"               uuid
+  "published"              boolean         [not null, default: TRUE]
+  "awaiting_deploy"        boolean         [not null, default: FALSE]
+  "published_changed_at"   timestamptz
+  "published_changed_by"   uuid
 
   Indexes {
     "domain_id" [name: "idx_routes_domain_id"]
     "hostname" [unique, name: "idx_routes_hostname"]
     "organization_id" [name: "idx_routes_organization_id"]
     "project_id" [name: "idx_routes_project_id"]
+    "stack_id" [name: "idx_routes_stack_id"]
   }
 }
 
@@ -230,6 +264,12 @@ Table "public"."deployments" {
   "build_job_name"         varchar(500)
   "log"                    text
   "deployed_at"            timestamptz
+  "source"                 varchar(500)    [not null]
+  "source_branch"          varchar(500)    [not null]
+  "source_commit"          varchar(500)    [not null]
+  "source_commit_message"  varchar(500)    [not null]
+  "from_level"             varchar(500)    [not null]
+  "from_deployment_id"     uuid
 
   Indexes {
     "service_id" [name: "idx_deployments_service_id"]
@@ -287,6 +327,8 @@ Table "public"."git_integrations" {
   "o_auth_refresh_token"   text
   "o_auth_token_expiry"    timestamptz     [default: 'null']
   "groups"                 varchar(500)    [not null]
+  "webhook_secret"         text
+  "registered_api_base"    varchar(500)    [not null]
   "gh_app_id"              varchar(500)    [not null]
   "gh_app_slug"            varchar(500)    [not null]
   "gh_client_id"           varchar(500)    [not null]

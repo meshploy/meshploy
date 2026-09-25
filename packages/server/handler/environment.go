@@ -60,6 +60,39 @@ func (h *Handler) registerEnvironmentRoutes(api huma.API) {
 		Tags:        []string{"Projects"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.RenameEnvironment)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-environment",
+		Method:      "DELETE",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/environment",
+		Summary:     "Delete an environment level and everything in it; groups skip it from then on",
+		Tags:        []string{"Projects"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.DeleteEnvironment)
+}
+
+type DeleteEnvironmentOutput struct {
+	Body *svc.DeletedLevel
+}
+
+// DeleteEnvironment deletes the level projectId: its workloads, its namespace
+// and its row, taking it out of every group's path.
+func (h *Handler) DeleteEnvironment(ctx context.Context, input *ProjectPathInput) (*DeleteEnvironmentOutput, error) {
+	_, _, level, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionDelete, "")
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.svc.Promotions.DeleteLevel(ctx, level)
+	if err != nil {
+		if errors.Is(err, svc.ErrDeleteProduction) {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+		if nf := notFound(err); nf != err {
+			return nil, nf
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &DeleteEnvironmentOutput{Body: out}, nil
 }
 
 type RenameEnvironmentInput struct {

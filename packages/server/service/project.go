@@ -34,6 +34,9 @@ type ProjectCounts struct {
 type ProjectWithCounts struct {
 	db.Project
 	ProjectCounts
+	// Stats breaks the counts down for the project overview: only a single
+	// project's read fills it.
+	Stats map[string]map[string]int `json:"stats,omitempty"`
 }
 
 // ProjectListOptions narrows and orders a project list.
@@ -197,7 +200,70 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 	if len(counts) > 0 {
 		result.ProjectCounts = counts[0]
 	}
+	stats, err := s.stats(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	result.Stats = stats
 	return result, nil
+}
+
+// stats breaks each count down the way its overview card does: services by
+// status, routes by kind, jobs by how they run. A key with nothing in it is
+// left out.
+func (s *ProjectService) stats(ctx context.Context, projectID uuid.UUID) (map[string]map[string]int, error) {
+	out := map[string]map[string]int{}
+	add := func(kind, key string, n int) {
+		if n == 0 {
+			return
+		}
+		if out[kind] == nil {
+			out[kind] = map[string]int{}
+		}
+		out[kind][key] += n
+	}
+	type row struct {
+		Key string
+		N   int
+	}
+	countBy := func(model any, key string, where string, args ...any) ([]row, error) {
+		var rows []row
+		q := s.db.WithContext(ctx).Model(model).Select(key+" AS key, COUNT(*) AS n").
+			Where("project_id = ?", projectID).Where(where, args...)
+		if !strings.HasPrefix(key, "'") { // a constant key is one group already
+			q = q.Group(key)
+		}
+		err := q.Scan(&rows).Error
+		return rows, err
+	}
+	queries := []struct {
+		kind  string
+		model any
+		key   string
+		where string
+		args  []any
+	}{
+		{"services", &db.Service{}, "status", "type = ?", []any{db.ServiceTypeApplication}},
+		{"databases", &db.Service{}, "status", "type = ?", []any{db.ServiceTypeDatabase}},
+		{"stacks", &db.Stack{}, "status", "TRUE", nil},
+		{"volumes", &db.Volume{}, "status", "TRUE", nil},
+		{"routes", &db.Route{}, "CASE WHEN NOT published THEN 'paused' WHEN zone = 'internal' THEN 'internal' ELSE 'https' END", "TRUE", nil},
+		{"routes", &db.TCPRoute{}, "'tcp'", "TRUE", nil},
+		{"jobs", &db.Job{}, "CASE WHEN schedule <> '' THEN 'scheduled' ELSE 'manual' END", "TRUE", nil},
+		{"jobs", &db.Job{}, "'failed'", "status = ?", []any{db.JobStatusFailed}},
+		{"variables", &db.VariableGroup{}, "CASE WHEN service_id IS NULL THEN 'shared' ELSE 'published' END", "TRUE", nil},
+		{"config_files", &db.ConfigFile{}, "CASE WHEN EXISTS (SELECT 1 FROM service_config_files scf WHERE scf.config_file_id = config_files.id) THEN 'attached' ELSE 'unused' END", "TRUE", nil},
+	}
+	for _, q := range queries {
+		rows, err := countBy(q.model, q.key, q.where, q.args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			add(q.kind, r.Key, r.N)
+		}
+	}
+	return out, nil
 }
 
 // reservedNamespaces are namespaces Kubernetes owns. A project's slug is its

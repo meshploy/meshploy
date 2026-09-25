@@ -1,14 +1,16 @@
 import { StatusPill } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, Outlet, useParams, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Box, Database, Loader2, Play, ServerCrash, Square, Terminal, Plus } from "lucide-react"
+import { Box, ChevronDown, Database, ExternalLink, Globe, Loader2, Play, ServerCrash, Square, Terminal, Plus } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { services as servicesApi, deployments, stacks as stacksApi } from "@/lib/api"
+import { services as servicesApi, deployments, stacks as stacksApi, routes as routesApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 import { useIsAdmin } from "@/store/org-store"
 import { livePoll } from "@/lib/live-poll"
+import { OriginStrip } from "@/components/services/deployment-origin"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
   component: ServiceLayout,
@@ -59,6 +61,24 @@ function ServiceLayout() {
     queryFn: () => stacksApi.get(orgId!, projectId, service!.stack_id!, token),
     enabled: !!orgId && !!service?.stack_id,
   })
+
+  // What runs here now, and where it came from: a branch built here, or an
+  // image moved in from another level. Shares the overview's query.
+  const { data: history } = useQuery({
+    queryKey: ["deployments", orgId, projectId, serviceId],
+    queryFn: () => deployments.list(orgId!, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+  const current = history?.find((d) => d.status === "success")
+
+  // The addresses a browser can open: the service's routes, internal ones
+  // aside. Shares the overview's query.
+  const { data: projectRoutes } = useQuery({
+    queryKey: ["routes", orgId, projectId],
+    queryFn: () => routesApi.list(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  const addresses = (projectRoutes ?? []).filter((r) => r.zone !== "internal" && r.targets.some((t) => t.service_id === serviceId))
 
   const startMutation = useMutation({
     mutationFn: () => servicesApi.start(orgId!, projectId, serviceId, token),
@@ -115,6 +135,7 @@ function ServiceLayout() {
               : "Application · Standalone service"
         }
         badge={<StatusPill status={service.status} />}
+        highlight={current && <OriginStrip origin={current} image={current.image} />}
         actions={
           <>
             {(service.status === "stopped" || service.status === "failed") && !!service.image && !!service.deployed_at && (
@@ -130,6 +151,22 @@ function ServiceLayout() {
                 {stopMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
                 Stop
               </Button>
+            )}
+            {service.type !== "database" && projectRoutes && (
+              addresses.length === 0 ? (
+                <Button variant="outline" size="sm" render={<Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "route", service: serviceId }} />}><Globe className="size-4" />Add route</Button>
+              ) : addresses.length === 1 ? (
+                <Button variant="outline" size="sm" render={<a href={`https://${addresses[0].hostname}`} target="_blank" rel="noopener noreferrer" title={addresses[0].hostname} />}><ExternalLink className="size-4" />Open</Button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}><ExternalLink className="size-4" />Open<ChevronDown className="size-3.5" /></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[240px]">
+                    {addresses.map((r) => (
+                      <DropdownMenuItem key={r.id} render={<a href={`https://${r.hostname}`} target="_blank" rel="noopener noreferrer" />}>{r.hostname}</DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
             )}
             <Button variant="outline" size="sm" render={<Link to="/projects/$id/services/$serviceId/logs" params={{ id: projectId, serviceId }} />}><Terminal className="size-4" />Logs</Button>
             <Button size="sm" onClick={() => deployMutation.mutate()} disabled={deployMutation.isPending || service.status === "deploying"}><Plus className="size-4" />Deploy</Button>

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -151,6 +152,8 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		Status:       db.DeploymentPending,
 		Image:        imageName,
 		BuildJobName: jobName,
+		Source:       db.DeploySourceBuild,
+		SourceBranch: bc.Branch,
 		Log:          fmt.Sprintf("Build triggered by user %s\n", in.TriggeredBy),
 	}
 	if err := s.db.WithContext(ctx).Create(&deployment).Error; err != nil {
@@ -209,6 +212,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 		ServiceID: svc.ID,
 		Status:    db.DeploymentDeploying,
 		Image:     svc.Image,
+		Source:    db.DeploySourceImage,
 		Log:       fmt.Sprintf("Direct image deploy triggered by user %s\n", triggeredBy),
 	}
 	if err := s.db.WithContext(ctx).Create(&deployment).Error; err != nil {
@@ -570,6 +574,15 @@ func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID,
 		"log":         logValue,
 		"deployed_at": &now,
 	})
+	// A build logs what it cloned; record it, so the image can say where it
+	// came from when it moves to another level.
+	if text, ok := logValue.(string); ok {
+		if commit, message := commitFromBuildLog(text); commit != "" {
+			s.db.Model(&db.Deployment{}).
+				Where("id = ? AND source = ? AND source_commit = ''", deploymentID, db.DeploySourceBuild).
+				Updates(map[string]any{"source_commit": commit, "source_commit_message": message})
+		}
+	}
 	svcUpdates := map[string]any{"status": db.ServiceRunning, "deployed_at": &now}
 	if image != "" {
 		svcUpdates["image"] = image
@@ -972,13 +985,22 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 		return nil, fmt.Errorf("deployment has no image reference stored")
 	}
 	return s.deployImage(ctx, target.Service, target.Image,
-		fmt.Sprintf("Rolling back to deployment %s (%s)\n", target.ID.String()[:8], target.Image), "Rollback")
+		fmt.Sprintf("Rolling back to deployment %s (%s)\n", target.ID.String()[:8], target.Image), "Rollback",
+		Provenance{Source: db.DeploySourceRollback, From: &target})
+}
+
+// Provenance is where an image being deployed as it is came from: the source,
+// and the deployment it was taken from, whose branch and commit it carries.
+type Provenance struct {
+	Source    string
+	FromLevel string
+	From      *db.Deployment
 }
 
 // DeployImage runs an image that already exists on a service, without building.
 // It is what promotion does: the image a lower level built and ran, deployed
 // as it is to the level above. note opens the deployment's log.
-func (s *DeploymentService) DeployImage(ctx context.Context, serviceID uuid.UUID, image, note string) (*db.Deployment, error) {
+func (s *DeploymentService) DeployImage(ctx context.Context, serviceID uuid.UUID, image, note string, prov Provenance) (*db.Deployment, error) {
 	if s.k8s == nil {
 		return nil, ErrK8sNotConfigured
 	}
@@ -989,12 +1011,12 @@ func (s *DeploymentService) DeployImage(ctx context.Context, serviceID uuid.UUID
 	if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").First(&svc, "id = ?", serviceID).Error; err != nil {
 		return nil, err
 	}
-	return s.deployImage(ctx, svc, image, note+"\n", "Deploy")
+	return s.deployImage(ctx, svc, image, note+"\n", "Deploy", prov)
 }
 
 // deployImage applies image to svc's workload in the background and records it
 // as a deployment. what names the operation in its log and errors.
-func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, image, logLine, what string) (*db.Deployment, error) {
+func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, image, logLine, what string, prov Provenance) (*db.Deployment, error) {
 	now := time.Now()
 	dep := &db.Deployment{
 		ServiceID:  svc.ID,
@@ -1002,6 +1024,12 @@ func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, ima
 		Image:      image,
 		Log:        logLine,
 		DeployedAt: &now,
+		Source:     prov.Source,
+		FromLevel:  prov.FromLevel,
+	}
+	if f := prov.From; f != nil {
+		dep.FromDeploymentID = &f.ID
+		dep.SourceBranch, dep.SourceCommit, dep.SourceCommitMessage = f.SourceBranch, f.SourceCommit, f.SourceCommitMessage
 	}
 	if err := s.db.WithContext(ctx).Create(dep).Error; err != nil {
 		return nil, err
@@ -1949,4 +1977,26 @@ func (s *DeploymentService) ResetDatabase(ctx context.Context, serviceID uuid.UU
 	// Mark service stopped, then re-provision.
 	s.db.Model(&db.Service{}).Where("id = ?", serviceID).Update("status", db.ServiceStopped)
 	return s.provisionDatabase(ctx, &svc)
+}
+
+// buildCommitLine is what the builder logs after cloning: the short hash and
+// the subject. Older builder images logged only the hash, on the clone line.
+var (
+	buildCommitLine = regexp.MustCompile(`Commit: ([0-9a-f]{7,40}) ([^\r\n\x1b]*)`)
+	buildCloneLine  = regexp.MustCompile(`Cloned successfully \(([0-9a-f]{7,40})\)`)
+)
+
+// commitFromBuildLog finds the commit a build cloned, and its subject line.
+func commitFromBuildLog(log string) (commit, message string) {
+	if m := buildCommitLine.FindStringSubmatch(log); m != nil {
+		message = strings.TrimSpace(m[2])
+		if len(message) > 200 {
+			message = message[:200]
+		}
+		return m[1], message
+	}
+	if m := buildCloneLine.FindStringSubmatch(log); m != nil {
+		return m[1], ""
+	}
+	return "", ""
 }
