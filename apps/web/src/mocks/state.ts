@@ -337,6 +337,7 @@ export const db: Record<string, DemoRecord[]> = {
   ],
   "storage-integrations": [
     record({
+      id: "00000000-0000-0000-0000-0000000000c1",
       name: "Demo backups",
       provider: "s3",
       endpoint: "",
@@ -424,7 +425,21 @@ export const db: Record<string, DemoRecord[]> = {
     },
   ],
   runs: [seed.demoJobRun, ...demoRunHistory()],
-  backups: [],
+  // Every demo database is backed up nightly, as a real workspace should be.
+  // Postgres has a good backup to clone from; the rest are set up but have not
+  // run yet, which is what the board's "no backup yet" says for them.
+  backups: [seed.demoServiceDb, ...demoDatabases.map((d) => d.service)].map((svc, i) =>
+    record({
+      id: `00000000-0000-0000-0000-000000000${300 + i}`,
+      service_id: svc.id,
+      storage_integration_id: "00000000-0000-0000-0000-0000000000c1",
+      schedule: "0 2 * * *",
+      retention_days: 14,
+      enabled: true,
+      last_backup_at: svc.id === seed.demoServiceDb.id ? new Date(Date.now() - 6 * 3_600_000).toISOString() : null,
+      last_backup_status: svc.id === seed.demoServiceDb.id ? "success" : null,
+    })
+  ),
   permissions: [],
 }
 export const org = { ...seed.demoOrg }

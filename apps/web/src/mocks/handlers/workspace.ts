@@ -691,7 +691,12 @@ export const workspaceHandlers = [
       attention.push({ kind: "job_failed", severity: "warning", title: `The last run of ${j.name} failed`,
         detail: `in ${where(j.project_id)}`, project_id: j.project_id, job_id: j.id })
     const unprotected = new Map<string, DemoRecord[]>()
-    for (const d of db.services.filter((s) => s.type === "database" && !s.has_backup))
+    // As the API decides it: no enabled backup configured, or a last backup that failed.
+    const configured = (id: string) => db.backups.find((b) => b.service_id === id && b.enabled !== false)
+    for (const d of db.services.filter((s) => s.type === "database" && configured(s.id)?.last_backup_status === "failed"))
+      attention.push({ kind: "backup_failed", severity: "warning", title: `The last backup of ${d.name} failed`,
+        detail: `in ${where(d.project_id)}`, project_id: d.project_id, service_id: d.id })
+    for (const d of db.services.filter((s) => s.type === "database" && !configured(s.id)))
       unprotected.set(d.project_id, [...(unprotected.get(d.project_id) ?? []), d])
     for (const [pid, list] of unprotected) {
       const names = list.map((d) => d.name)
