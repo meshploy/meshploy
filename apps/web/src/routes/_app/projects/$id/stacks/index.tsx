@@ -8,6 +8,7 @@ import { stacks as stacksApi, type ApiStack } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { HelpButton } from "@/help/help-button"
 import { livePoll } from "@/lib/live-poll"
 
 
@@ -105,7 +106,7 @@ function StacksTab() {
     <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1>Stacks</h1>
+          <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Stacks</span><HelpButton topic="stacks" label="How stacks work" /></h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && (
             <span className="text-xs text-muted-foreground">{stackList.length}</span>

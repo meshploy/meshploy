@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowRight, ArrowUpRight, Box, ExternalLink, Database, Loader2, Minus, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import {
@@ -15,7 +15,12 @@ import type { Board, BoardCell, BoardGroup, EnvironmentLevel } from "@/lib/api/p
 import { cn, formatRelativeTime } from "@/lib/utils"
 import { livePoll } from "@/lib/live-poll"
 import { OriginLine } from "@/components/services/deployment-origin"
-import { LevelDot } from "@/components/projects/environment-switcher"
+import { LevelDot, NewLevelDialog } from "@/components/projects/environment-switcher"
+import { HelpButton } from "@/help/help-button"
+import { TermInfo } from "@/help/term"
+import { LevelChain, HelpMarkdown } from "@/help/render"
+import { topic as helpTopic } from "@/help/topics"
+import { useHelp } from "@/help/store"
 
 /**
  * The project's environments at a glance, and moving services up them.
@@ -58,7 +63,8 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
       qc.invalidateQueries({ queryKey: ["environments", orgId] })
     },
   })
-  if (!board || board.levels.length < 2) return null
+  // Production alone still renders: the board teaches what levels are then.
+  if (!board) return null
 
   // What a card's menu offers. A service in no group can be copied down (as a
   // group of its own) or added to a group; a grouped service can be brought
@@ -116,16 +122,27 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
     <section ref={sectionRef} className="space-y-3" aria-label="Environments">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Environments</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            What each level runs. Promote moves the same image up a group&apos;s path; nothing is rebuilt.
-          </p>
+          <h2 className="flex items-center gap-1 text-sm font-semibold">
+            Environments
+            <HelpButton topic="environments" label="How environments work" className="size-6" />
+          </h2>
+          {board.levels.length > 1 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              What each level runs. Promote moves the same image up a group&apos;s path; nothing is rebuilt.
+            </p>
+          )}
         </div>
-        <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => setCreating(true)}>
-          <Plus className="h-3.5 w-3.5" />
-          Group
-        </Button>
+        {board.levels.length > 1 && (
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Group
+          </Button>
+        )}
       </div>
+
+      {/* Production alone: nothing to move between yet, so the board teaches
+          what levels are instead of showing one column. */}
+      {board.levels.length < 2 && <NoLevels orgId={orgId} projectId={projectId} token={token} levels={board.levels} />}
 
       {act.error && (
         <p role="alert" className="text-xs text-destructive">
@@ -133,7 +150,7 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
         </p>
       )}
 
-      {narrow && (
+      {narrow && board.levels.length > 1 && (
         <div role="tablist" aria-label="Level" className="quiet-surface flex gap-1 overflow-x-auto rounded-lg border border-border p-1">
           {allColumns.map((l, i) => (
             <button
@@ -156,7 +173,7 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
       )}
 
       {/* Wide enough, every level side by side; the grid never scrolls the page. */}
-      <div className="env-board overflow-x-auto rounded-xl border border-border">
+      {board.levels.length > 1 && <div className="env-board overflow-x-auto rounded-xl border border-border">
         <div className={cn("grid", !narrow && "min-w-max")} style={grid}>
           {!narrow && <div className="env-cell env-head" />}
           {columns.map((l) => (
@@ -207,14 +224,14 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
                     {own.map((c) => (
                       <ServiceCard key={c.service_id} cell={c} actions={actionsFor(c, null)} onAction={(run) => act.mutate(run)} />
                     ))}
-                    {missing.length > 0 && <Borrowed text={missing.join(" · ")} />}
+                    {missing.length > 0 && <Borrowed text={missing.join(" · ")} term="environments.borrowed" />}
                   </div>
                 )
               })}
             </>
           )}
 
-          <RowLabel title="Databases" detail="Never promoted. A level without its own copy uses the one above, data and all." />
+          <RowLabel title="Databases" detail="Never promoted. A level without its own copy uses the one above, data and all." term="environments.borrowed-database" />
           {columns.map((l) => {
             const own = dbs.filter((c) => c.level_id === l.project_id)
             // Each database this level does not have, and the copy it uses.
@@ -257,7 +274,7 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
             )
           })}
         </div>
-      </div>
+      </div>}
 
       {creating && (
         <NewGroupDialog board={board} orgId={orgId} projectId={projectId} token={token} onClose={() => setCreating(false)} />
@@ -282,25 +299,70 @@ function nearestAboveWith(level: EnvironmentLevel, levels: EnvironmentLevel[], h
   return above.find(has)
 }
 
-function RowLabel({ title, detail, children }: { title: string; detail: string; children?: React.ReactNode }) {
+function RowLabel({ title, detail, term, children }: { title: string; detail: string; term?: string; children?: React.ReactNode }) {
   return (
     <div className="env-cell px-3 py-3">
-      <p className="text-xs font-semibold">{title}</p>
+      <p className="flex items-center gap-1 text-xs font-semibold">
+        {title}
+        {term && <TermInfo id={term} />}
+      </p>
       <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{detail}</p>
       {children}
     </div>
   )
 }
 
-function Borrowed({ text, warn }: { text: string; warn?: boolean }) {
+function Borrowed({ text, warn, term }: { text: string; warn?: boolean; term?: string }) {
   return (
     <div
       className={cn(
-        "flex min-h-12 items-center rounded-md border border-dashed px-2.5 py-2 text-[11px] leading-relaxed",
+        "flex min-h-12 items-center justify-between gap-2 rounded-md border border-dashed px-2.5 py-2 text-[11px] leading-relaxed",
         warn ? "border-amber-500/40 bg-amber-500/5 text-amber-300/90" : "border-border/70 text-muted-foreground"
       )}
     >
-      {text}
+      <span>{text}</span>
+      {term && <TermInfo id={term} />}
+    </div>
+  )
+}
+
+/**
+ * A project with production alone: what levels are, drawn and in two
+ * sentences from the help topic, with the way to add one and the way to read
+ * more. The first time someone meets environments is the moment they want to
+ * learn them.
+ */
+function NoLevels({ orgId, projectId, token, levels }: { orgId: string; projectId: string; token: string; levels: EnvironmentLevel[] }) {
+  const [adding, setAdding] = useState(false)
+  const show = useHelp((s) => s.show)
+  const navigate = useNavigate()
+  const intro = helpTopic("environments")?.sections.find((s) => s.id === "levels")?.body.split("\n\n")[0] ?? ""
+  return (
+    <div className="env-board space-y-4 rounded-xl border border-border p-5" data-testid="no-levels">
+      <LevelChain levels={["dev", "staging", "production"]} className="w-fit" />
+      <HelpMarkdown source={intro} className="max-w-2xl" />
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => setAdding(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          Add a level
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => show("environments")}>
+          How environments work
+        </Button>
+      </div>
+      {adding && (
+        <NewLevelDialog
+          orgId={orgId}
+          projectId={projectId}
+          levels={levels}
+          token={token}
+          onClose={() => setAdding(false)}
+          onCreated={(l) => {
+            setAdding(false)
+            navigate({ to: `/projects/${l.project_id}/` })
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -429,6 +491,7 @@ function CardRoute({ routes }: { routes: NonNullable<BoardCell["routes"]> }) {
           <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-50" />
           <span className="truncate">{first.hostname}</span>
           <span className="shrink-0 text-[11px] text-muted-foreground/70">after first deploy</span>
+          <TermInfo id="environments.after-first-deploy" />
         </span>
       )}
       {more}
@@ -473,6 +536,7 @@ function GroupRow({
   return (
     <>
       <RowLabel
+        term={group.single ? "environments.single-group" : "environments.promotion-group"}
         title={group.single ? `${group.name} · just this service` : group.name}
         detail={`Builds in ${entry?.name ?? "?"}, then ${group.path.slice(1).map((id) => byId.get(id)?.name).join(" → ")}`}
       >

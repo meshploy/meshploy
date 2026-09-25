@@ -33,6 +33,7 @@ import { CLUSTER_ROLES, RolePicker } from "@/components/nodes/role-picker"
 import { RoleChangeDialog } from "@/components/nodes/role-change-dialog"
 import { formatRelativeTime } from "@/lib/utils"
 import { useState, useEffect, useRef, useMemo, useId } from "react"
+import { TermInfo } from "@/help/term"
 import { AreaChart, Area, YAxis, ResponsiveContainer, Tooltip } from "recharts"
 
 function toRawSample(ts: number, m: ApiNodeMetrics): RawSample {
@@ -566,6 +567,7 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <p className="text-xs font-medium text-foreground">Act as build node</p>
+              <TermInfo id="nodes.build-node" />
               {isBuilder && (
                 <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
                   Active

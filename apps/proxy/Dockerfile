@@ -20,6 +20,7 @@ COPY packages/client/go.mod packages/client/go.sum* ./packages/client/
 COPY packages/mcpserver/go.mod packages/mcpserver/go.sum* ./packages/mcpserver/
 COPY packages/license/go.mod packages/license/go.sum* ./packages/license/
 COPY packages/hostagent/go.mod packages/hostagent/go.sum* ./packages/hostagent/
+COPY packages/help/go.mod packages/help/go.sum* ./packages/help/
 COPY packages/server/go.mod packages/server/go.sum* ./packages/server/
 
 # go work sync requires all modules in go.work to be present.

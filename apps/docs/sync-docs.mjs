@@ -8,7 +8,7 @@
  * generated files in src/content/docs/ directly.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, rmSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -49,13 +49,15 @@ const docs = [
   },
   {
     src: 'CONCEPTS.md',
-    dest: 'architecture/concepts.md',
-    title: 'Concepts & design decisions',
-    description: 'Why each technical choice was made and what the alternatives were.',
+    dest: 'architecture/design-decisions.md',
+    title: 'Design decisions',
+    description: 'How Meshploy is built, why each technical choice was made, and what the alternatives were.',
   },
+
+  // ── Reference ────────────────────────────────────────────────────────────────
   {
     src: 'packages/db/README.md',
-    dest: 'architecture/database.md',
+    dest: 'reference/database.md',
     title: 'Database schema',
     description: 'Shared GORM models, migrations, encryption, and the CE/EE open-core boundary.',
   },
@@ -126,10 +128,10 @@ for (const asset of staticAssets) {
 // that have no corresponding docs page).
 const GITHUB_BASE = 'https://github.com/meshploy/meshploy/blob/main';
 const linkMap = {
-  './CONCEPTS.md':           '/architecture/concepts',
+  './CONCEPTS.md':           '/architecture/design-decisions',
   './CONTRIBUTING.md':       '/contributing/guide',
   './HOW_IT_WORKS.md':       '/architecture/how-it-works',
-  './packages/db/README.md': '/architecture/database',
+  './packages/db/README.md': '/reference/database',
   './SECURITY.md':           '/contributing/security',
   './TODO.md':               '/contributing/roadmap',
   './apps/cli/README.md':    '/cli/reference',
@@ -199,3 +201,30 @@ for (const doc of docs) {
 }
 
 console.log(`\n✔  ${synced} docs synced.\n`);
+
+// ── Concepts: the help topics ─────────────────────────────────────────────────
+// packages/help/topics/*.md is one text read in three places: the console's
+// help drawer, the MCP server, and here. Its own markup is turned into
+// Starlight's: a heading's {#id} becomes an anchor that keeps the console's
+// links working, a diagram becomes its text form, and the Terms section a
+// glossary pointing at the sections behind each term.
+const helpDir = resolve(root, 'packages/help/topics');
+const conceptsOut = resolve(out, 'concepts');
+rmSync(conceptsOut, { recursive: true, force: true });
+mkdirSync(conceptsOut, { recursive: true });
+for (const file of readdirSync(helpDir).filter((f) => f.endsWith('.md')).sort()) {
+  const raw = readFileSync(resolve(helpDir, file), 'utf8');
+  const header = raw.match(/^---\n([\s\S]*?)\n---\n/);
+  if (!header) throw new Error(`packages/help/topics/${file}: no header`);
+  const field = (name) => (header[1].match(new RegExp(`^${name}:\\s*(.*)$`, 'm')) || [])[1] || '';
+  const id = field('id');
+  let body = raw.slice(header[0].length);
+  body = body.replace(/^## (.+?) \{#([a-z0-9-]+)\}\s*$/gm, '<span id="$2"></span>\n\n## $1');
+  body = body.replace(/^::diagram [a-z-]+ \| (.+)$/gm, '```text\n$1\n```');
+  body = body.replace(/^- \*\*(.+?)\*\* \{#([a-z0-9-]+) -> ([a-z0-9-]+)\}: (.+)$/gm, '- <span id="term-$2"></span>**$1**: $4 [More](#$3)');
+  // Quoted: a summary with a colon in it is not valid YAML bare.
+  const frontmatter = ['---', `title: ${JSON.stringify(field('title'))}`, `description: ${JSON.stringify(field('summary'))}`, '---', '', ''].join('\n');
+  writeFileSync(resolve(conceptsOut, `${id}.md`), frontmatter + body, 'utf8');
+  console.log(`  synced  packages/help/topics/${file} → apps/docs/src/content/docs/concepts/${id}.md`);
+  synced++;
+}

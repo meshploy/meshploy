@@ -7,6 +7,7 @@ import {
   type ReactElement,
 } from "react"
 import { cn } from "@/lib/utils"
+import { TermInfo } from "@/help/term"
 import { Button } from "@/components/ui/button"
 
 export const inputCls =
@@ -64,10 +65,13 @@ export function Section({
 export function Field({
   label,
   required,
+  term,
   children,
 }: {
   label: string
   required?: boolean
+  /** A help term ("topic.term") explained by an ⓘ beside the label. */
+  term?: string
   children: React.ReactNode
 }) {
   const fieldId = useId()
@@ -92,14 +96,17 @@ export function Field({
       role={isControl ? undefined : "group"}
       aria-labelledby={isControl ? undefined : `${fieldId}-label`}
     >
-      <label
-        id={`${fieldId}-label`}
-        htmlFor={isControl ? controlId : undefined}
-        className="text-xs font-medium text-muted-foreground"
-      >
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </label>
+      <div className="flex items-center gap-1">
+        <label
+          id={`${fieldId}-label`}
+          htmlFor={isControl ? controlId : undefined}
+          className="text-xs font-medium text-muted-foreground"
+        >
+          {label}
+          {required && <span className="text-destructive ml-0.5">*</span>}
+        </label>
+        {term && <TermInfo id={term} />}
+      </div>
       {Children.map(children, (c) =>
         isValidElement(c) &&
         child &&

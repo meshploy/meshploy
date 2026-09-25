@@ -6,6 +6,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { EnvironmentBoard } from "@/components/projects/environment-board"
+import { HelpButton } from "@/help/help-button"
 import { StatLine } from "@/components/system/stat-line"
 
 export const Route = createFileRoute("/_app/projects/$id/")({ component: ProjectOverview })
@@ -26,7 +27,7 @@ function ProjectOverview() {
     { name: "Jobs", path: "jobs", stats: "jobs", icon: Clock, count: project?.jobs_count, description: "Scheduled tasks and one-off runs" },
   ] as const
   return <div className="console-page space-y-7">
-    <div className="flex flex-wrap items-start justify-between gap-4"><div><h1>Project overview</h1><p className="mt-2 text-sm text-muted-foreground">Everything running in {project?.name ?? "this project"}, in one place.</p></div><Button render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="size-4" />New resource</Button></div>
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Project overview</span><HelpButton topic="environments" label="How projects and environments work" /></h1><p className="mt-2 text-sm text-muted-foreground">Everything running in {project?.name ?? "this project"}, in one place.</p></div><Button render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="size-4" />New resource</Button></div>
     {orgId && <EnvironmentBoard orgId={orgId} projectId={id} token={token} />}
     <section aria-labelledby="resources-heading" className="space-y-3"><div><h2 id="resources-heading" className="text-sm font-semibold">Resources</h2><p className="mt-1 text-xs text-muted-foreground">What this level holds, and how it is doing.</p></div>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{resources.map(({ name, path, stats, icon: Icon, count, description }) => <Link key={path} to={`/projects/$id/${path}`} params={{ id }} className="overview-resource-card interactive-surface group rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-secondary/40"><div className="flex items-center justify-between"><span className="accent-icon-tile"><Icon className="size-5" /></span><ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary" /></div><div className="mt-7 flex items-center justify-between"><h2 className="text-sm font-semibold">{name}</h2><span className="text-3xl font-semibold tabular-nums">{count ?? 0}</span></div><p className="mt-2 text-xs text-muted-foreground">{description}</p><StatLine kind={stats} stats={project?.stats?.[stats]} /></Link>)}</div></section>

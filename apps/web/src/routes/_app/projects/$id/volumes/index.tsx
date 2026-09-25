@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
+import { HelpButton } from "@/help/help-button"
 import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/volumes/")({
@@ -104,7 +105,7 @@ function VolumesTab() {
   return (
     <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1>Volumes</h1>
+        <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Volumes</span><HelpButton topic="volumes" label="How volumes work" /></h1>
         <Button
           size="sm"
           onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "volume" } })}

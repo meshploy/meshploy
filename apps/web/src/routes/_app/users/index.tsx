@@ -24,6 +24,7 @@ import {
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin, useOrgRole } from "@/store/org-store"
+import { HelpButton } from "@/help/help-button"
 import type { OrgRole } from "@/types"
 
 export const Route = createFileRoute("/_app/users/")({
@@ -67,7 +68,7 @@ function UsersPage() {
     <div className="console-page space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Users</h1>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Users</span><HelpButton topic="users" label="How users and access work" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {total} {total === 1 ? "member" : "members"}
             {invitations.length > 0 && ` · ${invitations.length} pending`}

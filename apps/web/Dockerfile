@@ -1,7 +1,9 @@
 # ── Build stage ────────────────────────────────────────────────────────────────
-# Build context: apps/web/ (no monorepo dependency)
+# Build context: apps/web/, plus packages/help as a second, named context: the
+# help topics the console bundles live outside the web app, because the docs
+# site and the MCP server read them too.
 #
-#   docker build -t ghcr.io/meshploy/web:latest apps/web/
+#   docker build --build-context help=packages/help -t ghcr.io/meshploy/web:latest apps/web/
 #
 # API URL is NOT baked in — it is injected at container startup via the
 # API_URL environment variable (written to /config.js by the entrypoint).
@@ -14,6 +16,8 @@ COPY package.json package-lock.json* ./
 RUN npm ci --prefer-offline
 
 COPY . .
+COPY --from=help topics /help/topics
+ENV HELP_DIR=/help/topics
 RUN npm run build
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────

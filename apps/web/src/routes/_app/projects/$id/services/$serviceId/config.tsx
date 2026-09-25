@@ -42,6 +42,7 @@ import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
 import { DeployWebhookURL } from "@/components/services/deploy-webhook"
 import { useReceiving } from "@/components/services/deploy-guard"
+import { TermInfo } from "@/help/term"
 import { formatRelativeTime } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
@@ -881,7 +882,7 @@ function AutoDeploySection({
     >
       <div className="space-y-4">
         {/* Deploy-on-push toggle */}
-        <Field label="Auto-deploy on push">
+        <Field label="Auto-deploy on push" term="services.auto-deploy">
           <div className="flex items-center gap-2">
             <Switch checked={autoDeploy} onCheckedChange={onToggle} />
             <span className="text-xs text-muted-foreground">
@@ -910,7 +911,7 @@ function AutoDeploySection({
         </Field>
 
         {autoDeploy && (
-          <Field label="Only when these paths change">
+          <Field label="Only when these paths change" term="services.watch-paths">
             <textarea
               className={cn(inputCls, "min-h-[62px] font-mono text-xs py-2")}
               value={watchPaths}
@@ -1070,6 +1071,7 @@ function AutoDeploySection({
         <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <Zap className="h-3 w-3" /> Deploy webhook URL
+            <TermInfo id="services.deploy-webhook" />
           </label>
           <DeployWebhookURL
             orgId={orgId}

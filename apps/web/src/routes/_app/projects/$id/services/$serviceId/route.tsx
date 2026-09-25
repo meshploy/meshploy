@@ -152,6 +152,7 @@ function ServiceLayout() {
               : "Application · Standalone service"
         }
         badge={<StatusPill status={service.status} />}
+        help={service.type === "database" ? { topic: "databases", label: "How databases work" } : { topic: "services", label: "How services and builds work" }}
         highlight={current && <OriginStrip origin={current} image={current.image} />}
         actions={
           <>

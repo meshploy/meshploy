@@ -31,6 +31,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { formatRelativeTime } from "@/lib/utils"
 import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
+import { HelpButton } from "@/help/help-button"
 import { useOrgStore, useOrgRole } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/cluster/")({
@@ -138,7 +139,7 @@ function ClusterPage() {
   return (
     <div className="console-page cluster-workspace p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Cluster</h1>
+        <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Cluster</span><HelpButton topic="nodes" label="How nodes and the mesh work" /></h1>
         <p className="text-sm text-muted-foreground mt-0.5">Single K3s cluster spanning all mesh nodes</p>
       </div>
 

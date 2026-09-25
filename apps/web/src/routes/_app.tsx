@@ -14,6 +14,8 @@ import { useTabStore, type SessionTab, type ExplorerPayload, type TerminalPayloa
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { orgs as orgsApi, auth } from "@/lib/api"
+import { HelpDrawer } from "@/help/help-drawer"
+import { useHelp } from "@/help/store"
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: async () => {
@@ -43,6 +45,8 @@ function AppLayout() {
   const { mobileNavOpen, setMobileNavOpen } = useUIStore()
   const { tabs, activeTabId, setActiveTab } = useTabStore()
   const pathname = useRouterState({ select: state => state.location.pathname })
+  // The help drawer sits beside the page on a wide screen, so the page makes room.
+  const helpOpen = useHelp((s) => s.open)
   useEffect(() => { setActiveTab(null) }, [pathname, setActiveTab])
   useEffect(() => {
     const wideScreen = window.matchMedia("(min-width: 761px)")
@@ -81,7 +85,7 @@ function AppLayout() {
     <div className="console-shell flex h-full">
       {mobileNavOpen && <button className="fixed inset-0 z-60 bg-background/80 backdrop-blur-sm md:hidden" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <AppSidebar />
-      <div inert={mobileNavOpen ? true : undefined} className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <div inert={mobileNavOpen ? true : undefined} className={cn("flex flex-col flex-1 min-w-0 overflow-hidden", helpOpen && "lg:pr-[440px]")}>
         <Topbar />
         {import.meta.env.VITE_DEMO_MODE === "true" && <div className="console-demo-banner"><span><strong>Demo workspace</strong> · Changes stay in this browser session. No infrastructure is connected.</span><button onClick={() => window.location.reload()}>Reset demo</button></div>}
         <TabBar />
@@ -96,6 +100,7 @@ function AppLayout() {
           ))}
         </main>
       </div>
+      <HelpDrawer />
     </div>
   )
 }

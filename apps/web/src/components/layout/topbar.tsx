@@ -2,7 +2,8 @@ import { useTabStore } from "@/store/tab-store"
 import { useUIStore } from "@/store/ui-store"
 import { useRouterState, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Box, Check, ChevronDown, ChevronRight, Clock, Database, Globe, HardDrive, Home, Layers, Menu, Search, Server } from "lucide-react"
+import { Box, Check, ChevronDown, ChevronRight, CircleHelp, Clock, Database, Globe, HardDrive, Home, Layers, Menu, Search, Server } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +20,8 @@ import { UserMenu } from "./user-menu"
 import { projects as projectsApi, services as servicesApi, nodes as nodesApi, volumes as volumesApi, routes as routesApi, tcpRoutes as tcpRoutesApi, jobs as jobsApi, stacks as stacksApi, orgs as orgsApi, variableGroups, configFiles, agents, domains } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { useHelp } from "@/help/store"
+import { topicForPath } from "@/help/topics"
 
 const SEGMENT_LABELS: Record<string, string> = {
   projects:     "Projects",
@@ -551,8 +554,37 @@ export function Topbar() {
         <Breadcrumb />
       </div>
       <div className="flex items-center gap-3">
+        <PageHelp />
         <UserMenu />
       </div>
     </header>
+  )
+}
+
+/**
+ * The top bar's "?": the explanation of the page you are on, in the help
+ * drawer. On a page nothing is written for yet, the drawer opens on its list
+ * of topics and its search.
+ */
+function PageHelp() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const { open, show, close } = useHelp()
+  const topic = topicForPath(pathname)
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        onClick={() => (open ? close() : show(topic?.id))}
+        aria-label={topic ? `Help: ${topic.title}` : "Help"}
+        aria-pressed={open}
+        className={cn(
+          "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          open && "border-primary/40 bg-muted text-foreground"
+        )}
+      >
+        <CircleHelp className="size-4" />
+        <span className="hidden sm:inline">Help</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{topic ? `Help: ${topic.title}` : "Help"} · press ?</TooltipContent>
+    </Tooltip>
   )
 }

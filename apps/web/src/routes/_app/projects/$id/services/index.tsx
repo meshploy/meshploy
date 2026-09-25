@@ -10,6 +10,7 @@ import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 import type { ServiceStatus } from "@/types"
+import { HelpButton } from "@/help/help-button"
 import { livePoll } from "@/lib/live-poll"
 
 function ServiceCard({ svc, onClick, stackNames, orgId, projectId }: {
@@ -96,7 +97,7 @@ function ServicesTab() {
     <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1>Services</h1>
+          <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Services</span><HelpButton topic="services" label="How services work" /></h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && (
             <span className="text-xs text-muted-foreground">{serviceList.length}</span>

@@ -8,6 +8,7 @@ import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { HelpButton } from "@/help/help-button"
 import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/jobs/")({
@@ -59,7 +60,7 @@ function JobsPage() {
     <div className="console-page p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1>Jobs</h1>
+          <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Jobs</span><HelpButton topic="jobs" label="How jobs work" /></h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{list.length}</span>}
         </div>

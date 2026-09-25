@@ -9,6 +9,7 @@ import { Loader2, ServerCrash, Server, Cpu, CheckCircle2, Plus } from "lucide-re
 import { NodesTable } from "@/components/nodes/nodes-table"
 import { nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { HelpButton } from "@/help/help-button"
 import { useOrgStore } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/nodes/")({
@@ -55,7 +56,7 @@ function NodesPage() {
     <div className="console-page p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Nodes</h1>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Nodes</span><HelpButton topic="nodes" label="How nodes work" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {online} of {nodeList.length} nodes online
           </p>

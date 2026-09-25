@@ -14,6 +14,7 @@ import { domains as domainsApi, ApiError } from "@/lib/api"
 import type { ApiDomain, ApiDomainRoute, DnsMode } from "@/lib/api/domains"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
+import { HelpButton } from "@/help/help-button"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/domains/")({
@@ -50,7 +51,7 @@ function DomainsPage() {
     <div className="console-page space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight">Domains</h1>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Domains</span><HelpButton topic="domains" label="How domains work" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {bases.length} base {bases.length === 1 ? "domain" : "domains"} · {custom.length} custom
           </p>

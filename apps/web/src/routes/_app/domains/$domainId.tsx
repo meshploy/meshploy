@@ -19,6 +19,7 @@ import { useGatewayPublicIp } from "@/components/domains/use-gateway-ip"
 import { domains as domainsApi, routes as routesApi, ApiError } from "@/lib/api"
 import type { ApiDomain, ApiDomainRoute, DnsMode } from "@/lib/api/domains"
 import { useAuthStore } from "@/store/auth-store"
+import { TermInfo } from "@/help/term"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/domains/$domainId")({
@@ -99,6 +100,8 @@ function DomainPage() {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold tracking-tight font-mono break-all">{domain.base_domain}</h1>
           {domain.is_primary && <Badge variant="secondary">Primary</Badge>}
+          {domain.is_primary && <TermInfo id="domains.primary" />}
+          {domain.former_primary && <TermInfo id="domains.former-primary" />}
           {!domain.verified && (
             <Badge variant="outline" className="border-amber-500/40 text-amber-400">
               Not verified
@@ -155,7 +158,7 @@ function DomainPage() {
         />
       </ResourcePanel>
 
-      <ResourcePanel title="DNS mode">
+      <ResourcePanel title="DNS mode" action={<TermInfo id={domain.dns_mode === "ondemand" ? "domains.on-demand" : "domains.delegation"} />}>
         <DnsModeSection domain={domain} orgId={orgId} token={token} readOnly={!isAdmin} />
       </ResourcePanel>
 

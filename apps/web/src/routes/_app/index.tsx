@@ -26,6 +26,7 @@ import { NeedsAttention } from "@/components/system/needs-attention"
 import { DeliveryPanel, Sparkline } from "@/components/system/delivery-panel"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { StatLine } from "@/components/system/stat-line"
+import { HelpButton } from "@/help/help-button"
 import { LevelDot } from "@/components/projects/environment-switcher"
 
 export const Route = createFileRoute("/_app/")({
@@ -90,7 +91,7 @@ function OverviewPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Workspace overview</h1>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Workspace overview</span><HelpButton topic="overview" label="What the overview shows" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             Your projects, deployments, and nodes in one place.
           </p>

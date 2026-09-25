@@ -7,6 +7,8 @@ on:
     paths:
       - "apps/api/**"
       - "apps/web/**"
+      # The console bundles the help topics.
+      - "packages/help/**"
       - "apps/proxy/**"
       - "apps/builder/**"
       - "deploy/**"
@@ -76,6 +78,7 @@ jobs:
 
             web:
               - "apps/web/**"
+              - "packages/help/**"
 
             proxy:
               - "apps/proxy/**"
@@ -232,6 +235,9 @@ jobs:
         with:
           context: apps/web
           file: apps/web/Dockerfile
+          # The help topics the console bundles, outside the web app's own
+          # folder; the Dockerfile copies them from this named context.
+          build-contexts: help=packages/help
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
