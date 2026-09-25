@@ -12,6 +12,8 @@ export const record = (values: Record<string, unknown> = {}): DemoRecord => ({
 })
 const projectId = seed.DEMO_PROJECT_ID
 export const secondProjectId = "00000000-0000-0000-0000-000000000040"
+export const stagingLevelId = "00000000-0000-0000-0000-000000000041"
+export const stagingWebId = "00000000-0000-0000-0000-000000000042"
 export const groupId = "00000000-0000-0000-0000-000000000041"
 export const fileId = "00000000-0000-0000-0000-000000000042"
 // The managed databases beyond the seeded Postgres, one per engine.
@@ -70,15 +72,54 @@ function tcpRoute(gatewayPort: number, over: Record<string, unknown>) {
 
 export const db: Record<string, DemoRecord[]> = {
   projects: [
-    seed.demoProject,
+    { ...seed.demoProject, env_name: "production", env_level: 0 },
     {
       ...seed.demoProject,
       id: secondProjectId,
       name: "Experiments",
       slug: "experiments",
+      env_name: "production",
+      env_level: 0,
+    },
+    // A staging level of the demo project, so the level switcher has
+    // something to switch to. Levels start empty: services arrive in one by
+    // being promoted into it.
+    {
+      ...seed.demoProject,
+      id: stagingLevelId,
+      slug: `${seed.demoProject.slug}-staging`,
+      parent_project_id: seed.demoProject.id,
+      env_name: "staging",
+      env_level: 1,
     },
   ],
-  services: [seed.demoServiceApi, seed.demoServiceWeb, seed.demoServiceDb, ...demoDatabases.map((d) => d.service)],
+  services: [
+    seed.demoServiceApi,
+    seed.demoServiceWeb,
+    // Backed up, so a level's own copy of it can be cloned in the demo.
+    { ...seed.demoServiceDb, has_backup: true },
+    ...demoDatabases.map((d) => d.service),
+    // web, built in staging from a newer commit than production runs, so the
+    // board has a promotion waiting.
+    {
+      ...seed.demoServiceWeb,
+      id: stagingWebId,
+      project_id: stagingLevelId,
+      lineage_id: seed.demoServiceWeb.id,
+      image: "ghcr.io/demo/web:sha-4a1b9c2",
+      deployed_at: new Date(Date.now() - 40 * 60_000).toISOString(),
+    },
+  ],
+  // The app group: web, built in staging and promoted to production.
+  "promotion-groups": [
+    {
+      id: "00000000-0000-0000-0000-000000000051",
+      project_id: seed.demoProject.id,
+      name: "app",
+      path: [stagingLevelId, seed.demoProject.id],
+      lineages: [seed.demoServiceWeb.id],
+    },
+  ],
   jobs: [seed.demoJob],
   volumes: [{ ...seed.demoVolume, stack_id: null }],
   stacks: [seed.demoStack],

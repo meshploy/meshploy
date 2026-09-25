@@ -401,6 +401,14 @@ func (s *VariableGroupService) CollectEnvVarsForJob(ctx context.Context, jobID u
 	if err != nil {
 		return nil, err
 	}
+	var job db.Job
+	if err := s.db.WithContext(ctx).Select("project_id").First(&job, "id = ?", jobID).Error; err != nil {
+		return nil, err
+	}
+	groups, err = s.nearestCopies(ctx, job.ProjectID, groups)
+	if err != nil {
+		return nil, err
+	}
 	return flattenGroups(groups), nil
 }
 
@@ -409,7 +417,120 @@ func (s *VariableGroupService) CollectEnvVars(ctx context.Context, serviceID uui
 	if err != nil {
 		return nil, err
 	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Select("project_id").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+	groups, err = s.nearestCopies(ctx, svc.ProjectID, groups)
+	if err != nil {
+		return nil, err
+	}
 	return flattenGroups(groups), nil
+}
+
+// nearestCopies is how an environment level borrows what it does not have.
+//
+// A service reaches another through the other's published group (its host,
+// port, URL, and for a database how to connect), and those values name the
+// publisher's namespace. Across levels a service is several copies, one per
+// level, so each published group attached here is swapped for the one
+// published by the copy in the nearest level at or above the consumer's own
+// level: staging's web uses staging's database when staging has one, and the
+// one above when it does not. Only copies that have been deployed publish a
+// group, so a copy that has never run is passed over for the level above.
+//
+// Resolved at every deploy rather than when groups are attached, so giving a
+// level its own database later is enough for its services to use it on their
+// next deploy. Groups that are not published by a service are left alone.
+func (s *VariableGroupService) nearestCopies(ctx context.Context, projectID uuid.UUID, groups []db.VariableGroup) ([]db.VariableGroup, error) {
+	var publishers []uuid.UUID
+	for _, g := range groups {
+		if g.ServiceID != nil {
+			publishers = append(publishers, *g.ServiceID)
+		}
+	}
+	if len(publishers) == 0 {
+		return groups, nil
+	}
+	var here db.Project
+	if err := s.db.WithContext(ctx).First(&here, "id = ?", projectID).Error; err != nil {
+		return nil, err
+	}
+	root := here.ID
+	if here.ParentProjectID != nil {
+		root = *here.ParentProjectID
+	}
+	var chain []db.Project
+	if err := s.db.WithContext(ctx).Select("id", "env_level").
+		Where("id = ? OR parent_project_id = ?", root, root).Find(&chain).Error; err != nil {
+		return nil, err
+	}
+	if len(chain) < 2 {
+		return groups, nil // a project with no levels has nothing to borrow
+	}
+	levelOf := make(map[uuid.UUID]int, len(chain))
+	chainIDs := make([]uuid.UUID, len(chain))
+	for i, p := range chain {
+		levelOf[p.ID] = p.EnvLevel
+		chainIDs[i] = p.ID
+	}
+
+	var pubs []db.Service
+	if err := s.db.WithContext(ctx).Select("id", "lineage_id").Where("id IN ?", publishers).Find(&pubs).Error; err != nil {
+		return nil, err
+	}
+	lineageOfPub := make(map[uuid.UUID]uuid.UUID, len(pubs))
+	lineages := make([]uuid.UUID, 0, len(pubs))
+	for _, p := range pubs {
+		l := lineageOf(p)
+		lineageOfPub[p.ID] = l
+		lineages = append(lineages, l)
+	}
+
+	// Every copy of those services in this chain that publishes a group.
+	var copies []db.Service
+	if err := s.db.WithContext(ctx).Select("id", "project_id", "lineage_id").
+		Where("project_id IN ? AND COALESCE(lineage_id, id) IN ?", chainIDs, lineages).Find(&copies).Error; err != nil {
+		return nil, err
+	}
+	copyIDs := make([]uuid.UUID, len(copies))
+	for i, c := range copies {
+		copyIDs[i] = c.ID
+	}
+	var published []db.VariableGroup
+	if err := s.db.WithContext(ctx).Preload("Items").
+		Where("service_id IN ? AND system_managed = ?", copyIDs, true).Find(&published).Error; err != nil {
+		return nil, err
+	}
+	groupOf := make(map[uuid.UUID]db.VariableGroup, len(published))
+	for _, g := range published {
+		groupOf[*g.ServiceID] = g
+	}
+
+	mine := here.EnvLevel
+	out := make([]db.VariableGroup, len(groups))
+	for i, g := range groups {
+		out[i] = g
+		if g.ServiceID == nil {
+			continue
+		}
+		lineage := lineageOfPub[*g.ServiceID]
+		best, bestLevel := db.VariableGroup{}, -1
+		for _, c := range copies {
+			lvl, ok := levelOf[c.ProjectID]
+			pg, published := groupOf[c.ID]
+			if !ok || !published || lineageOf(c) != lineage || lvl > mine {
+				continue // not this service, not published, or below the consumer
+			}
+			if lvl > bestLevel {
+				best, bestLevel = pg, lvl
+			}
+		}
+		if bestLevel >= 0 {
+			out[i] = best
+		}
+	}
+	return out, nil
 }
 
 func flattenGroups(groups []db.VariableGroup) map[string]string {

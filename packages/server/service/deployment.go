@@ -46,6 +46,9 @@ type DeploymentService struct {
 	git       *GitIntegrationService
 	varGroups *VariableGroupService
 	notif     *NotificationService
+	// routes publishes the routes waiting for a service's first deploy in an
+	// environment level. Assigned in service.New.
+	routes *RouteService
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -573,6 +576,11 @@ func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID,
 	}
 	s.db.Model(&db.Service{}).Where("id = ?", serviceID).Updates(svcUpdates)
 
+	// Routes copied into a level with this service go live now that it runs.
+	if s.routes != nil {
+		s.routes.PublishAwaitingRoutes(ctx, serviceID)
+	}
+
 	if s.notif == nil {
 		return
 	}
@@ -963,37 +971,59 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 	if target.Image == "" {
 		return nil, fmt.Errorf("deployment has no image reference stored")
 	}
+	return s.deployImage(ctx, target.Service, target.Image,
+		fmt.Sprintf("Rolling back to deployment %s (%s)\n", target.ID.String()[:8], target.Image), "Rollback")
+}
 
+// DeployImage runs an image that already exists on a service, without building.
+// It is what promotion does: the image a lower level built and ran, deployed
+// as it is to the level above. note opens the deployment's log.
+func (s *DeploymentService) DeployImage(ctx context.Context, serviceID uuid.UUID, image, note string) (*db.Deployment, error) {
+	if s.k8s == nil {
+		return nil, ErrK8sNotConfigured
+	}
+	if image == "" {
+		return nil, fmt.Errorf("no image to deploy")
+	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+	return s.deployImage(ctx, svc, image, note+"\n", "Deploy")
+}
+
+// deployImage applies image to svc's workload in the background and records it
+// as a deployment. what names the operation in its log and errors.
+func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, image, logLine, what string) (*db.Deployment, error) {
 	now := time.Now()
 	dep := &db.Deployment{
-		ServiceID:  target.ServiceID,
+		ServiceID:  svc.ID,
 		Status:     db.DeploymentDeploying,
-		Image:      target.Image,
-		Log:        fmt.Sprintf("Rolling back to deployment %s (%s)\n", target.ID.String()[:8], target.Image),
+		Image:      image,
+		Log:        logLine,
 		DeployedAt: &now,
 	}
 	if err := s.db.WithContext(ctx).Create(dep).Error; err != nil {
 		return nil, err
 	}
-
-	svc := target.Service
 	namespace := svc.Project.Slug
+	lower := strings.ToLower(what)
 
 	go func() {
 		portSpecs := toPortSpecs(svc.Ports)
-		wp := s.workloadParams(context.Background(), &svc, target.Image, dep.ID)
+		wp := s.workloadParams(context.Background(), &svc, image, dep.ID)
 		if err := appk8s.ApplyDeployment(context.Background(), s.k8s, wp); err != nil {
-			s.failDeployment(dep.ID, "rollback failed: "+err.Error())
+			s.failDeployment(dep.ID, lower+" failed: "+err.Error())
 			return
 		}
 		s.markDeployed(context.Background(), &svc, wp.Image)
 		if err := appk8s.ApplyService(context.Background(), s.k8s, appK8sName(&svc), namespace, portSpecs); err != nil {
-			s.failDeployment(dep.ID, "rollback failed to apply K8s service: "+err.Error())
+			s.failDeployment(dep.ID, lower+" failed to apply K8s service: "+err.Error())
 			return
 		}
 		assignedNPs, err := appk8s.ApplyNodePortService(context.Background(), s.k8s, appK8sName(&svc), namespace, portSpecs)
 		if err != nil {
-			s.failDeployment(dep.ID, "rollback failed to apply K8s NodePort service: "+err.Error())
+			s.failDeployment(dep.ID, lower+" failed to apply K8s NodePort service: "+err.Error())
 			return
 		}
 		for _, sp := range svc.Ports {
@@ -1001,7 +1031,17 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 				s.db.Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
 			}
 		}
-		s.succeedDeployment(context.Background(), dep.ID, svc.ID, dep.Log+"Rollback applied successfully.", target.Image)
+		s.succeedDeployment(context.Background(), dep.ID, svc.ID, dep.Log+what+" applied successfully.", image)
+
+		// Publish (or refresh) what other services use to reach this one, as
+		// the build path does. A copy promoted into a level starts publishing
+		// here, which is what lets the levels below it borrow it.
+		if s.varGroups != nil {
+			var fresh db.Service
+			if err := s.db.Preload("Ports").First(&fresh, "id = ?", svc.ID).Error; err == nil {
+				_ = s.varGroups.UpsertSystemGroup(context.Background(), &fresh, namespace)
+			}
+		}
 	}()
 
 	return dep, nil
@@ -1039,8 +1079,27 @@ func (s *DeploymentService) pruneOldImages(ctx context.Context, serviceID uuid.U
 	if err != nil {
 		return
 	}
-	for _, dep := range deployments[bc.ImageRetention:] {
-		s.deleteRegistryImage(host, user, pass, dep.Image)
+	// An image this service built may be what another level runs now:
+	// promotion deploys it upward as it is. Deleting it would leave production
+	// unable to start a pod the next time one is rescheduled, so an image any
+	// other service has deployed is kept.
+	old := deployments[bc.ImageRetention:]
+	images := make([]string, 0, len(old))
+	for _, dep := range old {
+		images = append(images, dep.Image)
+	}
+	var shared []string
+	s.db.WithContext(ctx).Model(&db.Deployment{}).
+		Where("image IN ? AND service_id <> ? AND status = ?", images, serviceID, db.DeploymentSuccess).
+		Distinct().Pluck("image", &shared)
+	keep := make(map[string]bool, len(shared))
+	for _, img := range shared {
+		keep[img] = true
+	}
+	for _, dep := range old {
+		if !keep[dep.Image] {
+			s.deleteRegistryImage(host, user, pass, dep.Image)
+		}
 	}
 }
 

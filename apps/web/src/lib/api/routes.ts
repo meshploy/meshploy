@@ -33,6 +33,8 @@ export interface ApiDbRoute {
   stack_id: string | null
   /** False when paused: kept with its targets, not served. */
   published: boolean
+  /** Copied into an environment level; published by its service's first deploy there. */
+  awaiting_deploy?: boolean
   published_changed_at: string | null
   published_changed_by: string | null
   targets: ApiRouteTarget[]

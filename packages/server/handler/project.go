@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/meshploy/packages/db"
@@ -174,7 +175,13 @@ func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*
 	if err != nil {
 		return nil, err
 	}
-	return nil, h.svc.Projects.Delete(ctx, projectID)
+	if err := h.svc.Projects.Delete(ctx, projectID); err != nil {
+		if errors.Is(err, svc.ErrProjectHasLevels) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, notFound(err)
+	}
+	return nil, nil
 }
 
 func (h *Handler) ClearBuildCache(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {

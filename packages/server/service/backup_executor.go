@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -381,9 +382,58 @@ func (s *BackupService) execRestore(ctx context.Context, cfgID uuid.UUID, key st
 		First(&cfg, "id = ?", cfgID).Error; err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	return s.restoreObject(ctx, cfg.StorageIntegration, key, cfg.Service)
+}
 
+// RestoreInto restores a backup one database took into another database of the
+// same engine: how an environment level's own database starts as a clone of
+// the one above. The object is read with the source's storage integration and
+// written with the target's credentials, in the target's namespace. Runs to
+// completion; the caller decides whether to wait.
+func (s *BackupService) RestoreInto(ctx context.Context, sourceCfgID uuid.UUID, key string, targetServiceID uuid.UUID) error {
+	var cfg db.BackupConfig
+	if err := s.db.WithContext(ctx).Preload("StorageIntegration").First(&cfg, "id = ?", sourceCfgID).Error; err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	var target db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").First(&target, "id = ?", targetServiceID).Error; err != nil {
+		return fmt.Errorf("load target: %w", err)
+	}
+	return s.restoreObject(ctx, cfg.StorageIntegration, key, target)
+}
+
+// LatestBackup is the newest backup a database has, and the config that took
+// it: what a clone restores. It fails when there is none, so a clone is
+// refused rather than started with nothing to restore.
+func (s *BackupService) LatestBackup(ctx context.Context, serviceID uuid.UUID) (uuid.UUID, BackupObject, error) {
+	var cfgs []db.BackupConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).Find(&cfgs).Error; err != nil {
+		return uuid.Nil, BackupObject{}, err
+	}
+	var bestCfg uuid.UUID
+	var best BackupObject
+	for _, c := range cfgs {
+		objs, err := s.ListObjects(ctx, c.ID, serviceID)
+		if err != nil || len(objs) == 0 {
+			continue
+		}
+		if bestCfg == uuid.Nil || objs[0].LastModified.After(best.LastModified) {
+			bestCfg, best = c.ID, objs[0]
+		}
+	}
+	if bestCfg == uuid.Nil {
+		return uuid.Nil, BackupObject{}, ErrNoBackup
+	}
+	return bestCfg, best, nil
+}
+
+// ErrNoBackup is returned when a database has no backup to restore from.
+var ErrNoBackup = errors.New("this database has no backup yet")
+
+// restoreObject streams a backup object into target's running database pod.
+func (s *BackupService) restoreObject(ctx context.Context, storage db.StorageIntegration, key string, target db.Service) error {
 	var dc db.DatabaseConfig
-	if err := s.db.WithContext(ctx).Where("service_id = ?", cfg.ServiceID).First(&dc).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("service_id = ?", target.ID).First(&dc).Error; err != nil {
 		return fmt.Errorf("load database config: %w", err)
 	}
 
@@ -392,12 +442,12 @@ func (s *BackupService) execRestore(ctx context.Context, cfgID uuid.UUID, key st
 		return err
 	}
 
-	s3c, err := newS3Client(cfg.StorageIntegration)
+	s3c, err := newS3Client(storage)
 	if err != nil {
 		return fmt.Errorf("s3 client: %w", err)
 	}
 
-	obj, err := s3c.GetObject(ctx, cfg.StorageIntegration.Bucket, key, minio.GetObjectOptions{})
+	obj, err := s3c.GetObject(ctx, storage.Bucket, key, minio.GetObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("get object: %w", err)
 	}
@@ -407,13 +457,13 @@ func (s *BackupService) execRestore(ctx context.Context, cfgID uuid.UUID, key st
 		return fmt.Errorf("kubernetes not available")
 	}
 
-	podName, err := appk8s.FindRunningPod(ctx, s.k8s, cfg.Service.Project.Slug, dc.Slug)
+	podName, err := appk8s.FindRunningPod(ctx, s.k8s, target.Project.Slug, dc.Slug)
 	if err != nil {
 		return fmt.Errorf("find pod: %w", err)
 	}
 
 	return appk8s.ExecRestoreCommand(ctx, s.k8s, s.restCfg,
-		cfg.Service.Project.Slug, podName, dc.Slug, cmd, obj)
+		target.Project.Slug, podName, dc.Slug, cmd, obj)
 }
 
 func (s *BackupService) execSystemRestore(ctx context.Context, cfgID uuid.UUID, key string) error {

@@ -70,6 +70,31 @@ const (
 	NodeOSWindows NodeOS = "windows"
 )
 
+// PromotionGroup is a set of services that move up a project's environment
+// levels together, along a path of their own. Path lists the levels' project
+// IDs from the one the group enters at (the only one that builds) up to
+// production. A level the path skips has none of the group's services, and
+// uses them from the level above. ProjectID is the production project.
+type PromotionGroup struct {
+	Base
+	ProjectID uuid.UUID   `gorm:"type:uuid;not null;index" json:"project_id"`
+	Name      string      `gorm:"not null"                 json:"name"`
+	Path      StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"path"`
+	// Single marks a group made by copying one service into a level, rather
+	// than one an operator put together. Adding the service to another group
+	// merges it away.
+	Single bool `gorm:"not null;default:false" json:"single"`
+}
+
+// PromotionGroupMember puts one service lineage in a group. A lineage is in
+// at most one group of its project.
+type PromotionGroupMember struct {
+	Base
+	GroupID   uuid.UUID `gorm:"type:uuid;not null;index"       json:"group_id"`
+	ProjectID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_group_member_lineage" json:"project_id"`
+	LineageID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_group_member_lineage" json:"lineage_id"`
+}
+
 type ServiceType string
 
 const (
@@ -385,6 +410,19 @@ type Project struct {
 	// Service-level env vars override these when the same key appears.
 	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
+	// Environment levels. A project is its own production level; each level
+	// below it (staging, dev, ...) is a project row of its own, pointing at it
+	// through ParentProjectID, with its own namespace - so everything that
+	// scopes by project works inside a level unchanged. The console presents a
+	// project and its levels as one project with a level switcher, and the
+	// projects list shows only projects, never their levels.
+	//
+	// EnvLevel orders them: 0 is production, and each level below counts up.
+	// Promotion moves a service up, from a higher number to a lower one.
+	ParentProjectID *uuid.UUID `gorm:"type:uuid;index"                 json:"parent_project_id,omitempty"`
+	EnvName         string     `gorm:"not null;default:'production'"   json:"env_name"`
+	EnvLevel        int        `gorm:"not null;default:0"              json:"env_level"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID"                         json:"-"`
 	Services     []Service    `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 	Routes       []Route      `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
@@ -626,6 +664,13 @@ type Service struct {
 	// flight, leaves the record correct and the cluster old, and every later
 	// apply then sees nothing to do. Empty means nothing is recorded yet.
 	DeployedSpecHash string `gorm:"not null;default:''" json:"-"`
+
+	// LineageID ties the copies of one service across a project's environment
+	// levels: web in staging and web in production are separate rows, one per
+	// namespace, and promotion moves an image between them. Nil on a service
+	// that has not been copied from another, which is its own lineage, so the
+	// lineage of any service is COALESCE(lineage_id, id).
+	LineageID *uuid.UUID `gorm:"type:uuid;index" json:"lineage_id,omitempty"`
 
 	Project                 Project              `gorm:"foreignKey:ProjectID"                                         json:"-"`
 	Node                    *Node                `gorm:"foreignKey:NodeID;constraint:OnDelete:SET NULL"               json:"-"`
@@ -1025,6 +1070,12 @@ type Route struct {
 	// certificate, so it can be prepared before it goes live. Existing rows
 	// became published when the column was added.
 	Published bool `gorm:"not null;default:true" json:"published"`
+
+	// AwaitingDeploy marks a route copied into an environment level with the
+	// service it serves, before that service has run there: it is paused, its
+	// address unknown, and it is published by the service's first successful
+	// deploy. A route an operator paused by hand never carries it.
+	AwaitingDeploy bool `gorm:"not null;default:false" json:"awaiting_deploy"`
 	// PublishedChangedAt and PublishedChangedBy record the last publish or
 	// pause. Nil on a route that was never changed.
 	PublishedChangedAt *time.Time `json:"published_changed_at"`

@@ -1135,15 +1135,18 @@ function RouteForm({ projectId }: { projectId: string }) {
 
   const selectedDomain = verifiedDomains.find((d) => d.id === rf.domainId)
 
+  // In an environment level the API adds the level's name to the subdomain
+  // (app in staging is app-staging), so the preview shows what will be served.
+  const levelSuffix = project?.parent_project_id && project.env_name ? `-${project.env_name}` : ""
   const hostnamePreview = (() => {
     if (rf.zone === "public" && rf.domainMode === "custom") {
       return rf.customHostname || "your-domain.com"
     }
     if (!selectedDomain || !rf.subdomain) return null
     if (rf.zone === "internal") {
-      return `${rf.subdomain}.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
+      return `${rf.subdomain}${levelSuffix}.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
     }
-    return `${rf.subdomain}.${selectedDomain.base_domain}`
+    return `${rf.subdomain}${levelSuffix}.${selectedDomain.base_domain}`
   })()
 
   // A name from what the route is: the project, and the service it points at
@@ -1156,8 +1159,8 @@ function RouteForm({ projectId }: { projectId: string }) {
 
     const suffix = selectedDomain
       ? rf.zone === "internal"
-        ? `.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
-        : `.${selectedDomain.base_domain}`
+        ? `${levelSuffix}.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
+        : `${levelSuffix}.${selectedDomain.base_domain}`
       : ""
     const taken = new Set(orgRoutes.map((r) => r.hostname))
 
@@ -1374,8 +1377,8 @@ function RouteForm({ projectId }: { projectId: string }) {
                   {selectedDomain && (
                     <span className="flex items-center px-3 text-sm text-muted-foreground bg-muted/20 border border-l-0 border-border/60 rounded-r-md whitespace-nowrap">
                       {rf.zone === "internal"
-                        ? `.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
-                        : `.${selectedDomain.base_domain}`}
+                        ? `${levelSuffix}.${selectedDomain.internal_subdomain}.${selectedDomain.base_domain}`
+                        : `${levelSuffix}.${selectedDomain.base_domain}`}
                     </span>
                   )}
                 </div>
