@@ -222,7 +222,7 @@ function NewLevelDialog({
             <p className="text-xs text-muted-foreground">Where it goes</p>
             <div className="flex flex-wrap items-center gap-2">
               <SegmentedControl
-                className="h-8"
+                className="h-10 text-sm"
                 value={effective}
                 onValueChange={(v) => setPlacement(v as "above" | "below")}
                 options={
@@ -239,7 +239,7 @@ function NewLevelDialog({
                 value={anchorId}
                 onChange={setAnchorId}
                 options={levels.map((l) => ({ value: l.project_id, label: l.name }))}
-                className="h-8 w-40 text-xs"
+                className="w-40 text-sm"
               />
             </div>
             <ol className="flex flex-wrap items-center gap-1.5 pt-1" aria-label="The chain, lowest first">
