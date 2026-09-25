@@ -215,7 +215,8 @@ A project is its own production level; each level below it is a project of its o
 | DELETE | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}` | ✓ | Delete a group; its services stay where they are |
 | POST | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/services` | ✓ | Add services, merging away any single-service group they were in |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/services/{lineageId}` | ✓ | Take a service out of a group; its copies keep running |
-| POST | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/promote` | ✓ | Promote from this level to the next on the group's path, as the same images; needs update on the target level |
+| POST | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/promote` | ✓ | Promote from this level to the next on the group's path, as the same images; needs update on the target level. `?overwrite=true` also replaces a newer image built there (a hotfix) |
+| GET | `/orgs/{orgId}/projects/{projectId}/promotion-groups/{groupId}/preflight` | ✓ | Per service: new to the target, own variables it brings, and what would block it (variables from below) |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/copy-to-level` | ✓ | Copy a service into a lower level as a group of its own |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/bring-down` | ✓ | Run a service's current image in a lower level |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/level-copy` | ✓ | Delete this level's copy of a service and its routes; the level uses the one above, and the service leaves a group that builds here |
@@ -284,6 +285,8 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream` | ✓ | Stream a deployment's build log (SSE) |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/record` | ✓ | Delete a deployment record |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/rollback` | ✓ | Roll back to a previous successful deployment |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/redeploy` | ✓ | Run the current image again, without building; keeps where the image came from |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/dependents` | ✓ | Services and jobs, at any level, whose variables come from this service today |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs` | ✓ | Snapshot of a service's container logs |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs/stream` | ✓ | Stream a service's container logs (SSE) |
 

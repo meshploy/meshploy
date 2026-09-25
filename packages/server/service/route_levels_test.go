@@ -3,12 +3,14 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // A route in an environment level carries the level's name in its hostname,
@@ -101,4 +103,56 @@ func TestACopiedServiceBringsItsRoutesAndTheyGoLiveWhenItRuns(t *testing.T) {
 	svcs.Routes.PublishAwaitingRoutes(ctx, webS2.ID)
 	require.NoError(t, gdb.First(&copied, "id = ?", copied.ID).Error)
 	assert.False(t, copied.Published)
+}
+
+// A service can start in a level. Promoting it creates it in production for
+// the first time, with its routes under production's real names: app-staging1
+// becomes app, paused until production's first deploy of it succeeds.
+func TestAServiceBornInALevelGetsProductionNamesWhenPromoted(t *testing.T) {
+	ctx := context.Background()
+	svcs, gdb, prod, s1, _, _, _ := newChain(t)
+	service.UseK8sForTest(svcs, fake.NewSimpleClientset())
+	var project meshdb.Project
+	require.NoError(t, gdb.First(&project, "id = ?", prod).Error)
+	domain := meshdb.Domain{OrganizationID: project.OrganizationID, BaseDomain: "acme.dev", InternalSubdomain: "internal",
+		PreviewSubdomain: "preview", Verified: true, IsPrimary: true, VerifyToken: "t"}
+	require.NoError(t, gdb.Create(&domain).Error)
+
+	shop := meshdb.Service{ProjectID: s1, Name: "shop", Slug: "shop", Type: meshdb.ServiceTypeApplication, EnvVars: "MODE=staging"}
+	require.NoError(t, gdb.Create(&shop).Error)
+	require.NoError(t, gdb.Create(&meshdb.ServicePort{ServiceID: shop.ID, Name: "http", Port: 3000, IsHTTP: true, IsPrimary: true}).Error)
+	route, err := svcs.Routes.Create(ctx, service.CreateRouteInput{OrgID: project.OrganizationID, ProjectID: s1,
+		DomainID: &domain.ID, Zone: meshdb.RouteZonePublic, Subdomain: "shop", Paused: true})
+	require.NoError(t, err)
+	require.Equal(t, "shop-staging1.acme.dev", route.Hostname)
+	require.NoError(t, gdb.Create(&meshdb.RouteTarget{RouteID: route.ID, Path: "/", ServiceID: &shop.ID}).Error)
+
+	group, err := svcs.Promotions.CreateGroup(ctx, prod, service.GroupInput{Name: "shop", ServiceIDs: []uuid.UUID{shop.ID}, Path: []uuid.UUID{s1, prod}})
+	require.NoError(t, err)
+	now := time.Now()
+	require.NoError(t, gdb.Create(&meshdb.Deployment{ServiceID: shop.ID, Status: meshdb.DeploymentSuccess, Image: "registry/shop:v1", DeployedAt: &now}).Error)
+
+	result, err := svcs.Promotions.Promote(ctx, s1, group.ID)
+	require.NoError(t, err)
+	require.Len(t, result.Promoted, 1)
+	assert.True(t, result.Promoted[0].CreatedThere, "production had no shop until now")
+
+	var up meshdb.Service
+	require.NoError(t, gdb.First(&up, "project_id = ? AND name = ?", prod, "shop").Error)
+	assert.Equal(t, meshdb.EncryptedString("MODE=staging"), up.EnvVars, "its own variables come as they are, staging's values included")
+
+	var copied meshdb.Route
+	require.NoError(t, gdb.Preload("Targets").First(&copied, "project_id = ?", prod).Error)
+	assert.Equal(t, "shop.acme.dev", copied.Hostname, "production's copy takes the real name")
+	assert.True(t, copied.AwaitingDeploy)
+	require.Len(t, copied.Targets, 1)
+	assert.Equal(t, up.ID, *copied.Targets[0].ServiceID)
+
+	require.Eventually(t, func() bool {
+		var d meshdb.Deployment
+		return gdb.First(&d, "id = ?", result.Promoted[0].Deployment.ID).Error == nil && d.Status == meshdb.DeploymentSuccess
+	}, 10*time.Second, 50*time.Millisecond)
+	var staging meshdb.Route
+	require.NoError(t, gdb.First(&staging, "id = ?", route.ID).Error)
+	assert.Equal(t, "shop-staging1.acme.dev", staging.Hostname, "staging keeps its own name")
 }

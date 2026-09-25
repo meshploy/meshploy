@@ -46,7 +46,7 @@ export interface ApiDeployment {
   build_job_name: string
   log: string
   /** Where the image came from: built here, or moved here from another level. */
-  source?: "build" | "promotion" | "bring_down" | "rollback" | "image" | ""
+  source?: "build" | "promotion" | "bring_down" | "rollback" | "image" | "redeploy" | ""
   source_branch?: string
   source_commit?: string
   source_commit_message?: string
@@ -126,6 +126,9 @@ export interface ApiBuildConfig {
   /** Deploy on push only when one of these paths changed. Empty = every push. */
   watch_paths: string[]
   deploy_token: string
+  /** When the deploy webhook was last called, and through which host: set by the API on each authenticated call. */
+  deploy_hook_host?: string
+  deploy_hook_called_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -238,6 +241,22 @@ export const services = {
     apiFetch<{ env_vars: string }>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/env-vars`,
       {},
+      token
+    ),
+
+  /** Services and jobs, at any level, whose variables come from this service today. */
+  dependents: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<{ kind: "service" | "job"; name: string; level: string }[]>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/dependents`,
+      {},
+      token
+    ),
+
+  /** Runs the current image again, without building. */
+  redeploy: (orgId: string, projectId: string, serviceId: string, token: string) =>
+    apiFetch<ApiDeployment>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/redeploy`,
+      { method: "POST" },
       token
     ),
 

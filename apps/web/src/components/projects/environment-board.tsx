@@ -13,6 +13,7 @@ import {
 import { projects as projectsApi, ApiError } from "@/lib/api"
 import type { Board, BoardCell, BoardGroup, EnvironmentLevel } from "@/lib/api/projects"
 import { cn, formatRelativeTime } from "@/lib/utils"
+import { livePoll } from "@/lib/live-poll"
 import { OriginLine } from "@/components/services/deployment-origin"
 import { LevelDot } from "@/components/projects/environment-switcher"
 
@@ -29,6 +30,10 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
   const { data: board } = useQuery({
     queryKey: ["board", orgId, projectId],
     queryFn: () => projectsApi.board(orgId, projectId, token),
+    // Live while anything on it deploys: a finished deploy changes its card.
+    refetchInterval: livePoll<Board>((b) =>
+      [...b.ungrouped, ...b.groups.flatMap((g) => g.cells)].some((c) => c.status === "deploying")
+    ),
   })
   const [creating, setCreating] = useState(false)
   // Too narrow for every level side by side, the board shows one at a time.
@@ -64,9 +69,11 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
   const actionsFor = (cell: BoardCell, group: BoardGroup | null): CardAction[] => {
     const here = levelOf(cell.level_id)
     // Any copy below production can go; the level then uses the one above.
+    // One that started here has nothing above it, so removing it deletes it.
+    const onlyCopy = !copyAbove(board, cell)
     const remove: CardAction[] = here.production
       ? []
-      : [{ section: `This level`, label: `Remove from ${here.name}`, open: () => setRemoving({ cell, group }) }]
+      : [{ section: `This level`, label: onlyCopy ? `Delete ${cell.service_name}` : `Remove from ${here.name}`, open: () => setRemoving({ cell, group }) }]
     if (cell.type === "database") return remove
     const below = board.levels.filter((l) => l.level > here.level).sort((a, b) => a.level - b.level)
     const out: CardAction[] = []
@@ -315,11 +322,14 @@ interface CardAction {
 function ServiceCard({
   cell,
   note,
+  hotfix = false,
   actions = [],
   onAction,
 }: {
   cell: BoardCell
   note?: string
+  /** Runs something built at this level instead of promoted to it. */
+  hotfix?: boolean
   actions?: CardAction[]
   onAction?: (run: () => Promise<unknown>) => void
 }) {
@@ -336,6 +346,14 @@ function ServiceCard({
         <span className="flex min-w-0 items-center gap-1.5">
           {cell.type === "database" ? <Database className="h-3 w-3 shrink-0" /> : <Box className="h-3 w-3 shrink-0" />}
           <span className="truncate">{cell.service_name}</span>
+          {hotfix && (
+            <span
+              className="shrink-0 rounded border border-amber-500/40 px-1 text-[10px] font-normal text-amber-300"
+              title="Built at this level, not promoted to it: a hotfix, until a promotion replaces it"
+            >
+              built here
+            </span>
+          )}
         </span>
         <span className={cn("size-1.5 shrink-0 rounded-full", running ? "bg-emerald-400" : "bg-muted-foreground/40")} />
       </p>
@@ -443,7 +461,7 @@ function GroupRow({
   onAction: (run: () => Promise<unknown>) => void
 }) {
   const qc = useQueryClient()
-  const [confirming, setConfirming] = useState<{ from: EnvironmentLevel; to: EnvironmentLevel } | null>(null)
+  const [confirming, setConfirming] = useState<{ from: EnvironmentLevel; to: EnvironmentLevel; overwrite: boolean } | null>(null)
   const [editing, setEditing] = useState(false)
   const remove = useMutation({
     mutationFn: () => projectsApi.deleteGroup(orgId, projectId, group.id, token),
@@ -492,20 +510,27 @@ function GroupRow({
         // Enabled when anything here is newer than what runs above: Promote
         // moves those, and leaves the rest with the reason.
         const ahead = next ? planPromotion(group, l, next).moves.length > 0 : false
+        // The level above runs something built there, a hotfix, and nothing
+        // here is newer: offered as Overwrite, which says what it replaces.
+        const divergedAbove =
+          !!next &&
+          !ahead &&
+          group.cells.some((c) => c.level_id === next.project_id && builtHere(c, group)) &&
+          planPromotion(group, l, next, true).moves.length > 0
         return (
           <div key={l.project_id} className="env-cell flex flex-col gap-2 p-2">
             {cells.length > 0
-              ? cells.map((c) => <ServiceCard key={c.service_id} cell={c} actions={actionsFor(c)} onAction={onAction} />)
+              ? cells.map((c) => <ServiceCard key={c.service_id} cell={c} hotfix={builtHere(c, group)} actions={actionsFor(c)} onAction={onAction} />)
               : <Borrowed text={at === 0 ? "Not built yet" : "Not promoted here yet"} />}
             {next && (
               <Button
                 size="sm"
                 variant={ahead ? "default" : "outline"}
-                disabled={!ahead}
-                className="mt-auto h-7 gap-1 text-xs"
-                onClick={() => setConfirming({ from: l, to: next })}
+                disabled={!ahead && !divergedAbove}
+                className={cn("mt-auto h-7 gap-1 text-xs", !ahead && divergedAbove && "border-amber-500/40 text-amber-300 hover:bg-amber-500/10")}
+                onClick={() => setConfirming({ from: l, to: next, overwrite: !ahead })}
               >
-                {ahead ? "Promote" : cells.some((c) => c.image) ? "Nothing newer for" : "Nothing built for"}{" "}
+                {ahead ? "Promote" : divergedAbove ? "Overwrite" : cells.some((c) => c.image) ? "Nothing newer for" : "Nothing built for"}{" "}
                 <ArrowRight className="h-3 w-3" /> {next.name}
               </Button>
             )}
@@ -520,6 +545,7 @@ function GroupRow({
           group={group}
           from={confirming.from}
           to={confirming.to}
+          overwrite={confirming.overwrite}
           orgId={orgId}
           token={token}
           onClose={() => setConfirming(null)}
@@ -533,6 +559,7 @@ function PromoteDialog({
   group,
   from,
   to,
+  overwrite = false,
   orgId,
   token,
   onClose,
@@ -540,26 +567,46 @@ function PromoteDialog({
   group: BoardGroup
   from: EnvironmentLevel
   to: EnvironmentLevel
+  /** Replace what the level above built there, even with older images. */
+  overwrite?: boolean
   orgId: string
   token: string
   onClose: () => void
 }) {
   const qc = useQueryClient()
   const promote = useMutation({
-    mutationFn: () => projectsApi.promote(orgId, from.project_id, group.id, token),
+    mutationFn: () => projectsApi.promote(orgId, from.project_id, group.id, token, overwrite),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", orgId] })
       qc.invalidateQueries({ queryKey: ["environments", orgId] })
       onClose()
     },
   })
-  const { moves, stays } = planPromotion(group, from, to)
+  // What the server says before anything moves: a service whose variables
+  // would come from below the target stays, with what the target needs; one
+  // new to the target brings its own variables as they are.
+  const { data: notes = [] } = useQuery({
+    queryKey: ["promote-preflight", orgId, from.project_id, group.id],
+    queryFn: () => projectsApi.promotePreflight(orgId, from.project_id, group.id, token),
+  })
+  const plan = planPromotion(group, from, to, overwrite)
+  // What the level above built itself, which this replaces or must include.
+  const hotfixes = group.cells.filter(
+    (c) => c.level_id === to.project_id && builtHere(c, group) && plan.moves.some((m) => m.lineage_id === c.lineage_id)
+  )
+  const blocked = new Map(notes.filter((n) => n.blocked).map((n) => [n.service_name, n.blocked!]))
+  const moves = plan.moves.filter((c) => !blocked.has(c.service_name))
+  const stays: { name: string; reason: Skip; detail?: string }[] = [
+    ...plan.moves.filter((c) => blocked.has(c.service_name)).map((c) => ({ name: c.service_name, reason: "from_below" as const, detail: blocked.get(c.service_name) })),
+    ...plan.stays,
+  ]
+  const arriving = notes.filter((n) => n.new_there && !n.blocked && moves.some((c) => c.service_name === n.service_name))
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            Promote {group.name} to {to.name}?
+            {overwrite ? `Overwrite ${to.name} with ${from.name}'s ${group.name}?` : `Promote ${group.name} to ${to.name}?`}
           </DialogTitle>
           <DialogDescription>
             Each service runs in {to.name} exactly the image it runs in {from.name}, with {to.name}&apos;s own
@@ -575,6 +622,7 @@ function PromoteDialog({
             Moves to {to.name}
           </p>
           <ul className="space-y-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs">
+            {moves.length === 0 && <li className="text-muted-foreground">Nothing can move yet.</li>}
             {moves.map((c) => (
               <li key={c.service_id} className="flex items-center justify-between gap-3">
                 <span className="font-medium text-foreground">{c.service_name}</span>
@@ -591,12 +639,49 @@ function PromoteDialog({
             </p>
             <ul className="space-y-1.5 rounded-md border border-dashed border-border/60 bg-muted/10 p-3 text-xs text-muted-foreground">
               {stays.map((st) => (
-                <li key={st.name} className="flex items-center justify-between gap-3">
+                <li key={st.name} className="flex items-start justify-between gap-3">
                   <span className="font-medium">{st.name}</span>
-                  <span className="text-right text-muted-foreground">{skipText(st.reason, from.name, to.name)}</span>
+                  <span className={cn("text-right", st.reason === "from_below" ? "text-amber-300/90" : "text-muted-foreground")}>
+                    {skipText(st.reason, from.name, to.name, st.detail)}
+                  </span>
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+        {hotfixes.length > 0 && (
+          <div
+            className={cn(
+              "space-y-1 rounded-md border px-3 py-2 text-xs",
+              overwrite ? "border-destructive/40 bg-destructive/5 text-red-300" : "border-amber-500/30 bg-amber-500/5 text-amber-300/90"
+            )}
+            data-testid="hotfixes"
+          >
+            {hotfixes.map((h) => {
+              const incoming = moves.find((m) => m.lineage_id === h.lineage_id)
+              const what = [h.source_branch, h.source_commit?.slice(0, 7)].filter(Boolean).join("@") || shortImage(h.image)
+              const theirs = incoming && ([incoming.source_branch, incoming.source_commit?.slice(0, 7)].filter(Boolean).join("@") || shortImage(incoming.image))
+              return (
+                <p key={h.service_id}>
+                  <strong className="font-semibold">{h.service_name}</strong> in {to.name} runs {what}, built there.{" "}
+                  {overwrite
+                    ? `Overwriting replaces it with ${from.name}'s ${theirs}, built earlier: the fix is gone unless that build has it.`
+                    : `Make sure ${from.name}'s ${theirs} includes it.`}
+                </p>
+              )
+            })}
+          </div>
+        )}
+        {arriving.length > 0 && (
+          <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90" data-testid="arriving">
+            {arriving.map((n) => (
+              <p key={n.service_name}>
+                <strong className="font-semibold">{n.service_name}</strong> is new to {to.name}.{" "}
+                {n.own_variables > 0
+                  ? `Its ${n.own_variables} ${n.own_variables === 1 ? "variable" : "variables"} of its own come from ${from.name} as they are: review them on its page in ${to.name}.`
+                  : `It has no variables of its own to review.`}
+              </p>
+            ))}
           </div>
         )}
         {promote.error && (
@@ -608,9 +693,9 @@ function PromoteDialog({
           <Button variant="ghost" onClick={onClose} disabled={promote.isPending}>
             Cancel
           </Button>
-          <Button onClick={() => promote.mutate()} disabled={promote.isPending}>
+          <Button variant={overwrite ? "destructive" : "default"} onClick={() => promote.mutate()} disabled={promote.isPending || moves.length === 0}>
             {promote.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Promote to {to.name}
+            {overwrite ? `Overwrite ${to.name}` : `Promote to ${to.name}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -994,6 +1079,16 @@ function EditGroupDialog({
  * Removing a level's copy of a service. What goes, what stays, and what the
  * level uses afterwards are all said before anything is deleted.
  */
+/** The nearest level above cell's that has its own copy of the service. */
+function copyAbove(board: Board, cell: BoardCell) {
+  const level = board.levels.find((l) => l.project_id === cell.level_id)!
+  const cells = [...board.ungrouped, ...board.groups.flatMap((g) => g.cells)]
+  return board.levels
+    .filter((l) => l.level < level.level)
+    .sort((a, b) => b.level - a.level)
+    .find((l) => cells.some((c) => c.level_id === l.project_id && c.lineage_id === cell.lineage_id))
+}
+
 function RemoveFromLevelDialog({
   cell,
   group,
@@ -1011,14 +1106,7 @@ function RemoveFromLevelDialog({
 }) {
   const qc = useQueryClient()
   const level = board.levels.find((l) => l.project_id === cell.level_id)!
-  const above = board.levels
-    .filter((l) => l.level < level.level)
-    .sort((a, b) => b.level - a.level)
-    .find((l) =>
-      [...board.ungrouped, ...board.groups.flatMap((g) => g.cells)].some(
-        (c) => c.level_id === l.project_id && c.lineage_id === cell.lineage_id
-      )
-    )
+  const above = copyAbove(board, cell)
   const buildsHere = group && group.path[0] === level.project_id
   const remove = useMutation({
     mutationFn: () => projectsApi.removeFromLevel(orgId, level.project_id, cell.service_id, token),
@@ -1033,13 +1121,12 @@ function RemoveFromLevelDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            Remove {cell.service_name} from {level.name}?
+            {above ? `Remove ${cell.service_name} from ${level.name}?` : `Delete ${cell.service_name}?`}
           </DialogTitle>
           <DialogDescription>
-            {level.name}&apos;s {cell.service_name} is deleted, with {level.name}&apos;s routes to it.{" "}
             {above
-              ? `${above.name}'s ${cell.service_name} is untouched, and ${level.name} uses it from then on.`
-              : `Nothing above ${level.name} has a ${cell.service_name}.`}
+              ? `${level.name}'s ${cell.service_name} is deleted, with ${level.name}'s routes to it. ${above.name}'s ${cell.service_name} is untouched, and ${level.name} uses it from then on.`
+              : `${cell.service_name} started in ${level.name} and no level above has it, so this deletes the service, with its routes and deployments. Levels below that use it from ${level.name} lose it too. This cannot be undone.`}
           </DialogDescription>
         </DialogHeader>
         {cell.type === "database" && above && (
@@ -1062,7 +1149,7 @@ function RemoveFromLevelDialog({
           </Button>
           <Button variant="destructive" onClick={() => remove.mutate()} disabled={remove.isPending}>
             {remove.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Remove from {level.name}
+            {above ? `Remove from ${level.name}` : `Delete ${cell.service_name}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1070,14 +1157,23 @@ function RemoveFromLevelDialog({
   )
 }
 
-type Skip = "unchanged" | "older" | "never_built" | "not_here"
+type Skip = "unchanged" | "older" | "never_built" | "not_here" | "from_below"
 
 /**
  * What promoting a group from one level to the next would do, by the rule the
  * API applies: a service moves when its image here was built after what runs
  * above (or nothing runs above yet), and otherwise stays, for a reason.
  */
-function planPromotion(group: BoardGroup, from: EnvironmentLevel, to: EnvironmentLevel) {
+/** When a cell's image was built: what Promote compares, as the API does. */
+const builtAt = (c: BoardCell) => new Date(c.image_built_at ?? c.deployed_at ?? 0)
+
+/** A level above a group's entry running something made there, not promoted to it: a hotfix. */
+export function builtHere(cell: BoardCell | undefined, group: BoardGroup | null) {
+  if (!cell || !group || group.path[0] === cell.level_id || !group.path.includes(cell.level_id)) return false
+  return cell.arrival === "build" || cell.arrival === "image"
+}
+
+function planPromotion(group: BoardGroup, from: EnvironmentLevel, to: EnvironmentLevel, overwrite = false) {
   const lineages = [...new Set(group.cells.map((c) => c.lineage_id))]
   const moves: BoardCell[] = []
   const stays: { name: string; reason: Skip }[] = []
@@ -1088,15 +1184,17 @@ function planPromotion(group: BoardGroup, from: EnvironmentLevel, to: Environmen
     if (!here) stays.push({ name, reason: "not_here" })
     else if (!here.image) stays.push({ name, reason: "never_built" })
     else if (up?.image && up.image === here.image) stays.push({ name, reason: "unchanged" })
-    else if (up?.image && here.deployed_at && up.deployed_at && new Date(here.deployed_at) <= new Date(up.deployed_at))
+    else if (!overwrite && up?.image && builtAt(here) <= builtAt(up))
       stays.push({ name, reason: "older" })
     else moves.push(here)
   }
   return { moves, stays }
 }
 
-function skipText(reason: Skip, from: string, to: string) {
+function skipText(reason: Skip, from: string, to: string, detail?: string) {
   switch (reason) {
+    case "from_below":
+      return detail ?? `would use variables from below ${to}`
     case "unchanged":
       return `unchanged: ${to} runs this image`
     case "older":

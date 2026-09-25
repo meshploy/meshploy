@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -442,15 +443,21 @@ func (s *VariableGroupService) CollectEnvVars(ctx context.Context, serviceID uui
 // Resolved at every deploy rather than when groups are attached, so giving a
 // level its own database later is enough for its services to use it on their
 // next deploy. Groups that are not published by a service are left alone.
+//
+// A level never uses anything from below it: that would be production reading
+// staging's values, or connecting to staging's database. A shared group that
+// belongs to a lower level, or a published one whose service has no running
+// copy at or above this level, is refused with ErrBorrowFromBelow, which names
+// what this level needs of its own.
 func (s *VariableGroupService) nearestCopies(ctx context.Context, projectID uuid.UUID, groups []db.VariableGroup) ([]db.VariableGroup, error) {
+	if len(groups) == 0 {
+		return groups, nil
+	}
 	var publishers []uuid.UUID
 	for _, g := range groups {
 		if g.ServiceID != nil {
 			publishers = append(publishers, *g.ServiceID)
 		}
-	}
-	if len(publishers) == 0 {
-		return groups, nil
 	}
 	var here db.Project
 	if err := s.db.WithContext(ctx).First(&here, "id = ?", projectID).Error; err != nil {
@@ -461,7 +468,7 @@ func (s *VariableGroupService) nearestCopies(ctx context.Context, projectID uuid
 		root = *here.ParentProjectID
 	}
 	var chain []db.Project
-	if err := s.db.WithContext(ctx).Select("id", "env_level").
+	if err := s.db.WithContext(ctx).Select("id", "env_level", "env_name", "parent_project_id").
 		Where("id = ? OR parent_project_id = ?", root, root).Find(&chain).Error; err != nil {
 		return nil, err
 	}
@@ -469,15 +476,34 @@ func (s *VariableGroupService) nearestCopies(ctx context.Context, projectID uuid
 		return groups, nil // a project with no levels has nothing to borrow
 	}
 	levelOf := make(map[uuid.UUID]int, len(chain))
+	nameOf := make(map[uuid.UUID]string, len(chain))
 	chainIDs := make([]uuid.UUID, len(chain))
 	for i, p := range chain {
 		levelOf[p.ID] = p.EnvLevel
+		nameOf[p.ID] = p.EnvName
+		if p.ParentProjectID == nil {
+			nameOf[p.ID] = "production"
+		}
 		chainIDs[i] = p.ID
+	}
+	mine := here.EnvLevel
+	for _, g := range groups {
+		if lvl, ok := levelOf[g.ProjectID]; ok && g.ServiceID == nil && lvl > mine {
+			return nil, fmt.Errorf("%w: the %s variable group belongs to %s, below %s; give %s a group of its own instead",
+				ErrBorrowFromBelow, g.Name, nameOf[g.ProjectID], nameOf[here.ID], nameOf[here.ID])
+		}
+	}
+	if len(publishers) == 0 {
+		return groups, nil
 	}
 
 	var pubs []db.Service
-	if err := s.db.WithContext(ctx).Select("id", "lineage_id").Where("id IN ?", publishers).Find(&pubs).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("id", "lineage_id", "name", "project_id").Where("id IN ?", publishers).Find(&pubs).Error; err != nil {
 		return nil, err
+	}
+	pubByID := make(map[uuid.UUID]db.Service, len(pubs))
+	for _, p := range pubs {
+		pubByID[p.ID] = p
 	}
 	lineageOfPub := make(map[uuid.UUID]uuid.UUID, len(pubs))
 	lineages := make([]uuid.UUID, 0, len(pubs))
@@ -507,7 +533,6 @@ func (s *VariableGroupService) nearestCopies(ctx context.Context, projectID uuid
 		groupOf[*g.ServiceID] = g
 	}
 
-	mine := here.EnvLevel
 	out := make([]db.VariableGroup, len(groups))
 	for i, g := range groups {
 		out[i] = g
@@ -528,9 +553,40 @@ func (s *VariableGroupService) nearestCopies(ctx context.Context, projectID uuid
 		}
 		if bestLevel >= 0 {
 			out[i] = best
+			continue
+		}
+		// Nothing at or above: the group attached is all there is. Used as it
+		// is only when it is not from below.
+		if pub, ok := pubByID[*g.ServiceID]; ok {
+			if lvl, inChain := levelOf[pub.ProjectID]; inChain && lvl > mine {
+				return nil, fmt.Errorf("%w: it uses %s's variables, and the only running %s is in %s, below %s; give %s its own %s first",
+					ErrBorrowFromBelow, pub.Name, pub.Name, nameOf[pub.ProjectID], nameOf[here.ID], nameOf[here.ID], pub.Name)
+			}
 		}
 	}
 	return out, nil
+}
+
+// ErrBorrowFromBelow refuses variables a level would take from a level below
+// it; the message says what the level needs of its own.
+var ErrBorrowFromBelow = errors.New("a level cannot use variables from a level below it")
+
+// CheckBorrowing is nil when serviceID's variables can be resolved without
+// reaching below its level, and ErrBorrowFromBelow saying why not otherwise.
+func (s *VariableGroupService) CheckBorrowing(ctx context.Context, serviceID uuid.UUID) error {
+	_, err := s.CollectEnvVars(ctx, serviceID)
+	return err
+}
+
+// CheckBorrowingAt is CheckBorrowing for serviceID's variable groups as they
+// would be at another level, for a service about to be copied there.
+func (s *VariableGroupService) CheckBorrowingAt(ctx context.Context, levelID, serviceID uuid.UUID) error {
+	groups, err := s.ListForService(ctx, serviceID)
+	if err != nil {
+		return err
+	}
+	_, err = s.nearestCopies(ctx, levelID, groups)
+	return err
 }
 
 func flattenGroups(groups []db.VariableGroup) map[string]string {
@@ -541,4 +597,93 @@ func flattenGroups(groups []db.VariableGroup) map[string]string {
 		}
 	}
 	return out
+}
+
+// Dependent is a service or job whose variables come, today, from the group
+// another service publishes: what stops working when that service goes.
+type Dependent struct {
+	Kind  string `json:"kind"` // "service" or "job"
+	Name  string `json:"name"`
+	Level string `json:"level"` // the environment level it is in; "production" for a project's own
+}
+
+// Dependents lists who reads serviceID's published variables now, at any
+// level. A consumer attached to another copy's group counts when that group
+// resolves to this one (a staging service using production's database); one
+// whose own level has a copy of its own does not. Deleting serviceID removes
+// its group, and each of these loses those variables on its next deploy.
+func (s *VariableGroupService) Dependents(ctx context.Context, serviceID uuid.UUID) ([]Dependent, error) {
+	out := []Dependent{}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+	var own db.VariableGroup
+	if err := s.db.WithContext(ctx).Where("service_id = ? AND system_managed = ?", serviceID, true).First(&own).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return out, nil // publishes nothing, so nothing reads it
+		}
+		return nil, err
+	}
+	lineage := lineageOf(svc)
+	// Every group any copy of it publishes: consumers attach to their own
+	// level's copy, or to one above.
+	var groupIDs []uuid.UUID
+	if err := s.db.WithContext(ctx).Model(&db.VariableGroup{}).
+		Where("system_managed = ? AND service_id IN (?)", true,
+			s.db.Model(&db.Service{}).Select("id").Where("COALESCE(lineage_id, id) = ?", lineage)).
+		Pluck("id", &groupIDs).Error; err != nil {
+		return nil, err
+	}
+	levelName := func(projectID uuid.UUID) string {
+		var p db.Project
+		if s.db.WithContext(ctx).Select("env_name", "parent_project_id").First(&p, "id = ?", projectID).Error != nil || p.ParentProjectID == nil {
+			return "production"
+		}
+		return p.EnvName
+	}
+	resolvesHere := func(projectID uuid.UUID, groups []db.VariableGroup) bool {
+		resolved, err := s.nearestCopies(ctx, projectID, groups)
+		if err != nil {
+			return false
+		}
+		for _, g := range resolved {
+			if g.ID == own.ID {
+				return true
+			}
+		}
+		return false
+	}
+
+	var consumers []db.Service
+	if err := s.db.WithContext(ctx).Where("id IN (?) AND COALESCE(lineage_id, id) <> ?",
+		s.db.Model(&db.ServiceVariableGroup{}).Select("service_id").Where("group_id IN ?", groupIDs), lineage).
+		Order("name").Find(&consumers).Error; err != nil {
+		return nil, err
+	}
+	for _, c := range consumers {
+		groups, err := s.ListForService(ctx, c.ID)
+		if err != nil {
+			return nil, err
+		}
+		if resolvesHere(c.ProjectID, groups) {
+			out = append(out, Dependent{Kind: "service", Name: c.Name, Level: levelName(c.ProjectID)})
+		}
+	}
+	var jobs []db.Job
+	if err := s.db.WithContext(ctx).Where("id IN (?)",
+		s.db.Model(&db.JobVariableGroup{}).Select("job_id").Where("group_id IN ?", groupIDs)).
+		Order("name").Find(&jobs).Error; err != nil {
+		return nil, err
+	}
+	for _, j := range jobs {
+		groups, err := s.ListForJob(ctx, j.ID)
+		if err != nil {
+			return nil, err
+		}
+		if resolvesHere(j.ProjectID, groups) {
+			out = append(out, Dependent{Kind: "job", Name: j.Name, Level: levelName(j.ProjectID)})
+		}
+	}
+	return out, nil
 }

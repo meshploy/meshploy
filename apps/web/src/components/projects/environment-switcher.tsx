@@ -76,10 +76,11 @@ export function EnvironmentSwitcher({
             <DropdownMenuItem key={l.project_id} onClick={() => go(l)} className="gap-2 text-sm">
               <LevelDot production={l.production} />
               <span className="flex-1 min-w-0 truncate">{l.name}</span>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="min-w-[2.5rem] text-right text-[11px] tabular-nums text-muted-foreground">
                 {l.services_count + l.databases_count || "empty"}
               </span>
-              {l.project_id === projectId && <Check className="h-3.5 w-3.5 text-primary" />}
+              {/* Every row keeps the check's room, so the counts line up. */}
+              <Check className={cn("h-3.5 w-3.5 shrink-0 text-primary", l.project_id !== projectId && "invisible")} />
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />

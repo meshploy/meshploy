@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Rocket, RotateCcw, ScrollText, Trash2, X } from "lucide-react"
 import { services as servicesApi, buildConfigs as buildConfigsApi } from "@/lib/api"
 import { DeployWebhookURL } from "@/components/services/deploy-webhook"
+import { useDeployGuard } from "@/components/services/deploy-guard"
 import { Button } from "@/components/ui/button"
 import { deployments as deploymentsApi, type ApiDeployment } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -81,6 +82,7 @@ function DeploymentsTab() {
   useEffect(() => {
     const active = deploymentList.some((d) => ACTIVE_STATUSES.has(d.status))
     if (wasActive.current && !active) {
+      queryClient.invalidateQueries({ queryKey: ["board", orgId] })
       queryClient.invalidateQueries({ queryKey: servicesQueryKey })
       queryClient.invalidateQueries({ queryKey: serviceQueryKey })
     }
@@ -90,13 +92,17 @@ function DeploymentsTab() {
   const triggerMutation = useMutation({
     mutationFn: () => deploymentsApi.trigger(orgId!, projectId, serviceId, token),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["board", orgId] })
       queryClient.invalidateQueries({ queryKey })
       queryClient.invalidateQueries({ queryKey: servicesQueryKey })
     },
   })
 
+  const deployGuard = useDeployGuard({ orgId, projectId, serviceId, token, build: () => triggerMutation.mutate() })
+
   return (
     <div className="console-page space-y-6">
+      {deployGuard.dialog}
       <ResourceIntro title="Deployment history" description="Follow builds and rollouts, inspect output, and manage previous deployments." />
       <div className="resource-metrics">
         <MetricTile icon={Rocket} label="Deployments" value={isLoading ? "…" : deploymentList.length} detail="Recorded history" />
@@ -133,7 +139,7 @@ function DeploymentsTab() {
           <Button
             size="sm"
             className="gap-1.5"
-            onClick={() => triggerMutation.mutate()}
+            onClick={deployGuard.request}
             disabled={triggerMutation.isPending}
           >
             {triggerMutation.isPending ? (
@@ -170,7 +176,7 @@ function DeploymentsTab() {
           <Button
             size="sm"
             className="gap-1.5 mt-1"
-            onClick={() => triggerMutation.mutate()}
+            onClick={deployGuard.request}
             disabled={triggerMutation.isPending}
           >
             <Rocket className="h-3.5 w-3.5" />

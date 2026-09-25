@@ -109,6 +109,11 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 	if svc.Type != db.ServiceTypeApplication {
 		return nil, fmt.Errorf("only application services can be deployed via build pipeline")
 	}
+	// Refused before anything runs: deploying would start it without variables
+	// it needs, or with a lower level's.
+	if err := s.checkBorrowing(ctx, svc.ID); err != nil {
+		return nil, err
+	}
 
 	// Try to load the build config. Services with a pre-built image have no build config.
 	var bc db.BuildConfig
@@ -1017,6 +1022,9 @@ func (s *DeploymentService) DeployImage(ctx context.Context, serviceID uuid.UUID
 // deployImage applies image to svc's workload in the background and records it
 // as a deployment. what names the operation in its log and errors.
 func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, image, logLine, what string, prov Provenance) (*db.Deployment, error) {
+	if err := s.checkBorrowing(ctx, svc.ID); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	dep := &db.Deployment{
 		ServiceID:  svc.ID,
@@ -1999,4 +2007,79 @@ func commitFromBuildLog(log string) (commit, message string) {
 		return m[1], ""
 	}
 	return "", ""
+}
+
+// checkBorrowing refuses a deploy whose variables would come from a level
+// below the service's. Any other failure to read them is left to the deploy,
+// as before.
+func (s *DeploymentService) checkBorrowing(ctx context.Context, serviceID uuid.UUID) error {
+	if s.varGroups == nil {
+		return nil
+	}
+	if err := s.varGroups.CheckBorrowing(ctx, serviceID); errors.Is(err, ErrBorrowFromBelow) {
+		return err
+	}
+	return nil
+}
+
+// ImageOrigin is where a deployment's image came from.
+type ImageOrigin struct {
+	// Arrival is how the image reached this service: build or image when it
+	// was made here, promotion or bring_down when it came from another level.
+	// Redeploys and rollbacks are looked through, since they only run again
+	// an image that arrived some other way. Empty for deployments made before
+	// provenance was recorded.
+	Arrival string
+	// BuiltAt is when the image was made: the build or first deploy that
+	// produced it, wherever that was. It orders images between levels; a
+	// redeploy or rollback today does not make an old image newer.
+	BuiltAt time.Time
+}
+
+// ImageOrigin follows d back through the deployments it took its image from.
+func (s *DeploymentService) ImageOrigin(ctx context.Context, d db.Deployment) ImageOrigin {
+	out := ImageOrigin{Arrival: d.Source, BuiltAt: d.CreatedAt}
+	cur := d
+	arrived := d.Source != db.DeploySourceRollback && d.Source != db.DeploySourceRedeploy
+	for hops := 0; cur.FromDeploymentID != nil && hops < 50; hops++ {
+		var prev db.Deployment
+		if err := s.db.WithContext(ctx).First(&prev, "id = ?", *cur.FromDeploymentID).Error; err != nil {
+			break
+		}
+		if !arrived {
+			out.Arrival = prev.Source
+			arrived = prev.Source != db.DeploySourceRollback && prev.Source != db.DeploySourceRedeploy
+		}
+		out.BuiltAt = prev.CreatedAt
+		cur = prev
+	}
+	if !arrived {
+		out.Arrival = ""
+	}
+	return out
+}
+
+// ErrNothingToRedeploy is Redeploy on a service that has never run.
+var ErrNothingToRedeploy = errors.New("nothing to redeploy: this service has not deployed successfully yet")
+
+// Redeploy runs the image serviceID runs now again, as it is: for changed
+// variables, without building, and without changing where the image came
+// from.
+func (s *DeploymentService) Redeploy(ctx context.Context, serviceID uuid.UUID) (*db.Deployment, error) {
+	var last db.Deployment
+	if err := s.db.WithContext(ctx).
+		Where("service_id = ? AND status = ? AND image <> ''", serviceID, db.DeploymentSuccess).
+		Order("created_at DESC").First(&last).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNothingToRedeploy
+		}
+		return nil, err
+	}
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return nil, err
+	}
+	return s.deployImage(ctx, svc, last.Image,
+		fmt.Sprintf("Redeploying the current image (%s)\n", last.Image), "Redeploy",
+		Provenance{Source: db.DeploySourceRedeploy, From: &last})
 }

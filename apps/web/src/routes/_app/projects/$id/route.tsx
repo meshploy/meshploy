@@ -69,8 +69,10 @@ function LevelBanner({ orgId, projectId, name, token }: { orgId: string; project
   const borrowed = here && here.databases_count === 0
     ? levels.filter(l => l.level < here.level && l.databases_count > 0).sort((a, b) => b.level - a.level)[0]
     : undefined
-  return <div role="status" className="mb-4 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90">
-    <span className="mt-1"><LevelDot production={false} /></span>
+  // A strip across the content, like the demo bar above it: pages pad
+  // themselves differently, so a boxed banner lines up with none of them.
+  return <div role="status" className="flex items-start gap-2 border-b border-amber-500/25 bg-amber-500/[0.06] px-4 py-2.5 text-xs md:px-[30px] leading-relaxed text-amber-300/90">
+    <span className="mt-[5px]"><LevelDot production={false} /></span>
     <span>
       You are in <strong className="font-semibold">{name}</strong>. What you change here stays in {name}; production is not touched.
       {borrowed && <> {name} has no database of its own, so it uses <strong className="font-semibold">{borrowed.name}</strong>&apos;s: writes here change {borrowed.name}&apos;s data.</>}

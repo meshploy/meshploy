@@ -133,6 +133,15 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 	}, h.DeleteWorkload)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-service-dependents",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/dependents",
+		Summary:     "Services and jobs, at any level, whose variables come from this service today",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListDependents)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "start-service",
 		Method:      "POST",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/start",
@@ -828,4 +837,22 @@ func (h *Handler) GetPodMetrics(ctx context.Context, input *WorkloadPathInput) (
 		metrics = []appk8s.PodMetrics{}
 	}
 	return &GetPodMetricsOutput{Body: metrics}, nil
+}
+
+type ListDependentsOutput struct {
+	Body []svc.Dependent
+}
+
+// ListDependents is what the delete confirmation lists: who loses variables
+// when this service goes.
+func (h *Handler) ListDependents(ctx context.Context, input *WorkloadPathInput) (*ListDependentsOutput, error) {
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := h.svc.VariableGroups.Dependents(ctx, serviceID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &ListDependentsOutput{Body: deps}, nil
 }

@@ -12,8 +12,8 @@ export const record = (values: Record<string, unknown> = {}): DemoRecord => ({
 })
 const projectId = seed.DEMO_PROJECT_ID
 export const secondProjectId = "00000000-0000-0000-0000-000000000040"
-export const stagingLevelId = "00000000-0000-0000-0000-000000000041"
-export const stagingWebId = "00000000-0000-0000-0000-000000000042"
+export const stagingLevelId = "00000000-0000-0000-0000-0000000000b1"
+export const stagingWebId = "00000000-0000-0000-0000-0000000000b2"
 export const groupId = "00000000-0000-0000-0000-000000000041"
 export const fileId = "00000000-0000-0000-0000-000000000042"
 // The managed databases beyond the seeded Postgres, one per engine.
@@ -225,6 +225,17 @@ export const db: Record<string, DemoRecord[]> = {
     }),
   ],
   "variable-groups": [
+    // Postgres's connection, published for the services that read it: api
+    // does, so deleting Postgres has someone to warn about.
+    record({
+      id: "00000000-0000-0000-0000-0000000000b5",
+      project_id: projectId,
+      service_id: seed.DEMO_SVC_DB,
+      name: "postgres",
+      description: "Connection details for postgres",
+      system_managed: true,
+      items: [],
+    }),
     record({
       id: groupId,
       project_id: projectId,
@@ -387,7 +398,7 @@ export const db: Record<string, DemoRecord[]> = {
     // of it, promoted up from staging.
     {
       ...seed.demoDeployment,
-      id: "00000000-0000-0000-0000-000000000043",
+      id: "00000000-0000-0000-0000-0000000000b3",
       service_id: stagingWebId,
       image: "ghcr.io/demo/web:sha-4a1b9c2",
       build_job_name: "build-web-4a1b9c2",
@@ -400,7 +411,7 @@ export const db: Record<string, DemoRecord[]> = {
     },
     {
       ...seed.demoDeployment,
-      id: "00000000-0000-0000-0000-000000000044",
+      id: "00000000-0000-0000-0000-0000000000b4",
       service_id: seed.demoServiceWeb.id,
       image: seed.demoServiceWeb.image,
       build_job_name: "",
@@ -439,7 +450,7 @@ export const buildConfigs: Record<string, any> = {
   },
 }
 export const attachments: Record<string, string[]> = {
-  [seed.DEMO_SVC_API]: [groupId],
+  [seed.DEMO_SVC_API]: [groupId, "00000000-0000-0000-0000-0000000000b5"],
 }
 export function projectCounts(p: DemoRecord) {
   const count = (kind: string, filter = (_r: DemoRecord) => true) =>

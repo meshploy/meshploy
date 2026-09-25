@@ -35,15 +35,17 @@ type JobService struct {
 // A job that runs against a database attaches that database's group and writes
 // DATABASE_URL=${PRIMARY_PG_DB_URL}, rather than carrying a second copy of the
 // password that nothing rotates.
-func (s *JobService) jobEnv(ctx context.Context, job *db.Job) []corev1.EnvVar {
+//
+// Variables that cannot be read are an error, not an empty set: a migration
+// run without its DATABASE_URL does not fail safely.
+func (s *JobService) jobEnv(ctx context.Context, job *db.Job) ([]corev1.EnvVar, error) {
 	own := appk8s.ParseEnvBlock(string(job.EnvVars))
 	if s.varGroups == nil {
-		return own
+		return own, nil
 	}
 	groupEnvs, err := s.varGroups.CollectEnvVarsForJob(ctx, job.ID)
 	if err != nil {
-		log.Printf("job %s: read variable groups: %v", job.Name, err)
-		return own
+		return nil, fmt.Errorf("read the job's variable groups: %w", err)
 	}
 	envs, unknown, looped := resolveEnvRefs(mergeSecretEnvs(own, groupEnvs))
 	if len(unknown) > 0 {
@@ -52,7 +54,7 @@ func (s *JobService) jobEnv(ctx context.Context, job *db.Job) []corev1.EnvVar {
 	if len(looped) > 0 {
 		log.Printf("job %s: left as written, their references go round in a loop: %s", job.Name, strings.Join(looped, ", "))
 	}
-	return envs
+	return envs, nil
 }
 
 // ─── Input types ─────────────────────────────────────────────────────────────
@@ -306,6 +308,14 @@ func (s *JobService) applyCronJob(ctx context.Context, job *db.Job) {
 			nodeName = node.Name
 		}
 	}
+	envVars, err := s.jobEnv(ctx, job)
+	if err != nil {
+		// The schedule is left as it was rather than rewritten without the
+		// variables; the job says why until its variables can be read.
+		log.Printf("job %s: schedule not updated: %v", job.Name, err)
+		s.db.WithContext(ctx).Model(job).Update("status", db.JobStatusFailed)
+		return
+	}
 	_ = appk8s.EnsureNamespace(ctx, s.k8s, project.Slug)
 	_ = appk8s.ApplyCronJob(ctx, s.k8s, appk8s.CronJobParams{
 		Name:              job.K8sName,
@@ -315,7 +325,7 @@ func (s *JobService) applyCronJob(ctx context.Context, job *db.Job) {
 		HistoryLimit:      int32(job.HistoryLimit),
 		Image:             job.Image,
 		Command:           job.Command,
-		EnvVars:           s.jobEnv(ctx, job),
+		EnvVars:           envVars,
 		CPURequest:        job.CPURequest,
 		CPULimit:          job.CPULimit,
 		MemRequest:        job.MemoryRequest,
@@ -462,7 +472,16 @@ func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, 
 		}
 	}
 
-	envVars := s.jobEnv(ctx, job)
+	envVars, err := s.jobEnv(ctx, job)
+	if err != nil {
+		// Recorded as a failed run, so the history says why it never started.
+		now := time.Now()
+		s.db.WithContext(ctx).Model(&run).Updates(map[string]any{
+			"status": db.JobStatusFailed, "finished_at": &now, "log": "Not started: " + err.Error() + "\n"})
+		s.db.WithContext(ctx).Model(job).Update("status", db.JobStatusFailed)
+		run.Status, run.FinishedAt, run.Log = db.JobStatusFailed, &now, "Not started: "+err.Error()+"\n"
+		return &run, nil
+	}
 
 	params := appk8s.RunJobParams{
 		JobName:    k8sJobName,
