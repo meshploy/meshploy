@@ -10,6 +10,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { useAuthStore } from "@/store/auth-store"
+import { HelpButton } from "@/help/help-button"
 import { formatRelativeTime } from "@/lib/utils"
 
 // Migrating this server off another platform.
@@ -90,7 +91,7 @@ function MigrationPage() {
   return (
     <div className="console-page p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Migration</h1>
+        <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Migration</span><HelpButton topic="migration" label="How migration works" /></h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           Moving this server's workloads onto Meshploy, a group at a time. Every step runs on the machine
           itself; nothing is taken until you ask for it.

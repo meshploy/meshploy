@@ -72,6 +72,7 @@ import { Input } from "@/components/ui/input"
 import { CronScheduleBlock } from "@/components/jobs/cron-schedule-block"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import type { TCPZone } from "@/lib/api/routes"
+import { TermInfo } from "@/help/term"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
 
 // ─── Route ───────────────────────────────────────────────────────────────────
@@ -1269,7 +1270,7 @@ function RouteForm({ projectId, serviceId }: { projectId: string; serviceId?: st
       <RouteKindPicker value={kind} onChange={setKind} />
 
       {/* ── Section: Zone ───────────────────────────────────── */}
-      <Section title="Zone" subtitle="Where is this route exposed?">
+      <Section title="Zone" subtitle="Where is this route exposed?" action={<TermInfo id="routes.internal" />}>
         <SegmentedControl
           value={rf.zone}
           onValueChange={(v) => {
@@ -1621,7 +1622,7 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <Section title="Zone" subtitle="Where this port is reachable from.">
+      <Section title="Zone" subtitle="Where this port is reachable from." action={<TermInfo id="routes.tcp" />}>
         <SegmentedControl
           value={zone}
           onValueChange={(v) => setZone(v as TCPZone)}
@@ -1864,6 +1865,7 @@ function TargetRowField({
             Strip path
           </label>
         )}
+        {row.targetMode !== "redirect" && <TermInfo id="routes.strip-path" />}
         {row.targetMode === "redirect" && <div className="ml-auto" />}
         {onRemove && (
           <Button

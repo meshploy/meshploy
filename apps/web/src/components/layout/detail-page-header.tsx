@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { ArrowLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { HelpButton } from "@/help/help-button"
 
 interface DetailPageHeaderProps {
   backTo: string
@@ -14,6 +15,8 @@ interface DetailPageHeaderProps {
   actions?: React.ReactNode
   /** Shown between the identity row and the tabs, for what matters most right now. */
   highlight?: React.ReactNode
+  /** A help topic, opened by a "?" beside the name. */
+  help?: { topic: string; label: string }
   children?: React.ReactNode // tab nav items
 }
 
@@ -28,6 +31,7 @@ export function DetailPageHeader({
   subtitle,
   actions,
   highlight,
+  help,
   children,
 }: DetailPageHeaderProps) {
   return (
@@ -65,6 +69,7 @@ export function DetailPageHeader({
                 >
                   {name}
                 </h1>
+                {help && <HelpButton topic={help.topic} label={help.label} />}
                 {badge}
               </div>
               {subtitle && (

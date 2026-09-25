@@ -21,6 +21,7 @@ meshploy/
 │   ├── mcpserver/    # MCP tool definitions (imported by cli for stdio, api for remote /mcp)
 │   ├── license/      # Enterprise licence verification: claims, keys, features
 │   ├── hostagent/    # Contract between the gateway's host agent (CLI) and the API: reports, firewall parsing, port verdicts
+│   ├── help/         # Meshploy explaining itself: topics/*.md, read by the console's help drawer, the docs' Concepts and (later) MCP
 │   └── server/       # API core — config, service, handler, middleware, k8s (imported by apps/api)
 ├── deploy/           # Headscale, CoreDNS, Docker Compose infra
 ├── go.work           # Go Workspaces: ties apps/* + packages/*
@@ -39,6 +40,10 @@ meshploy/
 - **packages/mcpserver** — The MCP tool definitions (~100 tools) built on `packages/client`. Imported by `apps/cli` for the local stdio server (`meshploy mcp`) and by `packages/server` for the gateway-served remote `/mcp` endpoint.
 - **apps/web** — Vite + React 19 + TanStack Router frontend. Dark-only, Tailwind CSS v4 (CSS-first via `@tailwindcss/vite`, no config file), shadcn/ui Nova preset, `@base-ui/react` primitives.
 - **deploy/** — Headscale (WireGuard mesh), CoreDNS, Docker Compose. The gateway node is the only public-internet-facing machine; all workers are dark.
+
+### Help is one text
+
+`packages/help/topics/*.md` is the only place a feature is explained to users. The console bundles it (the `virtual:help-topics` Vite plugin; the web image gets the folder as a second build context, `--build-context help=packages/help`) for its help drawer (a page's "?" or the `?` key), the ⓘ beside a term, and empty states; `apps/docs/sync-docs.mjs` publishes it as the docs' **Concepts**; the MCP server can serve it. A topic is a header (`id`, `title`, `summary`, `pages`), sections `## Title {#id}`, and a `## Terms {#terms}` glossary of `- **Label** {#term -> section}: text` that the console's tooltips show. `packages/help`'s test fails a term pointing at a missing section, or an em-dash. `CONCEPTS.md` is the architecture's design decisions, not this.
 
 ### Edge configuration is generated
 

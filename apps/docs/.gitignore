@@ -16,6 +16,9 @@ src/content/docs/architecture/
 src/content/docs/cli/
 src/content/docs/api/
 src/content/docs/contributing/
+# ...and packages/help/topics, for the Concepts pages
+src/content/docs/concepts/
+src/content/docs/reference/
 # generated types
 .astro/
 

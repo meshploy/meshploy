@@ -5,6 +5,7 @@ import { KeyRound, Layers, Loader2, Lock, Plus, Server, Trash2 } from "lucide-re
 import { variableGroups as groupsApi, type ApiVariableGroup } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { HelpButton } from "@/help/help-button"
 import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/_app/projects/$id/variables/")({
@@ -92,7 +93,7 @@ function VariablesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1>Variables</h1>
+          <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Variables</span><HelpButton topic="variables" label="How variable groups work" /></h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{userGroups.length}</span>}
         </div>

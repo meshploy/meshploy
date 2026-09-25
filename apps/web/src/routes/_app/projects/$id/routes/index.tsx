@@ -10,6 +10,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 import { PublishStateBadge, PublishToggle } from "@/components/routes/publish-toggle"
+import { HelpButton } from "@/help/help-button"
 import { FirewallMarker } from "@/components/routes/firewall-hint"
 
 export const Route = createFileRoute("/_app/projects/$id/routes/")({
@@ -58,7 +59,7 @@ function RoutesTab() {
     <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1>Routes</h1>
+          <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Routes</span><HelpButton topic="routes" label="How routes work" /></h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{routeList.length + tcpList.length}</span>}
         </div>

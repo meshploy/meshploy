@@ -1,4 +1,4 @@
-# Meshploy — Architectural Concepts
+# Meshploy design decisions
 
 For contributors and engineers who want to understand how Meshploy is built and why each technical decision was made. Assumes you've read the README and are comfortable with Go, containers, and basic Kubernetes concepts.
 

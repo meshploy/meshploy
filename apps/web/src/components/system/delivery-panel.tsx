@@ -3,6 +3,7 @@ import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import type { ApiDelivery } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { TermInfo } from "@/help/term"
 
 /**
  * How the workspace ships: what ran each day for two weeks, and the four
@@ -28,15 +29,16 @@ export function DeliveryPanel({ delivery }: { delivery: ApiDelivery }) {
         <span className="text-xs text-muted-foreground">Last 14 days · numbers are production</span>
       </div>
       <div className="grid grid-cols-2 gap-px bg-border/40 md:grid-cols-4">
-        <Metric label="Deploys a week" value={delivery.deploys_per_week ? round(delivery.deploys_per_week) : "0"} note="successful, to production" />
+        <Metric term="overview.deploys-a-week" label="Deploys a week" value={delivery.deploys_per_week ? round(delivery.deploys_per_week) : "0"} note="successful, to production" />
         <Metric
+          term="overview.change-failure-rate"
           label="Change failure rate"
           value={rate === undefined ? undefined : `${Math.round(rate * 100)}%`}
           note="deploys that failed"
           tone={rate === undefined ? undefined : rate > 0.3 ? "bad" : rate > 0.15 ? "warn" : "good"}
         />
-        <Metric label="Time to recover" value={duration(delivery.recovery_seconds)} note="failed deploy to the next good one" />
-        <Metric label="Staging to production" value={duration(delivery.promotion_seconds)} note="build to promotion, median" />
+        <Metric term="overview.time-to-recover" label="Time to recover" value={duration(delivery.recovery_seconds)} note="failed deploy to the next good one" />
+        <Metric term="overview.staging-to-production" label="Staging to production" value={duration(delivery.promotion_seconds)} note="build to promotion, median" />
       </div>
       <div className="px-4 pb-3 pt-4">
         {empty ? (
@@ -112,10 +114,13 @@ function segment(above?: string) {
   }
 }
 
-function Metric({ label, value, note, tone }: { label: string; value?: string; note: string; tone?: "good" | "warn" | "bad" }) {
+function Metric({ label, value, note, tone, term }: { label: string; value?: string; note: string; tone?: "good" | "warn" | "bad"; term?: string }) {
   return (
     <div className="bg-card px-4 py-3" data-testid={`metric-${label}`}>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+        {label}
+        {term && <TermInfo id={term} />}
+      </p>
       <p
         className={cn(
           "mt-1 text-2xl font-semibold tabular-nums",

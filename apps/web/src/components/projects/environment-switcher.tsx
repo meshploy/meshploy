@@ -1,7 +1,8 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import { Check, ChevronsUpDown, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
+import { Check, ChevronsUpDown, CircleHelp, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
+import { useHelp } from "@/help/store"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +48,7 @@ export function EnvironmentSwitcher({
   const [adding, setAdding] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const showHelp = useHelp((s) => s.show)
   const { data: levels = [] } = useQuery({
     queryKey: ["environments", orgId, projectId],
     queryFn: () => projectsApi.environments(orgId, projectId, token),
@@ -100,6 +102,11 @@ export function EnvironmentSwitcher({
               Delete {current.name}
             </DropdownMenuItem>
           )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => showHelp("environments")} className="gap-2 text-sm text-muted-foreground">
+            <CircleHelp className="h-3.5 w-3.5" />
+            How environments work
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       {deleting && current && (
@@ -150,7 +157,7 @@ export function LevelDot({ production }: { production: boolean }) {
  * The chain is drawn with the new level where it will go, because "above
  * staging" and "below qa" are easy to confuse and the picture is not.
  */
-function NewLevelDialog({
+export function NewLevelDialog({
   orgId,
   projectId,
   levels,

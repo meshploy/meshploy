@@ -41,6 +41,12 @@ export default defineConfig({
 					],
 				},
 				{
+					// How Meshploy is used: packages/help's topics, the same
+					// text as the console's help drawer.
+					label: 'Concepts',
+					items: [{ autogenerate: { directory: 'concepts' } }],
+				},
+				{
 					label: 'Guides',
 					items: [
 						{ label: 'Deploy your first application', slug: 'guides/deploy-first-application' },
@@ -55,17 +61,17 @@ export default defineConfig({
 					label: 'Architecture',
 					items: [
 						{ label: 'How it works', slug: 'architecture/how-it-works' },
-						{ label: 'Concepts & design decisions', slug: 'architecture/concepts' },
-						{ label: 'Database schema', slug: 'architecture/database' },
+						{ label: 'Design decisions', slug: 'architecture/design-decisions' },
 					],
 				},
 				{
-					label: 'CLI',
-					items: [{ autogenerate: { directory: 'cli' } }],
-				},
-				{
-					label: 'API',
-					items: [{ autogenerate: { directory: 'api' } }],
+					// Lookup material.
+					label: 'Reference',
+					items: [
+						{ label: 'CLI', slug: 'cli/reference' },
+						{ label: 'API', slug: 'api/reference' },
+						{ label: 'Database schema', slug: 'reference/database' },
+					],
 				},
 				{
 					label: 'Contributing',

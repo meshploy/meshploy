@@ -8,6 +8,7 @@ import {
   notifications as notificationsApi,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { HelpButton } from "@/help/help-button"
 import { useOrgStore } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/integrations/_tabs")({
@@ -38,7 +39,7 @@ function IntegrationsLayout() {
   return (
     <div className="console-page p-6 space-y-8">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
+        <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Integrations</span><HelpButton topic="integrations" label="How integrations work" /></h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           Connect external services for source code, images, backups, and alerts
         </p>

@@ -26,6 +26,7 @@ import { TokenRevealDialog } from "@/components/agents/token-reveal-dialog"
 import { useMcpUrl } from "@/components/agents/use-mcp-url"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin, useOrgRole } from "@/store/org-store"
+import { HelpButton } from "@/help/help-button"
 import { formatRelativeTime } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/agents/")({
@@ -67,7 +68,7 @@ function AgentsPage() {
     <div className="console-page space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Agents</span><HelpButton topic="agents" label="How agents work" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {agents.length} {agents.length === 1 ? "agent" : "agents"} · machine principals for automation & MCP
           </p>

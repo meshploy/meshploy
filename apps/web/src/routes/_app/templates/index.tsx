@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { TemplateLogo } from "@/components/templates/template-logo"
+import { HelpButton } from "@/help/help-button"
 import { UseTemplateDialog } from "@/components/templates/use-template-dialog"
 
 export const Route = createFileRoute("/_app/templates/")({
@@ -74,7 +75,7 @@ function TemplatesPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Templates</h1>
+          <h1 className="text-lg font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Templates</span><HelpButton topic="templates" label="How templates work" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             One-click apps. Deploy a template as a stack into any project.
           </p>

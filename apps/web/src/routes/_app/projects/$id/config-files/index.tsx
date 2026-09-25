@@ -12,6 +12,7 @@ import { configFiles as configFilesApi, type ApiConfigFile } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
+import { HelpButton } from "@/help/help-button"
 import { livePoll } from "@/lib/live-poll"
 
 export const Route = createFileRoute("/_app/projects/$id/config-files/")({
@@ -51,7 +52,7 @@ function ConfigFilesPage() {
     <div className="console-page p-6 space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1>Config files</h1>
+          <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Config files</span><HelpButton topic="config-files" label="How config files work" /></h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Files mounted into a service at a path — for software configured by file rather than by
             environment variable. Stored encrypted; the contents are never shown again after saving.

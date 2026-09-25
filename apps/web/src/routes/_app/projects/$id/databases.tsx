@@ -10,6 +10,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { HelpButton } from "@/help/help-button"
 import { livePoll } from "@/lib/live-poll"
 
 const ENGINE_LABELS: Record<string, string> = {
@@ -134,7 +135,7 @@ function DatabasesTab() {
     <div className="console-page p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1>Databases</h1>
+          <h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Databases</span><HelpButton topic="databases" label="How databases work" /></h1>
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && (
             <span className="text-xs text-muted-foreground">{dbList.length}</span>

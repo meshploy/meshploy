@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { HelpButton } from "@/help/help-button"
 import { formatRelativeTime } from "@/lib/utils"
 
 // What runs on this org's nodes that Meshploy does not route.
@@ -57,7 +58,7 @@ function DiscoveryPage() {
     <div className="console-page p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Discovery</h1>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Discovery</span><HelpButton topic="discovery" label="How discovery works" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             Everything running on your nodes that Meshploy does not manage. Read from each machine; nothing here is touched.
           </p>
