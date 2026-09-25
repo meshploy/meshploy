@@ -37,6 +37,16 @@ type ProjectWithCounts struct {
 	// Stats breaks the counts down for the project overview: only a single
 	// project's read fills it.
 	Stats map[string]map[string]int `json:"stats,omitempty"`
+	// Levels are a project's environment levels below production, lowest
+	// last, on the list: the workspace overview draws its chain from them.
+	Levels []LevelSummary `json:"levels,omitempty"`
+}
+
+// LevelSummary names one environment level of a project.
+type LevelSummary struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	Name      string    `json:"name"`
+	Level     int       `json:"level"`
 }
 
 // ProjectListOptions narrows and orders a project list.
@@ -159,11 +169,22 @@ func (s *ProjectService) ListWithCounts(ctx context.Context, orgID uuid.UUID, op
 		countMap[c.ProjectID] = c
 	}
 
+	var children []db.Project
+	if err := s.db.WithContext(ctx).Select("id", "parent_project_id", "env_name", "env_level").
+		Where("parent_project_id IN ?", projectIDs).Order("env_level").Find(&children).Error; err != nil {
+		return nil, err
+	}
+	levels := map[uuid.UUID][]LevelSummary{}
+	for _, c := range children {
+		levels[*c.ParentProjectID] = append(levels[*c.ParentProjectID], LevelSummary{ProjectID: c.ID, Name: c.EnvName, Level: c.EnvLevel})
+	}
+
 	result := make([]ProjectWithCounts, len(projects))
 	for i, p := range projects {
 		result[i] = ProjectWithCounts{
 			Project:       p,
 			ProjectCounts: countMap[p.ID],
+			Levels:        levels[p.ID],
 		}
 	}
 	return result, nil
@@ -200,7 +221,7 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 	if len(counts) > 0 {
 		result.ProjectCounts = counts[0]
 	}
-	stats, err := s.stats(ctx, projectID)
+	stats, err := s.Stats(ctx, []uuid.UUID{projectID})
 	if err != nil {
 		return nil, err
 	}
@@ -208,10 +229,10 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 	return result, nil
 }
 
-// stats breaks each count down the way its overview card does: services by
-// status, routes by kind, jobs by how they run. A key with nothing in it is
-// left out.
-func (s *ProjectService) stats(ctx context.Context, projectID uuid.UUID) (map[string]map[string]int, error) {
+// Stats breaks each count down the way an overview card does, summed over
+// projectIDs: services by status, routes by kind, jobs by how they run. A key
+// with nothing in it is left out.
+func (s *ProjectService) Stats(ctx context.Context, projectIDs []uuid.UUID) (map[string]map[string]int, error) {
 	out := map[string]map[string]int{}
 	add := func(kind, key string, n int) {
 		if n == 0 {
@@ -229,7 +250,7 @@ func (s *ProjectService) stats(ctx context.Context, projectID uuid.UUID) (map[st
 	countBy := func(model any, key string, where string, args ...any) ([]row, error) {
 		var rows []row
 		q := s.db.WithContext(ctx).Model(model).Select(key+" AS key, COUNT(*) AS n").
-			Where("project_id = ?", projectID).Where(where, args...)
+			Where("project_id IN ?", projectIDs).Where(where, args...)
 		if !strings.HasPrefix(key, "'") { // a constant key is one group already
 			q = q.Group(key)
 		}

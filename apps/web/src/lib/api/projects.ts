@@ -20,6 +20,8 @@ export interface ApiProject {
   config_files_count: number
   /** Each count broken down, on a single project's read: services by status, routes by kind, and so on. */
   stats?: Record<string, Record<string, number>>
+  /** On the list: the project's levels below production, highest first. */
+  levels?: { project_id: string; name: string; level: number }[]
   /** Set on an environment level: the project it is a level of. */
   parent_project_id?: string | null
   /** "production" on a project itself. */
@@ -129,6 +131,7 @@ export function toProject(p: ApiProject): Project {
     stacksCount: p.stacks_count ?? 0,
     volumesCount: p.volumes_count ?? 0,
     configFilesCount: p.config_files_count ?? 0,
+    levels: (p.levels ?? []).map((l) => ({ id: l.project_id, name: l.name, level: l.level })),
     createdAt: parseTimestamp(p.created_at) ?? new Date(p.created_at),
   }
 }

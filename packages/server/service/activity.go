@@ -59,6 +59,15 @@ type ActivityEntry struct {
 	ResourceType string    `json:"resource_type"`
 	ProjectID    uuid.UUID `json:"project_id"`
 	ProjectName  string    `json:"project_name"`
+	// Level is the environment level it happened in; empty in production.
+	Level string `json:"level,omitempty"`
+
+	// Where a deployment's image came from, as the deployment records it.
+	Source              string `json:"source,omitempty"`
+	SourceBranch        string `json:"source_branch,omitempty"`
+	SourceCommit        string `json:"source_commit,omitempty"`
+	SourceCommitMessage string `json:"source_commit_message,omitempty"`
+	FromLevel           string `json:"from_level,omitempty"`
 }
 
 // ListRecent is the newest entries across a set of projects.
@@ -104,7 +113,9 @@ func (s *ActivityService) recentDeployments(ctx context.Context, projectIDs []uu
 		Select(`'deployment' AS kind, d.id, d.status, d.image AS detail,
 			d.created_at, d.deployed_at AS finished_at,
 			s.id AS resource_id, s.name AS resource_name, s.type AS resource_type,
-			p.id AS project_id, p.name AS project_name`).
+			p.id AS project_id, p.name AS project_name,
+			CASE WHEN p.parent_project_id IS NULL THEN '' ELSE p.env_name END AS level,
+			d.source, d.source_branch, d.source_commit, d.source_commit_message, d.from_level`).
 		Joins("JOIN services s ON s.id = d.service_id").
 		Joins("JOIN projects p ON p.id = s.project_id").
 		Where("p.id IN ?", projectIDs).
@@ -121,7 +132,8 @@ func (s *ActivityService) recentJobRuns(ctx context.Context, projectIDs []uuid.U
 		Select(`'job_run' AS kind, r.id, r.status, j.schedule AS detail,
 			r.created_at, r.finished_at,
 			j.id AS resource_id, j.name AS resource_name, 'job' AS resource_type,
-			p.id AS project_id, p.name AS project_name`).
+			p.id AS project_id, p.name AS project_name,
+			CASE WHEN p.parent_project_id IS NULL THEN '' ELSE p.env_name END AS level`).
 		Joins("JOIN jobs j ON j.id = r.job_id").
 		Joins("JOIN projects p ON p.id = j.project_id").
 		Where("p.id IN ?", projectIDs).

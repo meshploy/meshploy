@@ -5,6 +5,7 @@ import { activity as activityApi, type ApiActivityEntry } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
+import { originTitle } from "@/components/services/deployment-origin"
 
 /**
  * What has happened in this workspace lately.
@@ -76,12 +77,12 @@ function ActivityRow({ entry: e }: { entry: ApiActivityEntry }) {
       <div className="flex-1 min-w-40">
         <p className="text-sm font-medium leading-tight truncate">
           {e.resource_name}
-          <span className="text-muted-foreground font-normal"> in {e.project_name}</span>
+          <span className="text-muted-foreground font-normal">
+            {" "}in {e.project_name}
+            {e.level ? ` (${e.level})` : ""}
+          </span>
         </p>
-        <p className="text-xs text-muted-foreground truncate">
-          {statusText(e)}
-          {e.detail ? ` · ${e.detail}` : ""}
-        </p>
+        <p className="text-xs text-muted-foreground truncate">{describe(e)}</p>
       </div>
       <span className="text-xs text-muted-foreground shrink-0">
         {formatRelativeTime(new Date(e.finished_at ?? e.created_at))}
@@ -159,4 +160,21 @@ function statusText(e: ApiActivityEntry): string {
     default:
       return "Queued"
   }
+}
+
+/**
+ * The line under the name: for a deployment that knows where its image came
+ * from, that ("Promoted from staging · develop@4a1b9c2 Add the checkout
+ * page"); otherwise its status and image, or a job's schedule.
+ */
+function describe(e: ApiActivityEntry) {
+  if (e.kind === "deployment" && e.source && e.status !== "failed") {
+    // "Built from develop" names the branch already; a promotion does not.
+    const named = e.source === "build" || e.source === "redeploy"
+    const commit = [named ? undefined : e.source_branch, e.source_commit?.slice(0, 7)].filter(Boolean).join("@")
+    return [originTitle(e), commit && commit + (e.source_commit_message ? ` ${e.source_commit_message}` : "")]
+      .filter(Boolean)
+      .join(" · ")
+  }
+  return statusText(e) + (e.detail ? ` · ${e.detail}` : "")
 }

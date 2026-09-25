@@ -64,6 +64,15 @@ func (h *Handler) registerDeploymentRoutes(api huma.API) {
 	}, h.ListActivity)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-overview",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/overview",
+		Summary:     "The workspace overview: what needs attention, and each count broken down, across the projects the caller can see",
+		Tags:        []string{"Deployments"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetOverview)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "list-deployments",
 		Method:      "GET",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments",
@@ -160,23 +169,9 @@ func (h *Handler) ListActivity(ctx context.Context, input *ListActivityInput) (*
 	if err != nil {
 		return nil, err
 	}
-	visibleIDs, isAdmin, err := h.svc.Permissions.VisibleProjectIDs(ctx, orgID, callerID)
+	projectIDs, _, err := h.visibleProjects(ctx, orgID, callerID)
 	if err != nil {
 		return nil, err
-	}
-	var projectIDs []uuid.UUID
-	if isAdmin {
-		projects, err := h.svc.Projects.List(ctx, orgID)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range projects {
-			projectIDs = append(projectIDs, p.ID)
-		}
-	} else {
-		for id := range visibleIDs {
-			projectIDs = append(projectIDs, id)
-		}
 	}
 	out, err := h.svc.Activity.ListRecent(ctx, projectIDs, input.Limit)
 	if err != nil {
@@ -404,4 +399,51 @@ func sseHeaders(w http.ResponseWriter) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
+}
+
+// visibleProjects is every project and level the caller can see: all of them
+// for an admin, the granted ones otherwise. What the workspace-wide views
+// (activity, overview) read, so neither leaks a project somebody was not given.
+func (h *Handler) visibleProjects(ctx context.Context, orgID, callerID uuid.UUID) ([]uuid.UUID, bool, error) {
+	visibleIDs, isAdmin, err := h.svc.Permissions.VisibleProjectIDs(ctx, orgID, callerID)
+	if err != nil {
+		return nil, false, err
+	}
+	var projectIDs []uuid.UUID
+	if isAdmin {
+		projects, err := h.svc.Projects.List(ctx, orgID)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, p := range projects {
+			projectIDs = append(projectIDs, p.ID)
+		}
+		return projectIDs, true, nil
+	}
+	for id := range visibleIDs {
+		projectIDs = append(projectIDs, id)
+	}
+	return projectIDs, false, nil
+}
+
+type GetOverviewOutput struct {
+	Body *service.Overview
+}
+
+// GetOverview is the workspace overview: what needs attention, and each
+// count broken down, across the projects the caller can see.
+func (h *Handler) GetOverview(ctx context.Context, input *OrgPathInput) (*GetOverviewOutput, error) {
+	callerID, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	projectIDs, isAdmin, err := h.visibleProjects(ctx, orgID, callerID)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.svc.Overview.Get(ctx, orgID, projectIDs, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return &GetOverviewOutput{Body: out}, nil
 }

@@ -393,6 +393,7 @@ export const db: Record<string, DemoRecord[]> = {
     }),
   ],
   deployments: [
+    ...demoDeployHistory(),
     seed.demoDeployment,
     // web in staging was built from develop; production runs an older commit
     // of it, promoted up from staging.
@@ -422,7 +423,7 @@ export const db: Record<string, DemoRecord[]> = {
       source_commit_message: "Cache product images",
     },
   ],
-  runs: [seed.demoJobRun],
+  runs: [seed.demoJobRun, ...demoRunHistory()],
   backups: [],
   permissions: [],
 }
@@ -466,10 +467,14 @@ export function projectCounts(p: DemoRecord) {
     volumes_count: count("volumes"),
     config_files_count: count("config-files"),
     stats: projectStats(p),
+    levels: db.projects
+      .filter((l) => l.parent_project_id === p.id)
+      .sort((a, b) => a.env_level - b.env_level)
+      .map((l) => ({ project_id: l.id, name: l.env_name, level: l.env_level })),
   }
 }
 /** The overview cards' breakdowns, as the API computes them. */
-function projectStats(p: DemoRecord) {
+export function projectStats(p: DemoRecord) {
   const out: Record<string, Record<string, number>> = {}
   const add = (kind: string, key: string) => {
     out[kind] ??= {}
@@ -488,4 +493,54 @@ function projectStats(p: DemoRecord) {
   for (const g of mine("variable-groups")) add("variables", g.service_id ? "published" : "shared")
   for (const f of mine("config-files")) add("config_files", f.attached_services?.length ? "attached" : "unused")
   return out
+}
+
+/**
+ * Two weeks of the demo's shipping, so the overview's delivery chart and
+ * numbers have something to show: api built and deployed from main, with one
+ * failed deploy fixed two hours later; web built in staging from develop and
+ * promoted to production. Each service's newest one here is what its card
+ * shows, so they match the rest of the demo.
+ */
+function demoDeployHistory() {
+  const ago = (days: number, hours = 0) => new Date(Date.now() - days * 86_400_000 + hours * 3_600_000).toISOString()
+  const id = (n: number) => `00000000-0000-0000-0000-000000000${String(100 + n).padStart(3, "0")}`
+  const dep = (n: number, service: string, at: string, status: string, fields: Record<string, unknown>) => ({
+    ...seed.demoDeployment, id: id(n), service_id: service, status, created_at: at, updated_at: at,
+    deployed_at: status === "success" ? at : null, build_job_name: "", log: "[demo] history", ...fields,
+  })
+  const api = (n: number, days: number, hours: number, status: string, commit: string, message: string) =>
+    dep(n, seed.DEMO_SVC_API, ago(days, hours), status, { image: `ghcr.io/demo/api:${commit}`, source: "build", source_branch: "main", source_commit: commit, source_commit_message: message })
+  const staging = (n: number, days: number, commit: string, message: string) =>
+    dep(n, stagingWebId, ago(days), "success", { image: `ghcr.io/demo/web:sha-${commit}`, source: "build", source_branch: "develop", source_commit: commit, source_commit_message: message })
+  const promoted = (n: number, days: number, builtDays: number, commit: string, message: string) =>
+    dep(n, seed.demoServiceWeb.id, ago(days), "success", {
+      image: `ghcr.io/demo/web:sha-${commit}`, source: "promotion", from_level: "staging", arrival: "promotion",
+      source_branch: "develop", source_commit: commit, source_commit_message: message, image_built_at: ago(builtDays),
+    })
+  return [
+    api(1, 13, 0, "success", "5d1e0a7", "Add request logging"),
+    api(2, 11, 0, "failed", "8c24f19", "Upgrade the router"),
+    api(3, 11, 2, "success", "b7e3d40", "Fix the router upgrade"),
+    api(4, 8, 0, "success", "e91a6c3", "Cache sessions"),
+    api(5, 4, 0, "success", "31f0b2d", "Tune the connection pool"),
+    staging(6, 12, "0a4c7e1", "Add product search"),
+    staging(7, 9, "6b2f913", "Speed up the product grid"),
+    staging(8, 6, "d83a5f0", "Show stock on product pages"),
+    staging(9, 3, "9e3f210", "Cache product images"),
+    promoted(10, 11, 12, "0a4c7e1", "Add product search"),
+    promoted(11, 7, 9, "6b2f913", "Speed up the product grid"),
+    promoted(12, 2, 3, "9e3f210", "Cache product images"),
+  ]
+}
+
+/** The demo's migration job, run most days, failing once. */
+function demoRunHistory() {
+  return [1, 2, 4, 5, 6, 8, 9, 10, 12, 13].map((days, i) => {
+    const at = new Date(Date.now() - days * 86_400_000).toISOString()
+    return {
+      ...seed.demoJobRun, id: `00000000-0000-0000-0000-000000000${200 + i}`,
+      status: days === 6 ? "failed" : "success", created_at: at, started_at: at, finished_at: at,
+    }
+  })
 }

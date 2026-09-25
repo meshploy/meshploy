@@ -8,6 +8,7 @@ import {
   record,
   now,
   projectCounts,
+  projectStats,
   buildConfigs,
   attachments,
   type DemoRecord,
@@ -275,9 +276,15 @@ function routeTarget(input: Record<string, any>, routeId: string) {
     target_port: port?.port || input.port || input.target_port || 80,
   })
 }
+/** A service's deployments newest first, by when each was made, as the API orders them. */
+function deploymentsOf(serviceId: string) {
+  return db.deployments
+    .filter((d) => d.service_id === serviceId)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+}
 /** What the service last deployed successfully says about where it came from. */
 function originOf(serviceId: string) {
-  const d = db.deployments.find((d) => d.service_id === serviceId && d.status === "success")
+  const d = deploymentsOf(serviceId).find((d) => d.status === "success")
   if (!d) return {}
   return {
     source: d.source, source_branch: d.source_branch, source_commit: d.source_commit,
@@ -613,9 +620,7 @@ export const workspaceHandlers = [
     }
     return json(buildConfigs[id])
   }),
-  http.get(`${S}/deployments`, ({ params }) =>
-    json(db.deployments.filter((d) => d.service_id === params.serviceId))
-  ),
+  http.get(`${S}/deployments`, ({ params }) => json(deploymentsOf(String(params.serviceId)))),
   // The overview's activity feed: deployments and job runs across projects,
   // joined to the names it shows and interleaved by time. The real one is
   // scoped to what the caller can see; in the demo there is one member and they
@@ -638,6 +643,9 @@ export const workspaceHandlers = [
         resource_type: svc?.type ?? "application",
         project_id: project?.id ?? "",
         project_name: project?.name ?? "unknown",
+        level: project?.parent_project_id ? project.env_name : undefined,
+        source: d.source, source_branch: d.source_branch, source_commit: d.source_commit,
+        source_commit_message: d.source_commit_message, from_level: d.from_level,
       }
     })
 
@@ -664,6 +672,110 @@ export const workspaceHandlers = [
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
       .slice(0, limit)
     return json(rows)
+  }),
+  // The overview: what needs someone, as the API decides it, from the demo's
+  // own state; and every count broken down across all levels.
+  http.get(`${O}/overview`, () => {
+    const attention: any[] = []
+    const where = (projectId: string) => {
+      const p = find("projects", projectId)
+      return p?.parent_project_id ? `${p.name} (${p.env_name})` : p?.name ?? ""
+    }
+    for (const s of db.services.filter((s) => s.status === "failed"))
+      attention.push({ kind: s.type === "database" ? "database_failed" : "service_failed", severity: "critical",
+        title: `${s.name} is failing`, detail: `in ${where(s.project_id)}`, project_id: s.project_id, service_id: s.id })
+    for (const n of (db.nodes ?? []).filter((n: DemoRecord) => n.status && n.status !== "online"))
+      attention.push({ kind: "node_offline", severity: "critical", title: `${n.name} is ${n.status}`,
+        detail: "its workloads cannot be scheduled there", node_id: n.id })
+    for (const j of db.jobs.filter((j) => j.status === "failed"))
+      attention.push({ kind: "job_failed", severity: "warning", title: `The last run of ${j.name} failed`,
+        detail: `in ${where(j.project_id)}`, project_id: j.project_id, job_id: j.id })
+    const unprotected = new Map<string, DemoRecord[]>()
+    for (const d of db.services.filter((s) => s.type === "database" && !s.has_backup))
+      unprotected.set(d.project_id, [...(unprotected.get(d.project_id) ?? []), d])
+    for (const [pid, list] of unprotected) {
+      const names = list.map((d) => d.name)
+      attention.push(list.length === 1
+        ? { kind: "backup_missing", severity: "warning", title: `${names[0]} has no backups`,
+            detail: `in ${where(pid)}; nothing to restore from if its volume is lost`, project_id: pid, service_id: list[0].id }
+        : { kind: "backup_missing", severity: "warning", title: `${list.length} databases in ${where(pid)} have no backups`,
+            detail: `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` and ${names.length - 3} more` : ""}; nothing to restore from if a volume is lost`, project_id: pid })
+    }
+    // A level ahead of the one above it on a group's path.
+    const built = (s: DemoRecord) => new Date((originOf(s.id) as { image_built_at?: string }).image_built_at ?? s.deployed_at ?? 0)
+    for (const g of db["promotion-groups"] ?? []) {
+      const root = find("projects", g.project_id)
+      for (let i = 0; i + 1 < g.path.length; i++) {
+        const [from, to] = [g.path[i], g.path[i + 1]]
+        const ahead = g.lineages
+          .map((l: string) => ({ here: db.services.find((s) => s.project_id === from && (s.lineage_id ?? s.id) === l), up: db.services.find((s) => s.project_id === to && (s.lineage_id ?? s.id) === l) }))
+          .filter(({ here, up }: { here?: DemoRecord; up?: DemoRecord }) => here?.image && (!up?.image || (up.image !== here.image && built(here) > built(up))))
+          .map(({ here }: { here: DemoRecord }) => here.name)
+        if (ahead.length) {
+          const name = (id: string) => { const p = find("projects", id); return p?.parent_project_id ? p.env_name : "production" }
+          attention.push({ kind: "promotion_waiting", severity: "info",
+            title: `${ahead.length === 1 ? ahead[0] : `${ahead[0]} and ${ahead.length - 1} more`} in ${name(from)} is ready for ${name(to)}`,
+            detail: `${root?.name}, group ${g.name}`, project_id: g.project_id })
+        }
+      }
+    }
+    for (const d of (db.domains ?? []).filter((d: DemoRecord) => !d.verified && !d.retiring_at))
+      attention.push({ kind: "domain_unverified", severity: "warning", title: `${d.base_domain} is not verified`,
+        detail: "routes cannot use it until its DNS record is found", domain_id: d.id })
+    const rank: Record<string, number> = { critical: 0, warning: 1, info: 2 }
+    attention.sort((a, b) => rank[a.severity] - rank[b.severity])
+
+    const stats: Record<string, Record<string, number>> = {}
+    for (const p of db.projects)
+      for (const [kind, parts] of Object.entries(projectStats(p)))
+        for (const [key, n] of Object.entries(parts)) {
+          stats[kind] ??= {}
+          stats[kind][key] = (stats[kind][key] ?? 0) + n
+        }
+    // Delivery over the last 14 days, as the API measures it.
+    const DAYS = 14
+    const start = new Date(); start.setUTCHours(0, 0, 0, 0); start.setUTCDate(start.getUTCDate() - (DAYS - 1))
+    const dayOf = (at: string) => Math.floor((new Date(at).getTime() - start.getTime()) / 86_400_000)
+    const days = Array.from({ length: DAYS }, (_, i) => ({
+      date: new Date(start.getTime() + i * 86_400_000).toISOString().slice(0, 10),
+      deployed: 0, deploy_failed: 0, jobs_succeeded: 0, jobs_failed: 0,
+    }))
+    const projects: Record<string, number[]> = {}
+    const inProd = (serviceId: string) => { const s = find("services", serviceId); return s && !find("projects", s.project_id)?.parent_project_id }
+    const ordered = [...db.deployments].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+    let ok = 0, failed = 0
+    const recoveries: number[] = [], promotions: number[] = []
+    ordered.forEach((d, i) => {
+      const day = dayOf(d.created_at)
+      if (day < 0 || day >= DAYS || (d.status !== "success" && d.status !== "failed")) return
+      if (d.status === "success") days[day].deployed++; else days[day].deploy_failed++
+      const svc = find("services", d.service_id)
+      const root = svc ? (find("projects", svc.project_id)?.parent_project_id ?? svc.project_id) : ""
+      ;(projects[root] ??= Array(DAYS).fill(0))[day]++
+      if (!inProd(d.service_id)) return
+      if (d.status === "failed") {
+        failed++
+        const fix = ordered.slice(i + 1).find((l) => l.service_id === d.service_id && l.status === "success")
+        if (fix) recoveries.push((new Date(fix.created_at).getTime() - new Date(d.created_at).getTime()) / 1000)
+        return
+      }
+      ok++
+      if (d.source === "promotion" && d.image_built_at)
+        promotions.push((new Date(d.created_at).getTime() - new Date(d.image_built_at).getTime()) / 1000)
+    })
+    for (const r of db.runs) {
+      const day = dayOf(r.created_at)
+      if (day < 0 || day >= DAYS) continue
+      if (r.status === "success") days[day].jobs_succeeded++
+      if (r.status === "failed") days[day].jobs_failed++
+    }
+    const median = (xs: number[]) => { if (!xs.length) return undefined; const s = [...xs].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
+    const delivery = {
+      days, projects, deploys_per_week: (ok * 7) / DAYS,
+      change_failure_rate: ok + failed ? failed / (ok + failed) : undefined,
+      recovery_seconds: median(recoveries), promotion_seconds: median(promotions),
+    }
+    return json({ attention, stats, delivery })
   }),
   http.post(`${S}/deployments`, ({ params }) => {
     const d = deploy(String(params.serviceId))
@@ -1703,7 +1815,7 @@ function environmentHandlers() {
       return new HttpResponse(null, { status: 204 })
     }),
     http.post(`${S}/redeploy`, ({ params }) => {
-      const last = db.deployments.find((d) => d.service_id === params.serviceId && d.status === "success")
+      const last = deploymentsOf(String(params.serviceId)).find((d) => d.status === "success")
       if (!last) return error("nothing to redeploy: this service has not deployed successfully yet", 400)
       const d = record({ ...last, ...originOf(String(params.serviceId)), id: undefined, source: "redeploy", deployed_at: now(), log: "[demo] Redeploying the current image" })
       d.id = crypto.randomUUID()

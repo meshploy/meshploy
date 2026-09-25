@@ -35,6 +35,7 @@ type Services struct {
 	TCPRoutes       *TCPRouteService
 	Deployments     *DeploymentService
 	Activity        *ActivityService
+	Overview        *OverviewService
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
 	Storage         *StorageService
@@ -303,6 +304,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
 
+	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions}
 	return svc
 }
 

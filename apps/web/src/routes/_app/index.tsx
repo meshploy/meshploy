@@ -10,7 +10,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react"
-import { nodes as nodesApi, projects as projectsApi, toNode, toProject } from "@/lib/api"
+import { nodes as nodesApi, projects as projectsApi, activity as activityApi, toNode, toProject, type ApiAttentionItem } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import type { Node, Project } from "@/types"
@@ -22,6 +22,11 @@ import { StartHere } from "@/components/system/start-here"
 import { RecentActivity } from "@/components/system/recent-activity"
 import { MeshLoadSummary, NodeLoadBars } from "@/components/system/mesh-load"
 import { useMeshLoad } from "@/components/system/use-mesh-load"
+import { NeedsAttention } from "@/components/system/needs-attention"
+import { DeliveryPanel, Sparkline } from "@/components/system/delivery-panel"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { StatLine } from "@/components/system/stat-line"
+import { LevelDot } from "@/components/projects/environment-switcher"
 
 export const Route = createFileRoute("/_app/")({
   // `?start` renders the getting-started panel on a workspace that is past it.
@@ -56,10 +61,25 @@ function OverviewPage() {
     select: (raw) => raw.map(toProject),
   })
 
+  // What needs someone, and each count broken down across every level.
+  const { data: overview, isLoading: overviewLoading, isError: overviewError } = useQuery({
+    queryKey: ["overview", orgId],
+    queryFn: () => activityApi.overview(orgId!, token),
+    enabled: !!orgId,
+    refetchInterval: 15_000,
+  })
+  const attention = overview?.attention ?? []
+  const stats = overview?.stats ?? {}
+  const sum = (kind: string) => Object.values(stats[kind] ?? {}).reduce((a, b) => a + b, 0)
+
   const onlineNodes = nodeList.filter((n) => n.status === "online").length
   const load = useMeshLoad(nodeList)
-  const totalServices = projectList.reduce((s, p) => s + p.servicesCount, 0)
-  const totalRoutes = projectList.reduce((s, p) => s + p.routesCount, 0)
+  // Across every level when the breakdown is in, production alone until then.
+  const totalServices = overview ? sum("services") : projectList.reduce((s, p) => s + p.servicesCount, 0)
+  const totalRoutes = overview ? sum("routes") : projectList.reduce((s, p) => s + p.routesCount, 0)
+  const withServices = projectList.filter((p) => p.servicesCount > 0).length
+  // Copies in environment levels, which the project list does not count.
+  const inLevels = totalServices - projectList.reduce((s, p) => s + p.servicesCount, 0)
 
   if (nodesLoading || projectsLoading) return <div className="console-page flex items-center gap-3 text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading your workspace…</div>
 
@@ -83,7 +103,7 @@ function OverviewPage() {
 
       <StartHere nodes={nodeList} projects={projectList} forced={start} />
 
-      {!nodesError && nodeList.some(n => n.status !== "online") && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-5 py-4"><AlertCircle className="size-5 text-amber-400"/><div className="flex-1"><p className="text-sm font-medium">{nodeList.length-onlineNodes} nodes need attention</p><p className="text-xs text-muted-foreground mt-1">{nodeList.filter(n=>n.status !== "online").map(n=>n.name).join(", ")}</p></div><Link to="/nodes" className="text-xs text-primary">Review nodes →</Link></div>}
+      {projectList.length > 0 && <NeedsAttention items={attention} loading={overviewLoading} failed={overviewError} />}
       {/* Stat cards. Held back on an empty workspace: four zeros say nothing that
           the panel above has not said better. */}
       {projectList.length > 0 && <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -92,28 +112,36 @@ function OverviewPage() {
           label="Nodes online"
           value={String(onlineNodes)}
           denom={`/ ${nodeList.length}`}
-          sub="mesh nodes"
+          sub={onlineNodes < nodeList.length ? `offline: ${nodeList.filter((n) => n.status !== "online").map((n) => n.name).join(", ")}` : "mesh nodes"}
           accent={nodeList.length > 0 && onlineNodes < nodeList.length ? "warn" : undefined}
         />
         <StatCard
           icon={<Box className="h-3.5 w-3.5" />}
           label="Services"
           value={String(totalServices)}
-          sub={`across ${projectList.length} project${projectList.length !== 1 ? "s" : ""}`}
+          sub={`in ${withServices} project${withServices !== 1 ? "s" : ""}${inLevels > 0 ? ` · ${inLevels} in ${withServices === 1 ? "its" : "their"} levels` : ""}`}
+          breakdown={<StatLine kind="services" stats={stats.services} className="mt-0 border-0 pt-0" />}
         />
         <StatCard
           icon={<FolderKanban className="h-3.5 w-3.5" />}
           label="Projects"
           value={String(projectList.length)}
-          sub="in this workspace"
+          sub={
+            projectList.some((p) => p.levels.length > 0)
+              ? `${projectList.filter((p) => p.levels.length > 0).length} with environment levels`
+              : "in this workspace"
+          }
         />
         <StatCard
           icon={<Globe className="h-3.5 w-3.5" />}
           label="Routes"
           value={String(totalRoutes)}
-          sub="public and internal access"
+          sub={stats.routes ? "" : "public and internal access"}
+          breakdown={<StatLine kind="routes" stats={stats.routes} className="mt-0 border-0 pt-0" />}
         />
       </div>}
+
+      {projectList.length > 0 && overview?.delivery && <DeliveryPanel delivery={overview.delivery} />}
 
       <div className="flex items-center justify-between"><h2 className="text-base font-semibold">{org?.name ?? "Your workspace"}</h2>{isAdmin && <Link to="/cluster" className="text-sm text-muted-foreground hover:text-primary">View cluster →</Link>}</div>
       {/* Mesh topology + Projects */}
@@ -139,7 +167,7 @@ function OverviewPage() {
             ) : (
               <div className="flex flex-col gap-0.5">
                 {projectList.map((p) => (
-                  <ProjectRow key={p.id} project={p} />
+                  <ProjectRow key={p.id} project={p} waiting={attention.filter((a) => a.kind === "promotion_waiting" && a.project_id === p.id)} deploys={overview?.delivery?.projects?.[p.id]} />
                 ))}
               </div>
             )}
@@ -160,6 +188,7 @@ function StatCard({
   value,
   denom,
   sub,
+  breakdown,
   accent,
 }: {
   icon: React.ReactNode
@@ -167,6 +196,8 @@ function StatCard({
   value: string
   denom?: string
   sub: string
+  /** The count broken down, above sub. */
+  breakdown?: React.ReactNode
   accent?: "warn"
 }) {
   return (
@@ -179,12 +210,16 @@ function StatCard({
         {value}
         {denom && <span className="text-base font-normal text-muted-foreground ml-1">{denom}</span>}
       </p>
-      <p className="text-xs text-muted-foreground">{sub}</p>
+      {/* The breakdown draws nothing until there is something in it. */}
+      <div className="space-y-1">
+        {breakdown}
+        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      </div>
     </div>
   )
 }
 
-function ProjectRow({ project }: { project: Project }) {
+function ProjectRow({ project, waiting, deploys }: { project: Project; waiting: ApiAttentionItem[]; deploys?: number[] }) {
   const hue = projectColorHue(project.id)
   return (
     <Link
@@ -201,6 +236,42 @@ function ProjectRow({ project }: { project: Project }) {
         <p className="text-xs text-muted-foreground">
           {project.servicesCount} service{project.servicesCount !== 1 ? "s" : ""} · {project.routesCount} route{project.routesCount !== 1 ? "s" : ""}
         </p>
+        {/* Its levels, lowest first, the way promotion moves. */}
+        {project.levels.length > 0 && (
+          <p className="mt-1 flex items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground" data-testid="level-chain">
+            {[...project.levels].reverse().map((l) => (
+              <span key={l.id} className="inline-flex items-center gap-1">
+                <LevelDot production={false} />
+                {l.name}
+                <span className="text-muted-foreground/50">→</span>
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1">
+              <LevelDot production />
+              production
+            </span>
+          </p>
+        )}
+      </div>
+      {/* Stacked, so the level chain keeps its line. */}
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        {waiting.length > 0 && (
+          <Tooltip>
+            <TooltipTrigger
+              render={<span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-300" />}
+            >
+              {waiting.length === 1 ? "promotion waiting" : `${waiting.length} promotions waiting`}
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="space-y-0.5">
+                {waiting.map((w) => (
+                  <p key={w.title}>{w.title}</p>
+                ))}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        <Sparkline counts={deploys} />
       </div>
       <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
     </Link>
