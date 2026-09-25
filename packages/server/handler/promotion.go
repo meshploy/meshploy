@@ -108,6 +108,31 @@ func (h *Handler) registerPromotionRoutes(api huma.API) {
 		Summary: "Promote a group's services from this level to the next on its path, as the same images",
 		Tags:    []string{"Projects"}, Security: []map[string][]string{{"bearer": {}}},
 	}, h.PromoteGroup)
+	huma.Register(api, huma.Operation{
+		OperationID: "promote-group-preflight", Method: "GET", Path: base + "/promotion-groups/{groupId}/preflight",
+		Summary: "What promoting a group from this level would create, bring along, or be stopped by",
+		Tags:    []string{"Projects"}, Security: []map[string][]string{{"bearer": {}}},
+	}, h.PromotePreflight)
+}
+
+type PreflightOutput struct {
+	Body []svc.PreflightNote
+}
+
+func (h *Handler) PromotePreflight(ctx context.Context, input *GroupPathInput) (*PreflightOutput, error) {
+	_, _, level, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	if err != nil {
+		return nil, err
+	}
+	groupID, err := parseUUID(input.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	notes, err := h.svc.Promotions.Preflight(ctx, level, groupID)
+	if err != nil {
+		return nil, promotionError(err)
+	}
+	return &PreflightOutput{Body: notes}, nil
 }
 
 func (h *Handler) GetBoard(ctx context.Context, input *ProjectPathInput) (*BoardOutput, error) {
@@ -178,7 +203,14 @@ func (h *Handler) DeletePromotionGroup(ctx context.Context, input *GroupPathInpu
 	return nil, notFound(h.svc.Promotions.DeleteGroup(ctx, projectID, groupID))
 }
 
-func (h *Handler) PromoteGroup(ctx context.Context, input *GroupPathInput) (*PromoteOutput, error) {
+type PromoteGroupInput struct {
+	GroupPathInput
+	// Overwrite moves images older than what the level above runs, replacing
+	// something built there, such as a hotfix.
+	Overwrite bool `query:"overwrite"`
+}
+
+func (h *Handler) PromoteGroup(ctx context.Context, input *PromoteGroupInput) (*PromoteOutput, error) {
 	userID, orgID, level, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, "")
 	if err != nil {
 		return nil, err
@@ -196,7 +228,11 @@ func (h *Handler) PromoteGroup(ctx context.Context, input *GroupPathInput) (*Pro
 	if err := h.svc.Permissions.CheckAccess(ctx, orgID, userID, next, db.ResourceProject, db.ActionUpdate, &next); err != nil {
 		return nil, huma.Error403Forbidden("you cannot change the level this group promotes to")
 	}
-	out, err := h.svc.Promotions.Promote(ctx, level, groupID)
+	promote := h.svc.Promotions.Promote
+	if input.Overwrite {
+		promote = h.svc.Promotions.Overwrite
+	}
+	out, err := promote(ctx, level, groupID)
 	if err != nil {
 		return nil, promotionError(err)
 	}
@@ -428,7 +464,7 @@ func promotionError(err error) error {
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, svc.ErrGroupPath), errors.Is(err, svc.ErrGroupEmpty), errors.Is(err, svc.ErrGroupDatabase),
 		errors.Is(err, svc.ErrGroupTopLevel), errors.Is(err, svc.ErrGroupNotHere), errors.Is(err, svc.ErrNothingToPromote),
-		errors.Is(err, svc.ErrNotBelow), errors.Is(err, svc.ErrNotInGroup):
+		errors.Is(err, svc.ErrNotBelow), errors.Is(err, svc.ErrNotInGroup), errors.Is(err, svc.ErrBorrowFromBelow):
 		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.Is(err, svc.ErrK8sNotConfigured):
 		return huma.Error503ServiceUnavailable(err.Error())

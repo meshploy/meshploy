@@ -46,6 +46,13 @@ function SettingsTab() {
     },
   })
 
+  // Who loses variables when this goes: shown before the name is typed.
+  const { data: dependents = [] } = useQuery({
+    queryKey: ["service-dependents", orgId, projectId, serviceId],
+    queryFn: () => servicesApi.dependents(orgId, projectId, serviceId, token),
+    enabled: !!orgId,
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => servicesApi.delete(orgId, projectId, serviceId, token),
     onSuccess: () => {
@@ -180,10 +187,25 @@ function SettingsTab() {
           <div>
             <p className="text-sm font-medium">Delete service</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Deletes the service record and all associated deployments.
-              The K8s workload is not automatically removed.
+              Deletes the service and its deployments, and removes it from the cluster.
             </p>
           </div>
+          {dependents.length > 0 && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90" data-testid="dependents">
+              <p className="font-medium">
+                {dependents.length === 1 ? "1 thing reads" : `${dependents.length} things read`} {service?.name}&apos;s variables, and
+                lose them on their next deploy or run:
+              </p>
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                {dependents.map((d) => (
+                  <li key={`${d.kind}-${d.level}-${d.name}`}>
+                    {d.kind === "job" ? "job " : ""}
+                    <span className="font-medium">{d.name}</span> in {d.level}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <Field label={`Type "${service?.name}" to confirm`}>
             <input
               value={deleteConfirm}

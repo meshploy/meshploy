@@ -41,6 +41,8 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
 import { DeployWebhookURL } from "@/components/services/deploy-webhook"
+import { useReceiving } from "@/components/services/deploy-guard"
+import { formatRelativeTime } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
 
@@ -864,6 +866,10 @@ function AutoDeploySection({
     },
   })
 
+  // A group promotes into this level: pushes and CI calls here skip the
+  // level below, which is worth saying where they are set up.
+  const { receiving } = useReceiving(orgId, projectId, serviceId, token)
+
   if (!bc) return null
 
   const deployToken = bc.deploy_token
@@ -888,6 +894,13 @@ function AutoDeploySection({
                 : "Disabled"}
             </span>
           </div>
+          {receiving && (
+            <p className={cn("mt-1.5 text-xs", autoDeploy ? "text-amber-400" : "text-muted-foreground")} data-testid="receiving-autodeploy">
+              {autoDeploy
+                ? `Pushes to ${bc.branch} build ${receiving.here?.name} directly, skipping ${receiving.from?.name}: right for a branch only hotfixes land on. The next promotion from ${receiving.from?.name} will not replace such a build until ${receiving.from?.name} builds something newer.`
+                : `Off: ${receiving.here?.name} takes its images from ${receiving.from?.name} (group ${receiving.group.name}). Turn it on only for a branch hotfixes land on; pushes to it then build ${receiving.here?.name} directly.`}
+            </p>
+          )}
           {autoDeploy && !bc.git_integration_id && (
             <p className="text-xs text-amber-400 flex items-center gap-1 mt-1.5">
               <AlertTriangle className="h-3 w-3 shrink-0" />
@@ -1028,6 +1041,28 @@ function AutoDeploySection({
           <p className="text-xs text-muted-foreground flex items-center gap-1.5">
             <Loader2 className="h-3 w-3 animate-spin" /> Checking whether pushes reach Meshploy…
           </p>
+        )}
+
+        {/* Meshploy cannot see a CI job, but it records each call: one still
+            deploying here after a group took over says to move it. */}
+        {receiving && bc.deploy_hook_called_at && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90" data-testid="receiving-ci">
+            CI called this service&apos;s deploy webhook {formatRelativeTime(new Date(bc.deploy_hook_called_at))}: it builds{" "}
+            {receiving.here?.name} directly, skipping {receiving.from?.name}. To build in {receiving.from?.name} first and
+            promote, point CI at{" "}
+            {receiving.fromCell ? (
+              <Link
+                to="/projects/$id/services/$serviceId/config"
+                params={{ id: receiving.from!.project_id, serviceId: receiving.fromCell.service_id }}
+                className="font-medium text-primary hover:underline"
+              >
+                {receiving.from?.name}&apos;s deploy webhook
+              </Link>
+            ) : (
+              `${receiving.from?.name}'s deploy webhook`
+            )}{" "}
+            instead, and keep this one for hotfixes or remove it.
+          </div>
         )}
 
         {/* The per-service deploy token: nothing to do with a git connection,

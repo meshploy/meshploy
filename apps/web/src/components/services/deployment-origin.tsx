@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, GitBranch, GitCommitHorizontal, Package, RotateCcw } from "lucide-react"
+import { ArrowDown, ArrowUp, GitBranch, GitCommitHorizontal, Package, RefreshCw, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** Where a deployment's image came from, as a deployment or a board cell carries it. */
@@ -16,6 +16,7 @@ const sourceIcon = {
   bring_down: ArrowDown,
   rollback: RotateCcw,
   image: Package,
+  redeploy: RefreshCw,
 } as const
 
 /** The headline: built from a branch, or moved here from another level. */
@@ -26,6 +27,7 @@ export function originTitle(o: DeploymentOrigin): string {
     case "bring_down": return `Brought down from ${o.from_level || "the level above"}`
     case "rollback": return "Rolled back"
     case "image": return "Deployed from an image"
+    case "redeploy": return o.source_branch ? `Redeployed, built from ${o.source_branch}` : "Redeployed"
     default: return ""
   }
 }

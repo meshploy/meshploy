@@ -58,10 +58,14 @@ export interface BoardCell {
   deployed_at?: string | null
   /** A database whose last backup succeeded, which a level's own copy can be cloned from. */
   has_backup?: boolean
+  /** How the running image got here, looked through redeploys and rollbacks: build or image when made here. */
+  arrival?: "build" | "image" | "promotion" | "bring_down" | ""
+  /** When the running image was built, wherever that was: what Promote compares. */
+  image_built_at?: string | null
   /** Public addresses at this level, live ones first. */
   routes?: { hostname: string; live: boolean }[]
   /** Where the image came from: built here, or moved here from another level. */
-  source?: "build" | "promotion" | "bring_down" | "rollback" | "image" | ""
+  source?: "build" | "promotion" | "bring_down" | "rollback" | "image" | "redeploy" | ""
   source_branch?: string
   source_commit?: string
   source_commit_message?: string
@@ -94,11 +98,21 @@ export interface Promotion {
 }
 
 /** Why Promote left a service where it was. */
-export type SkipReason = "unchanged" | "older" | "never_built" | "not_here"
+export type SkipReason = "unchanged" | "older" | "never_built" | "not_here" | "from_below"
 
 export interface PromoteResult {
   promoted: Promotion[]
-  skipped: { service_name: string; reason: SkipReason }[]
+  skipped: { service_name: string; reason: SkipReason; detail?: string }[]
+}
+
+/** What the Promote dialog says about one service before it moves. */
+export interface PreflightNote {
+  service_name: string
+  /** The target has no copy yet: promoting creates one, with the source's own variables as they are. */
+  new_there: boolean
+  own_variables: number
+  /** What the target needs first, when the service's variables would come from below it. */
+  blocked?: string
 }
 
 export function toProject(p: ApiProject): Project {
@@ -263,9 +277,17 @@ export const projects = {
     ),
 
   /** Promote a group's services from this level (projectId) to the next on its path. */
-  promote: (orgId: string, levelId: string, groupId: string, token: string) =>
+  promotePreflight: (orgId: string, levelId: string, groupId: string, token: string) =>
+    apiFetch<PreflightNote[]>(
+      `/api/v1/orgs/${orgId}/projects/${levelId}/promotion-groups/${groupId}/preflight`,
+      {},
+      token
+    ),
+
+  /** Overwrite also moves images older than the level above's, replacing what was built there. */
+  promote: (orgId: string, levelId: string, groupId: string, token: string, overwrite = false) =>
     apiFetch<PromoteResult>(
-      `/api/v1/orgs/${orgId}/projects/${levelId}/promotion-groups/${groupId}/promote`,
+      `/api/v1/orgs/${orgId}/projects/${levelId}/promotion-groups/${groupId}/promote${overwrite ? "?overwrite=true" : ""}`,
       { method: "POST" },
       token
     ),

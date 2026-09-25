@@ -1255,6 +1255,9 @@ const (
 	DeploySourceBringDown = "bring_down"
 	DeploySourceRollback  = "rollback"
 	DeploySourceImage     = "image"
+	// DeploySourceRedeploy runs the image a service already runs again, for
+	// changed variables, without building.
+	DeploySourceRedeploy = "redeploy"
 )
 
 // ---------------------------------------------------------------------------

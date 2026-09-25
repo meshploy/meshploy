@@ -1,7 +1,8 @@
+import { useEffect, useRef } from "react"
 import { StatusPill } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, Outlet, useParams, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Box, ChevronDown, Database, ExternalLink, Globe, Loader2, Play, ServerCrash, Square, Terminal, Plus } from "lucide-react"
+import { Box, ChevronDown, Database, ExternalLink, Globe, Loader2, Play, Rocket, ServerCrash, Square, Terminal } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { services as servicesApi, deployments, stacks as stacksApi, routes as routesApi } from "@/lib/api"
@@ -11,6 +12,7 @@ import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-he
 import { useIsAdmin } from "@/store/org-store"
 import { livePoll } from "@/lib/live-poll"
 import { OriginStrip } from "@/components/services/deployment-origin"
+import { useDeployGuard } from "@/components/services/deploy-guard"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
   component: ServiceLayout,
@@ -43,9 +45,14 @@ function ServiceLayout() {
   const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const deployMutation = useMutation({ mutationFn: () => deployments.trigger(orgId!, projectId, serviceId, token), onSuccess: (deployment) => { queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] }); queryClient.invalidateQueries({ queryKey: ["service", orgId, projectId, serviceId] }); navigate({ to: "/projects/$id/services/$serviceId/deployments/$deploymentId", params: { id: projectId, serviceId, deploymentId: deployment.id } }) } })
+  const deployMutation = useMutation({ mutationFn: () => deployments.trigger(orgId!, projectId, serviceId, token), onSuccess: (deployment) => { queryClient.invalidateQueries({ queryKey: ["board", orgId] }); queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] }); queryClient.invalidateQueries({ queryKey: ["service", orgId, projectId, serviceId] }); navigate({ to: "/projects/$id/services/$serviceId/deployments/$deploymentId", params: { id: projectId, serviceId, deploymentId: deployment.id } }) } })
 
   const queryKey = ["service", orgId, projectId, serviceId]
+  const deployGuard = useDeployGuard({
+    orgId, projectId, serviceId, token,
+    build: () => deployMutation.mutate(),
+    onRedeployed: (deployment) => navigate({ to: "/projects/$id/services/$serviceId/deployments/$deploymentId", params: { id: projectId, serviceId, deploymentId: deployment.id } }),
+  })
 
   const { data: service, isLoading, isError } = useQuery({
     queryKey,
@@ -53,6 +60,16 @@ function ServiceLayout() {
     enabled: !!orgId,
     refetchInterval: livePoll<{ status: string }>((d) => d.status === "deploying"),
   })
+
+  // A deploy that finishes changes what the environments board shows: its
+  // image, and whether it was built here.
+  const lastStatus = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (lastStatus.current === "deploying" && service?.status !== "deploying") {
+      queryClient.invalidateQueries({ queryKey: ["board", orgId] })
+    }
+    lastStatus.current = service?.status
+  }, [service?.status, orgId, queryClient])
 
   // Named so the subtitle can link to it: "Managed by a stack" is a dead end
   // when the stack is one click away.
@@ -169,7 +186,7 @@ function ServiceLayout() {
               )
             )}
             <Button variant="outline" size="sm" render={<Link to="/projects/$id/services/$serviceId/logs" params={{ id: projectId, serviceId }} />}><Terminal className="size-4" />Logs</Button>
-            <Button size="sm" onClick={() => deployMutation.mutate()} disabled={deployMutation.isPending || service.status === "deploying"}><Plus className="size-4" />Deploy</Button>
+            <Button size="sm" onClick={deployGuard.request} disabled={deployMutation.isPending || service.status === "deploying"}><Rocket className="size-4" />Deploy</Button>
           </>
         }
       >
@@ -188,6 +205,7 @@ function ServiceLayout() {
         ))}
       </DetailPageHeader>
 
+      {deployGuard.dialog}
       {(deployMutation.error || startMutation.error || stopMutation.error) && <p role="alert" className="mx-8 mt-4 text-sm text-destructive">{(deployMutation.error || startMutation.error || stopMutation.error)?.message}</p>}
       <div className="flex-1">
         <Outlet />

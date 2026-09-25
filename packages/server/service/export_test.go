@@ -16,3 +16,9 @@ var CommitFromBuildLog = commitFromBuildLog
 func UseWorkloadK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Workloads.k8s = client
 }
+
+// UseJobK8sForTest gives the job service a cluster client, so a test can
+// trigger a run.
+func UseJobK8sForTest(s *Services, client kubernetes.Interface) {
+	s.Jobs.k8s = client
+}

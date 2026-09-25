@@ -282,6 +282,10 @@ function originOf(serviceId: string) {
   return {
     source: d.source, source_branch: d.source_branch, source_commit: d.source_commit,
     source_commit_message: d.source_commit_message, from_level: d.from_level,
+    // How the image arrived and when it was built, as the API traces them:
+    // a redeploy or rollback carries both over from what it ran again.
+    arrival: d.arrival ?? d.source ?? "",
+    image_built_at: d.image_built_at ?? d.created_at,
   }
 }
 /** Deploys an image as it is, as promotion and bring-down do, recording where it came from. */
@@ -290,7 +294,7 @@ function deployAsIs(src: DemoRecord, target: DemoRecord, source: string) {
   db.deployments.unshift(record({
     service_id: target.id, status: "success", image: src.image, build_job_name: "",
     log: `[demo] ${source === "promotion" ? "Promoted" : "Brought down"} from ${fromLevel}`,
-    deployed_at: now(), ...originOf(src.id), source, from_level: fromLevel,
+    deployed_at: now(), ...originOf(src.id), source, from_level: fromLevel, arrival: source,
   }))
 }
 function deploy(serviceId: string) {
@@ -1532,6 +1536,37 @@ function environmentHandlers() {
     // The API's rule: the level's services and routes go, groups skip it, a
     // group that built there builds at the next level, and one left with
     // nothing between entry and production is dissolved.
+    // New-to-target services and their own variables; the demo has no
+    // variables that come from below, so nothing is blocked here.
+    http.get(`${P}/promotion-groups/:groupId/preflight`, ({ params }) => {
+      const group = (db["promotion-groups"] ?? []).find((g) => g.id === params.groupId)
+      if (!group) return missing()
+      const next = group.path[group.path.indexOf(params.projectId) + 1]
+      const of = (level: string, lineage: string) => db.services.find((s) => s.project_id === level && (s.lineage_id ?? s.id) === lineage)
+      return json(
+        group.lineages
+          .map((lineage: string) => ({ src: of(params.projectId as string, lineage), up: next && of(next, lineage) }))
+          .filter(({ src }: { src?: DemoRecord }) => src)
+          .map(({ src, up }: { src: DemoRecord; up?: DemoRecord }) => ({
+            service_name: src.name,
+            new_there: !up,
+            own_variables: up ? 0 : String(src.env_vars ?? "").split("\n").filter((l) => l.includes("=")).length,
+          }))
+      )
+    }),
+    // Who reads a service's published group: services attached to it, named
+    // with their level.
+    http.get(`${P}/services/:serviceId/dependents`, ({ params }) => {
+      const published = (db["variable-groups"] ?? []).filter((g) => g.service_id === params.serviceId).map((g) => g.id)
+      return json(
+        db.services
+          .filter((s) => s.id !== params.serviceId && (attachments[s.id] ?? []).some((g: string) => published.includes(g)))
+          .map((s) => {
+            const level = find("projects", s.project_id)
+            return { kind: "service", name: s.name, level: level?.parent_project_id ? level.env_name : "production" }
+          })
+      )
+    }),
     http.delete(`${P}/environment`, ({ params }) => {
       const level = find("projects", params.projectId)
       if (!level) return missing()
@@ -1667,7 +1702,17 @@ function environmentHandlers() {
       db["promotion-groups"] = (db["promotion-groups"] ?? []).filter((g) => g.id !== params.groupId)
       return new HttpResponse(null, { status: 204 })
     }),
-    http.post(`${P}/promotion-groups/:groupId/promote`, ({ params }) => {
+    http.post(`${S}/redeploy`, ({ params }) => {
+      const last = db.deployments.find((d) => d.service_id === params.serviceId && d.status === "success")
+      if (!last) return error("nothing to redeploy: this service has not deployed successfully yet", 400)
+      const d = record({ ...last, ...originOf(String(params.serviceId)), id: undefined, source: "redeploy", deployed_at: now(), log: "[demo] Redeploying the current image" })
+      d.id = crypto.randomUUID()
+      db.deployments.unshift(d)
+      return json(d, 202)
+    }),
+    http.post(`${P}/promotion-groups/:groupId/promote`, ({ params, request }) => {
+      const overwrite = new URL(request.url).searchParams.get("overwrite") === "true"
+      const builtAt = (svc: DemoRecord) => new Date((originOf(svc.id) as { image_built_at?: string }).image_built_at ?? svc.deployed_at ?? 0)
       const group = (db["promotion-groups"] ?? []).find((g) => g.id === params.groupId)
       if (!group) return missing()
       const i = group.path.indexOf(params.projectId)
@@ -1685,7 +1730,7 @@ function environmentHandlers() {
         if (!src) { skipped.push({ service_name: name, reason: "not_here" }); continue }
         if (!src.image) { skipped.push({ service_name: name, reason: "never_built" }); continue }
         if (up?.image && up.image === src.image) { skipped.push({ service_name: name, reason: "unchanged" }); continue }
-        if (up?.image && src.deployed_at && up.deployed_at && new Date(src.deployed_at) <= new Date(up.deployed_at)) {
+        if (!overwrite && up?.image && builtAt(src) <= builtAt(up)) {
           skipped.push({ service_name: name, reason: "older" }); continue
         }
         let target = up

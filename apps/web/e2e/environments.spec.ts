@@ -1,5 +1,5 @@
 import { test, expect, loginAsDemo, goto } from "./fixtures"
-import { DEMO_ORG_ID, DEMO_PROJECT_ID, DEMO_ROUTE_ID, DEMO_SVC_API, DEMO_SVC_WEB } from "../src/mocks/data"
+import { DEMO_ORG_ID, DEMO_PROJECT_ID, DEMO_ROUTE_ID, DEMO_SVC_API, DEMO_SVC_DB, DEMO_SVC_WEB } from "../src/mocks/data"
 
 // A project's environment levels. Each level is a project of its own
 // underneath, so the console's job is to keep them presented as one project:
@@ -149,7 +149,7 @@ test.describe("Environment board", () => {
 test("a route created in a level shows, and gets, the level's name", async ({ page }) => {
   await loginAsDemo(page)
   // The demo's seeded staging level.
-  await goto(page, "/projects/00000000-0000-0000-0000-000000000041/new?type=route")
+  await goto(page, "/projects/00000000-0000-0000-0000-0000000000b1/new?type=route")
   await expect(page.getByText("Where is this route exposed?")).toBeVisible({ timeout: 10_000 })
   await page.getByPlaceholder("api or *.my-app").fill("shop")
   await expect(page.getByText(/^-staging\./).first()).toBeVisible()
@@ -385,4 +385,93 @@ test("the overview's resource cards break their counts down", async ({ page }) =
   await expect(resources.getByTestId("stats-services")).toContainText("2 running", { timeout: 10_000 })
   await expect(resources.getByTestId("stats-routes")).toContainText("HTTPS")
   await expect(resources.getByTestId("stats-routes")).toContainText("TCP")
+})
+
+test("a service that started in a level says Delete, since nothing above has it", async ({ page }) => {
+  const staging = "00000000-0000-0000-0000-0000000000b1"
+  await loginAsDemo(page)
+  await goto(page, `/projects/${staging}/services`)
+  await page.evaluate(async ([org, level]) => {
+    await fetch(`/api/v1/orgs/${org}/projects/${level}/services`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "shop", type: "application", image: "demo/shop:1" }),
+    })
+  }, [DEMO_ORG_ID, staging])
+  await page.getByRole("complementary", { name: "Project navigation" }).getByRole("link", { name: "Overview" }).click()
+
+  const board = page.getByRole("region", { name: "Environments" })
+  await board.getByRole("button", { name: "More for shop" }).click({ timeout: 10_000 })
+  await expect(page.getByRole("menuitem", { name: "Remove from staging" })).toHaveCount(0)
+  await page.getByRole("menuitem", { name: "Delete shop" }).click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toContainText("no level above has it")
+  await dialog.getByRole("button", { name: "Delete shop" }).click()
+  await expect(board.getByRole("button", { name: "More for shop" })).toHaveCount(0)
+})
+
+test("promoting a service new to production says its own variables come as they are", async ({ page }) => {
+  const staging = "00000000-0000-0000-0000-0000000000b1"
+  await loginAsDemo(page)
+  await goto(page, `/projects/${staging}/services`)
+  await page.evaluate(async ([org, level]) => {
+    await fetch(`/api/v1/orgs/${org}/projects/${level}/services`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "shop", type: "application", image: "demo/shop:1", env_vars: "MODE=staging\nDEBUG=1" }),
+    })
+  }, [DEMO_ORG_ID, staging])
+  await page.getByRole("complementary", { name: "Project navigation" }).getByRole("link", { name: "Overview" }).click()
+
+  const board = page.getByRole("region", { name: "Environments" })
+  await board.getByRole("button", { name: "More for shop" }).click({ timeout: 10_000 })
+  await page.getByRole("menuitem", { name: "app" }).click()
+  await board.getByRole("button", { name: /Promote.*production/ }).click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog.getByTestId("arriving")).toContainText("shop is new to production")
+  await expect(dialog.getByTestId("arriving")).toContainText("Its 2 variables of its own come from staging as they are")
+})
+
+test("deleting a database says who reads it, at every level", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services/${DEMO_SVC_DB}/settings`)
+  await expect(page.getByTestId("dependents")).toContainText("api", { timeout: 10_000 })
+  await expect(page.getByTestId("dependents")).toContainText("in production")
+})
+
+test("Deploy on a level a group promotes into asks first, and can just redeploy", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services/${DEMO_SVC_WEB}/overview`)
+  await page.getByRole("button", { name: "Deploy", exact: true }).click({ timeout: 10_000 })
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toContainText("It takes its images from staging (group app)")
+  await dialog.getByRole("button", { name: "Redeploy the current image" }).click()
+  await expect(page).toHaveURL(/\/deployments\//)
+})
+
+test("a hotfix built in production is marked, and staging can only overwrite it", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services/${DEMO_SVC_WEB}/overview`)
+  await page.getByRole("button", { name: "Deploy", exact: true }).click({ timeout: 10_000 })
+  await page.getByRole("dialog").getByRole("button", { name: "Build here anyway" }).click()
+  await expect(page).toHaveURL(/\/deployments\//)
+  await page.waitForTimeout(2600) // the demo build finishes
+
+  await page.getByRole("complementary", { name: "Project navigation" }).getByRole("link", { name: "Overview" }).click()
+  const board = page.getByRole("region", { name: "Environments" })
+  await expect(board.getByText("built here")).toBeVisible({ timeout: 10_000 })
+  await board.getByRole("button", { name: /Overwrite.*production/ }).click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog.getByTestId("hotfixes")).toContainText("built there")
+  await expect(dialog.getByTestId("hotfixes")).toContainText("the fix is gone unless that build has it")
+  await dialog.getByRole("button", { name: "Overwrite production" }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(board.getByText("built here")).toHaveCount(0)
+})
+
+test("production's config says what a push does while a group promotes into it", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services/${DEMO_SVC_WEB}/config`)
+  // The demo's production web deploys on push, to show the Bitbucket screens.
+  await expect(page.getByTestId("receiving-autodeploy")).toContainText("Pushes to main build production directly, skipping staging", { timeout: 10_000 })
 })

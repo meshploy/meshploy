@@ -336,12 +336,19 @@ func (s *PromotionService) DeleteGroup(ctx context.Context, projectID, groupID u
 		return err
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Where("id = ? AND project_id = ?", groupID, root.ID).Delete(&db.PromotionGroup{})
-		if res.Error != nil {
-			return res.Error
+		var group db.PromotionGroup
+		if err := tx.Where("id = ? AND project_id = ?", groupID, root.ID).First(&group).Error; err != nil {
+			return err
 		}
-		if res.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
+		var lineages []uuid.UUID
+		if err := tx.Model(&db.PromotionGroupMember{}).Where("group_id = ?", groupID).Pluck("lineage_id", &lineages).Error; err != nil {
+			return err
+		}
+		if err := releaseLineages(tx, pathIDs(group.Path), lineages); err != nil {
+			return err
+		}
+		if err := tx.Delete(&group).Error; err != nil {
+			return err
 		}
 		return tx.Where("group_id = ?", groupID).Delete(&db.PromotionGroupMember{}).Error
 	})
@@ -384,8 +391,11 @@ type Promotion struct {
 // Skipped is a service Promote left where it was, and why.
 type Skipped struct {
 	ServiceName string `json:"service_name"`
-	// Reason is one of: unchanged, older, never_built, not_here.
+	// Reason is one of: unchanged, older, never_built, not_here, and
+	// from_below, for one whose variables would come from below the target.
 	Reason string `json:"reason"`
+	// Detail says what the target needs first, for from_below.
+	Detail string `json:"detail,omitempty"`
 }
 
 // PromoteResult is what a promotion moved, and what it left.
@@ -403,6 +413,17 @@ type PromoteResult struct {
 // reported as skipped with the reason. A promotion that would move nothing is
 // refused.
 func (s *PromotionService) Promote(ctx context.Context, level, groupID uuid.UUID) (*PromoteResult, error) {
+	return s.promote(ctx, level, groupID, false)
+}
+
+// Overwrite is Promote for a level above that runs something of its own, a
+// hotfix built there: it moves each image that differs from what the level
+// above runs, older or not. The dialog asking for it names what is replaced.
+func (s *PromotionService) Overwrite(ctx context.Context, level, groupID uuid.UUID) (*PromoteResult, error) {
+	return s.promote(ctx, level, groupID, true)
+}
+
+func (s *PromotionService) promote(ctx context.Context, level, groupID uuid.UUID, overwrite bool) (*PromoteResult, error) {
 	root, err := s.projects.RootProject(ctx, level)
 	if err != nil {
 		return nil, err
@@ -495,10 +516,26 @@ func (s *PromotionService) Promote(ctx context.Context, level, groupID uuid.UUID
 				result.Skipped = append(result.Skipped, Skipped{ServiceName: src.Name, Reason: "unchanged"})
 				continue
 			}
-			if above != nil && !here.CreatedAt.After(above.CreatedAt) {
+			// Ordered by when each image was built, not when it was last
+			// deployed: a rollback or redeploy above makes nothing newer.
+			if above != nil && !overwrite &&
+				!s.deployments.ImageOrigin(ctx, *here).BuiltAt.After(s.deployments.ImageOrigin(ctx, *above).BuiltAt) {
 				result.Skipped = append(result.Skipped, Skipped{ServiceName: src.Name, Reason: "older"})
 				continue
 			}
+		}
+		// Its variables as the target would resolve them: the target's copy's
+		// when it has one, else the ones the copy will be made with.
+		attached := src.ID
+		if up.ID != uuid.Nil {
+			attached = up.ID
+		}
+		if err := s.deployments.varGroups.CheckBorrowingAt(ctx, next, attached); err != nil {
+			if !errors.Is(err, ErrBorrowFromBelow) {
+				return nil, err
+			}
+			result.Skipped = append(result.Skipped, Skipped{ServiceName: src.Name, Reason: "from_below", Detail: fromBelowDetail(err)})
+			continue
 		}
 		moves = append(moves, move{src: src, image: here.Image, depID: here.ID})
 	}
@@ -594,6 +631,12 @@ type BoardCell struct {
 	SourceCommit        string `json:"source_commit,omitempty"`
 	SourceCommitMessage string `json:"source_commit_message,omitempty"`
 	FromLevel           string `json:"from_level,omitempty"`
+	// Arrival and ImageBuiltAt are where the running image came from, looked
+	// through redeploys and rollbacks, and when it was built: what Promote
+	// compares, and what says a level runs something built there instead of
+	// something promoted to it.
+	Arrival      string     `json:"arrival,omitempty"`
+	ImageBuiltAt *time.Time `json:"image_built_at,omitempty"`
 	// Routes are the service's public addresses at this level, published
 	// ones first, so the card can open what this level serves.
 	Routes []BoardRoute `json:"routes,omitempty"`
@@ -705,6 +748,8 @@ func (s *PromotionService) Board(ctx context.Context, projectID uuid.UUID) (*Boa
 			cell.Image, cell.DeployedAt = d.Image, d.DeployedAt
 			cell.Source, cell.SourceBranch, cell.FromLevel = d.Source, d.SourceBranch, d.FromLevel
 			cell.SourceCommit, cell.SourceCommitMessage = d.SourceCommit, d.SourceCommitMessage
+			origin := s.deployments.ImageOrigin(ctx, d)
+			cell.Arrival, cell.ImageBuiltAt = origin.Arrival, &origin.BuiltAt
 		}
 		if gi, ok := grouped[cell.LineageID]; ok {
 			board.Groups[gi].Cells = append(board.Groups[gi].Cells, cell)
@@ -1045,6 +1090,9 @@ func (s *PromotionService) RemoveFromGroup(ctx context.Context, projectID, group
 		if res.RowsAffected == 0 {
 			return ErrNotInGroup
 		}
+		if err := releaseLineages(tx, pathIDs(group.Path), []uuid.UUID{lineageID}); err != nil {
+			return err
+		}
 		var left int64
 		if err := tx.Model(&db.PromotionGroupMember{}).Where("group_id = ?", group.ID).Count(&left).Error; err != nil {
 			return err
@@ -1330,16 +1378,10 @@ func (s *PromotionService) DeleteLevel(ctx context.Context, levelID uuid.UUID) (
 			autoDeploy[lineageOf(sv)] = bc.AutoDeploy
 		}
 	}
-	for _, sv := range services {
-		if err := s.workloads.Delete(ctx, sv.ID); err != nil {
-			return out, err
-		}
-		out.ServicesRemoved++
-	}
-	if s.workloads.k8s != nil {
-		if err := appk8s.DeleteNamespace(ctx, s.workloads.k8s, level.Slug); err != nil {
-			return out, err
-		}
+	n, err := s.teardown(ctx, level)
+	out.ServicesRemoved = n
+	if err != nil {
+		return out, err
 	}
 
 	levels, err := s.projects.Levels(ctx, rootID)
@@ -1406,4 +1448,138 @@ func (s *PromotionService) DeleteLevel(ctx context.Context, levelID uuid.UUID) (
 		return out, err
 	}
 	return out, nil
+}
+
+// fromBelowDetail is ErrBorrowFromBelow's message without its prefix.
+func fromBelowDetail(err error) string {
+	return strings.TrimPrefix(err.Error(), ErrBorrowFromBelow.Error()+": ")
+}
+
+// PreflightNote is what the Promote dialog says about one service before it
+// moves: whether it is new to the target, how many variables of its own it
+// brings there, and what would stop it.
+type PreflightNote struct {
+	ServiceName string `json:"service_name"`
+	// NewThere is set when the target has no copy yet: promoting creates one,
+	// with the source's own variables as they are.
+	NewThere     bool `json:"new_there"`
+	OwnVariables int  `json:"own_variables"`
+	// Blocked says what the target needs first, when its variables would
+	// come from below it.
+	Blocked string `json:"blocked,omitempty"`
+}
+
+// Preflight notes each of the group's services in level before promoting it
+// to the next level on the group's path.
+func (s *PromotionService) Preflight(ctx context.Context, level, groupID uuid.UUID) ([]PreflightNote, error) {
+	next, err := s.NextLevel(ctx, level, groupID)
+	if err != nil {
+		return nil, err
+	}
+	var members []db.PromotionGroupMember
+	if err := s.db.WithContext(ctx).Where("group_id = ?", groupID).Find(&members).Error; err != nil {
+		return nil, err
+	}
+	out := []PreflightNote{}
+	for _, m := range members {
+		var src db.Service
+		if err := s.db.WithContext(ctx).Where("project_id = ? AND COALESCE(lineage_id, id) = ?", level, m.LineageID).First(&src).Error; err != nil {
+			continue // not in this level: Promote skips it, and says so
+		}
+		note := PreflightNote{ServiceName: src.Name}
+		attached := src.ID
+		var up db.Service
+		if s.db.WithContext(ctx).Where("project_id = ? AND COALESCE(lineage_id, id) = ?", next, m.LineageID).First(&up).Error == nil {
+			attached = up.ID
+		} else {
+			note.NewThere = true
+			note.OwnVariables = len(appk8s.ParseEnvBlock(string(src.EnvVars)))
+		}
+		if err := s.deployments.varGroups.CheckBorrowingAt(ctx, next, attached); err != nil {
+			if !errors.Is(err, ErrBorrowFromBelow) {
+				return nil, err
+			}
+			note.Blocked = fromBelowDetail(err)
+		}
+		out = append(out, note)
+	}
+	return out, nil
+}
+
+// releaseLineages hands services leaving a group back their own builds. The
+// group turned auto-deploy off above its entry level, where copies received
+// promotions instead; with no group, nothing promotes to them, so each takes
+// the entry's setting back and deploys on push again if the entry did.
+func releaseLineages(tx *gorm.DB, path, lineages []uuid.UUID) error {
+	if len(path) < 2 {
+		return nil
+	}
+	for _, l := range lineages {
+		var entry db.BuildConfig
+		err := tx.Where("service_id IN (?)", tx.Model(&db.Service{}).Select("id").
+			Where("project_id = ? AND COALESCE(lineage_id, id) = ?", path[0], l)).First(&entry).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue // nothing built at the entry: nothing to hand back
+		}
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&db.BuildConfig{}).
+			Where("service_id IN (?)", tx.Model(&db.Service{}).Select("id").
+				Where("project_id IN ? AND COALESCE(lineage_id, id) = ?", path[1:], l)).
+			Update("auto_deploy", entry.AutoDeploy).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// teardown takes a project's or a level's workloads out of the cluster: each
+// service through the ordinary delete, which removes its cluster objects
+// before its row, then the namespace with the volumes, jobs and secrets left
+// in it. The rows that remain go with the project's row, by cascade.
+func (s *PromotionService) teardown(ctx context.Context, project db.Project) (int, error) {
+	var services []db.Service
+	if err := s.db.WithContext(ctx).Where("project_id = ?", project.ID).Find(&services).Error; err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, sv := range services {
+		if err := s.workloads.Delete(ctx, sv.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	if s.workloads.k8s != nil {
+		if err := appk8s.DeleteNamespace(ctx, s.workloads.k8s, project.Slug); err != nil {
+			return removed, err
+		}
+	}
+	return removed, nil
+}
+
+// DeleteProject deletes a project and, first, everything it runs, so nothing
+// is left in the cluster under a namespace no project owns. A project with
+// levels is refused before anything is touched; a level is deleted with
+// DeleteLevel.
+func (s *PromotionService) DeleteProject(ctx context.Context, projectID uuid.UUID) error {
+	var project db.Project
+	if err := s.db.WithContext(ctx).First(&project, "id = ?", projectID).Error; err != nil {
+		return err
+	}
+	if project.ParentProjectID != nil {
+		_, err := s.DeleteLevel(ctx, projectID)
+		return err
+	}
+	var levels int64
+	if err := s.db.WithContext(ctx).Model(&db.Project{}).Where("parent_project_id = ?", projectID).Count(&levels).Error; err != nil {
+		return err
+	}
+	if levels > 0 {
+		return ErrProjectHasLevels
+	}
+	if _, err := s.teardown(ctx, project); err != nil {
+		return err
+	}
+	return s.projects.Delete(ctx, projectID)
 }

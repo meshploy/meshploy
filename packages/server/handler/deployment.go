@@ -111,6 +111,27 @@ func (h *Handler) registerDeploymentRoutes(api huma.API) {
 		DefaultStatus: 202,
 	}, h.RollbackDeployment)
 
+	huma.Register(api, huma.Operation{
+		OperationID:   "redeploy-service",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/redeploy",
+		Summary:       "Run the image the service runs now again, without building",
+		Tags:          []string{"Deployments"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 202,
+	}, h.RedeployService)
+}
+
+func (h *Handler) RedeployService(ctx context.Context, input *ListDeploymentsInput) (*GetDeploymentOutput, error) {
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionDeploy, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	dep, err := h.svc.Deployments.Redeploy(ctx, serviceID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &GetDeploymentOutput{Body: dep}, nil
 }
 
 func (h *Handler) TriggerDeployment(ctx context.Context, input *ListDeploymentsInput) (*GetDeploymentOutput, error) {
