@@ -457,6 +457,9 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     gitBranch: "main",
     builder: "railpack" as "railpack" | "dockerfile",
     dockerfilePath: "Dockerfile",
+    installCommand: "",
+    buildCommand: "",
+    startCommand: "",
     registryIntegrationId: "",
     builderNodeName: "" as string,
     builderCPURequest: "1000m",
@@ -490,6 +493,9 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       gitBranch: bc?.branch ?? "main",
       builder: (bc?.builder as typeof form.builder) ?? "railpack",
       dockerfilePath: bc?.dockerfile_path ?? "Dockerfile",
+      installCommand: bc?.install_command ?? "",
+      buildCommand: bc?.build_command ?? "",
+      startCommand: service.start_command ?? "",
       registryIntegrationId: bc?.registry_integration_id ?? "",
       builderNodeName: bc?.builder_node ?? "",
       builderCPURequest: bc?.builder_cpu_request || "1000m",
@@ -532,6 +538,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
         cpu_limit: form.cpuLimit,
         memory_request: form.memoryRequest,
         memory_limit: form.memoryLimit,
+        start_command: form.startCommand.trim(),
       }
       if (form.source === "image") {
         svcBody.image = form.image
@@ -548,6 +555,8 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           branch: form.gitBranch,
           builder: form.builder,
           dockerfile_path: form.builder === "dockerfile" ? form.dockerfilePath : undefined,
+          install_command: form.installCommand.trim(),
+          build_command: form.buildCommand.trim(),
           registry_integration_id: form.registryIntegrationId || undefined,
           builder_node: form.builderNodeName,
           builder_cpu_request: form.builderCPURequest,
@@ -654,6 +663,17 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
 
       {/* ── Deployment ────────────────────────────────────────── */}
       <Section title="Deployment" subtitle="Choose where this service runs and how many replicas to start">
+        {/* The command the service starts with. Empty keeps the image's own:
+            what Railpack worked out, or the Dockerfile's CMD. */}
+        <Field label="Start command" term="services.start-command">
+          <input
+            value={form.startCommand}
+            onChange={(e) => patch({ startCommand: e.target.value })}
+            placeholder="The image's own"
+            className={cn(inputCls, "font-mono")}
+            data-testid="start-command"
+          />
+        </Field>
         <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" /> Target node

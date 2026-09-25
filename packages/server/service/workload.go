@@ -77,6 +77,9 @@ type CreateWorkloadInput struct {
 	Branch                string
 	Builder               db.BuilderType
 	DockerfilePath        string
+	InstallCommand        string // "" = the builder's own
+	BuildCommand          string // "" = the builder's own
+	StartCommand          string // "" = the image's own
 	RegistryIntegrationID *uuid.UUID
 	BuilderNode           string // "" = auto-schedule on any builder node
 	BuilderCPURequest     string // "" = default (1000m)
@@ -241,6 +244,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		HealthcheckStartPeriodSecs: in.HealthcheckStartPeriodSecs,
 		Command:                    in.Command,
 		Args:                       in.Args,
+		StartCommand:               strings.TrimSpace(in.StartCommand),
 	}
 	// An empty resource setting keeps the column default. Leaving these out
 	// entirely ran a service on the defaults until something updated it, even
@@ -297,6 +301,8 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			GitRepo:               in.GitRepo,
 			Branch:                branch,
 			DockerfilePath:        dockerfilePath,
+			InstallCommand:        strings.TrimSpace(in.InstallCommand),
+			BuildCommand:          strings.TrimSpace(in.BuildCommand),
 			RegistryIntegrationID: in.RegistryIntegrationID,
 			BuilderNode:           in.BuilderNode,
 			BuilderCPURequest:     in.BuilderCPURequest,
@@ -751,6 +757,8 @@ type UpdateWorkloadInput struct {
 	// When true, PullRegistryIntegrationID is applied (nil = clear / public image).
 	UpdatePullRegistry        bool
 	PullRegistryIntegrationID *uuid.UUID
+
+	StartCommand *string // nil = no change; "" = the image's own
 }
 
 func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in UpdateWorkloadInput) (*db.Service, error) {
@@ -798,6 +806,9 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	}
 	if in.Replicas != nil {
 		updates["replicas"] = *in.Replicas
+	}
+	if in.StartCommand != nil {
+		updates["start_command"] = strings.TrimSpace(*in.StartCommand)
 	}
 	if in.CPURequest != nil {
 		updates["cpu_request"] = *in.CPURequest
@@ -976,6 +987,8 @@ type UpdateBuildConfigInput struct {
 	RootDir               *string // subdirectory within the repo to build from (e.g. "frontend")
 	Builder               *db.BuilderType
 	DockerfilePath        *string
+	InstallCommand        *string // nil = no change; "" = the builder's own
+	BuildCommand          *string // nil = no change; "" = the builder's own
 	RegistryIntegrationID *uuid.UUID
 	ClearRegistry         bool    // when true, set registry_integration_id to NULL
 	BuildEnvVars          *string // nil = no change; "" = clear
@@ -1022,6 +1035,12 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.DockerfilePath != nil {
 		bc.DockerfilePath = *in.DockerfilePath
+	}
+	if in.InstallCommand != nil {
+		bc.InstallCommand = strings.TrimSpace(*in.InstallCommand)
+	}
+	if in.BuildCommand != nil {
+		bc.BuildCommand = strings.TrimSpace(*in.BuildCommand)
 	}
 	if in.ClearRegistry {
 		bc.RegistryIntegrationID = nil

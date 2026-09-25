@@ -290,8 +290,8 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			LivenessProbe:       probe,
 			ReadinessProbe:      probe,
 			ImagePullSecretName: pullSecretName,
-			Command:             svc.Command,
-			Args:                svc.Args,
+			Command:             containerCommand(svc.StartCommand, svc.Command),
+			Args:                containerArgs(svc.StartCommand, svc.Args),
 		}
 		if err := appk8s.ApplyDeployment(bgCtx, s.k8s, wp); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s deployment: "+err.Error())
@@ -389,26 +389,28 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 
 	// Create the build Job.
 	err := appk8s.CreateBuildJob(ctx, s.k8s, appk8s.BuildJobParams{
-		JobName:       a.jobName,
-		Namespace:     a.namespace,
-		Image:         builderImage,
-		GitRepo:       a.bc.GitRepo,
-		GitURL:        a.git.URL,
-		GitUser:       a.git.User,
-		GitBranch:     a.bc.Branch,
-		GitToken:      a.git.Token,
-		RootDir:       a.bc.RootDir,
-		Builder:       string(a.bc.Builder),
-		ImageDest:     a.imageName,
-		RegistryHost:  a.registryHost,
-		RegistryUser:  a.registryUser,
-		RegistryPass:  a.registryPass,
-		BuildEnvVars:  s.buildEnv(ctx, a),
-		BuilderNode:   a.bc.BuilderNode,
-		CPURequest:    a.bc.BuilderCPURequest,
-		MemoryRequest: a.bc.BuilderMemoryRequest,
-		CPULimit:      a.bc.BuilderCPULimit,
-		MemoryLimit:   a.bc.BuilderMemoryLimit,
+		JobName:        a.jobName,
+		Namespace:      a.namespace,
+		Image:          builderImage,
+		GitRepo:        a.bc.GitRepo,
+		GitURL:         a.git.URL,
+		GitUser:        a.git.User,
+		GitBranch:      a.bc.Branch,
+		GitToken:       a.git.Token,
+		RootDir:        a.bc.RootDir,
+		Builder:        string(a.bc.Builder),
+		ImageDest:      a.imageName,
+		RegistryHost:   a.registryHost,
+		RegistryUser:   a.registryUser,
+		RegistryPass:   a.registryPass,
+		BuildEnvVars:   s.buildEnv(ctx, a),
+		InstallCommand: a.bc.InstallCommand,
+		BuildCommand:   a.bc.BuildCommand,
+		BuilderNode:    a.bc.BuilderNode,
+		CPURequest:     a.bc.BuilderCPURequest,
+		MemoryRequest:  a.bc.BuilderMemoryRequest,
+		CPULimit:       a.bc.BuilderCPULimit,
+		MemoryLimit:    a.bc.BuilderMemoryLimit,
 	})
 	if err != nil {
 		s.failDeployment(a.deployment.ID, "failed to create build job: "+err.Error())
@@ -496,8 +498,8 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		LivenessProbe:       probe,
 		ReadinessProbe:      probe,
 		ImagePullSecretName: pullSecretName,
-		Command:             a.svc.Command,
-		Args:                a.svc.Args,
+		Command:             containerCommand(a.svc.StartCommand, a.svc.Command),
+		Args:                containerArgs(a.svc.StartCommand, a.svc.Args),
 	}
 	if err := appk8s.ApplyDeployment(ctx, s.k8s, wp); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
@@ -774,8 +776,8 @@ func (s *DeploymentService) workloadParams(ctx context.Context, svc *db.Service,
 		LivenessProbe:       probe,
 		ReadinessProbe:      probe,
 		ImagePullSecretName: pullSecretName,
-		Command:             svc.Command,
-		Args:                svc.Args,
+		Command:             containerCommand(svc.StartCommand, svc.Command),
+		Args:                containerArgs(svc.StartCommand, svc.Args),
 	}
 }
 
@@ -2082,4 +2084,24 @@ func (s *DeploymentService) Redeploy(ctx context.Context, serviceID uuid.UUID) (
 	return s.deployImage(ctx, svc, last.Image,
 		fmt.Sprintf("Redeploying the current image (%s)\n", last.Image), "Redeploy",
 		Provenance{Source: db.DeploySourceRedeploy, From: &last})
+}
+
+// containerCommand is what replaces the image's ENTRYPOINT: the console's
+// start command, run through the image's shell, when one is set; otherwise the
+// service's own command (from a stack's compose file), or nothing, which keeps
+// the image's.
+func containerCommand(start string, command db.StringArray) []string {
+	if start != "" {
+		return []string{"/bin/sh", "-c", start}
+	}
+	return command
+}
+
+// containerArgs is what replaces the image's CMD: nothing under a start
+// command, which is the whole command line; otherwise the service's own args.
+func containerArgs(start string, args db.StringArray) []string {
+	if start != "" {
+		return nil
+	}
+	return args
 }

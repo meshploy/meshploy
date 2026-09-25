@@ -68,6 +68,10 @@ type BuildJobParams struct {
 	RegistryPass string
 	// Subdirectory within the cloned repo to build from. Empty = repo root.
 	RootDir string
+	// InstallCommand and BuildCommand override the builder's own, for
+	// Nixpacks and Railpack; empty leaves it to the builder.
+	InstallCommand string
+	BuildCommand   string
 	// Build-time env vars — KEY=VALUE, one per line.
 	// Forwarded to nixpacks (--env), railpack (export), dockerfile (--build-arg).
 	BuildEnvVars string
@@ -221,6 +225,8 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "REGISTRY_USER", Value: p.RegistryUser},
 								{Name: "REGISTRY_PASS", Value: p.RegistryPass},
 								{Name: "BUILD_ENV_VARS", Value: p.BuildEnvVars},
+								{Name: "INSTALL_COMMAND", Value: p.InstallCommand},
+								{Name: "BUILD_COMMAND", Value: p.BuildCommand},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{

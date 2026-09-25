@@ -657,6 +657,10 @@ type Service struct {
 	// container as written.
 	Command StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"command,omitempty"`
 	Args    StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"args,omitempty"`
+	// StartCommand is the console's start command: one line, run through the
+	// image's /bin/sh, so pipes and && work. Set, it replaces Command and Args
+	// and the image's own ENTRYPOINT and CMD; empty keeps them.
+	StartCommand string `gorm:"not null;default:''" json:"start_command,omitempty"`
 
 	// DeployedSpecHash fingerprints what last reached the cluster, so an apply
 	// can tell a service that is behind from one that is current. The record
@@ -715,6 +719,11 @@ type BuildConfig struct {
 	RootDir          string     `gorm:"default:'.'"` // root of the app within the repo
 	// Dockerfile builder
 	DockerfilePath string     `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
+	// InstallCommand and BuildCommand replace what Nixpacks or Railpack would
+	// work out for themselves; empty leaves it to them. A Dockerfile build
+	// ignores both: its steps are in the Dockerfile.
+	InstallCommand string `gorm:"not null;default:''" json:"install_command,omitempty"`
+	BuildCommand   string `gorm:"not null;default:''" json:"build_command,omitempty"`
 	BuildArgs      EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"build_args"`
 
 	// Build-time environment variables — KEY=VALUE, one per line.

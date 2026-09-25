@@ -10,6 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
+import { useEffect } from "react"
 import { Field, inputCls } from "@/components/services/form-primitives"
 
 export interface SourceState {
@@ -23,15 +25,22 @@ export interface SourceState {
   gitBranch: string
   builder: "railpack" | "dockerfile"
   dockerfilePath: string
+  /** Empty: the builder works it out, as it always has. */
+  installCommand: string
+  buildCommand: string
   registryIntegrationId: string
 }
 
 export function SourceFields({
   value: f,
   onChange,
+  pickDefaultRegistry = false,
 }: {
   value: SourceState
   onChange: (patch: Partial<SourceState>) => void
+  /** A new service: choose the built-in registry (or the only one) for it,
+   *  the way the builder is chosen for it. Off where a saved choice is shown. */
+  pickDefaultRegistry?: boolean
 }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
@@ -48,6 +57,15 @@ export function SourceFields({
     queryFn: () => registryApi.list(orgId, token),
     enabled: !!orgId,
   })
+
+  const fallbackRegistry =
+    registryList.find((r) => r.provider === "builtin") ?? (registryList.length === 1 ? registryList[0] : undefined)
+  useEffect(() => {
+    if (pickDefaultRegistry && !f.registryIntegrationId && fallbackRegistry) {
+      onChange({ registryIntegrationId: fallbackRegistry.id })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickDefaultRegistry, f.registryIntegrationId, fallbackRegistry?.id])
 
   const { data: repoList = [], isFetching: reposFetching } = useQuery({
     queryKey: ["git-repos", orgId, f.gitIntegrationId],
@@ -269,6 +287,31 @@ export function SourceFields({
               </Field>
             )}
           </div>
+
+          {/* Left empty, Railpack works both out from the code, as it always
+              has; a Dockerfile holds its own steps. */}
+          {f.builder === "dockerfile" ? (
+            <p className="text-xs text-muted-foreground">The install and build steps are the Dockerfile&apos;s own.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4" data-testid="build-commands">
+              <Field label="Install command" term="services.install-command">
+                <input
+                  value={f.installCommand}
+                  onChange={(e) => onChange({ installCommand: e.target.value })}
+                  placeholder="Worked out by Railpack"
+                  className={cn(inputCls, "font-mono")}
+                />
+              </Field>
+              <Field label="Build command" term="services.build-command">
+                <input
+                  value={f.buildCommand}
+                  onChange={(e) => onChange({ buildCommand: e.target.value })}
+                  placeholder="Worked out by Railpack"
+                  className={cn(inputCls, "font-mono")}
+                />
+              </Field>
+            </div>
+          )}
 
           <Field label="Registry (push destination)" required>
             <Select

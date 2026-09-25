@@ -9,6 +9,7 @@
 #   GIT_USER       user presented with GIT_TOKEN (x-access-token, oauth2)
 #   GIT_TOKEN      access token; empty for a public repository
 #   BUILDER        nixpacks | railpack | dockerfile
+#   INSTALL_COMMAND, BUILD_COMMAND   optional: replace the builder's own (Nixpacks, Railpack)
 #   IMAGE_DEST     registry/image:tag to push to
 #   REGISTRY_HOST  registry hostname (for buildah login)
 #   REGISTRY_USER  registry username
@@ -60,6 +61,22 @@ if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
         export "${key}=${value}"
         RAILPACK_SECRET_FLAGS+=(--secret "id=${key},env=${key}")
     done <<< "${BUILD_ENV_VARS}"
+fi
+
+# ── Install and build commands ────────────────────────────────────────────────
+# Set in the console to replace what the builder works out for itself; empty
+# leaves it to the builder. Nixpacks takes both as flags; Railpack takes the
+# build command as a flag and the install command as its RAILPACK_INSTALL_CMD
+# variable. A Dockerfile build ignores both: its steps are in the Dockerfile.
+NIXPACKS_CMD_FLAGS=()
+RAILPACK_CMD_FLAGS=()
+if [[ -n "${INSTALL_COMMAND:-}" ]]; then
+    NIXPACKS_CMD_FLAGS+=(--install-cmd "${INSTALL_COMMAND}")
+    RAILPACK_CMD_FLAGS+=(--env "RAILPACK_INSTALL_CMD=${INSTALL_COMMAND}")
+fi
+if [[ -n "${BUILD_COMMAND:-}" ]]; then
+    NIXPACKS_CMD_FLAGS+=(--build-cmd "${BUILD_COMMAND}")
+    RAILPACK_CMD_FLAGS+=(--build-cmd "${BUILD_COMMAND}")
 fi
 
 # ── Clone ─────────────────────────────────────────────────────────────────────
@@ -152,7 +169,8 @@ case "${BUILDER}" in
     # --out writes only the generated .nixpacks/ plan files (Dockerfile + .nix
     # files). It does NOT copy the app source. We copy .nixpacks/ back into the
     # workspace so the build context contains both the source and the plan files.
-    nixpacks build . --out /tmp/nixpacks-out "${NIXPACKS_ENV_FLAGS[@]+"${NIXPACKS_ENV_FLAGS[@]}"}"
+    nixpacks build . --out /tmp/nixpacks-out "${NIXPACKS_ENV_FLAGS[@]+"${NIXPACKS_ENV_FLAGS[@]}"}" \
+        "${NIXPACKS_CMD_FLAGS[@]+"${NIXPACKS_CMD_FLAGS[@]}"}"
     cp -r /tmp/nixpacks-out/.nixpacks "${WORKDIR}/.nixpacks"
     # --layers enables intermediate layer caching in the PVC-backed OCI storage.
     # --cache-from uses the last successfully pushed image as the cache source.
@@ -230,7 +248,8 @@ EOF
     log "Preparing railpack build plan…"
     railpack prepare . \
         --plan-out "${WORKDIR}/railpack-plan.json" \
-        "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}"
+        "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
+        "${RAILPACK_CMD_FLAGS[@]+"${RAILPACK_CMD_FLAGS[@]}"}"
 
     log "Building and pushing via BuildKit frontend → ${IMAGE_DEST}"
     buildctl build \

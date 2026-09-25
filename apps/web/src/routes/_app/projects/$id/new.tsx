@@ -115,6 +115,9 @@ interface FormState {
   gitBranch: string
   builder: Builder
   dockerfilePath: string
+  installCommand: string
+  buildCommand: string
+  startCommand: string
   registryIntegrationId: string
   nodeId: string | null
   builderNodeName: string | null  // k8s_node_name; null = auto-schedule
@@ -144,6 +147,9 @@ const INITIAL: FormState = {
   gitBranch: "",
   builder: "railpack",
   dockerfilePath: "Dockerfile",
+  installCommand: "",
+  buildCommand: "",
+  startCommand: "",
   registryIntegrationId: "",
   nodeId: null,
   builderNodeName: null,
@@ -223,6 +229,7 @@ function NewResourcePage() {
         memory_request: form.memoryRequest || undefined,
         memory_limit: form.memoryLimit || undefined,
         node_id: form.nodeId ?? undefined,
+        start_command: form.startCommand.trim() || undefined,
       }
       if (form.source === "image") {
         body.image = form.image
@@ -237,6 +244,8 @@ function NewResourcePage() {
         body.branch                   = form.gitBranch
         body.builder                  = form.builder
         body.dockerfile_path          = form.builder === "dockerfile" ? form.dockerfilePath : undefined
+        body.install_command          = form.builder !== "dockerfile" ? form.installCommand.trim() || undefined : undefined
+        body.build_command            = form.builder !== "dockerfile" ? form.buildCommand.trim() || undefined : undefined
         body.registry_integration_id  = form.registryIntegrationId || undefined
         body.builder_node             = form.builderNodeName ?? ""
         body.builder_cpu_request      = form.builderCPURequest || undefined
@@ -433,6 +442,7 @@ function ServiceForm({
         <SourceFields
           value={form as SourceState}
           onChange={patch}
+          pickDefaultRegistry
         />
       </Section>
 
@@ -504,6 +514,17 @@ function ServiceForm({
 
       {/* ── Section: Deployment ──────────────────────────────── */}
       <Section title="Deployment" subtitle="Choose where this service runs and how many replicas to start">
+        {/* The command the service starts with. Empty keeps the image's own:
+            what Railpack worked out, or the Dockerfile's CMD. */}
+        <Field label="Start command" term="services.start-command">
+          <input
+            value={form.startCommand}
+            onChange={(e) => patch({ startCommand: e.target.value })}
+            placeholder="The image's own"
+            className={cn(inputCls, "font-mono")}
+            data-testid="start-command"
+          />
+        </Field>
         {/* Node selection */}
         <div className="flex flex-col gap-3">
           <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
