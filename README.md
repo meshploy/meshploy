@@ -27,7 +27,7 @@ Meshploy is a self-hosted application platform that connects your servers over a
 
 Build on a machine you choose. Run workloads on connected workers. Keep control of where your applications and data live.
 
-[![Meshploy console showing projects, node health, and a private mesh topology](docs/assets/console-overview.png)](https://meshploy.com/playground/)
+[![Meshploy console showing what needs attention, resources across environment levels, and delivery over two weeks](docs/assets/console-overview.png)](https://meshploy.com/playground/)
 
 <p align="center"><em>The Meshploy console with sample data. Explore it in the browser playground; no server is required.</em></p>
 
