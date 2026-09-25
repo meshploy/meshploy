@@ -234,6 +234,7 @@ func copyService(ctx context.Context, tx *gorm.DB, src db.Service, level uuid.UU
 		HealthcheckStartPeriodSecs: src.HealthcheckStartPeriodSecs,
 		Command:                    src.Command,
 		Args:                       src.Args,
+		StartCommand:               src.StartCommand,
 		LineageID:                  &lineage,
 	}
 	if err := tx.WithContext(ctx).Create(&dst).Error; err != nil {
@@ -276,6 +277,8 @@ func copyService(ctx context.Context, tx *gorm.DB, src db.Service, level uuid.UU
 			Branch:                bc.Branch,
 			RootDir:               bc.RootDir,
 			DockerfilePath:        bc.DockerfilePath,
+			InstallCommand:        bc.InstallCommand,
+			BuildCommand:          bc.BuildCommand,
 			BuildArgs:             bc.BuildArgs,
 			BuildEnvVars:          bc.BuildEnvVars,
 			BuilderNode:           bc.BuilderNode,

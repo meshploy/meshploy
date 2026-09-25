@@ -20,6 +20,13 @@ Meshploy clones the branch you choose and builds an image with one of three buil
 
 A build runs as a job on a **build node**, pushes the image to your registry (the built-in one, or a registry you connected), then deploys it. The build log streams on the deployment's page, and the deployment records the branch and commit it built.
 
+## Commands {#commands}
+
+Three optional commands. Left empty, each is worked out for you, as before:
+
+- **Install command** (`pnpm install --frozen-lockfile`) and **build command** (`pnpm build`) replace the steps Railpack works out from the code. A Dockerfile build has its own steps, so they apply to Railpack only.
+- **Start command** (`node dist/server.js`) replaces the command the image starts with, whether Railpack built it, a Dockerfile did, or it is an image you named. It runs through the image's shell, so `&&` and pipes work, and it changes on the next deploy with no rebuild. An image without a shell, such as a distroless one, cannot use it.
+
 ## Deploying on push {#auto-deploy}
 
 With **auto-deploy** on, a push to the tracked branch builds and deploys by itself. A GitHub connection reports every push through the Meshploy GitHub App; GitLab, Gitea and Bitbucket use a webhook on the repository, which Meshploy adds when its token allows. **Watch paths** narrow it to pushes that change certain folders, for a repository that holds more than one service.
@@ -52,6 +59,9 @@ A deploy fails at once when no online node can build, and after a few minutes wh
 - **Auto-deploy** {#auto-deploy -> auto-deploy}: Build and deploy on every push to the tracked branch.
 - **Watch paths** {#watch-paths -> auto-deploy}: Only pushes that change these folders deploy; for a repository holding more than one service.
 - **Deploy webhook** {#deploy-webhook -> auto-deploy}: A URL that builds this service whenever it is called. Its token is the only guard: treat it as a credential.
+- **Install command** {#install-command -> commands}: Replaces the install step Railpack works out, such as pnpm install. Empty: Railpack decides.
+- **Build command** {#build-command -> commands}: Replaces the build step Railpack works out, such as pnpm build. Empty: Railpack decides.
+- **Start command** {#start-command -> commands}: Replaces the command the image starts with, run through its shell; changes on the next deploy without a rebuild. Empty: the image's own.
 - **Redeploy** {#redeploy -> deploys}: Runs the image the service runs now again, for changed variables, without building.
 - **Rollback** {#rollback -> deploys}: Runs an earlier deployment's image again, as it was.
 - **Image retention** {#image-retention -> deploys}: How many built images are kept, which is how far back a rollback can go.

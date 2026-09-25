@@ -256,3 +256,20 @@ func TestIsBuildNode(t *testing.T) {
 		t.Error("a node without the label counted as a build node")
 	}
 }
+
+// The console's install and build commands reach the builder as they were
+// typed; empty ones are empty, which leaves the builder to work them out.
+func TestCreateBuildJobPassesInstallAndBuildCommands(t *testing.T) {
+	_, env := jobEnv(t, BuildJobParams{
+		JobName: "build-app-2", Namespace: "demo", Image: "example.com/builder:test",
+		GitURL: "https://git.example.com/app.git", GitBranch: "main",
+		InstallCommand: "pnpm install --frozen-lockfile", BuildCommand: "pnpm build && pnpm test",
+	})
+	if env["INSTALL_COMMAND"] != "pnpm install --frozen-lockfile" || env["BUILD_COMMAND"] != "pnpm build && pnpm test" {
+		t.Errorf("commands = %q / %q", env["INSTALL_COMMAND"], env["BUILD_COMMAND"])
+	}
+	_, env = jobEnv(t, BuildJobParams{JobName: "build-app-3", Namespace: "demo", Image: "x", GitBranch: "main"})
+	if env["INSTALL_COMMAND"] != "" || env["BUILD_COMMAND"] != "" {
+		t.Error("an unset command must reach the builder empty")
+	}
+}

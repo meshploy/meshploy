@@ -14,6 +14,8 @@ export interface ApiServicePort {
 export interface ApiService {
   id: string
   name: string
+  /** Run through the image's /bin/sh at start; absent = the image's own command. */
+  start_command?: string
   /** The Kubernetes object's name, and so the hostname other workloads resolve.
    *  Derived from the name when the service is created and fixed thereafter, so
    *  "docai_db" answers to "docai-db". Absent on services created before the
@@ -111,6 +113,10 @@ export interface ApiBuildConfig {
   git_repo: string
   branch: string
   dockerfile_path: string
+  /** Replaces the builder's install step (Railpack, Nixpacks); empty = the builder's own. */
+  install_command?: string
+  /** Replaces the builder's build step (Railpack, Nixpacks); empty = the builder's own. */
+  build_command?: string
   registry_integration_id: string | null
   git_integration_id: string | null
   builder_node: string
@@ -158,6 +164,12 @@ export interface CreateServiceBody {
   branch?: string
   builder?: "railpack" | "dockerfile"
   dockerfile_path?: string
+  /** Replaces the builder's install step (Railpack, Nixpacks); empty = the builder's own. */
+  install_command?: string
+  /** Replaces the builder's build step (Railpack, Nixpacks); empty = the builder's own. */
+  build_command?: string
+  /** Run through the image's /bin/sh at start; empty = the image's own. */
+  start_command?: string
   registry_integration_id?: string
   builder_node?: string          // "" = auto-schedule
   builder_cpu_request?: string   // "" = default (1000m)
@@ -187,6 +199,7 @@ export interface UpdateServiceBody {
   env_vars?: string
   ports?: PortBody[]   // replaces all ports when set
   pull_registry_integration_id?: string  // "" = clear (public image), UUID = set
+  start_command?: string // "" = the image's own
 }
 
 export interface UpdateBuildConfigBody {
@@ -194,6 +207,10 @@ export interface UpdateBuildConfigBody {
   branch?: string
   builder?: "railpack" | "dockerfile"
   dockerfile_path?: string
+  /** Replaces the builder's install step (Railpack, Nixpacks); empty = the builder's own. */
+  install_command?: string
+  /** Replaces the builder's build step (Railpack, Nixpacks); empty = the builder's own. */
+  build_command?: string
   registry_integration_id?: string  // "" = clear
   build_env_vars?: string           // nil = no change; "" = clear
   git_integration_id?: string
