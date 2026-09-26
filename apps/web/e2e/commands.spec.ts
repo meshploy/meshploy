@@ -55,3 +55,18 @@ test("a route's target opens the service behind it", async ({ page }) => {
   await page.getByRole("link", { name: "Go to service" }).click({ timeout: 10_000 })
   await expect(page).toHaveURL(new RegExp(`/services/${DEMO_SVC_WEB}`))
 })
+
+test("Ctrl+/ comments a variable out, and back in", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/services/${DEMO_SVC_API}/config`)
+  const editor = page.locator(".cm-content").first()
+  await editor.click({ timeout: 10_000 })
+  await page.keyboard.press("Control+End")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("FEATURE_FLAG=on")
+  const line = page.locator(".cm-line").filter({ hasText: "FEATURE_FLAG=on" })
+  await page.keyboard.press("Control+/")
+  await expect(line).toHaveText("# FEATURE_FLAG=on")
+  await page.keyboard.press("Control+/")
+  await expect(line).toHaveText("FEATURE_FLAG=on")
+})
