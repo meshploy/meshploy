@@ -31,7 +31,10 @@ type Config struct {
 	KubeconfigPath string // KUBECONFIG      path to kubeconfig file; empty = in-cluster config
 	K3sServerURL   string // K3S_SERVER_URL  override k3s API server URL (e.g. when running in Docker)
 	BuilderImage   string // BUILDER_IMAGE   override the builder container image
-	K3sToken       string // K3S_TOKEN       node token for workers to join the cluster
+	// BuildCacheLimitGB caps each project's build cache: after every build the
+	// builder trims it back under this. BUILD_CACHE_LIMIT_GB; default 10, 0 = no cap.
+	BuildCacheLimitGB int
+	K3sToken          string // K3S_TOKEN       node token for workers to join the cluster
 
 	// TLS handling for K3S_SERVER_URL. The rewrite breaks hostname verification
 	// because the cluster certificate is not issued for the rewritten address,
@@ -152,7 +155,14 @@ func Load() (*Config, error) {
 		KubeconfigPath: os.Getenv("KUBECONFIG"),
 		K3sServerURL:   os.Getenv("K3S_SERVER_URL"),
 		BuilderImage:   os.Getenv("BUILDER_IMAGE"),
-		K3sToken:       os.Getenv("K3S_TOKEN"),
+		BuildCacheLimitGB: func() int {
+			v := strings.TrimSpace(os.Getenv("BUILD_CACHE_LIMIT_GB"))
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+				return n
+			}
+			return 10
+		}(),
+		K3sToken: os.Getenv("K3S_TOKEN"),
 
 		K3sTLSServerName: os.Getenv("K3S_TLS_SERVER_NAME"),
 		K3sSkipTLSVerify: envBool("K3S_SKIP_TLS_VERIFY"),

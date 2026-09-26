@@ -2,7 +2,8 @@ import { SettingsWorkspace } from "@/components/layout/settings-workspace"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Check, Loader2, Pencil, Trash2, X } from "lucide-react"
+import { Check, Eraser, Loader2, Pencil, Trash2, X } from "lucide-react"
+import { TermInfo } from "@/help/term"
 import { projects as projectsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -40,6 +41,10 @@ function ProjectSettingsPage() {
     },
   })
 
+  const clearCache = useMutation({
+    mutationFn: () => projectsApi.clearBuildCache(orgId, projectId, token),
+  })
+
   const deleteMut = useMutation({
     mutationFn: () => projectsApi.delete(orgId, projectId, token),
     onSuccess: () => {
@@ -53,7 +58,7 @@ function ProjectSettingsPage() {
   return (
     <div className="console-page settings-page space-y-6">
       <div><h1>Project settings</h1><p className="mt-2 text-sm text-muted-foreground">Manage project identity and lifecycle.</p></div>
-      <SettingsWorkspace sections={[["project-general", "General"], ["project-danger", "Danger zone"]]}>
+      <SettingsWorkspace sections={[["project-general", "General"], ["project-build-cache", "Build cache"], ["project-danger", "Danger zone"]]}>
       {/* General */}
       <section id="project-general" className="console-section space-y-4">
         <div>
@@ -122,6 +127,28 @@ function ProjectSettingsPage() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* The project's build cache: one for all its services, trimmed after
+          every build to the server's limit, and cleared here at any time. */}
+      <section id="project-build-cache" className="console-section space-y-4">
+        <div>
+          <h2 className="flex items-center gap-1 text-sm font-medium">
+            Build cache
+            <TermInfo id="services.build-cache" />
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Layers kept from earlier builds, so the next one is faster. Shared by every service in this project, and
+            trimmed back to the server&apos;s limit after each build. Clear it to free the space now, or to force a
+            clean build; the next build is slower while it fills again.
+          </p>
+        </div>
+        {clearCache.isError && <p className="text-xs text-destructive">{(clearCache.error as Error).message}</p>}
+        {clearCache.isSuccess && <p className="text-xs text-emerald-400">Cleared. The next build starts fresh.</p>}
+        <Button size="sm" variant="outline" className="gap-1.5" disabled={clearCache.isPending} onClick={() => clearCache.mutate()}>
+          {clearCache.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
+          Clear build cache
+        </Button>
       </section>
 
       {/* Danger zone */}

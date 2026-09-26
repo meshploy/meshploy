@@ -261,6 +261,14 @@ EOF
         --progress plain \
         "${RAILPACK_SECRET_FLAGS[@]+"${RAILPACK_SECRET_FLAGS[@]}"}"
 
+    # Keep the cache under the project's limit: BuildKit drops the least
+    # recently used layers first, so what the next build needs is what stays.
+    if [[ "${CACHE_LIMIT_MB:-0}" -gt 0 ]]; then
+        log "Trimming the build cache to ${CACHE_LIMIT_MB} MB…"
+        buildctl prune --keep-storage "${CACHE_LIMIT_MB}" >/dev/null \
+            || log "Could not trim the build cache; the build itself succeeded."
+    fi
+
     kill "${BUILDKITD_PID}" 2>/dev/null || true
     ;;
 
@@ -290,6 +298,22 @@ case "${BUILDER}" in
   nixpacks|dockerfile)
     log "Pushing ${IMAGE_DEST}…"
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
+    ;;
+esac
+
+# ── Cache limit (Buildah) ─────────────────────────────────────────────────────
+# Buildah cannot trim its layer cache to a size, so over the limit it is
+# emptied, and the next build starts cold. Never fails the build.
+case "${BUILDER}" in
+  nixpacks|dockerfile)
+    if [[ "${CACHE_LIMIT_MB:-0}" -gt 0 ]]; then
+        used_mb=$(du -sm /var/lib/containers/storage 2>/dev/null | cut -f1)
+        if [[ "${used_mb:-0}" -gt "${CACHE_LIMIT_MB}" ]]; then
+            log "Build cache is ${used_mb} MB, over the ${CACHE_LIMIT_MB} MB limit: emptying it."
+            buildah rmi --all --force >/dev/null 2>&1 \
+                || log "Could not empty the build cache; the build itself succeeded."
+        fi
+    fi
     ;;
 esac
 

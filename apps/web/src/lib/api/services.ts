@@ -423,7 +423,7 @@ export interface ApiAttentionItem {
   kind:
     | "service_failed" | "database_failed" | "deploy_failed" | "job_failed"
     | "backup_missing" | "backup_failed" | "node_offline" | "domain_unverified"
-    | "former_primary" | "promotion_waiting" | "hotfix_running"
+    | "former_primary" | "promotion_waiting" | "hotfix_running" | "node_disk" | "orphans"
   severity: "critical" | "warning" | "info"
   title: string
   detail?: string

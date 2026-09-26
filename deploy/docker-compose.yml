@@ -115,6 +115,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-https://console.${DOMAIN}}
       HEADSCALE_URL: http://headscale:8080
       HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
+      # Each project's build cache is trimmed back under this after every build.
+      BUILD_CACHE_LIMIT_GB: ${BUILD_CACHE_LIMIT_GB:-10}
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       # The address is rewritten because the kubeconfig points at 127.0.0.1,
       # which is the host, not this container. The cluster certificate is not

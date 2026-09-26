@@ -1,6 +1,11 @@
 package service
 
-import "k8s.io/client-go/kubernetes"
+import (
+	"context"
+
+	"github.com/google/uuid"
+	"k8s.io/client-go/kubernetes"
+)
 
 // UseK8sForTest gives the deployment service a cluster client, so tests in
 // service_test can drive a deploy against a fake one. Compiled only into tests.
@@ -21,4 +26,14 @@ func UseWorkloadK8sForTest(s *Services, client kubernetes.Interface) {
 // trigger a run.
 func UseJobK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Jobs.k8s = client
+}
+
+// UseNodeMetricsForTest replaces how the overview reads a node's metrics.
+func UseNodeMetricsForTest(s *Services, read func(ctx context.Context, nodeID uuid.UUID) (*NodeMetrics, error)) {
+	s.Overview.metrics = read
+}
+
+// UseOrphansK8sForTest gives the orphan check a cluster client to compare with.
+func UseOrphansK8sForTest(s *Services, client kubernetes.Interface) {
+	s.Orphans.k8s = client
 }
