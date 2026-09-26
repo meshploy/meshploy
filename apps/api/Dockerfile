@@ -57,7 +57,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ── Runtime stage ──────────────────────────────────────────────────────────────
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata postgresql-client
+# git: a stack read from a whole repository, and the look at a repository
+# that fills in a new service, clone it.
+RUN apk add --no-cache ca-certificates tzdata postgresql-client git
 
 WORKDIR /app
 COPY --from=builder /out/api ./api

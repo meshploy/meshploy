@@ -74,6 +74,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import type { TCPZone } from "@/lib/api/routes"
 import { TermInfo } from "@/help/term"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
+import { StackDetection, useStackDetection, type DetectionApplied } from "@/components/services/stack-detection"
 
 // ─── Route ───────────────────────────────────────────────────────────────────
 
@@ -417,6 +418,48 @@ function ServiceForm({
 
   const readyVolumes = projectVolumes.filter((v) => v.mounts?.length === 0)
 
+  // What the repository looks like, and the settings it suggests. Each is
+  // filled in only while the field still holds the form's default or what an
+  // earlier look filled in, so nothing typed by hand is overwritten, and
+  // choosing another repository replaces the first one's suggestions.
+  const detection = useStackDetection(orgId, form)
+  const [applied, setApplied] = useState<DetectionApplied>({})
+  const d = form.source === "git" ? detection.data : undefined
+  useEffect(() => {
+    if (form.source !== "git") return
+    const next: Partial<FormState> = {}
+    const got: DetectionApplied = {}
+    const free = <K extends "builder" | "startCommand" | "memoryLimit">(k: K, prev: FormState[K] | undefined) =>
+      form[k] === INITIAL[k] || (prev !== undefined && form[k] === prev)
+    const builder = d?.builder ?? INITIAL.builder
+    if (free("builder", applied.builder as Builder | undefined)) {
+      next.builder = builder
+      if (builder !== INITIAL.builder) got.builder = builder
+    }
+    const start = d?.start_command ?? INITIAL.startCommand
+    if (free("startCommand", applied.startCommand)) {
+      next.startCommand = start
+      if (start) got.startCommand = start
+    }
+    const memory = d?.memory_limit ?? INITIAL.memoryLimit
+    if (free("memoryLimit", applied.memoryLimit)) {
+      next.memoryLimit = memory
+      if (d?.memory_limit) got.memoryLimit = memory
+    }
+    const primary = form.ports.findIndex((p) => p.isPrimary)
+    const current = form.ports[primary]?.port
+    const port = d?.port ?? INITIAL.ports[0].port
+    if (primary >= 0 && (current === INITIAL.ports[0].port || current === applied.port)) {
+      if (current !== port) next.ports = form.ports.map((p, i) => (i === primary ? { ...p, port } : p))
+      if (d?.port) got.port = port
+    }
+    const changed = (Object.keys(next) as (keyof FormState)[]).some((k) => JSON.stringify(next[k]) !== JSON.stringify(form[k]))
+    if (changed) patch(next)
+    setApplied(got)
+    // Runs when a look finishes, not on every keystroke in the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [d, form.source])
+
   function attachVolume() {
     if (!pendingVolumeId || !pendingMountPath.trim()) return
     patch({ volumeAttachment: { volumeId: pendingVolumeId, mountPath: pendingMountPath.trim() } })
@@ -444,6 +487,7 @@ function ServiceForm({
           onChange={patch}
           pickDefaultRegistry
         />
+        {form.source === "git" && <StackDetection query={detection} applied={applied} />}
       </Section>
 
       {/* ── Section: Build ───────────────────────────────────── */}

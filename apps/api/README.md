@@ -482,6 +482,7 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 | POST | `/orgs/{orgId}/git-integrations/oauth` | ✓ | Start a GitLab, Gitea or Bitbucket OAuth App connection |
 | DELETE | `/orgs/{orgId}/git-integrations/{id}` | ✓ | Delete a git integration |
 | GET | `/orgs/{orgId}/git-integrations/{id}/branches` | ✓ | List branches for a repository |
+| POST | `/orgs/{orgId}/detect-stack` | ✓ | Look at a repository's branch (shallow clone of its tree and small files) and suggest a builder, port, start command and memory limit for a new service |
 | GET | `/orgs/{orgId}/git-integrations/{id}/install-url` | ✓ | Get GitHub App install URL for a specific integration |
 | GET | `/orgs/{orgId}/git-integrations/{id}/oauth-reconnect` | ✓ | Re-generate OAuth authorization URL for a pending integration |
 | GET | `/orgs/{orgId}/git-integrations/{id}/push-hook` | ✓ | Where the provider should deliver pushes, and the secret to sign them with (org admin) |

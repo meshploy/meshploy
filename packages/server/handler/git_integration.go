@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -37,6 +38,10 @@ type RepoItem struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
 	Private       bool   `json:"private"`
+}
+
+type DetectStackOutput struct {
+	Body *service.Detection
 }
 
 type ListBranchesOutput struct {
@@ -371,6 +376,42 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 			return nil, err
 		}
 		return &ListBranchesOutput{Body: branches}, nil
+	})
+
+	// Detect: what a repository's branch is, to fill in a new service.
+	huma.Register(api, huma.Operation{
+		OperationID: "detect-repository-stack",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/orgs/{orgId}/detect-stack",
+		Summary:     "Look at a repository's branch and suggest how to build and run it: builder, port, start command, memory",
+		Tags:        []string{tag},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, func(ctx context.Context, in *struct {
+		OrgID string `path:"orgId"`
+		Body  struct {
+			// GitIntegrationID is empty for a public repository.
+			GitIntegrationID string `json:"git_integration_id,omitempty"`
+			Repo             string `json:"repo" minLength:"1"`
+			Branch           string `json:"branch" minLength:"1"`
+			DockerfilePath   string `json:"dockerfile_path,omitempty"`
+		}
+	}) (*DetectStackOutput, error) {
+		_, orgID, integrationID, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.Body.GitIntegrationID)
+		if err != nil {
+			return nil, err
+		}
+		var idp *uuid.UUID
+		if in.Body.GitIntegrationID != "" {
+			idp = &integrationID
+		}
+		d, err := h.svc.GitIntegrations.DetectStack(ctx, orgID, idp, in.Body.Repo, in.Body.Branch, in.Body.DockerfilePath)
+		if errors.Is(err, service.ErrGitIntegrationNotFound) {
+			return nil, huma.Error404NotFound("git integration not found")
+		}
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+		return &DetectStackOutput{Body: d}, nil
 	})
 
 	// Delete

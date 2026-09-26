@@ -1230,6 +1230,19 @@ export const workspaceHandlers = [
     t.revoked_at = now()
     return ok()
   }),
+  // A look at a repository before its first build: demo/api is a FastAPI app
+  // loading torch, demo/web a Node app with a Dockerfile that starts it.
+  http.post(`${O}/detect-stack`, async ({ request }) => {
+    const b = await body(request)
+    if (String(b.repo).includes("web"))
+      return json({ facts: { languages: ["node"], dockerfile: "Dockerfile", dockerfile_cmd: true, expose: 8080 },
+        summary: "Node.js · Dockerfile", builder: "dockerfile", port: 8080,
+        notes: ["Builds with the repository's Dockerfile, which says how to start the app."] })
+    return json({ facts: { languages: ["python"], framework: "fastapi", entry: "app.main:app", heavy: ["torch"] },
+      summary: "Python · FastAPI (app/main.py)", builder: "railpack", port: 8000,
+      start_command: "uvicorn app.main:app --host 0.0.0.0 --port $PORT", memory_limit: "2Gi",
+      notes: ["Starts the FastAPI app in app/main.py; check the command before deploying.", "Depends on torch, which usually needs 2 GiB or more."] })
+  }),
   http.get(`${O}/git-integrations/:integrationId/repos`, () =>
     json([
       { full_name: "demo/api", default_branch: "main", private: true },
