@@ -7,7 +7,26 @@ const lines = () => [
   `${new Date().toISOString()} INFO [demo] GET /health 200 2ms`,
   `${new Date().toISOString()} INFO [demo] GET /api/projects 200 18ms`,
 ]
-function stream(request: Request, messages: string[]) {
+/**
+ * A build log as long as a real one, so the log view has something to scroll:
+ * a Railpack build of a Python app, with a warning and the push at the end.
+ */
+function buildLog() {
+  const out = [
+    "[meshploy-build] Cloning demo-workspace/web@develop…",
+    "[meshploy-build] Cloned successfully (4a1b9c2)",
+    "[meshploy-build] Commit: 4a1b9c2 Add the dark checkout page",
+    "[meshploy-build] Starting buildkitd…",
+    "  ↳ Detected Node",
+    "  ↳ Using npm",
+    "npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory.",
+  ]
+  for (let i = 1; i <= 104; i++) out.push(`#${Math.ceil(i / 4)} ${i % 4 === 0 ? `DONE ${((i % 17) / 10 + 0.1).toFixed(1)}s` : `added ${i * 3} packages in ${(i % 9) + 1}s`}`)
+  out.push("#27 exporting to image", "#27 exporting layers", "#27 pushing layers done", "Build complete: registry/demo-web:4a1b9c2")
+  return out
+}
+
+function stream(request: Request, messages: string[], everyMs = 450) {
   let timer: ReturnType<typeof setInterval>
   const response = new ReadableStream({
     start(controller) {
@@ -40,7 +59,7 @@ function stream(request: Request, messages: string[]) {
           request.signal.removeEventListener("abort", stop)
           stop()
         }
-      }, 450)
+      }, everyMs)
     },
     cancel() {
       clearInterval(timer)
@@ -64,13 +83,8 @@ export const streamHandlers = [
       })
   ),
   http.get(`${S}/deployments/:deploymentId/logs/stream`, ({ request }) =>
-    stream(request, [
-      "[demo] Preparing build context",
-      "[demo] Building image…",
-      "[demo] Image ready",
-      "[demo] Starting application",
-      "[demo] Health checks passed. Deployment complete.",
-    ])
+    // A finished build's log arrives all at once in practice; fast here too.
+    stream(request, buildLog(), 8)
   ),
   terminal.addEventListener("connection", ({ client }) => {
     let command = ""

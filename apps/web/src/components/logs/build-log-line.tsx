@@ -1,55 +1,32 @@
 import { cn } from "@/lib/utils"
 import type { LogLevel } from "@/lib/log-level"
 
-const LEVEL_STYLES: Record<LogLevel, { bar: string; badge: string; row: string; text: string; label: string }> = {
-  error: {
-    bar: "bg-destructive/80",
-    badge: "bg-destructive/15 text-destructive border-destructive/30",
-    row: "bg-destructive/[0.07]",
-    text: "text-red-300/90",
-    label: "error",
-  },
-  warning: {
-    bar: "bg-amber-500/70",
-    badge: "bg-amber-500/10 text-amber-400 border-amber-500/25",
-    row: "bg-amber-500/[0.04]",
-    text: "text-amber-200/80",
-    label: "warn",
-  },
-  success: {
-    bar: "bg-emerald-500/70",
-    badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25",
-    row: "",
-    text: "text-emerald-300/90",
-    label: "success",
-  },
-  info: {
-    bar: "bg-sky-500/35",
-    badge: "bg-sky-500/10 text-sky-300/80 border-sky-500/20",
-    row: "",
-    text: "text-muted-foreground",
-    label: "info",
-  },
+// Ordinary lines carry nothing but their number; a line that matters gets a
+// mark in the gutter and its own colour, so a long log reads like a terminal
+// and the few lines worth stopping at are the only ones that stand out.
+const LEVEL_STYLES: Record<LogLevel, { mark: string; markClass: string; row: string; text: string }> = {
+  error: { mark: "✕", markClass: "text-red-400", row: "bg-red-500/[0.08]", text: "text-red-300" },
+  warning: { mark: "!", markClass: "text-amber-400", row: "", text: "text-amber-200/90" },
+  success: { mark: "✓", markClass: "text-emerald-400", row: "", text: "text-emerald-300/90" },
+  info: { mark: "", markClass: "", row: "", text: "text-muted-foreground" },
 }
 
 /**
- * One line of a build or deploy log: a level bar, a level badge, and the text.
- * Error lines are tinted so they stand out while scrolling a long log.
+ * One line of a build or deploy log: its number, a mark for errors, warnings
+ * and successes, and the text. Error rows are tinted so they stand out while
+ * scrolling a long log.
  */
-export function BuildLogLine({ text, level }: { text: string; level: LogLevel }) {
+export function BuildLogLine({ text, level, number }: { text: string; level: LogLevel; number: number }) {
   const s = LEVEL_STYLES[level]
   return (
-    <div data-level={level} className={cn("flex items-stretch gap-2.5 rounded-sm pr-1", s.row)}>
-      <span className={cn("w-1 shrink-0 rounded-full", s.bar)} />
-      <span
-        className={cn(
-          "mt-[3px] h-4 w-14 shrink-0 select-none rounded-full border text-center text-[10px] font-medium leading-[14px]",
-          s.badge,
-        )}
-      >
-        {s.label}
+    <div data-level={level} className={cn("group flex items-start rounded-sm", s.row)}>
+      <span className="w-12 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/35 group-hover:text-muted-foreground/70">
+        {number}
       </span>
-      <span className={cn("min-w-0 flex-1 whitespace-pre-wrap break-all py-px", s.text)}>{text || " "}</span>
+      <span className={cn("w-4 shrink-0 select-none text-center font-semibold", s.markClass)} aria-hidden={!s.mark}>
+        {s.mark}
+      </span>
+      <span className={cn("min-w-0 flex-1 whitespace-pre-wrap break-all pl-1 pr-1", s.text)}>{text || " "}</span>
     </div>
   )
 }

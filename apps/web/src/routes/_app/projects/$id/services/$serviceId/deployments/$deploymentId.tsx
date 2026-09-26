@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, Check, Copy, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -62,11 +62,33 @@ function DeploymentLogsPage() {
   })
 
   // Keep the newest line in view. Scrolls the log box itself: scrollIntoView
-  // moved every scrollable ancestor with it, the page included.
+  // moved every scrollable ancestor with it, the page included. Where it last
+  // put the view is kept, so its own scrolling is not mistaken for the reader's.
+  const autoTopRef = useRef(0)
+  useLayoutEffect(() => {
+    const el = logRef.current
+    if (!el || !followRef.current) return
+    el.scrollTop = el.scrollHeight
+    autoTopRef.current = el.scrollTop
+  }, [logLines])
+
+  // The box can change size after the lines are in: the steps above it appear
+  // once the deployment has loaded, a window is resized. While following, keep
+  // the bottom pinned, or the last lines slide out of view with nothing new
+  // arriving to bring them back.
   useEffect(() => {
     const el = logRef.current
-    if (el && followRef.current) el.scrollTop = el.scrollHeight
-  }, [logLines])
+    if (!el) return
+    const pin = () => {
+      if (!followRef.current) return
+      el.scrollTop = el.scrollHeight
+      autoTopRef.current = el.scrollTop
+    }
+    const observer = new ResizeObserver(pin)
+    observer.observe(el)
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
+    return () => observer.disconnect()
+  }, [logLines.length > 0])
 
   // Colour codes stripped, and each line tagged by level for display.
   const lines = useMemo(
@@ -94,6 +116,7 @@ function DeploymentLogsPage() {
     if (!box || !first) return
     followRef.current = false
     box.scrollTop = first.offsetTop - 8
+    autoTopRef.current = box.scrollTop
   }
 
   // Stream logs via SSE
@@ -279,8 +302,13 @@ function DeploymentLogsPage() {
           ref={logRef}
           className="relative flex-1 overflow-y-auto px-4 py-3"
           onScroll={(e) => {
+            // Only the reader scrolling up stops the follow. A scroll event from
+            // our own jump to the bottom can arrive after more lines landed,
+            // when the view looks "not at the bottom" though nobody moved it.
             const el = e.currentTarget
-            followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+            if (atBottom) followRef.current = true
+            else if (el.scrollTop < autoTopRef.current - 4) followRef.current = false
           }}
         >
           {isLoading && logLines.length === 0 ? (
@@ -292,9 +320,9 @@ function DeploymentLogsPage() {
               Waiting for log output…
             </p>
           ) : (
-            <div className="space-y-0.5 text-[12px] font-mono leading-relaxed">
+            <div className="text-[12px] font-mono leading-relaxed">
               {lines.map((line, i) => (
-                <BuildLogLine key={i} text={line.text} level={line.level} />
+                <BuildLogLine key={i} number={i + 1} text={line.text} level={line.level} />
               ))}
               {streaming && (
                 <span className="inline-block w-2 h-3.5 bg-muted-foreground/60 animate-pulse align-middle ml-0.5" />
