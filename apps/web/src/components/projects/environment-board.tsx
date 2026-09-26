@@ -15,6 +15,7 @@ import type { Board, BoardCell, BoardGroup, EnvironmentLevel } from "@/lib/api/p
 import { cn, formatRelativeTime } from "@/lib/utils"
 import { livePoll } from "@/lib/live-poll"
 import { OriginLine } from "@/components/services/deployment-origin"
+import { TroubleTag } from "@/components/services/trouble"
 import { LevelDot, NewLevelDialog } from "@/components/projects/environment-switcher"
 import { HelpButton } from "@/help/help-button"
 import { TermInfo } from "@/help/term"
@@ -408,6 +409,7 @@ function ServiceCard({
         <span className="flex min-w-0 items-center gap-1.5">
           {cell.type === "database" ? <Database className="h-3 w-3 shrink-0" /> : <Box className="h-3 w-3 shrink-0" />}
           <span className="truncate">{cell.service_name}</span>
+          {cell.trouble && <TroubleTag trouble={cell.trouble} />}
           {hotfix && (
             <span
               className="shrink-0 rounded border border-amber-500/40 px-1 text-[10px] font-normal text-amber-300"

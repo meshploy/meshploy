@@ -65,6 +65,23 @@ export interface ApiPodInfo {
   restarts: number
   node_name: string
   started_at: string
+  /** Why the container last stopped (OOMKilled, Error, ...), its exit code and when. */
+  last_reason?: string
+  last_exit_code?: number
+  last_finished_at?: string
+  /** Why it is not running now (CrashLoopBackOff, ImagePullBackOff, ...). */
+  waiting_reason?: string
+  memory_limit?: string
+}
+
+/** Why a service is not staying up, read from its pods; absent when it is fine. */
+export interface ApiTrouble {
+  kind: "out_of_memory" | "crashing" | "image_pull" | "cannot_start"
+  restarts: number
+  last_at?: string
+  exit_code?: number
+  message?: string
+  memory_limit?: string
 }
 
 export interface ApiPodMetrics {
@@ -423,7 +440,7 @@ export interface ApiAttentionItem {
   kind:
     | "service_failed" | "database_failed" | "deploy_failed" | "job_failed"
     | "backup_missing" | "backup_failed" | "node_offline" | "domain_unverified"
-    | "former_primary" | "promotion_waiting" | "hotfix_running" | "node_disk" | "orphans"
+    | "former_primary" | "promotion_waiting" | "hotfix_running" | "node_disk" | "orphans" | "service_trouble"
   severity: "critical" | "warning" | "info"
   title: string
   detail?: string

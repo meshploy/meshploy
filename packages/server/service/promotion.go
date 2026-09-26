@@ -643,6 +643,8 @@ type BoardCell struct {
 	// Routes are the service's public addresses at this level, published
 	// ones first, so the card can open what this level serves.
 	Routes []BoardRoute `json:"routes,omitempty"`
+	// Trouble is why the service is not staying up, when it is not.
+	Trouble *Trouble `json:"trouble,omitempty"`
 }
 
 // BoardRoute is one address a card links to. Live is false for a route that
@@ -728,6 +730,15 @@ func (s *PromotionService) Board(ctx context.Context, projectID uuid.UUID) (*Boa
 		sort.SliceStable(routesOf[id], func(a, b int) bool { return routesOf[id][a].Live && !routesOf[id][b].Live })
 	}
 
+	troubles := map[uuid.UUID]*Trouble{}
+	for _, l := range levels {
+		if t, err := s.workloads.Troubles(ctx, l.ProjectID); err == nil {
+			for id, tr := range t {
+				troubles[id] = tr
+			}
+		}
+	}
+
 	grouped := map[uuid.UUID]int{}
 	board := &Board{Levels: levels, Groups: make([]BoardGroup, len(groups)), Ungrouped: []BoardCell{}}
 	for i, g := range groups {
@@ -746,6 +757,7 @@ func (s *PromotionService) Board(ctx context.Context, projectID uuid.UUID) (*Boa
 			Status:      string(sv.Status),
 			HasBackup:   hasBackup[sv.ID],
 			Routes:      routesOf[sv.ID],
+			Trouble:     troubles[sv.ID],
 		}
 		if d, ok := latest[sv.ID]; ok {
 			cell.Image, cell.DeployedAt = d.Image, d.DeployedAt

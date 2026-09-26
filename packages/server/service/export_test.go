@@ -37,3 +37,7 @@ func UseNodeMetricsForTest(s *Services, read func(ctx context.Context, nodeID uu
 func UseOrphansK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Orphans.k8s = client
 }
+
+// UseWorkloadsK8sForTroubleTest is UseWorkloadK8sForTest under the name the
+// health tests read best with.
+var UseWorkloadsK8sForTroubleTest = UseWorkloadK8sForTest

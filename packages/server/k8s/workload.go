@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -704,6 +705,20 @@ type PodInfo struct {
 	Restarts  int32  `json:"restarts"`
 	NodeName  string `json:"node_name"`
 	StartedAt string `json:"started_at"` // RFC3339, empty if not yet started
+
+	// App is the pod's app label: the service it runs for.
+	App string `json:"-"`
+	// Why the container last stopped, when it has (OOMKilled, Error, ...),
+	// its exit code, and when.
+	LastReason     string     `json:"last_reason,omitempty"`
+	LastExitCode   int32      `json:"last_exit_code,omitempty"`
+	LastFinishedAt *time.Time `json:"last_finished_at,omitempty"`
+	// Why it is not running now, when it is waiting (CrashLoopBackOff,
+	// ImagePullBackOff, CreateContainerConfigError, ...), and the message.
+	WaitingReason  string `json:"waiting_reason,omitempty"`
+	WaitingMessage string `json:"waiting_message,omitempty"`
+	// MemoryLimit is the container's memory limit as set (e.g. "512Mi").
+	MemoryLimit string `json:"memory_limit,omitempty"`
 }
 
 // ListServicePods returns all pods for a given app label in the namespace,
@@ -715,30 +730,55 @@ func ListServicePods(ctx context.Context, client kubernetes.Interface, namespace
 	if err != nil {
 		return nil, err
 	}
-	pods := make([]PodInfo, 0, len(list.Items))
-	for _, p := range list.Items {
-		var restarts int32
-		var ready bool
+	return podInfos(list.Items), nil
+}
+
+// ListManagedPods returns every pod Meshploy runs in a namespace, each with
+// the service (app label) it belongs to: one call for a whole project.
+func ListManagedPods(ctx context.Context, client kubernetes.Interface, namespace string) ([]PodInfo, error) {
+	list, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: "managed-by=meshploy"})
+	if err != nil {
+		return nil, err
+	}
+	return podInfos(list.Items), nil
+}
+
+func podInfos(items []corev1.Pod) []PodInfo {
+	pods := make([]PodInfo, 0, len(items))
+	for _, p := range items {
+		info := PodInfo{
+			Name:     p.Name,
+			Phase:    string(p.Status.Phase),
+			NodeName: p.Spec.NodeName,
+			App:      p.Labels["app"],
+		}
 		for _, cs := range p.Status.ContainerStatuses {
-			restarts += cs.RestartCount
+			info.Restarts += cs.RestartCount
 			if cs.Ready {
-				ready = true
+				info.Ready = true
+			}
+			if t := cs.LastTerminationState.Terminated; t != nil {
+				info.LastReason, info.LastExitCode = t.Reason, t.ExitCode
+				if !t.FinishedAt.IsZero() {
+					at := t.FinishedAt.UTC()
+					info.LastFinishedAt = &at
+				}
+			}
+			if w := cs.State.Waiting; w != nil {
+				info.WaitingReason, info.WaitingMessage = w.Reason, w.Message
 			}
 		}
-		startedAt := ""
-		if p.Status.StartTime != nil {
-			startedAt = p.Status.StartTime.UTC().Format("2006-01-02T15:04:05Z")
+		if len(p.Spec.Containers) > 0 {
+			if m, ok := p.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory]; ok {
+				info.MemoryLimit = m.String()
+			}
 		}
-		pods = append(pods, PodInfo{
-			Name:      p.Name,
-			Phase:     string(p.Status.Phase),
-			Ready:     ready,
-			Restarts:  restarts,
-			NodeName:  p.Spec.NodeName,
-			StartedAt: startedAt,
-		})
+		if p.Status.StartTime != nil {
+			info.StartedAt = p.Status.StartTime.UTC().Format("2006-01-02T15:04:05Z")
+		}
+		pods = append(pods, info)
 	}
-	return pods, nil
+	return pods
 }
 
 // EnsureRegistryPullSecret creates or updates a docker-registry Secret in the

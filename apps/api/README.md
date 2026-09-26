@@ -287,6 +287,7 @@ A project is its own production level; each level below it is a project of its o
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/rollback` | ✓ | Roll back to a previous successful deployment |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/redeploy` | ✓ | Run the current image again, without building; keeps where the image came from |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/dependents` | ✓ | Services and jobs, at any level, whose variables come from this service today |
+| GET | `/orgs/{orgId}/projects/{projectId}/health` | ✓ | Services in a project that are not staying up, and why: out of memory (with the limit), crashing (with the exit code), image pull, cannot start |
 | GET | `/orgs/{orgId}/activity` | ✓ | Recent deployments and job runs across the projects the caller can see, with each deployment's level and where its image came from |
 | GET | `/orgs/{orgId}/overview` | ✓ | The workspace overview: what needs attention (failures, offline nodes, missing backups, waiting promotions, hotfixes; domains to admins), each count broken down across every level, and delivery over 14 days (runs per day; deploys a week, change failure rate, time to recover and staging-to-production time, all for production; a deploy sparkline per project) |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs` | ✓ | Snapshot of a service's container logs |
