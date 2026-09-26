@@ -48,3 +48,10 @@ test("a project's build cache can be cleared from its own settings", async ({ pa
   await page.getByRole("button", { name: "Clear build cache" }).click({ timeout: 10_000 })
   await expect(page.getByText("Cleared. The next build starts fresh.")).toBeVisible()
 })
+
+test("a route's target opens the service behind it", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/routes/00000000-0000-0000-0000-0000000000f1`)
+  await page.getByRole("link", { name: "Go to service" }).click({ timeout: 10_000 })
+  await expect(page).toHaveURL(new RegExp(`/services/${DEMO_SVC_WEB}`))
+})

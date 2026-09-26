@@ -1,7 +1,7 @@
 import { ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CornerDownRight, ExternalLink, Globe, Loader2, Pencil, Plus, ServerCrash, Trash2, X } from "lucide-react"
+import { Box, CornerDownRight, ExternalLink, Globe, Loader2, Pencil, Plus, ServerCrash, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { CustomDomainOwnership } from "@/components/domains/custom-domain-ownership"
 import { Badge } from "@/components/ui/badge"
@@ -678,15 +678,28 @@ function TargetItem({
             strip
           </Badge>
         )}
-        <a
-          href={openHref}
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* The service behind this path, when it is one of this project's. */}
+        {!isRedirect && target.service_id && serviceMap[target.service_id] && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs shrink-0"
+            render={<Link to="/projects/$id/services/$serviceId" params={{ id: projectId, serviceId: target.service_id }} />}
+          >
+            <Box className="h-3.5 w-3.5" />
+            Go to service
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
           title="Open in new tab"
-          className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0"
+          aria-label="Open in new tab"
+          className="text-muted-foreground/50 hover:text-foreground transition-colors shrink-0"
+          render={<a href={openHref} target="_blank" rel="noopener noreferrer" />}
         >
           <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
