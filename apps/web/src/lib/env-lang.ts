@@ -35,6 +35,9 @@ export const envLanguage = StreamLanguage.define<{ inValue: boolean }>({
   },
   blankLine(state) { state.inValue = false },
   copyState: (s) => ({ ...s }),
+  // "#" starts a comment, which is what Ctrl/Cmd+/ toggles on the selected
+  // lines; without it the editor's toggle has nothing to insert.
+  languageData: { commentTokens: { line: "#" } },
 })
 
 export const envTheme = EditorView.theme({
