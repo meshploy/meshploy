@@ -296,6 +296,9 @@ func (h *Handler) CreateStack(ctx context.Context, input *CreateStackInput) (*Ge
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid git_integration_id")
 		}
+		if err := h.gitIntegrationInOrg(ctx, input.OrgID, id); err != nil {
+			return nil, err
+		}
 		gitIntegrationID = &id
 	}
 	stack, err := h.svc.Stacks.Create(ctx, projectID, service.CreateStackInput{
@@ -362,6 +365,9 @@ func (h *Handler) UpdateStack(ctx context.Context, input *UpdateStackInput) (*Ge
 			id, err := parseUUID(*input.Body.GitIntegrationID)
 			if err != nil {
 				return nil, huma.Error400BadRequest("invalid git_integration_id")
+			}
+			if err := h.gitIntegrationInOrg(ctx, input.OrgID, id); err != nil {
+				return nil, err
 			}
 			in.GitIntegrationID = &id
 		}

@@ -1033,6 +1033,18 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 		}
 		if ext.Source.IntegrationID != "" {
 			if id, err := uuid.Parse(ext.Source.IntegrationID); err == nil {
+				// The spec is whatever its author wrote: an integration it
+				// names must be the stack's org's, or it would build with
+				// another org's credentials.
+				var orgID uuid.UUID
+				if err := s.db.WithContext(ctx).Model(&meshdb.Project{}).Select("projects.organization_id").
+					Joins("JOIN services ON services.project_id = projects.id").
+					Where("services.id = ?", serviceID).Scan(&orgID).Error; err != nil {
+					return err
+				}
+				if s.git == nil || s.git.InOrg(ctx, orgID, id) != nil {
+					return fmt.Errorf("x-meshploy source integration %s is not one of this organization's git integrations", id)
+				}
 				input.GitIntegrationID = &id
 			}
 		}

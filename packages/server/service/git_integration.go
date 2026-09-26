@@ -278,6 +278,21 @@ func (s *GitIntegrationService) HandleGitHubCallback(ctx context.Context, instal
 // ─── Org-level integration management ────────────────────────────────────────
 
 // GetByID returns a single git integration by its ID (no org scoping — used internally).
+// InOrg reports whether the integration is orgID's. Every route that names an
+// integration asks, since its id alone would otherwise reach another org's
+// credentials.
+func (s *GitIntegrationService) InOrg(ctx context.Context, orgID, id uuid.UUID) error {
+	var n int64
+	if err := s.db.WithContext(ctx).Model(&db.GitIntegration{}).
+		Where("id = ? AND organization_id = ?", id, orgID).Count(&n).Error; err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrGitIntegrationNotFound
+	}
+	return nil
+}
+
 func (s *GitIntegrationService) GetByID(ctx context.Context, id uuid.UUID) (*db.GitIntegration, error) {
 	var row db.GitIntegration
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
