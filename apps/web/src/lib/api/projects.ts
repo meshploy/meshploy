@@ -215,9 +215,9 @@ export const projects = {
       token
     ),
 
-  /** Services in the project that are not staying up, by service id. */
+  /** Services in the project that are not staying up, and advice from their last builds, by service id. */
   health: (orgId: string, projectId: string, token: string) =>
-    apiFetch<{ services: Record<string, import("./services").ApiTrouble> }>(
+    apiFetch<{ services: Record<string, import("./services").ApiTrouble>; hints?: Record<string, import("./services").ApiHint[]> }>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/health`,
       {},
       token

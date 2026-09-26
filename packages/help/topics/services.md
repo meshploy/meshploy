@@ -63,6 +63,16 @@ A service whose container keeps dying can still say "running", because it is res
 
 Restarts from more than half an hour ago are not counted, so a service that recovered stops being flagged.
 
+## Suggestions after a build {#hints}
+
+Each build also looks at what the app is: its language, its framework and entry point, dependencies known to need a lot of memory, a Dockerfile in the repository. Set against the service's settings, that turns into suggestions on the service's page, each with its fix, and a line on the workspace overview:
+
+- **No start command**: Railpack could not tell how to start the app, so its container has nothing to run. For a FastAPI, Flask, Django or Node.js app Meshploy suggests one, such as `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, to check before saving. When the repository has a Dockerfile that starts it, building with that is offered too.
+- **Likely to need more memory**: it depends on something like PyTorch, sentence-transformers or Puppeteer, which usually needs more than its memory limit.
+- **Listens on a different port**: the start command, or the Dockerfile's `EXPOSE`, names a port other than the one the service sends traffic to.
+
+A fix saves the setting; it reaches the running app on the next deploy, which the page offers. A suggestion goes away once the settings no longer match it, or when someone dismisses it, which sets it aside for everyone.
+
 ## Common tasks {#how-to}
 
 - **Deploy from a repository.** New resource, choose Service, pick the git connection, repository and branch, then Deploy.
@@ -79,6 +89,7 @@ Restarts from more than half an hour ago are not counted, so a service that reco
 - **Build command** {#build-command -> commands}: Replaces the build step Railpack works out, such as pnpm build. Empty: Railpack decides.
 - **Start command** {#start-command -> commands}: Replaces the command the image starts with, run through its shell; changes on the next deploy without a rebuild. Empty: the image's own.
 - **Out of memory** {#out-of-memory -> trouble}: The container went over its memory limit and was killed. Raise the limit under the service's resources.
+- **Suggestion** {#hint -> hints}: Advice from the last build about how the service is set up, such as a missing start command or too little memory for what the app loads, with its fix.
 - **Build cache** {#build-cache -> build-cache}: Layers kept from earlier builds, shared by the project's services and trimmed back to the server's limit after each build. Clearing it only makes the next build slower.
 - **Redeploy** {#redeploy -> deploys}: Runs the image the service runs now again, for changed variables, without building.
 - **Rollback** {#rollback -> deploys}: Runs an earlier deployment's image again, as it was.

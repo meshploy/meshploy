@@ -118,6 +118,71 @@ if [[ -n "${ROOT_DIR:-}" ]]; then
     cd "${WORKDIR}/${ROOT_DIR}"
 fi
 
+# ── Stack ─────────────────────────────────────────────────────────────────────
+# What the app is, read back by the API for the console's hints: its language,
+# its framework and entry point, dependencies known to need a lot of memory,
+# and a Dockerfile it already has. One "Stack:" line per fact. Only looks;
+# never fails the build.
+detect_stack() {
+    local prune=(-name .git -o -name node_modules -o -name .venv -o -name venv -o -name __pycache__ -o -name dist -o -name build)
+    local deps="" file var
+
+    if [[ -f requirements.txt || -f pyproject.toml || -f Pipfile || -f setup.py ]]; then
+        log "Stack: language python"
+        deps=$(cat requirements*.txt pyproject.toml Pipfile setup.py 2>/dev/null | tr '[:upper:]_' '[:lower:]-' || true)
+        # The ASGI or WSGI app object: "app = FastAPI(" in app/main.py is app.main:app.
+        for fw in FastAPI Flask; do
+            file=$(find . -maxdepth 4 \( "${prune[@]}" \) -prune -o -name '*.py' -print 2>/dev/null \
+                | xargs -r grep -lE "^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(:[^=]*)?=[[:space:]]*${fw}\(" 2>/dev/null | head -1)
+            [[ -z "$file" ]] && continue
+            var=$(grep -m1 -oE "^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(:[^=]*)?=[[:space:]]*${fw}\(" "$file" | grep -oE '^[A-Za-z_][A-Za-z0-9_]*')
+            file="${file#./}"; file="${file%.py}"
+            log "Stack: entry $(tr '[:upper:]' '[:lower:]' <<<"$fw") ${file//\//.}:${var}"
+            break
+        done
+        if [[ -z "$file" && -f manage.py ]]; then
+            file=$(find . -maxdepth 3 \( "${prune[@]}" \) -prune -o -name wsgi.py -print 2>/dev/null | head -1)
+            if [[ -n "$file" ]]; then
+                file="${file#./}"; file="${file%.py}"
+                log "Stack: entry django ${file//\//.}"
+            fi
+        fi
+    fi
+    if [[ -f package.json ]]; then
+        log "Stack: language node"
+        deps+=$'\n'$(cat package.json 2>/dev/null || true)
+        if ! grep -qE '"start"[[:space:]]*:' package.json; then
+            for file in server.js index.js main.js app.js dist/index.js dist/main.js; do
+                [[ -f "$file" ]] && { log "Stack: entry node ${file}"; break; }
+            done
+        fi
+    fi
+    [[ -f go.mod ]] && log "Stack: language go"
+    [[ -f Gemfile ]] && log "Stack: language ruby"
+    [[ -f composer.json ]] && log "Stack: language php"
+    [[ -f Cargo.toml ]] && log "Stack: language rust"
+
+    # Kept in step with the API's table of what each one needs.
+    local heavy
+    heavy=$(grep -oE '(^|[^a-z0-9-])(torch|tensorflow|jax|transformers|sentence-transformers|spacy|easyocr|paddleocr|onnxruntime|llama-cpp-python|vllm|puppeteer|playwright)([^a-z0-9-]|$)' <<<"$deps" 2>/dev/null \
+        | grep -oE '[a-z0-9-]+' | sort -u | tr '\n' ' ' || true)
+    [[ -n "${heavy// /}" ]] && log "Stack: heavy ${heavy% }"
+
+    local df="${DOCKERFILE_PATH:-Dockerfile}"
+    if [[ -f "$df" ]]; then
+        if grep -qiE '^[[:space:]]*(CMD|ENTRYPOINT)[[:space:]]' "$df"; then
+            log "Stack: dockerfile ${df} cmd"
+        else
+            log "Stack: dockerfile ${df}"
+        fi
+        local expose
+        expose=$(grep -m1 -iE '^[[:space:]]*EXPOSE[[:space:]]+[0-9]+' "$df" | grep -oE '[0-9]+' | head -1 || true)
+        [[ -n "$expose" ]] && log "Stack: expose ${expose}"
+    fi
+    return 0
+}
+detect_stack || true
+
 # ── Mark registry as insecure if it is HTTP ──────────────────────────────────
 # buildah defaults to HTTPS. Internal mesh registries (e.g. 100.64.x.x:5000)
 # are plain HTTP — add them to registries.conf so buildah doesn't upgrade to TLS.

@@ -13,6 +13,7 @@ import { useIsAdmin } from "@/store/org-store"
 import { livePoll } from "@/lib/live-poll"
 import { OriginStrip } from "@/components/services/deployment-origin"
 import { TroubleBanner } from "@/components/services/trouble"
+import { HintsPanel } from "@/components/services/hints"
 import { useDeployGuard } from "@/components/services/deploy-guard"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
@@ -98,6 +99,7 @@ function ServiceLayout() {
     refetchInterval: 15_000,
   })
   const trouble = health?.services[serviceId]
+  const hints = health?.hints?.[serviceId] ?? []
 
   // The addresses a browser can open: the service's routes, internal ones
   // aside. Shares the overview's query.
@@ -165,9 +167,10 @@ function ServiceLayout() {
         badge={<StatusPill status={service.status} />}
         help={service.type === "database" ? { topic: "databases", label: "How databases work" } : { topic: "services", label: "How services and builds work" }}
         highlight={
-          (trouble || current) && (
+          (trouble || current || hints.length > 0) && (
             <>
               {trouble && <TroubleBanner trouble={trouble} projectId={projectId} serviceId={serviceId} />}
+              {orgId && <HintsPanel hints={hints} service={service} orgId={orgId} projectId={projectId} />}
               {current && <OriginStrip origin={current} image={current.image} />}
             </>
           )

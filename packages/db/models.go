@@ -662,6 +662,11 @@ type Service struct {
 	// and the image's own ENTRYPOINT and CMD; empty keeps them.
 	StartCommand string `gorm:"not null;default:''" json:"start_command,omitempty"`
 
+	// DismissedHints are the build hints someone set aside for this service,
+	// comma-separated kinds: dismissing one hides it for everyone, since the
+	// advice is about the service, not about who reads it.
+	DismissedHints string `gorm:"not null;default:''" json:"dismissed_hints,omitempty"`
+
 	// DeployedSpecHash fingerprints what last reached the cluster, so an apply
 	// can tell a service that is behind from one that is current. The record
 	// alone cannot: a rollout that is skipped, because a deploy was already in
@@ -718,12 +723,12 @@ type BuildConfig struct {
 	Branch           string     `gorm:"default:'main'"         json:"branch"`
 	RootDir          string     `gorm:"default:'.'"` // root of the app within the repo
 	// Dockerfile builder
-	DockerfilePath string     `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
+	DockerfilePath string `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
 	// InstallCommand and BuildCommand replace what Nixpacks or Railpack would
 	// work out for themselves; empty leaves it to them. A Dockerfile build
 	// ignores both: its steps are in the Dockerfile.
-	InstallCommand string `gorm:"not null;default:''" json:"install_command,omitempty"`
-	BuildCommand   string `gorm:"not null;default:''" json:"build_command,omitempty"`
+	InstallCommand string     `gorm:"not null;default:''" json:"install_command,omitempty"`
+	BuildCommand   string     `gorm:"not null;default:''" json:"build_command,omitempty"`
 	BuildArgs      EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"build_args"`
 
 	// Build-time environment variables — KEY=VALUE, one per line.
@@ -1246,11 +1251,16 @@ type Deployment struct {
 	// SourceBranch and SourceCommit are the build's, carried along when the
 	// image moves between levels; FromLevel and FromDeploymentID name the
 	// level and deployment a promotion or bring-down took it from.
-	Source           string     `gorm:"not null;default:''" json:"source,omitempty"`
-	SourceBranch     string     `gorm:"not null;default:''" json:"source_branch,omitempty"`
-	SourceCommit     string     `gorm:"not null;default:''" json:"source_commit,omitempty"`
+	Source       string `gorm:"not null;default:''" json:"source,omitempty"`
+	SourceBranch string `gorm:"not null;default:''" json:"source_branch,omitempty"`
+	SourceCommit string `gorm:"not null;default:''" json:"source_commit,omitempty"`
 	// SourceCommitMessage is the commit's subject line.
 	SourceCommitMessage string `gorm:"not null;default:''" json:"source_commit_message,omitempty"`
+	// StackFacts is what the build found out about the app, as JSON: its
+	// language, framework, heavy dependencies, a Dockerfile, whether the
+	// builder found a start command. Read by the service's hints; empty for
+	// deployments that did not build.
+	StackFacts       string     `gorm:"type:text;not null;default:''" json:"-"`
 	FromLevel        string     `gorm:"not null;default:''" json:"from_level,omitempty"`
 	FromDeploymentID *uuid.UUID `gorm:"type:uuid"           json:"from_deployment_id,omitempty"`
 

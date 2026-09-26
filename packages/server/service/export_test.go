@@ -41,3 +41,9 @@ func UseOrphansK8sForTest(s *Services, client kubernetes.Interface) {
 // UseWorkloadsK8sForTroubleTest is UseWorkloadK8sForTest under the name the
 // health tests read best with.
 var UseWorkloadsK8sForTroubleTest = UseWorkloadK8sForTest
+
+// RecordStackForTest keeps what a build log says about the app on its
+// deployment, as the end of a build does.
+func RecordStackForTest(s *Services, deploymentID uuid.UUID, log string) {
+	s.Deployments.recordStack(context.Background(), deploymentID, log)
+}
