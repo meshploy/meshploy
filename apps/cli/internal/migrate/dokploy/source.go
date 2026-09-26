@@ -104,6 +104,10 @@ type Source struct {
 	AcmeBytes    int64 `json:"acme_bytes,omitempty"`
 	// PathMB is the size of host paths apps bind-mount, measured with du.
 	PathMB map[string]int `json:"path_mb,omitempty"`
+	// ComposeFiles are git-sourced compose apps' files as checked out on this
+	// host, by appName: what the plan reads a compose app from, since only a
+	// pasted file is in Dokploy's database.
+	ComposeFiles map[string]string `json:"compose_files,omitempty"`
 }
 
 // Detection is whether this is a Dokploy host, and which Dokploy.

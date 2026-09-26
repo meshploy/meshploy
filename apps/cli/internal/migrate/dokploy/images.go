@@ -114,3 +114,70 @@ func (m ImageMover) fail(e journal.Entry, cause error) error {
 	}
 	return cause
 }
+
+// Carry makes the image a container is running pullable by the cluster, pinned
+// to exactly that image, and returns the reference.
+//
+// It reads the image the container runs by ID, not by its tag: a tag can have
+// moved on since the container started - a newer build not yet deployed, a
+// re-pulled `latest` - and a migration moves what is running. An image that
+// came from a registry is referred to by its digest, so a floating tag such as
+// `timescale/timescaledb:latest-pg16` cannot hand the moved database a newer
+// engine than its data was written by. One built on this host is pushed into
+// the built-in registry under a tag made from its ID.
+func (m ImageMover) Carry(step, group, container string) (string, error) {
+	out, err := m.Runner.Output("docker", "inspect", container, "--format", "{{.Image}}|{{.Config.Image}}")
+	if err != nil {
+		return "", fmt.Errorf("read the image %s runs: %w", container, err)
+	}
+	id, name, _ := strings.Cut(strings.TrimSpace(out), "|")
+	digests, err := m.Runner.Output("docker", "image", "inspect", id, "--format", "{{range .RepoDigests}}{{.}} {{end}}")
+	if err != nil {
+		return "", fmt.Errorf("read image %s: %w", id, err)
+	}
+	if fields := strings.Fields(digests); len(fields) > 0 {
+		return fields[0], nil
+	}
+	if m.Registry.Endpoint == "" {
+		return "", fmt.Errorf("%s runs an image built on this host, and there is no registry to carry it to", container)
+	}
+	short := strings.TrimPrefix(id, "sha256:")
+	if len(short) > 12 {
+		short = short[:12]
+	}
+	repo := m.Registry.Ref(name)
+	repo = repo[:strings.LastIndex(repo, ":")]
+	target := repo + ":dokploy-" + short
+
+	if m.Journal != nil && m.Journal.Done(step) {
+		return target, nil
+	}
+	entry := journal.Entry{Step: step, Group: group, Action: "push-image", Target: target, Result: journal.OK, Created: target}
+	if _, err := m.Runner.Output("docker", "tag", id, target); err != nil {
+		return "", m.fail(entry, fmt.Errorf("tag %s: %w", id, err))
+	}
+	if _, err := m.Runner.Output("docker", "push", target); err != nil {
+		return "", m.fail(entry, fmt.Errorf("push %s: %w", target, err))
+	}
+	if m.Journal != nil {
+		_ = m.Journal.Append(entry)
+	}
+	return target, nil
+}
+
+// ComposeContainer is the container a compose project runs for one of its
+// services, stopped ones included: a one-shot service's finished container
+// still says which image it ran.
+func (m ImageMover) ComposeContainer(project, service string) (string, error) {
+	out, err := m.Runner.Output("docker", "ps", "-a",
+		"--filter", "label=com.docker.compose.project="+project,
+		"--filter", "label=com.docker.compose.service="+service,
+		"--format", "{{.ID}}")
+	if err != nil {
+		return "", err
+	}
+	if ids := strings.Fields(out); len(ids) > 0 {
+		return ids[0], nil
+	}
+	return "", nil
+}

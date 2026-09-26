@@ -24,6 +24,10 @@ Until **Finish**, everything can be put back. **Roll back** a single group, or *
 
 **Finish** cannot be undone. By default it leaves the old platform's volumes on the disk, holding their data; tick **Remove its volumes too** only when you are sure nothing on them is needed.
 
+## Compose apps {#compose}
+
+A compose app becomes a stack. The plan reads its compose file first and says what will happen to each service: built ones move on the image they run now and build from their Dockerfile on the next deploy, one-shot steps run once per deploy, repository files and published addresses come across. A service that reaches into the machine itself, with host networking, privileges, devices, the Docker socket or a folder of the host, asks before the app moves: move it without that, or leave the app on the old platform.
+
 ## Groups that cannot move {#stuck}
 
 A group Meshploy cannot move keeps running on the old platform. At cut over it loses its domains, because the ports change hands; the console says which domains before you confirm. Finish leaves it running.

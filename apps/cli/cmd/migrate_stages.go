@@ -101,6 +101,13 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		return nil, err
 	}
 
+	// A compose app's services start on the images their containers run,
+	// carried into the built-in registry, rather than on a build.
+	registry, err := rt.api.BuiltinRegistry()
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := dokploy.Move(dokploy.MoveDeps{
 		Plan:    *rt.plan,
 		Group:   group,
@@ -109,6 +116,7 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		Control: dokploy.Control{Runner: migrate.ExecRunner{}, Journal: rt.journal},
 		Probe:   dokploy.HTTPProbe{Addr: probeAddr()},
 		Data:    data,
+		Images:  &dokploy.ImageMover{Runner: migrate.ExecRunner{}, Registry: registry, Journal: rt.journal},
 		Journal: rt.journal,
 	})
 	body, marshalErr := json.Marshal(result)

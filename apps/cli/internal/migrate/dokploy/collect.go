@@ -2,6 +2,7 @@ package dokploy
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -75,6 +76,18 @@ func collect(r migrate.Runner, withRows bool) (Source, error) {
 				mb, _ := strconv.Atoi(f[0])
 				src.PathMB[path] = mb
 			}
+		}
+	}
+	// A git-sourced compose app's file is in its checkout, not the database.
+	src.ComposeFiles = map[string]string{}
+	for _, c := range rows["compose"] {
+		app := c.Str("appName")
+		if c.Str("sourceType") == "raw" || app == "" {
+			continue
+		}
+		file := path.Join("/etc/dokploy/compose", app, "code", path.Clean("/"+c.Str("composePath")))
+		if out, err := r.Output("cat", file); err == nil {
+			src.ComposeFiles[app] = out
 		}
 	}
 	return src, nil

@@ -45,6 +45,20 @@ type MoveAPI interface {
 	StackServices(projectID, stackID string) ([]string, error)
 }
 
+// StackImageAPI is what starting a compose app on the images it ran needs,
+// beyond MoveAPI: the API applied without rolling anything out, the stack's
+// services by name, and a way to set what one runs.
+type StackImageAPI interface {
+	ApplyStackRecords(projectID, stackID string) error
+	StackServiceRefs(projectID, stackID string) ([]StackServiceRef, error)
+	SetServiceImage(projectID, serviceID, image string) error
+}
+
+// StackServiceRef is one service a stack created.
+type StackServiceRef struct {
+	ID, Name, Image string
+}
+
 // Prober checks that a hostname answers. Separated so a move can be tested
 // without a network, and so the real one can be given a timeout.
 type Prober interface {
@@ -61,7 +75,11 @@ type MoveDeps struct {
 	Probe   Prober
 	// Data copies what the group carries. Nil refuses a group with data rather
 	// than moving an application away from it.
-	Data    *DataMover
+	Data *DataMover
+	// Images carries the images a compose app's services run into the
+	// cluster, so a moved stack starts on them rather than on a build. Nil,
+	// or an API without StackImageAPI, applies the stack as it is.
+	Images  *ImageMover
 	Journal *journal.Journal
 	// HealthTimeout bounds the wait for Meshploy's copies to come up. A group
 	// that will not start must fail while the operator is watching, not hang.
@@ -278,12 +296,27 @@ func (d MoveDeps) startStack(m GroupMember) error {
 		return fmt.Errorf("%s has no Meshploy copy: run prepare first", m.Name)
 	}
 	step := d.step(m.ID, "start")
+	images, carry := d.API.(StackImageAPI)
+	carry = carry && d.Images != nil
 	if !d.Journal.Done(step) {
-		if err := d.API.ApplyStack(projectID, stackID); err != nil {
+		apply := d.API.ApplyStack
+		if carry {
+			// Records only: rolling out would build every service with a
+			// build: section from source, and the move must not hang on a
+			// build succeeding. What each runs is set below.
+			apply = images.ApplyStackRecords
+		}
+		if err := apply(projectID, stackID); err != nil {
 			return d.record(step, "apply-stack", m.Name, err, nil)
 		}
 		_ = d.Journal.Append(journal.Entry{Step: step, Group: d.Group.ID, Action: "apply-stack",
 			Target: m.Name, Result: journal.OK, Created: stackID})
+	}
+
+	if carry {
+		if err := d.carryStackImages(images, m, projectID, stackID, step); err != nil {
+			return err
+		}
 	}
 
 	services, err := d.API.StackServices(projectID, stackID)
@@ -308,6 +341,38 @@ func (d MoveDeps) startStack(m GroupMember) error {
 	for _, id := range services {
 		if err := d.waitHealthy(projectID, id, m.Name); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// carryStackImages sets each of a compose app's services to run the image its
+// Dokploy container runs, pinned: a service built from source then starts
+// without being built, and one from a registry on the exact image it ran. A
+// service with no container in Dokploy keeps what the stack gave it.
+func (d MoveDeps) carryStackImages(api StackImageAPI, m GroupMember, projectID, stackID, step string) error {
+	refs, err := api.StackServiceRefs(projectID, stackID)
+	if err != nil {
+		return err
+	}
+	project := d.appName(m.ID)
+	for _, svc := range refs {
+		container, err := d.Images.ComposeContainer(project, svc.Name)
+		if err != nil {
+			return fmt.Errorf("find %s's container: %w", svc.Name, err)
+		}
+		if container == "" {
+			continue
+		}
+		ref, err := d.Images.Carry(step+"/image/"+svc.ID, d.Group.ID, container)
+		if err != nil {
+			return d.record(step+"/image/"+svc.ID, "carry-image", svc.Name, err, nil)
+		}
+		if ref == svc.Image {
+			continue
+		}
+		if err := api.SetServiceImage(projectID, svc.ID, ref); err != nil {
+			return d.record(step+"/set-image/"+svc.ID, "set-image", svc.Name, err, nil)
 		}
 	}
 	return nil

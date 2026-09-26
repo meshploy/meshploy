@@ -425,6 +425,31 @@ func (a ClientAPI) ApplyStack(projectID, stackID string) error {
 	return err
 }
 
+// ApplyStackRecords applies a stack's records and rolls nothing out.
+func (a ClientAPI) ApplyStackRecords(projectID, stackID string) error {
+	_, err := a.C.ApplyStackRecordsOnly(a.OrgID, projectID, stackID)
+	return err
+}
+
+// StackServiceRefs are a stack's services with their names and images.
+func (a ClientAPI) StackServiceRefs(projectID, stackID string) ([]StackServiceRef, error) {
+	services, err := a.C.ListStackServices(a.OrgID, projectID, stackID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]StackServiceRef, 0, len(services))
+	for _, s := range services {
+		out = append(out, StackServiceRef{ID: s.ID, Name: s.Name, Image: s.Image})
+	}
+	return out, nil
+}
+
+// SetServiceImage sets the image a service runs, without deploying it.
+func (a ClientAPI) SetServiceImage(projectID, serviceID, image string) error {
+	_, err := a.C.UpdateService(a.OrgID, projectID, serviceID, client.UpdateServiceBody{Image: &image})
+	return err
+}
+
 // StackServices are the services a stack created.
 func (a ClientAPI) StackServices(projectID, stackID string) ([]string, error) {
 	services, err := a.C.ListStackServices(a.OrgID, projectID, stackID)

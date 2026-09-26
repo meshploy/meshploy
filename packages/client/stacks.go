@@ -113,6 +113,19 @@ func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, err
 	return decodePtr[ApplyResult](resp)
 }
 
+// ApplyStackRecordsOnly reconciles a stack's records and starts no rollout:
+// services, ports, files and routes are written, and nothing is built or
+// deployed. For a caller that decides what each service runs - the
+// migration, which starts services on the images their old platform ran.
+func (c *Client) ApplyStackRecordsOnly(orgID, projectID, stackID string) (*ApplyResult, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/stacks/"+stackID+"/apply",
+		map[string]any{"deploy": false})
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[ApplyResult](resp)
+}
+
 // ManifestBody is one inline compose manifest: the spec plus what the server
 // cannot read off the caller's machine.
 type ManifestBody struct {

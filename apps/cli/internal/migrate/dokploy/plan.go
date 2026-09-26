@@ -473,6 +473,17 @@ func (b *builder) composes() {
 			it.Details["containers"] = fmt.Sprintf("%d of %d running", running, total)
 		}
 		it.Reasons = append(it.Reasons, "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains")
+		content := b.src.ComposeFiles[name]
+		if r.Str("sourceType") == "raw" {
+			content = r.Str("composeFile")
+		}
+		if content == "" {
+			it.Reasons = append(it.Reasons, "its compose file is not on this server, so it is read when the stack is applied")
+		} else if findings, err := checkCompose(content, envLines(r.Str("env"))); err != nil {
+			it.Reasons = append(it.Reasons, "its compose file could not be read: "+err.Error())
+		} else {
+			composeDecisions(&it, findings)
+		}
 		if r.Str("serverId") != "" {
 			it.Verdict = NotMoved
 			it.Reasons = []string{"runs on a remote Dokploy server, which is not migrated"}

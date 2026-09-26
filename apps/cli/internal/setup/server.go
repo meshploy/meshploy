@@ -217,7 +217,9 @@ func (s *Server) saveMigration(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in = withDefaults(*plan, in)
-		if err := saveConfirmedPlan(*plan, in); err != nil {
+		// What the stages work from is the plan with its answers applied:
+		// a group whose questions were answered can move.
+		if err := saveConfirmedPlan(dokploy.Settle(*plan, in.Decisions, in.Exclude), in); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}

@@ -102,6 +102,9 @@ func Scrub(src Source) Source {
 		out.Listeners = append(out.Listeners, l)
 	}
 
+	// A compose file is the whole of someone's application; a fixture keeps
+	// the shape of the server, never that.
+	out.ComposeFiles = nil
 	out.PathMB = map[string]int{}
 	for p, mb := range src.PathMB {
 		out.PathMB[s.path(p)] = mb

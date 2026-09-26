@@ -499,3 +499,69 @@ func TestMovingAComposeAppAgainStartsItsServices(t *testing.T) {
 		t.Errorf("applied = %v, the stack should not be applied twice", api.applied)
 	}
 }
+
+// carryAPI is the move API that can also start a stack on given images.
+type carryAPI struct {
+	*fakeMoveAPI
+	recordsOnly []string
+	images      map[string]string
+}
+
+func (c *carryAPI) ApplyStackRecords(projectID, stackID string) error {
+	c.recordsOnly = append(c.recordsOnly, stackID)
+	c.fakeMoveAPI.applied = append(c.fakeMoveAPI.applied, stackID) // what StackServices reads
+	return nil
+}
+
+func (c *carryAPI) StackServiceRefs(projectID, stackID string) ([]StackServiceRef, error) {
+	return []StackServiceRef{{ID: "svc-web", Name: "web"}, {ID: "svc-worker", Name: "worker", Image: "redis:7"}}, nil
+}
+
+func (c *carryAPI) SetServiceImage(projectID, serviceID, image string) error {
+	c.images[serviceID] = image
+	return nil
+}
+
+// A compose app's services start on the images their containers run, not on
+// a build: one built on the host is pushed to the built-in registry under a tag
+// from its ID, one from a registry is pinned by its digest, and the stack is
+// applied without rolling anything out.
+func TestAComposeAppMovesOnTheImagesItRan(t *testing.T) {
+	d, base, runner, _ := movable(t)
+	api := &carryAPI{fakeMoveAPI: base, images: map[string]string{}}
+	d.API = api
+	d.Images = &ImageMover{Runner: runner, Registry: Registry{Endpoint: "100.64.0.1:5000"}, Journal: d.Journal}
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "analytics",
+		Project: "Acme · production", Verdict: Moves, Details: map[string]string{"app_name": "analytics-abc"}})
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/stack/c1", Action: "create-stack",
+		Target: "analytics", Result: journal.OK, Created: "stack-1"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-an", Name: "analytics", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production"}}}
+	base.stackServices["stack-1"] = []string{"svc-web", "svc-worker"}
+	base.status["svc-web"], base.status["svc-worker"] = "running", "running"
+	ps := "docker ps -a --filter label=com.docker.compose.project=analytics-abc --filter label=com.docker.compose.service="
+	runner.replies[ps+"web --format {{.ID}}"] = "cw\n"
+	runner.replies[ps+"worker --format {{.ID}}"] = "ck\n"
+	runner.replies["docker inspect cw --format {{.Image}}|{{.Config.Image}}"] = "sha256:aaaaaaaaaaaaaaaaffff|analytics-abc-web\n"
+	runner.replies["docker inspect ck --format {{.Image}}|{{.Config.Image}}"] = "sha256:bbbb|redis:7\n"
+	runner.replies["docker image inspect sha256:bbbb --format {{range .RepoDigests}}{{.}} {{end}}"] = "redis@sha256:1234 \n"
+
+	if _, err := Move(d); err != nil {
+		t.Fatalf("%v", err)
+	}
+	if len(api.recordsOnly) != 1 {
+		t.Fatalf("the stack should be applied without a rollout: %v", api.recordsOnly)
+	}
+	pushed := "100.64.0.1:5000/analytics-abc-web:dokploy-aaaaaaaaaaaa"
+	if api.images["svc-web"] != pushed || !runner.didRun("docker push "+pushed) {
+		t.Errorf("web: %q, ran %v", api.images["svc-web"], runner.ran)
+	}
+	if api.images["svc-worker"] != "redis@sha256:1234" {
+		t.Errorf("worker should be pinned by digest: %q", api.images["svc-worker"])
+	}
+	if len(base.started) != 2 {
+		t.Errorf("both services should start: %v", base.started)
+	}
+}
