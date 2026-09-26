@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.19.0](https://github.com/meshploy/meshploy/compare/v0.18.0...v0.19.0) (2026-09-26)
+
+
+### Features
+
+* **builds:** cap each project's build cache, and warn on a filling disk or a leftover workload ([99b54c6](https://github.com/meshploy/meshploy/commit/99b54c6e03a3e94808e6e56b54df04ba554077a9))
+* **environments:** show where each image came from, open routes from cards, delete levels, and break down resource counts ([8b0d74c](https://github.com/meshploy/meshploy/commit/8b0d74cd93c73e62c7b1948bd0563ecf7d5361bc))
+* **help:** explain every feature in place, from one text shared by the console, the docs' Concepts and later MCP ([544b101](https://github.com/meshploy/meshploy/commit/544b101be5507aa361839dc17951ac3f2c98b44b))
+* **nodes:** join a Mac or a Windows machine to the mesh as a mesh-only node ([eb16199](https://github.com/meshploy/meshploy/commit/eb16199e993c1b77c471a1925b7acb24dedb36d8))
+* **overview:** show what needs attention, each project's levels, where deployments came from, and delivery over two weeks ([27cfb1f](https://github.com/meshploy/meshploy/commit/27cfb1f3603cc19d6b0aeb1c8b5407d1fc102316))
+* **projects:** add environment levels, with promotion groups, borrowing, derived hostnames and own databases ([29cbc5d](https://github.com/meshploy/meshploy/commit/29cbc5d0904b15a6a301b7064159f2f753b4ef9b))
+* **routes:** link a route's target to its service ([6ac301b](https://github.com/meshploy/meshploy/commit/6ac301baf3f339f0fbdf7309706231c412562961))
+* **services:** add install, build and start commands, and default to the built-in registry ([69e4296](https://github.com/meshploy/meshploy/commit/69e42962691af6d6b8273ef2e25ae01172504e21))
+* **services:** fill in a new service from what its repository is ([69592bf](https://github.com/meshploy/meshploy/commit/69592bf4a6a63970403de063cc23d4809536e74a))
+* **services:** say why a service keeps dying, wherever it shows ([e449977](https://github.com/meshploy/meshploy/commit/e449977c4191d2357b80b8141571319b97c6d54d))
+* **services:** suggest fixes from what the build found out about the app ([90b9b67](https://github.com/meshploy/meshploy/commit/90b9b67876d5b1307580253de420d9c9f7dbdc9c))
+
+
+### Bug Fixes
+
+* **console:** drop the outdated domain section from settings, and align the new-level placement controls ([4a3632f](https://github.com/meshploy/meshploy/commit/4a3632f00a6b0ecdb014ffaa46c44b5b9355fd71))
+* **console:** toggle comments with Ctrl+/ in variable editors ([7d0d0e5](https://github.com/meshploy/meshploy/commit/7d0d0e582b42f82e254327f541780902c0e8293b))
+* **deployments:** open the log at its latest line, and mark only the lines that matter ([ccee98c](https://github.com/meshploy/meshploy/commit/ccee98c281a248139e0e51fe08a937ed80c9ad48))
+* **environments:** never read variables from a lower level, mark and overwrite hotfixes, and stop failing quietly on deletes and job runs ([9b7e495](https://github.com/meshploy/meshploy/commit/9b7e4950dd509c80b54d002d686506b027c24348))
+* **git:** refuse another organization's git integration on every route that names one ([52a8d29](https://github.com/meshploy/meshploy/commit/52a8d291b57baad64f0c09515de20fc53bfe094a))
+* **nodes:** let a provisioned node remove itself with its own secret, not the token it spent ([4ba97cd](https://github.com/meshploy/meshploy/commit/4ba97cda4d327403d10b2a54c78dced0e760432f))
+* **routes:** issue certificates for names under a wildcard route ([b5f42cf](https://github.com/meshploy/meshploy/commit/b5f42cfdf63ac1c0a81bc35f474e9e81037549d8))
+* **variables:** publish the address a service really runs at ([ee29748](https://github.com/meshploy/meshploy/commit/ee2974807997945c595e13ab1ecca81f31d2c7a9))
+* **web:** list the licences of the chart library's dependencies ([e3dbbdc](https://github.com/meshploy/meshploy/commit/e3dbbdc8d4a2ffebe42778b0b7cf0dca8e1de1f6))
+
 ## [0.18.0](https://github.com/meshploy/meshploy/compare/v0.17.0...v0.18.0) (2026-09-23)
 
 
