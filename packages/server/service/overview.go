@@ -28,6 +28,7 @@ type OverviewService struct {
 	projects   *ProjectService
 	promotions *PromotionService
 	orphans    *OrphanService
+	workloads  *WorkloadService
 	// metrics reads a node's live metrics (node_exporter); replaceable in tests.
 	metrics func(ctx context.Context, nodeID uuid.UUID) (*NodeMetrics, error)
 
@@ -161,6 +162,27 @@ func (s *OverviewService) Get(ctx context.Context, orgID uuid.UUID, projectIDs [
 			add(AttentionItem{Kind: kind, Severity: SeverityCritical,
 				Title: fmt.Sprintf("%s is failing", sv.Name), Detail: "in " + where[sv.ProjectID],
 				ProjectID: id(sv.ProjectID), ServiceID: id(sv.ID)})
+		}
+
+		// Services that keep dying: out of memory, crashing, cannot start.
+		for _, p := range projects {
+			troubles, err := s.workloads.Troubles(ctx, p.ID)
+			if err != nil {
+				continue
+			}
+			for sid, t := range troubles {
+				if down[sid] {
+					continue
+				}
+				var sv db.Service
+				if s.db.WithContext(ctx).Select("id", "name", "project_id").First(&sv, "id = ?", sid).Error != nil {
+					continue
+				}
+				down[sid] = true
+				add(AttentionItem{Kind: "service_trouble", Severity: SeverityCritical,
+					Title: troubleTitle(sv.Name, t), Detail: troubleDetail(t) + "; in " + where[sv.ProjectID],
+					ProjectID: id(sv.ProjectID), ServiceID: id(sv.ID)})
+			}
 		}
 
 		// A last deploy that failed on a service still running its previous
@@ -592,4 +614,37 @@ func humanBytes(b int64) string {
 		return fmt.Sprintf("%.0f GB", float64(b)/gb)
 	}
 	return fmt.Sprintf("%.0f MB", float64(b)/(1<<20))
+}
+
+// troubleTitle and troubleDetail say what is wrong with a service in words.
+func troubleTitle(name string, t *Trouble) string {
+	switch t.Kind {
+	case TroubleOutOfMemory:
+		return name + " keeps running out of memory"
+	case TroubleImagePull:
+		return name + " cannot pull its image"
+	case TroubleCannotStart:
+		return name + " cannot start"
+	}
+	return name + " keeps stopping"
+}
+
+func troubleDetail(t *Trouble) string {
+	d := fmt.Sprintf("%d restarts", t.Restarts)
+	if t.Restarts == 1 {
+		d = "1 restart"
+	}
+	switch t.Kind {
+	case TroubleOutOfMemory:
+		if t.MemoryLimit != "" {
+			d += "; memory limit " + t.MemoryLimit
+		}
+	case TroubleCrashing:
+		d += fmt.Sprintf("; exits with code %d", t.ExitCode)
+	case TroubleImagePull, TroubleCannotStart:
+		if t.Message != "" {
+			d = t.Message
+		}
+	}
+	return d
 }

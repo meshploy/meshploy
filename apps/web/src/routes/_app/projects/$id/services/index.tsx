@@ -11,10 +11,13 @@ import { formatRelativeTime } from "@/lib/utils"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
 import type { ServiceStatus } from "@/types"
 import { HelpButton } from "@/help/help-button"
+import { TroubleTag } from "@/components/services/trouble"
+import { projects as projectsHealthApi, type ApiTrouble } from "@/lib/api"
 import { livePoll } from "@/lib/live-poll"
 
-function ServiceCard({ svc, onClick, stackNames, orgId, projectId }: {
+function ServiceCard({ svc, onClick, stackNames, orgId, projectId, trouble }: {
   svc: ApiService
+  trouble?: ApiTrouble
   onClick: () => void
   stackNames: Map<string, string>
   orgId: string | undefined
@@ -42,9 +45,12 @@ function ServiceCard({ svc, onClick, stackNames, orgId, projectId }: {
             <p className="text-[11px] text-muted-foreground">port :{(svc.ports?.find((p) => p.is_primary) ?? svc.ports?.[0])?.port ?? "—"} · ×{svc.replicas}</p>
           </div>
         </div>
-        <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border shrink-0 ${statusStyle}`}>
-          {svc.status}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {trouble && <TroubleTag trouble={trouble} />}
+          <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border shrink-0 ${statusStyle}`}>
+            {svc.status}
+          </Badge>
+        </div>
       </div>
 
       <div className="border-t border-border/40 pt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -92,6 +98,13 @@ function ServicesTab() {
   })
 
   const serviceList = allServices.filter((s) => s.type === "application")
+  // Which of them keep dying, and why.
+  const { data: health } = useQuery({
+    queryKey: ["project-health", orgId, projectId],
+    queryFn: () => projectsHealthApi.health(orgId!, projectId, token),
+    enabled: !!orgId,
+    refetchInterval: 15_000,
+  })
 
   return (
     <div className="console-page p-6 space-y-4">
@@ -141,6 +154,7 @@ function ServicesTab() {
             <ServiceCard
               key={svc.id}
               svc={svc}
+              trouble={health?.services[svc.id]}
               stackNames={stackNames}
               orgId={orgId}
               projectId={projectId}

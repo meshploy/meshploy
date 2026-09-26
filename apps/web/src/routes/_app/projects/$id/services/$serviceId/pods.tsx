@@ -184,6 +184,14 @@ function PodsTab() {
                     </TableCell>
                     <TableCell className={`${tdCls} tabular-nums text-muted-foreground`}>
                       {pod.restarts}
+                      {/* Why it last stopped, or why it is waiting: the restart count alone says nothing. */}
+                      {(pod.waiting_reason || (pod.restarts > 0 && pod.last_reason)) && (
+                        <span className={pod.last_reason === "OOMKilled" || pod.waiting_reason ? "ml-2 text-red-300" : "ml-2"} data-testid="pod-last-reason">
+                          {pod.last_reason === "OOMKilled"
+                            ? `out of memory${pod.memory_limit ? ` (limit ${pod.memory_limit})` : ""}`
+                            : pod.waiting_reason || `${pod.last_reason} (exit ${pod.last_exit_code ?? "?"})`}
+                        </span>
+                      )}
                     </TableCell>
                     {hasMetrics && (
                       <>

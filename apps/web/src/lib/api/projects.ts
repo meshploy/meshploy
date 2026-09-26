@@ -64,6 +64,8 @@ export interface BoardCell {
   arrival?: "build" | "image" | "promotion" | "bring_down" | ""
   /** When the running image was built, wherever that was: what Promote compares. */
   image_built_at?: string | null
+  /** Why the service is not staying up, when it is not. */
+  trouble?: import("./services").ApiTrouble
   /** Public addresses at this level, live ones first. */
   routes?: { hostname: string; live: boolean }[]
   /** Where the image came from: built here, or moved here from another level. */
@@ -210,6 +212,14 @@ export const projects = {
     apiFetch<{ hostnames_changed: number }>(
       `/api/v1/orgs/${orgId}/projects/${levelId}/environment`,
       { method: "PATCH", body: JSON.stringify({ name }) },
+      token
+    ),
+
+  /** Services in the project that are not staying up, by service id. */
+  health: (orgId: string, projectId: string, token: string) =>
+    apiFetch<{ services: Record<string, import("./services").ApiTrouble> }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/health`,
+      {},
       token
     ),
 

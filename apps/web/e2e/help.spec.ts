@@ -76,6 +76,8 @@ test.describe("Help", () => {
   })
 
   test("every page with a topic opens it from beside its title", async ({ page }) => {
+    // Eight full page loads: more than the default limit allows on a busy machine.
+    test.setTimeout(90_000)
     const pages: [string, string, string][] = [
       [`/projects/${DEMO_PROJECT_ID}/stacks`, "How stacks work", "A group of services, volumes, routes and files"],
       [`/projects/${DEMO_PROJECT_ID}/jobs`, "How jobs work", "Containers that run to completion"],

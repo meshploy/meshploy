@@ -5,13 +5,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Box, ChevronDown, Database, ExternalLink, Globe, Loader2, Play, Rocket, ServerCrash, Square, Terminal } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { services as servicesApi, deployments, stacks as stacksApi, routes as routesApi } from "@/lib/api"
+import { services as servicesApi, deployments, stacks as stacksApi, routes as routesApi, projects as projectsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 import { useIsAdmin } from "@/store/org-store"
 import { livePoll } from "@/lib/live-poll"
 import { OriginStrip } from "@/components/services/deployment-origin"
+import { TroubleBanner } from "@/components/services/trouble"
 import { useDeployGuard } from "@/components/services/deploy-guard"
 
 export const Route = createFileRoute("/_app/projects/$id/services/$serviceId")({
@@ -88,6 +89,16 @@ function ServiceLayout() {
   })
   const current = history?.find((d) => d.status === "success")
 
+  // Whether its pods are staying up, and if not, why. Polled: a crash loop
+  // shows up after the deploy that started it.
+  const { data: health } = useQuery({
+    queryKey: ["project-health", orgId, projectId],
+    queryFn: () => projectsApi.health(orgId!, projectId, token),
+    enabled: !!orgId,
+    refetchInterval: 15_000,
+  })
+  const trouble = health?.services[serviceId]
+
   // The addresses a browser can open: the service's routes, internal ones
   // aside. Shares the overview's query.
   const { data: projectRoutes } = useQuery({
@@ -153,7 +164,14 @@ function ServiceLayout() {
         }
         badge={<StatusPill status={service.status} />}
         help={service.type === "database" ? { topic: "databases", label: "How databases work" } : { topic: "services", label: "How services and builds work" }}
-        highlight={current && <OriginStrip origin={current} image={current.image} />}
+        highlight={
+          (trouble || current) && (
+            <>
+              {trouble && <TroubleBanner trouble={trouble} projectId={projectId} serviceId={serviceId} />}
+              {current && <OriginStrip origin={current} image={current.image} />}
+            </>
+          )
+        }
         actions={
           <>
             {(service.status === "stopped" || service.status === "failed") && !!service.image && !!service.deployed_at && (

@@ -276,6 +276,13 @@ function routeTarget(input: Record<string, any>, routeId: string) {
     target_port: port?.port || input.port || input.target_port || 80,
   })
 }
+/**
+ * Services that keep dying in the demo, by id. Every demo service is healthy;
+ * the browser tests set one here (POST .../__trouble) to see each place that
+ * tells the reader.
+ */
+const troubles: Record<string, Record<string, any>> = {}
+
 /** A service's deployments newest first, by when each was made, as the API orders them. */
 function deploymentsOf(serviceId: string) {
   return db.deployments
@@ -673,6 +680,18 @@ export const workspaceHandlers = [
       .slice(0, limit)
     return json(rows)
   }),
+  http.get(`${P}/health`, ({ params }) =>
+    json({
+      services: Object.fromEntries(
+        Object.entries(troubles).filter(([id]) => find("services", id)?.project_id === params.projectId)
+      ),
+    })
+  ),
+  // Demo-only, for the browser tests: make a service keep dying.
+  http.post(`${S}/__trouble`, async ({ params, request }) => {
+    troubles[String(params.serviceId)] = await body(request)
+    return json({ ok: true })
+  }),
   // The overview: what needs someone, as the API decides it, from the demo's
   // own state; and every count broken down across all levels.
   http.get(`${O}/overview`, () => {
@@ -680,6 +699,17 @@ export const workspaceHandlers = [
     const where = (projectId: string) => {
       const p = find("projects", projectId)
       return p?.parent_project_id ? `${p.name} (${p.env_name})` : p?.name ?? ""
+    }
+    const troubleTitle: Record<string, string> = {
+      out_of_memory: "keeps running out of memory", crashing: "keeps stopping",
+      image_pull: "cannot pull its image", cannot_start: "cannot start",
+    }
+    for (const [id, t] of Object.entries(troubles)) {
+      const s = find("services", id)
+      if (!s) continue
+      attention.push({ kind: "service_trouble", severity: "critical", title: `${s.name} ${troubleTitle[t.kind]}`,
+        detail: `${t.restarts} restarts${t.memory_limit ? `; memory limit ${t.memory_limit}` : ""}; in ${where(s.project_id)}`,
+        project_id: s.project_id, service_id: s.id })
     }
     for (const s of db.services.filter((s) => s.status === "failed"))
       attention.push({ kind: s.type === "database" ? "database_failed" : "service_failed", severity: "critical",
@@ -1582,6 +1612,7 @@ function environmentHandlers() {
         deployed_at: s.deployed_at ?? s.updated_at ?? null,
         has_backup: !!s.has_backup,
         ...originOf(s.id),
+        trouble: troubles[s.id],
         routes: db.routes
           .filter((r) => r.zone !== "internal" && (r.targets ?? []).some((t: DemoRecord) => t.service_id === s.id))
           .map((r) => ({ hostname: r.hostname, live: r.published !== false && !r.awaiting_deploy }))

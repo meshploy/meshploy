@@ -53,6 +53,16 @@ A value can refer to another with `${NAME}`, so `DATABASE_URL=${PRIMARY_DB_URL}`
 
 A deploy fails at once when no online node can build, and after a few minutes when no node can take the service.
 
+## When a service keeps stopping {#trouble}
+
+A service whose container keeps dying can still say "running", because it is restarted each time. Meshploy reads why from its pods and says so on the service's page, on its card, in the services list and on the workspace overview:
+
+- **Out of memory**: it went over its memory limit and was killed. Raise the limit on its Configuration page, under resources, or find what uses more than expected. The default of 512 MB is too little for many apps that load a model or a large dataset.
+- **Keeps stopping**: its process exits and is restarted, with the exit code. Its log says why.
+- **Cannot pull its image**, or **cannot start**: the image name, the registry's credentials, or its configuration needs fixing.
+
+Restarts from more than half an hour ago are not counted, so a service that recovered stops being flagged.
+
 ## Common tasks {#how-to}
 
 - **Deploy from a repository.** New resource, choose Service, pick the git connection, repository and branch, then Deploy.
@@ -68,6 +78,7 @@ A deploy fails at once when no online node can build, and after a few minutes wh
 - **Install command** {#install-command -> commands}: Replaces the install step Railpack works out, such as pnpm install. Empty: Railpack decides.
 - **Build command** {#build-command -> commands}: Replaces the build step Railpack works out, such as pnpm build. Empty: Railpack decides.
 - **Start command** {#start-command -> commands}: Replaces the command the image starts with, run through its shell; changes on the next deploy without a rebuild. Empty: the image's own.
+- **Out of memory** {#out-of-memory -> trouble}: The container went over its memory limit and was killed. Raise the limit under the service's resources.
 - **Build cache** {#build-cache -> build-cache}: Layers kept from earlier builds, shared by the project's services and trimmed back to the server's limit after each build. Clearing it only makes the next build slower.
 - **Redeploy** {#redeploy -> deploys}: Runs the image the service runs now again, for changed variables, without building.
 - **Rollback** {#rollback -> deploys}: Runs an earlier deployment's image again, as it was.

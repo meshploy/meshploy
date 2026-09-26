@@ -145,6 +145,15 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 	}, h.ListDependents)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-project-health",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/health",
+		Summary:     "Services in a project that are not staying up, and why: out of memory, crashing, image pull, cannot start",
+		Tags:        []string{"Services"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetProjectHealth)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "start-service",
 		Method:      "POST",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/start",
@@ -867,4 +876,29 @@ func (h *Handler) ListDependents(ctx context.Context, input *WorkloadPathInput) 
 		return nil, notFound(err)
 	}
 	return &ListDependentsOutput{Body: deps}, nil
+}
+
+type GetProjectHealthOutput struct {
+	Body struct {
+		// Services maps a service id to what is wrong with it; a service that
+		// is fine is absent.
+		Services map[string]*svc.Trouble `json:"services"`
+	}
+}
+
+func (h *Handler) GetProjectHealth(ctx context.Context, input *ProjectPathInput) (*GetProjectHealthOutput, error) {
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	if err != nil {
+		return nil, err
+	}
+	troubles, err := h.svc.Workloads.Troubles(ctx, projectID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	out := &GetProjectHealthOutput{}
+	out.Body.Services = map[string]*svc.Trouble{}
+	for id, t := range troubles {
+		out.Body.Services[id.String()] = t
+	}
+	return out, nil
 }
