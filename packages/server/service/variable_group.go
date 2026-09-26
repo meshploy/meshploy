@@ -211,7 +211,10 @@ func serviceEnvPrefix(name string) string {
 // for a service. Called at service creation and after each successful deploy.
 func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Service, namespace string) error {
 	prefix := serviceEnvPrefix(svc.Name)
-	host := serviceDNSName(svc.Name, namespace)
+	// The name the workload really runs under, not one derived from the
+	// display name: a database called docai_db runs as docai-db-63fbb8, and a
+	// host built from its name would point at nothing.
+	host := fmt.Sprintf("%s.%s.svc.cluster.local", workloadName(ctx, s.db, svc), namespace)
 
 	// Find or create the group
 	var group db.VariableGroup
@@ -686,4 +689,25 @@ func (s *VariableGroupService) Dependents(ctx context.Context, serviceID uuid.UU
 		}
 	}
 	return out, nil
+}
+
+// RefreshPublished rewrites every service's published group from what it is
+// now. Run once at startup, so a group published with a wrong host by an
+// earlier version is corrected without waiting for that service to deploy.
+func (s *VariableGroupService) RefreshPublished(ctx context.Context) error {
+	var services []db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").
+		Where("id IN (?)", s.db.Model(&db.VariableGroup{}).Select("service_id").Where("service_id IS NOT NULL AND system_managed = ?", true)).
+		Find(&services).Error; err != nil {
+		return err
+	}
+	for i := range services {
+		if services[i].Project.Slug == "" {
+			continue
+		}
+		if err := s.UpsertSystemGroup(ctx, &services[i], services[i].Project.Slug); err != nil {
+			return fmt.Errorf("%s: %w", services[i].Name, err)
+		}
+	}
+	return nil
 }
