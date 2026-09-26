@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,6 +73,9 @@ type BuildJobParams struct {
 	// Nixpacks and Railpack; empty leaves it to the builder.
 	InstallCommand string
 	BuildCommand   string
+	// CacheLimitMB is what the builder trims its cache back under after a
+	// build; 0 leaves it to grow.
+	CacheLimitMB int
 	// Build-time env vars — KEY=VALUE, one per line.
 	// Forwarded to nixpacks (--env), railpack (export), dockerfile (--build-arg).
 	BuildEnvVars string
@@ -227,6 +231,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "BUILD_ENV_VARS", Value: p.BuildEnvVars},
 								{Name: "INSTALL_COMMAND", Value: p.InstallCommand},
 								{Name: "BUILD_COMMAND", Value: p.BuildCommand},
+								{Name: "CACHE_LIMIT_MB", Value: strconv.Itoa(p.CacheLimitMB)},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{

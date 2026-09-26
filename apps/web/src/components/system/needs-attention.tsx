@@ -89,7 +89,9 @@ function AttentionRow({ item }: { item: ApiAttentionItem }) {
   const className = "flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-secondary/40"
   const p = item.project_id
   // Where each kind is dealt with.
-  if (item.kind === "node_offline" && item.node_id)
+  if (item.kind === "orphans")
+    return <Link to="/cluster" className={className}>{body}</Link>
+  if ((item.kind === "node_offline" || item.kind === "node_disk") && item.node_id)
     return <Link to="/nodes/$id" params={{ id: item.node_id }} className={className}>{body}</Link>
   if ((item.kind === "domain_unverified" || item.kind === "former_primary") && item.domain_id)
     return <Link to="/domains/$domainId" params={{ domainId: item.domain_id }} className={className}>{body}</Link>

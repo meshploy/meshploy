@@ -123,7 +123,7 @@ function SettingsTab() {
       {service?.type !== "database" && (
         <Section
           title="Build cache"
-          subtitle="Buildah layer cache is shared across all services in this project. Clear it to force a clean rebuild (e.g. after a corrupted cache or to free disk space). The cache is recreated automatically on the next deploy."
+          subtitle="The build cache belongs to the project: clearing it here clears it for every service in the project. It is trimmed to the server's limit after each build; clear it to free the space now, or to force a clean build."
         >
           {clearCacheMutation.isError && (
             <p className="text-xs text-destructive">{(clearCacheMutation.error as Error).message}</p>

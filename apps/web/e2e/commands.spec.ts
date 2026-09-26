@@ -41,3 +41,10 @@ test.describe("Commands", () => {
     await expect(page.getByRole("combobox").filter({ hasText: "Meshploy registry" })).toBeVisible({ timeout: 10_000 })
   })
 })
+
+test("a project's build cache can be cleared from its own settings", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}/settings`)
+  await page.getByRole("button", { name: "Clear build cache" }).click({ timeout: 10_000 })
+  await expect(page.getByText("Cleared. The next build starts fresh.")).toBeVisible()
+})

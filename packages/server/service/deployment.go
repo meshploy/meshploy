@@ -404,6 +404,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		RegistryUser:   a.registryUser,
 		RegistryPass:   a.registryPass,
 		BuildEnvVars:   s.buildEnv(ctx, a),
+		CacheLimitMB:   s.cfg.BuildCacheLimitGB * 1024,
 		InstallCommand: a.bc.InstallCommand,
 		BuildCommand:   a.bc.BuildCommand,
 		BuilderNode:    a.bc.BuilderNode,

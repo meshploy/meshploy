@@ -10,6 +10,9 @@ import (
 	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // The overview says what needs someone, most urgent first, from state the
@@ -134,4 +137,53 @@ func sum(xs []int) int {
 		n += x
 	}
 	return n
+}
+
+// A node's disk filling up, and a workload no service owns, are on the
+// overview: the disk for everyone, the leftover workload for admins.
+func TestTheOverviewSaysWhenADiskFillsOrAWorkloadIsLeftOver(t *testing.T) {
+	ctx := context.Background()
+	svcs, gdb, prod, _, _, _, _ := newChain(t)
+	var project meshdb.Project
+	require.NoError(t, gdb.First(&project, "id = ?", prod).Error)
+	full := meshdb.Node{OrganizationID: project.OrganizationID, Name: "gw", Status: meshdb.NodeOnline}
+	roomy := meshdb.Node{OrganizationID: project.OrganizationID, Name: "worker", Status: meshdb.NodeOnline}
+	require.NoError(t, gdb.Create(&full).Error)
+	require.NoError(t, gdb.Create(&roomy).Error)
+	const gb = int64(1) << 30
+	service.UseNodeMetricsForTest(svcs, func(_ context.Context, id uuid.UUID) (*service.NodeMetrics, error) {
+		if id == full.ID {
+			return &service.NodeMetrics{DiskTotalBytes: 193 * gb, DiskAvailBytes: 12 * gb}, nil
+		}
+		return &service.NodeMetrics{DiskTotalBytes: 100 * gb, DiskAvailBytes: 60 * gb}, nil
+	})
+
+	// A workload in the project's namespace that no service is behind.
+	client := fake.NewSimpleClientset(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name: "docai-db", Namespace: project.Slug, Labels: map[string]string{"managed-by": "meshploy"}}})
+	service.UseOrphansK8sForTest(svcs, client)
+
+	got, err := svcs.Overview.Get(ctx, project.OrganizationID, []uuid.UUID{prod}, true)
+	require.NoError(t, err)
+	var disk, orphan *service.AttentionItem
+	for i, a := range got.Attention {
+		switch a.Kind {
+		case "node_disk":
+			disk = &got.Attention[i]
+		case "orphans":
+			orphan = &got.Attention[i]
+		}
+	}
+	require.NotNil(t, disk, "gw is 93% full")
+	assert.Equal(t, "gw's disk is 93% full", disk.Title)
+	assert.Equal(t, service.SeverityWarning, disk.Severity)
+	assert.Equal(t, full.ID, *disk.NodeID)
+	require.NotNil(t, orphan)
+	assert.Equal(t, "docai-db runs, and no service owns it", orphan.Title)
+
+	member, err := svcs.Overview.Get(ctx, project.OrganizationID, []uuid.UUID{prod}, false)
+	require.NoError(t, err)
+	for _, a := range member.Attention {
+		assert.NotEqual(t, "orphans", a.Kind, "the cluster's leftovers are an admin's to see")
+	}
 }

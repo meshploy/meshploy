@@ -27,6 +27,12 @@ Three optional commands. Left empty, each is worked out for you, as before:
 - **Install command** (`pnpm install --frozen-lockfile`) and **build command** (`pnpm build`) replace the steps Railpack works out from the code. A Dockerfile build has its own steps, so they apply to Railpack only.
 - **Start command** (`node dist/server.js`) replaces the command the image starts with, whether Railpack built it, a Dockerfile did, or it is an image you named. It runs through the image's shell, so `&&` and pipes work, and it changes on the next deploy with no rebuild. An image without a shell, such as a distroless one, cannot use it.
 
+## Build cache {#build-cache}
+
+A project keeps a **build cache**: layers from earlier builds, so the next build reuses what has not changed and is faster. It is shared by every service in the project, and after each build it is trimmed back under the server's limit (10 GB unless the server sets `BUILD_CACHE_LIMIT_GB`). A Railpack build drops the layers used least recently, so what the next build needs stays; a Dockerfile build over the limit starts its cache again. Nothing fails at the limit: a build is only slower when it cannot reuse a layer.
+
+**Clear build cache**, in the project's settings or any of its services', empties it at once: to free the space, or to force a clean build.
+
 ## Deploying on push {#auto-deploy}
 
 With **auto-deploy** on, a push to the tracked branch builds and deploys by itself. A GitHub connection reports every push through the Meshploy GitHub App; GitLab, Gitea and Bitbucket use a webhook on the repository, which Meshploy adds when its token allows. **Watch paths** narrow it to pushes that change certain folders, for a repository that holds more than one service.
@@ -62,6 +68,7 @@ A deploy fails at once when no online node can build, and after a few minutes wh
 - **Install command** {#install-command -> commands}: Replaces the install step Railpack works out, such as pnpm install. Empty: Railpack decides.
 - **Build command** {#build-command -> commands}: Replaces the build step Railpack works out, such as pnpm build. Empty: Railpack decides.
 - **Start command** {#start-command -> commands}: Replaces the command the image starts with, run through its shell; changes on the next deploy without a rebuild. Empty: the image's own.
+- **Build cache** {#build-cache -> build-cache}: Layers kept from earlier builds, shared by the project's services and trimmed back to the server's limit after each build. Clearing it only makes the next build slower.
 - **Redeploy** {#redeploy -> deploys}: Runs the image the service runs now again, for changed variables, without building.
 - **Rollback** {#rollback -> deploys}: Runs an earlier deployment's image again, as it was.
 - **Image retention** {#image-retention -> deploys}: How many built images are kept, which is how far back a rollback can go.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,7 +27,28 @@ type OverviewService struct {
 	db         *gorm.DB
 	projects   *ProjectService
 	promotions *PromotionService
+	orphans    *OrphanService
+	// metrics reads a node's live metrics (node_exporter); replaceable in tests.
+	metrics func(ctx context.Context, nodeID uuid.UUID) (*NodeMetrics, error)
+
+	diskMu    sync.Mutex
+	diskCache map[uuid.UUID]diskReading
 }
+
+// diskReading is a node's disk as last read, kept for diskReadingTTL so the
+// overview's refresh does not scrape every node every few seconds.
+type diskReading struct {
+	total, avail int64
+	at           time.Time
+}
+
+const (
+	diskReadingTTL = time.Minute
+	// A node's disk is worth a look from diskWarnPercent full, and an emergency
+	// from diskCriticalPercent: builds and databases fail when it fills.
+	diskWarnPercent     = 85
+	diskCriticalPercent = 95
+)
 
 // Attention severities, most urgent first.
 const (
@@ -237,6 +259,26 @@ func (s *OverviewService) Get(ctx context.Context, orgID uuid.UUID, projectIDs [
 	for _, n := range nodes {
 		add(AttentionItem{Kind: "node_offline", Severity: SeverityCritical,
 			Title: fmt.Sprintf("%s is %s", n.Name, n.Status), Detail: "its workloads cannot be scheduled there", NodeID: id(n.ID)})
+	}
+	for _, item := range s.diskItems(ctx, orgID) {
+		add(item)
+	}
+	if isAdmin && s.orphans != nil {
+		// What runs in the cluster with no service behind it: it holds memory,
+		// and nothing in the console shows it except the Cluster page.
+		orphans, err := s.orphans.List(ctx, orgID)
+		if err == nil && len(orphans) > 0 {
+			names := make([]string, len(orphans))
+			for i, o := range orphans {
+				names[i] = o.Name
+			}
+			title := fmt.Sprintf("%d workloads run that no service owns", len(orphans))
+			if len(orphans) == 1 {
+				title = fmt.Sprintf("%s runs, and no service owns it", orphans[0].Name)
+			}
+			add(AttentionItem{Kind: "orphans", Severity: SeverityWarning, Title: title,
+				Detail: listNames(names, 3) + "; left over in the cluster, still using resources"})
+		}
 	}
 	if isAdmin {
 		var domains []db.Domain
@@ -476,4 +518,78 @@ func median(xs []float64) *float64 {
 		m = (sorted[len(sorted)/2-1] + m) / 2
 	}
 	return &m
+}
+
+// diskItems reports online nodes whose disk is filling. Each node is read at
+// most once a minute, all at once, and a node that cannot be read (no
+// node_exporter, a Windows machine) is left out rather than guessed.
+func (s *OverviewService) diskItems(ctx context.Context, orgID uuid.UUID) []AttentionItem {
+	if s.metrics == nil {
+		return nil
+	}
+	var nodes []db.Node
+	if err := s.db.WithContext(ctx).Where("organization_id = ? AND status = ?", orgID, db.NodeOnline).Order("name").Find(&nodes).Error; err != nil {
+		return nil
+	}
+	s.diskMu.Lock()
+	if s.diskCache == nil {
+		s.diskCache = map[uuid.UUID]diskReading{}
+	}
+	var stale []db.Node
+	for _, n := range nodes {
+		if r, ok := s.diskCache[n.ID]; !ok || time.Since(r.at) > diskReadingTTL {
+			stale = append(stale, n)
+		}
+	}
+	s.diskMu.Unlock()
+
+	var wg sync.WaitGroup
+	for _, n := range stale {
+		wg.Add(1)
+		go func(n db.Node) {
+			defer wg.Done()
+			rctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			reading := diskReading{at: time.Now()}
+			if m, err := s.metrics(rctx, n.ID); err == nil && m != nil {
+				reading.total, reading.avail = m.DiskTotalBytes, m.DiskAvailBytes
+			}
+			s.diskMu.Lock()
+			s.diskCache[n.ID] = reading
+			s.diskMu.Unlock()
+		}(n)
+	}
+	wg.Wait()
+
+	var out []AttentionItem
+	s.diskMu.Lock()
+	defer s.diskMu.Unlock()
+	for _, n := range nodes {
+		r := s.diskCache[n.ID]
+		if r.total <= 0 {
+			continue
+		}
+		used := int(100 * (r.total - r.avail) / r.total)
+		if used < diskWarnPercent {
+			continue
+		}
+		severity := SeverityWarning
+		if used >= diskCriticalPercent {
+			severity = SeverityCritical
+		}
+		id := n.ID
+		out = append(out, AttentionItem{Kind: "node_disk", Severity: severity,
+			Title:  fmt.Sprintf("%s's disk is %d%% full", n.Name, used),
+			Detail: fmt.Sprintf("%s free; builds and databases fail when it fills. Build caches and volumes are the usual cause", humanBytes(r.avail)),
+			NodeID: &id})
+	}
+	return out
+}
+
+func humanBytes(b int64) string {
+	const gb = 1 << 30
+	if b >= gb {
+		return fmt.Sprintf("%.0f GB", float64(b)/gb)
+	}
+	return fmt.Sprintf("%.0f MB", float64(b)/(1<<20))
 }

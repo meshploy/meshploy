@@ -304,7 +304,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
 
-	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions}
+	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions, orphans: svc.Orphans, metrics: nodes.GetNodeMetrics}
 	return svc
 }
 

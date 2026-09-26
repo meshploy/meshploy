@@ -273,3 +273,11 @@ func TestCreateBuildJobPassesInstallAndBuildCommands(t *testing.T) {
 		t.Error("an unset command must reach the builder empty")
 	}
 }
+
+// The cache limit reaches the builder in megabytes; 0 means no cap.
+func TestCreateBuildJobPassesTheCacheLimit(t *testing.T) {
+	_, env := jobEnv(t, BuildJobParams{JobName: "build-app-4", Namespace: "demo", Image: "x", GitBranch: "main", CacheLimitMB: 10240})
+	if env["CACHE_LIMIT_MB"] != "10240" {
+		t.Errorf("CACHE_LIMIT_MB = %q", env["CACHE_LIMIT_MB"])
+	}
+}
