@@ -84,6 +84,27 @@ export interface ApiTrouble {
   memory_limit?: string
 }
 
+/**
+ * Advice about a service from what its last build found out about the app,
+ * set against how it is configured, with the fixes. Gone once the
+ * configuration no longer matches it, or once dismissed.
+ */
+export interface ApiHint {
+  kind: "start_command" | "memory" | "port"
+  title: string
+  detail: string
+  fixes?: ApiHintFix[]
+  /** The build the advice comes from, when it comes from one. */
+  deployment_id?: string
+}
+
+export interface ApiHintFix {
+  /** What taking it changes: the start command, the memory limit, the primary port, or the builder. */
+  action: "start_command" | "memory" | "port" | "builder"
+  label: string
+  value: string
+}
+
 export interface ApiPodMetrics {
   pod_name: string
   cpu_millis: number
@@ -315,6 +336,14 @@ export const services = {
       token
     ),
 
+  /** Sets one kind of build hint aside for the service, for everyone. */
+  dismissHint: (orgId: string, projectId: string, serviceId: string, kind: ApiHint["kind"], token: string) =>
+    apiFetch<void>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/hints/${kind}/dismiss`,
+      { method: "POST" },
+      token
+    ),
+
   getDatabaseConfig: (orgId: string, projectId: string, serviceId: string, token: string) =>
     apiFetch<ApiDatabaseConfig>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/database-config`,
@@ -440,7 +469,7 @@ export interface ApiAttentionItem {
   kind:
     | "service_failed" | "database_failed" | "deploy_failed" | "job_failed"
     | "backup_missing" | "backup_failed" | "node_offline" | "domain_unverified"
-    | "former_primary" | "promotion_waiting" | "hotfix_running" | "node_disk" | "orphans" | "service_trouble"
+    | "former_primary" | "promotion_waiting" | "hotfix_running" | "node_disk" | "orphans" | "service_trouble" | "service_hints"
   severity: "critical" | "warning" | "info"
   title: string
   detail?: string

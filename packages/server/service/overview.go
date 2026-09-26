@@ -212,6 +212,42 @@ func (s *OverviewService) Get(ctx context.Context, orgID uuid.UUID, projectIDs [
 				ProjectID: id(sv.ProjectID), ServiceID: id(sv.ID), DeploymentID: id(d.ID)})
 		}
 
+		// Advice from builds: a start command the builder could not find, too
+		// little memory for what the app loads, a port it does not listen on.
+		// A service already listed as down says it has suggestions waiting instead
+		// of getting a second line.
+		for _, p := range projects {
+			hints, err := s.workloads.Hints(ctx, p.ID)
+			if err != nil {
+				continue
+			}
+			for sid, hs := range hints {
+				fixes := fmt.Sprintf("%d %s on its page", len(hs), plural(len(hs), "suggestion", "suggestions"))
+				listed := false
+				for i := range out.Attention {
+					if a := &out.Attention[i]; a.ServiceID != nil && *a.ServiceID == sid {
+						a.Detail += "; " + fixes
+						listed = true
+					}
+				}
+				if listed {
+					continue
+				}
+				var sv db.Service
+				if s.db.WithContext(ctx).Select("id", "name", "project_id").First(&sv, "id = ?", sid).Error != nil {
+					continue
+				}
+				titles := make([]string, len(hs))
+				for i, h := range hs {
+					titles[i] = strings.ToLower(h.Title[:1]) + h.Title[1:]
+				}
+				add(AttentionItem{Kind: "service_hints", Severity: SeverityWarning,
+					Title:     fmt.Sprintf("%s: %s", sv.Name, joinNames(titles)),
+					Detail:    fixes + "; in " + where[sv.ProjectID],
+					ProjectID: id(sv.ProjectID), ServiceID: id(sv.ID)})
+			}
+		}
+
 		// Jobs whose last run failed.
 		var jobs []db.Job
 		if err := s.db.WithContext(ctx).Where("project_id IN ? AND status = ?", projectIDs, db.JobStatusFailed).Order("name").Find(&jobs).Error; err != nil {

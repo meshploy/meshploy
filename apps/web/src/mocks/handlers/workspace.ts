@@ -283,6 +283,58 @@ function routeTarget(input: Record<string, any>, routeId: string) {
  */
 const troubles: Record<string, Record<string, any>> = {}
 
+/**
+ * What the demo's builds found out about each app, by service id, as the
+ * builder's "Stack:" lines tell the API. Empty in the demo; the browser tests
+ * set one (POST .../__stack) to see the hints it leads to.
+ */
+const stackFacts: Record<string, Record<string, any>> = {}
+
+const HEAVY: Record<string, number> = {
+  torch: 2048, tensorflow: 2048, jax: 2048, transformers: 2048, "sentence-transformers": 2048, vllm: 2048,
+  "llama-cpp-python": 2048, spacy: 1024, easyocr: 2048, paddleocr: 2048, onnxruntime: 1024, puppeteer: 1024, playwright: 1024,
+}
+const mib = (q: string) => (q.endsWith("Gi") ? parseFloat(q) * 1024 : q.endsWith("Mi") ? parseFloat(q) : 0)
+const human = (m: number) => (m >= 1024 ? `${m / 1024} GiB` : `${m} MiB`)
+
+/** The service's hints, by the API's rules (service/hints.go). */
+function hintsOf(s: DemoRecord) {
+  const f = stackFacts[s.id]
+  const bc = buildConfigs[s.id]
+  const out: any[] = []
+  const start: Record<string, string> = {
+    fastapi: `uvicorn ${f?.entry} --host 0.0.0.0 --port $PORT`, flask: `gunicorn ${f?.entry} --bind 0.0.0.0:$PORT`,
+    django: `gunicorn ${f?.entry} --bind 0.0.0.0:$PORT`, node: `node ${f?.entry}`,
+  }
+  if (f?.no_start_command && !s.start_command && bc?.builder !== "dockerfile") {
+    const fixes: any[] = [{ action: "start_command", label: "Set start command", value: start[f.framework] ?? "" }]
+    let detail = "Railpack could not tell how to start this app, so its container has nothing to run."
+    if (f.framework) detail += ` It looks like a ${{ fastapi: "FastAPI", flask: "Flask", django: "Django", node: "Node.js" }[f.framework as string]} app in ${f.framework === "node" ? f.entry : `${String(f.entry).split(":")[0].replace(/\./g, "/")}.py`}.`
+    if (f.dockerfile_cmd) {
+      detail += " The repository has a Dockerfile that says how to start it."
+      fixes.push({ action: "builder", label: "Build with its Dockerfile", value: "dockerfile" })
+    }
+    out.push({ kind: "start_command", title: "No start command", detail, fixes })
+  }
+  const heavy = (f?.heavy ?? []).filter((h: string) => HEAVY[h])
+  const need = Math.max(0, ...heavy.map((h: string) => HEAVY[h]))
+  if (need && mib(s.memory_limit ?? "") < need) {
+    const pkgs = heavy.filter((h: string) => HEAVY[h] === need)
+    out.push({ kind: "memory", title: "Likely to need more memory",
+      detail: `It depends on ${pkgs.length === 2 ? pkgs.join(" and ") : pkgs.length > 2 ? `${pkgs[0]} and ${pkgs.length - 1} more` : pkgs[0]}, which usually needs ${human(need)} or more; its memory limit is ${human(mib(s.memory_limit ?? "0Mi"))}.`,
+      fixes: [{ action: "memory", label: `Set limit to ${human(need)}`, value: `${need / 1024}Gi` }] })
+  }
+  const primary = (s.ports ?? []).find((p: DemoRecord) => p.is_primary)?.port ?? s.ports?.[0]?.port
+  const m = /(?:--port[= ]|-p |--bind[= ]|-b )(?:[0-9.]*:)?([0-9]{2,5})\b/.exec(s.start_command ?? "")
+  if (primary && m && Number(m[1]) !== primary)
+    out.push({ kind: "port", title: "Listens on a different port",
+      detail: `The start command listens on ${m[1]}, but the service sends traffic to ${primary}.`,
+      fixes: [{ action: "port", label: `Use port ${m[1]}`, value: m[1] },
+        { action: "start_command", label: "Listen on $PORT", value: s.start_command.replace(m[0], m[0].replace(m[1], "$PORT")) }] })
+  const dismissed = String(s.dismissed_hints ?? "").split(",")
+  return out.filter((h) => !dismissed.includes(h.kind))
+}
+
 /** A service's deployments newest first, by when each was made, as the API orders them. */
 function deploymentsOf(serviceId: string) {
   return db.deployments
@@ -685,8 +737,21 @@ export const workspaceHandlers = [
       services: Object.fromEntries(
         Object.entries(troubles).filter(([id]) => find("services", id)?.project_id === params.projectId)
       ),
+      hints: Object.fromEntries(
+        db.services.filter((s) => s.project_id === params.projectId).map((s) => [s.id, hintsOf(s)]).filter(([, h]) => h.length > 0)
+      ),
     })
   ),
+  // Demo-only, for the browser tests: what a build found out about the app.
+  http.post(`${S}/__stack`, async ({ params, request }) => {
+    stackFacts[String(params.serviceId)] = await body(request)
+    return json({ ok: true })
+  }),
+  http.post(`${S}/hints/:kind/dismiss`, ({ params }) => {
+    const s = find("services", String(params.serviceId))
+    if (s) s.dismissed_hints = [s.dismissed_hints, params.kind].filter(Boolean).join(",")
+    return new HttpResponse(null, { status: 204 })
+  }),
   // Demo-only, for the browser tests: make a service keep dying.
   http.post(`${S}/__trouble`, async ({ params, request }) => {
     troubles[String(params.serviceId)] = await body(request)
@@ -714,6 +779,17 @@ export const workspaceHandlers = [
     for (const s of db.services.filter((s) => s.status === "failed"))
       attention.push({ kind: s.type === "database" ? "database_failed" : "service_failed", severity: "critical",
         title: `${s.name} is failing`, detail: `in ${where(s.project_id)}`, project_id: s.project_id, service_id: s.id })
+    for (const s of db.services) {
+      const hs = hintsOf(s)
+      if (hs.length === 0) continue
+      const fixes = `${hs.length} ${hs.length === 1 ? "suggestion" : "suggestions"} on its page`
+      const listed = attention.filter((a) => a.service_id === s.id)
+      if (listed.length > 0) { listed.forEach((a) => { a.detail += `; ${fixes}` }); continue }
+      const titles = hs.map((h) => h.title[0].toLowerCase() + h.title.slice(1))
+      attention.push({ kind: "service_hints", severity: "warning",
+        title: `${s.name}: ${titles.length === 2 ? titles.join(" and ") : titles.length > 2 ? `${titles[0]} and ${titles.length - 1} more` : titles[0]}`,
+        detail: `${fixes}; in ${where(s.project_id)}`, project_id: s.project_id, service_id: s.id })
+    }
     for (const n of (db.nodes ?? []).filter((n: DemoRecord) => n.status && n.status !== "online"))
       attention.push({ kind: "node_offline", severity: "critical", title: `${n.name} is ${n.status}`,
         detail: "its workloads cannot be scheduled there", node_id: n.id })

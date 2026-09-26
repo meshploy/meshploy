@@ -434,6 +434,10 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		},
 	})
 
+	// What the build found out about the app, for the service's hints: kept
+	// whether or not the build worked, since a failed one often says most.
+	s.recordStack(ctx, a.deployment.ID, result.Log)
+
 	if result.Unschedulable {
 		// Deleted so it cannot start later, after the deploy was reported failed.
 		fg := metav1.DeletePropagationForeground

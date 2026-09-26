@@ -148,10 +148,20 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 		OperationID: "get-project-health",
 		Method:      "GET",
 		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/health",
-		Summary:     "Services in a project that are not staying up, and why: out of memory, crashing, image pull, cannot start",
+		Summary:     "Services in a project that are not staying up, and why, and advice from their last builds",
 		Tags:        []string{"Services"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetProjectHealth)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "dismiss-service-hint",
+		Method:        "POST",
+		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/hints/{kind}/dismiss",
+		Summary:       "Set aside one kind of build hint for a service, for everyone",
+		Tags:          []string{"Services"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.DismissHint)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "start-service",
@@ -883,6 +893,9 @@ type GetProjectHealthOutput struct {
 		// Services maps a service id to what is wrong with it; a service that
 		// is fine is absent.
 		Services map[string]*svc.Trouble `json:"services"`
+		// Hints maps a service id to advice from its last build; a service
+		// with none is absent.
+		Hints map[string][]svc.Hint `json:"hints"`
 	}
 }
 
@@ -900,5 +913,32 @@ func (h *Handler) GetProjectHealth(ctx context.Context, input *ProjectPathInput)
 	for id, t := range troubles {
 		out.Body.Services[id.String()] = t
 	}
+	hints, err := h.svc.Workloads.Hints(ctx, projectID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("read hints", err)
+	}
+	out.Body.Hints = map[string][]svc.Hint{}
+	for id, hs := range hints {
+		out.Body.Hints[id.String()] = hs
+	}
 	return out, nil
+}
+
+type DismissHintInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	ServiceID string `path:"serviceId"`
+	Kind      string `path:"kind" enum:"start_command,memory,port"`
+}
+
+// DismissHint sets a hint aside for everyone who can see the service.
+func (h *Handler) DismissHint(ctx context.Context, input *DismissHintInput) (*struct{}, error) {
+	_, _, serviceID, _, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionUpdate, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Workloads.DismissHint(ctx, serviceID, input.Kind); err != nil {
+		return nil, notFound(err)
+	}
+	return nil, nil
 }
