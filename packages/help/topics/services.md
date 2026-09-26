@@ -63,6 +63,17 @@ A service whose container keeps dying can still say "running", because it is res
 
 Restarts from more than half an hour ago are not counted, so a service that recovered stops being flagged.
 
+## Filled in from the repository {#detect}
+
+Choosing a repository and branch for a new service has Meshploy look at a few of its files first: the dependency files, the usual entry points and a Dockerfile. It says what it found under the repository, and fills in what fits:
+
+- **Builder**: the repository's Dockerfile when it says how to start the app, Railpack otherwise.
+- **Port**: from the Dockerfile's `EXPOSE`, or the framework's usual one.
+- **Start command**: for a FastAPI, Flask, Django or Node.js app Railpack may not know how to start. Check it before deploying.
+- **Memory limit**: more than the default when the app depends on something that needs it, such as PyTorch.
+
+Only fields still holding their default are filled in, so nothing typed by hand is replaced. Every value stays editable, and the suggestions after the first build catch what a look at a few files cannot see.
+
 ## Suggestions after a build {#hints}
 
 Each build also looks at what the app is: its language, its framework and entry point, dependencies known to need a lot of memory, a Dockerfile in the repository. Set against the service's settings, that turns into suggestions on the service's page, each with its fix, and a line on the workspace overview:
@@ -89,6 +100,7 @@ A fix saves the setting; it reaches the running app on the next deploy, which th
 - **Build command** {#build-command -> commands}: Replaces the build step Railpack works out, such as pnpm build. Empty: Railpack decides.
 - **Start command** {#start-command -> commands}: Replaces the command the image starts with, run through its shell; changes on the next deploy without a rebuild. Empty: the image's own.
 - **Out of memory** {#out-of-memory -> trouble}: The container went over its memory limit and was killed. Raise the limit under the service's resources.
+- **Detected** {#detected -> detect}: What a look at the repository found, and the settings it filled in. Every one stays editable.
 - **Suggestion** {#hint -> hints}: Advice from the last build about how the service is set up, such as a missing start command or too little memory for what the app loads, with its fix.
 - **Build cache** {#build-cache -> build-cache}: Layers kept from earlier builds, shared by the project's services and trimmed back to the server's limit after each build. Clearing it only makes the next build slower.
 - **Redeploy** {#redeploy -> deploys}: Runs the image the service runs now again, for changed variables, without building.

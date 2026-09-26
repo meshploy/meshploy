@@ -111,4 +111,27 @@ export const gitIntegrations = {
 
   delete: (orgId: string, id: string, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/git-integrations/${id}`, { method: "DELETE" }, token),
+
+  /** Looks at a repository's branch and suggests how to build and run it. No integration: a public repository. */
+  detect: (orgId: string, body: { git_integration_id?: string; repo: string; branch: string; dockerfile_path?: string }, token: string) =>
+    apiFetch<ApiDetection>(`/api/v1/orgs/${orgId}/detect-stack`, { method: "POST", body: JSON.stringify(body) }, token),
+}
+
+/** What a look at a repository found, and the settings it suggests; a suggestion left out has nothing better than the default. */
+export interface ApiDetection {
+  facts: {
+    languages?: string[]
+    framework?: string
+    entry?: string
+    heavy?: string[]
+    dockerfile?: string
+    dockerfile_cmd?: boolean
+    expose?: number
+  }
+  summary: string
+  builder?: "railpack" | "dockerfile"
+  port?: number
+  start_command?: string
+  memory_limit?: string
+  notes?: string[]
 }
