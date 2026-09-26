@@ -126,6 +126,24 @@ type OAuthReconnectOutput struct {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+// gitIntegrationInOrg refuses an integration that is not the org's, as not
+// found. The org and role checks alone say nothing about the id in the path
+// or the body, which could name another org's integration and so reach its
+// repositories, its push-hook secret, or delete it.
+func (h *Handler) gitIntegrationInOrg(ctx context.Context, orgIDStr string, id uuid.UUID) error {
+	orgID, err := parseUUID(orgIDStr)
+	if err != nil {
+		return err
+	}
+	if err := h.svc.GitIntegrations.InOrg(ctx, orgID, id); err != nil {
+		if errors.Is(err, service.ErrGitIntegrationNotFound) {
+			return huma.Error404NotFound("git integration not found")
+		}
+		return huma.Error500InternalServerError("check git integration", err)
+	}
+	return nil
+}
+
 func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 	const tag = "Git Integrations"
 
@@ -241,6 +259,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		if err != nil {
 			return nil, err
 		}
+		if err := h.gitIntegrationInOrg(ctx, in.OrgID, integrationID); err != nil {
+			return nil, err
+		}
 		installURL, err := h.svc.GitIntegrations.GitHubInstallURL(ctx, integrationID, in.GithubOrg)
 		if err != nil {
 			return nil, err
@@ -263,6 +284,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		if err != nil {
 			return nil, err
 		}
+		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
+			return nil, err
+		}
 		authURL, err := h.svc.GitIntegrations.OAuthReconnect(ctx, id)
 		if err != nil {
 			return nil, err
@@ -283,6 +307,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 	}, func(ctx context.Context, in *GitIntegrationPathInput) (*ListReposOutput, error) {
 		_, _, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
+			return nil, err
+		}
+		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
 			return nil, err
 		}
 		repos, err := h.svc.GitIntegrations.ListRepos(ctx, id)
@@ -319,6 +346,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid integration ID")
 		}
+		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
+			return nil, err
+		}
 		hook, err := h.svc.GitIntegrations.PushHookDetails(ctx, id, in.Repo)
 		if err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
@@ -344,6 +374,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid integration ID")
 		}
+		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
+			return nil, err
+		}
 		hook, err := h.svc.GitIntegrations.InstallPushHook(ctx, id, in.Body.Repo)
 		if err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
@@ -366,6 +399,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 	}) (*ListBranchesOutput, error) {
 		_, _, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
+			return nil, err
+		}
+		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
 			return nil, err
 		}
 		if in.Repo == "" {
@@ -426,6 +462,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 	}, func(ctx context.Context, in *GitIntegrationPathInput) (*struct{}, error) {
 		_, _, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
 		if err != nil {
+			return nil, err
+		}
+		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
 			return nil, err
 		}
 		if err := h.svc.GitIntegrations.Delete(ctx, id); err != nil {

@@ -352,6 +352,9 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid git_integration_id")
 		}
+		if err := h.gitIntegrationInOrg(ctx, input.OrgID, id); err != nil {
+			return nil, err
+		}
 		gitIntegrationID = &id
 	}
 	var pullRegistryID *uuid.UUID
@@ -642,6 +645,9 @@ func (h *Handler) UpsertServiceBuildConfig(ctx context.Context, input *PatchBuil
 		id, err := parseUUID(*input.Body.GitIntegrationID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid git_integration_id")
+		}
+		if err := h.gitIntegrationInOrg(ctx, input.OrgID, id); err != nil {
+			return nil, err
 		}
 		in.GitIntegrationID = &id
 	}
