@@ -35,7 +35,11 @@ func TestDatabaseGroupCarriesItsConnection(t *testing.T) {
 		items[it.Key] = it
 	}
 
-	host := "primary-db.vars.svc.cluster.local"
+	// The name the database really runs under: its generated one, not its
+	// display name, which no workload answers to.
+	var dc meshdb.DatabaseConfig
+	require.NoError(t, gdb.First(&dc, "service_id = ?", database.ID).Error)
+	host := dc.Slug + ".vars.svc.cluster.local"
 	require.Equal(t, host+":5432", string(items["PRIMARY_DB_ADDR"].Value))
 	require.Equal(t, "app", string(items["PRIMARY_DB_USER"].Value))
 	require.Equal(t, "app", string(items["PRIMARY_DB_DB"].Value))

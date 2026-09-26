@@ -205,6 +205,15 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	}
 
 	varGroups := &VariableGroupService{db: db}
+	if c != nil {
+		// Published groups carry each service's address; correct any an
+		// earlier version wrote wrong, in the background.
+		go func() {
+			if err := varGroups.RefreshPublished(context.Background()); err != nil {
+				log.Printf("warning: refresh published variable groups: %v", err)
+			}
+		}()
+	}
 	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups,
 		nodePortMeshOnly: c != nil && c.NodePortAddresses != ""}
 	projects := &ProjectService{db: db}

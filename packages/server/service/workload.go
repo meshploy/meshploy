@@ -674,6 +674,13 @@ func applyDatabaseMeshExposure(ctx context.Context, k8s kubernetes.Interface, dc
 // The preloaded config is used when present, and looked up otherwise, so this
 // is correct regardless of how the caller loaded the service.
 func (s *WorkloadService) k8sName(ctx context.Context, svc *db.Service) string {
+	return workloadName(ctx, s.db, svc)
+}
+
+// workloadName is the name a service's workload and its cluster Service carry,
+// and so the hostname other workloads reach it by. Shared by everything that
+// names it: what deploys it, and the variables it publishes about itself.
+func workloadName(ctx context.Context, gdb *gorm.DB, svc *db.Service) string {
 	if svc.Type != db.ServiceTypeDatabase {
 		// Stored at creation. Empty on rows that predate the column, which fall
 		// back to the name they were already deployed under -- so nothing that
@@ -687,7 +694,7 @@ func (s *WorkloadService) k8sName(ctx context.Context, svc *db.Service) string {
 		return svc.DatabaseConfig.Slug
 	}
 	var dc db.DatabaseConfig
-	if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err == nil && dc.Slug != "" {
+	if err := gdb.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err == nil && dc.Slug != "" {
 		return dc.Slug
 	}
 	return slugify(svc.Name)
