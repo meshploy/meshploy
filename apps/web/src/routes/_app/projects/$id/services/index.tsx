@@ -78,6 +78,7 @@ const STATUS_STYLES: Record<ServiceStatus, string> = {
   deploying: "bg-amber-500/10 text-amber-400 border-amber-500/20",
   failed:    "bg-destructive/10 text-destructive border-destructive/20",
   stopped:   "bg-muted text-muted-foreground border-border",
+  completed: "bg-sky-500/10 text-sky-400 border-sky-500/20",
 }
 
 function ServicesTab() {

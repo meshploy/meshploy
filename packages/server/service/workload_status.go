@@ -61,6 +61,9 @@ func (s *WorkloadService) reconcileStatuses(ctx context.Context) {
 		Preload("Project").
 		Preload("DatabaseConfig").
 		Where("status IN ?", reconciledStatuses).
+		// A service that runs once has no Deployment to read; its deploy
+		// records how its run ended.
+		Where("NOT run_once").
 		Find(&services).Error; err != nil {
 		log.Printf("status reconciler: list services: %v", err)
 		return
@@ -170,7 +173,7 @@ func deriveStackStatus(svcs []db.Service) db.StackStatus {
 			running++
 		case db.ServiceDeploying:
 			deploying++
-		case db.ServiceStopped:
+		case db.ServiceStopped, db.ServiceCompleted:
 			stopped++
 		}
 	}

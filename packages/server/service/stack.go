@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -650,9 +651,18 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 
 	specNames := make(map[string]struct{}, len(project.Services))
 
+	runOnce := runOnceServices(project.Services)
+
 	for _, svcName := range topoSortServices(project.Services) {
 		svcDef := project.Services[svcName]
 		specNames[svcName] = struct{}{}
+		retries, once := runOnce[svcName]
+		for dep, d := range svcDef.DependsOn {
+			if d.Condition == composetypes.ServiceConditionCompletedSuccessfully {
+				result.Warnings = append(result.Warnings, fmt.Sprintf(
+					"%s: starts alongside %s rather than after it finishes; it should retry until %s has run", svcName, dep, dep))
+			}
+		}
 
 		ext := decodeExt(svcDef.Extensions)
 		isDatabase := ext != nil && ext.Type == "database"
@@ -764,6 +774,12 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				}
 			}
 
+			if aliases := composeAliases(svc, svcDef); len(aliases) > 0 {
+				s.db.WithContext(ctx).Model(svc).Update("dns_aliases", aliases)
+			}
+			if once {
+				s.db.WithContext(ctx).Model(svc).Updates(map[string]any{"run_once": true, "run_retries": retries})
+			}
 			s.attachVolumeMounts(ctx, svc.ID, svcDef.Volumes, volumesByName)
 			s.syncConfigFiles(ctx, stack, svc.ID, svcName, svcFiles, result)
 			result.Created = append(result.Created, svcName)
@@ -821,6 +837,17 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				wantPorts = portPrintsFromRows(existingSvc.Ports)
 			}
 			changed := existingSvc.DeployedSpecHash != fingerprint(want, wantPorts)
+			// The names it answers to are applied with its Services, so a change
+			// to them is a change to roll out.
+			aliases := composeAliases(&existingSvc, svcDef)
+			updates["dns_aliases"] = aliases
+			updates["run_once"], updates["run_retries"] = once, retries
+			if existingSvc.RunOnce != once || existingSvc.RunRetries != retries {
+				changed = true
+			}
+			if !slices.Equal([]string(existingSvc.DNSAliases), []string(aliases)) {
+				changed = true
+			}
 
 			if err := s.db.WithContext(ctx).Model(&existingSvc).Updates(updates).Error; err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: update failed: %v", svcName, err))
@@ -832,6 +859,13 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					result.Errors = append(result.Errors, fmt.Sprintf("%s: ports: %v", svcName, perr))
 				}
 				changed = changed || portsChanged
+			}
+			// The file is what the service is built from, so it re-states the
+			// build each apply, as it re-states everything else.
+			if !isDatabase && (ext != nil && (ext.Source != nil || ext.Build != nil) || svcDef.Build != nil && svcDef.Build.Context != "") {
+				if err := s.applyBuildConfig(ctx, existingSvc.ID, svcDef, ext, &stack); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("%s: build config failed: %v", svcName, err))
+				}
 			}
 			if s.attachVolumeMounts(ctx, existingSvc.ID, svcDef.Volumes, volumesByName) {
 				changed = true
@@ -1007,6 +1041,12 @@ func (s *StackService) attachVolumeMounts(
 
 func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID, svcDef composetypes.ServiceConfig, ext *meshployExt, stack *meshdb.Stack) error {
 	builder := meshdb.BuilderNixpacks
+	// Compose builds a build: section from a Dockerfile, always: its own
+	// dockerfile:, or Dockerfile in the context. Handing it to Nixpacks built a
+	// monorepo's twelve services as twelve guesses at its root.
+	if svcDef.Build != nil && svcDef.Build.Context != "" {
+		builder = meshdb.BuilderDockerfile
+	}
 	if ext != nil && ext.Build != nil && ext.Build.Builder != "" {
 		switch ext.Build.Builder {
 		case "railpack":
@@ -1069,6 +1109,21 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 		input.RootDir = &rootDir
 	}
 
+	if svcDef.Build != nil && svcDef.Build.Context != "" {
+		dockerfile := svcDef.Build.Dockerfile
+		if dockerfile == "" {
+			dockerfile = "Dockerfile"
+		}
+		input.DockerfilePath = &dockerfile
+		args := map[string]string{}
+		for k, v := range svcDef.Build.Args {
+			if v != nil {
+				args[k] = *v
+			}
+		}
+		input.BuildArgs = &args
+	}
+
 	if ext != nil && ext.Build != nil {
 		if ext.Build.DockerfilePath != "" {
 			input.DockerfilePath = &ext.Build.DockerfilePath
@@ -1097,6 +1152,60 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// runOnceServices are the services a compose file expects to finish rather
+// than keep running, with how often a failed run is retried: those another
+// service waits for with condition service_completed_successfully, a
+// migration or a setup step. restart: "no" alone does not say it - it is
+// compose's default, and most long-running services leave it so.
+func runOnceServices(services composetypes.Services) map[string]int32 {
+	out := map[string]int32{}
+	for _, svc := range services {
+		for dep, d := range svc.DependsOn {
+			if d.Condition != composetypes.ServiceConditionCompletedSuccessfully {
+				continue
+			}
+			var retries int32
+			if def, ok := services[dep]; ok {
+				if n, found := strings.CutPrefix(def.Restart, "on-failure"); found {
+					retries = 3
+					if v, err := strconv.Atoi(strings.TrimPrefix(n, ":")); err == nil && v >= 0 {
+						retries = int32(v)
+					}
+				}
+			}
+			out[dep] = retries
+		}
+	}
+	return out
+}
+
+// composeAliases are the further names a compose service is reached by: its
+// container_name and its network aliases, as DNS labels, less the name it
+// already has. Docker answers to all of them; so must the cluster.
+func composeAliases(svc *meshdb.Service, def composetypes.ServiceConfig) meshdb.StringArray {
+	own := appK8sName(svc)
+	candidates := []string{def.ContainerName}
+	nets := make([]string, 0, len(def.Networks))
+	for n := range def.Networks {
+		nets = append(nets, n)
+	}
+	sort.Strings(nets)
+	for _, n := range nets {
+		if cfg := def.Networks[n]; cfg != nil {
+			candidates = append(candidates, cfg.Aliases...)
+		}
+	}
+	out := meshdb.StringArray{}
+	for _, c := range candidates {
+		a := slugify(c)
+		if a == "" || a == own || len(a) > 63 || a[0] < 'a' || a[0] > 'z' || slices.Contains(out, a) {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
 
 // topoSortServices returns service names in dependency order (dependencies first).
 func topoSortServices(services composetypes.Services) []string {
@@ -1331,6 +1440,15 @@ func (s *StackService) uninterpolatedFiles(ctx context.Context, spec string) (ma
 			paths["configs/"+name] = c.File
 		}
 	}
+	// A bind mount's source as written, before the loader resolves ./x
+	// against a working directory that means nothing here.
+	for name, svcDef := range project.Services {
+		for _, v := range svcDef.Volumes {
+			if v.Type == composetypes.VolumeTypeBind {
+				paths["binds/"+name+"/"+v.Target] = v.Source
+			}
+		}
+	}
 	for name, c := range project.Secrets {
 		if c.File != "" {
 			paths["secrets/"+name] = c.File
@@ -1350,8 +1468,18 @@ func (s *StackService) syncConfigFiles(
 	if s.configFiles == nil || len(files) == 0 {
 		return false
 	}
+	// Named after the file, or after its whole path when two files share a
+	// name: a bind-mounted directory can hold scripts/seed/x.sql beside
+	// scripts/x.sql.
+	bases := map[string]int{}
+	for _, f := range files {
+		bases[path.Base(f.Path)]++
+	}
 	for _, f := range files {
 		name := fmt.Sprintf("%s-%s", svcName, path.Base(f.Path))
+		if bases[path.Base(f.Path)] > 1 {
+			name = fmt.Sprintf("%s-%s", svcName, strings.ReplaceAll(strings.Trim(f.Path, "/"), "/", "-"))
+		}
 
 		var existing meshdb.ConfigFile
 		err := s.db.WithContext(ctx).

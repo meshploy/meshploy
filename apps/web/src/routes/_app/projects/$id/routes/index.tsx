@@ -189,7 +189,7 @@ function TCPRouteRow({ route, serviceNames, projectId, onClick }: {
       <TableCell className="px-4 py-3">
         <div className="flex items-center gap-2">
           <Network className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-          <Link to="/projects/$id/routes/tcp/$routeId" params={{ id: projectId, routeId: route.id }} className="font-medium text-foreground font-mono text-sm hover:text-primary">:{route.gateway_port}</Link>
+          <Link to="/projects/$id/routes/tcp/$routeId" params={{ id: projectId, routeId: route.id }} className="font-medium text-foreground font-mono text-sm hover:text-primary">{route.bind_address ?? ""}:{route.gateway_port}</Link>
           <span className="text-xs text-muted-foreground">→</span>
           {route.service_id ? (
             <Link to="/projects/$id/services/$serviceId/config" params={{ id: projectId, serviceId: route.service_id }} className="text-sm hover:text-primary">

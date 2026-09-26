@@ -25,7 +25,11 @@ export interface ApiService {
   node_id: string | null
   stack_id: string | null
   type: "application" | "database"
-  status: "running" | "stopped" | "deploying" | "failed"
+  status: "running" | "stopped" | "deploying" | "failed" | "completed"
+  /** Runs to completion as a Job on each deploy, rather than kept up. */
+  run_once?: boolean
+  /** Further names it answers to inside the cluster: compose container_name and network aliases. */
+  dns_aliases?: string[]
   image: string
   pull_registry_integration_id: string | null
   ports: ApiServicePort[]

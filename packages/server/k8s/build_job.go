@@ -69,6 +69,9 @@ type BuildJobParams struct {
 	RegistryPass string
 	// Subdirectory within the cloned repo to build from. Empty = repo root.
 	RootDir string
+	// DockerfilePath is a Dockerfile build's file, relative to RootDir. Empty
+	// is the builder's default, Dockerfile.
+	DockerfilePath string
 	// InstallCommand and BuildCommand override the builder's own, for
 	// Nixpacks and Railpack; empty leaves it to the builder.
 	InstallCommand string
@@ -223,6 +226,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "GIT_BRANCH", Value: p.GitBranch},
 								{Name: "GIT_TOKEN", Value: p.GitToken},
 								{Name: "ROOT_DIR", Value: p.RootDir},
+								{Name: "DOCKERFILE_PATH", Value: p.DockerfilePath},
 								{Name: "BUILDER", Value: p.Builder},
 								{Name: "IMAGE_DEST", Value: p.ImageDest},
 								{Name: "REGISTRY_HOST", Value: p.RegistryHost},
@@ -294,6 +298,8 @@ type JobWaitOptions struct {
 	OnStarted func(node string)
 	// Poll is the interval between checks. Zero means five seconds.
 	Poll time.Duration
+	// Container is whose log is read. Empty is a build's, "builder".
+	Container string
 }
 
 // WaitForJob polls the job until it succeeds, fails, or the context is cancelled.
@@ -353,12 +359,18 @@ func WaitForJobWith(ctx context.Context, client kubernetes.Interface, namespace,
 			}
 		}
 
-		log := FetchContainerLog(ctx, client, namespace, jobName, "builder")
+		container := opts.Container
+		if container == "" {
+			container = "builder"
+		}
+		log := FetchContainerLog(ctx, client, namespace, jobName, container)
 
 		if job.Status.Succeeded > 0 {
 			return JobResult{Success: true, Log: log}
 		}
-		if job.Status.Failed > 0 {
+		// Failed only once the Job has given up: one with retries left runs
+		// its pod again, and an early failed pod is not the outcome.
+		if jobGaveUp(job) {
 			return JobResult{Success: false, Log: log, OutOfMemory: oomKilled(jobPod(ctx, client, namespace, jobName))}
 		}
 		time.Sleep(poll)
@@ -391,7 +403,23 @@ func noNodeMatches(pod *corev1.Pod) string {
 	return ""
 }
 
-// FetchContainerLog returns stdout+stderr from the first pod of a K8s Job.
+// jobGaveUp is a Job that will not run again: marked failed, or out of the
+// retries its backoff limit allows.
+func jobGaveUp(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	limit := int32(0)
+	if job.Spec.BackoffLimit != nil {
+		limit = *job.Spec.BackoffLimit
+	}
+	return job.Status.Failed > limit
+}
+
+// FetchContainerLog returns stdout+stderr from the latest pod of a K8s Job:
+// a Job that retried has one pod per attempt, and the last says how it ended.
 // containerName must match the container name used in the pod spec.
 func FetchContainerLog(ctx context.Context, client kubernetes.Interface, namespace, jobName, containerName string) string {
 	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
@@ -401,6 +429,11 @@ func FetchContainerLog(ctx context.Context, client kubernetes.Interface, namespa
 		return ""
 	}
 	pod := pods.Items[0]
+	for _, p := range pods.Items[1:] {
+		if p.CreationTimestamp.After(pod.CreationTimestamp.Time) {
+			pod = p
+		}
+	}
 	req := client.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: containerName})
 	rc, err := req.Stream(ctx)
 	if err != nil {

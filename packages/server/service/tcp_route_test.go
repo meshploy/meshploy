@@ -248,7 +248,7 @@ func TestAnUnknownZoneIsRefused(t *testing.T) {
 		Zone: "internal", TargetIP: "127.0.0.1", TargetPort: 3580,
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "public, mesh or local")
+	assert.Contains(t, err.Error(), "public, mesh, local or address")
 }
 
 // Authorising a route says nothing about what it may point at. Before this,
@@ -372,4 +372,58 @@ func TestIgnoringNeedsAnAddressAndAPort(t *testing.T) {
 	require.Error(t, err)
 	_, err = e.svcs.System.IgnoreEndpoint(ctx, e.org.ID, gateway.ID, uuid.New(), "0.0.0.0", 0, "")
 	require.Error(t, err)
+}
+
+// A compose file publishing a port on one address of its host - PowerInsight's
+// databases on 100.81.6.12 - gets a TCP route bound to that address once a
+// deploy has given the port a NodePort, and loses it when the file stops
+// publishing it. A route the operator made by hand is never touched.
+func TestAPortPublishedOnOneAddressBecomesARouteBoundToIt(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	user, err := e.svcs.Auth.Register(ctx, service.RegisterInput{Username: "pi", Email: "pi@example.com", Password: "pass"})
+	require.NoError(t, err)
+
+	spec := func(ports string) string {
+		return "services:\n  db1:\n    image: timescale/timescaledb:latest-pg16\n    ports:\n" + ports
+	}
+	r, err := e.svcs.Stacks.ApplyManifest(ctx, e.project.ID, service.ManifestInput{Name: "pi",
+		Spec: spec("      - \"100.81.6.12:5433:5432\"\n      - \"127.0.0.1:9187:9187\"\n")}, user.ID)
+	require.NoError(t, err)
+	require.Empty(t, r.Errors)
+
+	var db1 meshdb.Service
+	require.NoError(t, e.gdb.Preload("Ports").Where("project_id = ? AND name = ?", e.project.ID, "db1").First(&db1).Error)
+	var pg meshdb.ServicePort
+	for _, p := range db1.Ports {
+		if p.Port == 5432 {
+			pg = p
+		}
+	}
+	require.Equal(t, "100.81.6.12", pg.PublishAddress)
+	require.Equal(t, 5433, pg.PublishPort)
+
+	// What a deploy does: assign the NodePort, then sync.
+	require.NoError(t, e.gdb.Model(&pg).Update("node_port", 31543).Error)
+	hand, err := e.create(6000, service.CreateTCPRouteInput{TargetIP: "127.0.0.1", TargetPort: 6000, Zone: meshdb.TCPZoneLocal})
+	require.NoError(t, err)
+	e.svcs.TCPRoutes.SyncPublished(ctx, db1.ID)
+	e.svcs.TCPRoutes.SyncPublished(ctx, db1.ID) // twice: nothing doubles
+
+	var routes []meshdb.TCPRoute
+	require.NoError(t, e.gdb.Where("service_id = ?", db1.ID).Find(&routes).Error)
+	require.Len(t, routes, 1)
+	assert.Equal(t, meshdb.TCPZoneAddress, routes[0].Zone)
+	assert.Equal(t, "100.81.6.12", routes[0].BindAddress)
+	assert.Equal(t, 5433, routes[0].GatewayPort)
+	assert.Equal(t, 31543, routes[0].TargetPort)
+
+	_, err = e.svcs.Stacks.ApplyManifest(ctx, e.project.ID, service.ManifestInput{Name: "pi", Spec: spec("      - \"5432\"\n")}, user.ID)
+	require.NoError(t, err)
+	e.svcs.TCPRoutes.SyncPublished(ctx, db1.ID)
+	var left int64
+	e.gdb.Model(&meshdb.TCPRoute{}).Where("service_id = ?", db1.ID).Count(&left)
+	assert.Zero(t, left, "no longer published on the address: its route goes")
+	e.gdb.Model(&meshdb.TCPRoute{}).Where("id = ?", hand.ID).Count(&left)
+	assert.Equal(t, int64(1), left, "a route made by hand stays")
 }

@@ -1,6 +1,7 @@
 export type NodeStatus = "online" | "offline"
 export type K3sRole = "server" | "agent"
-export type ServiceStatus = "running" | "stopped" | "deploying" | "failed"
+/** completed: a service that runs once, whose last run finished. */
+export type ServiceStatus = "running" | "stopped" | "deploying" | "failed" | "completed"
 export type ServiceType = "application" | "database"
 export type OrgRole = "owner" | "admin" | "member"
 export type DeploymentStatus = "pending" | "running" | "success" | "failed"

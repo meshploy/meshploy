@@ -153,6 +153,9 @@ func TestZoneDecidesTheBindAddress(t *testing.T) {
 // the mesh, so it falls back to loopback instead.
 func TestAMeshRouteWithoutAMeshAddressStaysLocal(t *testing.T) {
 	t.Setenv("MESH_IP", "")
+	if got := bindFor("", db.TCPRoute{Zone: db.TCPZoneAddress, BindAddress: "100.81.6.12"}); got != "100.81.6.12" {
+		t.Fatalf("an address route binds %s, want its own address", got)
+	}
 	if got := bindFor("", db.TCPRoute{Zone: db.TCPZoneMesh, GatewayPort: 5432}); got != "127.0.0.1" {
 		t.Errorf("got %q, want loopback", got)
 	}

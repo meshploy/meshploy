@@ -178,8 +178,11 @@ export interface ApiTCPRoute {
   organization_id: string
   project_id: string
   gateway_port: number
-  /** Absent from an API older than zones, where every route was public. */
-  zone?: TCPZone
+  /** Absent from an API older than zones, where every route was public. "address": bound to bind_address alone, made from a compose file publishing there. */
+  zone?: TCPZone | "address"
+  bind_address?: string
+  /** Made from a service port a compose file published on one address; it follows that port. */
+  from_publish?: boolean
   service_id: string | null
   service_port: number
   node_id: string | null

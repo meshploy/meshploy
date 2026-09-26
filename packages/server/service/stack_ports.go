@@ -40,6 +40,20 @@ func stackPorts(def composetypes.ServiceConfig, deployPort int) (ports []PortInp
 			continue
 		}
 		add(int(pc.Target), !isLoopback(pc.HostIP), pc.Name, pc.AppProtocol)
+		// Loopback-only is already "internal" above: reachable in the cluster,
+		// not from outside it, which is what it meant on the host.
+		switch {
+		case specificAddress(pc.HostIP):
+			// Published on one address the host has, such as its address on
+			// another network: a TCP route bound to that address, once a deploy
+			// has given the port somewhere to forward to.
+			published, _ := strconv.Atoi(pc.Published)
+			if published == 0 {
+				published = int(pc.Target)
+			}
+			i := byPort[int(pc.Target)]
+			ports[i].PublishAddress, ports[i].PublishPort = pc.HostIP, published
+		}
 	}
 	for _, e := range def.Expose {
 		from, to, proto, err := parseExpose(e)
@@ -77,6 +91,13 @@ func stackPorts(def composetypes.ServiceConfig, deployPort int) (ports []PortInp
 	ports[primary].IsPrimary = true
 	nameStackPorts(ports)
 	return ports, true, notes
+}
+
+// specificAddress is a host address a port is published on that is neither
+// every interface nor loopback.
+func specificAddress(ip string) bool {
+	a := net.ParseIP(ip)
+	return a != nil && !a.IsUnspecified() && !a.IsLoopback()
 }
 
 // wellKnownTCP are the ports of common services that do not speak HTTP, so a
@@ -196,6 +217,9 @@ func (s *StackService) syncStackPorts(ctx context.Context, serviceID uuid.UUID, 
 				IsHTTP:    p.IsHTTP,
 				IsPrimary: p.IsPrimary,
 				IsPublic:  p.IsPublic,
+
+				PublishAddress: p.PublishAddress,
+				PublishPort:    p.PublishPort,
 			}
 			if p.IsPublic {
 				row.NodePort = nodePorts[p.Port]
@@ -221,13 +245,15 @@ func samePorts(current []meshdb.ServicePort, want []PortInput) bool {
 		name                  string
 		port                  int
 		http, primary, public bool
+		address               string
+		publish               int
 	}
 	have := make(map[key]int, len(current))
 	for _, p := range current {
-		have[key{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic}]++
+		have[key{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic, p.PublishAddress, p.PublishPort}]++
 	}
 	for _, p := range want {
-		k := key{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic}
+		k := key{p.Name, p.Port, p.IsHTTP, p.IsPrimary, p.IsPublic, p.PublishAddress, p.PublishPort}
 		if have[k] == 0 {
 			return false
 		}

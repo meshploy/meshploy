@@ -109,6 +109,9 @@ const (
 	ServiceRunning   ServiceStatus = "running"
 	ServiceStopped   ServiceStatus = "stopped"
 	ServiceFailed    ServiceStatus = "failed"
+	// ServiceCompleted is a service that runs once (RunOnce) and whose last
+	// run finished successfully.
+	ServiceCompleted ServiceStatus = "completed"
 )
 
 type BuilderType string
@@ -657,6 +660,17 @@ type Service struct {
 	// container as written.
 	Command StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"command,omitempty"`
 	Args    StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"args,omitempty"`
+	// DNSAliases are further names the service answers to inside the cluster,
+	// for a stack: compose's container_name and network aliases, which other
+	// services in the same file reach it by. Each is a headless Service
+	// pointing at the same pods.
+	DNSAliases StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"dns_aliases,omitempty"`
+	// RunOnce marks a service that does its work and exits - a migration, a
+	// setup step - rather than one kept up: it runs as a Kubernetes Job on
+	// each deploy, and a successful run leaves it "completed". RunRetries is
+	// how often a failed run is tried again.
+	RunOnce    bool  `gorm:"not null;default:false" json:"run_once,omitempty"`
+	RunRetries int32 `gorm:"not null;default:0" json:"run_retries,omitempty"`
 	// StartCommand is the console's start command: one line, run through the
 	// image's /bin/sh, so pipes and && work. Set, it replaces Command and Args
 	// and the image's own ENTRYPOINT and CMD; empty keeps them.
@@ -707,6 +721,12 @@ type ServicePort struct {
 	IsPrimary bool      `gorm:"not null;default:false"   json:"is_primary"` // health check target; exactly one per service
 	IsPublic  bool      `gorm:"not null"                 json:"is_public"`  // gets a K8s NodePort
 	NodePort  int       `gorm:"default:0"                json:"node_port"`  // assigned NodePort; 0 = not yet deployed
+	// PublishAddress and PublishPort are where a compose file published this
+	// port on one particular address of its host - "100.81.6.12:5433:5432" -
+	// which a deploy turns into a TCP route bound to that address alone.
+	// Empty for a port published everywhere or nowhere.
+	PublishAddress string `gorm:"not null;default:''" json:"publish_address,omitempty"`
+	PublishPort    int    `gorm:"not null;default:0"  json:"publish_port,omitempty"`
 }
 
 func (ServicePort) TableName() string { return "service_ports" }
@@ -1158,6 +1178,10 @@ const (
 	// TCPZoneLocal binds loopback alone: reachable through an SSH tunnel to the
 	// gateway, and from nowhere else.
 	TCPZoneLocal TCPRouteZone = "local"
+	// TCPZoneAddress binds one address the gateway has, given in BindAddress:
+	// what a compose file means by publishing on 100.81.6.12 rather than
+	// everywhere.
+	TCPZoneAddress TCPRouteZone = "address"
 )
 
 type TCPRoute struct {
@@ -1185,6 +1209,11 @@ type TCPRoute struct {
 	// at all, where AllowedCIDRs decides who may connect once they can.
 	// Existing rows are public, which is what they have always been.
 	Zone TCPRouteZone `gorm:"type:varchar(10);not null;default:'public'" json:"zone"`
+	// BindAddress is the address an "address" route binds; empty otherwise.
+	BindAddress string `gorm:"not null;default:''" json:"bind_address,omitempty"`
+	// FromPublish marks a route made from a service port's PublishAddress: it
+	// follows that port, and goes when the port stops asking for it.
+	FromPublish bool `gorm:"not null;default:false" json:"from_publish,omitempty"`
 
 	// AllowedCIDRs restricts who may connect. Empty means anyone who can reach
 	// the port, which on the gateway is the internet.

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"slices"
 	"strings"
@@ -32,6 +33,8 @@ func zoneAddressName(z db.TCPRouteZone) string {
 		return "the mesh address"
 	case db.TCPZoneLocal:
 		return "this machine's loopback"
+	case db.TCPZoneAddress:
+		return "one address of this machine"
 	}
 	return "every interface"
 }
@@ -91,6 +94,11 @@ type CreateTCPRouteInput struct {
 	// Zone is where the gateway binds the port. Empty means public, which is
 	// what every route was before there was a choice.
 	Zone db.TCPRouteZone
+	// BindAddress is the one address an "address" zone binds.
+	BindAddress string
+	// FromPublish makes the route from a service port's publish address,
+	// which may be an HTTP port: compose published it, whatever it speaks.
+	FromPublish bool
 
 	AllowedCIDRs []string
 
@@ -156,10 +164,10 @@ func validZone(z db.TCPRouteZone) (db.TCPRouteZone, error) {
 	switch z {
 	case "":
 		return db.TCPZonePublic, nil
-	case db.TCPZonePublic, db.TCPZoneMesh, db.TCPZoneLocal:
+	case db.TCPZonePublic, db.TCPZoneMesh, db.TCPZoneLocal, db.TCPZoneAddress:
 		return z, nil
 	}
-	return "", fmt.Errorf("a zone is public, mesh or local, not %q", z)
+	return "", fmt.Errorf("a zone is public, mesh, local or address, not %q", z)
 }
 
 func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*db.TCPRoute, error) {
@@ -183,11 +191,19 @@ func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*
 		return nil, fmt.Errorf("a public route needs a gateway port")
 	}
 
+	if zone == db.TCPZoneAddress {
+		ip := net.ParseIP(in.BindAddress)
+		if ip == nil || ip.IsUnspecified() {
+			return nil, fmt.Errorf("an address route needs the address to bind, not %q", in.BindAddress)
+		}
+	}
 	route := &db.TCPRoute{
 		OrganizationID: in.OrgID,
 		ProjectID:      in.ProjectID,
 		GatewayPort:    in.GatewayPort,
 		Zone:           zone,
+		BindAddress:    strings.TrimSpace(in.BindAddress),
+		FromPublish:    in.FromPublish,
 		ServiceID:      in.ServiceID,
 		NodeID:         in.NodeID,
 		AllowedCIDRs:   cidrs,
@@ -286,7 +302,7 @@ func (s *TCPRouteService) Retarget(ctx context.Context, serviceID uuid.UUID) {
 	}
 	for i := range routes {
 		r := &routes[i]
-		in := CreateTCPRouteInput{ServiceID: r.ServiceID, ServicePort: r.ServicePort}
+		in := CreateTCPRouteInput{ServiceID: r.ServiceID, ServicePort: r.ServicePort, FromPublish: r.FromPublish}
 		fresh := *r
 		if err := s.resolveTarget(ctx, &fresh, in); err != nil {
 			continue // the service has no published port right now; leave the route alone
@@ -300,6 +316,44 @@ func (s *TCPRouteService) Retarget(ctx context.Context, serviceID uuid.UUID) {
 			"status":      db.TCPRoutePending,
 		})
 	}
+}
+
+// SyncPublished makes a service's TCP routes match the ports it publishes on
+// one address: a route bound to that address for each, and none for a port
+// that stopped asking. Run after a deploy, which gives the ports somewhere to
+// forward to. Best-effort: a port the gateway cannot give (its own, or taken)
+// is logged and left, and the rest still sync.
+func (s *TCPRouteService) SyncPublished(ctx context.Context, serviceID uuid.UUID) {
+	var svc db.Service
+	if err := s.db.WithContext(ctx).Preload("Project").Preload("Ports").First(&svc, "id = ?", serviceID).Error; err != nil {
+		return
+	}
+	var have []db.TCPRoute
+	s.db.WithContext(ctx).Where("service_id = ? AND from_publish", serviceID).Find(&have)
+	want := map[int]db.ServicePort{}
+	for _, p := range svc.Ports {
+		if p.PublishAddress != "" && p.PublishPort != 0 {
+			want[p.PublishPort] = p
+		}
+	}
+	for _, r := range have {
+		p, ok := want[r.GatewayPort]
+		if ok && p.PublishAddress == r.BindAddress && p.Port == r.ServicePort {
+			delete(want, r.GatewayPort) // already there; Retarget keeps its address current
+			continue
+		}
+		s.db.WithContext(ctx).Delete(&db.TCPRoute{}, "id = ?", r.ID)
+	}
+	for _, p := range want {
+		id := svc.ID
+		if _, err := s.Create(ctx, CreateTCPRouteInput{
+			OrgID: svc.Project.OrganizationID, ProjectID: svc.ProjectID, GatewayPort: p.PublishPort,
+			ServiceID: &id, ServicePort: p.Port, Zone: db.TCPZoneAddress, BindAddress: p.PublishAddress, FromPublish: true,
+		}); err != nil {
+			log.Printf("service %s: publish port %d on %s:%d: %v", svc.Name, p.Port, p.PublishAddress, p.PublishPort, err)
+		}
+	}
+	s.Retarget(ctx, serviceID)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -370,7 +424,7 @@ func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute,
 			First(&svc, "services.id = ?", *in.ServiceID).Error; err != nil {
 			return fmt.Errorf("service not found")
 		}
-		port, nodePort, err := s.servicePort(ctx, &svc, in.ServicePort)
+		port, nodePort, err := s.servicePort(ctx, &svc, in.ServicePort, in.FromPublish)
 		if err != nil {
 			return err
 		}
@@ -393,7 +447,7 @@ func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute,
 // by a port row, so it is read from there: a TCP route to a database is that
 // setting plus a way in from the gateway, and asking for one without the other
 // would forward to a port the cluster never opened.
-func (s *TCPRouteService) servicePort(ctx context.Context, svc *db.Service, want int) (int, int, error) {
+func (s *TCPRouteService) servicePort(ctx context.Context, svc *db.Service, want int, anyProtocol bool) (int, int, error) {
 	if svc.Type == db.ServiceTypeDatabase {
 		var dc db.DatabaseConfig
 		if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err != nil {
@@ -412,7 +466,7 @@ func (s *TCPRouteService) servicePort(ctx context.Context, svc *db.Service, want
 	var match *db.ServicePort
 	for i := range svc.Ports {
 		p := &svc.Ports[i]
-		if !p.IsPublic || p.IsHTTP {
+		if !p.IsPublic || p.IsHTTP && !anyProtocol {
 			continue // an HTTP port takes a domain route, which gives it TLS
 		}
 		if want != 0 && p.Port != want {

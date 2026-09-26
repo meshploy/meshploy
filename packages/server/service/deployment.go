@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +51,9 @@ type DeploymentService struct {
 	// routes publishes the routes waiting for a service's first deploy in an
 	// environment level. Assigned in service.New.
 	routes *RouteService
+	// tcpRoutes follows a deploy with the TCP routes a service's ports ask
+	// for by being published on one address. Assigned in service.New.
+	tcpRoutes *TCPRouteService
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -293,12 +297,12 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 			Command:             containerCommand(svc.StartCommand, svc.Command),
 			Args:                containerArgs(svc.StartCommand, svc.Args),
 		}
-		if err := appk8s.ApplyDeployment(bgCtx, s.k8s, wp); err != nil {
+		if err := s.startWorkload(bgCtx, svc, wp); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s deployment: "+err.Error())
 			return
 		}
 		s.markDeployed(bgCtx, svc, wp.Image)
-		if err := appk8s.ApplyService(bgCtx, s.k8s, appK8sName(svc), namespace, portSpecs); err != nil {
+		if err := s.applyInClusterService(bgCtx, svc, namespace, portSpecs); err != nil {
 			s.failDeployment(deploymentID, "failed to apply K8s service: "+err.Error())
 			return
 		}
@@ -319,7 +323,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 		// as "Deployment applied successfully".
 		depLog := deployment.Log + "Deployment applied. Waiting for the rollout…\n"
 		s.appendLog(deploymentID, &depLog, "")
-		res := appk8s.WatchRollout(bgCtx, s.k8s, appK8sName(svc), namespace, rolloutTimeout,
+		res := s.awaitWorkload(bgCtx, svc, namespace,
 			func(line string) { s.appendLog(deploymentID, &depLog, line) })
 
 		if !res.Succeeded {
@@ -398,6 +402,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		GitBranch:      a.bc.Branch,
 		GitToken:       a.git.Token,
 		RootDir:        a.bc.RootDir,
+		DockerfilePath: a.bc.DockerfilePath,
 		Builder:        string(a.bc.Builder),
 		ImageDest:      a.imageName,
 		RegistryHost:   a.registryHost,
@@ -506,12 +511,12 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		Command:             containerCommand(a.svc.StartCommand, a.svc.Command),
 		Args:                containerArgs(a.svc.StartCommand, a.svc.Args),
 	}
-	if err := appk8s.ApplyDeployment(ctx, s.k8s, wp); err != nil {
+	if err := s.startWorkload(ctx, &a.svc, wp); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s deployment: "+err.Error())
 		return
 	}
 	s.markDeployed(ctx, &a.svc, wp.Image)
-	if err := appk8s.ApplyService(ctx, s.k8s, appK8sName(&a.svc), a.namespace, portSpecs); err != nil {
+	if err := s.applyInClusterService(ctx, &a.svc, a.namespace, portSpecs); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to apply K8s service: "+err.Error())
 		return
 	}
@@ -533,7 +538,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	// is a failed deploy, not a successful one.
 	depLog := result.Log + "\nDeployment applied. Waiting for the rollout…\n"
 	s.appendLog(a.deployment.ID, &depLog, "")
-	res := appk8s.WatchRollout(ctx, s.k8s, appK8sName(&a.svc), a.namespace, rolloutTimeout,
+	res := s.awaitWorkload(ctx, &a.svc, a.namespace,
 		func(line string) { s.appendLog(a.deployment.ID, &depLog, line) })
 
 	if !res.Succeeded {
@@ -596,6 +601,11 @@ func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID,
 		}
 	}
 	svcUpdates := map[string]any{"status": db.ServiceRunning, "deployed_at": &now}
+	var runOnce bool
+	s.db.Model(&db.Service{}).Select("run_once").Where("id = ?", serviceID).Scan(&runOnce)
+	if runOnce {
+		svcUpdates["status"] = db.ServiceCompleted
+	}
 	if image != "" {
 		svcUpdates["image"] = image
 	}
@@ -604,6 +614,11 @@ func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID,
 	// Routes copied into a level with this service go live now that it runs.
 	if s.routes != nil {
 		s.routes.PublishAwaitingRoutes(ctx, serviceID)
+	}
+	// Ports published on one address need their port assigned before a route
+	// can forward to it, which this deploy has just done.
+	if s.tcpRoutes != nil {
+		s.tcpRoutes.SyncPublished(ctx, serviceID)
 	}
 
 	if s.notif == nil {
@@ -658,6 +673,11 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	if svc.Status != db.ServiceRunning || svc.Image == "" {
 		return nil
 	}
+	// A service that runs once is not re-run by a change to what it mounts;
+	// the next deploy runs it with the change.
+	if svc.RunOnce {
+		return nil
+	}
 	// A managed database is a different workload, under a different name, with
 	// a claim and the engine's environment. Re-applying it through the
 	// application path below would deploy an empty second copy beside its data.
@@ -698,7 +718,7 @@ func (s *DeploymentService) applyPortServices(ctx context.Context, svc *db.Servi
 	}
 	specs := toPortSpecs(ports)
 	name := appK8sName(svc)
-	if err := appk8s.ApplyService(ctx, s.k8s, name, namespace, specs); err != nil {
+	if err := s.applyInClusterService(ctx, svc, namespace, specs); err != nil {
 		return err
 	}
 	assigned, err := appk8s.ApplyNodePortService(ctx, s.k8s, name, namespace, specs)
@@ -1055,12 +1075,12 @@ func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, ima
 	go func() {
 		portSpecs := toPortSpecs(svc.Ports)
 		wp := s.workloadParams(context.Background(), &svc, image, dep.ID)
-		if err := appk8s.ApplyDeployment(context.Background(), s.k8s, wp); err != nil {
+		if err := s.startWorkload(context.Background(), &svc, wp); err != nil {
 			s.failDeployment(dep.ID, lower+" failed: "+err.Error())
 			return
 		}
 		s.markDeployed(context.Background(), &svc, wp.Image)
-		if err := appk8s.ApplyService(context.Background(), s.k8s, appK8sName(&svc), namespace, portSpecs); err != nil {
+		if err := s.applyInClusterService(context.Background(), &svc, namespace, portSpecs); err != nil {
 			s.failDeployment(dep.ID, lower+" failed to apply K8s service: "+err.Error())
 			return
 		}
@@ -1073,6 +1093,19 @@ func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, ima
 			if np, ok := assignedNPs[sp.Name]; ok && np != 0 {
 				s.db.Model(&db.ServicePort{}).Where("id = ?", sp.ID).Update("node_port", np)
 			}
+		}
+		// A run-once service's image is not "applied" until its run ends: the
+		// Job has only been created.
+		if svc.RunOnce {
+			runLog := dep.Log + what + " started.\n"
+			res := s.awaitWorkload(context.Background(), &svc, namespace, func(line string) { s.appendLog(dep.ID, &runLog, line) })
+			if !res.Succeeded {
+				s.failDeployment(dep.ID, runLog+"\nRun failed: "+res.Reason)
+				s.db.Model(&db.Service{}).Where("id = ?", svc.ID).Updates(map[string]any{"image": image, "status": db.ServiceFailed})
+				return
+			}
+			s.succeedDeployment(context.Background(), dep.ID, svc.ID, runLog, image)
+			return
 		}
 		s.succeedDeployment(context.Background(), dep.ID, svc.ID, dep.Log+what+" applied successfully.", image)
 
@@ -1697,28 +1730,27 @@ func mergeSecretEnvs(envs []corev1.EnvVar, secrets map[string]string) []corev1.E
 }
 
 // slugify converts a name to a K8s-safe lowercase slug.
-// appK8sName returns the Kubernetes object name for an application service.
-//
-// Every path that names a cluster object for a service must go through this.
-// Deploying under one name while status, stop, delete and exec look for another
-// is not a cosmetic mismatch -- it leaves a running workload nothing can see or
-// remove, which is how the orphaned Deployments happened.
-//
-// Slug is empty on rows created before it existed; those keep resolving to the
-// name they were deployed under, so nothing running is renamed.
 // buildEnv is the build block with its ${…} references filled in.
 //
 // The references may name a runtime variable or one from an attached group, so
 // a build step needing a value the service already has does not mean typing it
 // twice. Only the build block's own keys reach the builder.
+//
+// A Dockerfile build's arguments come first, as KEY=VALUE lines too: the
+// builder passes every line to a Dockerfile build as --build-arg, and a key the
+// build block also sets is the block's, since it comes later.
 func (s *DeploymentService) buildEnv(ctx context.Context, a runPipelineArgs) string {
+	args := buildArgLines(a.bc.BuildArgs)
 	block := string(a.bc.BuildEnvVars)
 	if block == "" {
-		return ""
+		return args
 	}
 	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, a.svc.ID)
 	sources := mergeSecretEnvs(runtimeEnvVars(string(a.svc.EnvVars), 0), groupEnvs)
 	resolved, unresolved := resolveBuildEnv(block, sources)
+	if args != "" {
+		resolved = args + "\n" + resolved
+	}
 	if len(unresolved) > 0 {
 		msg := "Build variables left as written, not defined for this service: ${" +
 			strings.Join(unresolved, "}, ${") + "}"
@@ -1729,6 +1761,92 @@ func (s *DeploymentService) buildEnv(ctx context.Context, a runPipelineArgs) str
 	return resolved
 }
 
+// runOnceTimeout bounds a run-once service's run: a migration over a large
+// table can take a while, and one that has not finished in this time is stuck.
+const runOnceTimeout = 60 * time.Minute
+
+// startWorkload puts a service's workload in the cluster: a Deployment kept up,
+// or a Job for a service that runs once.
+func (s *DeploymentService) startWorkload(ctx context.Context, svc *db.Service, wp appk8s.WorkloadParams) error {
+	if svc.RunOnce {
+		return appk8s.RunOnce(ctx, s.k8s, wp, svc.RunRetries)
+	}
+	return appk8s.ApplyDeployment(ctx, s.k8s, wp)
+}
+
+// awaitWorkload follows what startWorkload started to its outcome: a rollout
+// until the pods serve, or a run until it exits, with its output in the log.
+func (s *DeploymentService) awaitWorkload(ctx context.Context, svc *db.Service, namespace string, onLine func(string)) appk8s.RolloutResult {
+	name := appK8sName(svc)
+	if !svc.RunOnce {
+		return appk8s.WatchRollout(ctx, s.k8s, name, namespace, rolloutTimeout, onLine)
+	}
+	onLine("Running once…")
+	r := appk8s.WaitForJobWith(ctx, s.k8s, namespace, name, appk8s.JobWaitOptions{Timeout: runOnceTimeout, Unschedulable: buildUnschedulableGrace, Container: name})
+	for _, line := range strings.Split(strings.TrimRight(r.Log, "\n"), "\n") {
+		onLine(line)
+	}
+	switch {
+	case r.Success:
+		return appk8s.RolloutResult{Succeeded: true}
+	case r.Unschedulable:
+		return appk8s.RolloutResult{Reason: "no node can run it"}
+	case r.OutOfMemory:
+		return appk8s.RolloutResult{Reason: "it ran out of memory"}
+	}
+	return appk8s.RolloutResult{Reason: "the run did not finish successfully; its output is above"}
+}
+
+// buildArgLines writes build arguments as the builder reads them, sorted so a
+// build's variables do not change order between runs.
+func buildArgLines(args db.EnvVarsMap) string {
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	lines := make([]string, 0, len(keys))
+	for _, k := range keys {
+		lines = append(lines, k+"="+args[k])
+	}
+	return strings.Join(lines, "\n")
+}
+
+// applyInClusterService publishes a workload under its name inside the
+// cluster. A stack's service is reached the way its compose file reaches it:
+// by name, on any port, before it is ready, and under its container_name and
+// network aliases too, so it gets headless Services (ApplyNameService). Any
+// other service keeps its ClusterIP Service on its declared ports.
+func (s *DeploymentService) applyInClusterService(ctx context.Context, svc *db.Service, namespace string, specs []appk8s.PortSpec) error {
+	name := appK8sName(svc)
+	if svc.StackID == nil {
+		return appk8s.ApplyService(ctx, s.k8s, name, namespace, specs)
+	}
+	if err := appk8s.ApplyNameService(ctx, s.k8s, name, name, namespace, specs, false); err != nil {
+		return err
+	}
+	var keep []string
+	for _, alias := range svc.DNSAliases {
+		if alias == name {
+			continue
+		}
+		if err := appk8s.ApplyNameService(ctx, s.k8s, alias, name, namespace, specs, true); err != nil {
+			return err
+		}
+		keep = append(keep, alias)
+	}
+	return appk8s.PruneAliasServices(ctx, s.k8s, name, namespace, keep)
+}
+
+// appK8sName returns the Kubernetes object name for an application service.
+//
+// Every path that names a cluster object for a service must go through this.
+// Deploying under one name while status, stop, delete and exec look for another
+// is not a cosmetic mismatch -- it leaves a running workload nothing can see or
+// remove, which is how the orphaned Deployments happened.
+//
+// Slug is empty on rows created before it existed; those keep resolving to the
+// name they were deployed under, so nothing running is renamed.
 func appK8sName(svc *db.Service) string {
 	if svc.Slug != "" {
 		return svc.Slug

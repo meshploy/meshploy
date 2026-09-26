@@ -110,6 +110,11 @@ func (s *WorkloadService) Troubles(ctx context.Context, projectID uuid.UUID) (ma
 	}
 	now := time.Now()
 	for i := range services {
+		// A run-once service's exits are its runs finishing; its deploy says
+		// whether they worked.
+		if services[i].RunOnce {
+			continue
+		}
 		if t := troubleOf(byApp[s.k8sName(ctx, &services[i])], now); t != nil {
 			out[services[i].ID] = t
 		}

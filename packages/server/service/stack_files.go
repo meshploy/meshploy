@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,6 +25,9 @@ type stackFileSource func(rel string) ([]byte, error)
 // files are mounted from a Kubernetes Secret, which holds at most 1 MiB.
 const maxStackFile = 1 << 20
 
+// maxBindFiles caps the files one bind-mounted directory can carry.
+const maxBindFiles = 200
+
 // maxRepoRead caps any single read from a checkout.
 const maxRepoRead = 4 << 20
 
@@ -38,13 +42,31 @@ func mapFileSource(files map[string]string) stackFileSource {
 		byPath[path.Clean(filepath.ToSlash(p))] = c
 	}
 	return func(rel string) ([]byte, error) {
-		c, ok := byPath[path.Clean(filepath.ToSlash(rel))]
+		want := path.Clean(filepath.ToSlash(rel))
+		c, ok := byPath[want]
 		if !ok {
+			var under []string
+			for p := range byPath {
+				if rest, found := strings.CutPrefix(p, want+"/"); found {
+					under = append(under, rest)
+				}
+			}
+			if len(under) > 0 {
+				sort.Strings(under)
+				return nil, &dirError{files: under}
+			}
 			return nil, fmt.Errorf("not sent with the manifest")
 		}
 		return []byte(c), nil
 	}
 }
+
+// dirError is what a file source answers when the path it was asked for is a
+// directory: the files under it, relative to it. A bind mount of a directory
+// becomes one config file per file.
+type dirError struct{ files []string }
+
+func (e *dirError) Error() string { return "is a directory" }
 
 // gitFileSource reads the files a git stack's compose file names from the same
 // repository and branch, fetched the way its spec is. cleanup removes the
@@ -128,6 +150,26 @@ func readRepoFile(dir, p string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
+	if info, err := f.Stat(); err == nil && info.IsDir() {
+		var under []string
+		walkErr := fs.WalkDir(root.FS(), p, func(q string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.Type().IsRegular() {
+				under = append(under, strings.TrimPrefix(q, p+"/"))
+			}
+			if len(under) > maxBindFiles {
+				return fmt.Errorf("%s holds more than %d files", p, maxBindFiles)
+			}
+			return nil
+		})
+		if walkErr != nil {
+			return nil, walkErr
+		}
+		sort.Strings(under)
+		return nil, &dirError{files: under}
+	}
 	data, err := io.ReadAll(io.LimitReader(f, maxRepoRead+1))
 	if err != nil {
 		return nil, err
@@ -204,6 +246,64 @@ func (s *StackService) composeFiles(
 		}
 	}
 
+	// Bind mounts of the repository's own files - ./migrations, a script, a
+	// settings file - become config files at the same place: the files are in
+	// the repository the stack came from, where compose read them. Anything
+	// else a bind mount names is on the machine that ran compose, and is left
+	// out with the reason.
+	var bindBytes int
+	for _, v := range svcDef.Volumes {
+		if v.Type != composetypes.VolumeTypeBind {
+			continue
+		}
+		rel := rawPaths["binds/"+svcDef.Name+"/"+v.Target]
+		if rel == "" {
+			rel = v.Source
+		}
+		if !strings.HasPrefix(rel, "./") && !strings.HasPrefix(rel, "../") && rel != "." {
+			notes = append(notes, fmt.Sprintf("bind mount of %s at %s left out: it is a path on the machine that runs compose; use configs: for a file, or a named volume", rel, v.Target))
+			continue
+		}
+		label := fmt.Sprintf("bind mount of %s at %s", rel, v.Target)
+		if files == nil {
+			notes = append(notes, label+" left out: no files were sent or fetched with this apply")
+			continue
+		}
+		take := func(from, to string) bool {
+			data, err := files(from)
+			if err != nil {
+				notes = append(notes, fmt.Sprintf("%s left out: %s could not be read (%v)", label, from, err))
+				return false
+			}
+			bindBytes += len(data)
+			if bindBytes > maxStackFile {
+				notes = append(notes, fmt.Sprintf("%s left out: its files come to more than 1 MiB, the most a service's config files can hold; use a named volume", label))
+				return false
+			}
+			out = append(out, meshployFile{Path: to, Content: string(data)})
+			return true
+		}
+		data, err := files(rel)
+		var dir *dirError
+		switch {
+		case err == nil:
+			bindBytes += len(data)
+			if bindBytes > maxStackFile {
+				notes = append(notes, fmt.Sprintf("%s left out: it is larger than 1 MiB, the most a config file can hold", label))
+				continue
+			}
+			out = append(out, meshployFile{Path: v.Target, Content: string(data)})
+		case errors.As(err, &dir):
+			for _, f := range dir.files {
+				if !take(path.Join(rel, f), path.Join(v.Target, f)) {
+					break
+				}
+			}
+		default:
+			notes = append(notes, fmt.Sprintf("%s left out: it could not be read (%v)", label, err))
+		}
+	}
+
 	for _, ref := range svcDef.Configs {
 		obj, defined := project.Configs[ref.Source]
 		target := ref.Target
@@ -241,9 +341,17 @@ func (s *StackService) hasStackFile(ctx context.Context, stack meshdb.Stack, tar
 // carry over, so an apply says so rather than leaving it out silently.
 func droppedByStack(svcDef composetypes.ServiceConfig) []string {
 	var notes []string
-	for _, v := range svcDef.Volumes {
-		if v.Type == composetypes.VolumeTypeBind {
-			notes = append(notes, fmt.Sprintf("bind mount at %s left out: the files it names are on the machine that runs compose; use configs: for a file, or a named volume", v.Target))
+	if b := svcDef.Build; b != nil {
+		if b.Target != "" {
+			notes = append(notes, fmt.Sprintf("build target %q left out: the whole Dockerfile is built", b.Target))
+		}
+		if b.DockerfileInline != "" {
+			notes = append(notes, "dockerfile_inline left out: put the Dockerfile in the repository")
+		}
+		for k, v := range b.Args {
+			if v == nil {
+				notes = append(notes, fmt.Sprintf("build arg %s has no value here and is left out", k))
+			}
 		}
 	}
 	if len(svcDef.ExtraHosts) > 0 {

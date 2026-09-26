@@ -164,6 +164,13 @@ func bindFor(bind string, route db.TCPRoute) string {
 		return meshBind(route)
 	case db.TCPZoneLocal:
 		return "127.0.0.1"
+	case db.TCPZoneAddress:
+		// One address the gateway has, as a compose file published it. Without
+		// one, loopback, for the reason meshBind gives.
+		if route.BindAddress != "" {
+			return route.BindAddress
+		}
+		return "127.0.0.1"
 	default:
 		return bind
 	}

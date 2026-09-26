@@ -111,7 +111,7 @@ function TCPRouteDetailPage() {
         backLabel="Back to routes"
         backParams={{ id: projectId }}
         icon={<Network className="h-4 w-4 text-muted-foreground" />}
-        name={`:${route.gateway_port}`}
+        name={`${route.bind_address ?? ""}:${route.gateway_port}`}
         nameClassName="font-mono"
         badge={
           <>
@@ -132,6 +132,7 @@ function TCPRouteDetailPage() {
             <aside className="space-y-6">
               <ResourcePanel title="Route details">
                 <ResourceFact label="Gateway port"><code>{route.gateway_port}</code></ResourceFact>
+                {route.bind_address && <ResourceFact label="Listens on"><code>{route.bind_address}</code>{route.from_publish && <span className="ml-2 text-xs text-muted-foreground">as its compose file publishes it</span>}</ResourceFact>}
                 <ResourceFact label="Target">
                   {route.service_id ? (
                     <Link to="/projects/$id/services/$serviceId/config" params={{ id: projectId, serviceId: route.service_id }} className="hover:text-primary">

@@ -91,7 +91,7 @@ export function ResourceIntro({
   )
 }
 export function StatusPill({ status }: { status: string }) {
-  const tone = ["running", "success", "ready", "online", "applied"].includes(
+  const tone = ["running", "success", "ready", "online", "applied", "completed"].includes(
     status
   )
     ? "good"

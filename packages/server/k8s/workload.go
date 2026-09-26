@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -103,6 +105,45 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 		replicas = 1
 	}
 
+	labels, podSpec := workloadPod(p)
+	// A service that ran once before and now runs for good leaves its last
+	// run's Job behind; it goes, so the name means one thing.
+	if err := deleteRunOnceJob(ctx, client, p.Namespace, p.Name); err != nil {
+		return err
+	}
+
+	desired := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      p.Name,
+			Namespace: p.Namespace,
+			Labels:    labels,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Strategy: rolloutStrategy(p),
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       podSpec,
+			},
+		},
+	}
+
+	_, err := client.AppsV1().Deployments(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = client.AppsV1().Deployments(p.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	_, err = client.AppsV1().Deployments(p.Namespace).Update(ctx, desired, metav1.UpdateOptions{})
+	return err
+}
+
+// workloadPod is the pod a workload runs, whether a Deployment keeps it up or
+// a Job runs it once: the same container, environment, volumes and files.
+func workloadPod(p WorkloadParams) (map[string]string, corev1.PodSpec) {
 	labels := map[string]string{
 		"app":        p.Name,
 		"managed-by": "meshploy",
@@ -208,33 +249,7 @@ func ApplyDeployment(ctx context.Context, client kubernetes.Interface, p Workloa
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: p.ImagePullSecretName}}
 	}
 
-	desired := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      p.Name,
-			Namespace: p.Namespace,
-			Labels:    labels,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Strategy: rolloutStrategy(p),
-			Selector: &metav1.LabelSelector{MatchLabels: labels},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec:       podSpec,
-			},
-		},
-	}
-
-	_, err := client.AppsV1().Deployments(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		_, err = client.AppsV1().Deployments(p.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	_, err = client.AppsV1().Deployments(p.Namespace).Update(ctx, desired, metav1.UpdateOptions{})
-	return err
+	return labels, podSpec
 }
 
 // rolloutStrategy decides how a new version replaces the old one.
@@ -392,6 +407,82 @@ func ApplyAliasService(ctx context.Context, client kubernetes.Interface, aliasNa
 	desired.Spec.ClusterIP = existing.Spec.ClusterIP
 	_, err = client.CoreV1().Services(namespace).Update(ctx, desired, metav1.UpdateOptions{})
 	return err
+}
+
+// ApplyNameService publishes a workload under a name the way Docker's network
+// does: a headless Service, so the name resolves straight to the pods and any
+// port they listen on answers, declared or not, and to pods not yet ready, so
+// a process can resolve its own name while it starts. A stack's services reach
+// each other like this, since a compose file never has to declare the ports
+// one service uses to reach another.
+//
+// alias marks a further name for the same pods, which PruneAliasServices can
+// later remove. A Service already under this name that is not headless is
+// replaced: its cluster IP cannot be taken away in place.
+func ApplyNameService(ctx context.Context, client kubernetes.Interface, name, target, namespace string, ports []PortSpec, alias bool) error {
+	labels := map[string]string{"app": target, "managed-by": "meshploy"}
+	if alias {
+		labels["meshploy-alias"] = "true"
+	}
+	svcPorts := make([]corev1.ServicePort, len(ports))
+	for i, p := range ports {
+		svcPorts[i] = corev1.ServicePort{Name: p.Name, Port: p.Port, TargetPort: intstr.FromInt32(p.Port), Protocol: corev1.ProtocolTCP}
+	}
+	desired := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels},
+		Spec: corev1.ServiceSpec{
+			Selector:                 map[string]string{"app": target},
+			Ports:                    svcPorts,
+			ClusterIP:                corev1.ClusterIPNone,
+			PublishNotReadyAddresses: true,
+		},
+	}
+	services := client.CoreV1().Services(namespace)
+	existing, err := services.Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = services.Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// Never take over a Service this did not make for the same pods: an alias
+	// colliding with another workload's name would silently steal it.
+	if existing.Labels["managed-by"] != "meshploy" || existing.Labels["app"] != target {
+		if alias {
+			return nil
+		}
+		return fmt.Errorf("service %s already exists for something else", name)
+	}
+	if existing.Spec.ClusterIP != corev1.ClusterIPNone {
+		if err := services.Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+			return err
+		}
+		_, err = services.Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	desired.ResourceVersion = existing.ResourceVersion
+	_, err = services.Update(ctx, desired, metav1.UpdateOptions{})
+	return err
+}
+
+// PruneAliasServices removes the alias Services of target that are no longer
+// wanted.
+func PruneAliasServices(ctx context.Context, client kubernetes.Interface, target, namespace string, keep []string) error {
+	services := client.CoreV1().Services(namespace)
+	list, err := services.List(ctx, metav1.ListOptions{LabelSelector: "meshploy-alias=true,app=" + target})
+	if err != nil {
+		return err
+	}
+	for _, svc := range list.Items {
+		if slices.Contains(keep, svc.Name) {
+			continue
+		}
+		if err := services.Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 // DatabaseWorkloadParams describes a managed-database workload.
@@ -820,5 +911,74 @@ func DeleteWorkload(ctx context.Context, client kubernetes.Interface, name, name
 	if err := svc.Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("delete service: %w", err)
 	}
+	if err := deleteRunOnceJob(ctx, client, namespace, name); err != nil {
+		return fmt.Errorf("delete last run: %w", err)
+	}
+	// The further names a stack's service answered to go with it.
+	if err := PruneAliasServices(ctx, client, name, namespace, nil); err != nil {
+		return fmt.Errorf("delete alias services: %w", err)
+	}
 	return nil
+}
+
+// RunOnce runs a workload to completion as a Job, for a service that does its
+// work and exits - a migration, a topic created before the services that use
+// it - which a Deployment would restart forever. Its last run is replaced, and
+// a Deployment of the same name is removed: the service changed from running
+// for good to running once. retries is how many times a failed run is tried
+// again; 0 runs it exactly once.
+func RunOnce(ctx context.Context, client kubernetes.Interface, p WorkloadParams, retries int32) error {
+	withResourceDefaults(&p)
+	labels, podSpec := workloadPod(p)
+	podSpec.RestartPolicy = corev1.RestartPolicyNever
+	for i := range podSpec.Containers {
+		// Probes judge something meant to stay up; a run judges itself by its
+		// exit code.
+		podSpec.Containers[i].LivenessProbe = nil
+		podSpec.Containers[i].ReadinessProbe = nil
+	}
+	if err := client.AppsV1().Deployments(p.Namespace).Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("remove deployment: %w", err)
+	}
+	if err := deleteRunOnceJob(ctx, client, p.Namespace, p.Name); err != nil {
+		return err
+	}
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: p.Namespace,
+			Labels: map[string]string{"app": p.Name, "managed-by": "meshploy", "meshploy-run-once": "true"}},
+		Spec: batchv1.JobSpec{
+			BackoffLimit: &retries,
+			Template:     corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: podSpec},
+		},
+	}
+	_, err := client.BatchV1().Jobs(p.Namespace).Create(ctx, job, metav1.CreateOptions{})
+	return err
+}
+
+// deleteRunOnceJob removes a workload's run-once Job and its pods, and waits
+// for the name to be free: a Job is deleted in the background, and creating the
+// next run under a name still being deleted is refused.
+func deleteRunOnceJob(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	jobs := client.BatchV1().Jobs(namespace)
+	existing, err := jobs.Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if existing.Labels["meshploy-run-once"] != "true" {
+		return nil // not ours to remove
+	}
+	bg := metav1.DeletePropagationBackground
+	if err := jobs.Delete(ctx, name, metav1.DeleteOptions{PropagationPolicy: &bg}); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("remove last run: %w", err)
+	}
+	for i := 0; i < 60; i++ {
+		if _, err := jobs.Get(ctx, name, metav1.GetOptions{}); k8serrors.IsNotFound(err) {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("the last run of %s is still being removed", name)
 }

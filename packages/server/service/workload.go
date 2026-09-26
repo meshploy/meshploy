@@ -47,6 +47,10 @@ type PortInput struct {
 	IsHTTP    bool   // speaks HTTP/1.1 (proxy-routable)
 	IsPrimary bool   // exactly one per service should be true
 	IsPublic  bool   // gets a K8s NodePort
+	// PublishAddress and PublishPort: published on this one host address and
+	// port, as a compose file can; see db.ServicePort.
+	PublishAddress string
+	PublishPort    int
 }
 
 type CreateWorkloadInput struct {
@@ -269,6 +273,9 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 				IsHTTP:    pi.IsHTTP,
 				IsPrimary: pi.IsPrimary,
 				IsPublic:  pi.IsPublic,
+
+				PublishAddress: pi.PublishAddress,
+				PublishPort:    pi.PublishPort,
 			}
 			if err := tx.Create(sp).Error; err != nil {
 				return err
@@ -496,6 +503,14 @@ func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.S
 			return nil, err
 		}
 		svc.Replicas = 1
+	}
+	// Starting a service that runs once is running it: once, as a deploy of
+	// the image it has, so its outcome and output are recorded like any other.
+	if svc.RunOnce && s.k8s != nil && s.deployment != nil {
+		if _, err := s.deployment.DeployImage(ctx, serviceID, svc.Image, "Started: running once.", Provenance{Source: db.DeploySourceImage}); err != nil {
+			return nil, err
+		}
+		return s.getByID(ctx, serviceID)
 	}
 	if s.k8s != nil {
 		// Re-apply the whole spec rather than scaling what is already in the
@@ -999,15 +1014,18 @@ type UpdateBuildConfigInput struct {
 	RegistryIntegrationID *uuid.UUID
 	ClearRegistry         bool    // when true, set registry_integration_id to NULL
 	BuildEnvVars          *string // nil = no change; "" = clear
-	BuilderNode           *string // nil = no change; "" = auto-schedule
-	BuilderCPURequest     *string // nil = no change; "" = use default (1000m)
-	BuilderMemoryRequest  *string // nil = no change; "" = use default (1Gi)
-	BuilderCPULimit       *string // nil = no change; "" = no cap
-	BuilderMemoryLimit    *string // nil = no change; "" = 4Gi, or the request when larger
-	RollbackEnabled       *bool
-	ImageRetention        *int
-	AutoDeploy            *bool
-	WatchPaths            *[]string
+	// BuildArgs are a Dockerfile build's arguments, as a compose file's
+	// build.args names them; nil = no change.
+	BuildArgs            *map[string]string
+	BuilderNode          *string // nil = no change; "" = auto-schedule
+	BuilderCPURequest    *string // nil = no change; "" = use default (1000m)
+	BuilderMemoryRequest *string // nil = no change; "" = use default (1Gi)
+	BuilderCPULimit      *string // nil = no change; "" = no cap
+	BuilderMemoryLimit   *string // nil = no change; "" = 4Gi, or the request when larger
+	RollbackEnabled      *bool
+	ImageRetention       *int
+	AutoDeploy           *bool
+	WatchPaths           *[]string
 }
 
 // UpsertBuildConfig creates or updates the BuildConfig for a service.
@@ -1056,6 +1074,9 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if in.BuildEnvVars != nil {
 		bc.BuildEnvVars = db.EncryptedString(*in.BuildEnvVars)
+	}
+	if in.BuildArgs != nil {
+		bc.BuildArgs = db.EnvVarsMap(*in.BuildArgs)
 	}
 	if in.BuilderNode != nil {
 		bc.BuilderNode = *in.BuilderNode

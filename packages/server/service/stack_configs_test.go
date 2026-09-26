@@ -83,7 +83,7 @@ func TestStackApplyCarriesComposeConfigs(t *testing.T) {
 	assert.EqualValues(t, 3, attached)
 
 	warnings := strings.Join(r.Warnings, "\n")
-	assert.Contains(t, warnings, "bind mount at /etc/local.conf left out")
+	assert.Contains(t, warnings, "bind mount of ./local.conf at /etc/local.conf left out")
 	assert.Contains(t, warnings, "extra_hosts left out")
 	assert.Contains(t, warnings, "DB_HOST points at host.docker.internal")
 
