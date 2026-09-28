@@ -547,6 +547,11 @@ func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Se
 		return nil, err
 	}
 	if s.k8s != nil {
+		// Its pod goes, and its logs with it: what it wrote last is kept for
+		// the Logs tab, which is where someone looks for why they stopped it.
+		if s.deployment != nil {
+			s.deployment.KeepLastLogs(ctx, serviceID)
+		}
 		if err := appk8s.ScaleDeployment(ctx, s.k8s, s.k8sName(ctx, &svc), svc.Project.Slug, 0); err != nil {
 			return nil, err
 		}

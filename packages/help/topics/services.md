@@ -67,6 +67,8 @@ A service whose container keeps dying can still say "running", because it is res
 
 Restarts from more than half an hour ago are not counted, so a service that recovered stops being flagged.
 
+
+While it waits to restart, its **Logs** tab shows the run that exited, with its exit code, since the run about to start has written nothing yet. Stopping a service removes its pod and the pod's logs, so Stop keeps the last 500 lines it wrote, and the Logs tab shows them, with when it stopped, until it runs again.
 ## Filled in from the repository {#detect}
 
 Choosing a repository and branch for a new service has Meshploy look at a few of its files first: the dependency files, the usual entry points and a Dockerfile. It says what it found under the repository, and fills in what fits:

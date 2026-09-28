@@ -1612,11 +1612,14 @@ func parseSinceDuration(s string) *int64 {
 	return nil
 }
 
-// findRuntimePod resolves the running pod name and namespace for a service.
-func (s *DeploymentService) findRuntimePod(ctx context.Context, serviceID uuid.UUID) (podName, namespace string, err error) {
+// findRuntimePod resolves the pod whose logs a service's Logs tab shows: the
+// newest one not being taken down. previous is set when its container is
+// waiting to restart after exiting: its own log is then empty or nearly, and
+// what explains the crash is the log of the run that exited.
+func (s *DeploymentService) findRuntimePod(ctx context.Context, serviceID uuid.UUID) (podName, namespace string, previous *corev1.ContainerStateTerminated, err error) {
 	var svc db.Service
 	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
-		return "", "", fmt.Errorf("service not found")
+		return "", "", nil, fmt.Errorf("service not found")
 	}
 	namespace = svc.Project.Slug
 	podSlug := appK8sName(&svc)
@@ -1629,9 +1632,80 @@ func (s *DeploymentService) findRuntimePod(ctx context.Context, serviceID uuid.U
 	selector := fmt.Sprintf("app=%s,managed-by=meshploy", podSlug)
 	pods, err := s.k8s.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil || len(pods.Items) == 0 {
-		return "", "", fmt.Errorf("no running pod found for this service")
+		return "", "", nil, errNoRuntimePod
 	}
-	return pods.Items[0].Name, namespace, nil
+	// One not being taken down over one that is, then the newest: during a
+	// rollout the old pod lingers beside the new one.
+	better := func(a, b corev1.Pod) bool {
+		if (a.DeletionTimestamp == nil) != (b.DeletionTimestamp == nil) {
+			return a.DeletionTimestamp == nil
+		}
+		return a.CreationTimestamp.After(b.CreationTimestamp.Time)
+	}
+	pod := pods.Items[0]
+	for _, p := range pods.Items[1:] {
+		if better(p, pod) {
+			pod = p
+		}
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Waiting != nil && cs.RestartCount > 0 && cs.LastTerminationState.Terminated != nil {
+			previous = cs.LastTerminationState.Terminated
+		}
+		break
+	}
+	return pod.Name, namespace, previous, nil
+}
+
+// errNoRuntimePod is a service with no pod to read logs from: stopped, or
+// not started yet.
+var errNoRuntimePod = errors.New("no running pod found for this service")
+
+// maxKeptLogBytes bounds the lines kept when a service stops.
+const maxKeptLogBytes = 256 << 10
+
+// KeepLastLogs saves the end of what a service's pod wrote, before stopping
+// deletes the pod and its logs. Best effort: a service with nothing to read
+// keeps what it kept before.
+func (s *DeploymentService) KeepLastLogs(ctx context.Context, serviceID uuid.UUID) {
+	if s.k8s == nil {
+		return
+	}
+	text, err := s.fetchPodLogs(ctx, serviceID, LogOptions{TailLines: 500})
+	if err != nil || strings.TrimSpace(text) == "" {
+		return
+	}
+	if len(text) > maxKeptLogBytes {
+		text = text[len(text)-maxKeptLogBytes:]
+		if nl := strings.IndexByte(text, '\n'); nl >= 0 {
+			text = text[nl+1:]
+		}
+	}
+	now := time.Now()
+	s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).
+		Updates(map[string]any{"last_logs": text, "last_logs_at": &now})
+}
+
+// keptLogs is what a stopped service wrote last, with the line that says so.
+func (s *DeploymentService) keptLogs(ctx context.Context, serviceID uuid.UUID) (header string, lines []string) {
+	var svc db.Service
+	if s.db.WithContext(ctx).Select("last_logs", "last_logs_at").First(&svc, "id = ?", serviceID).Error != nil ||
+		svc.LastLogs == "" || svc.LastLogsAt == nil {
+		return "", nil
+	}
+	header = fmt.Sprintf("No pod is running. These are the last lines it wrote before it was stopped, at %s:",
+		svc.LastLogsAt.UTC().Format(time.RFC3339))
+	return header, strings.Split(strings.TrimRight(svc.LastLogs, "\n"), "\n")
+}
+
+// previousRunNote says the lines shown are the run that exited, not the one
+// waiting to start.
+func previousRunNote(t *corev1.ContainerStateTerminated) string {
+	note := fmt.Sprintf("The container is restarting after it exited with code %d", t.ExitCode)
+	if t.Reason != "" && t.Reason != "Error" {
+		note += " (" + t.Reason + ")"
+	}
+	return note + "; these are the lines of the run that exited:"
 }
 
 // buildPodLogOptions converts LogOptions into corev1.PodLogOptions.
@@ -1669,17 +1743,33 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 		return nil
 	}
 
-	podName, namespace, err := s.findRuntimePod(ctx, serviceID)
+	podName, namespace, previous, err := s.findRuntimePod(ctx, serviceID)
+	if errors.Is(err, errNoRuntimePod) {
+		if header, lines := s.keptLogs(ctx, serviceID); header != "" {
+			sendLine(header)
+			for _, l := range lines {
+				sendLine(l)
+			}
+			sendDone()
+			return nil
+		}
+	}
 	if err != nil {
 		sendLine("Error: " + err.Error())
 		sendDone()
 		return nil
 	}
 
-	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
+	logOpts := buildPodLogOptions(opts, 200)
+	if previous != nil {
+		sendLine(previousRunNote(previous))
+		logOpts.Previous, logOpts.Follow = true, false
+	} else {
+		sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
+	}
 	flush()
 
-	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, buildPodLogOptions(opts, 200))
+	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, logOpts)
 	stream, err := req.Stream(ctx)
 	if err != nil {
 		sendLine("Cannot stream live container logs: " + err.Error())
@@ -1704,19 +1794,34 @@ func (s *DeploymentService) StreamRuntimeLogs(ctx context.Context, serviceID uui
 }
 
 // FetchRuntimeLogs fetches a snapshot of container logs as plain text (no streaming).
-// Used by the download endpoint.
+// Used by the download endpoint, and to keep a service's last lines when it
+// stops. A stopped service gives what it kept.
 func (s *DeploymentService) FetchRuntimeLogs(ctx context.Context, serviceID uuid.UUID, opts LogOptions) (string, error) {
 	if s.k8s == nil {
 		return "Kubernetes is not configured on this instance.\n", nil
 	}
 
-	podName, namespace, err := s.findRuntimePod(ctx, serviceID)
+	text, err := s.fetchPodLogs(ctx, serviceID, opts)
+	if errors.Is(err, errNoRuntimePod) {
+		if header, lines := s.keptLogs(ctx, serviceID); header != "" {
+			return header + "\n" + strings.Join(lines, "\n") + "\n", nil
+		}
+	}
+	return text, err
+}
+
+// fetchPodLogs reads the logs of the pod a service runs now, or of its last
+// run while it waits to restart.
+func (s *DeploymentService) fetchPodLogs(ctx context.Context, serviceID uuid.UUID, opts LogOptions) (string, error) {
+	podName, namespace, previous, err := s.findRuntimePod(ctx, serviceID)
 	if err != nil {
 		return "", err
 	}
 
 	opts.Follow = false
-	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, buildPodLogOptions(opts, 0))
+	logOpts := buildPodLogOptions(opts, 0)
+	logOpts.Previous = previous != nil
+	req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, logOpts)
 	stream, err := req.Stream(ctx)
 	if err != nil {
 		return "", fmt.Errorf("cannot fetch container logs: %w", err)

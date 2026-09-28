@@ -689,6 +689,11 @@ type Service struct {
 	// what it ran before, so "running" alone did not say that what runs is
 	// not the latest.
 	LatestDeployFailed bool `gorm:"not null;default:false" json:"latest_deploy_failed"`
+	// LastLogs is the end of what the service wrote before it was last
+	// stopped, kept because stopping deletes its pod and the pod's logs with
+	// it. The Logs tab shows it while no pod runs.
+	LastLogs   string     `gorm:"type:text;not null;default:''" json:"-"`
+	LastLogsAt *time.Time `json:"-"`
 	RunRetries int32 `gorm:"not null;default:0" json:"run_retries,omitempty"`
 	// StartCommand is the console's start command: one line, run through the
 	// image's /bin/sh, so pipes and && work. Set, it replaces Command and Args
