@@ -1,3 +1,4 @@
+import { CountStepper, CpuStepper, MemoryStepper } from "@/components/forms/steppers"
 import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
 import { GroupAttachments } from "@/components/variables/group-attachments"
 import { ResourceIntro } from "@/components/layout/resource-workbench"
@@ -36,7 +37,7 @@ import {
   type ApiVariableGroup,
   type UpdateServiceBody,
 } from "@/lib/api"
-import { nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
+import { nodeCapacity, nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
@@ -44,7 +45,6 @@ import { DeployWebhookURL } from "@/components/services/deploy-webhook"
 import { useReceiving } from "@/components/services/deploy-guard"
 import { TermInfo } from "@/help/term"
 import { formatRelativeTime } from "@/lib/utils"
-import { Input } from "@/components/ui/input"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
 
 export const Route = createFileRoute(
@@ -478,6 +478,10 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
   const { value: form, setValue: setForm } = draft
   const [showResources, setShowResources] = useState(false)
   const patch = (p: Partial<typeof form>) => setForm((f) => ({ ...f, ...p }))
+  // The most a pod can be given: the chosen node's, or the largest that could
+  // take it when it is auto-scheduled.
+  const serviceCap = nodeCapacity(form.nodeId ? rawNodes.filter((n) => n.id === form.nodeId) : schedulableNodes(rawNodes))
+  const builderCap = nodeCapacity(form.builderNodeName ? rawNodes.filter((n) => n.k8s_node_name === form.builderNodeName) : builderNodes)
 
   useEffect(() => {
     if (!service) return
@@ -629,16 +633,16 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Builder CPU request">
-              <input value={form.builderCPURequest} onChange={(e) => patch({ builderCPURequest: e.target.value })} placeholder="1000m" className={inputCls} />
+              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPURequest} onChange={(v) => patch({ builderCPURequest: v })} emptyLabel="Default (1 CPU)" aria-label="Builder CPU request" />
             </Field>
             <Field label="Builder CPU limit">
-              <input value={form.builderCPULimit} onChange={(e) => patch({ builderCPULimit: e.target.value })} placeholder="No cap" className={inputCls} />
+              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPULimit} onChange={(v) => patch({ builderCPULimit: v })} emptyLabel="No cap" aria-label="Builder CPU limit" />
             </Field>
             <Field label="Builder memory request">
-              <input value={form.builderMemoryRequest} onChange={(e) => patch({ builderMemoryRequest: e.target.value })} placeholder="1Gi" className={inputCls} />
+              <MemoryStepper max={builderCap.memoryBytes} value={form.builderMemoryRequest} onChange={(v) => patch({ builderMemoryRequest: v })} emptyLabel="Default (1 GiB)" aria-label="Builder memory request" />
             </Field>
             <Field label="Builder memory limit">
-              <input value={form.builderMemoryLimit} onChange={(e) => patch({ builderMemoryLimit: e.target.value })} placeholder="4Gi" className={inputCls} />
+              <MemoryStepper max={builderCap.memoryBytes} value={form.builderMemoryLimit} onChange={(v) => patch({ builderMemoryLimit: v })} emptyLabel="Default (4 GiB)" aria-label="Builder memory limit" />
             </Field>
           </div>
           <p className="text-[11px] text-muted-foreground">
@@ -689,14 +693,9 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
         </div>
 
         <Field label="Replicas">
-          <Input
-            type="number"
-            min={1}
-            max={hasVolume ? 1 : 20}
-            value={hasVolume ? 1 : form.replicas}
-            disabled={hasVolume}
-            onChange={(e) => !hasVolume && patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
-          />
+          <CountStepper value={hasVolume ? 1 : form.replicas} min={1} max={hasVolume ? 1 : 20} disabled={hasVolume}
+            unit="replica" aria-label="Replicas" className="max-w-56"
+            onChange={(n) => !hasVolume && patch({ replicas: n })} />
           {hasVolume && (
             <p className="text-[11px] text-amber-400 flex items-center gap-1 mt-1">
               <AlertTriangle className="h-3 w-3 shrink-0" /> Locked to 1 — volume attached
@@ -718,10 +717,10 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           </Button>
           {showResources && (
             <div id="service-resource-limits" className="grid grid-cols-2 gap-4 border-t border-border/40 p-4">
-              <Field label="CPU request"><input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} /></Field>
-              <Field label="CPU limit"><input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} /></Field>
-              <Field label="Memory request"><input value={form.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} /></Field>
-              <Field label="Memory limit"><input value={form.memoryLimit} onChange={(e) => patch({ memoryLimit: e.target.value })} className={inputCls} /></Field>
+              <Field label="CPU request"><CpuStepper max={serviceCap.cpuMillis} value={form.cpuRequest} onChange={(v) => patch({ cpuRequest: v })} aria-label="CPU request" /></Field>
+              <Field label="CPU limit"><CpuStepper max={serviceCap.cpuMillis} value={form.cpuLimit} onChange={(v) => patch({ cpuLimit: v })} emptyLabel="No limit" aria-label="CPU limit" /></Field>
+              <Field label="Memory request"><MemoryStepper max={serviceCap.memoryBytes} value={form.memoryRequest} onChange={(v) => patch({ memoryRequest: v })} aria-label="Memory request" /></Field>
+              <Field label="Memory limit"><MemoryStepper max={serviceCap.memoryBytes} value={form.memoryLimit} onChange={(v) => patch({ memoryLimit: v })} emptyLabel="No limit" aria-label="Memory limit" /></Field>
             </div>
           )}
         </div>
@@ -1173,14 +1172,8 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
 
         {enabled && (
           <Field label="Images to keep">
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={retention}
-              onChange={(e) => setRetention(e.target.value)}
-              className={cn(inputCls, "w-24")}
-            />
+            <CountStepper value={parseInt(retention) || 3} min={1} max={50} unit="image" aria-label="Images to keep"
+              className="w-44" onChange={(n) => setRetention(String(n))} />
           </Field>
         )}
       </div>

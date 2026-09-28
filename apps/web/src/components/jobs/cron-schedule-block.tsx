@@ -1,3 +1,4 @@
+import { CountStepper } from "@/components/forms/steppers"
 import { cn } from "@/lib/utils"
 import { Field, inputCls } from "@/components/services/form-primitives"
 import { SegmentedControl } from "@/components/ui/segmented-control"
@@ -93,14 +94,8 @@ export function CronScheduleBlock({
               </p>
             </Field>
             <Field label="History limit">
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={historyLimit}
-                onChange={(e) => onHistoryLimitChange(e.target.value)}
-                className={cn(inputCls, "text-xs")}
-              />
+              <CountStepper value={parseInt(historyLimit) || 1} min={1} max={50} aria-label="Runs to keep"
+                onChange={(n) => onHistoryLimitChange(String(n))} />
               <p className="text-xs text-muted-foreground/50 mt-1.5">Completed runs to keep.</p>
             </Field>
           </div>

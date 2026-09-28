@@ -1,3 +1,4 @@
+import { CountStepper, CpuStepper, MemoryStepper, StorageStepper } from "@/components/forms/steppers"
 import { FormLayout } from "@/components/layout/form-layout"
 import { SelfSignedNotice } from "@/components/domains/self-signed-notice"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -64,7 +65,7 @@ import {
   type ApiDbRoute,
 } from "@/lib/api"
 import { usableForNewRoutes } from "@/lib/api/domains"
-import { nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
+import { nodeCapacity, nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { inputCls, Section, Field, NodeCard } from "@/components/services/form-primitives"
@@ -409,6 +410,10 @@ function ServiceForm({
   const builderNodes = rawNodes.filter(
     (n) => n.k8s_member && n.status === "online" && n.k3s_labels?.["meshploy.com/role"] === "builder"
   )
+  // The most a pod can be given: the chosen node's, or the largest that could
+  // take it when it is auto-scheduled.
+  const serviceCap = nodeCapacity(form.nodeId ? rawNodes.filter((n) => n.id === form.nodeId) : schedulableNodes(rawNodes))
+  const builderCap = nodeCapacity(form.builderNodeName ? rawNodes.filter((n) => n.k8s_node_name === form.builderNodeName) : builderNodes)
 
   const { data: projectVolumes = [] } = useQuery<ApiVolume[]>({
     queryKey: ["volumes", orgId, projectId],
@@ -518,36 +523,16 @@ function ServiceForm({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Builder CPU request">
-              <input
-                value={form.builderCPURequest}
-                onChange={(e) => patch({ builderCPURequest: e.target.value })}
-                placeholder="1000m"
-                className={inputCls}
-              />
+              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPURequest} onChange={(v) => patch({ builderCPURequest: v })} emptyLabel="Default (1 CPU)" aria-label="Builder CPU request" />
             </Field>
             <Field label="Builder CPU limit">
-              <input
-                value={form.builderCPULimit}
-                onChange={(e) => patch({ builderCPULimit: e.target.value })}
-                placeholder="No cap"
-                className={inputCls}
-              />
+              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPULimit} onChange={(v) => patch({ builderCPULimit: v })} emptyLabel="No cap" aria-label="Builder CPU limit" />
             </Field>
             <Field label="Builder memory request">
-              <input
-                value={form.builderMemoryRequest}
-                onChange={(e) => patch({ builderMemoryRequest: e.target.value })}
-                placeholder="1Gi"
-                className={inputCls}
-              />
+              <MemoryStepper max={builderCap.memoryBytes} value={form.builderMemoryRequest} onChange={(v) => patch({ builderMemoryRequest: v })} emptyLabel="Default (1 GiB)" aria-label="Builder memory request" />
             </Field>
             <Field label="Builder memory limit">
-              <input
-                value={form.builderMemoryLimit}
-                onChange={(e) => patch({ builderMemoryLimit: e.target.value })}
-                placeholder="4Gi"
-                className={inputCls}
-              />
+              <MemoryStepper max={builderCap.memoryBytes} value={form.builderMemoryLimit} onChange={(v) => patch({ builderMemoryLimit: v })} emptyLabel="Default (4 GiB)" aria-label="Builder memory limit" />
             </Field>
           </div>
           <p className="text-[11px] text-muted-foreground">
@@ -687,13 +672,8 @@ function ServiceForm({
 
         {/* Replicas */}
         <Field label="Replicas">
-          <Input
-            type="number"
-            min={1}
-            max={20}
-            value={form.replicas}
-            onChange={(e) => patch({ replicas: Math.max(1, parseInt(e.target.value) || 1) })}
-          />
+          <CountStepper value={form.replicas} min={1} max={20} unit="replica" aria-label="Replicas" className="max-w-56"
+            onChange={(n) => patch({ replicas: n })} />
         </Field>
 
         {/* Resource limits (collapsible) */}
@@ -710,16 +690,16 @@ function ServiceForm({
           {form.showResources && (
             <div className="grid grid-cols-2 gap-4 border-t border-border/40 p-4">
               <Field label="CPU request">
-                <input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} />
+                <CpuStepper max={serviceCap.cpuMillis} value={form.cpuRequest} onChange={(v) => patch({ cpuRequest: v })} aria-label="CPU request" />
               </Field>
               <Field label="CPU limit">
-                <input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} />
+                <CpuStepper max={serviceCap.cpuMillis} value={form.cpuLimit} onChange={(v) => patch({ cpuLimit: v })} emptyLabel="No limit" aria-label="CPU limit" />
               </Field>
               <Field label="Memory request">
-                <input value={form.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} />
+                <MemoryStepper max={serviceCap.memoryBytes} value={form.memoryRequest} onChange={(v) => patch({ memoryRequest: v })} aria-label="Memory request" />
               </Field>
               <Field label="Memory limit">
-                <input value={form.memoryLimit} onChange={(e) => patch({ memoryLimit: e.target.value })} className={inputCls} />
+                <MemoryStepper max={serviceCap.memoryBytes} value={form.memoryLimit} onChange={(v) => patch({ memoryLimit: v })} emptyLabel="No limit" aria-label="Memory limit" />
               </Field>
             </div>
           )}
@@ -1001,15 +981,9 @@ function DatabaseForm({ projectId }: { projectId: string }) {
       </Section>
 
       <Section title="Storage" subtitle="Persistent volume size for this database">
-        <Field label="Storage (GiB)">
-          <Input
-            type="number"
-            min={1}
-            max={1000}
-            value={dbf.storageGB}
-            onChange={(e) => patchDbf({ storageGB: Math.max(1, parseInt(e.target.value) || 10) })}
-            className="h-9 text-sm"
-          />
+        <Field label="Storage">
+          <StorageStepper value={dbf.storageGB} max={1000} aria-label="Storage" className="max-w-56"
+            onChange={(gb) => patchDbf({ storageGB: gb || 10 })} />
         </Field>
       </Section>
 
@@ -2109,6 +2083,7 @@ function JobForm({ projectId }: { projectId: string }) {
     enabled: !!orgId,
   })
   const workerNodes = schedulableNodes(rawNodes).map(toNode)
+  const jobCap = nodeCapacity(jf.nodeId ? rawNodes.filter((n) => n.id === jf.nodeId) : schedulableNodes(rawNodes))
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -2249,16 +2224,16 @@ function JobForm({ projectId }: { projectId: string }) {
         {jf.showResources && (
           <div className="grid grid-cols-2 gap-4 border-t border-border/40 p-4">
             <Field label="CPU request">
-              <input value={jf.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} className={inputCls} />
+              <CpuStepper max={jobCap.cpuMillis} value={jf.cpuRequest} onChange={(v) => patch({ cpuRequest: v })} emptyLabel="Not set" aria-label="CPU request" />
             </Field>
             <Field label="CPU limit">
-              <input value={jf.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} className={inputCls} />
+              <CpuStepper max={jobCap.cpuMillis} value={jf.cpuLimit} onChange={(v) => patch({ cpuLimit: v })} emptyLabel="No limit" aria-label="CPU limit" />
             </Field>
             <Field label="Memory request">
-              <input value={jf.memoryRequest} onChange={(e) => patch({ memoryRequest: e.target.value })} className={inputCls} />
+              <MemoryStepper max={jobCap.memoryBytes} value={jf.memoryRequest} onChange={(v) => patch({ memoryRequest: v })} emptyLabel="Not set" aria-label="Memory request" />
             </Field>
             <Field label="Memory limit">
-              <input value={jf.memoryLimit} onChange={(e) => patch({ memoryLimit: e.target.value })} className={inputCls} />
+              <MemoryStepper max={jobCap.memoryBytes} value={jf.memoryLimit} onChange={(v) => patch({ memoryLimit: v })} emptyLabel="No limit" aria-label="Memory limit" />
             </Field>
           </div>
         )}
@@ -2777,16 +2752,9 @@ function VolumeForm({ projectId }: { projectId: string }) {
           />
         </Field>
 
-        <Field label="Size (GB)">
-          <input
-            type="number"
-            min={1}
-            max={500}
-            className={inputCls}
-            value={storageGB}
-            onChange={(e) => setStorageGB(Number(e.target.value))}
-          />
-          <p className="text-[11px] text-muted-foreground mt-1">Default: 5 GB. Can be increased but not decreased after creation.</p>
+        <Field label="Size">
+          <StorageStepper value={storageGB} max={500} aria-label="Size" className="max-w-56" onChange={(gb) => setStorageGB(gb || 5)} />
+          <p className="text-[11px] text-muted-foreground mt-1">Default: 5 GiB. Can be increased but not decreased after creation.</p>
         </Field>
 
         <div className="flex flex-col gap-3">

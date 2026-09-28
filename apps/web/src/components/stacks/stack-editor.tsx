@@ -1,3 +1,5 @@
+import { nodeCapacity } from "@/lib/api/nodes"
+import { CountStepper, CpuStepper, MemoryStepper, StorageStepper } from "@/components/forms/steppers"
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { parse as parseYaml, parseDocument, isMap } from "yaml"
@@ -744,6 +746,10 @@ function AppFields({
 }) {
   // Open when read-only: its toggle is disabled with the rest of the form.
   const [showResources, setShowResources] = useState(readOnly)
+  // The most a pod can be given: the chosen node's, or the largest that could
+  // take it when it is auto-scheduled.
+  const serviceCap = nodeCapacity(svc.nodeId ? workerNodes.filter((n) => n.id === svc.nodeId) : workerNodes)
+  const builderCap = nodeCapacity(svc.builderNodeName ? builderNodes.filter((n) => n.k8s_node_name === svc.builderNodeName) : builderNodes)
 
   return (
     <div className="space-y-5">
@@ -891,20 +897,10 @@ function AppFields({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Builder CPU request">
-                <input
-                  value={svc.builderCPURequest}
-                  onChange={(e) => onChange({ builderCPURequest: e.target.value })}
-                  placeholder="Default"
-                  className={inputCls}
-                />
+                <CpuStepper max={builderCap.cpuMillis} value={svc.builderCPURequest} onChange={(v) => onChange({ builderCPURequest: v })} emptyLabel="Default" aria-label="Builder CPU request" />
               </Field>
               <Field label="Builder memory request">
-                <input
-                  value={svc.builderMemoryRequest}
-                  onChange={(e) => onChange({ builderMemoryRequest: e.target.value })}
-                  placeholder="Default"
-                  className={inputCls}
-                />
+                <MemoryStepper max={builderCap.memoryBytes} value={svc.builderMemoryRequest} onChange={(v) => onChange({ builderMemoryRequest: v })} emptyLabel="Default" aria-label="Builder memory request" />
               </Field>
             </div>
           </div>
@@ -950,14 +946,8 @@ function AppFields({
             />
           </Field>
           <Field label="Replicas">
-            <input
-              type="number"
-              value={svc.replicas}
-              onChange={(e) => onChange({ replicas: e.target.value === "" ? "" : Number(e.target.value) })}
-              placeholder="1"
-              min={1}
-              className={inputCls}
-            />
+            <CountStepper value={svc.replicas === "" ? 1 : svc.replicas} min={1} max={20} unit="replica" aria-label="Replicas"
+              onChange={(n) => onChange({ replicas: n })} />
           </Field>
         </div>
 
@@ -974,16 +964,16 @@ function AppFields({
           {showResources && (
             <div className="px-4 pb-4 pt-0 grid grid-cols-2 gap-4 border-t border-border/40">
               <Field label="CPU request">
-                <input value={svc.cpuRequest} onChange={(e) => onChange({ cpuRequest: e.target.value })} placeholder="Default" className={inputCls} />
+                <CpuStepper max={serviceCap.cpuMillis} value={svc.cpuRequest} onChange={(v) => onChange({ cpuRequest: v })} emptyLabel="Default" aria-label="CPU request" />
               </Field>
               <Field label="CPU limit">
-                <input value={svc.cpuLimit} onChange={(e) => onChange({ cpuLimit: e.target.value })} placeholder="Default" className={inputCls} />
+                <CpuStepper max={serviceCap.cpuMillis} value={svc.cpuLimit} onChange={(v) => onChange({ cpuLimit: v })} emptyLabel="Default" aria-label="CPU limit" />
               </Field>
               <Field label="Memory request">
-                <input value={svc.memoryRequest} onChange={(e) => onChange({ memoryRequest: e.target.value })} placeholder="Default" className={inputCls} />
+                <MemoryStepper max={serviceCap.memoryBytes} value={svc.memoryRequest} onChange={(v) => onChange({ memoryRequest: v })} emptyLabel="Default" aria-label="Memory request" />
               </Field>
               <Field label="Memory limit">
-                <input value={svc.memoryLimit} onChange={(e) => onChange({ memoryLimit: e.target.value })} placeholder="Default" className={inputCls} />
+                <MemoryStepper max={serviceCap.memoryBytes} value={svc.memoryLimit} onChange={(v) => onChange({ memoryLimit: v })} emptyLabel="Default" aria-label="Memory limit" />
               </Field>
             </div>
           )}
@@ -1167,25 +1157,13 @@ function DatabaseFields({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Storage (GB)">
-          <input
-            type="number"
-            value={svc.dbStorageGB}
-            onChange={(e) => onChange({ dbStorageGB: e.target.value === "" ? "" : Number(e.target.value) })}
-            placeholder="Default"
-            min={1}
-            className={inputCls}
-          />
+        <Field label="Storage">
+          <StorageStepper value={svc.dbStorageGB} emptyLabel="Default" aria-label="Storage"
+            onChange={(gb) => onChange({ dbStorageGB: gb })} />
         </Field>
         <Field label="Replicas">
-          <input
-            type="number"
-            value={svc.replicas}
-            onChange={(e) => onChange({ replicas: e.target.value === "" ? "" : Number(e.target.value) })}
-            placeholder="1"
-            min={1}
-            className={inputCls}
-          />
+          <CountStepper value={svc.replicas === "" ? 1 : svc.replicas} min={1} max={20} unit="replica" aria-label="Replicas"
+            onChange={(n) => onChange({ replicas: n })} />
         </Field>
       </div>
 

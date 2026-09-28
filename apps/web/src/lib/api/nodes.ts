@@ -116,6 +116,21 @@ export function schedulableNodes(nodes: ApiNode[]): ApiNode[] {
   return nodes.filter((n) => n.k8s_member && n.status === "online" && n.mesh_role !== "builder" && n.mesh_role !== "mesh")
 }
 
+/**
+ * The most CPU (millicores) and memory (bytes) one of these nodes has: the
+ * largest a single pod on them can be given. Pass the node chosen for a
+ * workload, or every node that could take it when it is auto-scheduled.
+ * Undefined where no node reports it, so nothing is capped on a guess.
+ */
+export function nodeCapacity(nodes: (ApiNode | Node)[]): { cpuMillis?: number; memoryBytes?: number } {
+  const cpu = Math.max(0, ...nodes.map((n) => ("cpu_cores" in n ? n.cpu_cores : n.cpuCores) || 0))
+  const mem = Math.max(0, ...nodes.map((n) => ("memory_gb" in n ? n.memory_gb : n.memoryGB) || 0))
+  return {
+    cpuMillis: cpu > 0 ? Math.round(cpu * 1000) : undefined,
+    memoryBytes: mem > 0 ? Math.round(mem * 1024 ** 3) : undefined,
+  }
+}
+
 /** The second line of a node's card: its mesh IP, marked when it is the gateway. */
 export function nodeCardSub(node: Node): string {
   return node.k3sRole === "server" ? `${node.tailscaleIP} · gateway` : node.tailscaleIP

@@ -1,3 +1,4 @@
+import { CpuStepper, MemoryStepper } from "@/components/forms/steppers"
 import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
 import { GroupAttachments } from "@/components/variables/group-attachments"
 import { FormLayout } from "@/components/layout/form-layout"
@@ -9,7 +10,8 @@ import CodeMirror from "@uiw/react-codemirror"
 import { envLanguage, envTheme } from "@/lib/env-lang"
 import { StreamLanguage } from "@codemirror/language"
 import { shell } from "@codemirror/legacy-modes/mode/shell"
-import { jobs as jobsApi, type ApiJob, type CreateJobBody } from "@/lib/api"
+import { jobs as jobsApi, nodes as nodesApi, type ApiJob, type ApiNode, type CreateJobBody } from "@/lib/api"
+import { nodeCapacity, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
@@ -61,6 +63,13 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
     envVars: job.env_vars,
   })
   const { value: form } = draft
+  // The most a job's pod can be given: the largest node that could run it.
+  const { data: rawNodes = [] } = useQuery<ApiNode[]>({
+    queryKey: ["nodes", orgId],
+    queryFn: () => nodesApi.list(orgId, token),
+    enabled: !!orgId,
+  })
+  const jobCap = nodeCapacity(schedulableNodes(rawNodes))
   const patch = (p: Partial<typeof form>) => draft.setValue((v) => ({ ...v, ...p }))
 
   useEffect(() => {
@@ -169,16 +178,16 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
       <Section title="Resources" subtitle="CPU and memory requests and limits">
         <div className="grid grid-cols-2 gap-4">
           <Field label="CPU request">
-            <input value={form.cpuRequest} onChange={(e) => patch({ cpuRequest: e.target.value })} placeholder="100m" className={cn(inputCls, "font-mono text-xs")} />
+            <CpuStepper max={jobCap.cpuMillis} value={form.cpuRequest} onChange={(v) => patch({ cpuRequest: v })} emptyLabel="Not set" aria-label="CPU request" />
           </Field>
           <Field label="CPU limit">
-            <input value={form.cpuLimit} onChange={(e) => patch({ cpuLimit: e.target.value })} placeholder="500m" className={cn(inputCls, "font-mono text-xs")} />
+            <CpuStepper max={jobCap.cpuMillis} value={form.cpuLimit} onChange={(v) => patch({ cpuLimit: v })} emptyLabel="No limit" aria-label="CPU limit" />
           </Field>
           <Field label="Memory request">
-            <input value={form.memRequest} onChange={(e) => patch({ memRequest: e.target.value })} placeholder="128Mi" className={cn(inputCls, "font-mono text-xs")} />
+            <MemoryStepper max={jobCap.memoryBytes} value={form.memRequest} onChange={(v) => patch({ memRequest: v })} emptyLabel="Not set" aria-label="Memory request" />
           </Field>
           <Field label="Memory limit">
-            <input value={form.memLimit} onChange={(e) => patch({ memLimit: e.target.value })} placeholder="512Mi" className={cn(inputCls, "font-mono text-xs")} />
+            <MemoryStepper max={jobCap.memoryBytes} value={form.memLimit} onChange={(v) => patch({ memLimit: v })} emptyLabel="No limit" aria-label="Memory limit" />
           </Field>
         </div>
       </Section>

@@ -4,6 +4,7 @@ import { Loader2, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { stacks as stacksApi } from "@/lib/api"
+import { CountStepper } from "@/components/forms/steppers"
 
 // How many images a stack's built services keep for rollback. A stack keeps
 // every image until this is turned on; a service that says otherwise in the
@@ -50,9 +51,8 @@ export function StackImagesSetting({ orgId, projectId, stackId, token }: {
           {enabled ? "Each built service keeps its last" : "Every image each built service builds"}
         </label>
         {enabled && (
-          <input type="number" min={1} max={50} value={retention} onChange={(e) => setRetention(e.target.value)}
-            aria-label="Images to keep"
-            className="h-8 w-16 rounded-md border border-border/60 bg-muted/20 px-2 text-sm" />
+          <CountStepper value={parseInt(retention) || 3} min={1} max={50} unit="image" aria-label="Images to keep"
+            className="w-40" onChange={(n) => setRetention(String(n))} />
         )}
         {changed && (
           <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} className="ml-auto">
