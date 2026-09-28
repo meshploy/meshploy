@@ -680,6 +680,11 @@ type Service struct {
 	// each deploy, and a successful run leaves it "completed". RunRetries is
 	// how often a failed run is tried again.
 	RunOnce    bool  `gorm:"not null;default:false" json:"run_once,omitempty"`
+	// LatestDeployFailed is set when a deployment of this service fails and
+	// cleared when one succeeds. A failed build leaves the service running
+	// what it ran before, so "running" alone did not say that what runs is
+	// not the latest.
+	LatestDeployFailed bool `gorm:"not null;default:false" json:"latest_deploy_failed"`
 	RunRetries int32 `gorm:"not null;default:0" json:"run_retries,omitempty"`
 	// StartCommand is the console's start command: one line, run through the
 	// image's /bin/sh, so pipes and && work. Set, it replaces Command and Args

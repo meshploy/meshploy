@@ -1,3 +1,4 @@
+import { NotLatestTag } from "@/components/services/not-latest-tag"
 import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
@@ -47,6 +48,7 @@ function ServiceCard({ svc, onClick, stackNames, orgId, projectId, trouble }: {
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {trouble && <TroubleTag trouble={trouble} />}
+          <NotLatestTag service={svc} />
           <Badge className={`text-[11px] px-1.5 py-0 h-4.5 border shrink-0 ${statusStyle}`}>
             {svc.status}
           </Badge>

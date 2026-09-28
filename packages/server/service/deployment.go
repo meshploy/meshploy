@@ -600,7 +600,7 @@ func (s *DeploymentService) succeedDeployment(ctx context.Context, deploymentID,
 				Updates(map[string]any{"source_commit": commit, "source_commit_message": message})
 		}
 	}
-	svcUpdates := map[string]any{"status": db.ServiceRunning, "deployed_at": &now}
+	svcUpdates := map[string]any{"status": db.ServiceRunning, "deployed_at": &now, "latest_deploy_failed": false}
 	var runOnce bool
 	s.db.Model(&db.Service{}).Select("run_once").Where("id = ?", serviceID).Scan(&runOnce)
 	if runOnce {
@@ -642,11 +642,25 @@ func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
 		"status": db.DeploymentFailed,
 		"log":    reason,
 	})
-	// Also mark the service as stopped.
-	s.db.Model(&db.Service{}).
-		Joins("JOIN deployments ON deployments.service_id = services.id").
-		Where("deployments.id = ?", id).
-		Update("status", db.ServiceStopped)
+	// A failed deployment leaves running what ran before: a build that fails
+	// never touches the cluster. So a service that had deployed goes back to
+	// running, which the status reconciler then checks against the cluster,
+	// and one that never reached the cluster is failed. It used to be marked stopped, which
+	// the reconciler leaves alone - stopped is how an operator's stop reads -
+	// and a service serving on its old image read as down. Either way the
+	// failure is recorded, and shown beside the status.
+	var svc db.Service
+	if err := s.db.Where("id = (?)", s.db.Model(&db.Deployment{}).Select("service_id").Where("id = ?", id)).
+		First(&svc).Error; err == nil {
+		// Something of it reached the cluster before - a deploy, or a start
+		// from an image, as a migration does - so it runs that still.
+		status := db.ServiceFailed
+		if svc.DeployedAt != nil || svc.DeployedSpecHash != "" {
+			status = db.ServiceRunning
+		}
+		s.db.Model(&db.Service{}).Where("id = ?", svc.ID).
+			Updates(map[string]any{"status": status, "latest_deploy_failed": true})
+	}
 	if s.notif != nil {
 		var dep db.Deployment
 		if s.db.Preload("Service.Project").First(&dep, "id = ?", id).Error == nil {
@@ -848,15 +862,52 @@ func buildProbeFromService(svc *db.Service) *corev1.Probe {
 
 // resolveRegistry returns registry credentials from the build config or
 // returns an error if no registry is configured.
+//
+// A build config with none linked uses the organization's own: its built-in
+// registry, or the only one it has. That is what a service made without
+// choosing gets - a stack's build: service, a migrated app - and refusing it
+// left a monorepo's every build waiting on a setting nobody was asked for.
 func (s *DeploymentService) resolveRegistry(ctx context.Context, bc *db.BuildConfig) (host, user, pass string, err error) {
-	if bc.RegistryIntegrationID == nil {
-		return "", "", "", fmt.Errorf("no container registry configured — add one in Integrations and link it to this service")
-	}
 	var reg db.RegistryIntegration
-	if err := s.db.WithContext(ctx).First(&reg, bc.RegistryIntegrationID).Error; err != nil {
-		return "", "", "", fmt.Errorf("registry integration not found")
+	if bc.RegistryIntegrationID != nil {
+		if err := s.db.WithContext(ctx).First(&reg, bc.RegistryIntegrationID).Error; err != nil {
+			return "", "", "", fmt.Errorf("registry integration not found")
+		}
+		return reg.Endpoint, string(reg.Username), string(reg.Password), nil
 	}
-	return reg.Endpoint, string(reg.Username), string(reg.Password), nil
+	fallback, err := s.defaultRegistry(ctx, bc.ServiceID)
+	if err != nil {
+		return "", "", "", err
+	}
+	if fallback == nil {
+		return "", "", "", fmt.Errorf("no container registry configured: add one in Integrations and link it to this service")
+	}
+	return fallback.Endpoint, string(fallback.Username), string(fallback.Password), nil
+}
+
+// defaultRegistry is the registry a service's builds push to when it names
+// none: its organization's built-in one, or its only one. Nil when it has
+// several and no built-in, which is a choice left to the operator.
+func (s *DeploymentService) defaultRegistry(ctx context.Context, serviceID uuid.UUID) (*db.RegistryIntegration, error) {
+	var regs []db.RegistryIntegration
+	err := s.db.WithContext(ctx).
+		Where("organization_id = (?)", s.db.Table("services").
+			Select("projects.organization_id").
+			Joins("JOIN projects ON projects.id = services.project_id").
+			Where("services.id = ?", serviceID)).
+		Order("created_at ASC").Find(&regs).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range regs {
+		if regs[i].Provider == db.RegistryBuiltin {
+			return &regs[i], nil
+		}
+	}
+	if len(regs) == 1 {
+		return &regs[0], nil
+	}
+	return nil, nil
 }
 
 // FindAndTriggerForPush builds every service that tracks the pushed repository

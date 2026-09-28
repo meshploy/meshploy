@@ -1,3 +1,4 @@
+import { NotLatestTag } from "@/components/services/not-latest-tag"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Server, Globe, HardDrive, FileCog } from "lucide-react"
@@ -108,6 +109,7 @@ function StackServicesTab() {
                 <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[svc.status]}`}>
                   {svc.status}
                 </Badge>
+                <NotLatestTag service={svc} />
                 {svc.image && (
                   <code className="text-[11px] font-mono text-muted-foreground/60 truncate hidden sm:block">
                     {svc.image}

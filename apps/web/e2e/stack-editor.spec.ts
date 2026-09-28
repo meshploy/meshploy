@@ -55,3 +55,15 @@ test.describe("A stack's compose file", () => {
     await expect(dialog).toHaveCount(0)
   })
 })
+
+// A service whose latest build failed still runs, and says it is not on the
+// latest build, beside its status, wherever it is listed.
+test("a service running an earlier build says its latest failed", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, "/projects/00000000-0000-0000-0000-000000000003/services")
+  await expect(page.getByTestId("not-latest-tag")).toHaveCount(1, { timeout: 10_000 })
+  await page.getByTestId("not-latest-tag").click()
+  // The service page says it too, beside its status.
+  await expect(page.getByTestId("not-latest-tag")).toBeVisible({ timeout: 10_000 })
+  await expect(page).toHaveURL(/\/services\/[0-9a-f-]+/)
+})

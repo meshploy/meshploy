@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 
+	meshdb "github.com/meshploy/packages/db"
+
 	"github.com/google/uuid"
 	"k8s.io/client-go/kubernetes"
 )
@@ -46,4 +48,20 @@ var UseWorkloadsK8sForTroubleTest = UseWorkloadK8sForTest
 // deployment, as the end of a build does.
 func RecordStackForTest(s *Services, deploymentID uuid.UUID, log string) {
 	s.Deployments.recordStack(context.Background(), deploymentID, log)
+}
+
+// ResolveRegistryForTest is the registry a build config's builds push to.
+func ResolveRegistryForTest(s *Services, ctx context.Context, bc *meshdb.BuildConfig) (string, error) {
+	host, _, _, err := s.Deployments.resolveRegistry(ctx, bc)
+	return host, err
+}
+
+// FailDeploymentForTest and SucceedDeploymentForTest end a deployment the way
+// a build or rollout does.
+func FailDeploymentForTest(s *Services, id uuid.UUID, reason string) {
+	s.Deployments.failDeployment(id, reason)
+}
+
+func SucceedDeploymentForTest(s *Services, ctx context.Context, id, serviceID uuid.UUID, image string) {
+	s.Deployments.succeedDeployment(ctx, id, serviceID, "", image)
 }

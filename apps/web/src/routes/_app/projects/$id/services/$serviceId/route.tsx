@@ -1,3 +1,4 @@
+import { NotLatestTag } from "@/components/services/not-latest-tag"
 import { useEffect, useRef } from "react"
 import { StatusPill } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, Outlet, useParams, useNavigate } from "@tanstack/react-router"
@@ -164,7 +165,7 @@ function ServiceLayout() {
                 </>
               : "Application · Standalone service"
         }
-        badge={<StatusPill status={service.status} />}
+        badge={<><StatusPill status={service.status} /><NotLatestTag service={service} /></>}
         help={service.type === "database" ? { topic: "databases", label: "How databases work" } : { topic: "services", label: "How services and builds work" }}
         highlight={
           (trouble || current || hints.length > 0) && (

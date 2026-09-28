@@ -40,6 +40,8 @@ export interface ApiService {
   memory_limit: string
   /** Null when it has never deployed: there is nothing to start yet. */
   deployed_at: string | null
+  /** Its latest deployment failed: it runs what it ran before, not the latest build. */
+  latest_deploy_failed?: boolean
   created_at: string
   updated_at: string
 }

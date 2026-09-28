@@ -140,6 +140,8 @@ export const demoServiceApi = {
 export const demoServiceWeb = {
   id: DEMO_SVC_WEB,
   name: "web",
+  // Its latest build failed; it still runs the one before.
+  latest_deploy_failed: true,
   project_id: DEMO_PROJECT_ID,
   node_id: DEMO_NODE_W1,
   stack_id: null,
