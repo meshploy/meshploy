@@ -253,7 +253,7 @@ function DeploymentLogsPage() {
       </div>
 
       {/* Progress stepper */}
-      {deployment && <DeploymentStepper status={deployment.status} />}
+      {deployment && <DeploymentStepper deployment={deployment} />}
 
       {/* Log terminal. A fixed height, so a long build scrolls inside it
           instead of growing the page; it ends at the bottom of the window. */}
@@ -347,16 +347,28 @@ function stepIndex(status: ApiDeployment["status"]) {
   return STEPS.findIndex((s) => s.key.includes(status))
 }
 
-function DeploymentStepper({ status }: { status: ApiDeployment["status"] }) {
-  const current = stepIndex(status)
+// Where a failed deployment stopped, as its log shows: a failure records no
+// stage, and marking Queued failed for a rollout that failed after a finished
+// build pointed at the wrong step.
+function failedStep(d: ApiDeployment) {
+  const log = d.log ?? ""
+  if (log.includes("Deployment applied") || log.includes("Rollout failed")) return 2
+  if (d.build_job_name || log.includes("[meshploy-build]")) return 1
+  return 0
+}
+
+function DeploymentStepper({ deployment }: { deployment: ApiDeployment }) {
+  const status = deployment.status
   const failed = status === "failed"
+  // Failed: the steps before the one it stopped at are done.
+  const current = failed ? failedStep(deployment) : stepIndex(status)
 
   return (
     <div className="flex items-center">
       {STEPS.map((step, i) => {
-        const done    = !failed && current > i
+        const done    = current > i
         const active  = !failed && current === i
-        const isFailed = failed && i === Math.max(current, 0)
+        const isFailed = failed && i === current
 
         const boxCls = done
           ? "border-emerald-500/30 bg-emerald-500/5"

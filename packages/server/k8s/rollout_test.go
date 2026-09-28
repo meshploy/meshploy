@@ -47,7 +47,10 @@ func TestTheWatcherOnlyLooksAtTheRevisionBeingRolledOut(t *testing.T) {
 		replicaSet("api-new", "2", "bbb222", depUID),
 	)
 
-	got := rolloutPodSelector(context.Background(), client, "api", "proj")
+	got, exact := rolloutPodSelector(context.Background(), client, "api", "proj")
+	if !exact {
+		t.Fatal("the new revision is known, so the selector is exact")
+	}
 	if !strings.Contains(got, "pod-template-hash=bbb222") {
 		t.Fatalf("selector = %q, want the new revision's hash", got)
 	}
@@ -67,15 +70,15 @@ func TestAReplicaSetOfAnotherDeploymentIsIgnored(t *testing.T) {
 		deployment("2"),
 		replicaSet("other-app", "2", "ccc333", types.UID("dep-2")),
 	)
-	got := rolloutPodSelector(context.Background(), client, "api", "proj")
+	got, _ := rolloutPodSelector(context.Background(), client, "api", "proj")
 	if strings.Contains(got, "ccc333") {
 		t.Errorf("selector = %q, want another deployment's ReplicaSet left out", got)
 	}
 }
 
 // Reporting a superset of the pods is worse than reporting none, so where the
-// revision cannot be identified the watcher falls back to the service's own
-// pods rather than guessing.
+// revision cannot be identified the selector says it is not exact, and the
+// watcher judges no pod until it is.
 func TestTheSelectorFallsBackWhenTheRevisionIsUnknown(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -86,11 +89,18 @@ func TestTheSelectorFallsBackWhenTheRevisionIsUnknown(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "proj", UID: depUID},
 		})},
 		{"no matching replicaset", fake.NewSimpleClientset(deployment("2"))},
+		// Just applied: the controller has not seen the new spec, and the
+		// annotation still names the revision being replaced.
+		{"new spec not yet observed", fake.NewSimpleClientset(func() *appsv1.Deployment {
+			d := deployment("1")
+			d.Generation, d.Status.ObservedGeneration = 2, 1
+			return d
+		}(), replicaSet("api-old", "1", "aaa111", depUID))},
 	} {
 		client := tc.client
-		got := rolloutPodSelector(context.Background(), client, "api", "proj")
-		if got != "app=api,managed-by=meshploy" {
-			t.Errorf("%s: selector = %q", tc.name, got)
+		got, exact := rolloutPodSelector(context.Background(), client, "api", "proj")
+		if got != "app=api,managed-by=meshploy" || exact {
+			t.Errorf("%s: selector = %q, exact = %v", tc.name, got, exact)
 		}
 	}
 }
@@ -133,5 +143,33 @@ func TestOnlyTheSelectedPodsEvents(t *testing.T) {
 	}
 	if strings.Contains(joined, "Back-off") {
 		t.Errorf("the old revision's failure was reported as this rollout's: %v", lines)
+	}
+}
+
+// The docai-backend deploy of 2026-09-29: the old revision's pod crash-looped
+// while the new one was still pulling its image, and the rollout was failed
+// on the old pod. Only the pods the watcher selected are judged.
+func TestAnOldRevisionsCrashLoopDoesNotFailTheRollout(t *testing.T) {
+	crashing := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-old-1", Namespace: "proj",
+			Labels: map[string]string{"app": "api", "managed-by": "meshploy", "pod-template-hash": "aaa111"}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+		}}},
+	}
+	pulling := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-new-1", Namespace: "proj",
+			Labels: map[string]string{"app": "api", "managed-by": "meshploy", "pod-template-hash": "bbb222"}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}},
+		}}},
+	}
+	client := fake.NewSimpleClientset(crashing, pulling)
+
+	if reason, _, fatal := terminalPodFailure(context.Background(), client, "api", "proj", []string{"api-new-1"}); fatal {
+		t.Fatalf("failed on the old revision's pod: %s", reason)
+	}
+	if _, _, fatal := terminalPodFailure(context.Background(), client, "api", "proj", []string{"api-old-1"}); !fatal {
+		t.Error("a selected pod in CrashLoopBackOff is still a failure")
 	}
 }

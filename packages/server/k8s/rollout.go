@@ -67,8 +67,14 @@ func WatchRollout(
 		// still pulling its own image, and reporting those as this rollout's
 		// made a new deploy fail because the old one was broken - the very
 		// situation a deploy is meant to fix.
-		selector := rolloutPodSelector(ctx, client, name, namespace)
-		podNames := emitNewPodEvents(ctx, client, selector, namespace, seen, emit)
+		// Until the new revision can be told apart, nothing about the pods is
+		// this rollout's: right after an apply the deployment still names the
+		// old revision, whose crash-looping pod failed the deploy that was
+		// about to replace it.
+		var podNames []string
+		if selector, exact := rolloutPodSelector(ctx, client, name, namespace); exact {
+			podNames = emitNewPodEvents(ctx, client, selector, namespace, seen, emit)
+		}
 
 		dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil && !k8serrors.IsNotFound(err) {
@@ -188,7 +194,16 @@ func terminalPodFailure(
 	if err != nil {
 		return "", "", false
 	}
+	// This rollout's pods only. Every pod of the service was read, so an old
+	// revision's crash loop failed the deploy meant to fix it.
+	mine := make(map[string]bool, len(podNames))
+	for _, n := range podNames {
+		mine[n] = true
+	}
 	for _, p := range pods.Items {
+		if !mine[p.Name] {
+			continue
+		}
 		for _, cs := range p.Status.ContainerStatuses {
 			if cs.State.Waiting == nil || !terminalWaitReasons[cs.State.Waiting.Reason] {
 				continue
@@ -225,22 +240,30 @@ func terminalPodFailure(
 // container that the deploy was replacing. Stopping the service first made the
 // deploy work, which is the symptom that points straight here.
 //
-// Falls back to the deployment-wide selector when the ReplicaSet cannot be
-// identified: reporting a superset of the pods is worse than reporting none.
-func rolloutPodSelector(ctx context.Context, client kubernetes.Interface, name, namespace string) string {
+// exact is false, with the deployment-wide selector, when the new revision
+// cannot be identified yet: the deployment controller has not seen the new
+// spec (its observed generation is behind), or no ReplicaSet of the current
+// revision exists yet. Its pods are then not judged at all: reporting a
+// superset of them is worse than reporting none.
+func rolloutPodSelector(ctx context.Context, client kubernetes.Interface, name, namespace string) (selector string, exact bool) {
 	base := fmt.Sprintf("app=%s,managed-by=meshploy", name)
 
 	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return base
+		return base, false
+	}
+	// The revision annotation moves only once the controller has handled the
+	// new spec; before that it names the revision being replaced.
+	if dep.Status.ObservedGeneration < dep.Generation {
+		return base, false
 	}
 	revision := dep.Annotations["deployment.kubernetes.io/revision"]
 	if revision == "" {
-		return base
+		return base, false
 	}
 	sets, err := client.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{LabelSelector: base})
 	if err != nil {
-		return base
+		return base, false
 	}
 	for _, rs := range sets.Items {
 		if rs.Annotations["deployment.kubernetes.io/revision"] != revision {
@@ -250,10 +273,10 @@ func rolloutPodSelector(ctx context.Context, client kubernetes.Interface, name, 
 			continue
 		}
 		if hash := rs.Labels["pod-template-hash"]; hash != "" {
-			return base + ",pod-template-hash=" + hash
+			return base + ",pod-template-hash=" + hash, true
 		}
 	}
-	return base
+	return base, false
 }
 
 func ownedBy(refs []metav1.OwnerReference, uid types.UID) bool {
