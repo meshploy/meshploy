@@ -357,77 +357,6 @@ set_env() {
   chmod 600 .env
 }
 
-# ── The mesh ────────────────────────────────────────────────────────────────
-# Meshploy runs its mesh on a tailscaled of its own - interface meshploy0, its
-# own state, socket and port - built from Tailscale with a small patch so it
-# cannot collide with a Tailscale the machine already has, or gets later:
-# tailscale0 and the `tailscale` command stay the machine's own
-# (apps/cli/internal/mesh, deploy/tailscale). `meshploy mesh ...` drives it.
-#
-# A machine that joined before this, on the stock tailscale0, keeps it: moving
-# a running node to another interface is a step of its own, not an install.
-MESH_IFACE="meshploy0"
-MESH_CMD=("$MESHPLOY_CLI" mesh)
-# Kube-proxy binds published ports to these, so they answer on the mesh and
-# nowhere else. Narrower than Tailscale's whole range: a machine's own tailnet
-# shares 100.64.0.0/10 and fd7a:115c:a1e0::/48, and its addresses must not get
-# the cluster's ports. Headscale hands out addresses from the start of both.
-NODEPORT_CIDRS="100.64.0.0/16,fd7a:115c:a1e0::/96"
-
-mesh_detect_legacy() {
-  if grep -qs "flannel-iface: tailscale0" /etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml \
-     || grep -qs -- "--flannel-iface=tailscale0" /etc/systemd/system/k3s-agent.service; then
-    MESH_IFACE="tailscale0"
-    MESH_CMD=(tailscale)
-    NODEPORT_CIDRS="100.64.0.0/10,fd7a:115c:a1e0::/48"
-    info "This machine joined the mesh on tailscale0 before Meshploy had its own; it stays there."
-  fi
-}
-
-# ensure_cli fetches the meshploy CLI on a machine that has none - a worker
-# installed with curl from the gateway - on the gateway's channel.
-ensure_cli() {
-  [[ -x "$MESHPLOY_CLI" ]] && return 0
-  info "Downloading the meshploy CLI, which installs the mesh…"
-  local get="/tmp/meshploy-get.sh"
-  curl -fsSL --connect-timeout 15 https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o "$get" \
-    || die "Could not download get.sh. Check this machine's connection to GitHub and retry."
-  if [[ "${MESHPLOY_CHANNEL:-latest}" == "main" ]]; then
-    bash "$get" --cli-only --edge || die "The meshploy CLI could not be installed."
-  else
-    bash "$get" --cli-only || die "The meshploy CLI could not be installed."
-  fi
-  rm -f "$get"
-}
-
-# mesh_install puts the mesh daemon in place and starts it, and has k3s start
-# after it at boot: flannel binds the mesh interface, which the daemon creates.
-mesh_install() {
-  if [[ "$MESH_IFACE" == "tailscale0" ]]; then
-    if ! command -v tailscale &>/dev/null; then
-      info "Downloading and installing Tailscale…"
-      curl -fsSL https://tailscale.com/install.sh | sh
-    fi
-    success "Tailscale: $(tailscale version | head -1)"
-    return 0
-  fi
-  ensure_cli
-  "$MESHPLOY_CLI" mesh install ${MESH_FROM:+--from "$MESH_FROM"} \
-    || die "Meshploy's mesh could not be installed. Check: journalctl -u meshploy-tailscaled"
-  local unit
-  for unit in k3s k3s-agent; do
-    mkdir -p "/etc/systemd/system/${unit}.service.d"
-    printf '[Unit]\nWants=meshploy-tailscaled.service\nAfter=meshploy-tailscaled.service\n' \
-      > "/etc/systemd/system/${unit}.service.d/10-meshploy-mesh.conf"
-  done
-  systemctl daemon-reload
-  success "Meshploy's mesh runs on ${MESH_IFACE}, beside any Tailscale of this machine's own"
-}
-
-# mesh_ip is this machine's IPv4 address on the mesh, or nothing yet.
-mesh_ip() { "${MESH_CMD[@]}" ip -4 2>/dev/null | head -1 || true; }
-mesh_detect_legacy
-
 # ── Local ports ─────────────────────────────────────────────────────────────
 # The gateway's own services listen on a few loopback ports: Headscale (8085)
 # and its metrics (9090), the proxy (8081), Postgres (5433). A server being
@@ -530,6 +459,77 @@ port_in_use() {
   fi
   return 1
 }
+
+# ── The mesh ────────────────────────────────────────────────────────────────
+# Meshploy runs its mesh on a tailscaled of its own - interface meshploy0, its
+# own state, socket and port - built from Tailscale with a small patch so it
+# cannot collide with a Tailscale the machine already has, or gets later:
+# tailscale0 and the `tailscale` command stay the machine's own
+# (apps/cli/internal/mesh, deploy/tailscale). `meshploy mesh ...` drives it.
+#
+# A machine that joined before this, on the stock tailscale0, keeps it: moving
+# a running node to another interface is a step of its own, not an install.
+MESH_IFACE="meshploy0"
+MESH_CMD=("$MESHPLOY_CLI" mesh)
+# Kube-proxy binds published ports to these, so they answer on the mesh and
+# nowhere else. Narrower than Tailscale's whole range: a machine's own tailnet
+# shares 100.64.0.0/10 and fd7a:115c:a1e0::/48, and its addresses must not get
+# the cluster's ports. Headscale hands out addresses from the start of both.
+NODEPORT_CIDRS="100.64.0.0/16,fd7a:115c:a1e0::/96"
+
+mesh_detect_legacy() {
+  if grep -qs "flannel-iface: tailscale0" /etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml \
+     || grep -qs -- "--flannel-iface=tailscale0" /etc/systemd/system/k3s-agent.service; then
+    MESH_IFACE="tailscale0"
+    MESH_CMD=(tailscale)
+    NODEPORT_CIDRS="100.64.0.0/10,fd7a:115c:a1e0::/48"
+    info "This machine joined the mesh on tailscale0 before Meshploy had its own; it stays there."
+  fi
+}
+
+# ensure_cli fetches the meshploy CLI on a machine that has none - a worker
+# installed with curl from the gateway - on the gateway's channel.
+ensure_cli() {
+  [[ -x "$MESHPLOY_CLI" ]] && return 0
+  info "Downloading the meshploy CLI, which installs the mesh…"
+  local get="/tmp/meshploy-get.sh"
+  curl -fsSL --connect-timeout 15 https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o "$get" \
+    || die "Could not download get.sh. Check this machine's connection to GitHub and retry."
+  if [[ "${MESHPLOY_CHANNEL:-latest}" == "main" ]]; then
+    bash "$get" --cli-only --edge || die "The meshploy CLI could not be installed."
+  else
+    bash "$get" --cli-only || die "The meshploy CLI could not be installed."
+  fi
+  rm -f "$get"
+}
+
+# mesh_install puts the mesh daemon in place and starts it, and has k3s start
+# after it at boot: flannel binds the mesh interface, which the daemon creates.
+mesh_install() {
+  if [[ "$MESH_IFACE" == "tailscale0" ]]; then
+    if ! command -v tailscale &>/dev/null; then
+      info "Downloading and installing Tailscale…"
+      curl -fsSL https://tailscale.com/install.sh | sh
+    fi
+    success "Tailscale: $(tailscale version | head -1)"
+    return 0
+  fi
+  ensure_cli
+  "$MESHPLOY_CLI" mesh install ${MESH_FROM:+--from "$MESH_FROM"} \
+    || die "Meshploy's mesh could not be installed. Check: journalctl -u meshploy-tailscaled"
+  local unit
+  for unit in k3s k3s-agent; do
+    mkdir -p "/etc/systemd/system/${unit}.service.d"
+    printf '[Unit]\nWants=meshploy-tailscaled.service\nAfter=meshploy-tailscaled.service\n' \
+      > "/etc/systemd/system/${unit}.service.d/10-meshploy-mesh.conf"
+  done
+  systemctl daemon-reload
+  success "Meshploy's mesh runs on ${MESH_IFACE}, beside any Tailscale of this machine's own"
+}
+
+# mesh_ip is this machine's IPv4 address on the mesh, or nothing yet.
+mesh_ip() { "${MESH_CMD[@]}" ip -4 2>/dev/null | head -1 || true; }
+mesh_detect_legacy
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 # Tolerated: `clear` fails when there is no terminal to clear - an install run
