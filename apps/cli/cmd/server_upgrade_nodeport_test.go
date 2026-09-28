@@ -11,11 +11,14 @@ import (
 // restarts instead of performing them.
 func nodePortFixture(t *testing.T, k3sExists bool) (path string, restarts *[]string) {
 	t.Helper()
-	origDropin, origRestart, origDir := nodePortDropin, systemctlRestart, meshployInstDir
-	t.Cleanup(func() { nodePortDropin, systemctlRestart, meshployInstDir = origDropin, origRestart, origDir })
+	origDropin, origRestart, origDir, origFlannel := nodePortDropin, systemctlRestart, meshployInstDir, flannelDropin
+	t.Cleanup(func() {
+		nodePortDropin, systemctlRestart, meshployInstDir, flannelDropin = origDropin, origRestart, origDir, origFlannel
+	})
 
 	root := t.TempDir()
 	nodePortDropin = filepath.Join(root, "rancher", "k3s", "config.yaml.d", "20-nodeport-addresses.yaml")
+	flannelDropin = filepath.Join(root, "rancher", "k3s", "config.yaml.d", "10-flannel-iface.yaml")
 	if k3sExists {
 		if err := os.MkdirAll(filepath.Join(root, "rancher", "k3s"), 0o755); err != nil {
 			t.Fatal(err)
@@ -83,5 +86,25 @@ func TestRestrictNodePortsSkipsWithoutK3s(t *testing.T) {
 	}
 	if len(*restarts) != 0 {
 		t.Errorf("restarted something on a machine with no k3s: %v", *restarts)
+	}
+}
+
+// A gateway on Meshploy's own mesh keeps its narrower ranges through an
+// upgrade: widening them would let a Tailscale of the machine's own answer for
+// the cluster's ports.
+func TestRestrictNodePortsKeepsTheOwnMeshNarrow(t *testing.T) {
+	dropin, _ := nodePortFixture(t, true)
+	if err := os.MkdirAll(filepath.Dir(flannelDropin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(flannelDropin, []byte("flannel-iface: meshploy0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := restrictNodePorts(); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(dropin)
+	if !strings.Contains(string(body), "nodeport-addresses="+ownMeshNodePortCIDRs) {
+		t.Errorf("drop-in = %s", body)
 	}
 }

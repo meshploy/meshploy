@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/meshploy/apps/cli/internal/mesh"
 	"os"
 	"os/exec"
 	"runtime"
@@ -157,8 +158,16 @@ func allowNodeExporterFromBridges() {
 	}
 }
 
-// getMeshIP returns the Tailscale IPv4 address assigned to this node.
+// getMeshIP returns this node's IPv4 address on the mesh: from Meshploy's own
+// mesh daemon where it runs, or the stock tailscale a machine that joined
+// before it uses.
 func getMeshIP() (string, error) {
+	if mesh.Installed() {
+		if ip := mesh.IP(); ip != "" {
+			return ip, nil
+		}
+		return "", fmt.Errorf("the mesh has no IPv4 address yet")
+	}
 	out, err := exec.Command("tailscale", "ip", "-4").Output()
 	if err != nil {
 		return "", err

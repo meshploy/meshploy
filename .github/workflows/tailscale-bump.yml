@@ -1,0 +1,93 @@
+name: Tailscale release check
+
+# Watches Tailscale's stable releases for the mesh binaries Meshploy builds
+# (deploy/tailscale). A newer one is rebuilt with the patch: when the patch
+# applies, the licence is the accepted one and it builds, a pull request moves
+# the pin, for a person to merge once Meshploy's Headscale supports that
+# client. When any of that fails, an issue says what, and nothing moves.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Latest stable Tailscale
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest=$(gh api repos/tailscale/tailscale/releases/latest --jq .tag_name)
+          latest=${latest#v}
+          pinned=$(cat deploy/tailscale/VERSION)
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          echo "pinned=${pinned}" >> "$GITHUB_OUTPUT"
+          newest=$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -1)
+          if [ "$latest" != "$pinned" ] && [ "$newest" = "$latest" ]; then
+            echo "newer=true" >> "$GITHUB_OUTPUT"
+          fi
+          branch="tailscale-v${latest}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.latest.outputs.newer == 'true' && steps.latest.outputs.open != 'true'
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Rebuild with the patch
+        id: build
+        if: steps.latest.outputs.newer == 'true' && steps.latest.outputs.open != 'true'
+        continue-on-error: true
+        env:
+          TAILSCALE_VERSION: ${{ steps.latest.outputs.latest }}
+          GOTOOLCHAIN: auto
+        run: deploy/tailscale/build.sh /tmp/mesh amd64 2>&1 | tee /tmp/build.log
+
+      - name: Open a pull request
+        if: steps.build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+          PINNED: ${{ steps.latest.outputs.pinned }}
+        run: |
+          branch="tailscale-v${LATEST}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          echo "$LATEST" > deploy/tailscale/VERSION
+          git commit -am "chore(mesh): build the mesh on Tailscale ${LATEST}"
+          git push origin "$branch"
+          gh pr create --head "$branch" --title "chore(mesh): build the mesh on Tailscale ${LATEST}" --body "$(cat <<EOF
+          Tailscale ${LATEST} is out; the mesh binaries are pinned to ${PINNED}.
+
+          This job checked that the patch applies, the licence is the accepted one, and it builds for linux/amd64.
+
+          Before merging:
+          - [ ] Meshploy's pinned Headscale supports a ${LATEST} client (a client newer than Headscale supports is the one upgrade that breaks a working mesh)
+          - [ ] Coexistence test passes on a machine that also runs a stock Tailscale (deploy/tailscale/README.md)
+          - [ ] Release notes read for anything the patch touches: routing, netfilter, DNS
+
+          Release notes: https://github.com/tailscale/tailscale/releases/tag/v${LATEST}
+          EOF
+          )"
+
+      - name: Say why it could not move
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+        run: |
+          gh issue create --title "Mesh binaries: Tailscale ${LATEST} does not build with the patch" --body "$(printf 'The weekly check could not rebuild the mesh on Tailscale %s. Either the patch no longer applies, the licence changed, or the build failed.\n\n```\n%s\n```\n' "$LATEST" "$(tail -40 /tmp/build.log)")"

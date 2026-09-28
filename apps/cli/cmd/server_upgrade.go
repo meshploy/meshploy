@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -331,10 +332,35 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	return nil
 }
 
+// proxyPortOrDefault is the proxy's loopback port from .env, or 8081.
+func proxyPortOrDefault() int {
+	if p := envPort("PROXY_PORT"); p > 0 {
+		return p
+	}
+	return 8081
+}
+
 // nodePortCIDRs are Headscale's ranges: what a published port may answer on.
 // A port reachable from anywhere else is published through a TCP route on the
 // gateway, deliberately, rather than by kube-proxy binding every address.
 const nodePortCIDRs = "100.64.0.0/10,fd7a:115c:a1e0::/48"
+
+// ownMeshNodePortCIDRs are the ranges on a machine whose mesh is Meshploy's
+// own (meshploy0): narrower, because a Tailscale of the machine's own shares
+// Tailscale's whole range, and its addresses must not answer for the
+// cluster's ports. Headscale hands out addresses from the start of both.
+const ownMeshNodePortCIDRs = "100.64.0.0/16,fd7a:115c:a1e0::/96"
+
+// flannelDropin is where install.sh pins flannel to the mesh interface.
+var flannelDropin = "/etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml"
+
+// meshNodePortCIDRs are the ranges for this machine's mesh.
+func meshNodePortCIDRs() string {
+	if b, err := os.ReadFile(flannelDropin); err == nil && strings.Contains(string(b), "flannel-iface: meshploy0") {
+		return ownMeshNodePortCIDRs
+	}
+	return nodePortCIDRs
+}
 
 // restrictNodePorts writes the k3s drop-in that keeps published ports on the
 // mesh, and records the ranges in .env so the console can say whether an
@@ -344,11 +370,12 @@ const nodePortCIDRs = "100.64.0.0/10,fd7a:115c:a1e0::/48"
 // every later upgrade passes straight through.
 func restrictNodePorts() error {
 	dropin := nodePortDropin
-	want := "kube-proxy-arg+:\n  - \"nodeport-addresses=" + nodePortCIDRs + "\"\n"
+	cidrs := meshNodePortCIDRs()
+	want := "kube-proxy-arg+:\n  - \"nodeport-addresses=" + cidrs + "\"\n"
 
 	if have, err := os.ReadFile(dropin); err == nil && string(have) == want {
 		if readEnvVar("NODEPORT_ADDRESSES") == "" {
-			return setEnvVar("NODEPORT_ADDRESSES", nodePortCIDRs)
+			return setEnvVar("NODEPORT_ADDRESSES", cidrs)
 		}
 		return nil
 	}
@@ -365,7 +392,7 @@ func restrictNodePorts() error {
 	if err := os.WriteFile(dropin, []byte(want), 0o644); err != nil {
 		return err
 	}
-	if err := setEnvVar("NODEPORT_ADDRESSES", nodePortCIDRs); err != nil {
+	if err := setEnvVar("NODEPORT_ADDRESSES", cidrs); err != nil {
 		return err
 	}
 	if err := systemctlRestart("k3s"); err != nil {
@@ -615,7 +642,7 @@ func stackChecks() []stackCheck {
 	return []stackCheck{
 		{name: "API", url: localAPI + "/health", api: true},
 		{name: "console", url: "http://127.0.0.1:5173/"},
-		{name: "proxy", url: "http://127.0.0.1:8081/"},
+		{name: "proxy", url: "http://127.0.0.1:" + strconv.Itoa(proxyPortOrDefault()) + "/"},
 		{name: "Caddy", url: "http://127.0.0.1:80/", host: host},
 	}
 }

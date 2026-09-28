@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meshploy/apps/cli/internal/mesh"
 	"io"
 	"io/fs"
 	"os"
@@ -123,6 +124,10 @@ var hostStatusCmd = &cobra.Command{
 
 // ── serve ────────────────────────────────────────────────────────────────────
 
+// meshOrderInterval is how often the mesh's firewall hook is checked: the
+// most a restart of another Tailscale on the machine can cut the mesh off.
+const meshOrderInterval = 2 * time.Second
+
 func hostServe(ctx context.Context, logw io.Writer) error {
 	state := hostagent.StateDir(hostDir)
 	if err := os.MkdirAll(state, 0755); err != nil {
@@ -143,6 +148,27 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		agent.Tasks[name] = t
 		mu.Unlock()
 	}
+
+	// Keep the mesh's firewall hook ahead of any other Tailscale's, which
+	// takes the top again every time it restarts (internal/mesh).
+	go func() {
+		t := time.NewTicker(meshOrderInterval)
+		defer t.Stop()
+		run := func(name string, args ...string) (string, error) {
+			out, err := exec.Command(name, args...).Output()
+			return string(out), err
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				for _, m := range mesh.KeepFirst(run) {
+					fmt.Fprintf(logw, "mesh: %s\n", m)
+				}
+			}
+		}
+	}()
 
 	upgrades := &upgradeLauncher{}
 	requests := &requestRunner{running: map[string]bool{}}

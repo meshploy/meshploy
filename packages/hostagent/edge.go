@@ -68,6 +68,28 @@ type EdgeSnapshot struct {
 	// MagicDNS names are answered by the node itself, so the domain does not
 	// have to stay registered to keep working.
 	MeshDomain string `json:"mesh_domain,omitempty"`
+	// ProxyPort and HeadscalePort are the gateway's loopback ports for the
+	// proxy and Headscale, which install.sh moves off their defaults when a
+	// server already has something there. Facts of the host, not of the API:
+	// the host fills them from its .env before rendering. Zero is the default.
+	ProxyPort     int `json:"proxy_port,omitempty"`
+	HeadscalePort int `json:"headscale_port,omitempty"`
+}
+
+// ProxyPortOrDefault is ProxyPort, or 8081.
+func (s EdgeSnapshot) ProxyPortOrDefault() int {
+	if s.ProxyPort > 0 {
+		return s.ProxyPort
+	}
+	return 8081
+}
+
+// HeadscalePortOrDefault is HeadscalePort, or 8085.
+func (s EdgeSnapshot) HeadscalePortOrDefault() int {
+	if s.HeadscalePort > 0 {
+		return s.HeadscalePort
+	}
+	return 8085
 }
 
 // MeshDomainOrDefault is MeshDomain, or mesh.<primary> for a snapshot written

@@ -30,6 +30,14 @@ The gateway is a build node too unless you turn **Act as build node** off.
 
 A node that stops reporting is marked **offline** after a short while. After a few minutes more, the cluster moves its services to other nodes that can take them.
 
+## A Tailscale of your own {#own-tailscale}
+
+Meshploy's mesh runs on a Tailscale of its own: the service `meshploy-tailscaled`, on the interface `meshploy0`. A machine can keep its own Tailscale on `tailscale0` beside it, installed before Meshploy or after, on its own tailnet, and the two do not touch each other's routes, firewall or DNS. The `tailscale` command stays yours; Meshploy's mesh answers to `meshploy mesh`, as in `meshploy mesh status`.
+
+If your own Tailscale restarts, Meshploy's mesh can pause for about a second while it puts its firewall rule back in front. A machine that joined before Meshploy had its own mesh stays on `tailscale0`.
+
+Mac and Windows machines join with the ordinary Tailscale app.
+
 ## Terms {#terms}
 
 - **Gateway** {#gateway -> nodes}: The one machine facing the internet: the control plane, the console and API, and the edge.

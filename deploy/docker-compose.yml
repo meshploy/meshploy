@@ -22,7 +22,8 @@ services:
       retries: 5
 
   # ── Headscale — WireGuard mesh control plane ───────────────────────────────
-  # Listens on localhost only; Caddy proxies headscale.{DOMAIN} → 8085
+  # Listens on localhost only; Caddy proxies headscale.{DOMAIN} to its port
+  # (HEADSCALE_HOST_PORT, 8085 unless install.sh found it taken).
   headscale:
     image: docker.io/headscale/headscale:0.28.0
     restart: unless-stopped
@@ -31,8 +32,8 @@ services:
       - 1.1.1.1
       - 1.0.0.1
     ports:
-      - "127.0.0.1:8085:8080"
-      - "127.0.0.1:9090:9090" # Prometheus metrics, localhost only
+      - "127.0.0.1:${HEADSCALE_HOST_PORT:-8085}:8080"
+      - "127.0.0.1:${HEADSCALE_METRICS_PORT:-9090}:9090" # Prometheus metrics, localhost only
     volumes:
       - ./headscale/config:/etc/headscale:z
       - ./headscale/data:/var/lib/headscale:z
@@ -108,6 +109,11 @@ services:
       - "4000:4000"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
+      # The gateway's loopback ports, which a TCP route must never take.
+      PROXY_PORT: ${PROXY_PORT:-8081}
+      HEADSCALE_HOST_PORT: ${HEADSCALE_HOST_PORT:-8085}
+      HEADSCALE_METRICS_PORT: ${HEADSCALE_METRICS_PORT:-9090}
+      POSTGRES_HOST_PORT: ${POSTGRES_HOST_PORT:-5433}
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       SETUP_TOKEN: ${SETUP_TOKEN:-}
@@ -203,7 +209,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@127.0.0.1:${POSTGRES_HOST_PORT:-5433}/${POSTGRES_DB:-meshploy}?sslmode=disable
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      PROXY_PORT: 8081
+      PROXY_PORT: ${PROXY_PORT:-8081}
       # Loopback for Caddy, plus the node's mesh address, which is how a
       # container on this host reaches the proxy - what a migration needs while
       # the platform being replaced still holds 443.

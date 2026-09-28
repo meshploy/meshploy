@@ -53,6 +53,29 @@ confirm() {
   [[ "$yn" =~ ^[Yy]$ ]]
 }
 
+# Meshploy's own mesh daemon (meshploy-tailscaled, on meshploy0) is what a
+# machine installed since it existed runs. Removing it is removing Meshploy's
+# mesh and nothing else: a Tailscale of the machine's own, on tailscale0, is not
+# Meshploy's to touch. A machine that joined on the stock tailscale0 before
+# keeps the old questions below.
+OWN_MESH=false
+[[ -f /etc/systemd/system/meshploy-tailscaled.service ]] && OWN_MESH=true
+
+remove_own_mesh() {
+  if command -v meshploy &>/dev/null; then
+    sudo meshploy mesh uninstall || true
+  else
+    sudo systemctl disable --now meshploy-tailscaled.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/meshploy-tailscaled.service \
+      /usr/local/lib/meshploy/tailscaled /usr/local/lib/meshploy/tailscale
+    sudo rm -rf /var/lib/meshploy/tailscale
+    sudo systemctl daemon-reload
+  fi
+  sudo rm -f /etc/systemd/system/k3s.service.d/10-meshploy-mesh.conf \
+    /etc/systemd/system/k3s-agent.service.d/10-meshploy-mesh.conf
+  success "Meshploy's mesh removed; any Tailscale of this machine's own is untouched"
+}
+
 # remove_tailscale_package: the package and its state. Shared by both roles.
 remove_tailscale_package() {
   sudo apt-get remove --purge -y tailscale 2>/dev/null \
@@ -179,7 +202,11 @@ if $WORKER; then
 
   # ── Disconnect from mesh ─────────────────────────────────────────────────────
   header "Disconnecting from WireGuard mesh"
-  if command -v tailscale &>/dev/null; then
+  if $OWN_MESH; then
+    if confirm "Leave and remove Meshploy's mesh?"; then
+      remove_own_mesh
+    fi
+  elif command -v tailscale &>/dev/null; then
     if confirm "Log out and disconnect from Headscale mesh?"; then
       sudo tailscale logout 2>/dev/null || true
       sudo tailscale down 2>/dev/null || true
@@ -191,7 +218,7 @@ if $WORKER; then
 
   # ── Remove Tailscale (optional) ──────────────────────────────────────────────
   header "Tailscale binaries"
-  if command -v tailscale &>/dev/null; then
+  if ! $OWN_MESH && command -v tailscale &>/dev/null; then
     if confirm "Remove Tailscale package?"; then
       remove_tailscale_package
       success "Tailscale removed"
@@ -279,7 +306,11 @@ else
 
   # ── Disconnect from mesh ────────────────────────────────────────────────────
   header "Disconnecting from WireGuard mesh"
-  if command -v tailscale &>/dev/null; then
+  if $OWN_MESH; then
+    if confirm "Remove Meshploy's mesh?"; then
+      remove_own_mesh
+    fi
+  elif command -v tailscale &>/dev/null; then
     if confirm "Disconnect this node from the Tailscale/Headscale mesh?"; then
       tailscale down 2>/dev/null || true
       success "Disconnected from mesh"
@@ -292,7 +323,7 @@ else
   # No `tailscale logout` here: this node's control server is the Headscale
   # stopped and deleted above, so there is nothing left to log out of, and the
   # call would only wait on a server that is gone.
-  if ! $REINSTALL && command -v tailscale &>/dev/null; then
+  if ! $REINSTALL && ! $OWN_MESH && command -v tailscale &>/dev/null; then
     header "Tailscale"
     if confirm "Remove the Tailscale package and its state?"; then
       remove_tailscale_package

@@ -442,3 +442,18 @@ func TestRenderReproducesTheShippedHeadscaleConfig(t *testing.T) {
 	}
 	assert.Equal(t, strip(expanded), strip(files[HeadscaleConfig]))
 }
+
+// A gateway whose proxy and Headscale moved off their default ports - because
+// a server being migrated already had something there - has Caddy forward to
+// the ports they actually use, and nowhere to the defaults.
+func TestRenderForwardsToTheChosenLoopbackPorts(t *testing.T) {
+	snap := snapshot(domain("example.com", hostagent.EdgeDNSOnDemand, true))
+	snap.ProxyPort, snap.HeadscalePort = 18081, 18085
+	files, err := Render(snap)
+	require.NoError(t, err)
+	caddy := string(files["caddy/Caddyfile"])
+	assert.Contains(t, caddy, "reverse_proxy localhost:18081")
+	assert.Contains(t, caddy, "reverse_proxy localhost:18085")
+	assert.NotContains(t, caddy, "localhost:8081")
+	assert.NotContains(t, caddy, "localhost:8085")
+}

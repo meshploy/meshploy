@@ -38,7 +38,7 @@ import conf.d/*.caddy
 # ── Headscale control plane ──────────────────────────────────────────────────
 headscale.{{ .BaseDomain }} {
 {{- template "named_tls" . }}
-    reverse_proxy localhost:8085
+    reverse_proxy localhost:{{ $.HeadscalePort }}
 }
 
 # ── Meshploy API ─────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ console.{{ .BaseDomain }} {
         on_demand
     }
 {{- end }}
-    reverse_proxy localhost:8081
+    reverse_proxy localhost:{{ $.ProxyPort }}
 }
 
 # ── Internal mesh traffic ────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ console.{{ .BaseDomain }} {
     # Caddy signs these with its own authority; clients warn until it is trusted.
     tls internal
 {{- end }}
-    reverse_proxy localhost:8081
+    reverse_proxy localhost:{{ $.ProxyPort }}
 }
 {{ end }}
 # ── Custom domains ───────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ console.{{ .BaseDomain }} {
     tls {
         on_demand
     }
-    reverse_proxy localhost:8081
+    reverse_proxy localhost:{{ $.ProxyPort }}
 }
 {{- define "named_tls" }}
 {{- if eq .DNSMode "delegation" }}

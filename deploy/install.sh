@@ -130,10 +130,12 @@ registry_needs_login() {
 }
 
 # ── Self-bootstrap ────────────────────────────────────────────────────────────
-# Config files (coredns/, headscale/, caddy/) are only needed for the master
-# path. Worker installs piped via 'meshploy node add' run without them.
+# The deploy files (docker-compose.yml and what it mounts) are only needed for
+# the master path. Worker installs piped via 'meshploy node add' run without
+# them. Not the Corefile: that is rendered by `meshploy domain apply` further
+# down, and a fresh deploy directory has none.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
-if [[ ! -f "$SCRIPT_DIR/coredns/Corefile" ]]; then
+if [[ ! -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
   if ! ($AUTO_MODE && [[ "${NODE_TYPE:-}" =~ ^(2|worker|Worker)$ ]]); then
     echo "Config files not found. Please run via get.sh:"
     echo "  curl -fsSL https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o /tmp/get.sh && sudo bash /tmp/get.sh"
@@ -353,6 +355,112 @@ set_env() {
   fi
   mv -f "$tmp" .env
   chmod 600 .env
+}
+
+# ── The mesh ────────────────────────────────────────────────────────────────
+# Meshploy runs its mesh on a tailscaled of its own - interface meshploy0, its
+# own state, socket and port - built from Tailscale with a small patch so it
+# cannot collide with a Tailscale the machine already has, or gets later:
+# tailscale0 and the `tailscale` command stay the machine's own
+# (apps/cli/internal/mesh, deploy/tailscale). `meshploy mesh ...` drives it.
+#
+# A machine that joined before this, on the stock tailscale0, keeps it: moving
+# a running node to another interface is a step of its own, not an install.
+MESH_IFACE="meshploy0"
+MESH_CMD=("$MESHPLOY_CLI" mesh)
+# Kube-proxy binds published ports to these, so they answer on the mesh and
+# nowhere else. Narrower than Tailscale's whole range: a machine's own tailnet
+# shares 100.64.0.0/10 and fd7a:115c:a1e0::/48, and its addresses must not get
+# the cluster's ports. Headscale hands out addresses from the start of both.
+NODEPORT_CIDRS="100.64.0.0/16,fd7a:115c:a1e0::/96"
+
+mesh_detect_legacy() {
+  if grep -qs "flannel-iface: tailscale0" /etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml \
+     || grep -qs -- "--flannel-iface=tailscale0" /etc/systemd/system/k3s-agent.service; then
+    MESH_IFACE="tailscale0"
+    MESH_CMD=(tailscale)
+    NODEPORT_CIDRS="100.64.0.0/10,fd7a:115c:a1e0::/48"
+    info "This machine joined the mesh on tailscale0 before Meshploy had its own; it stays there."
+  fi
+}
+
+# ensure_cli fetches the meshploy CLI on a machine that has none - a worker
+# installed with curl from the gateway - on the gateway's channel.
+ensure_cli() {
+  [[ -x "$MESHPLOY_CLI" ]] && return 0
+  info "Downloading the meshploy CLI, which installs the mesh…"
+  local get="/tmp/meshploy-get.sh"
+  curl -fsSL --connect-timeout 15 https://raw.githubusercontent.com/meshploy/meshploy/main/get.sh -o "$get" \
+    || die "Could not download get.sh. Check this machine's connection to GitHub and retry."
+  if [[ "${MESHPLOY_CHANNEL:-latest}" == "main" ]]; then
+    bash "$get" --cli-only --edge || die "The meshploy CLI could not be installed."
+  else
+    bash "$get" --cli-only || die "The meshploy CLI could not be installed."
+  fi
+  rm -f "$get"
+}
+
+# mesh_install puts the mesh daemon in place and starts it, and has k3s start
+# after it at boot: flannel binds the mesh interface, which the daemon creates.
+mesh_install() {
+  if [[ "$MESH_IFACE" == "tailscale0" ]]; then
+    if ! command -v tailscale &>/dev/null; then
+      info "Downloading and installing Tailscale…"
+      curl -fsSL https://tailscale.com/install.sh | sh
+    fi
+    success "Tailscale: $(tailscale version | head -1)"
+    return 0
+  fi
+  ensure_cli
+  "$MESHPLOY_CLI" mesh install ${MESH_FROM:+--from "$MESH_FROM"} \
+    || die "Meshploy's mesh could not be installed. Check: journalctl -u meshploy-tailscaled"
+  local unit
+  for unit in k3s k3s-agent; do
+    mkdir -p "/etc/systemd/system/${unit}.service.d"
+    printf '[Unit]\nWants=meshploy-tailscaled.service\nAfter=meshploy-tailscaled.service\n' \
+      > "/etc/systemd/system/${unit}.service.d/10-meshploy-mesh.conf"
+  done
+  systemctl daemon-reload
+  success "Meshploy's mesh runs on ${MESH_IFACE}, beside any Tailscale of this machine's own"
+}
+
+# mesh_ip is this machine's IPv4 address on the mesh, or nothing yet.
+mesh_ip() { "${MESH_CMD[@]}" ip -4 2>/dev/null | head -1 || true; }
+mesh_detect_legacy
+
+# ── Local ports ─────────────────────────────────────────────────────────────
+# The gateway's own services listen on a few loopback ports: Headscale (8085)
+# and its metrics (9090), the proxy (8081), Postgres (5433). A server being
+# migrated often has one of them taken already - PowerInsight holds 8081 and
+# 8085 on tcm-hg - so each is chosen rather than assumed, and recorded in .env,
+# which the compose file, the edge config and the CLI read.
+
+# local_port_free <port>: nothing listens on it on loopback or every address.
+local_port_free() {
+  ! ss -Hltn 2>/dev/null | awk '{print $4}' \
+    | grep -qE "^(127\.0\.0\.1|0\.0\.0\.0|\[::\]|\[::1\]|\*):$1\$"
+}
+
+# choose_local_port <VAR> <default>: an earlier choice in .env stays; an install
+# from before the choice existed keeps the default its own service holds; a
+# new one takes the default when free, else the first free port 10000 above it.
+choose_local_port() {
+  local var="$1" def="$2" have p
+  have="$(grep -E "^${var}=" .env 2>/dev/null | tail -1 | cut -d= -f2 || true)"
+  if [[ -n "$have" ]]; then
+    printf -v "$var" '%s' "$have"; return 0
+  fi
+  if [[ -f .env ]] && grep -q '^JWT_SECRET=' .env; then
+    printf -v "$var" '%s' "$def"; return 0
+  fi
+  p="$def"
+  if ! local_port_free "$p"; then
+    for p in $(seq $((def + 10000)) $((def + 10100))); do
+      local_port_free "$p" && break
+    done
+    warn "Port ${def} is taken on this machine; ${var} uses ${p} instead."
+  fi
+  printf -v "$var" '%s' "$p"
 }
 
 # port_in_use <port> — returns 0 (true) if the port is bound on any non-loopback address.
@@ -981,6 +1089,11 @@ REGEOF
   # ── Write config files ──────────────────────────────────────────────────────
   header "Writing configuration files"
 
+  choose_local_port HEADSCALE_HOST_PORT    8085
+  choose_local_port HEADSCALE_METRICS_PORT 9090
+  choose_local_port PROXY_PORT             8081
+  choose_local_port POSTGRES_HOST_PORT     5433
+
   GATEWAY_HOSTNAME=$(hostname)
 
   # .env
@@ -1008,7 +1121,11 @@ REGEOF
     set_env HOST_GATEWAY_IP     "${HOST_GATEWAY_IP}"
     set_env FIREWALL_STATE      "${FIREWALL_STATE:-unknown}"
     set_env FIREWALL_CHECKED_AT "${FIREWALL_CHECKED_AT}"
-    set_env NODEPORT_ADDRESSES  "100.64.0.0/10,fd7a:115c:a1e0::/48"
+    set_env NODEPORT_ADDRESSES  "${NODEPORT_CIDRS}"
+    set_env HEADSCALE_HOST_PORT    "${HEADSCALE_HOST_PORT}"
+    set_env HEADSCALE_METRICS_PORT "${HEADSCALE_METRICS_PORT}"
+    set_env PROXY_PORT             "${PROXY_PORT}"
+    set_env POSTGRES_HOST_PORT     "${POSTGRES_HOST_PORT}"
     # Only written when this run was told which channel to be on. An edge server
     # re-running the installer must not be moved back to stable by a default.
     if [[ -n "${MESHPLOY_CHANNEL:-}" ]]; then
@@ -1046,7 +1163,12 @@ FIREWALL_STATE=${FIREWALL_STATE:-unknown}
 FIREWALL_CHECKED_AT=${FIREWALL_CHECKED_AT}
 # What kube-proxy binds published ports to, written when the drop-in below is.
 # The console reads it to know whether an exposed port really is mesh-only.
-NODEPORT_ADDRESSES=100.64.0.0/10,fd7a:115c:a1e0::/48
+NODEPORT_ADDRESSES=${NODEPORT_CIDRS}
+# The gateway's own loopback ports, chosen at install where a default was taken.
+HEADSCALE_HOST_PORT=${HEADSCALE_HOST_PORT}
+HEADSCALE_METRICS_PORT=${HEADSCALE_METRICS_PORT}
+PROXY_PORT=${PROXY_PORT}
+POSTGRES_HOST_PORT=${POSTGRES_HOST_PORT}
 # Fill in after first start: $COMPOSE_CMD exec headscale headscale apikeys create
 HEADSCALE_API_KEY=
 ENVEOF
@@ -1204,29 +1326,23 @@ for u in json.load(sys.stdin):
   $COMPOSE_CMD up -d --force-recreate api
   success "API restarted"
 
-  # ── Install Tailscale ───────────────────────────────────────────────────────
-  header "Installing Tailscale"
-  if ! command -v tailscale &>/dev/null; then
-    info "Downloading and installing Tailscale…"
-    curl -fsSL https://tailscale.com/install.sh | sh
-    success "Tailscale installed"
-  else
-    success "Tailscale already installed: $(tailscale version | head -1)"
-  fi
+  # ── Install the mesh ────────────────────────────────────────────────────────
+  header "Installing the mesh"
+  mesh_install
 
   # ── Join this machine to the mesh ───────────────────────────────────────────
   # Joining creates the WireGuard interface with the mesh IP (e.g. 100.64.0.1).
   # CoreDNS and Caddy must start AFTER this so they can bind to that IP.
   header "Joining this node to the Headscale mesh"
   # Use localhost directly — Caddy/DNS not running yet (Phase 2 starts after this).
-  # Headscale is already reachable at 127.0.0.1:8085 inside the container network.
-  info "Connecting to http://127.0.0.1:8085 (direct, pre-DNS)…"
-  tailscale up \
-    --login-server="http://127.0.0.1:8085" \
+  # Headscale is already reachable on its loopback port.
+  info "Connecting to http://127.0.0.1:${HEADSCALE_HOST_PORT} (direct, pre-DNS)…"
+  "${MESH_CMD[@]}" up \
+    --login-server="http://127.0.0.1:${HEADSCALE_HOST_PORT}" \
     --authkey="$PREAUTH_KEY" \
     --hostname="gateway" \
     --accept-routes \
-    || warn "tailscale up returned non-zero — it may already be connected, check: tailscale status"
+    || warn "joining the mesh returned non-zero; it may already be joined, check: ${MESH_CMD[*]} status"
   success "This node joined the mesh as 'gateway'"
 
   # ── Keep published ports on the mesh ────────────────────────────────────────
@@ -1237,7 +1353,6 @@ for u in json.load(sys.stdin):
   #
   # Written beside the flannel drop-in and applied by the same restart below.
   NODEPORT_DROPIN="/etc/rancher/k3s/config.yaml.d/20-nodeport-addresses.yaml"
-  NODEPORT_CIDRS="100.64.0.0/10,fd7a:115c:a1e0::/48"
   NODEPORT_CHANGED=0
   if ! grep -qs "nodeport-addresses=${NODEPORT_CIDRS}" "$NODEPORT_DROPIN"; then
     mkdir -p "$(dirname "$NODEPORT_DROPIN")"
@@ -1249,13 +1364,14 @@ NPEOF
   fi
 
   # ── Pin flannel to the mesh interface ───────────────────────────────────────
-  # Deferred from the k3s install above, where tailscale0 could not exist. A
-  # drop-in rather than config.yaml so an operator's own config is left intact.
+  # Deferred from the k3s install above, where the mesh interface could not
+  # exist. A drop-in rather than config.yaml so an operator's own config is
+  # left intact.
   FLANNEL_DROPIN="/etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml"
-  if ! grep -qs "flannel-iface: tailscale0" "$FLANNEL_DROPIN" || [[ "$NODEPORT_CHANGED" -eq 1 ]]; then
+  if ! grep -qs "flannel-iface: ${MESH_IFACE}" "$FLANNEL_DROPIN" || [[ "$NODEPORT_CHANGED" -eq 1 ]]; then
     info "Binding flannel and published ports to the mesh interface…"
     mkdir -p "$(dirname "$FLANNEL_DROPIN")"
-    printf 'flannel-iface: tailscale0\n' > "$FLANNEL_DROPIN"
+    printf 'flannel-iface: %s\n' "$MESH_IFACE" > "$FLANNEL_DROPIN"
     systemctl restart k3s
 
     # Wait for the API server before touching pods; a restart takes a few seconds.
@@ -1275,7 +1391,7 @@ NPEOF
     # only k3s's own system pods exist this early in an install.
     if k3s kubectl get --raw='/readyz' &>/dev/null; then
       k3s kubectl delete pods --all -n kube-system --wait=false &>/dev/null || true
-      success "flannel bound to tailscale0 (mesh MTU); published ports bound to the mesh"
+      success "flannel bound to ${MESH_IFACE} (mesh MTU); published ports bound to the mesh"
     fi
   else
     success "flannel and published ports already bound to the mesh"
@@ -1454,9 +1570,12 @@ NEUNIT
   # answered by that platform - the next steps are the migration's own.
   if [[ "$EDGE_DEFERRED" == "true" ]]; then
     echo -e "    1. Read the migration plan:   ${BOLD}sudo meshploy migrate dokploy plan${RESET}"
-    echo -e "    2. Move a group when ready:   ${BOLD}sudo meshploy migrate dokploy move <group>${RESET}"
+    echo -e "       and confirm it:            ${BOLD}sudo meshploy migrate dokploy plan --confirm${RESET}"
+    echo -e "    2. Register, then press ${BOLD}Prepare${RESET} on the console's Migration page."
+    echo -e "    3. Move a group when ready:   ${BOLD}sudo meshploy migrate dokploy move <group>${RESET}"
     echo -e "       Its domains keep answering through the old edge, served by Meshploy."
-    echo -e "    3. Hand over the ports:       ${BOLD}sudo meshploy migrate dokploy cutover${RESET}"
+    echo -e "    4. Hand over the ports:       ${BOLD}sudo meshploy migrate dokploy cutover${RESET}"
+    echo -e "       or take them before the groups move: ${BOLD}cutover --edge-first${RESET}"
     echo -e "    Anything can be put back:     ${BOLD}sudo meshploy migrate dokploy rollback${RESET}"
   elif [[ "$DNS_MODE" == "ondemand" ]]; then
     echo -e "    1. Add these records at your DNS provider:"
@@ -1464,14 +1583,14 @@ NEUNIT
     echo -e "         ${CYAN}${DOMAIN}${RESET}     A   ${PUBLIC_IP}"
     echo -e "    2. Verify DNS:  dig +short console.${DOMAIN} A     ${YELLOW}# expect ${PUBLIC_IP}${RESET}"
     echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
-    echo -e "    4. Check mesh:  tailscale status"
+    echo -e "    4. Check mesh:  meshploy mesh status"
   else
     echo -e "    1. Delegate ${DOMAIN} at your DNS provider, if you have not yet:"
     echo -e "         ${CYAN}ns1.${DOMAIN}${RESET}   A    ${CYAN}${PUBLIC_IP}${RESET}"
     echo -e "         ${CYAN}${DOMAIN}${RESET}       NS   ${CYAN}ns1.${DOMAIN}${RESET}"
     echo -e "    2. Verify DNS:  dig @${PUBLIC_IP} ${DOMAIN} A"
     echo -e "    3. Check TLS:   curl -I https://api.${DOMAIN}"
-    echo -e "    4. Check mesh:  tailscale status"
+    echo -e "    4. Check mesh:  meshploy mesh status"
   fi
   hr
 
@@ -1642,15 +1761,9 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     fi
   fi
 
-  # ── Install Tailscale ───────────────────────────────────────────────────────
-  header "Installing Tailscale"
-  if ! command -v tailscale &>/dev/null; then
-    info "Downloading and installing Tailscale…"
-    curl -fsSL https://tailscale.com/install.sh | sh
-    success "Tailscale installed"
-  else
-    success "Tailscale already installed: $(tailscale version | head -1)"
-  fi
+  # ── Install the mesh ────────────────────────────────────────────────────────
+  header "Installing the mesh"
+  mesh_install
 
   # ── Derive a hostname from the machine's hostname ───────────────────────────
   NODE_HOSTNAME="$(hostname -s | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
@@ -1683,7 +1796,13 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   # whether to switch. --force-reauth is always passed unconditionally below because
   # tailscale refuses to re-authenticate with an authkey without it, even when the
   # login server hasn't changed.
-  EXISTING_URL="$(tailscale status --json 2>/dev/null | grep -m1 '"LoginServerURL"' | cut -d'"' -f4 || true)"
+  # Only the stock tailscale0 can be on another network already: Meshploy's own
+  # daemon is this mesh's alone, and a Tailscale of the machine's own is left
+  # where it is.
+  EXISTING_URL=""
+  if [[ "$MESH_IFACE" == "tailscale0" ]]; then
+    EXISTING_URL="$(tailscale status --json 2>/dev/null | grep -m1 '"LoginServerURL"' | cut -d'"' -f4 || true)"
+  fi
   if [[ -n "$EXISTING_URL" && "$EXISTING_URL" != "$HEADSCALE_URL" ]]; then
     warn "This node is connected to a different network: ${EXISTING_URL}"
     warn "Switching to ${HEADSCALE_URL} — it will disconnect from the current network."
@@ -1697,24 +1816,24 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   # --force-reauth re-authenticates silently with the authkey (no browser).
   # --reset clears any pre-existing non-default settings (e.g. exit-node,
   # shields-up) that would cause tailscale to reject the up command.
-  sudo tailscale up \
+  sudo "${MESH_CMD[@]}" up \
     --login-server="$HEADSCALE_URL" \
     --authkey="$PREAUTH_KEY" \
     --hostname="$NODE_HOSTNAME" \
     --accept-routes \
     --force-reauth \
     --reset \
-    || die "tailscale up failed — check: sudo tailscale status"
+    || die "Joining the mesh failed. Check: sudo ${MESH_CMD[*]} status"
 
   # Wait up to 15 s for the WireGuard IP to be assigned.
   MESH_IP_ASSIGNED=""
   for _i in $(seq 1 15); do
-    MESH_IP_ASSIGNED="$(tailscale ip -4 2>/dev/null || true)"
+    MESH_IP_ASSIGNED="$(mesh_ip)"
     [[ -n "$MESH_IP_ASSIGNED" ]] && break
     sleep 1
   done
   if [[ -z "$MESH_IP_ASSIGNED" ]]; then
-    die "No mesh IP assigned after 15 s. Check: sudo tailscale status"
+    die "No mesh IP assigned after 15 s. Check: sudo ${MESH_CMD[*]} status"
   fi
   success "Joined mesh as '${NODE_HOSTNAME}' — mesh IP: ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
 
@@ -1768,7 +1887,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   if [[ $_API_READY -eq 0 ]]; then
     warn "Cannot reach ${MESHPLOY_API_URL} after 60 s."
     warn "Diagnostics:"
-    warn "  tailscale status:  $(tailscale status --json 2>/dev/null | python3 -c "import sys,json; s=json.load(sys.stdin); print('connected' if s.get('BackendState')=='Running' else s.get('BackendState','unknown'))" 2>/dev/null || echo 'unknown')"
+    warn "  mesh status:       $("${MESH_CMD[@]}" status --json 2>/dev/null | python3 -c "import sys,json; s=json.load(sys.stdin); print('connected' if s.get('BackendState')=='Running' else s.get('BackendState','unknown'))" 2>/dev/null || echo 'unknown')"
     warn "  ping gateway:      $(ping -c1 -W2 100.64.0.1 &>/dev/null && echo 'ok' || echo 'FAILED')"
     warn "Auto-registration skipped. Register this node manually from the dashboard."
   else
@@ -1834,7 +1953,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       warn "Diagnostics:"
       warn "  ping gateway: $(ping -c1 -W2 "$_K3S_HOST" &>/dev/null && echo 'ok' || echo 'FAILED')"
       warn "  If ping fails, the WireGuard route to the master is not yet active."
-      warn "  Try: sudo tailscale status   and   sudo tailscale ping ${_K3S_HOST}"
+      warn "  Try: sudo ${MESH_CMD[*]} status   and   sudo ${MESH_CMD[*]} ping ${_K3S_HOST}"
       if ! ask_yn "Proceed anyway?"; then
         info "Skipped. Re-run the script or join manually later."
       else
@@ -1858,8 +1977,8 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
           K3S_NODE_NAME="$NODE_HOSTNAME" \
           sh -s - agent \
             --node-ip="${MESH_IP_ASSIGNED}" \
-            --flannel-iface=tailscale0 \
-            --kube-proxy-arg=nodeport-addresses=100.64.0.0/10,fd7a:115c:a1e0::/48; then
+            --flannel-iface="$MESH_IFACE" \
+            --kube-proxy-arg=nodeport-addresses="$NODEPORT_CIDRS"; then
         error "k3s agent install failed."
         warn "Last log lines:"
         journalctl -u k3s-agent --no-pager -n 20 2>/dev/null || true
@@ -1948,7 +2067,7 @@ NEUNIT
   echo -e "  ${BOLD}Mesh IP${RESET}    ${CYAN}${MESH_IP_ASSIGNED}${RESET}"
   echo
   echo -e "  ${BOLD}Next steps${RESET}"
-  echo -e "    1. Check connectivity from master:  tailscale ping ${NODE_HOSTNAME}"
+  echo -e "    1. Check connectivity from master:  meshploy mesh ping ${NODE_HOSTNAME}"
   echo -e "    2. View node in dashboard:          ${CYAN}Nodes → ${NODE_HOSTNAME}${RESET}"
   if [[ "$NODE_MESH_ROLE" == "mesh" ]]; then
     echo -e "    3. Route to a port on it:           ${CYAN}Project → Routes → New route → Node + port${RESET}"

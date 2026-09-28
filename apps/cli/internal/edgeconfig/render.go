@@ -63,6 +63,9 @@ type caddyData struct {
 	Domains      []hostagent.EdgeDomain
 	Primary      hostagent.EdgeDomain
 	MeshDomain   string
+	// The gateway's loopback ports Caddy forwards to.
+	ProxyPort     int
+	HeadscalePort int
 }
 
 // HeadscaleConfig is the one generated file that is not reloaded in place:
@@ -103,6 +106,7 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 	data := caddyData{
 		SnapshotPath: SnapshotPath, PublicIP: snap.PublicIP, MeshIP: snap.MeshIP,
 		Domains: domains, Primary: *snap.Primary(), MeshDomain: snap.MeshDomainOrDefault(),
+		ProxyPort: snap.ProxyPortOrDefault(), HeadscalePort: snap.HeadscalePortOrDefault(),
 	}
 	caddyfile, err := execute(tmpl, "Caddyfile.tmpl", data)
 	if err != nil {

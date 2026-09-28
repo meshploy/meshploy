@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +61,16 @@ when there is one domain and no database to have recorded a second.`,
 	},
 }
 
+// envPort reads a port from the install's .env; 0 when absent or not a number,
+// which leaves the default.
+func envPort(key string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(readEnvVar(key)))
+	if err != nil || n < 1 || n > 65535 {
+		return 0
+	}
+	return n
+}
+
 // Seams replaced by tests.
 var (
 	validateCaddyfile = validateCaddyfileWithCaddy
@@ -85,6 +96,13 @@ func applyEdgeSnapshot(out io.Writer, snap hostagent.EdgeSnapshot, dryRun, reloa
 // applyEdgeSnapshotChanges is applyEdgeSnapshot, also returning what it wrote,
 // for a caller that restarts the services itself and needs to know which.
 func applyEdgeSnapshotChanges(out io.Writer, snap hostagent.EdgeSnapshot, dryRun, reload bool) ([]edgeconfig.Change, error) {
+	// The loopback ports are this host's, recorded by install.sh in .env.
+	if snap.ProxyPort == 0 {
+		snap.ProxyPort = envPort("PROXY_PORT")
+	}
+	if snap.HeadscalePort == 0 {
+		snap.HeadscalePort = envPort("HEADSCALE_HOST_PORT")
+	}
 	files, err := edgeconfig.Render(snap)
 	if err != nil {
 		return nil, err
