@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Server, PlayCircle, CheckCircle2, XCircle, Trash2, Globe, HardDrive, FileCog } from "lucide-react"
+import { Loader2, Server, Globe, HardDrive, FileCog } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -9,14 +9,7 @@ import {
   volumes as volumesApi,
   configFiles as configFilesApi,
   type ApiService,
-  type ApplyStackResult,
-  type DestroyStackResult,
 } from "@/lib/api"
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog"
-import { useState } from "react"
-import { Switch } from "@/components/ui/switch"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -40,9 +33,7 @@ function StackServicesTab() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
-  const stackQueryKey = ["stack", orgId, projectId, stackId]
   const servicesQueryKey = ["stack-services", orgId, projectId, stackId]
 
   const { data: serviceList = [], isLoading } = useQuery({
@@ -50,41 +41,6 @@ function StackServicesTab() {
     queryFn: () => stacksApi.listServices(orgId!, projectId, stackId, token),
     enabled: !!orgId,
     refetchInterval: livePoll<ApiService[]>((d) => d.some((s) => s.status === "deploying")),
-  })
-
-  const applyMutation = useMutation({
-    mutationFn: () => stacksApi.apply(orgId!, projectId, stackId, token),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKey })
-      queryClient.invalidateQueries({ queryKey: servicesQueryKey })
-    },
-  })
-
-  const [confirmDestroy, setConfirmDestroy] = useState(false)
-  // Both default off on every open: the extra destruction is opt-in each time,
-  // never remembered from a previous run.
-  const [deleteVolumes, setDeleteVolumes] = useState(false)
-  const [deleteRoutes, setDeleteRoutes] = useState(false)
-
-  const openDestroy = () => {
-    setDeleteVolumes(false)
-    setDeleteRoutes(false)
-    setConfirmDestroy(true)
-  }
-
-  const destroyMutation = useMutation({
-    mutationFn: () =>
-      stacksApi.destroy(orgId!, projectId, stackId, token, {
-        delete_volumes: deleteVolumes,
-        delete_routes: deleteRoutes,
-      }),
-    onSuccess: () => {
-      setConfirmDestroy(false)
-      queryClient.invalidateQueries({ queryKey: stackQueryKey })
-      queryClient.invalidateQueries({ queryKey: servicesQueryKey })
-      queryClient.invalidateQueries({ queryKey: ["volumes", orgId, projectId] })
-      queryClient.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
-    },
   })
 
   // Routes and volumes are project-scoped in the API and carry stack_id, so the
@@ -111,8 +67,6 @@ function StackServicesTab() {
   })
   const stackConfigs = (cfgData?.files ?? []).filter((f) => f.stack_id === stackId)
 
-  const applyResult = applyMutation.data as ApplyStackResult | undefined
-  const destroyResult = destroyMutation.data as DestroyStackResult | undefined
 
   return (
     <div className="console-page p-6 space-y-4">
@@ -124,158 +78,7 @@ function StackServicesTab() {
             <span className="text-xs text-muted-foreground">{serviceList.length}</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={() => applyMutation.mutate()}
-          disabled={applyMutation.isPending}
-        >
-          {applyMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <PlayCircle className="h-3.5 w-3.5" />
-          )}
-          Apply
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 text-destructive hover:text-destructive"
-          onClick={openDestroy}
-          // Not disabled when the service list is empty: a stack whose services
-          // are already gone may still own volumes or routes, and that is
-          // exactly when someone comes back to clean them up.
-          disabled={destroyMutation.isPending}
-        >
-          {destroyMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Trash2 className="h-3.5 w-3.5" />
-          )}
-          Destroy
-        </Button>
-        </div>
       </div>
-
-      {destroyResult && (
-        <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
-          <p className="text-xs font-medium text-foreground">Destroy complete</p>
-          {(destroyResult.destroyed ?? []).length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CheckCircle2 className="h-3 w-3" />
-              Destroyed: {(destroyResult.destroyed ?? []).join(", ")}
-            </div>
-          )}
-          {(destroyResult.volumes ?? []).length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CheckCircle2 className="h-3 w-3" />
-              Volumes deleted: {(destroyResult.volumes ?? []).join(", ")}
-            </div>
-          )}
-          {(destroyResult.routes ?? []).length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CheckCircle2 className="h-3 w-3" />
-              Routes deleted: {(destroyResult.routes ?? []).join(", ")}
-            </div>
-          )}
-          {(destroyResult.errors ?? []).map((e) => (
-            <div key={e} className="flex items-center gap-1.5 text-xs text-destructive">
-              <XCircle className="h-3 w-3 shrink-0" />
-              {e}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <Dialog open={confirmDestroy} onOpenChange={setConfirmDestroy}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Destroy this stack?</DialogTitle>
-            <DialogDescription>
-              {serviceList.length > 0
-                ? `The ${serviceList.length} service${serviceList.length === 1 ? "" : "s"} this stack created ${serviceList.length === 1 ? "is" : "are"} removed from the cluster and from meshploy. The stack and its spec stay, so Apply recreates them.`
-                : "This stack has no services left to remove. The stack and its spec stay, so Apply recreates them."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 py-1">
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 p-3">
-              <div className="space-y-0.5">
-                <p className="text-xs font-medium text-foreground">Also delete volumes</p>
-                <p className="text-[11px] text-muted-foreground/70">
-                  Deletes the volumes this stack created and everything stored in them. This cannot
-                  be undone — applying again gives you empty volumes.
-                </p>
-              </div>
-              <Switch checked={deleteVolumes} onCheckedChange={(v) => setDeleteVolumes(Boolean(v))} />
-            </div>
-
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 p-3">
-              <div className="space-y-0.5">
-                <p className="text-xs font-medium text-foreground">Also delete routes</p>
-                <p className="text-[11px] text-muted-foreground/70">
-                  Frees the hostnames this stack published. Anyone using them stops being able to
-                  reach it, and applying again may not produce the same hostname.
-                </p>
-              </div>
-              <Switch checked={deleteRoutes} onCheckedChange={(v) => setDeleteRoutes(Boolean(v))} />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setConfirmDestroy(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => destroyMutation.mutate()}
-              disabled={destroyMutation.isPending}
-            >
-              {destroyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Destroy
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Apply result summary */}
-      {applyResult && (
-        <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
-          <p className="text-xs font-medium text-foreground">Apply complete</p>
-          <div className="flex flex-wrap gap-3">
-            {(applyResult.created ?? []).length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <CheckCircle2 className="h-3 w-3" />
-                Created: {(applyResult.created ?? []).join(", ")}
-              </div>
-            )}
-            {(applyResult.updated ?? []).length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-blue-400">
-                <CheckCircle2 className="h-3 w-3" />
-                Updated: {(applyResult.updated ?? []).join(", ")}
-              </div>
-            )}
-            {(applyResult.deleted ?? []).length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                Unlinked: {(applyResult.deleted ?? []).join(", ")}
-              </div>
-            )}
-            {(applyResult.errors ?? []).length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-destructive">
-                <XCircle className="h-3 w-3" />
-                Errors: {(applyResult.errors ?? []).join("; ")}
-              </div>
-            )}
-            {(applyResult.created ?? []).length === 0 && (applyResult.updated ?? []).length === 0 && (applyResult.errors ?? []).length === 0 && (
-              <p className="text-xs text-muted-foreground">No changes</p>
-            )}
-          </div>
-        </div>
-      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
@@ -287,19 +90,9 @@ function StackServicesTab() {
           <div className="text-center">
             <p className="text-sm text-muted-foreground">No services yet</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              Define services in the Editor tab and click Apply
+              Define services in the Editor tab, then Apply at the top of the page
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 mt-1"
-            onClick={() => applyMutation.mutate()}
-            disabled={applyMutation.isPending}
-          >
-            <PlayCircle className="h-3.5 w-3.5" />
-            Apply spec
-          </Button>
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">

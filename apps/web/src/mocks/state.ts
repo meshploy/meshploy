@@ -122,7 +122,21 @@ export const db: Record<string, DemoRecord[]> = {
   ],
   jobs: [seed.demoJob],
   volumes: [{ ...seed.demoVolume, stack_id: null }],
-  stacks: [seed.demoStack],
+  stacks: [
+    seed.demoStack,
+    // A stack whose file lives in git, as a migrated monorepo's does: carried
+    // across with its file and not synced here yet.
+    {
+      ...seed.demoStack,
+      id: "00000000-0000-0000-0000-0000000000c2",
+      name: "monorepo",
+      git_mode: "repo" as const,
+      git_repo: "acme/power-insight",
+      git_branch: "main",
+      git_path: "./docker-compose.yml",
+      spec: "services:\n  ui:\n    build: ./ui\n",
+    },
+  ],
   routes: [
     // web's address in production and its derived one in staging, so the
     // board's cards have something to open.

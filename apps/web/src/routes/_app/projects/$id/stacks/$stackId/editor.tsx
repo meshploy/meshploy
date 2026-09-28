@@ -1,13 +1,15 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect } from "react"
-import { AlertTriangle, GitBranch, Loader2, PlayCircle, RefreshCw, Save } from "lucide-react"
+import { GitBranch, Loader2, Pencil, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { stacks as stacksApi } from "@/lib/api"
+import { gitIntegrations, stacks as stacksApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { StackEditor } from "@/components/stacks/stack-editor"
-import { invalidateProjectViews } from "@/lib/project-views"
+import { StackSourceDialog } from "@/components/stacks/stack-source-dialog"
+import { Link } from "@tanstack/react-router"
+import { ResourceFact, ResourceIntro, ResourcePanel } from "@/components/layout/resource-workbench"
 import { formatRelativeTime } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId/editor")({
@@ -21,7 +23,6 @@ function StackEditorTab() {
   const queryClient = useQueryClient()
 
   const stackQueryKey = ["stack", orgId, projectId, stackId]
-  const servicesQueryKey = ["stack-services", orgId, projectId, stackId]
 
   const { data: stack, isLoading } = useQuery({
     queryKey: stackQueryKey,
@@ -31,9 +32,15 @@ function StackEditorTab() {
 
   const [spec, setSpec] = useState("")
   const [dirty, setDirty] = useState(false)
-  const [syncWarning, setSyncWarning] = useState<{ message: string; suggestedMode: string } | null>(null)
 
   const isGitSourced = !!stack?.git_mode
+  const [editingSource, setEditingSource] = useState(false)
+  const { data: integrations = [] } = useQuery({
+    queryKey: ["git-integrations", orgId],
+    queryFn: () => gitIntegrations.list(orgId!, token),
+    enabled: !!orgId && isGitSourced,
+  })
+  const access = integrations.find((i) => i.id === stack?.git_integration_id)
 
   useEffect(() => {
     if (stack && !dirty) {
@@ -49,45 +56,6 @@ function StackEditorTab() {
     },
   })
 
-  const applyMutation = useMutation({
-    mutationFn: async () => {
-      if (dirty) {
-        await stacksApi.update(orgId!, projectId, stackId, { spec }, token)
-      }
-      return stacksApi.apply(orgId!, projectId, stackId, token)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKey })
-      queryClient.invalidateQueries({ queryKey: servicesQueryKey })
-      invalidateProjectViews(queryClient, orgId, projectId)
-      setDirty(false)
-    },
-  })
-
-  const syncMutation = useMutation({
-    mutationFn: () => stacksApi.sync(orgId!, projectId, stackId, token),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKey })
-      queryClient.invalidateQueries({ queryKey: servicesQueryKey })
-      invalidateProjectViews(queryClient, orgId, projectId)
-      setDirty(false)
-      if (result.warning && result.suggested_mode && result.suggested_mode !== stack?.git_mode) {
-        setSyncWarning({ message: result.warning, suggestedMode: result.suggested_mode })
-      } else {
-        setSyncWarning(null)
-      }
-    },
-  })
-
-  const switchModeMutation = useMutation({
-    mutationFn: (mode: string) =>
-      stacksApi.update(orgId!, projectId, stackId, { git_mode: mode as "file" | "repo" }, token),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(stackQueryKey, updated)
-      setSyncWarning(null)
-    },
-  })
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -97,124 +65,76 @@ function StackEditorTab() {
   }
 
   const repoShort = stack?.git_repo?.replace(/^https?:\/\//, "").replace(/\.git$/, "")
+  const failure = saveMutation.error as Error | null
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Git source banner */}
-      {isGitSourced && stack && (
-        <div className="flex items-center justify-between px-6 py-2.5 border-b border-border/60 bg-muted/30 shrink-0">
-          <div className="flex items-center gap-3 text-xs text-muted-foreground min-w-0">
-            <GitBranch className="h-3.5 w-3.5 shrink-0 text-primary/70" />
-            <span className="truncate font-mono">{repoShort}</span>
-            <span className="text-border">·</span>
-            <span>{stack.git_branch}</span>
-            <span className="text-border">·</span>
-            <span>
-              {stack.git_last_synced_at
-                ? `synced ${formatRelativeTime(new Date(stack.git_last_synced_at))}`
-                : "never synced"}
-            </span>
-            {stack.git_last_sync_sha && (
-              <>
-                <span className="text-border">·</span>
-                <span className="font-mono">{stack.git_last_sync_sha.slice(0, 7)}</span>
-              </>
-            )}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 h-7 text-xs shrink-0"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-          >
-            {syncMutation.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3 w-3" />
-            )}
-            Sync
+    <div className="console-page space-y-6">
+      <ResourceIntro
+        title="Compose file"
+        description={isGitSourced
+          ? "Read from git. Sync, at the top, fetches the file from its branch and applies it: services with an image pull it, services with a build: section build from their context in the same repository."
+          : "The stack's Compose file. Save keeps your edits; Apply, at the top, makes the cluster match the saved file."}
+        action={!isGitSourced && (
+          <Button size="sm" className="gap-1.5" onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !dirty}>
+            {saveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save
           </Button>
-        </div>
-      )}
-
-      {/* Mode mismatch warning */}
-      {syncWarning && (
-        <div className="flex items-start gap-3 px-6 py-2.5 border-b border-amber-500/20 bg-amber-500/5 shrink-0">
-          <AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs text-amber-300/90">{syncWarning.message}</p>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 text-xs shrink-0 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
-            onClick={() => switchModeMutation.mutate(syncWarning.suggestedMode)}
-            disabled={switchModeMutation.isPending}
-          >
-            {switchModeMutation.isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-            Switch to {syncWarning.suggestedMode === "repo" ? "whole repo" : "file only"}
-          </Button>
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-border/60 shrink-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium">Compose Spec</p>
-          {isGitSourced && (
-            <span className="text-[11px] text-muted-foreground/60 bg-muted/40 px-1.5 py-0.5 rounded">
-              read-only
-            </span>
-          )}
-          {!isGitSourced && dirty && (
-            <span className="text-[11px] text-amber-400/80 font-mono">unsaved changes</span>
-          )}
-        </div>
-        {!isGitSourced && (
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || !dirty}
-            >
-              {saveMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              Save
-            </Button>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => applyMutation.mutate()}
-              disabled={applyMutation.isPending}
-            >
-              {applyMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <PlayCircle className="h-3.5 w-3.5" />
-              )}
-              {dirty ? "Save & Apply" : "Apply"}
-            </Button>
-          </div>
         )}
-      </div>
+      />
 
-      {/* Error banner */}
-      {(saveMutation.isError || applyMutation.isError || syncMutation.isError) && (
-        <div className="px-6 py-2 bg-destructive/10 border-b border-destructive/20 shrink-0">
-          <p className="text-xs text-destructive">
-            {((saveMutation.error || applyMutation.error || syncMutation.error) as Error)?.message ?? "Operation failed"}
-          </p>
+      {isGitSourced && stack && (
+        <ResourcePanel title="Source" description="Where the file and everything it builds from come from."
+          action={<Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditingSource(true)}>
+            <Pencil className="h-3.5 w-3.5" />Edit
+          </Button>}>
+          <ResourceFact label="Git access">
+            {access
+              ? <span>{access.name} <span className="text-muted-foreground">({access.provider}{access.connected ? "" : ", not authorized yet"})</span></span>
+              : <span className="text-amber-400/90">
+                  None: Sync and builds cannot read this repository.{" "}
+                  {integrations.length === 0
+                    ? <Link to="/integrations/new" search={{ category: "git" }} className="text-primary hover:underline">Connect one</Link>
+                    : <button type="button" onClick={() => setEditingSource(true)} className="text-primary hover:underline">Choose one</button>}
+                </span>}
+          </ResourceFact>
+          <ResourceFact label="Repository">
+            <span className="inline-flex items-center gap-1.5 font-mono">
+              <GitBranch className="h-3.5 w-3.5 text-primary/70 shrink-0" />{repoShort}
+            </span>
+          </ResourceFact>
+          <ResourceFact label="Branch"><span className="font-mono">{stack.git_branch || "default"}</span></ResourceFact>
+          <ResourceFact label="Compose file"><span className="font-mono">{stack.git_path || "docker-compose.yml"}</span></ResourceFact>
+          <ResourceFact label="Reads">
+            {stack.git_mode === "repo"
+              ? "The whole repository: files the compose file mounts come from it too"
+              : "The compose file alone"}
+          </ResourceFact>
+          <ResourceFact label="Last sync">
+            {stack.git_last_synced_at
+              ? <>{formatRelativeTime(new Date(stack.git_last_synced_at))}
+                  {stack.git_last_sync_sha && <span className="font-mono text-muted-foreground"> · {stack.git_last_sync_sha.slice(0, 7)}</span>}</>
+              : <span className="text-muted-foreground">Not synced yet: the file below is the one stored with the stack</span>}
+          </ResourceFact>
+        </ResourcePanel>
+      )}
+
+      {failure && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          {failure.message ?? "Operation failed"}
         </div>
       )}
 
-      {/* Editor */}
-      <div className="flex-1 overflow-auto p-4">
+      {isGitSourced && stack && orgId && (
+        <StackSourceDialog open={editingSource} onOpenChange={setEditingSource} stack={stack}
+          orgId={orgId} projectId={projectId} token={token} />
+      )}
+
+      <ResourcePanel
+        title="Spec"
+        description={isGitSourced ? "Read-only here: change it in the repository, then Sync." : undefined}
+        action={!isGitSourced && dirty ? <span className="text-[11px] text-amber-400/80 font-mono">unsaved changes</span> : undefined}
+      >
         <StackEditor
           value={spec}
           projectId={projectId}
@@ -222,46 +142,10 @@ function StackEditorTab() {
             setSpec(value)
             setDirty(value !== (stack?.spec ?? ""))
           }}
-          minHeight="calc(100vh - 200px)"
+          minHeight="calc(100vh - 360px)"
           readOnly={isGitSourced}
         />
-      </div>
-
-      {/* Apply/sync result */}
-      {(applyMutation.isSuccess || syncMutation.isSuccess) && (
-        <div className="px-6 py-3 border-t border-border/60 bg-muted/20 shrink-0">
-          {(() => {
-            const data = applyMutation.data ?? syncMutation.data
-            if (!data) return null
-            // Tolerate a missing list rather than blanking the page: one absent
-            // field should not cost the user the outcome of their apply.
-            const created = data.created ?? []
-            const updated = data.updated ?? []
-            const deployed = data.deployed ?? []
-            const deleted = data.deleted ?? []
-            const errors = data.errors ?? []
-            const warnings = data.warnings ?? []
-            return (
-              <p className="text-xs text-muted-foreground">
-                {syncMutation.isSuccess ? "Sync" : "Apply"} complete —
-                {created.length > 0 && ` created: ${created.join(", ")}`}
-                {updated.length > 0 && ` updated: ${updated.join(", ")}`}
-                {deployed.length > 0 && ` rolled out: ${deployed.join(", ")}`}
-                {deleted.length > 0 && ` unlinked: ${deleted.join(", ")}`}
-                {errors.length > 0 && (
-                  <span className="text-destructive"> errors: {errors.join("; ")}</span>
-                )}
-                {warnings.length > 0 && (
-                  <span className="text-amber-500"> warnings: {warnings.join("; ")}</span>
-                )}
-                {created.length === 0 &&
-                  updated.length === 0 &&
-                  errors.length === 0 && " no changes"}
-              </p>
-            )
-          })()}
-        </div>
-      )}
+      </ResourcePanel>
     </div>
   )
 }

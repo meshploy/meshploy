@@ -8,6 +8,7 @@ import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
 import { useIsAdmin } from "@/store/org-store"
 import { livePoll } from "@/lib/live-poll"
+import { useStackActions } from "@/components/stacks/stack-actions"
 
 export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId")({
   component: StackLayout,
@@ -33,6 +34,8 @@ function StackLayout() {
     refetchInterval: livePoll<ApiStack>((d) => d.status === "applying"),
   })
 
+  const actions = useStackActions({ stack, orgId, projectId, token })
+
   const tabs = [
     { label: "Overview", to: "/projects/$id/stacks/$stackId" as const },
     { label: "Services",     to: "/projects/$id/stacks/$stackId/services"     as const },
@@ -54,6 +57,8 @@ function StackLayout() {
             {stack.status}
           </Badge>
         )}
+        actions={actions.buttons}
+        highlight={actions.panel}
       >
         {tabs.map(({ label, to }) => (
           <Link
@@ -67,6 +72,7 @@ function StackLayout() {
         ))}
       </DetailPageHeader>
 
+      {actions.dialog}
       <div className="flex-1">
         <Outlet />
       </div>
