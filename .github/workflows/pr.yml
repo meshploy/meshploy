@@ -186,6 +186,41 @@ jobs:
       - name: test
         run: cd packages/server && go test ./... -v -timeout 300s
 
+  # ── Builder smoke test ────────────────────────────────────────────────────────
+  # Builds the builder image and builds something real with each builder, as
+  # main does before pushing it. Only when the builder changed: it pulls base
+  # images and takes a few minutes.
+  smoke-builder:
+    name: Builder smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            builder:
+              - "apps/builder/**"
+
+      - name: Set up Docker Buildx
+        if: steps.filter.outputs.builder == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        if: steps.filter.outputs.builder == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/builder/Dockerfile
+          load: true
+          tags: meshploy-builder:smoke
+          cache-from: type=gha
+
+      - name: Smoke test
+        if: steps.filter.outputs.builder == 'true'
+        run: apps/builder/smoke/run.sh meshploy-builder:smoke
+
   # ── Web typecheck ─────────────────────────────────────────────────────────────
   typecheck-web:
     name: Web typecheck

@@ -1,6 +1,6 @@
 # Meshploy Builder Image
 # Runs as the build container inside K8s Jobs.
-# Contains: git, nixpacks, railpack, buildah, buildkitd, buildctl.
+# Contains: git, railpack, buildah, buildkitd, buildctl.
 # Runs as root — build jobs are ephemeral and mesh-internal.
 #
 # Build: docker build -t ghcr.io/meshploy/builder:latest -f apps/builder/Dockerfile .
@@ -20,6 +20,8 @@ RUN apk add --no-cache \
     git \
     tar \
     buildah \
+    netavark \
+    aardvark-dns \
     fuse-overlayfs \
     buildkit \
     mise \
@@ -27,6 +29,22 @@ RUN apk add --no-cache \
     libc6-compat && \
     mkdir -p /lib64 && \
     ln -sf /lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+
+# ── Buildah isolation ─────────────────────────────────────────────────────────
+# chroot: build steps run in the build pod's own namespaces, which is already
+# the isolation - the setting Buildah's own image ships with. Buildah still
+# looks for its network backend, netavark (installed above with its DNS,
+# aardvark-dns), whatever the isolation: without it every Dockerfile build
+# failed at its first step ("could not find netavark").
+ENV BUILDAH_ISOLATION=chroot
+
+# ── Short image names ─────────────────────────────────────────────────────────
+# A Dockerfile's FROM golang:1.24-alpine means Docker Hub, as Docker reads it.
+# Buildah has no registry for a short name unless told, and refused every
+# such FROM ("short-name did not resolve to an alias"), which is most of them.
+RUN mkdir -p /etc/containers && \
+    printf 'unqualified-search-registries = ["docker.io"]\nshort-name-mode = "permissive"\n' \
+    > /etc/containers/registries.conf
 
 # ── Buildah root config ────────────────────────────────────────────────────────
 # Running as root: use native overlay. Storage path matches the PVC mount point
@@ -44,10 +62,6 @@ RUN BUILDKIT_VERSION="$(buildkitd --version | awk '{print $3}' | sed 's/^v//')" 
       "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" \
     | tar -xz -C /usr/local/bin --strip-components=1 bin/buildctl && \
     buildctl --version
-
-# ── Nixpacks ───────────────────────────────────────────────────────────────────
-RUN curl -fsSL https://nixpacks.com/install.sh | bash && \
-    nixpacks --version
 
 # ── Railpack ──────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://raw.githubusercontent.com/railwayapp/railpack/main/install.sh | bash && \
@@ -70,7 +84,7 @@ COPY apps/builder/meshploy-build /usr/local/bin/meshploy-build
 RUN chmod +x /usr/local/bin/meshploy-build
 
 # ── Licences ──────────────────────────────────────────────────────────────────
-# What this image bundles is Alpine packages and four downloaded tools, so its
+# What this image bundles is Alpine packages and three downloaded tools, so its
 # notices are read from the image itself rather than generated from a build
 # graph the way the API's are.
 COPY LICENSE NOTICE /usr/share/meshploy/

@@ -8,8 +8,8 @@
 #   GIT_BRANCH     branch to build
 #   GIT_USER       user presented with GIT_TOKEN (x-access-token, oauth2)
 #   GIT_TOKEN      access token; empty for a public repository
-#   BUILDER        nixpacks | railpack | dockerfile
-#   INSTALL_COMMAND, BUILD_COMMAND   optional: replace the builder's own (Nixpacks, Railpack)
+#   BUILDER        railpack | dockerfile
+#   INSTALL_COMMAND, BUILD_COMMAND   optional: replace Railpack's own
 #   IMAGE_DEST     registry/image:tag to push to
 #   REGISTRY_HOST  registry hostname (for buildah login)
 #   REGISTRY_USER  registry username
@@ -25,14 +25,16 @@ die() { echo -e "\033[1;31m[meshploy-build] ERROR:\033[0m $*" >&2; exit 1; }
 [[ -z "${IMAGE_DEST:-}"  ]] && die "IMAGE_DEST is not set"
 [[ -z "${REGISTRY_HOST:-}" ]] && die "REGISTRY_HOST is not set"
 
-BUILDER="${BUILDER:-nixpacks}"
+BUILDER="${BUILDER:-railpack}"
+# Nixpacks was retired for Railpack, its successor, which reads the same
+# projects. An API from before then still sends it for a service saved with it.
+[[ "${BUILDER}" == "nixpacks" ]] && BUILDER=railpack
 # Overridable so the clone can be exercised outside a build pod.
 WORKDIR="${MESHPLOY_BUILD_WORKDIR:-/tmp/workspace}"
 
 # ── Parse build-time env vars ─────────────────────────────────────────────────
 # BUILD_ENV_VARS is a newline-separated list of KEY=VALUE pairs.
 # Build arrays of flags for each builder from the non-empty, non-comment lines.
-NIXPACKS_ENV_FLAGS=()
 RAILPACK_ENV_FLAGS=()
 RAILPACK_SECRET_FLAGS=()
 DOCKERFILE_BUILD_ARG_FLAGS=()
@@ -53,7 +55,6 @@ if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
                 value="${value:1:${#value}-2}"
             fi
         fi
-        NIXPACKS_ENV_FLAGS+=(--env "${key}=${value}")
         RAILPACK_ENV_FLAGS+=(--env "${key}=${value}")
         DOCKERFILE_BUILD_ARG_FLAGS+=(--build-arg "${key}=${value}")
         # Railpack embeds build env vars as BuildKit secrets in the plan.
@@ -65,17 +66,13 @@ fi
 
 # ── Install and build commands ────────────────────────────────────────────────
 # Set in the console to replace what the builder works out for itself; empty
-# leaves it to the builder. Nixpacks takes both as flags; Railpack takes the
-# build command as a flag and the install command as its RAILPACK_INSTALL_CMD
-# variable. A Dockerfile build ignores both: its steps are in the Dockerfile.
-NIXPACKS_CMD_FLAGS=()
+# leaves it to the builder. Railpack takes the build command as a flag and the
+# install command as its RAILPACK_INSTALL_CMD variable. A Dockerfile build ignores both: its steps are in the Dockerfile.
 RAILPACK_CMD_FLAGS=()
 if [[ -n "${INSTALL_COMMAND:-}" ]]; then
-    NIXPACKS_CMD_FLAGS+=(--install-cmd "${INSTALL_COMMAND}")
     RAILPACK_CMD_FLAGS+=(--env "RAILPACK_INSTALL_CMD=${INSTALL_COMMAND}")
 fi
 if [[ -n "${BUILD_COMMAND:-}" ]]; then
-    NIXPACKS_CMD_FLAGS+=(--build-cmd "${BUILD_COMMAND}")
     RAILPACK_CMD_FLAGS+=(--build-cmd "${BUILD_COMMAND}")
 fi
 
@@ -188,6 +185,14 @@ detect_stack || true
 # are plain HTTP — add them to registries.conf so buildah doesn't upgrade to TLS.
 # This covers both `buildah push` and `buildah build --cache-from`.
 mkdir -p "${HOME}/.config/containers"
+# This file is read instead of the system's, so it says what the system's
+# does too: a short name (FROM golang:1.24-alpine) means Docker Hub, as Docker
+# reads it. Top-level keys go before any [[registry]] table.
+if ! grep -q '^unqualified-search-registries' "${HOME}/.config/containers/registries.conf" 2>/dev/null; then
+    printf 'unqualified-search-registries = ["docker.io"]\nshort-name-mode = "permissive"\n' \
+        | cat - "${HOME}/.config/containers/registries.conf" 2>/dev/null > /tmp/registries.conf || true
+    mv /tmp/registries.conf "${HOME}/.config/containers/registries.conf"
+fi
 cat >> "${HOME}/.config/containers/registries.conf" <<EOF
 
 [[registry]]
@@ -229,26 +234,6 @@ fi
 unset _IMAGE_FINAL
 
 case "${BUILDER}" in
-  nixpacks)
-    log "Building with Nixpacks → ${IMAGE_DEST}"
-    # --out writes only the generated .nixpacks/ plan files (Dockerfile + .nix
-    # files). It does NOT copy the app source. We copy .nixpacks/ back into the
-    # workspace so the build context contains both the source and the plan files.
-    nixpacks build . --out /tmp/nixpacks-out "${NIXPACKS_ENV_FLAGS[@]+"${NIXPACKS_ENV_FLAGS[@]}"}" \
-        "${NIXPACKS_CMD_FLAGS[@]+"${NIXPACKS_CMD_FLAGS[@]}"}"
-    cp -r /tmp/nixpacks-out/.nixpacks "${WORKDIR}/.nixpacks"
-    # --layers enables intermediate layer caching in the PVC-backed OCI storage.
-    # --cache-from uses the last successfully pushed image as the cache source.
-    # This means stale intermediate layers from failed builds are never reused —
-    # only layers from a real successful push are considered.
-    buildah build \
-        --layers \
-        --cache-from "${CACHE_FROM_REPO}" \
-        --file "${WORKDIR}/.nixpacks/Dockerfile" \
-        --tag "${IMAGE_DEST}" \
-        "${WORKDIR}"
-    ;;
-
   railpack)
     log "Building with Railpack → ${IMAGE_DEST}"
     # Railpack requires a BuildKit daemon. Start rootless buildkitd, wait for
@@ -310,9 +295,14 @@ EOF
     # Generate the railpack build plan, then drive BuildKit directly via buildctl.
     # Using type=image,push=true bypasses the railpack CLI's docker-tar-to-stdout
     # output entirely — no stdout capture, no tar boundary scan, no separate push.
+    # The plan and the context are the folder being built: the ROOT_DIR
+    # subdirectory when there is one. The context was the repository's root,
+    # which the plan made in the subdirectory does not describe ("/package.json":
+    # not found).
+    BUILD_DIR="${PWD}"
     log "Preparing railpack build plan…"
     railpack prepare . \
-        --plan-out "${WORKDIR}/railpack-plan.json" \
+        --plan-out "${BUILD_DIR}/railpack-plan.json" \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
         "${RAILPACK_CMD_FLAGS[@]+"${RAILPACK_CMD_FLAGS[@]}"}"
 
@@ -320,8 +310,8 @@ EOF
     buildctl build \
         --frontend=gateway.v0 \
         --opt source=ghcr.io/railwayapp/railpack-frontend \
-        --local context="${WORKDIR}" \
-        --local dockerfile="${WORKDIR}" \
+        --local context="${BUILD_DIR}" \
+        --local dockerfile="${BUILD_DIR}" \
         --output "type=image,name=${IMAGE_DEST},push=true,registry.insecure=true" \
         --progress plain \
         "${RAILPACK_SECRET_FLAGS[@]+"${RAILPACK_SECRET_FLAGS[@]}"}"
@@ -339,8 +329,13 @@ EOF
 
   dockerfile)
     log "Building with Dockerfile → ${IMAGE_DEST}"
+    # As the image sets it, for a builder image from before it did.
+    export BUILDAH_ISOLATION="${BUILDAH_ISOLATION:-chroot}"
     DOCKERFILE="${DOCKERFILE_PATH:-Dockerfile}"
     [[ -f "${DOCKERFILE}" ]] || die "Dockerfile not found at ${DOCKERFILE}"
+    # --layers enables intermediate layer caching in the PVC-backed OCI storage.
+    # --cache-from uses the last successfully pushed image as the cache source,
+    # so stale intermediate layers from failed builds are never reused.
     buildah build \
         --layers \
         --cache-from "${CACHE_FROM_REPO}" \
@@ -351,16 +346,16 @@ EOF
     ;;
 
   *)
-    die "Unknown builder: ${BUILDER}. Valid values: nixpacks, railpack, dockerfile"
+    die "Unknown builder: ${BUILDER}. Valid values: railpack, dockerfile"
     ;;
 esac
 
 # ── Push ──────────────────────────────────────────────────────────────────────
-# nixpacks/dockerfile: image is in buildah's local store after `buildah build`.
+# dockerfile: image is in buildah's local store after `buildah build`.
 # railpack: already pushed to the registry by buildctl above — nothing to do.
 # buildah uses registries.conf (written above) to reach HTTP registries.
 case "${BUILDER}" in
-  nixpacks|dockerfile)
+  dockerfile)
     log "Pushing ${IMAGE_DEST}…"
     buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
     ;;
@@ -370,7 +365,7 @@ esac
 # Buildah cannot trim its layer cache to a size, so over the limit it is
 # emptied, and the next build starts cold. Never fails the build.
 case "${BUILDER}" in
-  nixpacks|dockerfile)
+  dockerfile)
     if [[ "${CACHE_LIMIT_MB:-0}" -gt 0 ]]; then
         used_mb=$(du -sm /var/lib/containers/storage 2>/dev/null | cut -f1)
         if [[ "${used_mb:-0}" -gt "${CACHE_LIMIT_MB}" ]]; then

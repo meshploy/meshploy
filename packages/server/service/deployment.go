@@ -403,7 +403,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		GitToken:       a.git.Token,
 		RootDir:        a.bc.RootDir,
 		DockerfilePath: a.bc.DockerfilePath,
-		Builder:        string(a.bc.Builder),
+		Builder:        string(db.Builder(a.bc.Builder)),
 		ImageDest:      a.imageName,
 		RegistryHost:   a.registryHost,
 		RegistryUser:   a.registryUser,

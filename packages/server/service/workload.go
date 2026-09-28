@@ -285,10 +285,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		if in.GitRepo == "" {
 			return nil
 		}
-		builder := in.Builder
-		if builder == "" {
-			builder = db.BuilderNixpacks
-		}
+		builder := db.Builder(in.Builder)
 		branch := in.Branch
 		if branch == "" {
 			branch = "main"
@@ -1039,7 +1036,7 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	if isNew {
 		bc = db.BuildConfig{
 			ServiceID:      serviceID,
-			Builder:        db.BuilderNixpacks,
+			Builder:        db.BuilderRailpack,
 			DockerfilePath: "Dockerfile",
 		}
 	}
@@ -1056,7 +1053,7 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 		bc.RootDir = *in.RootDir
 	}
 	if in.Builder != nil {
-		bc.Builder = *in.Builder
+		bc.Builder = db.Builder(*in.Builder)
 	}
 	if in.DockerfilePath != nil {
 		bc.DockerfilePath = *in.DockerfilePath

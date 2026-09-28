@@ -134,7 +134,7 @@ func TestGetBuildConfig(t *testing.T) {
 	want := client.BuildConfig{
 		ID:        "bc-1",
 		ServiceID: testService,
-		Builder:   "nixpacks",
+		Builder:   "railpack",
 		GitRepo:   "https://github.com/org/repo",
 		Branch:    "main",
 		AutoDeploy: true,
@@ -179,7 +179,7 @@ func TestUpdateBuildConfig(t *testing.T) {
 				json.NewDecoder(r.Body).Decode(&capturedBody)
 				writeJSON(w, client.BuildConfig{
 					ID:      "bc-1",
-					Builder: "nixpacks",
+					Builder: "railpack",
 					Branch:  newBranch,
 				})
 			},

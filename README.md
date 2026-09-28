@@ -91,7 +91,7 @@ meshploy/
 │   ├── proxy/        # Edge proxy: "Ask & Resolve" L7 routing over the WireGuard mesh
 │   ├── cli/          # meshploy CLI: static binary for nodes, the cluster and the platform
 │   ├── web/          # Dashboard: Vite + React 19 + TanStack Router
-│   ├── builder/      # Builder image: git clone + Nixpacks / Railpack / Dockerfile builds
+│   ├── builder/      # Builder image: git clone + Railpack / Dockerfile builds
 │   └── docs/         # Documentation site (Astro Starlight), generated from these READMEs
 ├── packages/
 │   ├── server/       # API core: config, handlers, services, middleware, k8s

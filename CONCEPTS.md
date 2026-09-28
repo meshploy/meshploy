@@ -112,7 +112,7 @@ A custom Caddy DNS plugin (`github.com/meshploy/caddy-dns-meshploy`) writes DNS-
 
 ## The build system
 
-Builds run as ephemeral Kubernetes Jobs inside the cluster. The API creates a Job in the project's namespace; it runs on a node labelled `meshploy.com/role=builder` using a dedicated builder image that contains git, Nixpacks, Railpack, and buildah (for Dockerfile builds).
+Builds run as ephemeral Kubernetes Jobs inside the cluster. The API creates a Job in the project's namespace; it runs on a node labelled `meshploy.com/role=builder` using a dedicated builder image that contains git, Railpack (with BuildKit), and buildah (for Dockerfile builds).
 
 ```
 deployment trigger
@@ -120,7 +120,7 @@ deployment trigger
   → Job scheduled on builder node
   → meshploy-build binary:
       git clone → detect or use builder type
-      Nixpacks / Railpack / Dockerfile / pre-built image
+      Railpack / Dockerfile / pre-built image
       push → built-in registry (gateway mesh_ip:5000)
   → Job completes, cleaned up after 1h (TTLSecondsAfterFinished)
   → API updates K8s Deployment to pull new image → rolling update

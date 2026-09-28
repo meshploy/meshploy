@@ -589,7 +589,7 @@ func init() {
 
 	serviceBuildConfigSetCmd.Flags().String("repo", "", "Git repository URL")
 	serviceBuildConfigSetCmd.Flags().String("branch", "", "Git branch")
-	serviceBuildConfigSetCmd.Flags().String("builder", "", "Builder type: nixpacks, railpack, dockerfile, image")
+	serviceBuildConfigSetCmd.Flags().String("builder", "", "Builder type: railpack, dockerfile, image")
 	serviceBuildConfigSetCmd.Flags().String("dockerfile", "", "Path to Dockerfile (dockerfile builder only)")
 	serviceBuildConfigSetCmd.Flags().Bool("auto-deploy", false, "Enable auto-deploy on push")
 	serviceBuildConfigSetCmd.Flags().String("git-integration", "", "Git integration ID")

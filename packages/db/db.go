@@ -202,6 +202,10 @@ func applyConstraints(db *gorm.DB) error {
 		`UPDATE volumes SET status = 'idle' WHERE status = 'pending'`,
 		`ALTER TABLE volumes ALTER COLUMN status SET DEFAULT 'idle'`,
 
+		// Nixpacks was retired for Railpack, which reads the same projects: a
+		// service saved with it builds with Railpack from now on.
+		`UPDATE build_configs SET builder = 'railpack' WHERE builder = 'nixpacks'`,
+
 		// Backfill stack ownership onto volumes and routes created before the
 		// column existed. Without this, a destroy on an existing stack would find
 		// no volumes or routes to remove and silently do less than it says.

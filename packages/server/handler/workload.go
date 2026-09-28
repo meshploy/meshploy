@@ -61,8 +61,8 @@ type CreateWorkloadInput struct {
 		Branch                string  `json:"branch,omitempty"`
 		Builder               string  `json:"builder,omitempty"`
 		DockerfilePath        string  `json:"dockerfile_path,omitempty"`
-		InstallCommand        string  `json:"install_command,omitempty" doc:"Replaces the builder's install step (Nixpacks, Railpack). Empty: the builder's own"`
-		BuildCommand          string  `json:"build_command,omitempty" doc:"Replaces the builder's build step (Nixpacks, Railpack). Empty: the builder's own"`
+		InstallCommand        string  `json:"install_command,omitempty" doc:"Replaces the builder's install step (Railpack). Empty: Railpack's own"`
+		BuildCommand          string  `json:"build_command,omitempty" doc:"Replaces the builder's build step (Railpack). Empty: Railpack's own"`
 		StartCommand          string  `json:"start_command,omitempty" doc:"Run through the image's /bin/sh at start. Empty: the image's own"`
 		RegistryIntegrationID *string `json:"registry_integration_id,omitempty"`
 		// BuilderNode is the k8s_node_name to pin builds to ("" = auto-schedule).
@@ -598,8 +598,8 @@ type PatchBuildConfigInput struct {
 		Branch                *string   `json:"branch,omitempty"`
 		Builder               *string   `json:"builder,omitempty"`
 		DockerfilePath        *string   `json:"dockerfile_path,omitempty"`
-		InstallCommand        *string   `json:"install_command,omitempty" doc:"Nixpacks and Railpack only. Omit: no change; empty: the builder's own"`
-		BuildCommand          *string   `json:"build_command,omitempty" doc:"Nixpacks and Railpack only. Omit: no change; empty: the builder's own"`
+		InstallCommand        *string   `json:"install_command,omitempty" doc:"Railpack only. Omit: no change; empty: the builder's own"`
+		BuildCommand          *string   `json:"build_command,omitempty" doc:"Railpack only. Omit: no change; empty: the builder's own"`
 		RegistryIntegrationID *string   `json:"registry_integration_id,omitempty"` // "" = clear
 		BuilderNode           *string   `json:"builder_node,omitempty"`            // "" = auto-schedule
 		BuilderCPURequest     *string   `json:"builder_cpu_request,omitempty"`

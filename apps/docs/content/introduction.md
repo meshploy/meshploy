@@ -22,7 +22,7 @@ These roles do not require a separate machine each. Start small, then add suppor
 
 ### Build here. Run there.
 
-Connect a Git provider, configure a service, and choose how to build it. Meshploy supports Dockerfile builds, Nixpacks, Railpack, and deployment from an existing container image.
+Connect a Git provider, configure a service, and choose how to build it. Meshploy supports Dockerfile builds, Railpack, and deployment from an existing container image.
 
 Source builds run as Kubernetes Jobs on eligible build nodes. A service can pin its builds to a specific builder, while its application runs on workload nodes. The built-in registry provides a place to store the resulting images for deployment.
 

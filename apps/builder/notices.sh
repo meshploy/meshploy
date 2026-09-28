@@ -8,7 +8,7 @@
 #   - Alpine packages, from the package database the image already carries. It
 #     records a licence per package, and no text: Alpine does not ship licence
 #     files, so each entry names its SPDX licence and where the source lives.
-#   - Four tools downloaded during the build. Their licence texts are fetched
+#   - Three tools downloaded during the build. Their licence texts are fetched
 #     from the same releases the binaries came from, at the versions installed.
 #
 # Run during `docker build`, after the tools are installed.
@@ -61,13 +61,6 @@ if command -v buildctl >/dev/null 2>&1; then
     tool_section "BuildKit (buildctl)" "$v" \
         "https://raw.githubusercontent.com/moby/buildkit/v${v}/LICENSE" \
         "https://github.com/moby/buildkit"
-fi
-
-if command -v nixpacks >/dev/null 2>&1; then
-    v="$(nixpacks --version | awk '{print $2}' | sed 's/^v//')"
-    tool_section "Nixpacks" "$v" \
-        "https://raw.githubusercontent.com/railwayapp/nixpacks/v${v}/LICENSE" \
-        "https://github.com/railwayapp/nixpacks"
 fi
 
 if command -v railpack >/dev/null 2>&1; then

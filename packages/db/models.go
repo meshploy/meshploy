@@ -117,11 +117,21 @@ const (
 type BuilderType string
 
 const (
-	BuilderNixpacks   BuilderType = "nixpacks"
 	BuilderRailpack   BuilderType = "railpack"
 	BuilderDockerfile BuilderType = "dockerfile"
 	BuilderImage      BuilderType = "image"
 )
+
+// Builder is the builder a saved or requested name means. Nixpacks was
+// retired for Railpack, its successor, which reads the same projects; a
+// client or a stack file that still names it gets Railpack, and "" means the
+// default, Railpack too.
+func Builder(name BuilderType) BuilderType {
+	if name == "" || name == "nixpacks" {
+		return BuilderRailpack
+	}
+	return name
+}
 
 type DatabaseEngine string
 
@@ -744,15 +754,15 @@ type BuildConfig struct {
 	RootDir          string     `gorm:"default:'.'"` // root of the app within the repo
 	// Dockerfile builder
 	DockerfilePath string `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
-	// InstallCommand and BuildCommand replace what Nixpacks or Railpack would
-	// work out for themselves; empty leaves it to them. A Dockerfile build
+	// InstallCommand and BuildCommand replace what Railpack would
+	// work out for itself; empty leaves it to Railpack. A Dockerfile build
 	// ignores both: its steps are in the Dockerfile.
 	InstallCommand string     `gorm:"not null;default:''" json:"install_command,omitempty"`
 	BuildCommand   string     `gorm:"not null;default:''" json:"build_command,omitempty"`
 	BuildArgs      EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"build_args"`
 
 	// Build-time environment variables — KEY=VALUE, one per line.
-	// Passed to nixpacks (--env), railpack (export), or dockerfile (--build-arg).
+	// Passed to railpack (export) or dockerfile (--build-arg).
 	// Encrypted at rest; accessed via GET .../build-config/env-vars.
 	BuildEnvVars EncryptedString `gorm:"type:text" json:"-"`
 

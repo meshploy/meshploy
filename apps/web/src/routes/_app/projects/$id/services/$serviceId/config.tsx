@@ -802,7 +802,7 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
             theme="dark"
             extensions={extensions}
             onChange={(val) => setEnvVars(val)}
-            placeholder={"NIXPACKS_INSTALL_CMD=npm install\nNODE_ENV=production"}
+            placeholder={"NODE_ENV=production"}
             style={{ fontSize: 12 }}
             basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
           />

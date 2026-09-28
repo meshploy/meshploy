@@ -1080,9 +1080,9 @@ func buildRootDir(context string, stack *meshdb.Stack) string {
 }
 
 func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID, svcDef composetypes.ServiceConfig, ext *meshployExt, stack *meshdb.Stack) error {
-	builder := meshdb.BuilderNixpacks
+	builder := meshdb.BuilderRailpack
 	// Compose builds a build: section from a Dockerfile, always: its own
-	// dockerfile:, or Dockerfile in the context. Handing it to Nixpacks built a
+	// dockerfile:, or Dockerfile in the context. Handing it to Railpack built a
 	// monorepo's twelve services as twelve guesses at its root.
 	if svcDef.Build != nil && svcDef.Build.Context != "" {
 		builder = meshdb.BuilderDockerfile

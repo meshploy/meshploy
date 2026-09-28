@@ -13,9 +13,9 @@ A service has its own variables, ports, replicas and resource limits. Its page s
 
 ## Building from git {#building}
 
-Meshploy clones the branch you choose and builds an image with one of three builders:
+Meshploy clones the branch you choose and builds an image with one of two builders:
 
-- **Railpack** and **Nixpacks** look at the code and work out how to build it, with no Dockerfile needed.
+- **Railpack** looks at the code and works out how to build it, with no Dockerfile needed.
 - **Dockerfile** builds your own Dockerfile, from the path you give.
 
 A build runs as a job on a **build node**, pushes the image to your registry (the built-in one, or a registry you connected), then deploys it. The build log streams on the deployment's page, and the deployment records the branch and commit it built.

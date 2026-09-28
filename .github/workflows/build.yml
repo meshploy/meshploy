@@ -368,6 +368,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # The image builds on Alpine's packages, which change under it, and
+      # its defaults are what broke builds before while every test passed.
+      # So it builds something real before it is pushed.
+      - name: Build for the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/builder/Dockerfile
+          load: true
+          tags: meshploy-builder:smoke
+          cache-from: type=gha
+
+      - name: Smoke test
+        run: apps/builder/smoke/run.sh meshploy-builder:smoke
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:

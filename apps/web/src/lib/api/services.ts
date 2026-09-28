@@ -155,9 +155,9 @@ export interface ApiBuildConfig {
   git_repo: string
   branch: string
   dockerfile_path: string
-  /** Replaces the builder's install step (Railpack, Nixpacks); empty = the builder's own. */
+  /** Replaces the builder's install step (Railpack); empty = Railpack's own. */
   install_command?: string
-  /** Replaces the builder's build step (Railpack, Nixpacks); empty = the builder's own. */
+  /** Replaces the builder's build step (Railpack); empty = Railpack's own. */
   build_command?: string
   registry_integration_id: string | null
   git_integration_id: string | null
@@ -206,9 +206,9 @@ export interface CreateServiceBody {
   branch?: string
   builder?: "railpack" | "dockerfile"
   dockerfile_path?: string
-  /** Replaces the builder's install step (Railpack, Nixpacks); empty = the builder's own. */
+  /** Replaces the builder's install step (Railpack); empty = Railpack's own. */
   install_command?: string
-  /** Replaces the builder's build step (Railpack, Nixpacks); empty = the builder's own. */
+  /** Replaces the builder's build step (Railpack); empty = Railpack's own. */
   build_command?: string
   /** Run through the image's /bin/sh at start; empty = the image's own. */
   start_command?: string
@@ -249,9 +249,9 @@ export interface UpdateBuildConfigBody {
   branch?: string
   builder?: "railpack" | "dockerfile"
   dockerfile_path?: string
-  /** Replaces the builder's install step (Railpack, Nixpacks); empty = the builder's own. */
+  /** Replaces the builder's install step (Railpack); empty = Railpack's own. */
   install_command?: string
-  /** Replaces the builder's build step (Railpack, Nixpacks); empty = the builder's own. */
+  /** Replaces the builder's build step (Railpack); empty = Railpack's own. */
   build_command?: string
   registry_integration_id?: string  // "" = clear
   build_env_vars?: string           // nil = no change; "" = clear

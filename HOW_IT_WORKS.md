@@ -134,7 +134,7 @@ When you trigger a deployment from source:
 
 1. Meshploy creates an ephemeral K8s Job in your project's namespace
 2. The job runs on a node labelled `meshploy.com/role=builder`
-3. The builder container clones your repo, builds the image using Nixpacks, Railpack, or your Dockerfile, and pushes it to the built-in private registry running on the gateway (`mesh_ip:5000`)
+3. The builder container clones your repo, builds the image using Railpack or your Dockerfile, and pushes it to the built-in private registry running on the gateway (`mesh_ip:5000`)
 4. The job completes and is cleaned up automatically (TTL: 1 hour)
 5. The API updates your K8s Deployment to pull the new image from the built-in registry
 6. K3s performs a rolling update — old pods stay up until new pods pass health checks

@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export type VisualBuilder = "nixpacks" | "railpack" | "dockerfile"
+export type VisualBuilder = "railpack" | "dockerfile"
 
 const DB_ENGINES = [
   { value: "postgres",   label: "PostgreSQL",  versions: ["17", "16", "15", "14", "13"], port: 5432,  icon: SiPostgresql },
@@ -50,7 +50,7 @@ export interface VisualService {
   gitRepo: string
   gitBranch: string
   // App — build (git only)
-  builder: VisualBuilder | ""  // "" = not set: apply builds with Nixpacks
+  builder: VisualBuilder | ""  // "" = not set: apply builds with Railpack
   builderNodeName: string   // k8s_node_name or "" for auto
   builderCPURequest: string
   builderMemoryRequest: string
@@ -236,7 +236,8 @@ export function yamlToVisual(spec: string): VisualService[] {
         integrationId,
         gitRepo,
         gitBranch: src.branch ?? "",
-        builder: build.builder ?? "",
+        // Nixpacks was retired for Railpack, which apply builds a file naming it with.
+        builder: build.builder === "nixpacks" ? "railpack" : build.builder ?? "",
         builderNodeName: build.builder_node ?? "",
         builderCPURequest: build.builder_cpu_request ?? "",
         builderMemoryRequest: build.builder_memory_request ?? "",
@@ -846,10 +847,9 @@ function AppFields({
                   onValueChange={(v) => onChange({ builder: (v ?? "") as VisualBuilder | "" })}
                 >
                   <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                    <SelectValue placeholder="Nixpacks" />
+                    <SelectValue placeholder="Railpack" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
                     <SelectItem value="railpack">Railpack</SelectItem>
                     <SelectItem value="dockerfile">Dockerfile</SelectItem>
                   </SelectContent>

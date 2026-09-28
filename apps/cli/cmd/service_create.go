@@ -219,7 +219,7 @@ func wizardGitSource(sc *bufio.Scanner, c *client.Client, org string, build *Bui
 	}
 
 	// Builder
-	build.Builder = pickOne(sc, "Builder", []string{"nixpacks", "dockerfile", "buildpack"})
+	build.Builder = pickOne(sc, "Builder", []string{"railpack", "dockerfile"})
 	if build.Builder == "dockerfile" {
 		build.DockerfilePath = promptDefault(sc, "Dockerfile path", "./Dockerfile")
 	}

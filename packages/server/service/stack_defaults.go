@@ -136,7 +136,7 @@ func meshployDefaults(svc, xm *yaml.Node) []meshploySection {
 		sections = append(sections,
 			meshploySection{"source", []meshploySetting{{"branch", defaultBranch}}},
 			meshploySection{"build", []meshploySetting{
-				{"builder", string(meshdb.BuilderNixpacks)},
+				{"builder", string(meshdb.BuilderRailpack)},
 				{"builder_cpu_request", appk8s.DefaultBuilderCPURequest},
 				{"builder_memory_request", appk8s.DefaultBuilderMemoryRequest},
 			}},

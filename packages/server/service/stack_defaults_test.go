@@ -163,7 +163,7 @@ func TestFillMeshployDefaultsForDatabasesAndGitServices(t *testing.T) {
         memory_request: 256Mi
         memory_limit: 1Gi
       build:
-        builder: nixpacks
+        builder: railpack
         builder_cpu_request: 1000m
         builder_memory_request: 1Gi
 `, got, "a version is quoted: unquoted, 7 is a number and the block would not decode")

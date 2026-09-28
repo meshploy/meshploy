@@ -288,7 +288,7 @@ func (b *builder) applications() {
 			switch r.Str("buildType") {
 			case "heroku_buildpacks", "paketo_buildpacks":
 				it.Decisions = append(it.Decisions, Decision{ID: "builder", Question: r.Str("buildType") + " has no Meshploy builder",
-					Options: []Option{optImageOnly, {"nixpacks", "Build with Nixpacks"}, {"railpack", "Build with Railpack"}, {"dockerfile", "Build from a Dockerfile"}},
+					Options: []Option{optImageOnly, {"railpack", "Build with Railpack"}, {"dockerfile", "Build from a Dockerfile"}},
 					Default: optImageOnly.ID})
 			case "static":
 				it.Reasons = append(it.Reasons, "static site: rebuilt with Railpack")

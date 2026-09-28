@@ -13,7 +13,7 @@ meshploy/
 │   ├── proxy/        # Edge reverse proxy — "Ask & Resolve" L7 routing
 │   ├── cli/          # Static Go binary — node & cluster management CLI
 │   ├── web/          # Vite + React 19 + TanStack Router frontend
-│   ├── builder/      # Builder image (meshploy-build): git clone + Nixpacks / Railpack / Dockerfile
+│   ├── builder/      # Builder image (meshploy-build): git clone + Railpack / Dockerfile
 │   └── docs/         # Astro Starlight docs site, generated from the repo's READMEs by sync-docs.mjs
 ├── packages/
 │   ├── db/           # Shared GORM + PostgreSQL models (imported by api and proxy)

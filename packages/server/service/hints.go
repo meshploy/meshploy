@@ -22,8 +22,8 @@ import (
 // dismisses it.
 //
 // The builder reports the app as "Stack:" lines (apps/builder/meshploy-build),
-// which recordStack keeps on the deployment; Railpack and Nixpacks say for
-// themselves when they found no start command.
+// which recordStack keeps on the deployment; Railpack says for itself when it
+// found no start command.
 
 // Hint kinds.
 const (

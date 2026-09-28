@@ -19,7 +19,7 @@ import (
 
 const (
 	// builderImageRepo is the image that performs git clone + build + push.
-	// Contains: git, nixpacks, railpack, buildah.
+	// Contains: git, railpack, buildah.
 	builderImageRepo = "ghcr.io/meshploy/builder"
 
 	// BuilderNodeLabel is the node label used to schedule build jobs.
@@ -27,7 +27,7 @@ const (
 	BuilderNodeValue = "builder"
 
 	// buildCachePVC is the shared PVC for all build caches in a namespace.
-	// Subpaths partition it: "buildah" for buildah/nixpacks layers,
+	// Subpaths partition it: "buildah" for Dockerfile layers,
 	// "buildkit" for railpack's BuildKit layer cache.
 	buildCachePVC        = "build-cache"
 	buildCacheSize       = "20Gi"
@@ -60,7 +60,7 @@ type BuildJobParams struct {
 	GitUser   string // presented with GitToken: x-access-token (GitHub), oauth2 (GitLab, Gitea)
 	GitBranch string
 	GitToken  string // empty for a public repository
-	// Build method: "nixpacks" | "railpack" | "dockerfile"
+	// Build method: "railpack" | "dockerfile"
 	Builder string
 	// Full destination image ref, e.g. "registry.example.com/myapp:abc1234"
 	ImageDest    string
@@ -73,14 +73,14 @@ type BuildJobParams struct {
 	// is the builder's default, Dockerfile.
 	DockerfilePath string
 	// InstallCommand and BuildCommand override the builder's own, for
-	// Nixpacks and Railpack; empty leaves it to the builder.
+	// Railpack; empty leaves it to the builder.
 	InstallCommand string
 	BuildCommand   string
 	// CacheLimitMB is what the builder trims its cache back under after a
 	// build; 0 leaves it to grow.
 	CacheLimitMB int
 	// Build-time env vars — KEY=VALUE, one per line.
-	// Forwarded to nixpacks (--env), railpack (export), dockerfile (--build-arg).
+	// Forwarded to railpack (export), dockerfile (--build-arg).
 	BuildEnvVars string
 	// BuilderNode pins the job to a specific K8s node name (k8s_node_name).
 	// Empty = use NodeSelector meshploy.com/role=builder (auto-schedule).
@@ -239,7 +239,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									// buildah (nixpacks/dockerfile) layer cache
+									// buildah (dockerfile) layer cache
 									Name:      "build-cache",
 									MountPath: buildahCacheMountAt,
 									SubPath:   "buildah",
