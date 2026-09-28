@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -171,5 +172,54 @@ func TestAnOldRevisionsCrashLoopDoesNotFailTheRollout(t *testing.T) {
 	}
 	if _, _, fatal := terminalPodFailure(context.Background(), client, "api", "proj", []string{"api-old-1"}); !fatal {
 		t.Error("a selected pod in CrashLoopBackOff is still a failure")
+	}
+}
+
+// settledRollout is a deployment whose one replica the cluster reports as
+// updated and available, with its ReplicaSet and pod.
+func settledRollout(state corev1.ContainerState, restarts int32) *fake.Clientset {
+	dep := deployment("1")
+	one := int32(1)
+	dep.Spec.Replicas = &one
+	dep.Status.UpdatedReplicas, dep.Status.AvailableReplicas = 1, 1
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-1", Namespace: "proj",
+			Labels: map[string]string{"app": "api", "managed-by": "meshploy", "pod-template-hash": "aaa111"}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{State: state, RestartCount: restarts}}},
+	}
+	return fake.NewSimpleClientset(dep, replicaSet("api-rs", "1", "aaa111", depUID), pod)
+}
+
+// Pods that stay up past the settle time make a successful rollout.
+func TestARolloutSucceedsOnceItsPodsStayUp(t *testing.T) {
+	defer func(d time.Duration) { RolloutSettle = d }(RolloutSettle)
+	RolloutSettle = time.Second
+	client := settledRollout(corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, 2)
+
+	var lines []string
+	r := WatchRollout(context.Background(), client, "api", "proj", 30*time.Second, func(s string) { lines = append(lines, s) })
+	if !r.Succeeded {
+		t.Fatalf("rollout failed: %s", r.Reason)
+	}
+	// Restarts from before it came up do not count against it.
+	if !strings.Contains(strings.Join(lines, "\n"), "checking they stay up") {
+		t.Errorf("lines = %v", lines)
+	}
+}
+
+// The procureflow API of 2026-09-29: with no readiness check, its container
+// was available the moment it started and exited a second later on missing
+// variables, and the deploy was recorded as a success. Available is not up.
+func TestAnAvailablePodThatCrashesFailsTheRollout(t *testing.T) {
+	defer func(d time.Duration) { RolloutSettle = d }(RolloutSettle)
+	RolloutSettle = time.Second
+	client := settledRollout(corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}, 1)
+
+	r := WatchRollout(context.Background(), client, "api", "proj", 30*time.Second, func(string) {})
+	if r.Succeeded {
+		t.Fatal("a pod in CrashLoopBackOff made a successful rollout")
+	}
+	if r.Reason != "CrashLoopBackOff" {
+		t.Errorf("reason = %q", r.Reason)
 	}
 }

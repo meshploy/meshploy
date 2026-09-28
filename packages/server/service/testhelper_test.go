@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -31,6 +32,9 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 
 	meshdb.SetEncryptionKey("test-encryption-key-32-chars!!!!!")
+	// A fake cluster's pods never restart; waiting for them to stay up only
+	// slows every deploy test. The wait itself is tested in k8s.
+	appk8s.RolloutSettle = 0
 
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		// Use the existing local Postgres — create isolated DBs per test.

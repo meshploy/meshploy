@@ -58,6 +58,11 @@ func WatchRollout(
 	}
 	deadline := time.Now().Add(timeout)
 	seen := make(map[string]bool) // event UID + count, so a repeating event is reported once per occurrence
+	// When the new pods were first all available, and how often they had
+	// restarted by then: a rollout succeeds only once they have stayed up,
+	// without restarting again, for RolloutSettle.
+	var stableSince time.Time
+	var restartsAtStart int32
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -86,8 +91,26 @@ func WatchRollout(
 				desired = *dep.Spec.Replicas
 			}
 			if dep.Status.UpdatedReplicas >= desired && dep.Status.AvailableReplicas >= desired {
-				emit(fmt.Sprintf("Rollout complete — %d/%d replicas available.", dep.Status.AvailableReplicas, desired))
-				return RolloutResult{Succeeded: true}
+				// Available is not the same as up. A container with no
+				// readiness check is available the moment it starts, and an app
+				// that exits a second later on a missing variable was recorded
+				// as a successful deploy. So the pods have to stay up first.
+				restarts, running := podRestarts(ctx, client, namespace, podNames)
+				switch {
+				case desired == 0 || RolloutSettle <= 0:
+					stableSince = time.Now().Add(-RolloutSettle)
+				case !running || (!stableSince.IsZero() && restarts > restartsAtStart):
+					stableSince = time.Time{}
+				case stableSince.IsZero():
+					stableSince, restartsAtStart = time.Now(), restarts
+					emit(fmt.Sprintf("%d/%d replicas available; checking they stay up for %s…", dep.Status.AvailableReplicas, desired, RolloutSettle))
+				}
+				if !stableSince.IsZero() && time.Since(stableSince) >= RolloutSettle {
+					emit(fmt.Sprintf("Rollout complete — %d/%d replicas available.", dep.Status.AvailableReplicas, desired))
+					return RolloutResult{Succeeded: true}
+				}
+			} else {
+				stableSince = time.Time{}
 			}
 			for _, c := range dep.Status.Conditions {
 				if c.Type == appsv1.DeploymentProgressing &&
@@ -116,6 +139,28 @@ func WatchRollout(
 		case <-ticker.C:
 		}
 	}
+}
+
+// RolloutSettle is how long a rollout's pods must stay up, without
+// restarting, after they are all available, before the rollout counts as a
+// success. Tests set it to zero.
+var RolloutSettle = 10 * time.Second
+
+// podRestarts is how often the named pods' containers have restarted in all,
+// and whether every one of them is running now.
+func podRestarts(ctx context.Context, client kubernetes.Interface, namespace string, podNames []string) (restarts int32, running bool) {
+	running = true
+	for _, name := range podNames {
+		pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			continue // gone: replaced, and the deployment's counts say so
+		}
+		for _, cs := range pod.Status.ContainerStatuses {
+			restarts += cs.RestartCount
+			running = running && cs.State.Running != nil
+		}
+	}
+	return restarts, running
 }
 
 // emitNewPodEvents reports events on the deployment's pods that have not been

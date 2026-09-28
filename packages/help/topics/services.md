@@ -51,7 +51,7 @@ A value can refer to another with `${NAME}`, so `DATABASE_URL=${PRIMARY_DB_URL}`
 - **Rollback** runs an earlier deployment's image again, as it was, from the Deployments tab. Any deployment whose image is still kept can be rolled back to; one whose image was removed says **image removed**.
 - **Redeploy** runs the current image again, for changed variables, and builds nothing.
 
-A deploy fails at once when no online node can build, and after a few minutes when no node can take the service.
+A deploy fails at once when no online node can build, and after a few minutes when no node can take the service. It succeeds only once the new pods have stayed up for 10 seconds without restarting, so an app that starts and exits a moment later, on a missing variable say, fails the deploy with its own exit code rather than passing it.
 
 A service made on its own keeps the images of its **last 3** deployments, set under Settings, Rollback: older ones are removed after each build, and when the limit is saved. An image another level runs is always kept, so a promotion never loses what it moved. Turned off, a service keeps every image it builds and the registry grows with each one. Services made before this was the default keep every image, and their level's Services page offers to move them to the last 3. A stack's services keep images as the stack says.
 
