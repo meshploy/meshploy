@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,31 +102,8 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 
 // queueEdgeApply leaves a domain.apply request in the inbox.
 func (s *SystemService) queueEdgeApply(by uuid.UUID) error {
-	req := hostagent.Request{
+	return queueHostRequest(s.hostDir(), hostagent.Request{
 		ID: uuid.NewString(), Type: hostagent.RequestDomainApply,
 		RequestedBy: by.String(), RequestedAt: time.Now().UTC(),
-	}
-	if err := hostagent.ValidateRequest(req, ""); err != nil {
-		return err
-	}
-	data, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-	inbox := hostagent.InboxDir(s.hostDir())
-	// Written under a temporary name and renamed, so the agent never reads half
-	// a request.
-	tmp, err := os.CreateTemp(inbox, ".request-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), inbox+"/"+hostagent.RequestDomainApply+"-"+req.ID+".json")
+	})
 }

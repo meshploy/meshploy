@@ -1126,14 +1126,14 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
     retry: false,
   })
 
-  const draft = useConfigDraft({ enabled: false, retention: "5" })
+  const draft = useConfigDraft({ enabled: true, retention: "3" })
   const { enabled, retention } = draft.value
   const setEnabled = (enabled: boolean) => draft.setValue(v => ({ ...v, enabled }))
   const setRetention = (retention: string) => draft.setValue(v => ({ ...v, retention }))
 
   useEffect(() => {
     if (bc) {
-      draft.sync({ enabled: bc.rollback_enabled ?? false, retention: String(bc.image_retention ?? 5) })
+      draft.sync({ enabled: bc.rollback_enabled ?? false, retention: String(bc.image_retention || 3) })
     }
   }, [bc])
 
@@ -1141,9 +1141,12 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
     mutationFn: () =>
       buildConfigsApi.update(orgId, projectId, serviceId, {
         rollback_enabled: enabled,
-        image_retention: parseInt(retention) || 5,
+        image_retention: Math.max(1, parseInt(retention) || 3),
       }, token),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["build-config", orgId, projectId, serviceId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["build-config", orgId, projectId, serviceId] })
+      queryClient.invalidateQueries({ queryKey: ["deployments", orgId, projectId, serviceId] })
+    },
   })
 
   useConfigSave("Rollback", draft, () => mutation.mutateAsync(), service?.type === "application" && !!bc && !isLoading)
@@ -1154,16 +1157,16 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
   return (
     <Section
       title="Rollback"
-      subtitle="Keep previous deployment images so you can roll back instantly without a rebuild."
+      subtitle="Any deployment whose image is still kept can be rolled back to, from Deployments, without a rebuild. Keeping fewer images saves the registry's disk."
     >
       {/* Two short fields, and the second only means anything while the first
           is on, so they read as one setting on one line. */}
       <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
-        <Field label="Enable rollback">
+        <Field label="Limit kept images">
           <div className="flex h-[34px] items-center gap-2">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
             <span className="text-xs text-muted-foreground">
-              {enabled ? "Enabled" : "Disabled"}
+              {enabled ? "Keeps its last images" : "Keeps every image it builds"}
             </span>
           </div>
         </Field>
@@ -1181,6 +1184,12 @@ function RollbackSection({ projectId, serviceId }: { projectId: string; serviceI
           </Field>
         )}
       </div>
+      <p className="mt-3 text-[11px] text-muted-foreground/70">
+        {bc?.images_kept === undefined ? null : `Holds ${bc.images_kept} image${bc.images_kept === 1 ? "" : "s"} now. `}
+        {enabled
+          ? "Older images are removed when this is saved and after each build; an image another level runs is always kept."
+          : "Nothing is removed: the registry keeps growing with every build."}
+      </p>
     </Section>
   )
 }

@@ -15,6 +15,7 @@ import {
 } from "../state"
 import {
   demoServiceApi,
+  demoServiceWeb,
   demoJob,
   demoVolume,
   demoStack,
@@ -342,6 +343,12 @@ function hintsOf(s: DemoRecord) {
 }
 
 /** A service's deployments newest first, by when each was made, as the API orders them. */
+const keptLast = new Set<string>()
+function keepingEveryImage(projectId: string) {
+  return db.services
+    .filter((s) => s.project_id === projectId && s.id === demoServiceWeb.id && !keptLast.has(s.id))
+    .map((s) => ({ id: s.id, name: s.name, images_kept: deploymentsOf(s.id).filter((d) => d.status === "success").length }))
+}
 function deploymentsOf(serviceId: string) {
   return db.deployments
     .filter((d) => d.service_id === serviceId)
@@ -686,6 +693,15 @@ export const workspaceHandlers = [
     return json(buildConfigs[id])
   }),
   http.get(`${S}/deployments`, ({ params }) => json(deploymentsOf(String(params.serviceId)))),
+  // web in production was made before a service kept its last images, and
+  // keeps every one, until someone takes the offer.
+  http.get(`${P}/image-retention`, ({ params }) =>
+    json({ keep: 3, services: keepingEveryImage(String(params.projectId)) })),
+  http.post(`${P}/image-retention`, ({ params }) => {
+    const moved = keepingEveryImage(String(params.projectId))
+    for (const s of moved) keptLast.add(s.id)
+    return json({ keep: 3, services: moved })
+  }),
   // The overview's activity feed: deployments and job runs across projects,
   // joined to the names it shows and interleaved by time. The real one is
   // scoped to what the caller can see; in the demo there is one member and they

@@ -312,6 +312,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	go backups.StartScheduler(context.Background())
 	go backups.StartRetentionReaper(context.Background())
+	go deployments.StartRegistryGC(context.Background())
 	go notif.StartDeliveryReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())

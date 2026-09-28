@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -314,6 +315,10 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			BuilderCPULimit:       in.BuilderCPULimit,
 			BuilderMemoryLimit:    in.BuilderMemoryLimit,
 			DeployToken:           db.EncryptedString(deployToken),
+			// A service made on its own keeps its last images for rollback,
+			// not every image it ever builds.
+			RollbackEnabled: true,
+			ImageRetention:  db.DefaultImageRetention,
 		}
 		return tx.Create(bc).Error
 	}); err != nil {
@@ -987,7 +992,40 @@ func (s *WorkloadService) GetBuildConfig(ctx context.Context, serviceID uuid.UUI
 	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&bc).Error; err != nil {
 		return nil, err
 	}
+	if s.deployment != nil {
+		bc.ImagesKept = s.deployment.ImagesKept(ctx, serviceID)
+	}
 	return &bc, nil
+}
+
+// KeepingEveryImage is a level's services made on their own that build and
+// keep every image they build: made before a service kept its last images
+// from the start. Services of a stack keep images as their stack says.
+func (s *WorkloadService) KeepingEveryImage(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
+	var svcs []db.Service
+	err := s.db.WithContext(ctx).
+		Joins("JOIN build_configs ON build_configs.service_id = services.id").
+		Where("services.project_id = ? AND services.stack_id IS NULL", projectID).
+		Where("build_configs.builder <> ? AND NOT build_configs.rollback_enabled", db.BuilderImage).
+		Order("services.name").Find(&svcs).Error
+	return svcs, err
+}
+
+// KeepLastImages sets a level's services that keep every image to keep their
+// last DefaultImageRetention, and removes the rest now. What it removes
+// cannot be rolled back to afterwards.
+func (s *WorkloadService) KeepLastImages(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
+	svcs, err := s.KeepingEveryImage(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	on, keep := true, db.DefaultImageRetention
+	for _, svc := range svcs {
+		if _, err := s.UpsertBuildConfig(ctx, svc.ID, UpdateBuildConfigInput{RollbackEnabled: &on, ImageRetention: &keep}); err != nil {
+			return nil, err
+		}
+	}
+	return svcs, nil
 }
 
 // GetBuildEnvVars returns the decrypted build-time env vars for a service.
@@ -1035,9 +1073,19 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	}
 	if isNew {
 		bc = db.BuildConfig{
-			ServiceID:      serviceID,
-			Builder:        db.BuilderRailpack,
-			DockerfilePath: "Dockerfile",
+			ServiceID:       serviceID,
+			Builder:         db.BuilderRailpack,
+			DockerfilePath:  "Dockerfile",
+			RollbackEnabled: true,
+			ImageRetention:  db.DefaultImageRetention,
+		}
+		// A stack's service keeps images as its stack says.
+		var svc db.Service
+		if s.db.WithContext(ctx).Select("stack_id").First(&svc, "id = ?", serviceID).Error == nil && svc.StackID != nil {
+			var stack db.Stack
+			if s.db.WithContext(ctx).Select("rollback_enabled", "image_retention").First(&stack, "id = ?", *svc.StackID).Error == nil {
+				bc.RollbackEnabled, bc.ImageRetention = stack.RollbackEnabled, stack.ImageRetention
+			}
 		}
 	}
 	if in.GitIntegrationID != nil {
@@ -1090,10 +1138,14 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 	if in.BuilderMemoryLimit != nil {
 		bc.BuilderMemoryLimit = *in.BuilderMemoryLimit
 	}
+	keptBefore := keptImages(bc)
 	if in.RollbackEnabled != nil {
 		bc.RollbackEnabled = *in.RollbackEnabled
 	}
 	if in.ImageRetention != nil {
+		if *in.ImageRetention < 1 {
+			return nil, fmt.Errorf("a service keeps at least 1 image")
+		}
 		bc.ImageRetention = *in.ImageRetention
 	}
 	if in.WatchPaths != nil {
@@ -1150,7 +1202,21 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 		// and secret to add by hand.
 		s.git.ensurePushHookQuietly(*bc.GitIntegrationID, bc.GitRepo)
 	}
+	if err == nil && !isNew && s.deployment != nil && keptImages(bc) < keptBefore {
+		// A tighter limit is expected to free its images now, not at the
+		// service's next build, which may be weeks away.
+		s.deployment.PruneImages(ctx, serviceID)
+	}
 	return &bc, err
+}
+
+// keptImages is how many images a build config keeps: every one, when it
+// does not limit them.
+func keptImages(bc db.BuildConfig) int {
+	if !bc.RollbackEnabled || bc.ImageRetention <= 0 {
+		return math.MaxInt
+	}
+	return bc.ImageRetention
 }
 
 // RegenerateDeployToken creates a new deploy token for the build config of the

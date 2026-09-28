@@ -21,6 +21,9 @@ export interface ApiStack {
   git_integration_id: string | null
   git_last_synced_at: string | null
   git_last_sync_sha: string
+  /** Images its built services keep for rollback: true keeps each one's last image_retention, false every image. */
+  rollback_enabled?: boolean
+  image_retention?: number
 }
 
 export interface ApplyStackResult {
@@ -104,6 +107,9 @@ export interface UpdateStackBody {
   git_branch?: string
   git_path?: string
   git_integration_id?: string | null
+  /** Images the stack's built services keep: set on them at once. */
+  rollback_enabled?: boolean
+  image_retention?: number
 }
 
 export const stacks = {

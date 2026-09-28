@@ -284,7 +284,9 @@ A project is its own production level; each level below it is a project of its o
 | DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}` | ✓ | Cancel an active deployment |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream` | ✓ | Stream a deployment's build log (SSE) |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/record` | ✓ | Delete a deployment record |
-| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/rollback` | ✓ | Roll back to a previous successful deployment |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/rollback` | ✓ | Roll back to a previous successful deployment; 409 when its image was removed from the registry |
+| GET | `/orgs/{orgId}/projects/{projectId}/image-retention` | ✓ | A level's services made on their own that keep every image they build |
+| POST | `/orgs/{orgId}/projects/{projectId}/image-retention` | ✓ | Make them keep their last 3 images, removing the rest now |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/redeploy` | ✓ | Run the current image again, without building; keeps where the image came from |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/dependents` | ✓ | Services and jobs, at any level, whose variables come from this service today |
 | GET | `/orgs/{orgId}/projects/{projectId}/health` | ✓ | Services in a project that are not staying up, and why: out of memory (with the limit), crashing (with the exit code), image pull, cannot start; and each service's suggestions from its last build (`hints`), with their fixes |
@@ -303,7 +305,7 @@ A project is its own production level; each level below it is a project of its o
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks` | ✓ | Create a new stack |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks/meshploy-config` | ✓ | Write out every x-meshploy setting an apply would default |
 | GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Get a stack |
-| PUT | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Update a stack's spec and variables |
+| PUT | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Update a stack's spec and variables, and the images its built services keep (`rollback_enabled`, `image_retention`), set on them at once |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Delete a stack |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/apply` | ✓ | Apply the stack spec - reconcile services. `deploy: false` writes the records and rolls nothing out; `files` carries what the spec names by path when the server cannot read it (a migration sending a git stack's repository files from the old checkout) |
 | GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/runs` | ✓ | The stack's Syncs and Applies, newest first, each with its rollout's state |

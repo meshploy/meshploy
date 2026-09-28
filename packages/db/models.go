@@ -114,6 +114,10 @@ const (
 	ServiceCompleted ServiceStatus = "completed"
 )
 
+// DefaultImageRetention is how many images a service keeps for rollback
+// when it limits them, as a service made on its own does from the start.
+const DefaultImageRetention = 3
+
 type BuilderType string
 
 const (
@@ -795,10 +799,17 @@ type BuildConfig struct {
 	LastBuiltImage string     `json:"last_built_image"`
 	LastBuiltAt    *time.Time `json:"last_built_at"`
 
-	// Rollback — when enabled, old images are pruned from the registry after each
-	// successful build, keeping only the last ImageRetention deployments' images.
+	// Images kept for rollback. Any deployment whose image is still in the
+	// registry can be rolled back to; this says how many are kept. On, the
+	// images of all but the last ImageRetention successful deployments are
+	// removed after each build; off, every image is kept. A service made on
+	// its own starts on, keeping 3; a stack's services take the stack's
+	// setting, which starts off. The column keeps its old name.
 	RollbackEnabled bool `gorm:"not null;default:false" json:"rollback_enabled"`
-	ImageRetention  int  `gorm:"not null;default:5"     json:"image_retention"`
+	ImageRetention  int  `gorm:"not null;default:3"     json:"image_retention"`
+	// ImagesKept is how many images the service's deployments still have in
+	// the registry: what it can roll back to. Read, not stored.
+	ImagesKept int `gorm:"-" json:"images_kept"`
 
 	// Auto-deploy — when enabled, a push to the tracked branch triggers a new build.
 	// Works via GitHub App webhook (for private repos) or a per-service deploy token.
@@ -920,6 +931,12 @@ type Stack struct {
 	// git-source fields; the hook for "template update available" detection.
 	TemplateID      string `gorm:"not null;default:''" json:"template_id"`
 	TemplateVersion string `gorm:"not null;default:''" json:"template_version"`
+
+	// Images kept for rollback by the stack's built services, as a service's
+	// own setting says (BuildConfig.RollbackEnabled): off keeps every image.
+	// A service's own x-meshploy rollback in the compose file wins over it.
+	RollbackEnabled bool `gorm:"not null;default:false" json:"rollback_enabled"`
+	ImageRetention  int  `gorm:"not null;default:3"     json:"image_retention"`
 
 	Project        Project         `gorm:"foreignKey:ProjectID"                            json:"-"`
 	Services       []Service       `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
@@ -1345,6 +1362,10 @@ type Deployment struct {
 	StackFacts       string     `gorm:"type:text;not null;default:''" json:"-"`
 	FromLevel        string     `gorm:"not null;default:''" json:"from_level,omitempty"`
 	FromDeploymentID *uuid.UUID `gorm:"type:uuid"           json:"from_deployment_id,omitempty"`
+	// ImageRemovedAt is when Image was removed from the registry to keep a
+	// service's images to its limit, or found missing there by a rollback.
+	// A deployment whose image is gone cannot be rolled back to.
+	ImageRemovedAt *time.Time `json:"image_removed_at,omitempty"`
 
 	Service Service `gorm:"foreignKey:ServiceID" json:"-"`
 }

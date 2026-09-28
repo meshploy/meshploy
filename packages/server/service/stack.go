@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
 	appk8s "github.com/meshploy/packages/server/k8s"
+	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -72,6 +73,11 @@ type UpdateStackInput struct {
 	GitPath              *string
 	UpdateGitIntegration bool // true = apply GitIntegrationID (even if nil, to clear it)
 	GitIntegrationID     *uuid.UUID
+
+	// Images the stack's built services keep for rollback. Set at once on
+	// every service that does not say otherwise in the file.
+	RollbackEnabled *bool
+	ImageRetention  *int
 }
 
 // SyncResult is returned by Sync after fetching and applying the spec from git.
@@ -172,12 +178,69 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 	if in.UpdateGitIntegration {
 		updates["git_integration_id"] = in.GitIntegrationID
 	}
+	if in.RollbackEnabled != nil {
+		updates["rollback_enabled"] = *in.RollbackEnabled
+		stack.RollbackEnabled = *in.RollbackEnabled
+	}
+	if in.ImageRetention != nil {
+		if *in.ImageRetention < 1 {
+			return nil, fmt.Errorf("a service keeps at least 1 image")
+		}
+		updates["image_retention"] = *in.ImageRetention
+		stack.ImageRetention = *in.ImageRetention
+	}
 	if len(updates) > 0 {
 		if err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error; err != nil {
 			return nil, err
 		}
 	}
+	if in.RollbackEnabled != nil || in.ImageRetention != nil {
+		if err := s.keepImagesAsStack(ctx, &stack); err != nil {
+			return nil, err
+		}
+	}
 	return s.getByID(ctx, stackID)
+}
+
+// keepImagesAsStack gives the stack's built services its rollback setting
+// now, rather than at its next apply: each one whose own x-meshploy says
+// nothing about rollback.
+func (s *StackService) keepImagesAsStack(ctx context.Context, stack *meshdb.Stack) error {
+	own := servicesWithOwnRollback(stack.Spec)
+	var ids []uuid.UUID
+	if err := s.db.WithContext(ctx).Model(&meshdb.Service{}).
+		Joins("JOIN build_configs ON build_configs.service_id = services.id").
+		Where("services.stack_id = ? AND build_configs.builder <> ?", stack.ID, meshdb.BuilderImage).
+		Where("services.name NOT IN ?", append(own, "")).
+		Pluck("services.id", &ids).Error; err != nil {
+		return err
+	}
+	enabled, retention := stack.RollbackEnabled, stack.ImageRetention
+	for _, id := range ids {
+		if _, err := s.workload.UpsertBuildConfig(ctx, id, UpdateBuildConfigInput{
+			RollbackEnabled: &enabled, ImageRetention: &retention,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// servicesWithOwnRollback names the services of a compose file that set their
+// own x-meshploy rollback, which the stack's setting leaves alone.
+func servicesWithOwnRollback(spec string) []string {
+	var doc map[string]any
+	if yaml.Unmarshal([]byte(spec), &doc) != nil {
+		return nil
+	}
+	var names []string
+	for name := range childMap(doc, "services") {
+		if _, ok := childMap(childMap(childMap(doc, "services"), name), "x-meshploy")["rollback"]; ok {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ManifestInput is one inline compose manifest: the spec plus what the server
@@ -1197,6 +1260,10 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 		if ext.Rollback.Retention > 0 {
 			input.ImageRetention = &ext.Rollback.Retention
 		}
+	} else if builder != meshdb.BuilderImage {
+		// Kept as the stack says, unless the service says otherwise.
+		enabled, retention := stack.RollbackEnabled, stack.ImageRetention
+		input.RollbackEnabled, input.ImageRetention = &enabled, &retention
 	}
 
 	_, err := s.workload.UpsertBuildConfig(ctx, serviceID, input)

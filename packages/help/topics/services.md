@@ -48,10 +48,14 @@ A value can refer to another with `${NAME}`, so `DATABASE_URL=${PRIMARY_DB_URL}`
 ## Deploy, rollback and redeploy {#deploys}
 
 - **Deploy** builds from git, or deploys the configured image.
-- **Rollback** runs an earlier deployment's image again, as it was. Images are kept for it while **image retention** allows.
+- **Rollback** runs an earlier deployment's image again, as it was, from the Deployments tab. Any deployment whose image is still kept can be rolled back to; one whose image was removed says **image removed**.
 - **Redeploy** runs the current image again, for changed variables, and builds nothing.
 
 A deploy fails at once when no online node can build, and after a few minutes when no node can take the service.
+
+A service made on its own keeps the images of its **last 3** deployments, set under Settings, Rollback: older ones are removed after each build, and when the limit is saved. An image another level runs is always kept, so a promotion never loses what it moved. Turned off, a service keeps every image it builds and the registry grows with each one. Services made before this was the default keep every image, and their level's Services page offers to move them to the last 3. A stack's services keep images as the stack says.
+
+Removing an image frees its layers only once the built-in registry is garbage-collected, which the gateway does by itself at most weekly, when images were removed and no build is pushing.
 
 ## When a service keeps stopping {#trouble}
 
@@ -105,4 +109,4 @@ A fix saves the setting; it reaches the running app on the next deploy, which th
 - **Build cache** {#build-cache -> build-cache}: Layers kept from earlier builds, shared by the project's services and trimmed back to the server's limit after each build. Clearing it only makes the next build slower.
 - **Redeploy** {#redeploy -> deploys}: Runs the image the service runs now again, for changed variables, without building.
 - **Rollback** {#rollback -> deploys}: Runs an earlier deployment's image again, as it was.
-- **Image retention** {#image-retention -> deploys}: How many built images are kept, which is how far back a rollback can go.
+- **Image retention** {#image-retention -> deploys}: How many built images a service keeps, 3 unless changed, which is how far back a rollback can go. Off keeps every image.

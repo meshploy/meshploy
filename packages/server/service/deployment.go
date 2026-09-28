@@ -1061,6 +1061,10 @@ func (s *DeploymentService) ClearBuildCache(ctx context.Context, namespace strin
 
 // ─── Rollback ─────────────────────────────────────────────────────────────────
 
+// ErrImageRemoved is a rollback to a deployment whose image is no longer in
+// the registry: removed to keep the service's images to its limit.
+var ErrImageRemoved = errors.New("this deployment's image has been removed from the registry, so it cannot be rolled back to; the service keeps its last images only (Settings, Rollback)")
+
 // Rollback re-deploys the image from a previous successful deployment without
 // triggering a new build. Returns a new Deployment record immediately.
 func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID) (*db.Deployment, error) {
@@ -1076,6 +1080,23 @@ func (s *DeploymentService) Rollback(ctx context.Context, deploymentID uuid.UUID
 	}
 	if target.Image == "" {
 		return nil, fmt.Errorf("deployment has no image reference stored")
+	}
+	if target.ImageRemovedAt != nil {
+		return nil, ErrImageRemoved
+	}
+	// Removed before removals were recorded, or by hand: rolling back to it
+	// would leave the new pod unable to pull, so the registry is asked first.
+	// Only a clear "not there" refuses; a registry that cannot be asked
+	// leaves the rollback to go ahead.
+	var bc db.BuildConfig
+	if s.db.WithContext(ctx).Where("service_id = ?", target.ServiceID).First(&bc).Error == nil {
+		if host, user, pass, err := s.resolveRegistry(ctx, &bc); err == nil {
+			if _, status := imageDigest(host, user, pass, target.Image); status == http.StatusNotFound {
+				now := time.Now()
+				s.db.Model(&db.Deployment{}).Where("id = ?", target.ID).Update("image_removed_at", &now)
+				return nil, ErrImageRemoved
+			}
+		}
 	}
 	return s.deployImage(ctx, target.Service, target.Image,
 		fmt.Sprintf("Rolling back to deployment %s (%s)\n", target.ID.String()[:8], target.Image), "Rollback",
@@ -1198,18 +1219,32 @@ func (s *DeploymentService) Retry(ctx context.Context, deploymentID uuid.UUID) (
 
 // ─── Registry cleanup ─────────────────────────────────────────────────────────
 
-// pruneOldImages deletes registry manifests for successful deployments beyond
-// the retention count. Called in a background goroutine after each successful build.
+// pruneOldImages keeps a service's images to its limit: the images of its
+// last ImageRetention successful deployments stay, and the rest are removed
+// from the registry and marked removed on their deployments. Called in the
+// background after each successful build, and when the limit is set.
 func (s *DeploymentService) pruneOldImages(ctx context.Context, serviceID uuid.UUID, bc db.BuildConfig) {
 	if !bc.RollbackEnabled || bc.ImageRetention <= 0 {
 		return
 	}
 	var deployments []db.Deployment
 	s.db.WithContext(ctx).
-		Where("service_id = ? AND status = ? AND image != ''", serviceID, db.DeploymentSuccess).
+		Where("service_id = ? AND status = ? AND image != '' AND image_removed_at IS NULL", serviceID, db.DeploymentSuccess).
 		Order("created_at DESC").
 		Find(&deployments)
-	if len(deployments) <= bc.ImageRetention {
+	// Counted in images, not deployments: a redeploy or a rollback runs an
+	// image again, and the image a recent deployment runs is kept however
+	// old the deployment that first ran it.
+	keep := map[string]bool{}
+	var old []db.Deployment
+	for _, dep := range deployments {
+		if keep[dep.Image] || len(keep) < bc.ImageRetention {
+			keep[dep.Image] = true
+			continue
+		}
+		old = append(old, dep)
+	}
+	if len(old) == 0 {
 		return
 	}
 	host, user, pass, err := s.resolveRegistry(ctx, &bc)
@@ -1220,7 +1255,6 @@ func (s *DeploymentService) pruneOldImages(ctx context.Context, serviceID uuid.U
 	// promotion deploys it upward as it is. Deleting it would leave production
 	// unable to start a pod the next time one is rescheduled, so an image any
 	// other service has deployed is kept.
-	old := deployments[bc.ImageRetention:]
 	images := make([]string, 0, len(old))
 	for _, dep := range old {
 		images = append(images, dep.Image)
@@ -1229,72 +1263,124 @@ func (s *DeploymentService) pruneOldImages(ctx context.Context, serviceID uuid.U
 	s.db.WithContext(ctx).Model(&db.Deployment{}).
 		Where("image IN ? AND service_id <> ? AND status = ?", images, serviceID, db.DeploymentSuccess).
 		Distinct().Pluck("image", &shared)
-	keep := make(map[string]bool, len(shared))
 	for _, img := range shared {
 		keep[img] = true
 	}
+	removed := map[string]bool{}
 	for _, dep := range old {
-		if !keep[dep.Image] {
-			s.deleteRegistryImage(host, user, pass, dep.Image)
+		if keep[dep.Image] {
+			continue
+		}
+		if _, done := removed[dep.Image]; !done {
+			removed[dep.Image] = deleteRegistryImage(host, user, pass, dep.Image)
+		}
+		if removed[dep.Image] {
+			now := time.Now()
+			s.db.Model(&db.Deployment{}).Where("id = ?", dep.ID).Update("image_removed_at", &now)
 		}
 	}
 }
 
-// deleteRegistryImage soft-deletes a manifest from the registry.
-// image format: "registryHost/name:tag"
-func (s *DeploymentService) deleteRegistryImage(host, user, pass, image string) {
-	// Strip registry host prefix: "host/name:tag" → "name:tag"
-	withoutHost := strings.TrimPrefix(image, strings.TrimSuffix(host, "/")+"/")
-	// Split name and tag on last ":"
+// PruneImages keeps a service's images to its limit now, rather than after its
+// next build: what setting the limit is expected to do.
+func (s *DeploymentService) PruneImages(ctx context.Context, serviceID uuid.UUID) {
+	var bc db.BuildConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&bc).Error; err != nil {
+		return
+	}
+	go s.pruneOldImages(context.WithoutCancel(ctx), serviceID, bc)
+}
+
+// ImagesKept is how many images a service's successful deployments still
+// have in the registry, as far as Meshploy knows: the ones a rollback can go
+// back to.
+func (s *DeploymentService) ImagesKept(ctx context.Context, serviceID uuid.UUID) int {
+	var n int64
+	s.db.WithContext(ctx).Model(&db.Deployment{}).
+		Where("service_id = ? AND status = ? AND image != '' AND image_removed_at IS NULL", serviceID, db.DeploymentSuccess).
+		Distinct("image").Count(&n)
+	return int(n)
+}
+
+// manifestTypes is every manifest a registry may hold an image as: Buildah
+// pushes Docker's, BuildKit (Railpack) OCI ones, often an index. Asking for
+// Docker's alone found no Railpack image, so none was ever removed.
+var manifestTypes = strings.Join([]string{
+	"application/vnd.docker.distribution.manifest.v2+json",
+	"application/vnd.docker.distribution.manifest.list.v2+json",
+	"application/vnd.oci.image.manifest.v1+json",
+	"application/vnd.oci.image.index.v1+json",
+}, ", ")
+
+// registryManifest is where an image's manifest is: the registry's base URL,
+// the repository and the tag. ok is false for an image in another registry,
+// or one with no tag.
+func registryManifest(host, image string) (base, name, tag string, ok bool) {
+	bare := strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	bare = strings.TrimSuffix(bare, "/")
+	withoutHost, found := strings.CutPrefix(image, bare+"/")
+	if !found {
+		return "", "", "", false
+	}
 	lastColon := strings.LastIndex(withoutHost, ":")
 	if lastColon < 0 {
-		return
+		return "", "", "", false
 	}
-	name := withoutHost[:lastColon]
-	tag := withoutHost[lastColon+1:]
-
-	scheme := "https"
-	if !strings.HasPrefix(host, "https://") {
-		scheme = "http"
+	scheme := "http"
+	if strings.HasPrefix(host, "https://") {
+		scheme = "https"
 	}
-	registryBase := scheme + "://" + strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	return scheme + "://" + bare, withoutHost[:lastColon], withoutHost[lastColon+1:], true
+}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	// Step 1: resolve manifest digest.
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/v2/%s/manifests/%s", registryBase, name, tag), nil)
+// imageDigest asks the registry for an image's manifest digest. status is
+// the registry's answer: 200 with a digest, 404 when it has no such image.
+func imageDigest(host, user, pass, image string) (digest string, status int) {
+	base, name, tag, ok := registryManifest(host, image)
+	if !ok {
+		return "", 0
+	}
+	req, err := http.NewRequest(http.MethodHead, fmt.Sprintf("%s/v2/%s/manifests/%s", base, name, tag), nil)
 	if err != nil {
-		return
+		return "", 0
 	}
-	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+	req.Header.Set("Accept", manifestTypes)
 	if user != "" {
 		req.SetBasicAuth(user, pass)
 	}
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		if resp != nil {
-			resp.Body.Close()
-		}
-		return
-	}
-	digest := resp.Header.Get("Docker-Content-Digest")
-	resp.Body.Close()
-	if digest == "" {
-		return
-	}
-
-	// Step 2: delete the manifest.
-	req2, err := http.NewRequest("DELETE", fmt.Sprintf("%s/v2/%s/manifests/%s", registryBase, name, digest), nil)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return
+		return "", 0
+	}
+	resp.Body.Close()
+	return resp.Header.Get("Docker-Content-Digest"), resp.StatusCode
+}
+
+// deleteRegistryImage removes an image's manifest from the registry, and says
+// whether it is gone: deleted now, or not there to begin with. Its layers stay
+// on disk until the registry's garbage collection (RegistryGC) runs.
+func deleteRegistryImage(host, user, pass, image string) bool {
+	digest, status := imageDigest(host, user, pass, image)
+	if status == http.StatusNotFound {
+		return true
+	}
+	if status != http.StatusOK || digest == "" {
+		return false
+	}
+	base, name, _, _ := registryManifest(host, image)
+	req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/v2/%s/manifests/%s", base, name, digest), nil)
+	if err != nil {
+		return false
 	}
 	if user != "" {
-		req2.SetBasicAuth(user, pass)
+		req.SetBasicAuth(user, pass)
 	}
-	resp2, err := client.Do(req2)
-	if err == nil && resp2 != nil {
-		resp2.Body.Close()
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return false
 	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusNotFound
 }
 
 // ─── Log streaming ────────────────────────────────────────────────────────────

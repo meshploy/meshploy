@@ -1,4 +1,5 @@
 import { NotLatestTag } from "@/components/services/not-latest-tag"
+import { KeepImagesOffer } from "@/components/services/keep-images-offer"
 import { ResourceSearch, useResourceSearch } from "@/components/layout/resource-search"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
@@ -130,6 +131,7 @@ function ServicesTab() {
       </div>
 
       {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
+      {orgId && <KeepImagesOffer orgId={orgId} projectId={projectId} token={token} />}
       <ResourceSearch value={search} onChange={setSearch} count={serviceList.length} label="services" empty={serviceList.length > 0 && !serviceList.some(matches)} />
       {isLoading ? (
         <div className="flex items-center justify-center h-40">

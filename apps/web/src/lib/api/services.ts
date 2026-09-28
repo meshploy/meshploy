@@ -59,6 +59,8 @@ export interface ApiDeployment {
   source_commit?: string
   source_commit_message?: string
   from_level?: string
+  /** When its image was removed from the registry, to keep the service's images to its limit: it cannot be rolled back to. */
+  image_removed_at?: string | null
   deployed_at: string | null
   created_at: string
   updated_at: string
@@ -170,8 +172,11 @@ export interface ApiBuildConfig {
   builder_memory_limit: string
   last_built_image: string
   last_built_at: string | null
+  /** true: keeps the images of its last image_retention deployments; false: every image. Any image still kept can be rolled back to. */
   rollback_enabled: boolean
   image_retention: number
+  /** How many images its deployments still have in the registry. */
+  images_kept?: number
   auto_deploy: boolean
   /** Deploy on push only when one of these paths changed. Empty = every push. */
   watch_paths: string[]
@@ -404,6 +409,21 @@ export const services = {
       {},
       token
     ),
+}
+
+/** A level's services that keep every image they build, made before keeping the last three was the default. */
+export interface ApiImageRetention {
+  services: { id: string; name: string; images_kept: number }[]
+  /** How many each would keep. */
+  keep: number
+}
+
+export const imageRetention = {
+  list: (orgId: string, projectId: string, token: string) =>
+    apiFetch<ApiImageRetention>(`/api/v1/orgs/${orgId}/projects/${projectId}/image-retention`, {}, token),
+  /** Keeps each one's last images and removes the rest now. */
+  keepLast: (orgId: string, projectId: string, token: string) =>
+    apiFetch<ApiImageRetention>(`/api/v1/orgs/${orgId}/projects/${projectId}/image-retention`, { method: "POST" }, token),
 }
 
 export const buildConfigs = {

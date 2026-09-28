@@ -59,6 +59,9 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 		// Base domains and their DNS modes: no secret, but it names what this
 		// gateway serves, so it follows the other results and stays root-only.
 		return hostagent.DomainApplyFile, body, 0o600, err
+	case hostagent.RequestRegistryGC:
+		body, err := runRegistryGC()
+		return hostagent.RegistryGCFile, body, 0o644, err
 	case hostagent.RequestMigratePlan:
 		src, err := dokploy.Collect(migrate.ExecRunner{})
 		if err != nil {

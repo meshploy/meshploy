@@ -59,7 +59,6 @@ function DeploymentsTab() {
     enabled: !!orgId && service?.type === "application",
     retry: false,
   })
-  const rollbackEnabled = bc?.rollback_enabled ?? false
   const queryClient = useQueryClient()
 
   const queryKey = ["deployments", orgId, projectId, serviceId]
@@ -107,7 +106,10 @@ function DeploymentsTab() {
       <div className="resource-metrics">
         <MetricTile icon={Rocket} label="Deployments" value={isLoading ? "…" : deploymentList.length} detail="Recorded history" />
         <MetricTile icon={Loader2} label="In progress" value={isLoading ? "…" : deploymentList.filter(d => ACTIVE_STATUSES.has(d.status)).length} detail="Queued, building or rolling out" />
-        <MetricTile icon={RotateCcw} label="Rollback" value={<span className="text-xl">{rollbackEnabled ? "Enabled" : "Disabled"}</span>} detail="Configured in build settings" />
+        {bc && (
+          <MetricTile icon={RotateCcw} label="Images kept" value={bc.images_kept ?? "…"}
+            detail={bc.rollback_enabled ? `Its last ${bc.image_retention}, to roll back to` : "Every image it builds"} />
+        )}
       </div>
       {!isDatabase && bc?.deploy_token && orgId && (
         <div className="rounded-xl bg-card ring-1 ring-foreground/10 p-4 flex flex-col gap-2">
@@ -191,7 +193,7 @@ function DeploymentsTab() {
               deployment={dep}
               projectId={projectId}
               serviceId={serviceId}
-              rollbackEnabled={rollbackEnabled}
+              current={dep.id === deploymentList.find((d) => d.status === "success")?.id}
             />
           ))}
         </div>
@@ -204,12 +206,13 @@ function DeploymentRow({
   deployment,
   projectId,
   serviceId,
-  rollbackEnabled,
+  current,
 }: {
   deployment: ApiDeployment
   projectId: string
   serviceId: string
-  rollbackEnabled: boolean
+  /** The newest successful one: what runs, so nothing to roll back to. */
+  current: boolean
 }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
@@ -230,7 +233,12 @@ function DeploymentRow({
   const rollbackMutation = useMutation({
     mutationFn: () => deploymentsApi.rollback(orgId, projectId, serviceId, deployment.id, token),
     onSuccess: invalidate,
+    // Found gone from the registry: the list now says so.
+    onError: invalidate,
   })
+  // Any deployment whose image is still kept can be gone back to, whatever
+  // the limit on kept images says.
+  const canRollBack = deployment.status === "success" && !current && !deployment.image_removed_at
 
 
   return (
@@ -250,6 +258,15 @@ function DeploymentRow({
           <code className="text-[11px] font-mono text-muted-foreground/50 truncate hidden sm:block">
             {deployment.image}
           </code>
+        )}
+        {deployment.image_removed_at && (
+          <span className="text-[10px] text-muted-foreground/70 rounded-full border border-border/60 px-1.5"
+            title="Removed from the registry to keep the service's images to its limit: it cannot be rolled back to">
+            image removed
+          </span>
+        )}
+        {rollbackMutation.isError && (
+          <span className="w-full text-xs text-destructive">{(rollbackMutation.error as Error).message}</span>
         )}
       </div>
 
@@ -282,7 +299,7 @@ function DeploymentRow({
           </Button>
         ) : (
           <>
-            {rollbackEnabled && deployment.status === "success" && (
+            {canRollBack && (
               <Button
                 variant="ghost"
                 size="icon-sm"

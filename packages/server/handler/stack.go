@@ -57,6 +57,9 @@ type UpdateStackBody struct {
 	GitBranch        *string `json:"git_branch,omitempty"`
 	GitPath          *string `json:"git_path,omitempty"`
 	GitIntegrationID *string `json:"git_integration_id,omitempty"` // "" = clear, UUID = set
+	// Images the stack's built services keep for rollback
+	RollbackEnabled *bool `json:"rollback_enabled,omitempty" doc:"true: each built service keeps its last image_retention images; false: every image"`
+	ImageRetention  *int  `json:"image_retention,omitempty" minimum:"1" maximum:"50"`
 }
 
 type SyncStackInput struct {
@@ -376,12 +379,14 @@ func (h *Handler) UpdateStack(ctx context.Context, input *UpdateStackInput) (*Ge
 		return nil, err
 	}
 	in := service.UpdateStackInput{
-		Name:      input.Body.Name,
-		Spec:      input.Body.Spec,
-		Variables: input.Body.Variables,
-		GitRepo:   input.Body.GitRepo,
-		GitBranch: input.Body.GitBranch,
-		GitPath:   input.Body.GitPath,
+		Name:            input.Body.Name,
+		Spec:            input.Body.Spec,
+		Variables:       input.Body.Variables,
+		GitRepo:         input.Body.GitRepo,
+		GitBranch:       input.Body.GitBranch,
+		GitPath:         input.Body.GitPath,
+		RollbackEnabled: input.Body.RollbackEnabled,
+		ImageRetention:  input.Body.ImageRetention,
 	}
 	if input.Body.GitMode != nil {
 		mode := db.StackGitMode(*input.Body.GitMode)

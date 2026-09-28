@@ -48,13 +48,19 @@ const (
 	// socket. Args["dry_run"] = "true" reports what would change and writes
 	// nothing.
 	RequestDomainApply = "domain.apply"
+	// RequestRegistryGC runs the built-in registry's garbage collection, which
+	// is what frees the disk of images removed from it: removing an image
+	// removes only its manifest, and its layers stay until this runs. The API
+	// asks for it when images were removed and no build is pushing, since a
+	// layer being pushed during a collection can be deleted under the push.
+	RequestRegistryGC = "registry.gc"
 )
 
 // RequestTypes is every type the agent accepts.
 var RequestTypes = []string{
 	RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential,
 	RequestMigratePrepare, RequestMigrateMove, RequestMigrateCutover, RequestMigrateRollback,
-	RequestMigrateFinish, RequestDomainApply,
+	RequestMigrateFinish, RequestDomainApply, RequestRegistryGC,
 }
 
 const (
@@ -84,6 +90,8 @@ const (
 	// DomainApplyFile is what the last domain.apply did, for the console to
 	// read back.
 	DomainApplyFile = "domain-apply.json"
+	// RegistryGCFile is what the last registry.gc freed (RegistryGC).
+	RegistryGCFile = "registry-gc.json"
 	// StatusFile is where the migration has got to: which stages have run and
 	// which groups have moved.
 	//
@@ -94,6 +102,14 @@ const (
 	// makes a migration driven from a terminal show up in the browser.
 	StatusFile = "dokploy-status.json"
 )
+
+// RegistryGC is what a registry.gc did: how much the registry held before
+// and after its garbage collection.
+type RegistryGC struct {
+	FinishedAt  time.Time `json:"finished_at"`
+	BeforeBytes int64     `json:"before_bytes"`
+	AfterBytes  int64     `json:"after_bytes"`
+}
 
 // InboxDir is where the API writes requests.
 func InboxDir(dir string) string { return filepath.Join(dir, "inbox") }

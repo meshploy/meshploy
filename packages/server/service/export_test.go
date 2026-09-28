@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"time"
 
 	meshdb "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/config"
 
 	"github.com/google/uuid"
 	"k8s.io/client-go/kubernetes"
@@ -64,4 +66,21 @@ func FailDeploymentForTest(s *Services, id uuid.UUID, reason string) {
 
 func SucceedDeploymentForTest(s *Services, ctx context.Context, id, serviceID uuid.UUID, image string) {
 	s.Deployments.succeedDeployment(ctx, id, serviceID, "", image)
+}
+
+// PruneImagesForTest keeps a service's images to its limit, as after a build,
+// and waits for it.
+func PruneImagesForTest(s *Services, ctx context.Context, serviceID uuid.UUID) {
+	var bc meshdb.BuildConfig
+	if s.Deployments.db.Where("service_id = ?", serviceID).First(&bc).Error == nil {
+		s.Deployments.pruneOldImages(ctx, serviceID, bc)
+	}
+}
+
+// RequestRegistryGCForTest asks for the registry's garbage collection if it
+// is due at now, on a gateway whose host agent reports into hostDir.
+func RequestRegistryGCForTest(s *Services, ctx context.Context, hostDir string, now time.Time) error {
+	s.Deployments.cfg = &config.Config{HostDir: hostDir, BuiltinRegistryEndpoint: "100.64.0.1:5000"}
+	defer func() { s.Deployments.cfg = nil }()
+	return s.Deployments.requestRegistryGC(ctx, now)
 }

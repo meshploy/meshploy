@@ -548,7 +548,8 @@ function demoDeployHistory() {
       source_branch: "develop", source_commit: commit, source_commit_message: message, image_built_at: ago(builtDays),
     })
   return [
-    api(1, 13, 0, "success", "5d1e0a7", "Add request logging"),
+    // The oldest image was removed to keep api to its last three.
+    { ...api(1, 13, 0, "success", "5d1e0a7", "Add request logging"), image_removed_at: ago(8) },
     api(2, 11, 0, "failed", "8c24f19", "Upgrade the router"),
     api(3, 11, 2, "success", "b7e3d40", "Fix the router upgrade"),
     api(4, 8, 0, "success", "e91a6c3", "Cache sessions"),

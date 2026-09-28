@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -233,6 +234,9 @@ func (h *Handler) RollbackDeployment(ctx context.Context, input *DeploymentPathI
 		return nil, err
 	}
 	dep, err := h.svc.Deployments.Rollback(ctx, deploymentID)
+	if errors.Is(err, service.ErrImageRemoved) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

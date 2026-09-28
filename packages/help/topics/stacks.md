@@ -34,6 +34,7 @@ A stack runs a Compose file the way Docker Compose would, with Kubernetes undern
 - **Published ports.** A port published everywhere (`5432:5432`) is reachable on the mesh, never on the internet unless you add a TCP route. One published on a single address of the host (`100.81.6.12:5433:5432`) gets a TCP route bound to that address, created by its first deploy. One published on `127.0.0.1` stays inside the cluster.
 - **Bind mounts** of the repository's own files (`./migrations`, `./scripts/setup.sh`) arrive where Compose put them, read-only, up to 1 MB per service in all. A bind mount of a path on the host, such as `/var/run/docker.sock`, is left out, and the apply says so.
 - **Resources.** `mem_limit`, `cpus`, `mem_reservation` and `deploy.resources` set the service's limits and requests. Where the file says nothing, a new service gets Meshploy's defaults, and a limit set on the service since is kept by the next apply.
+- **Images kept for rollback.** A stack's built services keep every image they build until the stack says otherwise, on its Services tab: then each keeps its last few, as a service made on its own does. A service's own `x-meshploy.rollback` (`enabled`, `retention`) in the file wins over the stack's.
 - **Routes name a port.** A route to a service names the port it serves, and that port is routable from then on, even one the file only published on `127.0.0.1` or never listed.
 
 ## Terms {#terms}

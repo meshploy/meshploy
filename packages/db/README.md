@@ -48,11 +48,11 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 | Table | Purpose |
 |---|---|
-| `stacks` | Docker Compose stacks — parsed spec + services |
+| `stacks` | Docker Compose stacks — parsed spec + services, and the images their built services keep for rollback (`rollback_enabled`, `image_retention`) |
 | `stack_runs` | One Sync or Apply of a stack and its rollout: the services in `depends_on` layers, each with its deployment and state, and what the apply said. The request answers with the first layer; the rest are followed here |
 | `services` | Polymorphic workload: application or database. `slug` is the Kubernetes object name, fixed at creation and suffixed when the plain name is taken in the project; empty on pre-slug rows, which fall back to the display name. `lineage_id` ties the copies of one service across environment levels (a service's lineage is `COALESCE(lineage_id, id)`) |
 | `service_ports` | Exposed ports per service |
-| `build_configs` | Git source, builder type, registry target (1:1 with service) |
+| `build_configs` | Git source, builder type, registry target, and how many images it keeps for rollback: `rollback_enabled` on keeps the last `image_retention` (3 for a service made on its own), off keeps every one (1:1 with service) |
 | `database_configs` | Engine, version, storage size (1:1 with service) |
 | `volumes` | Persistent volumes |
 | `volume_mounts` | Volume ↔ Service mount (path + read-only flag) |
@@ -83,7 +83,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 | Table | Purpose |
 |---|---|
-| `deployments` | Deployment history + K8s artefacts + build log, and where the image came from: `source` (`build`, `promotion`, `bring_down`, `rollback`, `image`), branch, commit and its subject, and for an image moved between levels the level and deployment it came from |
+| `deployments` | Deployment history + K8s artefacts + build log, and where the image came from: `source` (`build`, `promotion`, `bring_down`, `rollback`, `image`), branch, commit and its subject, and for an image moved between levels the level and deployment it came from; `image_removed_at` once its image was removed from the registry, when it can no longer be rolled back to |
 
 ### Jobs & Cron
 
