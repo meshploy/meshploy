@@ -35,6 +35,7 @@ function MigrationPage() {
   const qc = useQueryClient()
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [confirmCutover, setConfirmCutover] = useState(false)
+  const [confirmEdgeFirst, setConfirmEdgeFirst] = useState(false)
   const [takeVolumes, setTakeVolumes] = useState(false)
   const [rollbackGroup, setRollbackGroup] = useState<GroupProgress | null>(null)
 
@@ -48,8 +49,8 @@ function MigrationPage() {
   })
 
   const run = useMutation({
-    mutationFn: ({ stage, group, volumes }: { stage: MigrationStage; group?: string; volumes?: boolean }) =>
-      systemApi.requestMigration(token, stage, { group, volumes }),
+    mutationFn: ({ stage, group, volumes, edgeFirst }: { stage: MigrationStage; group?: string; volumes?: boolean; edgeFirst?: boolean }) =>
+      systemApi.requestMigration(token, stage, { group, volumes, edge_first: edgeFirst || undefined }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["migration"] }),
   })
 
@@ -86,6 +87,9 @@ function MigrationPage() {
   const stuck = groups.filter((g) => !g.moved && !g.can_move)
   const goingDark = stuck.flatMap((g) => g.domains ?? [])
   const readyToCutOver = groups.length > 0 && waiting.length === 0
+  // Taken first, the ports change hands while groups are still to move: the
+  // old edge keeps serving them from a side port, so nothing goes dark.
+  const edgeFirst = !!status?.edge_first
   const busy = run.isPending || Object.values(data.requests ?? {}).some((r) => r.state === "queued" || r.state === "running")
 
   return (
@@ -161,19 +165,34 @@ function MigrationPage() {
         <section className="space-y-3">
           <ResourceIntro
             title="Hand over the ports"
-            description="Carries the certificates across, stops the old edge and starts Meshploy's on 80 and 443. Seconds of refused connections, and every group must have moved first."
+            description="Carries the certificates across and starts Meshploy's edge on 80 and 443. Seconds of refused connections. Every group moves first, or the ports are taken first and the old edge keeps serving what has not moved."
             action={
-              <Button size="sm" variant={status?.cut_over ? "outline" : "default"}
-                disabled={busy || !readyToCutOver || !data.agent_reporting || status?.cut_over}
-                onClick={() => (goingDark.length > 0 ? setConfirmCutover(true) : run.mutate({ stage: "cutover" }))}>
-                {status?.cut_over ? "Done" : "Cut over"}
-              </Button>
+              <div className="flex gap-2">
+                {!status?.cut_over && waiting.length > 0 && (
+                  <Button size="sm" variant="outline"
+                    disabled={busy || groups.length === 0 || !status?.prepared || !data.agent_reporting}
+                    onClick={() => setConfirmEdgeFirst(true)}>
+                    Take the edge first
+                  </Button>
+                )}
+                <Button size="sm" variant={status?.cut_over ? "outline" : "default"}
+                  disabled={busy || !readyToCutOver || !data.agent_reporting || status?.cut_over}
+                  onClick={() => (goingDark.length > 0 ? setConfirmCutover(true) : run.mutate({ stage: "cutover" }))}>
+                  {status?.cut_over ? "Done" : "Cut over"}
+                </Button>
+              </div>
             }
           />
-          {waiting.length > 0 && (
+          {edgeFirst && (
             <p className="text-xs text-muted-foreground">
-              {waiting.length === 1 ? `${waiting[0].name} can still move: move it first.`
-                : `${waiting.length} groups can still move: move them first.`}
+              Meshploy's edge holds the ports. What has not moved is still served by the old edge from a
+              side port; moving a group now only switches its domains.
+            </p>
+          )}
+          {waiting.length > 0 && !status?.cut_over && (
+            <p className="text-xs text-muted-foreground">
+              {waiting.length === 1 ? `${waiting[0].name} can still move: move it first, or take the edge first.`
+                : `${waiting.length} groups can still move: move them first, or take the edge first.`}
             </p>
           )}
           {waiting.length === 0 && goingDark.length > 0 && !status?.cut_over && (
@@ -194,7 +213,7 @@ function MigrationPage() {
             description="Removes what is left of the old platform. Until you do this, everything above can be put back; afterwards, nothing can."
             action={
               <Button size="sm" variant="destructive"
-                disabled={busy || !status?.cut_over || !data.agent_reporting}
+                disabled={busy || !status?.cut_over || (edgeFirst && waiting.length > 0) || !data.agent_reporting}
                 onClick={() => setConfirmFinish(true)}>
                 <Trash2 className="h-3.5 w-3.5" />Finish
               </Button>
@@ -202,6 +221,11 @@ function MigrationPage() {
           />
           {!status?.cut_over && (
             <p className="text-xs text-muted-foreground">Available once the ports have been handed over.</p>
+          )}
+          {edgeFirst && waiting.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Available once every group that can move has: the old edge still serves them.
+            </p>
           )}
           <RequestLine state={data.requests?.["migrate.finish"]} />
         </section>
@@ -256,6 +280,33 @@ function MigrationPage() {
             <Button variant="ghost" onClick={() => setConfirmCutover(false)}>Cancel</Button>
             <Button onClick={() => { run.mutate({ stage: "cutover" }); setConfirmCutover(false) }}>
               Hand over the ports
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Taking the edge first changes what the old platform can still do. */}
+      <Dialog open={confirmEdgeFirst} onOpenChange={setConfirmEdgeFirst}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Take the edge before the groups move?</DialogTitle>
+            <DialogDescription>
+              Meshploy's edge starts on 80 and 443. The old edge moves to a side port on this machine and
+              keeps serving every domain that has not moved, as it does now.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="text-sm space-y-1.5 list-disc pl-5">
+            <li>Groups then move one at a time; moving one switches only its domains.</li>
+            <li>
+              A domain added on the old platform from now on is not reached: Meshploy only hands on the
+              hostnames it knew when the edge was taken. Deploy new work on Meshploy.
+            </li>
+            <li>Rolling back gives the old edge its ports again.</li>
+          </ul>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmEdgeFirst(false)}>Cancel</Button>
+            <Button onClick={() => { run.mutate({ stage: "cutover", edgeFirst: true }); setConfirmEdgeFirst(false) }}>
+              Take the edge
             </Button>
           </DialogFooter>
         </DialogContent>

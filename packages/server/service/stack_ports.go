@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -197,6 +198,39 @@ func (s *StackService) syncStackPorts(ctx context.Context, serviceID uuid.UUID, 
 		var current []meshdb.ServicePort
 		if err := tx.Where("service_id = ?", serviceID).Find(&current).Error; err != nil {
 			return err
+		}
+		// A port a route names stays routable whatever compose says of it:
+		// the route made it so, and a re-apply taking its NodePort away
+		// would take the route down with it.
+		var routed, tcpRouted []int
+		if err := tx.Model(&meshdb.RouteTarget{}).Where("service_id = ? AND service_port > 0", serviceID).
+			Pluck("service_port", &routed).Error; err != nil {
+			return err
+		}
+		// A TCP route's port too, other than one a compose publish made: that
+		// one comes and goes with the file.
+		if err := tx.Model(&meshdb.TCPRoute{}).Where("service_id = ? AND service_port > 0 AND NOT from_publish", serviceID).
+			Pluck("service_port", &tcpRouted).Error; err != nil {
+			return err
+		}
+		ports = slices.Clone(ports)
+		for _, p := range tcpRouted {
+			for i := range ports {
+				if ports[i].Port == p {
+					ports[i].IsPublic = true
+				}
+			}
+		}
+		for i := range ports {
+			if slices.Contains(routed, ports[i].Port) {
+				ports[i].IsPublic, ports[i].IsHTTP = true, true
+			}
+		}
+		// And one compose does not list at all, which the route declared.
+		for _, port := range routed {
+			if !slices.ContainsFunc(ports, func(p PortInput) bool { return p.Port == port }) {
+				ports = append(ports, PortInput{Name: fmt.Sprintf("route-%d", port), Port: port, IsHTTP: true, IsPublic: true})
+			}
 		}
 		if samePorts(current, ports) {
 			return nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,11 +113,12 @@ func runMigrateMove(groupID string) ([]byte, error) {
 		Plan:    *rt.plan,
 		Group:   group,
 		API:     rt.api,
-		Edge:    dokploy.EdgeSwitcher{Target: dokploy.ProxyTarget(proxyHostAddr(), 0), Journal: rt.journal},
+		Edge:    dokploy.EdgeSwitcher{Target: dokploy.ProxyTarget(proxyHostAddr(), envPort("PROXY_PORT")), Journal: rt.journal},
 		Control: dokploy.Control{Runner: migrate.ExecRunner{}, Journal: rt.journal},
 		Probe:   dokploy.HTTPProbe{Addr: probeAddr()},
 		Data:    data,
 		Images:  &dokploy.ImageMover{Runner: migrate.ExecRunner{}, Registry: registry, Journal: rt.journal},
+		Repo:    dokploy.DiskRepo{},
 		Journal: rt.journal,
 	})
 	body, marshalErr := json.Marshal(result)
@@ -167,7 +169,7 @@ func unservedAtCutover() ([]string, error) {
 }
 
 // runMigrateCutover hands over ports 80 and 443: stage 3.
-func runMigrateCutover() ([]byte, error) {
+func runMigrateCutover(edgeFirst bool) ([]byte, error) {
 	rt, err := openMigration()
 	if err != nil {
 		return nil, err
@@ -192,6 +194,10 @@ func runMigrateCutover() ([]byte, error) {
 		ReadyCaddy:     meshployEdgeReady,
 		StartCaddy:     startMeshployEdge,
 		CaddyContainer: meshployCaddyContainer,
+		EdgeFirst:      edgeFirst,
+		Fallback:       rt.api,
+		ProxyAddr:      "127.0.0.1:" + strconv.Itoa(proxyPortOrDefault()),
+		TraefikConfig:  filepath.Join(dokploy.DefaultTraefikDir, "traefik.yml"),
 		Now:            time.Now,
 	})
 	body, marshalErr := json.Marshal(result)

@@ -191,3 +191,26 @@ func TestSkippingIsRecordedWithoutAPlan(t *testing.T) {
 		t.Error("a skip moves nothing, so there is no plan to write")
 	}
 }
+
+// A plan read in a terminal is confirmed with its defaults, and one with a
+// question that has none is refused, naming it.
+func TestConfirmPlanTakesTheDefaults(t *testing.T) {
+	migrationDir = t.TempDir()
+	plan := dokploy.Plan{Items: []dokploy.Item{{ID: "a1", Name: "web", Verdict: dokploy.Moves,
+		Decisions: []dokploy.Decision{{ID: "builder", Question: "which builder", Default: "image"}}}}}
+	if err := ConfirmPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	saved, ch, err := ReadConfirmedPlan()
+	if err != nil || saved == nil {
+		t.Fatalf("nothing saved: %v", err)
+	}
+	if ch.Decisions["a1"]["builder"] != "image" {
+		t.Errorf("default not taken: %v", ch.Decisions)
+	}
+
+	plan.Items[0].Decisions[0].Default = ""
+	if err := ConfirmPlan(plan); err == nil || !strings.Contains(err.Error(), "web: which builder") {
+		t.Errorf("an unanswerable question should refuse, naming it: %v", err)
+	}
+}

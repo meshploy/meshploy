@@ -347,6 +347,18 @@ func (m DataMover) CopyFiles(group Group, ids IDLookup) error {
 		}
 	}
 
+	// A compose app's named volumes: Docker's "<app>_<name>" into the stack's
+	// "<stack>-<name>", which its apply made. Left out, the app started on
+	// empty volumes and the move called that a success.
+	for _, member := range group.Members {
+		if member.Kind != "compose" {
+			continue
+		}
+		if err := m.copyStackVolumes(group, member, ids); err != nil {
+			return err
+		}
+	}
+
 	// An application's own volumes. Stage 1 created each one and attached it;
 	// what it could not do is fill it, because filling it means stopping the
 	// application that owns it.
@@ -387,6 +399,84 @@ func (m DataMover) CopyFiles(group Group, ids IDLookup) error {
 				Target: fmt.Sprintf("%s (%d entries)", mount.name, n), Result: journal.OK}); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// copyStackVolumes fills a compose app's stack volumes from its Docker ones.
+func (m DataMover) copyStackVolumes(group Group, member GroupMember, ids IDLookup) error {
+	it, ok := m.item(member.ID)
+	if !ok {
+		return nil
+	}
+	app := m.appName(it)
+	var volumes []string
+	for _, v := range m.Source.Docker.Volumes {
+		if strings.HasPrefix(v.Name, app+"_") {
+			volumes = append(volumes, v.Name)
+		}
+	}
+	if len(volumes) == 0 {
+		return nil
+	}
+	api, ok := m.API.(interface {
+		StackVolumeClaim(projectID, name string) (string, error)
+		StackServiceRefs(projectID, stackID string) ([]StackServiceRef, error)
+	})
+	if !ok {
+		return fmt.Errorf("%s has volumes to copy, and this API cannot find the stack's", member.Name)
+	}
+	stackID, projectID := ids(member)
+	if stackID == "" {
+		return fmt.Errorf("%s has no Meshploy stack: run prepare first", member.Name)
+	}
+	namespace, err := m.API.ProjectSlug(projectID)
+	if err != nil {
+		return err
+	}
+	refs, err := api.StackServiceRefs(projectID, stackID)
+	if err != nil {
+		return err
+	}
+	users := map[string]string{}
+	for _, pair := range strings.Split(it.Details["volume_users"], ",") {
+		if vol, svc, ok := strings.Cut(pair, ":"); ok {
+			users[vol] = svc
+		}
+	}
+	for _, docker := range volumes {
+		name := strings.TrimPrefix(docker, app+"_")
+		step := m.step(group.ID, "data", member.ID+"/volume/"+name)
+		if m.Journal.Done(step) {
+			continue
+		}
+		claim, err := api.StackVolumeClaim(projectID, it.Name+"-"+name)
+		if err != nil {
+			return fmt.Errorf("%s: its stack has no volume for %s: %w", member.Name, name, err)
+		}
+		// The helper runs the image of a service that mounts the volume: one
+		// the cluster can pull, with whatever the volume's files expect.
+		serviceID := ""
+		for _, r := range refs {
+			if r.Name == users[name] {
+				serviceID = r.ID
+			}
+		}
+		if serviceID == "" && len(refs) > 0 {
+			serviceID = refs[0].ID
+		}
+		image, err := m.API.ServiceImage(projectID, serviceID)
+		if err != nil {
+			return err
+		}
+		n, err := m.copyIntoClaim(namespace, claim, image, m.dataDir(docker))
+		if err != nil {
+			return fmt.Errorf("copy %s: %w", docker, err)
+		}
+		if err := m.Journal.Append(journal.Entry{Step: step, Group: group.ID, Action: "copy-volume",
+			Target: fmt.Sprintf("%s (%d entries)", docker, n), Result: journal.OK}); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -636,20 +726,22 @@ func (m DataMover) copyIntoClaim(namespace, claim, image, srcDir string) (int, e
 	if len(pod) > 60 {
 		pod = pod[:60]
 	}
-	// A helper left behind by an interrupted run holds the claim, so the first
-	// thing is to be sure there is not one.
-	_ = m.Kube.DeletePod(namespace, pod)
-	if err := m.Kube.Apply(copyPodManifest(namespace, pod, claim, image)); err != nil {
-		return 0, fmt.Errorf("start the copy helper: %w", err)
-	}
-	defer func() { _ = m.Kube.DeletePod(namespace, pod) }()
-
 	timeout := m.PodTimeout
 	if timeout == 0 {
 		timeout = 3 * time.Minute
 	}
-	if err := m.Kube.WaitReady(namespace, pod, timeout); err != nil {
-		return 0, fmt.Errorf("the copy helper did not start: %w", err)
+	defer func() { _ = m.Kube.DeletePod(namespace, pod) }()
+	// The service's own image first: one the cluster can pull, air-gapped
+	// or not. But a copy needs sh and tar, which a minimal image - MinIO's,
+	// anything distroless - does not have; then a small one that does.
+	first := timeout
+	if first > time.Minute {
+		first = time.Minute
+	}
+	if err := m.startHelper(namespace, pod, claim, image, first); err != nil {
+		if ferr := m.startHelper(namespace, pod, claim, copyHelperImage, timeout); ferr != nil {
+			return 0, fmt.Errorf("the copy helper did not start with %s (%v) or %s: %w", image, err, copyHelperImage, ferr)
+		}
 	}
 
 	// Empty it first: the workload may have started once and written its own
@@ -694,6 +786,27 @@ func (m DataMover) copyIntoClaim(namespace, claim, image, srcDir string) (int, e
 // keeps the commands the same for every workload.
 const copyMount = "/meshploy-data"
 
+// copyHelperImage runs a copy when the service's own image cannot: it has sh
+// and tar, and is small.
+const copyHelperImage = "docker.io/library/busybox:1.36"
+
+// startHelper starts the pod a copy runs in and checks it can do one.
+func (m DataMover) startHelper(namespace, pod, claim, image string, timeout time.Duration) error {
+	// A helper left behind - by an interrupted run, or by a first try whose
+	// image could not copy - holds the claim, so there must not be one.
+	_ = m.Kube.DeletePod(namespace, pod)
+	if err := m.Kube.Apply(copyPodManifest(namespace, pod, claim, image)); err != nil {
+		return fmt.Errorf("start the copy helper: %w", err)
+	}
+	if err := m.Kube.WaitReady(namespace, pod, timeout); err != nil {
+		return fmt.Errorf("the copy helper did not start: %w", err)
+	}
+	if err := m.Kube.Exec(namespace, pod, nil, nil, "sh", "-c", "command -v tar"); err != nil {
+		return fmt.Errorf("%s has no tar: %w", image, err)
+	}
+	return nil
+}
+
 func copyPodManifest(namespace, pod, claim, image string) string {
 	return fmt.Sprintf(`apiVersion: v1
 kind: Pod
@@ -709,6 +822,12 @@ spec:
     - name: copy
       image: %s
       command: ["sh", "-c", "sleep 3600"]
+      # As root, whatever user the image runs as: the copy restores every
+      # file's owner and mode, which a non-root user - Redpanda's image
+      # runs as redpanda - cannot, and tar then fails half-way.
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
       volumeMounts:
         - name: data
           mountPath: %s

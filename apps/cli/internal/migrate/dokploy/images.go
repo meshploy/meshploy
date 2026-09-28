@@ -26,8 +26,19 @@ import (
 
 // Registry is Meshploy's built-in registry, as reachable from this host.
 type Registry struct {
-	// Endpoint is host:port, e.g. "100.64.0.1:5000".
+	// Endpoint is host:port, e.g. "100.64.0.1:5000": what the cluster pulls.
 	Endpoint string
+	// PushVia is the same registry by another address, the one pushed to:
+	// "127.0.0.1:5000" on the gateway it runs on. Empty pushes to Endpoint.
+	PushVia string
+}
+
+// pushRef is ref named by PushVia, which is where it is pushed.
+func (r Registry) pushRef(ref string) string {
+	if r.PushVia == "" || !strings.HasPrefix(ref, r.Endpoint+"/") {
+		return ref
+	}
+	return r.PushVia + strings.TrimPrefix(ref, r.Endpoint)
 }
 
 // ImageMover copies locally built images into the built-in registry.
@@ -70,11 +81,12 @@ func (m ImageMover) Push(step, group, image string) (string, error) {
 		return target, nil
 	}
 	entry := journal.Entry{Step: step, Group: group, Action: "push-image", Target: target, Result: journal.OK, Created: target}
-	if _, err := m.Runner.Output("docker", "tag", image, target); err != nil {
+	push := m.Registry.pushRef(target)
+	if _, err := m.Runner.Output("docker", "tag", image, push); err != nil {
 		return "", m.fail(entry, fmt.Errorf("tag %s: %w", image, err))
 	}
-	if _, err := m.Runner.Output("docker", "push", target); err != nil {
-		return "", m.fail(entry, fmt.Errorf("push %s: %w", target, err))
+	if _, err := m.Runner.Output("docker", "push", push); err != nil {
+		return "", m.fail(entry, fmt.Errorf("push %s: %w", push, err))
 	}
 	if m.Journal != nil {
 		// No undo: an image in a registry harms nothing, and deleting one a
@@ -135,8 +147,15 @@ func (m ImageMover) Carry(step, group, container string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read image %s: %w", id, err)
 	}
+	// A registry image is referred to by its digest - unless the registry no
+	// longer has it. Images disappear upstream: MinIO stopped publishing
+	// minio/minio, and a server that pulled it years ago is the only place
+	// left holding it. The cluster could not pull that, so it is carried like
+	// one built here.
 	if fields := strings.Fields(digests); len(fields) > 0 {
-		return fields[0], nil
+		if _, err := m.Runner.Output("docker", "manifest", "inspect", fields[0]); err == nil {
+			return fields[0], nil
+		}
 	}
 	if m.Registry.Endpoint == "" {
 		return "", fmt.Errorf("%s runs an image built on this host, and there is no registry to carry it to", container)
@@ -153,11 +172,12 @@ func (m ImageMover) Carry(step, group, container string) (string, error) {
 		return target, nil
 	}
 	entry := journal.Entry{Step: step, Group: group, Action: "push-image", Target: target, Result: journal.OK, Created: target}
-	if _, err := m.Runner.Output("docker", "tag", id, target); err != nil {
+	push := m.Registry.pushRef(target)
+	if _, err := m.Runner.Output("docker", "tag", id, push); err != nil {
 		return "", m.fail(entry, fmt.Errorf("tag %s: %w", id, err))
 	}
-	if _, err := m.Runner.Output("docker", "push", target); err != nil {
-		return "", m.fail(entry, fmt.Errorf("push %s: %w", target, err))
+	if _, err := m.Runner.Output("docker", "push", push); err != nil {
+		return "", m.fail(entry, fmt.Errorf("push %s: %w", push, err))
 	}
 	if m.Journal != nil {
 		_ = m.Journal.Append(entry)

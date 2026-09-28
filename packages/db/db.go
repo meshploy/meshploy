@@ -104,6 +104,7 @@ func Migrate(db *gorm.DB) error {
 		&Route{},
 		&RouteTarget{},
 		&TCPRoute{},
+		&EdgeFallback{},
 
 		// Deployment History
 		&Deployment{},

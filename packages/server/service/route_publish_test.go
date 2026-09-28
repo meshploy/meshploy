@@ -184,3 +184,58 @@ func TestAPausedRouteMayWaitForItsAddress(t *testing.T) {
 	assert.Equal(t, 31555, published.Targets[0].TargetPort, "publishing resolved the address")
 	assert.NotEmpty(t, published.Targets[0].TargetIP)
 }
+
+// A route that names a service's own port keeps to it: made routable if it
+// was not - a compose port published on loopback, which Dokploy's Traefik still
+// served a domain on - and reached again when the paused route is published,
+// rather than whichever port is primary.
+func TestARouteKeepsToThePortItNamed(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	svc, err := e.svcs.Workloads.Create(ctx, e.project.ID, service.CreateWorkloadInput{
+		Name: "ui", Type: meshdb.ServiceTypeApplication, Image: "nginx:1"})
+	require.NoError(t, err)
+	require.NoError(t, e.gdb.Where("service_id = ?", svc.ID).Delete(&meshdb.ServicePort{}).Error)
+	require.NoError(t, e.gdb.Create(&[]meshdb.ServicePort{
+		{ServiceID: svc.ID, Name: "api", Port: 9000, IsHTTP: true, IsPublic: true, IsPrimary: true},
+		{ServiceID: svc.ID, Name: "web", Port: 80, IsHTTP: true},
+	}).Error)
+
+	route, err := e.svcs.Routes.Create(ctx, service.CreateRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID, Hostname: "ui.example.com", Paused: true,
+		Targets: []service.TargetInput{{Path: "/", ServiceID: &svc.ID, Port: 80, AllowUnresolved: true}},
+	})
+	require.NoError(t, err)
+	require.Len(t, route.Targets, 1)
+	assert.Equal(t, 80, route.Targets[0].ServicePort)
+	var web meshdb.ServicePort
+	require.NoError(t, e.gdb.First(&web, "service_id = ? AND port = 80", svc.ID).Error)
+	assert.True(t, web.IsPublic, "the port a route names is routable")
+
+	// The deploy assigns NodePorts; publishing then resolves the named port.
+	require.NoError(t, e.gdb.Model(&meshdb.ServicePort{}).Where("service_id = ? AND port = 80", svc.ID).Update("node_port", 30080).Error)
+	require.NoError(t, e.gdb.Model(&meshdb.ServicePort{}).Where("service_id = ? AND port = 9000", svc.ID).Update("node_port", 30900).Error)
+	live, err := e.svcs.Routes.SetPublished(ctx, route.ID, e.project.ID, true, uuid.New())
+	require.NoError(t, err)
+	assert.Equal(t, 30080, live.Targets[0].TargetPort, "the named port, not the primary one")
+}
+
+// A port the service never declared is declared by the route that names it:
+// a compose service Traefik reached on its container port with no ports: at all.
+func TestARouteDeclaresThePortItNames(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	svc, err := e.svcs.Workloads.Create(ctx, e.project.ID, service.CreateWorkloadInput{
+		Name: "pgadmin", Type: meshdb.ServiceTypeApplication, Image: "dpage/pgadmin4"})
+	require.NoError(t, err)
+
+	route, err := e.svcs.Routes.Create(ctx, service.CreateRouteInput{
+		OrgID: e.org.ID, ProjectID: e.project.ID, Hostname: "pga.example.com", Paused: true,
+		Targets: []service.TargetInput{{Path: "/", ServiceID: &svc.ID, Port: 80, AllowUnresolved: true}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 80, route.Targets[0].ServicePort)
+	var sp meshdb.ServicePort
+	require.NoError(t, e.gdb.First(&sp, "service_id = ? AND port = 80", svc.ID).Error)
+	assert.True(t, sp.IsPublic && sp.IsHTTP)
+}

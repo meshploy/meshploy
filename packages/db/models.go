@@ -1131,6 +1131,11 @@ type RouteTarget struct {
 	NodeID     *uuid.UUID `gorm:"type:uuid;index"           json:"node_id"`
 	TargetIP   string     `gorm:"not null;default:''"       json:"target_ip"`
 	TargetPort int        `gorm:"not null;default:0"        json:"target_port"`
+	// ServicePort is the service's own port a service target routes to, as
+	// the route named it; 0 follows the service's primary public port.
+	// Recorded so resolving the target again - when a paused route is
+	// published - reaches the same port and not whichever is primary.
+	ServicePort int `gorm:"not null;default:0" json:"service_port"`
 	// TargetTLS makes the hop to the target HTTPS instead of HTTP, for
 	// something that only speaks TLS - another Caddy, a Home Assistant, an
 	// appliance. The certificate is not verified: the target is named by
@@ -1639,3 +1644,22 @@ type Template struct {
 
 	Organization *Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }
+
+// EdgeFallback is where the gateway's proxy sends a request for a hostname it
+// has no published route for, while a migration is taking over from another
+// platform: that platform's own edge, moved to a side port when Meshploy's
+// took 80 and 443. The domains still served there keep working exactly as
+// they did, and each one moves over the moment Meshploy publishes a route for
+// it - a published route always wins. One row at most; none outside a
+// migration.
+type EdgeFallback struct {
+	Base
+	// Upstream is host:port of the old edge's HTTP entrypoint, reached plainly
+	// from the gateway: TLS ends at Meshploy's Caddy.
+	Upstream string `gorm:"not null" json:"upstream"`
+	// Hostnames are the domains the old edge still serves. Only these go to
+	// it, and only these get certificates for it.
+	Hostnames StringArray `gorm:"type:jsonb;not null;default:'[]'" json:"hostnames"`
+}
+
+func (EdgeFallback) TableName() string { return "edge_fallbacks" }

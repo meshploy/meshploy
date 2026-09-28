@@ -163,3 +163,24 @@ func TestFinishIsQueuedWithWhatWasChosenAboutVolumes(t *testing.T) {
 	require.NoError(t, err, "the agent must accept what the API writes")
 	assert.Equal(t, "true", req.Args["volumes"])
 }
+
+// The first Prepare carries the migration's credential with it, since nothing
+// else on the page asks for one; a later Prepare works with the one the host
+// already took, and mints nothing.
+func TestTheFirstPrepareIssuesTheCredential(t *testing.T) {
+	ctx := context.Background()
+	e, svc, hostDir := newMigrationEnv(t, true)
+	left := filepath.Join(hostagent.InboxDir(hostDir), hostagent.CredentialFile)
+
+	_, err := svc.System.RequestMigration(ctx, e.owner, "prepare", nil)
+	require.NoError(t, err)
+	cred, err := hostagent.TakeCredential(hostDir)
+	require.NoError(t, err)
+	require.NotNil(t, cred, "the first prepare should leave a credential")
+	require.NotEmpty(t, cred.Token)
+
+	_, err = svc.System.RequestMigration(ctx, e.owner, "prepare", nil)
+	require.NoError(t, err)
+	_, err = os.Stat(left)
+	assert.True(t, os.IsNotExist(err), "a later prepare should not mint another")
+}

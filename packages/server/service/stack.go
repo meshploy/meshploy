@@ -572,6 +572,12 @@ func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	return s.apply(ctx, stackID, triggerBy, envOverrides, nil, applyOptions(opts))
 }
 
+// ApplyWithFiles applies with the files the spec names by path, sent by a
+// caller that has them - as a manifest's are. None sent is a plain Apply.
+func (s *StackService) ApplyWithFiles(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides, files map[string]string, opts ...ApplyOptions) (*ApplyResult, error) {
+	return s.apply(ctx, stackID, triggerBy, envOverrides, mapFileSource(files), applyOptions(opts))
+}
+
 // apply reconciles a stack's spec. files reads what its configs and secrets
 // name by file:; nil when nothing is available to this apply.
 func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string, files stackFileSource, opts ApplyOptions) (*ApplyResult, error) {
@@ -683,8 +689,18 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		replicas := defaultReplicas
 		cpuRequest, cpuLimit := appk8s.DefaultCPURequest, appk8s.DefaultCPULimit
 		memRequest, memLimit := appk8s.DefaultMemoryRequest, appk8s.DefaultMemoryLimit
+		declared := composeResources(svcDef)
 		var nodeID *uuid.UUID
 		if ext != nil && ext.Deploy != nil {
+			for _, f := range []struct {
+				v   string
+				dst *string
+			}{{ext.Deploy.CPURequest, &declared.CPURequest}, {ext.Deploy.CPULimit, &declared.CPULimit},
+				{ext.Deploy.MemoryRequest, &declared.MemoryRequest}, {ext.Deploy.MemoryLimit, &declared.MemoryLimit}} {
+				if f.v != "" {
+					*f.dst = f.v
+				}
+			}
 			if ext.Deploy.Replicas > 0 {
 				replicas = ext.Deploy.Replicas
 			}
@@ -708,6 +724,17 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		}
 
 		existingSvc, exists := existingByName[svcName]
+		if exists {
+			cpuRequest = orKept(declared.CPURequest, existingSvc.CPURequest, cpuRequest)
+			cpuLimit = orKept(declared.CPULimit, existingSvc.CPULimit, cpuLimit)
+			memRequest = orKept(declared.MemoryRequest, existingSvc.MemoryRequest, memRequest)
+			memLimit = orKept(declared.MemoryLimit, existingSvc.MemoryLimit, memLimit)
+		} else {
+			cpuRequest = orKept(declared.CPURequest, "", cpuRequest)
+			cpuLimit = orKept(declared.CPULimit, "", cpuLimit)
+			memRequest = orKept(declared.MemoryRequest, "", memRequest)
+			memLimit = orKept(declared.MemoryLimit, "", memLimit)
+		}
 		if !exists {
 			var svc *meshdb.Service
 			var createErr error
@@ -1039,6 +1066,19 @@ func (s *StackService) attachVolumeMounts(
 // Build config
 // ---------------------------------------------------------------------------
 
+// buildRootDir is a build context as a folder of the stack's repository.
+func buildRootDir(context string, stack *meshdb.Stack) string {
+	base := ""
+	if stack != nil && stack.GitRepo != "" && stack.GitPath != "" {
+		base = path.Dir(strings.TrimPrefix(path.Clean("/"+stack.GitPath), "/"))
+	}
+	dir := strings.TrimPrefix(path.Clean("/"+path.Join(base, context)), "/")
+	if dir == "." {
+		return ""
+	}
+	return dir
+}
+
 func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID, svcDef composetypes.ServiceConfig, ext *meshployExt, stack *meshdb.Stack) error {
 	builder := meshdb.BuilderNixpacks
 	// Compose builds a build: section from a Dockerfile, always: its own
@@ -1099,13 +1139,11 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 		}
 	}
 
-	// Set RootDir from the native build.context (strip leading ./ or /).
+	// RootDir is the build.context, which compose resolves against the
+	// compose file's own folder: deploy/docker-compose.yml with context: ../api
+	// builds from api/, not from ../api above the repository.
 	if svcDef.Build != nil && svcDef.Build.Context != "" {
-		rootDir := strings.TrimPrefix(svcDef.Build.Context, "./")
-		rootDir = strings.TrimPrefix(rootDir, "/")
-		if rootDir == "." {
-			rootDir = ""
-		}
+		rootDir := buildRootDir(svcDef.Build.Context, stack)
 		input.RootDir = &rootDir
 	}
 
@@ -1427,6 +1465,14 @@ func (s *StackService) uninterpolatedFiles(ctx context.Context, spec string) (ma
 		o.SkipInterpolation = true
 		o.ResolvePaths = false
 	})
+	// A bind mount's source as written, before the loader resolves ./x
+	// against a working directory that means nothing here. Read from the YAML
+	// itself: a file that interpolates its ports - ${DB_PORT:-5433}:5432 -
+	// does not load uninterpolated, and every ./x it mounted was then taken
+	// for a path on the host and left out.
+	for key, src := range rawBindSources(spec) {
+		paths[key] = src
+	}
 	if err != nil {
 		return out, paths
 	}
@@ -1438,15 +1484,6 @@ func (s *StackService) uninterpolatedFiles(ctx context.Context, spec string) (ma
 	for name, c := range project.Configs {
 		if c.File != "" {
 			paths["configs/"+name] = c.File
-		}
-	}
-	// A bind mount's source as written, before the loader resolves ./x
-	// against a working directory that means nothing here.
-	for name, svcDef := range project.Services {
-		for _, v := range svcDef.Volumes {
-			if v.Type == composetypes.VolumeTypeBind {
-				paths["binds/"+name+"/"+v.Target] = v.Source
-			}
 		}
 	}
 	for name, c := range project.Secrets {

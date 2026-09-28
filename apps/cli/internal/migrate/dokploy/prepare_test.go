@@ -716,6 +716,7 @@ func TestComposeAppsBecomeStacks(t *testing.T) {
 			"sourceType": "github", "repository": "wiki", "owner": "acme", "branch": "main",
 			"composePath": "./docker-compose.yml"},
 	}
+	src.ComposeFiles = map[string]string{"wiki-def": "services:\n  wiki:\n    image: wikijs\n"}
 	plan = BuildPlan(src, time.Now())
 
 	api := newFakeAPI()
@@ -736,11 +737,51 @@ func TestComposeAppsBecomeStacks(t *testing.T) {
 	if got := byName["analytics"]; got.Variables["PORT"] != "8000" {
 		t.Errorf("its environment interpolates into the file: %+v", got.Variables)
 	}
-	if got := byName["wiki"]; got.Spec != "" || got.Repo == "" || got.Path != "./docker-compose.yml" {
+	if got := byName["wiki"]; got.Repo == "" || got.Path != "./docker-compose.yml" {
 		t.Errorf("a git-sourced app should keep reading from git: %+v", got)
+	}
+	// With the file its checkout has, which it applies until the repository
+	// can be read: a provider reconnected after the move, not before.
+	if got := byName["wiki"]; !strings.Contains(got.Spec, "image: wikijs") {
+		t.Errorf("a git stack should carry the checkout's file: %+v", got)
 	}
 	// And the stack is what the move starts.
 	if out.Services["c1"] == "" {
 		t.Error("the stack should be recorded as what was created for the compose app")
 	}
+}
+
+// Dokploy keeps a row per path, Meshploy a route per hostname: a second path
+// on a hostname becomes a target on the route the first made.
+func TestASecondPathOnAHostnameJoinsItsRoute(t *testing.T) {
+	plan, src := smallPlan(t)
+	src.Rows["domain"] = append(src.Rows["domain"], Row{"domainId": "dm2", "applicationId": "a1",
+		"host": "web.example.com", "path": "/api", "port": 3000, "https": true,
+		"certificateType": "letsencrypt", "enabled": true})
+	plan = BuildPlan(src, time.Now())
+	api := &targetAPI{fakeAPI: newFakeAPI()}
+	j := newJournal(t)
+
+	if _, err := Prepare(PrepareDeps{Plan: plan, Source: src, API: api, Journal: j}); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.routes) != 1 {
+		t.Fatalf("one hostname, one route: %+v", api.routes)
+	}
+	if len(api.targets) != 1 || api.targets[0] != "/api" {
+		t.Fatalf("the second path should be a target on it: %v", api.targets)
+	}
+	if first, second := j.CreatedBy("prepare/route/dm1"), j.CreatedBy("prepare/route/dm2"); first == "" || first != second {
+		t.Errorf("both rows should record the one route: %q, %q", first, second)
+	}
+}
+
+type targetAPI struct {
+	*fakeAPI
+	targets []string
+}
+
+func (a *targetAPI) AddRouteTarget(projectID, routeID string, spec RouteSpec) (string, error) {
+	a.targets = append(a.targets, spec.Path)
+	return routeID, nil
 }

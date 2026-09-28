@@ -3,7 +3,9 @@ package dokploy
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -32,6 +34,18 @@ type composeFinding struct {
 	Text string
 	// Blocks is whether the app may not work without it.
 	Blocks bool
+	// Public is a TCP port published on every address, "host:container":
+	// reachable from anywhere now, so the move opens it on the gateway.
+	Public string
+	// Local is one published on loopback, "host:container": reachable from
+	// the server itself and through an SSH tunnel, as it stays.
+	Local string
+	// Repo is a path the service bind-mounts from beside its compose file,
+	// as written ("./scripts"): the move sends it from Dokploy's checkout.
+	Repo string
+	// Volume is a named volume the service mounts: the move fills the stack's
+	// copy of it using this service's image.
+	Volume string
 }
 
 type composeSpec struct {
@@ -112,6 +126,10 @@ func checkCompose(content string, env map[string]string) ([]composeFinding, erro
 		}
 		for _, v := range s.Volumes {
 			src, target := volumeSource(v)
+			if src != "" && !strings.HasPrefix(src, ".") && !strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "~") {
+				out = append(out, composeFinding{Service: n, Key: "volume:" + src, Volume: src})
+				continue
+			}
 			switch {
 			case strings.HasSuffix(src, "docker.sock"):
 				add(n, "docker-socket", "mounts the Docker socket, which does not exist under Kubernetes", true)
@@ -120,7 +138,8 @@ func checkCompose(content string, env map[string]string) ([]composeFinding, erro
 			case strings.HasPrefix(src, "../files/"):
 				add(n, "dokploy-file:"+target, fmt.Sprintf("mounts Dokploy's file %s at %s, which is not carried yet", strings.TrimPrefix(src, "../files/"), target), true)
 			case strings.HasPrefix(src, "."):
-				add(n, "repo-files:"+target, fmt.Sprintf("gets %s from the repository at %s, read-only", src, target), false)
+				out = append(out, composeFinding{Service: n, Key: "repo-files:" + target, Repo: src,
+					Text: fmt.Sprintf("gets %s from the repository at %s, read-only", src, target)})
 			}
 		}
 		if s.Build != nil {
@@ -138,8 +157,84 @@ func checkCompose(content string, env map[string]string) ([]composeFinding, erro
 				break
 			}
 		}
+		for _, p := range s.Ports {
+			host, container, loopback, ok := publishedOnHost(p, env)
+			switch {
+			case !ok:
+			case loopback:
+				out = append(out, composeFinding{Service: n, Key: fmt.Sprintf("publish-local:%d", host),
+					Text:  fmt.Sprintf("publishes port %d on the server's loopback, which it keeps: a TCP route on the gateway's 127.0.0.1:%d", host, host),
+					Local: fmt.Sprintf("%d:%d", host, container)})
+			default:
+				out = append(out, composeFinding{Service: n, Key: fmt.Sprintf("publish-all:%d", host),
+					Text:   fmt.Sprintf("publishes port %d on every address, which becomes a TCP route on the gateway at %d", host, host),
+					Public: fmt.Sprintf("%d:%d", host, container)})
+			}
+		}
 	}
 	return out, nil
+}
+
+// composeStartOrder is the order compose starts a file's services in, as
+// layers: each service after everything it depends_on. Profile services are
+// left out, as compose leaves them. A cycle, which compose refuses, ends the
+// order where it starts; what is left goes last.
+func composeStartOrder(content string) [][]string {
+	var spec composeSpec
+	if err := yaml.Unmarshal([]byte(content), &spec); err != nil {
+		return nil
+	}
+	deps := map[string][]string{}
+	for n, s := range spec.Services {
+		if len(s.Profiles) > 0 {
+			continue
+		}
+		deps[n] = nil
+		switch d := s.DependsOn.(type) {
+		case []any:
+			for _, v := range d {
+				if name, ok := v.(string); ok {
+					deps[n] = append(deps[n], name)
+				}
+			}
+		case map[string]any:
+			for name := range d {
+				deps[n] = append(deps[n], name)
+			}
+		}
+	}
+	placed := map[string]bool{}
+	var layers [][]string
+	for len(placed) < len(deps) {
+		var layer []string
+		for n, ds := range deps {
+			if placed[n] {
+				continue
+			}
+			ready := true
+			for _, d := range ds {
+				if _, known := deps[d]; known && !placed[d] {
+					ready = false
+				}
+			}
+			if ready {
+				layer = append(layer, n)
+			}
+		}
+		if len(layer) == 0 {
+			for n := range deps {
+				if !placed[n] {
+					layer = append(layer, n)
+				}
+			}
+		}
+		sort.Strings(layer)
+		for _, n := range layer {
+			placed[n] = true
+		}
+		layers = append(layers, layer)
+	}
+	return layers
 }
 
 // volumeSource reads a compose volume entry, short or long form.
@@ -175,6 +270,48 @@ func publishedAddress(p any, env map[string]string) string {
 		return ip
 	}
 	return ""
+}
+
+// publishedOnHost reads a TCP port entry published on every address -
+// "5672:5672", "0.0.0.0:5672:5672", or the long form without a host_ip - or on
+// loopback, "127.0.0.1:8081:80". A port with no host side, a range, UDP, or one
+// bound to another address is neither: that last becomes a route bound to it.
+func publishedOnHost(p any, env map[string]string) (host, container int, loopback, ok bool) {
+	var ip, pub, target, proto string
+	switch e := p.(type) {
+	case string:
+		v := interpolate(e, env)
+		v, proto, _ = strings.Cut(v, "/")
+		parts := strings.Split(v, ":")
+		switch len(parts) {
+		case 2:
+			pub, target = parts[0], parts[1]
+		case 3:
+			ip, pub, target = parts[0], parts[1], parts[2]
+		default:
+			return 0, 0, false, false
+		}
+	case map[string]any:
+		ip, _ = e["host_ip"].(string)
+		proto, _ = e["protocol"].(string)
+		pub, target = fmt.Sprint(e["published"]), fmt.Sprint(e["target"])
+	default:
+		return 0, 0, false, false
+	}
+	if proto != "" && !strings.EqualFold(proto, "tcp") {
+		return 0, 0, false, false
+	}
+	ip = strings.Trim(strings.TrimSpace(ip), "[]")
+	loopback = ip == "127.0.0.1" || ip == "::1" || ip == "localhost"
+	if ip != "" && ip != "0.0.0.0" && ip != "::" && !loopback {
+		return 0, 0, false, false
+	}
+	h, err1 := strconv.Atoi(strings.TrimSpace(interpolate(pub, env)))
+	c, err2 := strconv.Atoi(strings.TrimSpace(target))
+	if err1 != nil || err2 != nil || h <= 0 || c <= 0 {
+		return 0, 0, false, false
+	}
+	return h, c, loopback, true
 }
 
 // interpolateVar is ${NAME}, ${NAME:-default}, ${NAME-default} or $NAME.
@@ -220,6 +357,42 @@ var optLeaveOnDokploy = Option{"leave", "Leave the app on Dokploy"}
 func composeDecisions(it *Item, findings []composeFinding) {
 	for _, f := range findings {
 		sentence := f.Service + " " + f.Text
+		if f.Volume != "" {
+			if it.Details == nil {
+				it.Details = map[string]string{}
+			}
+			if !strings.Contains(","+it.Details["volume_users"], ","+f.Volume+":") {
+				if it.Details["volume_users"] != "" {
+					it.Details["volume_users"] += ","
+				}
+				it.Details["volume_users"] += f.Volume + ":" + f.Service
+			}
+			continue
+		}
+		if f.Repo != "" {
+			if it.Details == nil {
+				it.Details = map[string]string{}
+			}
+			if !slices.Contains(strings.Split(it.Details["repo_files"], ","), f.Repo) {
+				if it.Details["repo_files"] != "" {
+					it.Details["repo_files"] += ","
+				}
+				it.Details["repo_files"] += f.Repo
+			}
+		}
+		for _, kp := range [][2]string{{"public_ports", f.Public}, {"local_ports", f.Local}} {
+			key, port := kp[0], kp[1]
+			if port == "" {
+				continue
+			}
+			if it.Details == nil {
+				it.Details = map[string]string{}
+			}
+			if it.Details[key] != "" {
+				it.Details[key] += ","
+			}
+			it.Details[key] += f.Service + ":" + port
+		}
 		if !f.Blocks {
 			it.Reasons = append(it.Reasons, sentence)
 			continue

@@ -112,6 +112,9 @@ type TCPRouteSpec struct {
 	ServiceID   string
 	// ServicePort is the database's own port, which the gateway forwards to.
 	ServicePort int
+	// Zone is where the gateway listens: public unless it says local, for a
+	// port that was published on the server's loopback.
+	Zone string
 }
 
 // RouteSpec is one hostname to create, paused.
@@ -366,6 +369,11 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 		if it.Kind != "domain" || !d.ready(it) {
 			continue
 		}
+		// A compose app's domain routes to a service its stack creates when
+		// it is applied, at move; its route is made there.
+		if it.Details["application_id"] == "" && it.Details["compose_id"] != "" {
+			continue
+		}
 		serviceID := out.Services[it.Details["application_id"]]
 		if serviceID == "" {
 			out.Failures = append(out.Failures, fmt.Sprintf("%s: the workload it points at was not created", it.Name))
@@ -380,7 +388,7 @@ func Prepare(d PrepareDeps) (PrepareResult, error) {
 			StripPath: it.Details["strip_path"] == "true",
 		}
 		_, _ = d.step(&out, "prepare/route/"+it.ID, "", "create-route", spec.Hostname, func() (string, error) {
-			return d.API.CreateRoute(projectID, spec)
+			return createOrExtendRoute(d.API, d.Journal, d.Plan, it.ID, projectID, spec)
 		})
 	}
 
@@ -439,6 +447,11 @@ func (d PrepareDeps) stackSpec(it Item) (StackSpec, bool) {
 			return spec, false
 		}
 		spec.Repo, spec.Branch, spec.Path = repo, branch, r.Str("composePath")
+		// The file as Dokploy's checkout has it, which the stack applies
+		// until its repository can be read: a provider connected through a
+		// callback on this server has to be reconnected first, and a stack
+		// with no file cannot move. The first sync afterwards replaces it.
+		spec.Spec = d.Source.ComposeFiles[r.Str("appName")]
 		return spec, true
 	}
 	return StackSpec{}, false
@@ -777,6 +790,45 @@ func (d PrepareDeps) portsFor(it Item) []int {
 		ports = append(ports, port)
 	}
 	return ports
+}
+
+// RouteTargetAdder adds a path to a route that already serves its hostname.
+type RouteTargetAdder interface {
+	AddRouteTarget(projectID, routeID string, spec RouteSpec) (string, error)
+}
+
+// createOrExtendRoute makes the route for one of Dokploy's domain rows. Dokploy
+// keeps a row per path, Meshploy a route per hostname: a second path on a
+// hostname an earlier row already made a route for becomes a target on that
+// route, which is where the route's id is recorded for this row too.
+func createOrExtendRoute(api interface {
+	CreateRoute(projectID string, spec RouteSpec) (string, error)
+}, j *journal.Journal, plan Plan, itemID, projectID string, spec RouteSpec) (string, error) {
+	if existing := routeForHost(j, plan, itemID, spec.Hostname); existing != "" {
+		adder, ok := api.(RouteTargetAdder)
+		if !ok {
+			return "", fmt.Errorf("%s already has a route, and this API cannot add a path to it", spec.Hostname)
+		}
+		if _, err := adder.AddRouteTarget(projectID, existing, spec); err != nil {
+			return "", err
+		}
+		return existing, nil
+	}
+	return api.CreateRoute(projectID, spec)
+}
+
+// routeForHost is the route another of the plan's domain rows already made for
+// this hostname, if one did.
+func routeForHost(j *journal.Journal, plan Plan, itemID, host string) string {
+	for _, it := range plan.Items {
+		if it.Kind != "domain" || it.ID == itemID || splitHostPath(it.Name) != host {
+			continue
+		}
+		if id := j.CreatedBy("prepare/route/" + it.ID); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // runningImage is the image this workload is running right now.

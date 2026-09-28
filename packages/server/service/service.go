@@ -33,6 +33,7 @@ type Services struct {
 	Domains         *DomainService
 	Routes          *RouteService
 	TCPRoutes       *TCPRouteService
+	EdgeFallback    *EdgeFallbackService
 	Deployments     *DeploymentService
 	Activity        *ActivityService
 	Overview        *OverviewService
@@ -267,6 +268,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Domains:         domains,
 		Routes:          routes,
 		TCPRoutes:       tcpRoutes,
+		EdgeFallback:    &EdgeFallbackService{db: db},
 		Deployments:     deployments,
 		Activity:        &ActivityService{db: db},
 		GitIntegrations: gitSvc,

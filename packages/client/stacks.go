@@ -117,9 +117,14 @@ func (c *Client) ApplyStack(orgID, projectID, stackID string) (*ApplyResult, err
 // services, ports, files and routes are written, and nothing is built or
 // deployed. For a caller that decides what each service runs - the
 // migration, which starts services on the images their old platform ran.
-func (c *Client) ApplyStackRecordsOnly(orgID, projectID, stackID string) (*ApplyResult, error) {
-	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/stacks/"+stackID+"/apply",
-		map[string]any{"deploy": false})
+func (c *Client) ApplyStackRecordsOnly(orgID, projectID, stackID string, files ...map[string]string) (*ApplyResult, error) {
+	body := map[string]any{"deploy": false}
+	// The files its spec names by path, for a stack whose repository cannot
+	// be read yet.
+	if len(files) > 0 && len(files[0]) > 0 {
+		body["files"] = files[0]
+	}
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/stacks/"+stackID+"/apply", body)
 	if err != nil {
 		return nil, err
 	}
@@ -178,4 +183,21 @@ func (c *Client) GetStackByName(orgID, projectID, ref string) (*Stack, error) {
 		}
 	}
 	return nil, ErrNotFound("stack", ref)
+}
+
+// SetEdgeFallback sends the hostnames the old platform still serves to its
+// edge on a side port, during a migration that took the edge first.
+func (c *Client) SetEdgeFallback(orgID, upstream string, hostnames []string) error {
+	resp, err := c.do("PUT", "/api/v1/orgs/"+orgID+"/edge-fallback",
+		map[string]any{"upstream": upstream, "hostnames": hostnames})
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// ClearEdgeFallback stops sending anything to the old platform's edge.
+func (c *Client) ClearEdgeFallback(orgID string) error {
+	return c.doNoContent("DELETE", "/api/v1/orgs/"+orgID+"/edge-fallback")
 }

@@ -305,7 +305,7 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Get a stack |
 | PUT | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Update a stack's spec and variables |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Delete a stack |
-| POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/apply` | ✓ | Apply the stack spec - reconcile services |
+| POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/apply` | ✓ | Apply the stack spec - reconcile services. `deploy: false` writes the records and rolls nothing out; `files` carries what the spec names by path when the server cannot read it (a migration sending a git stack's repository files from the old checkout) |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/destroy` | ✓ | Destroy the services this stack created, keeping the stack |
 | GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/services` | ✓ | List services belonging to a stack |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/sync` | ✓ | Fetch spec from git source and re-apply |
@@ -405,6 +405,9 @@ A project is its own production level; each level below it is a project of its o
 | POST | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}/pause` | ✓ | Close a TCP route's port and keep the route |
 | PATCH | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Change a TCP route's port or who may connect |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/tcp-routes/{routeId}` | ✓ | Stop publishing a TCP port |
+| GET | `/orgs/{orgId}/edge-fallback` | ✓ | Where the proxy sends hostnames it has no route for during a migration whose edge was taken first; null when nothing |
+| PUT | `/orgs/{orgId}/edge-fallback` | ✓ | Org admin: send the listed hostnames to the old platform's edge on its side port while no route serves them |
+| DELETE | `/orgs/{orgId}/edge-fallback` | ✓ | Org admin: stop sending anything to the old platform's edge |
 
 ### Domains & TLS
 
@@ -521,7 +524,7 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 | POST | `/system/upgrade` | ✓ | Queue an upgrade of this server to the latest build on its channel, a switch to the other channel (`{"channel": "edge"}`), or a switch to the Enterprise images the active licence grants (`{"edition": "enterprise"}`). Instance owner only |
 | GET | `/system/version` | ✓ | Get current and latest platform version |
 | GET | `/system/migrate/dokploy` | ✓ | Instance owner: the host agent's latest Dokploy detection and plan, and the state of each request |
-| POST | `/system/migrate/dokploy/{kind}` | ✓ | Instance owner: run a stage of the migration. `detect` and `plan` are read-only on the host. `credential` mints the migration agent's token and leaves it in the inbox for the agent to take once. `prepare` is stage 1 - the Meshploy side, services stopped and routes paused, Dokploy untouched. `move` is stage 2 for one group (body: `group`) and is the first kind that stops anything. `cutover` is stage 3, handing over ports 80 and 443. `rollback` undoes one group, or everything when no group is given; 409 when the agent is not reporting |
+| POST | `/system/migrate/dokploy/{kind}` | ✓ | Instance owner: run a stage of the migration. `detect` and `plan` are read-only on the host. `credential` mints the migration agent's token and leaves it in the inbox for the agent to take once. `prepare` is stage 1 - the Meshploy side, services stopped and routes paused, Dokploy untouched. `move` is stage 2 for one group (body: `group`) and is the first kind that stops anything. `cutover` is stage 3, handing over ports 80 and 443; with `edge_first` it runs before every group has moved, and the old edge keeps serving them from a side port. `rollback` undoes one group, or everything when no group is given; 409 when the agent is not reporting |
 | GET | `/system/host-agent` | ✓ | Whether the gateway's host agent is reporting, its version and the firewall it found |
 | POST | `/system/check-updates` | ✓ | Ask GitHub for the newest release or build now, past the caches; at most one real check every 30 seconds |
 

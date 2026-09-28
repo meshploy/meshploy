@@ -127,9 +127,11 @@ func (a ClientAPI) CreateRoute(projectID string, spec RouteSpec) (string, error)
 		Path:      spec.Path,
 		StripPath: spec.StripPath,
 	}
+	// The container port Dokploy's domain names, which the route keeps to:
+	// a service's primary port is not always the one its domain served.
 	if spec.Port != 0 {
 		port := spec.Port
-		body.Port = &port
+		body.TargetPort = &port
 	}
 	r, err := a.C.CreateRoute(a.OrgID, projectID, body)
 	if err != nil {
@@ -156,11 +158,25 @@ func (a ClientAPI) CreateTCPRoute(projectID string, spec TCPRouteSpec) (string, 
 		client.UpdateDatabaseConfigBody{MeshExposed: &exposed}); err != nil {
 		return "", fmt.Errorf("give %s mesh access: %w", spec.ServiceID, err)
 	}
+	return a.CreateServiceTCPRoute(projectID, spec)
+}
+
+// CreateServiceTCPRoute publishes a workload's port on the gateway, paused: a
+// compose service's port Docker published on every address. The service
+// already has the NodePort a stack gives every port it publishes.
+func (a ClientAPI) CreateServiceTCPRoute(projectID string, spec TCPRouteSpec) (string, error) {
+	if spec.GatewayPort == 0 {
+		return "", fmt.Errorf("a TCP route needs the port to publish")
+	}
 	paused := false
+	zone := spec.Zone
+	if zone == "" {
+		zone = "public"
+	}
 	body := client.CreateTCPRouteBody{
 		GatewayPort: spec.GatewayPort,
 		ServiceID:   &spec.ServiceID,
-		Zone:        "public",
+		Zone:        zone,
 		Published:   &paused,
 	}
 	if spec.ServicePort != 0 {
@@ -346,7 +362,16 @@ func (a ClientAPI) BuiltinRegistry() (Registry, error) {
 	}
 	for _, r := range list {
 		if r.Provider == "builtin" && r.Endpoint != "" {
-			return Registry{Endpoint: r.Endpoint}, nil
+			reg := Registry{Endpoint: r.Endpoint}
+			// The built-in registry runs on this gateway, where the migration
+			// runs too: pushed to through loopback, which Docker allows over
+			// plain HTTP, where the mesh address needs an insecure-registries
+			// entry the old platform's Docker does not have - and adding one
+			// means restarting the Docker everything still runs on.
+			if _, port, err := net.SplitHostPort(r.Endpoint); err == nil {
+				reg.PushVia = net.JoinHostPort("127.0.0.1", port)
+			}
+			return reg, nil
 		}
 	}
 	return Registry{}, nil
@@ -431,6 +456,34 @@ func (a ClientAPI) ApplyStackRecords(projectID, stackID string) error {
 	return err
 }
 
+// ApplyStackRecordsWithFiles is ApplyStackRecords with the files the stack's
+// compose file mounts from its repository, read from the old checkout.
+func (a ClientAPI) ApplyStackRecordsWithFiles(projectID, stackID string, files map[string]string) error {
+	r, err := a.C.ApplyStackRecordsOnly(a.OrgID, projectID, stackID, files)
+	if err != nil {
+		return err
+	}
+	// The plan said these files come across. One that did not is a service
+	// that starts without its migrations or its settings, so the move stops
+	// here, before anything of Dokploy's has.
+	var missing []string
+	for _, w := range r.Warnings {
+		if strings.Contains(w, "bind mount of .") && strings.Contains(w, "left out") {
+			missing = append(missing, w)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("repository files did not come across:\n  %s", strings.Join(missing, "\n  "))
+	}
+	return nil
+}
+
+// SetServiceLimits sets a service's CPU and memory limits.
+func (a ClientAPI) SetServiceLimits(projectID, serviceID, cpu, memory string) error {
+	_, err := a.C.UpdateService(a.OrgID, projectID, serviceID, client.UpdateServiceBody{CPULimit: &cpu, MemoryLimit: &memory})
+	return err
+}
+
 // StackServiceRefs are a stack's services with their names and images.
 func (a ClientAPI) StackServiceRefs(projectID, stackID string) ([]StackServiceRef, error) {
 	services, err := a.C.ListStackServices(a.OrgID, projectID, stackID)
@@ -502,6 +555,24 @@ func (a ClientAPI) VolumeSlug(projectID, volumeID string) (string, error) {
 		return "", fmt.Errorf("volume %s has no claim yet", v.Name)
 	}
 	return v.Slug, nil
+}
+
+// StackVolumeClaim is the claim of the project's volume of this name, which a
+// stack's apply made for a compose named volume.
+func (a ClientAPI) StackVolumeClaim(projectID, name string) (string, error) {
+	vols, err := a.C.ListVolumes(a.OrgID, projectID)
+	if err != nil {
+		return "", err
+	}
+	for _, v := range vols {
+		if v.Name == name {
+			if v.Slug == "" {
+				return "", fmt.Errorf("volume %s has no claim yet", name)
+			}
+			return v.Slug, nil
+		}
+	}
+	return "", fmt.Errorf("no volume named %s", name)
 }
 
 // ServiceImage is what Meshploy runs this workload from - the registry name,
@@ -677,4 +748,30 @@ func (p HTTPProbe) probeTLS(hostname string, timeout time.Duration) error {
 		return fmt.Errorf("the edge answered %s", resp.Status)
 	}
 	return nil
+}
+
+// SetEdgeFallback tells the gateway's proxy where the old edge now listens,
+// and which domains it still serves.
+func (a ClientAPI) SetEdgeFallback(upstream string, hostnames []string) error {
+	return a.C.SetEdgeFallback(a.OrgID, upstream, hostnames)
+}
+
+// ClearEdgeFallback stops the proxy sending anything to the old edge.
+func (a ClientAPI) ClearEdgeFallback() error {
+	return a.C.ClearEdgeFallback(a.OrgID)
+}
+
+// AddRouteTarget adds a path to an existing route, for a second path on a
+// hostname: Dokploy keeps one domain row per path, Meshploy one route per
+// hostname.
+func (a ClientAPI) AddRouteTarget(projectID, routeID string, spec RouteSpec) (string, error) {
+	body := client.CreateRouteBody{ServiceID: &spec.ServiceID, Path: spec.Path, StripPath: spec.StripPath}
+	if spec.Port != 0 {
+		port := spec.Port
+		body.TargetPort = &port
+	}
+	if err := a.C.AddRouteTarget(a.OrgID, projectID, routeID, body); err != nil {
+		return "", err
+	}
+	return routeID, nil
 }

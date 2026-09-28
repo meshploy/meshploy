@@ -148,3 +148,70 @@ services:
 	assert.Len(t, names, 4, "two migrate.sh files, two names")
 	assert.Contains(t, r.Warnings, "migrator: bind mount of /var/run/docker.sock at /var/run/docker.sock left out: it is a path on the machine that runs compose; use configs: for a file, or a named volume")
 }
+
+// A stack runs with the resources its compose file gives Docker, and keeps
+// what an operator (or a migration) set where the file says nothing, rather
+// than going back to Meshploy's defaults on the next apply.
+func TestStackTakesComposeResourcesAndKeepsOthers(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+	svcs := newServices(db)
+	user, err := svcs.Auth.Register(ctx, service.RegisterInput{Username: "res", Email: "res@example.com", Password: "pass"})
+	require.NoError(t, err)
+	var org meshdb.Organization
+	require.NoError(t, db.Where("slug = ?", user.Username).First(&org).Error)
+	proj, err := svcs.Projects.Create(ctx, org.ID, "res", "res")
+	require.NoError(t, err)
+
+	spec := `
+services:
+  broker:
+    image: redpandadata/redpanda
+    mem_limit: 2g
+    cpus: 1.5
+  worker:
+    image: alpine
+    deploy:
+      resources:
+        limits: {memory: 256M}
+        reservations: {cpus: "0.25", memory: 64M}
+  web:
+    image: nginx
+`
+	apply := func() {
+		t.Helper()
+		r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "res", Spec: spec}, user.ID,
+			service.ApplyOptions{NoDeploy: true})
+		require.NoError(t, err)
+		require.Empty(t, r.Errors)
+	}
+	get := func(name string) meshdb.Service {
+		t.Helper()
+		var svc meshdb.Service
+		require.NoError(t, db.Where("project_id = ? AND name = ?", proj.ID, name).First(&svc).Error)
+		return svc
+	}
+	apply()
+	assert.Equal(t, "2147483648", get("broker").MemoryLimit)
+	assert.Equal(t, "1500m", get("broker").CPULimit)
+	w := get("worker")
+	assert.Equal(t, "268435456", w.MemoryLimit)
+	assert.Equal(t, "250m", w.CPURequest)
+	assert.Equal(t, "67108864", w.MemoryRequest)
+	assert.Equal(t, "1Gi", get("web").MemoryLimit, "nothing declared: Meshploy's default")
+
+	// A git stack's file is applied as written, with nothing filled in: a
+	// limit it does not declare - set in the console, or carried from the old
+	// platform by a migration - survives the next sync.
+	stack := meshdb.Stack{ProjectID: proj.ID, Name: "git", Spec: "services:\n  api:\n    image: nginx\n",
+		GitMode: meshdb.StackGitModeRepo, GitRepo: "https://example.com/acme/api.git", GitBranch: "main"}
+	require.NoError(t, db.Create(&stack).Error)
+	_, err = svcs.Stacks.Apply(ctx, stack.ID, user.ID, nil, service.ApplyOptions{NoDeploy: true})
+	require.NoError(t, err)
+	assert.Equal(t, "1Gi", get("api").MemoryLimit)
+	require.NoError(t, db.Model(&meshdb.Service{}).Where("project_id = ? AND name = ?", proj.ID, "api").
+		Update("memory_limit", "3Gi").Error)
+	_, err = svcs.Stacks.Apply(ctx, stack.ID, user.ID, nil, service.ApplyOptions{NoDeploy: true})
+	require.NoError(t, err)
+	assert.Equal(t, "3Gi", get("api").MemoryLimit, "a limit the file does not declare is kept")
+}

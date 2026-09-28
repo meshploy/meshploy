@@ -65,7 +65,7 @@
       "maps_to": "Service built from git (railpack)",
       "verdict": "moves",
       "reasons": [
-        "runs the image it runs now until GitLab is reconnected in Meshploy; builds and deploys on push resume then, with no further setup",
+        "runs the image it runs now; to build and deploy on push again, connect GitLab in Meshploy and choose it as the source's git access",
         "starts from the image running now; the next deploy builds from its source",
         "redirect www.shop.example → shop.example (301) becomes a route redirect"
       ],
@@ -96,7 +96,7 @@
       "maps_to": "Service built from git (dockerfile)",
       "verdict": "needs_you",
       "reasons": [
-        "runs the image it runs now until GitHub is reconnected in Meshploy; builds and deploys on push resume then, with no further setup",
+        "runs the image it runs now; to build and deploy on push again, connect GitHub in Meshploy and choose it as the source's git access",
         "starts from the image running now; the next deploy builds from its source",
         "published ports become TCP routes on the gateway"
       ],
@@ -252,17 +252,18 @@
       "details": {
         "certificate": "none",
         "compose_id": "c1",
-        "https": "true"
+        "https": "true",
+        "service_name": "metabase"
       }
     },
     {
       "kind": "git_provider",
       "id": "g1",
       "name": "shop-gitlab",
-      "maps_to": "Git integration, waiting to be reconnected",
+      "maps_to": "Not carried: connect it again in Meshploy",
       "verdict": "moves",
       "reasons": [
-        "GitLab is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+        "GitLab is connected through a callback on this server, which cannot move: connect it in Meshploy's Integrations, then choose it as the git access of each moved app's source, and builds resume"
       ],
       "details": {
         "provider": "gitlab"
@@ -272,10 +273,10 @@
       "kind": "git_provider",
       "id": "g2",
       "name": "shop-github",
-      "maps_to": "Git integration, waiting to be reconnected",
+      "maps_to": "Not carried: connect it again in Meshploy",
       "verdict": "moves",
       "reasons": [
-        "GitHub is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+        "GitHub is connected through a callback on this server, which cannot move: connect it in Meshploy's Integrations, then choose it as the git access of each moved app's source, and builds resume"
       ],
       "details": {
         "provider": "github"

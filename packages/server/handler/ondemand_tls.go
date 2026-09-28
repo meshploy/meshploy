@@ -57,5 +57,11 @@ func (h *Handler) OnDemandTLSCheck(ctx context.Context, input *OnDemandTLSCheckI
 		return &struct{}{}, nil
 	}
 
+	// A domain the old platform still serves through the side port, during a
+	// migration that took the edge first: it keeps its HTTPS.
+	if h.svc.EdgeFallback.Serves(ctx, host) {
+		return &struct{}{}, nil
+	}
+
 	return nil, huma.Error403Forbidden("hostname not authorized for on-demand TLS")
 }

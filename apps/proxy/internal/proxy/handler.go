@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -35,6 +36,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	entry, ok := h.cache.Get(hostname, reqPath)
 	if !ok {
+		// A hostname the platform being migrated from still serves goes to
+		// its edge, as it arrived: the Host kept, and the X-Forwarded-Proto
+		// Caddy set, so that edge serves it rather than redirecting to HTTPS.
+		if upstream, found := h.cache.FallbackFor(hostname); found {
+			h.forwardToFallback(w, r, hostname, upstream)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, notFoundPage, hostname)
@@ -69,7 +77,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	target, _ := url.Parse(fmt.Sprintf("%s://%s:%d", scheme, entry.TargetIP, entry.TargetPort))
-	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy := &httputil.ReverseProxy{Rewrite: func(pr *httputil.ProxyRequest) { forwardedRequest(pr, target) }}
 	if entry.TargetTLS {
 		// The target is named by address, so its certificate has no name to be
 		// verified against - it is typically self-signed, on this machine's
@@ -83,9 +91,60 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"upstream unavailable"}`, http.StatusBadGateway)
 	}
 
-	// Preserve the original Host so upstreams that are host-aware still work.
-	r.Header.Set("X-Forwarded-Host", r.Host)
 	proxy.ServeHTTP(w, r)
+}
+
+// forwardToFallback hands a request to the old platform's edge.
+func (h *Handler) forwardToFallback(w http.ResponseWriter, r *http.Request, hostname, upstream string) {
+	target := &url.URL{Scheme: "http", Host: upstream}
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) { forwardedRequest(pr, target) },
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf("proxy: %s → old edge %s error: %v", hostname, upstream, err)
+			http.Error(w, `{"error":"upstream unavailable"}`, http.StatusBadGateway)
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// forwardedRequest is what a workload, or the old edge, is handed: the
+// request as the visitor sent it, its Host kept for host-aware upstreams, and
+// who the visitor was, the way Traefik told an app moved from Dokploy -
+// X-Forwarded-For and X-Real-Ip both the visitor. Caddy, in front, set
+// X-Forwarded-For to the visitor alone; the default director added Caddy's
+// loopback address to it and set no X-Real-Ip, so an app that logs or limits
+// by address saw one address for everyone. The old edge trusts this hop's
+// forwarded headers, so it keeps X-Real-Ip rather than naming the proxy.
+func forwardedRequest(pr *httputil.ProxyRequest, target *url.URL) {
+	pr.SetURL(target)
+	pr.Out.Host = pr.In.Host
+	client := visitor(pr.In)
+	pr.Out.Header.Set("X-Forwarded-For", client)
+	pr.Out.Header.Set("X-Real-Ip", client)
+	pr.Out.Header.Set("X-Forwarded-Host", pr.In.Host)
+	proto := pr.In.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		proto = "http"
+	}
+	pr.Out.Header.Set("X-Forwarded-Proto", proto)
+}
+
+// visitor is who sent the request. Caddy, on this machine's loopback, says who
+// in X-Forwarded-For; anything else reaching the proxy - a machine on the
+// mesh, through PROXY_BIND - is its own visitor, and what it claims about
+// others is not taken.
+func visitor(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			first, _, _ := strings.Cut(xff, ",")
+			return strings.TrimSpace(first)
+		}
+	}
+	return host
 }
 
 // tlsBackendTransport is shared, so connections to TLS targets are pooled the

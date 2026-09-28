@@ -275,6 +275,15 @@ func Finish(d FinishDeps) (FinishResult, error) {
 			func() error { return os.RemoveAll(path) })
 	}
 
+	// An edge taken first sent unmoved domains to the old edge, which is gone
+	// now: every group has moved, so their routes serve them, and the proxy
+	// stops looking for it.
+	if c, ok := d.API.(interface{ ClearEdgeFallback() error }); ok && d.Journal.Done("cutover/fallback") {
+		if err := c.ClearEdgeFallback(); err != nil {
+			out.Failures = append(out.Failures, "stop sending domains to the old edge: "+err.Error())
+		}
+	}
+
 	// The credential last: everything above went through it.
 	if d.API != nil {
 		if err := d.API.RevokeMigrationAgent(); err != nil {

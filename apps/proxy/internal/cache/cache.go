@@ -30,6 +30,15 @@ type Cache struct {
 	mu      sync.RWMutex
 	routes  map[string][]TargetEntry
 	refresh time.Duration
+	// fallback is where a hostname with no published route goes while a
+	// migration serves it from the old platform's edge; see db.EdgeFallback.
+	fallback *Fallback
+}
+
+// Fallback is the old edge, and the hostnames it still serves.
+type Fallback struct {
+	Upstream  string
+	Hostnames map[string]bool
 }
 
 func New(database *gorm.DB, refreshInterval time.Duration) *Cache {
@@ -115,11 +124,39 @@ func (c *Cache) load() error {
 	for k := range m {
 		sortEntries(m[k])
 	}
+	var fb *Fallback
+	var row db.EdgeFallback
+	if err := c.db.Order("created_at").Limit(1).Find(&row).Error; err == nil && row.Upstream != "" {
+		fb = &Fallback{Upstream: row.Upstream, Hostnames: map[string]bool{}}
+		for _, h := range row.Hostnames {
+			fb.Hostnames[strings.ToLower(h)] = true
+		}
+	}
 	c.mu.Lock()
 	c.routes = m
+	c.fallback = fb
 	c.mu.Unlock()
 	log.Printf("cache: loaded %d targets across %d hostnames", len(targets), len(m))
 	return nil
+}
+
+// SetFallback replaces the fallback; the refresh does this from the database.
+func (c *Cache) SetFallback(f *Fallback) {
+	c.mu.Lock()
+	c.fallback = f
+	c.mu.Unlock()
+}
+
+// FallbackFor is the old edge's address for a hostname it still serves, when
+// a migration has one: asked only after a hostname found no published route,
+// which always wins.
+func (c *Cache) FallbackFor(hostname string) (string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.fallback == nil || !c.fallback.Hostnames[strings.ToLower(hostname)] {
+		return "", false
+	}
+	return c.fallback.Upstream, true
 }
 
 func (c *Cache) loadHostname(hostname string) []TargetEntry {

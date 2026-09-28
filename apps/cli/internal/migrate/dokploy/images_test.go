@@ -1,6 +1,7 @@
 package dokploy
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -134,5 +135,45 @@ func TestNoRegistryMeansNoRewrite(t *testing.T) {
 	got, err := m.Push("s", "", "myapp:latest")
 	if err != nil || got != "myapp:latest" {
 		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+// An image whose registry no longer has it - minio/minio, withdrawn from
+// Docker Hub - is carried into the built-in registry like one built here,
+// since the cluster could not pull it by digest.
+func TestAnImageItsRegistryDroppedIsCarried(t *testing.T) {
+	r := &fakeRunner{replies: map[string]string{
+		"docker inspect cm --format {{.Image}}|{{.Config.Image}}":                                   "sha256:cccccccccccccccc|minio/minio:latest\n",
+		"docker image inspect sha256:cccccccccccccccc --format {{range .RepoDigests}}{{.}} {{end}}": "minio/minio@sha256:14ce \n",
+	}, errs: map[string]error{
+		"docker manifest inspect minio/minio@sha256:14ce": errors.New("repository does not exist"),
+	}}
+	m := ImageMover{Runner: r, Registry: Registry{Endpoint: "100.64.0.1:5000"}}
+	ref, err := m.Carry("step", "g", "cm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != "100.64.0.1:5000/minio/minio:dokploy-cccccccccccc" || !r.didRun("docker push "+ref) {
+		t.Fatalf("ref %q, ran %v", ref, r.ran)
+	}
+}
+
+// The registry on this gateway is pushed to through loopback, which Docker
+// takes over plain HTTP, and pulled from by its mesh address: one registry,
+// two names, and the old platform's Docker left unconfigured.
+func TestAnImageIsPushedThroughLoopback(t *testing.T) {
+	runner := &fakeRunner{replies: map[string]string{
+		"docker inspect c1 --format {{.Image}}|{{.Config.Image}}": "sha256:0123456789abcdef|app-web\n",
+	}}
+	m := ImageMover{Runner: runner, Registry: Registry{Endpoint: "100.64.0.1:5000", PushVia: "127.0.0.1:5000"}}
+	ref, err := m.Carry("s", "g", "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != "100.64.0.1:5000/app-web:dokploy-0123456789ab" {
+		t.Errorf("the cluster should pull by the mesh address: %s", ref)
+	}
+	if !runner.didRun("docker push 127.0.0.1:5000/app-web:dokploy-0123456789ab") {
+		t.Errorf("the push should go through loopback: %v", runner.ran)
 	}
 }

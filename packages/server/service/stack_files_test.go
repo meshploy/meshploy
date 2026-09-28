@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	meshdb "github.com/meshploy/packages/db"
 	"os"
 	"strings"
 	"testing"
@@ -168,5 +169,55 @@ func TestStackEnvironmentStillInterpolates(t *testing.T) {
 	got := project.Services["app"].Environment["GREETING"]
 	if got == nil || *got != "hello" {
 		t.Fatalf("stack variables must still reach the environment, got %v", got)
+	}
+}
+
+// A file that only loads interpolated - its ports read ${VAR:-default} - still
+// has its ./x bind mounts known as repository paths, not taken for the host's.
+func TestBindSourcesSurviveInterpolatedPorts(t *testing.T) {
+	spec := `
+services:
+  migrator:
+    image: postgres:16
+    ports:
+      - "${DB1_HOST:-127.0.0.1}:${DB1_PORT:-5433}:5432"
+    volumes:
+      - ./scripts:/scripts:ro
+      - type: bind
+        source: ./migrations
+        target: /migrations
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata: {}
+`
+	_, paths := (&StackService{}).uninterpolatedFiles(context.Background(), spec)
+	want := map[string]string{"binds/migrator//scripts": "./scripts", "binds/migrator//migrations": "./migrations"}
+	for k, v := range want {
+		if paths[k] != v {
+			t.Errorf("%s = %q, want %q (all: %v)", k, paths[k], v, paths)
+		}
+	}
+	for k := range paths {
+		if strings.Contains(k, "postgresql") {
+			t.Errorf("a named volume is not a bind: %s", k)
+		}
+	}
+}
+
+// A build context is the compose file's folder's, as compose reads it.
+func TestBuildContextFollowsTheComposeFile(t *testing.T) {
+	root := &meshdb.Stack{GitRepo: "https://example.com/r.git", GitPath: "./docker-compose.yml"}
+	nested := &meshdb.Stack{GitRepo: "https://example.com/r.git", GitPath: "deploy/docker-compose.yml"}
+	for _, c := range []struct {
+		ctx   string
+		stack *meshdb.Stack
+		want  string
+	}{
+		{"./ui", root, "ui"}, {".", root, ""}, {"../api", nested, "api"}, {".", nested, "deploy"},
+		{"./svc", nil, "svc"}, {"../../escape", nested, "escape"},
+	} {
+		if got := buildRootDir(c.ctx, c.stack); got != c.want {
+			t.Errorf("%q under %v = %q, want %q", c.ctx, c.stack, got, c.want)
+		}
 	}
 }

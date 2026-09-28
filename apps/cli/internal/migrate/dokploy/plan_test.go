@@ -167,7 +167,7 @@ func TestPlanMapsEachKind(t *testing.T) {
 	if _, asks := decision(site, "github"); asks {
 		t.Errorf("a reconnect is not a decision: %+v", site.Decisions)
 	}
-	if !hasReason(site, "until GitHub is reconnected") || !hasReason(site, "Railpack") {
+	if !hasReason(site, "connect GitHub in Meshploy and choose it") || !hasReason(site, "Railpack") {
 		t.Errorf("site: %+v", site)
 	}
 	if len(site.Redirects) != 1 || site.Redirects[0] != (Redirect{From: "www.site.example", To: "site.example", Code: 301}) {
@@ -201,7 +201,7 @@ func TestPlanMapsEachKind(t *testing.T) {
 	// The integration moves with its repositories and branches; only its
 	// credentials stay behind.
 	if g := item(t, p, "git_provider", "g2"); g.Verdict != Moves || len(g.Decisions) != 0 ||
-		!hasReason(g, "reconnect it once in Meshploy") {
+		!hasReason(g, "choose it as the git access") {
 		t.Errorf("github provider: %+v", g)
 	}
 	// The shared mount and the path-rewriting redirect have no safe default.

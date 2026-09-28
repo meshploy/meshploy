@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -259,6 +260,9 @@ func (s *RouteService) AddTarget(ctx context.Context, routeID uuid.UUID, in Targ
 	if err := s.validateRedirectTarget(ctx, routeID, route.Zone, &in); err != nil {
 		return nil, err
 	}
+	// A path added to a paused route is paused with it: its service may have
+	// no NodePort yet, and publishing the route resolves every target.
+	in.AllowUnresolved = in.AllowUnresolved || !route.Published
 	target, err := s.resolveTarget(ctx, route.OrganizationID, &in)
 	if err != nil {
 		return nil, err
@@ -639,7 +643,7 @@ func (s *RouteService) resolvePausedTargets(ctx context.Context, route *db.Route
 			continue
 		}
 		resolved, err := s.resolveTarget(ctx, route.OrganizationID, &TargetInput{
-			Path: t.Path, StripPath: t.StripPath, ServiceID: t.ServiceID,
+			Path: t.Path, StripPath: t.StripPath, ServiceID: t.ServiceID, Port: t.ServicePort,
 		})
 		if err != nil {
 			return err
@@ -733,11 +737,41 @@ func (s *RouteService) resolveTarget(ctx context.Context, orgID uuid.UUID, in *T
 		// Resolve to the correct ServicePort (primary if unspecified).
 		var sp db.ServicePort
 		var err error
-		if in.ServicePortID != nil {
+		switch {
+		case in.ServicePortID == nil && in.Port > 0:
+			// A route that names the service's own port routes to that
+			// one, and makes it routable if it was not: a compose port
+			// published on loopback, which Dokploy's Traefik still served a
+			// domain on. The next deploy gives it its NodePort.
+			err = s.db.WithContext(ctx).Where("service_id = ? AND port = ?", *in.ServiceID, in.Port).First(&sp).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// Named but never declared: a compose service Traefik served
+				// on its container port through a label, with no ports: or
+				// expose: at all. The route declares it.
+				if in.Port < 1 || in.Port > 65535 {
+					return nil, huma.Error422UnprocessableEntity(fmt.Sprintf("port %d is not a port", in.Port))
+				}
+				sp = db.ServicePort{ServiceID: *in.ServiceID, Name: fmt.Sprintf("route-%d", in.Port), Port: in.Port,
+					IsHTTP: true, IsPublic: true}
+				err = s.db.WithContext(ctx).Create(&sp).Error
+			}
+			if err != nil {
+				return nil, err
+			}
+			if !sp.IsPublic || !sp.IsHTTP {
+				if err := s.db.WithContext(ctx).Model(&db.ServicePort{}).Where("id = ?", sp.ID).
+					Updates(map[string]any{"is_public": true, "is_http": true}).Error; err != nil {
+					return nil, err
+				}
+				sp.IsPublic, sp.IsHTTP = true, true
+			}
+			t.ServicePort = sp.Port
+		case in.ServicePortID != nil:
 			err = s.db.WithContext(ctx).
 				Where("id = ? AND service_id = ? AND is_public = true AND is_http = true", *in.ServicePortID, *in.ServiceID).
 				First(&sp).Error
-		} else {
+			t.ServicePort = sp.Port
+		default:
 			err = s.db.WithContext(ctx).
 				Where("service_id = ? AND is_primary = true AND is_public = true AND is_http = true", *in.ServiceID).
 				First(&sp).Error

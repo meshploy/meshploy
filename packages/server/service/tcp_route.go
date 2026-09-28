@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,7 +74,58 @@ func (s *TCPRouteService) withHostFirewall(routes []db.TCPRoute) {
 //
 // Kept beside the exposure notice's list, which describes the same machine from
 // the other direction: what it publishes today.
-var gatewayOwnPorts = []int{22, 53, 80, 443, 2019, 4000, 5000, 6443, 8081, 8085, 9090, 9100, 10250}
+var gatewayOwnPorts, loopbackOwnPorts = gatewayListeners()
+
+// gatewayListeners are the gateway's own ports, and those of them that listen on
+// loopback alone. The loopback ports install.sh chose where a default was
+// taken on the server, which the compose file hands the API, stand in for their
+// defaults: a gateway installed beside a platform that held 8081 does not own
+// 8081, and a migration may well need to route it.
+func gatewayListeners() (all, loopbackOnly []int) {
+	for _, p := range []struct {
+		port     int
+		loopback bool
+	}{{22, false}, {53, false}, {80, false}, {443, false}, {2019, true}, {4000, false}, {5000, false},
+		{5173, true}, {6443, false}, {9100, false}, {10250, false}} {
+		all = append(all, p.port)
+		if p.loopback {
+			loopbackOnly = append(loopbackOnly, p.port)
+		}
+	}
+	for _, p := range []struct {
+		key      string
+		port     int
+		loopback bool
+	}{{"PROXY_PORT", 8081, false}, {"HEADSCALE_HOST_PORT", 8085, true},
+		{"HEADSCALE_METRICS_PORT", 9090, true}, {"POSTGRES_HOST_PORT", 5433, true}} {
+		if n, err := strconv.Atoi(os.Getenv(p.key)); err == nil && n > 0 {
+			p.port = n
+		}
+		if !slices.Contains(all, p.port) {
+			all = append(all, p.port)
+		}
+		if p.loopback {
+			loopbackOnly = append(loopbackOnly, p.port)
+		}
+	}
+	slices.Sort(all)
+	return all, loopbackOnly
+}
+
+// ownPortFor reports whether a route in this zone would take one of the
+// gateway's own listeners. One that listens on loopback alone is free on the
+// mesh address or another address the machine has: a database a platform
+// published on its tailnet address at 5433 does not collide with Meshploy's
+// Postgres on 127.0.0.1:5433.
+func ownPortFor(port int, zone db.TCPRouteZone) bool {
+	if !slices.Contains(gatewayOwnPorts, port) {
+		return false
+	}
+	if zone == db.TCPZoneMesh || zone == db.TCPZoneAddress {
+		return !slices.Contains(loopbackOwnPorts, port)
+	}
+	return true
+}
 
 // ── Input types ───────────────────────────────────────────────────────────────
 
@@ -184,7 +237,7 @@ func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*
 	// is the gateway's own" is what comes back rather than a complaint about
 	// the target.
 	if in.GatewayPort != 0 {
-		if err := s.checkPort(ctx, in.GatewayPort, uuid.Nil); err != nil {
+		if err := s.checkPort(ctx, in.GatewayPort, zone, uuid.Nil); err != nil {
 			return nil, err
 		}
 	} else if zone == db.TCPZonePublic {
@@ -217,7 +270,7 @@ func (s *TCPRouteService) Create(ctx context.Context, in CreateTCPRouteInput) (*
 	// to hold than two.
 	if route.GatewayPort == 0 {
 		route.GatewayPort = route.TargetPort
-		if err := s.checkPort(ctx, route.GatewayPort, uuid.Nil); err != nil {
+		if err := s.checkPort(ctx, route.GatewayPort, zone, uuid.Nil); err != nil {
 			return nil, err
 		}
 	}
@@ -244,7 +297,7 @@ func (s *TCPRouteService) Update(ctx context.Context, routeID, projectID uuid.UU
 	}
 	updates := map[string]any{}
 	if in.GatewayPort != nil && *in.GatewayPort != route.GatewayPort {
-		if err := s.checkPort(ctx, *in.GatewayPort, routeID); err != nil {
+		if err := s.checkPort(ctx, *in.GatewayPort, route.Zone, routeID); err != nil {
 			return nil, err
 		}
 		updates["gateway_port"] = *in.GatewayPort
@@ -274,6 +327,22 @@ func (s *TCPRouteService) SetPublished(ctx context.Context, routeID, projectID u
 	route, err := s.Get(ctx, routeID, projectID)
 	if err != nil {
 		return nil, err
+	}
+	updates := map[string]any{}
+	// A route created paused may have waited for its address; opening it is
+	// when it has to have one.
+	if published && route.ServiceID != nil && route.TargetPort == 0 {
+		fresh := *route
+		if err := s.resolveTarget(ctx, &fresh, CreateTCPRouteInput{ServiceID: route.ServiceID,
+			ServicePort: route.ServicePort, FromPublish: route.FromPublish}); err != nil {
+			return nil, err
+		}
+		updates["target_ip"], updates["target_port"] = fresh.TargetIP, fresh.TargetPort
+	}
+	if len(updates) > 0 {
+		if err := s.db.WithContext(ctx).Model(route).Updates(updates).Error; err != nil {
+			return nil, err
+		}
 	}
 	if err := s.db.WithContext(ctx).Model(route).Updates(map[string]any{
 		"published":            published,
@@ -360,11 +429,11 @@ func (s *TCPRouteService) SyncPublished(ctx context.Context, serviceID uuid.UUID
 
 // checkPort refuses a port the gateway cannot give away: outside the range, one
 // of its own, or already routed.
-func (s *TCPRouteService) checkPort(ctx context.Context, port int, exceptID uuid.UUID) error {
+func (s *TCPRouteService) checkPort(ctx context.Context, port int, zone db.TCPRouteZone, exceptID uuid.UUID) error {
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("a gateway port must be between 1 and 65535")
 	}
-	if slices.Contains(gatewayOwnPorts, port) {
+	if ownPortFor(port, zone) {
 		return fmt.Errorf("port %d is the gateway's own; pick another", port)
 	}
 	q := s.db.WithContext(ctx).Model(&db.TCPRoute{}).Where("gateway_port = ?", port)
@@ -424,7 +493,11 @@ func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute,
 			First(&svc, "services.id = ?", *in.ServiceID).Error; err != nil {
 			return fmt.Errorf("service not found")
 		}
-		port, nodePort, err := s.servicePort(ctx, &svc, in.ServicePort, in.FromPublish)
+		// A port named outright is the port meant, HTTP or not: a compose
+		// file that published a web port on every address made it reachable
+		// as a plain port, and a migration keeps it so. Left to choose, an
+		// HTTP port is passed over for the domain route that gives it TLS.
+		port, nodePort, err := s.servicePort(ctx, &svc, in.ServicePort, in.FromPublish || in.ServicePort != 0, in.Paused)
 		if err != nil {
 			return err
 		}
@@ -447,7 +520,7 @@ func (s *TCPRouteService) resolveTarget(ctx context.Context, route *db.TCPRoute,
 // by a port row, so it is read from there: a TCP route to a database is that
 // setting plus a way in from the gateway, and asking for one without the other
 // would forward to a port the cluster never opened.
-func (s *TCPRouteService) servicePort(ctx context.Context, svc *db.Service, want int, anyProtocol bool) (int, int, error) {
+func (s *TCPRouteService) servicePort(ctx context.Context, svc *db.Service, want int, anyProtocol, paused bool) (int, int, error) {
 	if svc.Type == db.ServiceTypeDatabase {
 		var dc db.DatabaseConfig
 		if err := s.db.WithContext(ctx).Where("service_id = ?", svc.ID).First(&dc).Error; err != nil {
@@ -476,6 +549,21 @@ func (s *TCPRouteService) servicePort(ctx context.Context, svc *db.Service, want
 			match = p
 		}
 	}
+	// A port named outright that is not routable yet - a compose port
+	// published on the host's loopback, which a stack keeps in the cluster -
+	// is made so: the route asks for it, and its next deploy gives it the
+	// NodePort the gateway forwards to.
+	if match == nil && want != 0 {
+		for i := range svc.Ports {
+			if p := &svc.Ports[i]; p.Port == want {
+				if err := s.db.WithContext(ctx).Model(&db.ServicePort{}).Where("id = ?", p.ID).Update("is_public", true).Error; err != nil {
+					return 0, 0, err
+				}
+				p.IsPublic = true
+				match = p
+			}
+		}
+	}
 	if match == nil {
 		return 0, 0, fmt.Errorf("%s has no routable non-HTTP port: an HTTP port is published with a domain route instead", svc.Name)
 	}
@@ -488,6 +576,11 @@ func (s *TCPRouteService) servicePort(ctx context.Context, svc *db.Service, want
 		}
 	}
 	if match.NodePort == 0 {
+		// A paused route opens nothing, so it can wait for its address: the
+		// deploy that assigns the NodePort retargets it.
+		if paused {
+			return match.Port, 0, nil
+		}
 		return 0, 0, fmt.Errorf("no port is published for %s yet: deploy it, then add the route", svc.Name)
 	}
 	return match.Port, match.NodePort, nil

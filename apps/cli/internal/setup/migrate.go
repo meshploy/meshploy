@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/meshploy/apps/cli/internal/migrate/dokploy"
@@ -196,6 +197,31 @@ func saveConfirmedPlan(plan dokploy.Plan, ch MigrationChoices) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// ConfirmPlan confirms a plan read in a terminal, taking every decision's
+// default: the path for a server installed without the browser setup, which is
+// where plans are otherwise confirmed. A decision with no default is a question
+// only its operator can answer, so a plan with one is refused and the error
+// names them.
+func ConfirmPlan(plan dokploy.Plan) error {
+	var open []string
+	for _, it := range plan.Items {
+		if it.Verdict == dokploy.NotMoved {
+			continue
+		}
+		for _, d := range it.Decisions {
+			if d.Default == "" {
+				open = append(open, it.Name+": "+d.Question)
+			}
+		}
+	}
+	if len(open) > 0 {
+		return fmt.Errorf("these have no default, so answer them in the browser setup (sudo meshploy setup serve):\n  %s",
+			strings.Join(open, "\n  "))
+	}
+	ch := withDefaults(plan, MigrationChoices{SavedAt: time.Now().UTC()})
+	return saveConfirmedPlan(dokploy.Settle(plan, ch.Decisions, ch.Exclude), ch)
 }
 
 // ReadConfirmedPlan loads what setup saved, or nil when nothing was saved.

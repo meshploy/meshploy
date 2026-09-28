@@ -112,13 +112,25 @@ func meshployDefaults(svc, xm *yaml.Node) []meshploySection {
 	if port, ok := composePrimaryPort(svc); ok {
 		deploy = append(deploy, meshploySetting{"port", port})
 	}
-	deploy = append(deploy,
-		meshploySetting{"replicas", defaultReplicas},
-		meshploySetting{"cpu_request", appk8s.DefaultCPURequest},
-		meshploySetting{"cpu_limit", appk8s.DefaultCPULimit},
-		meshploySetting{"memory_request", appk8s.DefaultMemoryRequest},
-		meshploySetting{"memory_limit", appk8s.DefaultMemoryLimit},
-	)
+	deploy = append(deploy, meshploySetting{"replicas", defaultReplicas})
+	// A resource compose declares for Docker is the one apply uses, so no
+	// default is written over it.
+	resources := mappingValue(mappingValue(svc, "deploy"), "resources")
+	limits, reservations := mappingValue(resources, "limits"), mappingValue(resources, "reservations")
+	for _, r := range []struct {
+		key      string
+		value    string
+		declared bool
+	}{
+		{"cpu_request", appk8s.DefaultCPURequest, mappingValue(reservations, "cpus") != nil},
+		{"cpu_limit", appk8s.DefaultCPULimit, mappingValue(svc, "cpus") != nil || mappingValue(limits, "cpus") != nil},
+		{"memory_request", appk8s.DefaultMemoryRequest, mappingValue(svc, "mem_reservation") != nil || mappingValue(reservations, "memory") != nil},
+		{"memory_limit", appk8s.DefaultMemoryLimit, mappingValue(svc, "mem_limit") != nil || mappingValue(limits, "memory") != nil},
+	} {
+		if !r.declared {
+			deploy = append(deploy, meshploySetting{r.key, r.value})
+		}
+	}
 	var sections []meshploySection
 	if scalarValue(mappingValue(xm, "source"), "git") != "" {
 		sections = append(sections,

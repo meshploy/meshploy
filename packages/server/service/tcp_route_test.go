@@ -158,6 +158,12 @@ func TestTCPRouteRefusesAnHTTPPort(t *testing.T) {
 	_, err = e.create(8080, service.CreateTCPRouteInput{ServiceID: &app.ID})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "domain route")
+	// Named outright, it is the port meant: a compose web port published on
+	// every address was reachable as a plain port, and a migration keeps it.
+	_, err = e.create(8080, service.CreateTCPRouteInput{ServiceID: &app.ID, ServicePort: 80, Paused: true})
+	if err != nil {
+		assert.NotContains(t, err.Error(), "domain route")
+	}
 }
 
 // The console checks what it can see before suggesting a hostname, but two
@@ -426,4 +432,57 @@ func TestAPortPublishedOnOneAddressBecomesARouteBoundToIt(t *testing.T) {
 	assert.Zero(t, left, "no longer published on the address: its route goes")
 	e.gdb.Model(&meshdb.TCPRoute{}).Where("id = ?", hand.ID).Count(&left)
 	assert.Equal(t, int64(1), left, "a route made by hand stays")
+}
+
+// A port the gateway holds on loopback alone is free on another address: a
+// database a platform published on its tailnet address at 5433 moves in beside
+// Meshploy's own Postgres on 127.0.0.1:5433. On every address, it is not.
+func TestALoopbackOwnPortIsFreeOnAnotherAddress(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	database := e.database(t, "Primary DB")
+	on := true
+	_, err := e.svcs.Workloads.UpdateDatabaseConfig(ctx, database.ID, service.UpdateDatabaseConfigInput{MeshExposed: &on})
+	require.NoError(t, err)
+	require.NoError(t, e.gdb.Model(&meshdb.DatabaseConfig{}).
+		Where("service_id = ?", database.ID).Update("node_port", 31432).Error)
+
+	_, err = e.create(5433, service.CreateTCPRouteInput{ServiceID: &database.ID})
+	require.Error(t, err, "public 5433 would take Meshploy's own Postgres port")
+	assert.Contains(t, err.Error(), "gateway's own")
+
+	_, err = e.create(5433, service.CreateTCPRouteInput{ServiceID: &database.ID,
+		Zone: meshdb.TCPZoneAddress, BindAddress: "100.80.0.1"})
+	require.NoError(t, err)
+
+	_, err = e.create(4000, service.CreateTCPRouteInput{ServiceID: &database.ID,
+		Zone: meshdb.TCPZoneAddress, BindAddress: "100.80.0.1"})
+	require.Error(t, err, "the API listens on every address")
+}
+
+// A port published on the host's loopback stays in the cluster until a route
+// names it: then it is routable, and a paused route waits for the deploy that
+// gives it an address rather than refusing.
+func TestAPausedTCPRouteMakesItsPortRoutable(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	app, err := e.svcs.Workloads.Create(ctx, e.project.ID, service.CreateWorkloadInput{
+		Name: "reports", Image: "app",
+		Ports: []service.PortInput{{Name: "http", Port: 8080, IsHTTP: true, IsPrimary: true}},
+	})
+	require.NoError(t, err)
+
+	route, err := e.create(8080, service.CreateTCPRouteInput{ServiceID: &app.ID, ServicePort: 8080,
+		Zone: meshdb.TCPZoneLocal, Paused: true})
+	require.NoError(t, err)
+	assert.Equal(t, 0, route.TargetPort, "no address until a deploy assigns one")
+	var p meshdb.ServicePort
+	require.NoError(t, e.gdb.First(&p, "service_id = ? AND port = 8080", app.ID).Error)
+	assert.True(t, p.IsPublic)
+
+	require.NoError(t, e.gdb.Model(&p).Update("node_port", 30808).Error)
+	// Opening it, with no deploy in between to retarget it, resolves it then.
+	live, err := e.svcs.TCPRoutes.SetPublished(ctx, route.ID, e.project.ID, true, uuid.New())
+	require.NoError(t, err)
+	assert.Equal(t, 30808, live.TargetPort)
 }

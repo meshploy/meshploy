@@ -25,6 +25,14 @@ func Collect(r migrate.Runner) (Source, error) {
 	return collect(r, true)
 }
 
+// Machine is the reading without Dokploy's own records: what detect reports,
+// the machine and its edge. A copy that lists fields instead once left out the
+// edge's holder, and called Dokploy's Traefik a custom edge.
+func (s Source) Machine() Source {
+	s.Rows, s.PathMB, s.ComposeFiles = nil, nil, nil
+	return s
+}
+
 func collect(r migrate.Runner, withRows bool) (Source, error) {
 	var src Source
 	docker, err := migrate.ReadDocker(r)

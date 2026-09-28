@@ -139,6 +139,8 @@ func movable(t *testing.T) (MoveDeps, *fakeMoveAPI, *fakeRunner, string) {
 	}
 	runner := &fakeRunner{replies: map[string]string{
 		"docker service inspect web-abc --format {{.Spec.Mode.Replicated.Replicas}}": "1\n",
+		// The compose app the tests add has run on this server.
+		"docker ps -aq --filter label=com.docker.compose.project=analytics-abc": "cw\n",
 	}}
 	moveAPI := newMoveAPI()
 
@@ -547,6 +549,7 @@ func TestAComposeAppMovesOnTheImagesItRan(t *testing.T) {
 	runner.replies["docker inspect cw --format {{.Image}}|{{.Config.Image}}"] = "sha256:aaaaaaaaaaaaaaaaffff|analytics-abc-web\n"
 	runner.replies["docker inspect ck --format {{.Image}}|{{.Config.Image}}"] = "sha256:bbbb|redis:7\n"
 	runner.replies["docker image inspect sha256:bbbb --format {{range .RepoDigests}}{{.}} {{end}}"] = "redis@sha256:1234 \n"
+	runner.replies["docker manifest inspect redis@sha256:1234"] = "{}"
 
 	if _, err := Move(d); err != nil {
 		t.Fatalf("%v", err)
@@ -563,5 +566,248 @@ func TestAComposeAppMovesOnTheImagesItRan(t *testing.T) {
 	}
 	if len(base.started) != 2 {
 		t.Errorf("both services should start: %v", base.started)
+	}
+}
+
+// routingCarryAPI can also make routes: a compose app's are made at move, once
+// its stack has the services they point at.
+type routingCarryAPI struct {
+	*carryAPI
+	routes  []RouteSpec
+	targets []RouteSpec
+}
+
+func (r *routingCarryAPI) CreateRoute(projectID string, spec RouteSpec) (string, error) {
+	r.routes = append(r.routes, spec)
+	return fmt.Sprintf("route-%d", len(r.routes)), nil
+}
+
+func (r *routingCarryAPI) AddRouteTarget(projectID, routeID string, spec RouteSpec) (string, error) {
+	r.targets = append(r.targets, spec)
+	return routeID, nil
+}
+
+// A compose app's domains route to the stack's services by name, one route per
+// hostname with a target per path, published once.
+func TestAComposeAppsDomainsRouteToItsServices(t *testing.T) {
+	d, base, runner, _ := movable(t)
+	api := &routingCarryAPI{carryAPI: &carryAPI{fakeMoveAPI: base, images: map[string]string{}}}
+	d.API = api
+	d.Images = &ImageMover{Runner: runner, Registry: Registry{Endpoint: "100.64.0.1:5000"}, Journal: d.Journal}
+	d.Plan.Items = append(d.Plan.Items,
+		Item{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production", Verdict: Moves,
+			Details: map[string]string{"app_name": "analytics-abc"}},
+		Item{Kind: "domain", ID: "cd1", Name: "an.example.com", Verdict: Moves,
+			Details: map[string]string{"compose_id": "c1", "service_name": "web", "port": "80"}},
+		Item{Kind: "domain", ID: "cd2", Name: "an.example.com/api", Verdict: Moves,
+			Details: map[string]string{"compose_id": "c1", "service_name": "worker", "port": "3000", "path": "/api"}})
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/stack/c1", Action: "create-stack",
+		Target: "analytics", Result: journal.OK, Created: "stack-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Journal.Append(journal.Entry{Step: "cutover/fallback", Result: journal.OK}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-an", Name: "analytics", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production"}}}
+	base.stackServices["stack-1"] = []string{"svc-web", "svc-worker"}
+	base.status["svc-web"], base.status["svc-worker"] = "running", "running"
+	ps := "docker ps -a --filter label=com.docker.compose.project=analytics-abc --filter label=com.docker.compose.service="
+	runner.replies[ps+"web --format {{.ID}}"] = "cw\n"
+	runner.replies[ps+"worker --format {{.ID}}"] = "ck\n"
+	runner.replies["docker inspect cw --format {{.Image}}|{{.Config.Image}}"] = "sha256:aaaa|nginx:1\n"
+	runner.replies["docker inspect ck --format {{.Image}}|{{.Config.Image}}"] = "sha256:bbbb|redis:7\n"
+	runner.replies["docker image inspect sha256:aaaa --format {{range .RepoDigests}}{{.}} {{end}}"] = "nginx@sha256:1 \n"
+	runner.replies["docker image inspect sha256:bbbb --format {{range .RepoDigests}}{{.}} {{end}}"] = "redis@sha256:2 \n"
+	runner.replies["docker manifest inspect nginx@sha256:1"] = "{}"
+	runner.replies["docker manifest inspect redis@sha256:2"] = "{}"
+
+	if _, err := Move(d); err != nil {
+		t.Fatalf("%v", err)
+	}
+	if len(api.routes) != 1 || api.routes[0].ServiceID != "svc-web" || api.routes[0].Hostname != "an.example.com" {
+		t.Fatalf("routes: %+v", api.routes)
+	}
+	if len(api.targets) != 1 || api.targets[0].ServiceID != "svc-worker" || api.targets[0].Path != "/api" {
+		t.Fatalf("targets: %+v", api.targets)
+	}
+	if len(base.published) != 1 || base.published[0] != "route-1" {
+		t.Errorf("the hostname should be published once: %v", base.published)
+	}
+}
+
+// tcpCarryAPI can also open a stack service's port on the gateway.
+type tcpCarryAPI struct {
+	*carryAPI
+	tcp []TCPRouteSpec
+}
+
+func (a *tcpCarryAPI) CreateServiceTCPRoute(projectID string, spec TCPRouteSpec) (string, error) {
+	a.tcp = append(a.tcp, spec)
+	return fmt.Sprintf("tcp-%d", spec.GatewayPort), nil
+}
+
+// A compose app's port published on every address opens on the gateway at the
+// same number once the app is up, and closes again when the group goes back.
+func TestAComposeAppKeepsItsPublicPort(t *testing.T) {
+	d, base, runner, _ := movable(t)
+	api := &tcpCarryAPI{carryAPI: &carryAPI{fakeMoveAPI: base, images: map[string]string{}}}
+	d.API = api
+	d.Images = &ImageMover{Runner: runner, Registry: Registry{Endpoint: "100.64.0.1:5000"}, Journal: d.Journal}
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production",
+		Verdict: Moves, Details: map[string]string{"app_name": "analytics-abc", "public_ports": "worker:5672:5672"}})
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/stack/c1", Action: "create-stack",
+		Target: "analytics", Result: journal.OK, Created: "stack-1"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-an", Name: "analytics", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production"}}}
+	base.stackServices["stack-1"] = []string{"svc-web", "svc-worker"}
+	base.status["svc-web"], base.status["svc-worker"] = "running", "running"
+	ps := "docker ps -a --filter label=com.docker.compose.project=analytics-abc --filter label=com.docker.compose.service="
+	runner.replies[ps+"web --format {{.ID}}"] = "cw\n"
+	runner.replies[ps+"worker --format {{.ID}}"] = "ck\n"
+	runner.replies["docker inspect cw --format {{.Image}}|{{.Config.Image}}"] = "sha256:aaaa|nginx:1\n"
+	runner.replies["docker inspect ck --format {{.Image}}|{{.Config.Image}}"] = "sha256:bbbb|rabbitmq:3\n"
+	runner.replies["docker image inspect sha256:aaaa --format {{range .RepoDigests}}{{.}} {{end}}"] = "nginx@sha256:1 \n"
+	runner.replies["docker image inspect sha256:bbbb --format {{range .RepoDigests}}{{.}} {{end}}"] = "rabbitmq@sha256:2 \n"
+	runner.replies["docker manifest inspect nginx@sha256:1"] = "{}"
+	runner.replies["docker manifest inspect rabbitmq@sha256:2"] = "{}"
+
+	if _, err := Move(d); err != nil {
+		t.Fatalf("%v", err)
+	}
+	if len(api.tcp) != 1 || api.tcp[0] != (TCPRouteSpec{GatewayPort: 5672, ServiceID: "svc-worker", ServicePort: 5672, Zone: "public"}) {
+		t.Fatalf("tcp routes: %+v", api.tcp)
+	}
+	if len(base.tcpPublished) != 1 || base.tcpPublished[0] != "tcp-5672" {
+		t.Errorf("the port should open once the app is up: %v", base.tcpPublished)
+	}
+}
+
+// A compose app whose move failed after its stack was applied is not moved:
+// the stack counts as started only once its services are up, and that is put
+// back with the rest.
+func TestAFailedComposeMoveIsNotReportedMoved(t *testing.T) {
+	d, base, runner, _ := movable(t)
+	api := &carryAPI{fakeMoveAPI: base, images: map[string]string{}}
+	d.API = api
+	d.Images = &ImageMover{Runner: runner, Registry: Registry{Endpoint: "100.64.0.1:5000"}, Journal: d.Journal}
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "analytics",
+		Project: "Acme · production", Verdict: Moves, Details: map[string]string{"app_name": "analytics-abc"}})
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/stack/c1", Action: "create-stack",
+		Target: "analytics", Result: journal.OK, Created: "stack-1"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-an", Name: "analytics", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production"}}}
+	d.Plan.Groups = []Group{d.Group}
+	base.stackServices["stack-1"] = []string{"svc-web", "svc-worker"}
+	base.fail["start:svc-worker"] = fmt.Errorf("image pull failed")
+	for _, c := range []string{"web", "worker"} {
+		runner.replies["docker ps -a --filter label=com.docker.compose.project=analytics-abc --filter label=com.docker.compose.service="+c+" --format {{.ID}}"] = "c" + c + "\n"
+		runner.replies["docker inspect c"+c+" --format {{.Image}}|{{.Config.Image}}"] = "sha256:" + c + "|" + c + ":1\n"
+		runner.replies["docker image inspect sha256:"+c+" --format {{range .RepoDigests}}{{.}} {{end}}"] = c + "@sha256:1 \n"
+		runner.replies["docker manifest inspect "+c+"@sha256:1"] = "{}"
+	}
+
+	if _, err := Move(d); err == nil {
+		t.Fatal("the move should fail")
+	}
+	if p := Progress(d.Plan, d.Journal, time.Now()); p.Groups[0].Moved {
+		t.Error("a group that put itself back is not moved")
+	}
+}
+
+// filesCarryAPI takes files with a records-only apply, and limits.
+type filesCarryAPI struct {
+	*carryAPI
+	files  map[string]string
+	limits map[string]string
+}
+
+func (a *filesCarryAPI) ApplyStackRecordsWithFiles(projectID, stackID string, files map[string]string) error {
+	a.files = files
+	return a.ApplyStackRecords(projectID, stackID)
+}
+
+func (a *filesCarryAPI) SetServiceLimits(projectID, serviceID, cpu, memory string) error {
+	a.limits[serviceID] = cpu + " " + memory
+	return nil
+}
+
+type fakeRepo map[string]map[string]string
+
+func (f fakeRepo) Tree(root string) (map[string]string, error) {
+	if t, ok := f[root]; ok {
+		return t, nil
+	}
+	return nil, fmt.Errorf("%s: no such file", root)
+}
+
+// A git stack's repository files come from Dokploy's checkout, keyed as the
+// compose file names them, and each service keeps the limits its container
+// had - the whole machine where Docker set none.
+func TestAComposeAppBringsItsFilesAndLimits(t *testing.T) {
+	d, base, runner, _ := movable(t)
+	api := &filesCarryAPI{carryAPI: &carryAPI{fakeMoveAPI: base, images: map[string]string{}}, limits: map[string]string{}}
+	d.API = api
+	d.Images = &ImageMover{Runner: runner, Registry: Registry{Endpoint: "100.64.0.1:5000"}, Journal: d.Journal}
+	d.Repo = fakeRepo{
+		"/etc/dokploy/compose/analytics-abc/code/scripts":      {"migrate.sh": "#!/bin/sh\n", "sql/1.sql": "select 1;"},
+		"/etc/dokploy/compose/analytics-abc/code/servers.json": {"": "{}"},
+	}
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production",
+		Verdict: Moves, Details: map[string]string{"app_name": "analytics-abc", "compose_path": "./docker-compose.yml",
+			"repo_files": "./scripts,./servers.json"}})
+	if err := d.Journal.Append(journal.Entry{Step: "prepare/stack/c1", Action: "create-stack",
+		Target: "analytics", Result: journal.OK, Created: "stack-1"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Group = Group{ID: "g-an", Name: "analytics", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "analytics", Project: "Acme · production"}}}
+	base.stackServices["stack-1"] = []string{"svc-web", "svc-worker"}
+	base.status["svc-web"], base.status["svc-worker"] = "running", "running"
+	for _, c := range []string{"web", "worker"} {
+		runner.replies["docker ps -a --filter label=com.docker.compose.project=analytics-abc --filter label=com.docker.compose.service="+c+" --format {{.ID}}"] = "c" + c + "\n"
+		runner.replies["docker inspect c"+c+" --format {{.Image}}|{{.Config.Image}}"] = "sha256:" + c + "|" + c + ":1\n"
+		runner.replies["docker image inspect sha256:"+c+" --format {{range .RepoDigests}}{{.}} {{end}}"] = c + "@sha256:1 \n"
+		runner.replies["docker manifest inspect "+c+"@sha256:1"] = "{}"
+	}
+	runner.replies["docker inspect cweb --format {{.HostConfig.NanoCpus}} {{.HostConfig.Memory}}"] = "0 0\n"
+	runner.replies["docker inspect cworker --format {{.HostConfig.NanoCpus}} {{.HostConfig.Memory}}"] = "500000000 268435456\n"
+	runner.replies["nproc"] = "12\n"
+	runner.replies["cat /proc/meminfo"] = "MemTotal:       32749324 kB\nMemFree: 1 kB\n"
+
+	if _, err := Move(d); err != nil {
+		t.Fatalf("%v", err)
+	}
+	want := map[string]string{"scripts/migrate.sh": "#!/bin/sh\n", "scripts/sql/1.sql": "select 1;", "servers.json": "{}"}
+	if fmt.Sprint(api.files) != fmt.Sprint(want) {
+		t.Errorf("files = %v", api.files)
+	}
+	if api.limits["svc-web"] != "12000m 31981Mi" || api.limits["svc-worker"] != "500m 268435456" {
+		t.Errorf("limits = %v", api.limits)
+	}
+}
+
+// A compose app that never ran - its build failed - has nothing to move, and
+// the move says so before touching anything.
+func TestAComposeAppThatNeverRanIsNotMoved(t *testing.T) {
+	d, base, runner, _ := movable(t)
+	d.API = &carryAPI{fakeMoveAPI: base, images: map[string]string{}}
+	d.Images = &ImageMover{Runner: runner, Registry: Registry{Endpoint: "100.64.0.1:5000"}, Journal: d.Journal}
+	d.Plan.Items = append(d.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "settrip", Verdict: Moves,
+		Details: map[string]string{"app_name": "settrip-abc"}})
+	d.Group = Group{ID: "g-st", Name: "settrip", CanMove: true,
+		Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "settrip"}}}
+	runner.replies["docker ps -aq --filter label=com.docker.compose.project=settrip-abc"] = ""
+
+	_, err := Move(d)
+	if err == nil || !strings.Contains(err.Error(), "deploy it there first") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(base.stopped) != 0 || len(base.started) != 0 || len(base.applied) != 0 {
+		t.Errorf("nothing should have been touched: stopped %v started %v applied %v", base.stopped, base.started, base.applied)
 	}
 }

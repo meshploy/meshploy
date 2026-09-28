@@ -172,7 +172,7 @@ func TestEveryUndoKindIsImplemented(t *testing.T) {
 	kinds := []string{
 		journal.UndoRestoreFile, journal.UndoRemoveFile, journal.UndoScaleService,
 		journal.UndoStartContainer, journal.UndoStopService, journal.UndoPauseRoute,
-		journal.UndoStartUnit,
+		journal.UndoStartUnit, journal.UndoRepublishService, journal.UndoClearEdgeFallback,
 	}
 	r := Rollback{Runner: &fakeRunner{}, Meshploy: stubMeshploy{}}
 	dir := t.TempDir()
@@ -183,7 +183,7 @@ func TestEveryUndoKindIsImplemented(t *testing.T) {
 		args := map[string]string{
 			"path": filepath.Join(dir, "target"), "backup": backup,
 			"service": "svc", "replicas": "2", "container": "c",
-			"project_id": "p", "service_id": "s", "route_id": "r", "unit": "caddy",
+			"project_id": "p", "service_id": "s", "route_id": "r", "unit": "caddy", "side": "18080",
 		}
 		if err := r.one(journal.Entry{Undo: &journal.Undo{Kind: kind, Args: args}}); err != nil {
 			t.Errorf("%s: %v", kind, err)
@@ -214,3 +214,4 @@ type stubMeshploy struct{}
 func (stubMeshploy) StopService(projectID, serviceID string) error { return nil }
 func (stubMeshploy) PauseRoute(projectID, routeID string) error    { return nil }
 func (stubMeshploy) PauseTCPRoute(string, string) error            { return nil }
+func (stubMeshploy) ClearEdgeFallback() error                      { return nil }

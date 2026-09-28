@@ -209,6 +209,9 @@ func (h *Handler) RequestDokployMigration(ctx context.Context, in *struct {
 		// Volumes lets finish remove the old platform's volumes as well. Left
 		// out, the data stays on the disk.
 		Volumes bool `json:"volumes,omitempty"`
+		// EdgeFirst takes the ports before every group has moved: the old
+		// edge moves to a side port and keeps serving what has not moved.
+		EdgeFirst bool `json:"edge_first,omitempty"`
 	}
 }) (*struct{ Body service.HostRequestState }, error) {
 	userID, err := requireUser(ctx)
@@ -221,6 +224,9 @@ func (h *Handler) RequestDokployMigration(ctx context.Context, in *struct {
 	}
 	if in.Body.Volumes {
 		args["volumes"] = "true"
+	}
+	if in.Body.EdgeFirst && in.Kind == "cutover" {
+		args["edge_first"] = "true"
 	}
 	if len(args) == 0 {
 		args = nil

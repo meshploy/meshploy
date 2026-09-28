@@ -66,7 +66,35 @@ type CutoverDeps struct {
 	// against ports Meshploy's was still holding, and neither served.
 	CaddyContainer string
 
+	// EdgeFirst takes the ports before everything has moved. The old edge is
+	// not stopped but moved to SidePort, and every domain of a group that has
+	// not moved yet goes on being served by it, through Meshploy's edge: Caddy
+	// holds 80 and 443 and terminates TLS, and the gateway's proxy sends
+	// those hostnames to the old edge (Fallback). A group then moves by
+	// publishing its routes, which take precedence. The old platform's
+	// console stays stopped, so it deploys nothing until finish.
+	EdgeFirst bool
+	// SidePort is where the old edge's HTTP entrypoint goes; 0 picks a free
+	// port from 18080.
+	SidePort int
+	// Fallback sets and clears where the proxy sends those hostnames.
+	Fallback EdgeFallbackAPI
+	// ProxyAddr is the gateway proxy's own address, asked before the ports
+	// change hands whether it already sends the old edge's hostnames on.
+	ProxyAddr string
+	// TraefikConfig is the old edge's static configuration, which has to trust
+	// the X-Forwarded-Proto Meshploy's edge sends: every Dokploy HTTP router
+	// redirects to HTTPS, and without it a request Caddy already decrypted
+	// would be sent round again forever.
+	TraefikConfig string
+
 	Now func() time.Time
+}
+
+// EdgeFallbackAPI is the part of Meshploy's API an edge-first cutover uses.
+type EdgeFallbackAPI interface {
+	SetEdgeFallback(upstream string, hostnames []string) error
+	ClearEdgeFallback() error
 }
 
 // EdgeHolder is the thing to stop: a Swarm service, a container, or a systemd
@@ -91,6 +119,11 @@ type CutoverResult struct {
 	// served here - the edge that served them is stopped - and their workloads
 	// keep running on the old platform, which finish still refuses to remove.
 	Unserved []string `json:"unserved,omitempty"`
+	// ThroughOldEdge are the domains an edge-first cutover left with the old
+	// edge, served through Meshploy's until their groups move; SidePort is
+	// where that edge now listens.
+	ThroughOldEdge []string `json:"through_old_edge,omitempty"`
+	SidePort       int      `json:"side_port,omitempty"`
 	// RolledBack is true when the old edge was put back because domains did
 	// not answer.
 	RolledBack bool   `json:"rolled_back,omitempty"`
@@ -113,14 +146,26 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 	// costs only the downtime it already carries, and cutting over without it
 	// takes its domains down for nothing.
 	pending := PendingAtCutover(d.Plan, d.Journal)
-	if len(pending.Movable) > 0 {
+	if len(pending.Movable) > 0 && !d.EdgeFirst {
 		out.Error = fmt.Sprintf("%s can still move: move %s first, or answer what is holding %s back",
 			strings.Join(pending.Movable, ", "),
 			plural(len(pending.Movable), "it", "them"), plural(len(pending.Movable), "it", "them"))
 		return out, fmt.Errorf("%s", out.Error)
 	}
-	// What cannot move is left where it is, named rather than refused.
-	out.Unserved = pending.StuckDomains
+	// What cannot move is left where it is, named rather than refused - or,
+	// taking the edge first, served through it from where it is.
+	if d.EdgeFirst {
+		if d.Edge.Kind != "swarm" {
+			out.Error = "taking the edge first needs the old edge to be a Swarm service, which Dokploy's Traefik on older installs is; this one is a " + orUnknown(d.Edge.Kind)
+			return out, fmt.Errorf("%s", out.Error)
+		}
+		if d.Fallback == nil || d.TraefikConfig == "" {
+			return out, fmt.Errorf("taking the edge first needs the Meshploy API and the old edge's configuration")
+		}
+		out.ThroughOldEdge = notMovedDomains(d.Plan, d.Journal)
+	} else {
+		out.Unserved = pending.StuckDomains
+	}
 
 	// 1. Back up what is about to change. Before anything else, because the
 	// value of a backup is entirely in having taken it early.
@@ -152,6 +197,27 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 		}
 	}
 
+	// 3b. Taking the edge first: the old edge learns to trust what Meshploy's
+	// sends it, and the proxy learns where the old edge will be - both before
+	// anything is down, and checked, since a proxy that does not know yet
+	// would answer these domains with a 404 for up to its refresh interval.
+	if d.EdgeFirst {
+		side, err := d.sidePort()
+		if err != nil {
+			out.Error = err.Error()
+			return out, err
+		}
+		out.SidePort = side
+		if err := d.trustForwardedHeaders(); err != nil {
+			out.Error = err.Error()
+			return out, err
+		}
+		if err := d.setFallback(side, out.ThroughOldEdge); err != nil {
+			out.Error = err.Error()
+			return out, err
+		}
+	}
+
 	// 4. The control plane, before its edge and before any downtime: while the
 	// old platform is running it can put its edge back. It is the thing whose
 	// job is keeping that edge alive, and a recreated edge races ours for 80
@@ -165,7 +231,11 @@ func Cutover(d CutoverDeps) (CutoverResult, error) {
 	// 5 and 6. The ports change hands. Everything between these two lines is
 	// refused connections, so there is nothing between them.
 	started := now()
-	if err := d.stopEdge(); err != nil {
+	stop := d.stopEdge
+	if d.EdgeFirst {
+		stop = func() error { return d.moveEdgeAside(out.SidePort) }
+	}
+	if err := stop(); err != nil {
 		out.Error = err.Error()
 		return out, err
 	}

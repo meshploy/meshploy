@@ -1,6 +1,7 @@
 package dokploy
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -81,5 +82,77 @@ services:
 func TestComposeCheckRefusesAFileItCannotRead(t *testing.T) {
 	if _, err := checkCompose("services: [unclosed", nil); err == nil {
 		t.Fatal("want an error")
+	}
+}
+
+// A port Docker published on every address is reachable from anywhere now, so
+// the plan says it opens on the gateway at the same number and records it for
+// the move. Loopback is kept as loopback; a specific address, UDP and
+// container-only ports are neither.
+func TestAPortPublishedEverywhereOpensOnTheGateway(t *testing.T) {
+	compose := `
+services:
+  mq:
+    image: rabbitmq:3
+    ports:
+      - "5672:5672"
+      - "0.0.0.0:15672:15672"
+      - "127.0.0.1:25672:25672"
+      - "100.80.0.1:4369:4369"
+      - "9000/udp"
+      - "${MQTT_PORT:-1883}:1883/tcp"
+  web:
+    image: nginx
+    ports:
+      - target: 80
+        published: 8088
+`
+	findings, err := checkCompose(compose, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	it := Item{Kind: "compose", ID: "c1"}
+	composeDecisions(&it, findings)
+	if got := it.Details["public_ports"]; got != "mq:5672:5672,mq:15672:15672,mq:1883:1883,web:8088:80" {
+		t.Errorf("public_ports = %q", got)
+	}
+	if got := it.Details["local_ports"]; got != "mq:25672:25672" {
+		t.Errorf("local_ports = %q", got)
+	}
+	found := false
+	for _, r := range it.Reasons {
+		if r == "mq publishes port 5672 on every address, which becomes a TCP route on the gateway at 5672" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the plan should say so: %v", it.Reasons)
+	}
+}
+
+// Services start in the order compose starts them: each after what it
+// depends_on, a tools profile left out.
+func TestComposeStartOrder(t *testing.T) {
+	got := composeStartOrder(`
+services:
+  db: {image: postgres}
+  broker: {image: redpanda}
+  migrator:
+    image: app
+    depends_on: {db: {condition: service_healthy}}
+  topics:
+    image: rpk
+    depends_on: [broker]
+  api:
+    image: app
+    depends_on:
+      migrator: {condition: service_completed_successfully}
+      topics: {condition: service_completed_successfully}
+  seed:
+    image: app
+    profiles: [tools]
+`)
+	if fmt.Sprint(got) != "[[broker db] [migrator topics] [api]]" {
+		t.Errorf("order = %v", got)
 	}
 }

@@ -25,6 +25,7 @@ func Progress(plan Plan, j *journal.Journal, now time.Time) hostagent.MigrationS
 	out := hostagent.MigrationStatus{
 		UpdatedAt: now.UTC(),
 		CutOver:   j.Done("cutover/stop-edge"),
+		EdgeFirst: j.Done("cutover/fallback"),
 		Finished:  Finished(j),
 		Groups:    make([]hostagent.GroupProgress, 0, len(plan.Groups)),
 	}

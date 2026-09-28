@@ -31,6 +31,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerWorkloadRoutes(api)
 	h.registerDomainRoutes(api)
 	h.registerOnDemandTLSRoutes(api)
+	h.registerEdgeFallbackRoutes(api)
 	h.registerRouteRoutes(api)
 	h.registerTCPRouteRoutes(api)
 	h.registerDeploymentRoutes(api)

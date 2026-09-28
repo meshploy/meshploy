@@ -381,6 +381,18 @@ func (s *AgentService) EnsureMigrationAgent(ctx context.Context, orgID, createdB
 	return uuid.Nil, uuid.Nil, "", err
 }
 
+// HasMigrationAgent reports whether the migration's principal exists, which it
+// does from its first credential until finish revokes it.
+func (s *AgentService) HasMigrationAgent(ctx context.Context, orgID uuid.UUID) (bool, error) {
+	var n int64
+	err := s.db.WithContext(ctx).Model(&db.User{}).
+		Joins("JOIN organization_members ON organization_members.user_id = users.id").
+		Where("users.username = ? AND users.kind = ? AND organization_members.organization_id = ?",
+			MigrationAgentName, db.UserAgent, orgID).
+		Count(&n).Error
+	return n > 0, err
+}
+
 // RevokeMigrationAgent removes the migration's principal and every token it
 // holds. Called by finish; idempotent, because an operator may well have
 // deleted it themselves.

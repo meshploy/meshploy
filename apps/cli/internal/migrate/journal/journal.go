@@ -99,6 +99,18 @@ const (
 	// UndoStartUnit starts systemd unit Args["unit"] again, for a custom edge
 	// that was stopped at cutover.
 	UndoStartUnit = "start-unit"
+	// UndoRepublishService gives Swarm service Args["service"] ports 80 and
+	// 443 back, in place of the side port Args["side"] an edge-first cutover
+	// moved it to.
+	UndoRepublishService = "republish-service"
+	// UndoClearEdgeFallback stops the gateway's proxy sending anything to the
+	// old platform's edge.
+	UndoClearEdgeFallback = "clear-edge-fallback"
+	// UndoForget has nothing to put back: the entry records that something
+	// happened, and putting the group back only has to mark it undone - a
+	// compose app's stack counted as started, whose services each carry
+	// their own undo.
+	UndoForget = "forget"
 )
 
 // Journal is an open journal file.

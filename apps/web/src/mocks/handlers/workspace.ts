@@ -44,6 +44,9 @@ const find = (kind: string, id: unknown) => db[kind].find((r) => r.id === id)
 
 // The one migration step the demo has running, if any, and until when.
 let demoMigrationRun: { kind: string; until: number } | null = null
+// Set once the demo's edge has been taken first: the ports are Meshploy's while
+// groups are still to move.
+let demoEdgeFirst = false
 // Which groups each job has attached, for the demo workspace.
 const jobGroups: Record<string, string[]> = {}
 const defaults: Record<string, any> = {
@@ -1371,7 +1374,8 @@ export const workspaceHandlers = [
       status: {
         updated_at: now(),
         prepared: true,
-        cut_over: false,
+        cut_over: demoEdgeFirst,
+        edge_first: demoEdgeFirst,
         finished: false,
         groups: [
           {
@@ -1407,7 +1411,9 @@ export const workspaceHandlers = [
       },
     })
   ),
-  http.post("/api/v1/system/migrate/dokploy/:kind", ({ params }) => {
+  http.post("/api/v1/system/migrate/dokploy/:kind", async ({ params, request }) => {
+    const body = (await request.json().catch(() => ({}))) as { edge_first?: boolean }
+    if (params.kind === "cutover" && body.edge_first) demoEdgeFirst = true
     demoMigrationRun = { kind: String(params.kind), until: Date.now() + 6_000 }
     return json({ id: "req-demo", state: "queued", requested_at: now() }, 202)
   }),

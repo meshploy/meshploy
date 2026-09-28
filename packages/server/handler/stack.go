@@ -111,6 +111,11 @@ type ApplyStackBody struct {
 	// Deploy left out means true: an apply rolls out the services it changed.
 	// Sending false reconciles the records and rolls nothing out.
 	Deploy *bool `json:"deploy,omitempty" doc:"Roll out the services this apply changes (default true)"`
+	// Files are what the compose file names by path - bind-mounted
+	// directories, configs - sent by a caller that has them when the server
+	// cannot read them: a migration carrying a git stack's files from the old
+	// platform's checkout before its repository is reconnected.
+	Files map[string]string `json:"files,omitempty" doc:"Files the spec names by path, keyed by that path, for when the server cannot read them"`
 }
 
 type ApplyStackInput struct {
@@ -231,6 +236,7 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "apply-stack",
+		MaxBodyBytes:  16 << 20, // the files a caller sends ride along, up to 1 MiB each
 		Method:        "POST",
 		Path:          "/api/v1/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/apply",
 		Summary:       "Apply the stack spec — reconcile services",
@@ -520,7 +526,7 @@ func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*Appl
 	if err != nil {
 		return nil, err
 	}
-	result, err := h.svc.Stacks.Apply(ctx, stackID, userID, input.Body.EnvOverrides,
+	result, err := h.svc.Stacks.ApplyWithFiles(ctx, stackID, userID, input.Body.EnvOverrides, input.Body.Files,
 		service.ApplyOptions{NoDeploy: input.Body.Deploy != nil && !*input.Body.Deploy})
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())

@@ -1,6 +1,8 @@
 package dokploy
 
 import (
+	"fmt"
+	"github.com/meshploy/apps/cli/internal/migrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -367,5 +369,90 @@ func TestABindMountsContentsAreCopiedIn(t *testing.T) {
 	}
 	if !kube.didRun("tar -C /meshploy-data -xf -") {
 		t.Errorf("it should land in the claim: %v", kube.ran)
+	}
+}
+
+// stackDataAPI knows a stack's volumes and services.
+type stackDataAPI struct{ fakeDataAPI }
+
+func (stackDataAPI) StackVolumeClaim(projectID, name string) (string, error) {
+	if name == "monorepo-db1-data" {
+		return "vol-ad0821", nil
+	}
+	return "", fmt.Errorf("no volume named %s", name)
+}
+
+func (stackDataAPI) StackServiceRefs(projectID, stackID string) ([]StackServiceRef, error) {
+	return []StackServiceRef{{ID: "svc-ui", Name: "ui"}, {ID: "svc-db1", Name: "db1"}}, nil
+}
+
+// A compose app's named volumes are copied into the stack's own: Docker's
+// "<app>_<name>" into "<stack>-<name>", by a helper running the image of the
+// service that mounts it. Skipped, the app started on empty volumes.
+func TestAComposeAppsVolumesAreCopied(t *testing.T) {
+	m, _, _, kube, j := statefulGroup(t)
+	m.API = stackDataAPI{}
+	m.Plan.Items = append(m.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "monorepo",
+		Details: map[string]string{"app_name": "pi-sime49", "volume_users": "db1-data:db1"}})
+	m.Source.Docker.Volumes = append(m.Source.Docker.Volumes, migrate.Volume{Name: "pi-sime49_db1-data", MB: 7000})
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "PG_VERSION"), []byte("16\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var asked string
+	m.volumePath = func(v string) string { asked = v; return src }
+	kube.replies["wc -l"] = "2\n"
+	group := Group{ID: "g-pi", Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "monorepo"}}}
+
+	if err := m.CopyFiles(group, func(GroupMember) (string, string) { return "stack-1", "proj-1" }); err != nil {
+		t.Fatal(err)
+	}
+	if asked != "pi-sime49_db1-data" {
+		t.Errorf("copied from %q", asked)
+	}
+	if len(kube.applied) != 1 || !strings.Contains(kube.applied[0], "claimName: vol-ad0821") {
+		t.Fatalf("applied: %v", kube.applied)
+	}
+	if !strings.Contains(kube.applied[0], "runAsUser: 0") {
+		t.Error("the helper restores owners, so it runs as root whatever the image's user")
+	}
+	if !j.Done("move/g-pi/data/c1/volume/db1-data") {
+		t.Error("the copy should be recorded, so a resumed move does not repeat it")
+	}
+}
+
+// tarlessKube is a cluster where the service's image has no tar.
+type tarlessKube struct{ *fakeKube }
+
+func (k tarlessKube) Exec(namespace, pod string, stdin io.Reader, stdout io.Writer, cmd ...string) error {
+	last := k.applied[len(k.applied)-1]
+	if strings.Contains(strings.Join(cmd, " "), "command -v tar") && !strings.Contains(last, copyHelperImage) {
+		return fmt.Errorf("exec: \"tar\": executable file not found")
+	}
+	return k.fakeKube.Exec(namespace, pod, stdin, stdout, cmd...)
+}
+
+// A service whose image cannot copy - MinIO's has no tar - has its volume
+// copied by a small image that can, rather than failing the move.
+func TestAVolumeWhoseImageCannotCopyUsesAHelperImage(t *testing.T) {
+	m, _, _, kube, _ := statefulGroup(t)
+	m.Kube = tarlessKube{kube}
+	m.API = stackDataAPI{}
+	m.Plan.Items = append(m.Plan.Items, Item{Kind: "compose", ID: "c1", Name: "monorepo",
+		Details: map[string]string{"app_name": "pi-sime49", "volume_users": "db1-data:db1"}})
+	m.Source.Docker.Volumes = append(m.Source.Docker.Volumes, migrate.Volume{Name: "pi-sime49_db1-data"})
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "xl.meta"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.volumePath = func(string) string { return src }
+	kube.replies["wc -l"] = "2\n"
+	group := Group{ID: "g-st", Members: []GroupMember{{Kind: "compose", ID: "c1", Name: "monorepo"}}}
+
+	if err := m.CopyFiles(group, func(GroupMember) (string, string) { return "stack-1", "proj-1" }); err != nil {
+		t.Fatal(err)
+	}
+	if len(kube.applied) != 2 || !strings.Contains(kube.applied[1], copyHelperImage) {
+		t.Fatalf("applied: %v", kube.applied)
 	}
 }

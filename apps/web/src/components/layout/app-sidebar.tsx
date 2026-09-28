@@ -154,18 +154,21 @@ export function AppSidebar() {
       : null
 
   // Migration is a page a server has for a few days of its life, so the link
-  // appears only while there is a migration to see: one was planned, and it has
-  // not been finished. Owner-only, like the page.
+  // appears only while there is a migration to see: one was planned, or has
+  // progress to show, and it has not been finished. Progress alone counts: a
+  // plan confirmed from a terminal leaves no plan result for the console, and
+  // the page for a server half-way through moving was then nowhere to be found.
+  // Owner-only, like the page.
   const { data: migration } = useQuery({
     queryKey: ["migration"],
     queryFn: () => system.migration(token!),
     enabled: !!token && isAdmin,
     staleTime: 60 * 1000,
-    refetchInterval: query => query.state.data?.plan && !query.state.data.status?.finished ? 5_000 : false,
+    refetchInterval: query => (query.state.data?.plan || query.state.data?.status) && !query.state.data.status?.finished ? 5_000 : false,
     retry: false,
     throwOnError: false,
   })
-  const migrating = isAdmin && !!migration?.plan && !migration.status?.finished
+  const migrating = isAdmin && !!(migration?.plan || migration?.status) && !migration.status?.finished
   const migrationStatus = migration?.status
   const migrationGroups = migrationStatus?.groups ?? []
   const movedGroups = migrationGroups.filter(group => group.moved).length

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,8 +30,7 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 		if err != nil && !src.Detection.Dokploy {
 			return "", nil, 0, err
 		}
-		plan := dokploy.BuildPlan(dokploy.Source{Detection: src.Detection, Docker: src.Docker, Listeners: src.Listeners,
-			Resources: src.Resources, DynamicFiles: src.DynamicFiles, AcmeBytes: src.AcmeBytes}, now)
+		plan := dokploy.BuildPlan(src.Machine(), now)
 		body, err := json.Marshal(map[string]any{"generated_at": plan.GeneratedAt, "detection": plan.Detection,
 			"edge": plan.Edge, "resources": plan.Resources, "mode": plan.Mode})
 		return hostagent.DetectFile, body, 0o644, err
@@ -41,7 +41,7 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 		body, err := runMigrateMove(req.Args["group"])
 		return hostagent.MoveFile, body, 0o600, err
 	case hostagent.RequestMigrateCutover:
-		body, err := runMigrateCutover()
+		body, err := runMigrateCutover(req.Args["edge_first"] == "true")
 		return hostagent.CutoverFile, body, 0o600, err
 	case hostagent.RequestMigrateFinish:
 		body, err := runMigrateFinish(req.Args["volumes"] == "true", req.Args["plan"] == "true")
@@ -171,13 +171,25 @@ const migrateCredentialFile = "dokploy-credential.json"
 // takeMigrationCredential consumes the token the API left in the inbox and
 // checks the API accepts it, so a credential that would fail later fails now,
 // while somebody is watching.
+// errNoCredentialLeft is an inbox with no credential waiting in it.
+var errNoCredentialLeft = errors.New("no credential was left for this request")
+
+// writeMigrationCredential keeps a credential where the stages read it, as
+// the credential request's own result is kept: root only.
+func writeMigrationCredential(body []byte) error {
+	if err := os.MkdirAll(hostagent.MigrateDir(hostDir), 0o755); err != nil {
+		return err
+	}
+	return writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), migrateCredentialFile), body, 0o600)
+}
+
 func takeMigrationCredential() ([]byte, error) {
 	cred, err := hostagent.TakeCredential(hostDir)
 	if err != nil {
 		return nil, err
 	}
 	if cred == nil {
-		return nil, fmt.Errorf("no credential was left for this request")
+		return nil, errNoCredentialLeft
 	}
 	if _, err := client.New(cred.BaseURL, cred.Token).ListOrgs(); err != nil {
 		return nil, fmt.Errorf("the API did not accept the migration credential: %w", err)
@@ -268,9 +280,18 @@ func runMigratePrepare() ([]byte, error) {
 
 // readMigrationCredential reads the token the agent took from the inbox.
 func readMigrationCredential() (*hostagent.Credential, error) {
+	// The console's first Prepare leaves the migration's credential in the
+	// inbox beside the request: taken and kept here before it is read.
+	if body, err := takeMigrationCredential(); err == nil {
+		if err := writeMigrationCredential(body); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, errNoCredentialLeft) {
+		return nil, err
+	}
 	b, err := os.ReadFile(filepath.Join(hostagent.MigrateDir(hostDir), migrateCredentialFile))
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("this server has no migration credential yet: start the migration from the console")
+		return nil, fmt.Errorf("this server has no migration credential yet: press Prepare on the console's Migration page, which issues one")
 	}
 	if err != nil {
 		return nil, err

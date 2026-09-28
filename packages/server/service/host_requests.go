@@ -117,6 +117,14 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 			return HostRequestState{}, err
 		}
 	}
+	// Prepare is the first stage that acts through the API. A migration that
+	// has no identity yet gets one with it, rather than a stage that fails
+	// asking for a step nothing on the page offers.
+	if reqType == hostagent.RequestMigratePrepare {
+		if err := s.issueFirstMigrationCredential(ctx, userID); err != nil {
+			return HostRequestState{}, err
+		}
+	}
 
 	req := hostagent.Request{ID: uuid.NewString(), Type: reqType, RequestedBy: userID.String(),
 		RequestedAt: time.Now().UTC(), Args: args}
@@ -266,6 +274,24 @@ func (s *SystemService) issueMigrationCredential(ctx context.Context, userID uui
 		BaseURL:   s.apiBaseURL(),
 		WrittenAt: time.Now().UTC(),
 	})
+}
+
+// issueFirstMigrationCredential leaves a credential for the agent unless the
+// migration already has its principal: a later prepare works with the one the
+// host already holds, and minting on every run would pile up tokens.
+func (s *SystemService) issueFirstMigrationCredential(ctx context.Context, userID uuid.UUID) error {
+	if s.agents == nil {
+		return nil
+	}
+	orgID, err := s.instanceOrg(ctx)
+	if err != nil {
+		return err
+	}
+	has, err := s.agents.HasMigrationAgent(ctx, orgID)
+	if err != nil || has {
+		return err
+	}
+	return s.issueMigrationCredential(ctx, userID)
 }
 
 // instanceOrg is the organisation a migration creates into. CE is single-org by

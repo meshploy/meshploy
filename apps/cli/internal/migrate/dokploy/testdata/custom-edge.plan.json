@@ -54,7 +54,7 @@
       "maps_to": "Service built from git (nixpacks)",
       "verdict": "moves",
       "reasons": [
-        "runs the image it runs now until GitHub is reconnected in Meshploy; builds and deploys on push resume then, with no further setup",
+        "runs the image it runs now; to build and deploy on push again, connect GitHub in Meshploy and choose it as the source's git access",
         "starts from the image running now; the next deploy builds from its source"
       ],
       "running": true,
@@ -97,6 +97,7 @@
       "maps_to": "Stack from the stored compose file",
       "verdict": "moves",
       "reasons": [
+        "nothing of it has run on this server, so there is nothing to move yet: deploy it in Dokploy first",
         "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains"
       ],
       "details": {
@@ -203,7 +204,8 @@
         "certificate": "none",
         "compose_id": "id-6",
         "https": "false",
-        "port": "8080"
+        "port": "8080",
+        "service_name": "container-7"
       }
     },
     {
@@ -216,7 +218,8 @@
         "certificate": "none",
         "compose_id": "id-5",
         "https": "false",
-        "port": "80"
+        "port": "80",
+        "service_name": "container-8"
       }
     },
     {
@@ -232,7 +235,8 @@
         "certificate": "none",
         "compose_id": "id-7",
         "https": "false",
-        "port": "5678"
+        "port": "5678",
+        "service_name": "container-9"
       }
     },
     {
@@ -245,17 +249,18 @@
         "certificate": "none",
         "compose_id": "id-7",
         "https": "false",
-        "port": "5678"
+        "port": "5678",
+        "service_name": "container-9"
       }
     },
     {
       "kind": "git_provider",
       "id": "id-17",
       "name": "git_provider-1",
-      "maps_to": "Git integration, waiting to be reconnected",
+      "maps_to": "Not carried: connect it again in Meshploy",
       "verdict": "moves",
       "reasons": [
-        "GitHub is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+        "GitHub is connected through a callback on this server, which cannot move: connect it in Meshploy's Integrations, then choose it as the git access of each moved app's source, and builds resume"
       ],
       "details": {
         "provider": "github"
@@ -265,10 +270,10 @@
       "kind": "git_provider",
       "id": "id-18",
       "name": "git_provider-2",
-      "maps_to": "Git integration, waiting to be reconnected",
+      "maps_to": "Not carried: connect it again in Meshploy",
       "verdict": "moves",
       "reasons": [
-        "GitHub is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume"
+        "GitHub is connected through a callback on this server, which cannot move: connect it in Meshploy's Integrations, then choose it as the git access of each moved app's source, and builds resume"
       ],
       "details": {
         "provider": "github"

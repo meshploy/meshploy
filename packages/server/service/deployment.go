@@ -705,7 +705,17 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	// Service and the NodePort a route target is resolved from, and a service
 	// that has never been deployed has neither - so re-applying has to publish
 	// them too, or the workload runs with nothing able to dial it.
-	return s.applyPortServices(ctx, &svc, svc.Project.Slug, svc.Ports)
+	if err := s.applyPortServices(ctx, &svc, svc.Project.Slug, svc.Ports); err != nil {
+		return err
+	}
+	// And what a deploy does once its ports have addresses: TCP routes for
+	// ports published on one address, and every TCP route pointed at the
+	// NodePorts just assigned. A service started again - a move retried after
+	// one that put itself back - comes up through here, not through a deploy.
+	if s.tcpRoutes != nil {
+		s.tcpRoutes.SyncPublished(ctx, serviceID)
+	}
+	return nil
 }
 
 // applyPortServices publishes a workload's ports: the in-cluster Service, and

@@ -472,6 +472,12 @@ func (b *builder) composes() {
 			it.Running = &on
 			it.Details["containers"] = fmt.Sprintf("%d of %d running", running, total)
 		}
+		if total == 0 {
+			// Nothing to carry: a compose app moves on the images its
+			// containers run, and one that never ran here - its build failed,
+			// say - has none. It moves once Dokploy has run it.
+			it.Reasons = append(it.Reasons, "nothing of it has run on this server, so there is nothing to move yet: deploy it in Dokploy first")
+		}
 		it.Reasons = append(it.Reasons, "Dokploy's Traefik labels and dokploy-network are removed; routes come from its domains")
 		content := b.src.ComposeFiles[name]
 		if r.Str("sourceType") == "raw" {
@@ -483,6 +489,14 @@ func (b *builder) composes() {
 			it.Reasons = append(it.Reasons, "its compose file could not be read: "+err.Error())
 		} else {
 			composeDecisions(&it, findings)
+			// The order compose started them in, which the move keeps.
+			var layers []string
+			for _, l := range composeStartOrder(content) {
+				layers = append(layers, strings.Join(l, ","))
+			}
+			if len(layers) > 1 {
+				it.Details["start_order"] = strings.Join(layers, "|")
+			}
 		}
 		if r.Str("serverId") != "" {
 			it.Verdict = NotMoved
@@ -579,6 +593,11 @@ func (b *builder) domains() {
 		}
 		if id := r.Str("composeId"); id != "" {
 			it.Details["compose_id"] = id
+			// The compose service it routes to: the stack's service of that
+			// name, which exists once the stack is applied at move.
+			if svc := r.Str("serviceName"); svc != "" {
+				it.Details["service_name"] = svc
+			}
 		}
 		switch {
 		case r.Str("previewDeploymentId") != "" || r.Str("domainType") == "preview":
@@ -617,8 +636,8 @@ func reconnectsAfterMove(sourceType string) bool {
 // again after a reconnect. Not a decision, because there is nothing to decide.
 func reconnectReason(sourceType string) string {
 	name := providerLabel(sourceType)
-	return "runs the image it runs now until " + name +
-		" is reconnected in Meshploy; builds and deploys on push resume then, with no further setup"
+	return "runs the image it runs now; to build and deploy on push again, connect " + name +
+		" in Meshploy and choose it as the source's git access"
 }
 
 // providerLabel is a provider's name as its own users write it.
@@ -651,9 +670,9 @@ func (b *builder) integrations() {
 			it.Reasons = append(it.Reasons,
 				"arrives working: Bitbucket is connected by an API token, which is not tied to this server")
 		default:
-			it.MapsTo = "Git integration, waiting to be reconnected"
+			it.MapsTo = "Not carried: connect it again in Meshploy"
 			it.Reasons = append(it.Reasons, providerLabel(p)+
-				" is connected through a callback on this server, which cannot move: reconnect it once in Meshploy and builds resume")
+				" is connected through a callback on this server, which cannot move: connect it in Meshploy's Integrations, then choose it as the git access of each moved app's source, and builds resume")
 		}
 		b.add(it)
 	}

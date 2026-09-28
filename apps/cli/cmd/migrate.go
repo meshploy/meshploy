@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/meshploy/apps/cli/internal/migrate"
 	"github.com/meshploy/apps/cli/internal/migrate/dokploy"
+	"github.com/meshploy/apps/cli/internal/setup"
+	"github.com/meshploy/packages/hostagent"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +58,7 @@ var migrateDokployDetectCmd = &cobra.Command{
 		if err != nil && !src.Detection.Dokploy {
 			return err
 		}
-		plan := dokploy.BuildPlan(dokploy.Source{Detection: src.Detection, Docker: src.Docker, Listeners: src.Listeners, Resources: src.Resources, DynamicFiles: src.DynamicFiles, AcmeBytes: src.AcmeBytes}, time.Now())
+		plan := dokploy.BuildPlan(src.Machine(), time.Now())
 		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 			return writeJSON(cmd.OutOrStdout(), map[string]any{"detection": plan.Detection, "edge": plan.Edge, "resources": plan.Resources, "mode": plan.Mode})
 		}
@@ -93,10 +96,25 @@ var migrateDokployPlanCmd = &cobra.Command{
 				return err
 			}
 		}
+		if confirm, _ := cmd.Flags().GetBool("confirm"); confirm {
+			if err := setup.ConfirmPlan(plan); err != nil {
+				return err
+			}
+			// Where the console reads the plan from, as if it had asked for
+			// it: a migration confirmed here shows there too.
+			if body, err := json.Marshal(plan); err == nil {
+				if err := os.MkdirAll(hostagent.MigrateDir(hostDir), 0o755); err == nil {
+					_ = writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), hostagent.PlanFile), body, 0o600)
+				}
+			}
+		}
 		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 			return writeJSON(cmd.OutOrStdout(), plan)
 		}
 		printPlan(cmd.OutOrStdout(), plan)
+		if confirm, _ := cmd.Flags().GetBool("confirm"); confirm {
+			fmt.Fprintln(cmd.OutOrStdout(), "\nConfirmed, with every decision's default. Next: press Prepare on the console's Migration page")
+		}
 		return nil
 	},
 }
@@ -316,7 +334,8 @@ first: cutover takes the ports for every domain at once.`,
 		// A workload that could not move keeps running where it is, but the
 		// edge that served it is about to stop. That is a decision, so it is
 		// put in front of the operator before the ports change hands.
-		if dark, err := unservedAtCutover(); err == nil && len(dark) > 0 {
+		edgeFirst, _ := cmd.Flags().GetBool("edge-first")
+		if dark, err := unservedAtCutover(); err == nil && len(dark) > 0 && !edgeFirst {
 			yes, _ := cmd.Flags().GetBool("yes")
 			fmt.Fprintln(cmd.OutOrStdout(), "These domains stop being served, because what they point at did not move:")
 			for _, d := range dark {
@@ -333,7 +352,7 @@ first: cutover takes the ports for every domain at once.`,
 				}
 			}
 		}
-		body, err := runMigrateCutover()
+		body, err := runMigrateCutover(edgeFirst)
 		if err != nil {
 			return err
 		}
@@ -343,6 +362,10 @@ first: cutover takes the ports for every domain at once.`,
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Meshploy holds 80 and 443. %d certificate(s) carried over; the ports changed hands in %s.\n",
 			len(result.CertificatesImported), result.Downtime)
+		if len(result.ThroughOldEdge) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "The old edge now listens on port %d and goes on serving %d domain(s) through Meshploy's until their groups move.\n",
+				result.SidePort, len(result.ThroughOldEdge))
+		}
 		for _, d := range result.Unserved {
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s is no longer served: its workload did not move.\n", d)
 		}
@@ -544,8 +567,10 @@ func init() {
 	migrateDokployPlanCmd.Flags().Bool("json", false, "Print the plan as JSON")
 	migrateDokployRollbackCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation about data already copied")
 	migrateDokployCutoverCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation about domains that stop being served")
+	migrateDokployCutoverCmd.Flags().Bool("edge-first", false, "Take the ports before every group has moved: the old edge moves to a side port and keeps serving what has not moved, through Meshploy's")
 	migrateDokployFinishCmd.Flags().Bool("volumes", false, "Remove the old platform's volumes too (their data is gone)")
 	migrateDokployFinishCmd.Flags().BoolP("yes", "y", false, "Skip the confirmation")
+	migrateDokployPlanCmd.Flags().Bool("confirm", false, "Confirm the plan with every decision's default, for the stages to work from (a server installed without the browser setup)")
 	migrateDokployPlanCmd.Flags().String("out", "", "Also write the plan as JSON to this file (created readable by root only)")
 	migrateDokployCmd.AddCommand(migrateDokployDetectCmd, migrateDokployPlanCmd, migrateDokployPrepareCmd,
 		migrateDokployMoveCmd, migrateDokployCutoverCmd, migrateDokployRollbackCmd,

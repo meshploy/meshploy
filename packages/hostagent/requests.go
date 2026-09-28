@@ -131,6 +131,10 @@ type MigrationStatus struct {
 	Prepared bool `json:"prepared"`
 	CutOver  bool `json:"cut_over"`
 	Finished bool `json:"finished"`
+	// EdgeFirst is a cutover taken before every group moved: Meshploy's edge
+	// holds the ports and hands what has not moved to the old edge, which
+	// serves it from a side port.
+	EdgeFirst bool `json:"edge_first,omitempty"`
 	// Groups is every group in the confirmed plan, in the order it would move.
 	Groups []GroupProgress `json:"groups"`
 }

@@ -61,6 +61,8 @@ export interface MigrationStatus {
   prepared: boolean
   cut_over: boolean
   finished: boolean
+  /** The ports were taken before every group moved; the old edge serves the rest from a side port. */
+  edge_first?: boolean
   groups: GroupProgress[]
 }
 
@@ -234,7 +236,7 @@ export const system = {
    * Ask the host agent to run a stage. It is queued, not run here: the API has
    * no access to the host, and the agent on the gateway does the work.
    */
-  requestMigration: (token: string, kind: MigrationStage, body?: { group?: string; volumes?: boolean }) =>
+  requestMigration: (token: string, kind: MigrationStage, body?: { group?: string; volumes?: boolean; edge_first?: boolean }) =>
     apiFetch<HostRequestState>(
       `/api/v1/system/migrate/dokploy/${kind}`,
       { method: "POST", body: JSON.stringify(body ?? {}) },

@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	meshdb "github.com/meshploy/packages/db"
 )
@@ -368,4 +370,47 @@ func droppedByStack(svcDef composetypes.ServiceConfig) []string {
 		}
 	}
 	return notes
+}
+
+// rawBindSources reads each service's bind mounts from the compose YAML as
+// written, keyed "binds/<service>/<target>": the short form ("./x:/x:ro")
+// and the long one (source/target). Nothing is interpolated or resolved.
+func rawBindSources(spec string) map[string]string {
+	var doc struct {
+		Services map[string]struct {
+			Volumes []any `yaml:"volumes"`
+		} `yaml:"services"`
+	}
+	out := map[string]string{}
+	if yaml.Unmarshal([]byte(spec), &doc) != nil {
+		return out
+	}
+	for name, svc := range doc.Services {
+		for _, v := range svc.Volumes {
+			var src, target string
+			switch e := v.(type) {
+			case string:
+				parts := strings.Split(e, ":")
+				if len(parts) < 2 {
+					continue
+				}
+				src, target = parts[0], parts[1]
+			case map[string]any:
+				if t, _ := e["type"].(string); t != "" && t != "bind" {
+					continue
+				}
+				src, _ = e["source"].(string)
+				target, _ = e["target"].(string)
+			}
+			if src == "" || target == "" {
+				continue
+			}
+			// A named volume has no path in it; only a path is a bind.
+			if !strings.HasPrefix(src, ".") && !strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "~") {
+				continue
+			}
+			out["binds/"+name+"/"+path.Clean(target)] = src
+		}
+	}
+	return out
 }

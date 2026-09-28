@@ -182,3 +182,29 @@ func (c *Client) FindRoute(orgID, projectID, ref string) (*Route, error) {
 func (c *Client) DeleteRoute(orgID, projectID, routeID string) error {
 	return c.doNoContent("DELETE", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/routes/"+routeID)
 }
+
+// AddRouteTarget adds a path to a route: a second path on a hostname one route
+// already serves, as a compose app's /api beside its /.
+func (c *Client) AddRouteTarget(orgID, projectID, routeID string, body CreateRouteBody) error {
+	t := routeWireTarget{Path: body.Path, StripPath: body.StripPath, ServiceID: body.ServiceID, NodeID: body.NodeID,
+		TargetIP: body.TargetIP}
+	if t.Path == "" {
+		t.Path = "/"
+	}
+	switch {
+	case body.TargetPort != nil:
+		t.Port = body.TargetPort
+	case body.ServiceID == nil && body.Port != nil:
+		t.Port = body.Port
+	}
+	if body.TargetTLS {
+		tls := true
+		t.TargetTLS = &tls
+	}
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/routes/"+routeID+"/targets", t)
+	if err != nil {
+		return err
+	}
+	_, err = decode[map[string]any](resp)
+	return err
+}

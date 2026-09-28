@@ -32,6 +32,8 @@ A stack runs a Compose file the way Docker Compose would, with Kubernetes undern
 - **Run once.** A service another one waits for with `condition: service_completed_successfully` (a migration, a setup step) runs to completion on each deploy instead of being kept up, and shows as **completed**. `restart: on-failure:N` retries it N times. The services waiting for it start alongside it rather than after it, so they should retry until it has run.
 - **Published ports.** A port published everywhere (`5432:5432`) is reachable on the mesh, never on the internet unless you add a TCP route. One published on a single address of the host (`100.81.6.12:5433:5432`) gets a TCP route bound to that address, created by its first deploy. One published on `127.0.0.1` stays inside the cluster.
 - **Bind mounts** of the repository's own files (`./migrations`, `./scripts/setup.sh`) arrive where Compose put them, read-only, up to 1 MB per service in all. A bind mount of a path on the host, such as `/var/run/docker.sock`, is left out, and the apply says so.
+- **Resources.** `mem_limit`, `cpus`, `mem_reservation` and `deploy.resources` set the service's limits and requests. Where the file says nothing, a new service gets Meshploy's defaults, and a limit set on the service since is kept by the next apply.
+- **Routes name a port.** A route to a service names the port it serves, and that port is routable from then on, even one the file only published on `127.0.0.1` or never listed.
 
 ## Terms {#terms}
 
