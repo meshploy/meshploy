@@ -36,7 +36,8 @@ export const cluster = {
     ),
 
   getJoinToken: (orgId: string, token: string) =>
-    apiFetch<{ token: string; server_url: string }>(
+    /** k3s_version is the release the server runs, which a joining node installs. */
+    apiFetch<{ token: string; server_url: string; k3s_version?: string }>(
       `/api/v1/orgs/${orgId}/cluster/join-token`,
       {},
       token

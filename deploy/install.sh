@@ -1922,6 +1922,10 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       K3S_JOIN_TOKEN="${K3S_JOIN_TOKEN:-$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('k3s_token',''))" 2>/dev/null || true)}"
       _REG_K3S_URL="$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('k3s_server_url',''))" 2>/dev/null || true)"
       [[ -n "$_REG_K3S_URL" ]] && K3S_SERVER_URL="${K3S_SERVER_URL:-$_REG_K3S_URL}"
+      # The release the gateway's server runs. Left to itself get.k3s.io
+      # installs the day's stable, and a worker joining months later ran a
+      # newer Kubernetes than its control plane, which is not supported.
+      K3S_VERSION="${K3S_VERSION:-$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('k3s_version',''))" 2>/dev/null || true)}"
     else
       warn "Auto-registration failed. You can register manually in the dashboard."
       warn "API response: ${_REG_RESPONSE:-<no response>}"
@@ -1970,9 +1974,15 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       # that inherit the mesh search domains and resolve the whole internet to
       # the gateway.
       configure_pod_dns
-      info "Installing k3s agent and joining ${K3S_SERVER_URL}…"
+      if [[ -n "${K3S_VERSION:-}" ]]; then
+        info "Installing k3s agent ${K3S_VERSION}, the gateway's release, and joining ${K3S_SERVER_URL}…"
+      else
+        warn "The gateway did not say which k3s it runs: installing today's stable release, which may be newer than the gateway's."
+        info "Installing k3s agent and joining ${K3S_SERVER_URL}…"
+      fi
       if ! curl -sfL https://get.k3s.io | \
-          sudo K3S_URL="$K3S_SERVER_URL" \
+          sudo INSTALL_K3S_VERSION="${K3S_VERSION:-}" \
+          K3S_URL="$K3S_SERVER_URL" \
           K3S_TOKEN="$K3S_JOIN_TOKEN" \
           K3S_NODE_NAME="$NODE_HOSTNAME" \
           sh -s - agent \
@@ -1982,7 +1992,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
         error "k3s agent install failed."
         warn "Last log lines:"
         journalctl -u k3s-agent --no-pager -n 20 2>/dev/null || true
-        die "Fix the error above and re-run: curl -sfL https://get.k3s.io | K3S_URL=\"${K3S_SERVER_URL}\" K3S_TOKEN=\"<token>\" sh -s - agent"
+        die "Fix the error above and re-run: curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=\"${K3S_VERSION:-}\" K3S_URL=\"${K3S_SERVER_URL}\" K3S_TOKEN=\"<token>\" sh -s - agent"
       fi
 
       # Wait for the agent to come up

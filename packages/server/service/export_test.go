@@ -84,3 +84,8 @@ func RequestRegistryGCForTest(s *Services, ctx context.Context, hostDir string, 
 	defer func() { s.Deployments.cfg = nil }()
 	return s.Deployments.requestRegistryGC(ctx, now)
 }
+
+// UseNodeK8sForTest gives the node service a cluster client.
+func UseNodeK8sForTest(s *Services, client kubernetes.Interface) {
+	s.Nodes.k8s = client
+}

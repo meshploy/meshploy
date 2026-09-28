@@ -87,6 +87,11 @@ func TestTheInstallerTakesTheJoinTokenFromRegistration(t *testing.T) {
 	if !strings.Contains(script, "k3s_server_url") {
 		t.Error("install.sh never reads k3s_server_url from the registration response")
 	}
+	// A worker installs the gateway's k3s, not the day's stable: a newer
+	// kubelet than the API server is not supported.
+	if !strings.Contains(script, "k3s_version") || !strings.Contains(script, `INSTALL_K3S_VERSION="${K3S_VERSION:-}"`) {
+		t.Error("install.sh does not install the k3s release the gateway runs")
+	}
 	// And when the gateway hands none back, it says so instead of prompting a
 	// machine nobody is watching.
 	if !strings.Contains(script, "No k3s join token came back from the gateway") {

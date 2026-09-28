@@ -640,6 +640,9 @@ type ClusterJoinTokenOutput struct {
 	Body struct {
 		Token     string `json:"token"`      // empty if k3s not installed
 		ServerURL string `json:"server_url"` // e.g. https://100.64.0.1:6443
+		// K3sVersion is the release the server runs, which a joining node
+		// installs (INSTALL_K3S_VERSION). Empty when it cannot be read.
+		K3sVersion string `json:"k3s_version,omitempty"`
 	}
 }
 
@@ -756,6 +759,7 @@ func (h *Handler) GetClusterJoinToken(ctx context.Context, input *ClusterPathInp
 	out := &ClusterJoinTokenOutput{}
 	out.Body.Token = h.k3sJoinToken()
 	out.Body.ServerURL = k3sServerURL
+	out.Body.K3sVersion = h.svc.Nodes.ClusterVersion(ctx)
 	return out, nil
 }
 
@@ -816,6 +820,9 @@ type SelfRegisterNodeOutput struct {
 		NodeSecret   string `json:"node_secret,omitempty"`
 		K3sToken     string `json:"k3s_token,omitempty"`
 		K3sServerURL string `json:"k3s_server_url,omitempty"`
+		// K3sVersion is the release the server runs: the node installs the
+		// same, never a newer Kubernetes than its control plane.
+		K3sVersion string `json:"k3s_version,omitempty"`
 	}
 }
 
@@ -879,6 +886,7 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	if node.MeshRole != db.MeshRoleMesh {
 		out.Body.K3sToken = h.k3sJoinToken()
 		out.Body.K3sServerURL = k3sServerURL
+		out.Body.K3sVersion = h.svc.Nodes.ClusterVersion(ctx)
 	}
 	return out, nil
 }
