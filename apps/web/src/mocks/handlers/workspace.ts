@@ -43,6 +43,9 @@ const body = async (request: Request): Promise<Record<string, any>> => {
 const find = (kind: string, id: unknown) => db[kind].find((r) => r.id === id)
 
 // The one migration step the demo has running, if any, and until when.
+// The demo stacks' Syncs and Applies, newest first.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const demoStackRuns: any[] = []
 let demoMigrationRun: { kind: string; until: number } | null = null
 // Set once the demo's edge has been taken first: the ports are Meshploy's while
 // groups are still to move.
@@ -1031,12 +1034,33 @@ export const workspaceHandlers = [
       const stack = find("stacks", params.stackId)
       if (!stack) return missing()
       try {
-        return json(applyStack(stack))
+        const result = applyStack(stack)
+        // Kept like the API's: the demo's rollouts are finished at once, a
+        // layer per service it created, so the tab has something to show.
+        const run = {
+          id: crypto.randomUUID(), stack_id: stack.id, kind: action, status: "succeeded",
+          commit: action === "sync" ? "fafdacf0c1d2e3f4" : undefined,
+          created_at: now(), updated_at: now(), finished_at: now(),
+          result: { created: result.created, updated: result.updated, deleted: result.deleted, errors: [], warnings: [] },
+          rollout: result.created.map((name: string, i: number) => {
+            const svc = db.services.find((x) => x.stack_id === stack.id && x.name === name)
+            return { name, service_id: svc?.id ?? name, layer: i, status: "succeeded" }
+          }),
+        }
+        demoStackRuns.unshift(run)
+        return json({ ...result, run_id: run.id })
       } catch (e) {
         return error((e as Error).message)
       }
     })
   ),
+  http.get(`${P}/stacks/:stackId/runs`, ({ params }) =>
+    json(demoStackRuns.filter((r) => r.stack_id === params.stackId))
+  ),
+  http.get(`${P}/stacks/:stackId/runs/:runId`, ({ params }) => {
+    const run = demoStackRuns.find((r) => r.id === params.runId)
+    return run ? json(run) : missing()
+  }),
   http.post(`${P}/stacks/:stackId/destroy`, ({ params }) => {
     const stack = find("stacks", params.stackId)
     if (!stack) return missing()

@@ -61,7 +61,9 @@ networks:
 	r, err := svcs.Stacks.ApplyManifest(ctx, proj.ID, service.ManifestInput{Name: "trips", Spec: spec("services/auth-service")}, user.ID)
 	require.NoError(t, err)
 	require.Empty(t, r.Errors)
-	assert.Contains(t, r.Warnings, "s1: starts alongside migrator rather than after it finishes; it should retry until migrator has run")
+	for _, w := range r.Warnings {
+		assert.NotContains(t, w, "starts alongside", "a rollout follows depends_on, so nothing starts alongside what it waits for")
+	}
 
 	once := func(name string) (bool, int32) {
 		t.Helper()

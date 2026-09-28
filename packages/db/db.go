@@ -82,6 +82,7 @@ func Migrate(db *gorm.DB) error {
 
 		// Workloads
 		&Stack{},
+		&StackRun{},
 		&Service{},
 		&ServicePort{},
 		&BuildConfig{},

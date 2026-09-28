@@ -864,6 +864,39 @@ const (
 	StackGitModeRepo StackGitMode = "repo" // clone whole repo
 )
 
+// StackRun is one Sync or Apply of a stack, and how its rollout went: the
+// services it rolled out in the order compose starts them, each with its
+// deployment, and what the apply said. Kept so a rollout that goes on after
+// the request - later depends_on layers wait for earlier ones - can be
+// followed, and looked back on.
+type StackRun struct {
+	Base
+	StackID     uuid.UUID  `gorm:"type:uuid;not null;index" json:"stack_id"`
+	Kind        string     `gorm:"type:varchar(10);not null" json:"kind"` // sync, apply
+	TriggeredBy *uuid.UUID `gorm:"type:uuid" json:"triggered_by,omitempty"`
+	// Commit is what a Sync fetched; empty for an Apply.
+	Commit string `gorm:"not null;default:''" json:"commit,omitempty"`
+	// Status is running until the last layer has finished, then succeeded,
+	// failed (a service in it failed), or stopped (a layer failed, so what
+	// depends on it was not started).
+	Status string `gorm:"type:varchar(12);not null;default:'running'" json:"status"`
+	// Result is the apply's lists as JSON: created, updated, deleted,
+	// errors, warnings.
+	Result string `gorm:"type:text;not null;default:''" json:"-"`
+	// Rollout is the services it rolls out as JSON, each with its layer,
+	// deployment and state.
+	Rollout    string     `gorm:"type:text;not null;default:''" json:"-"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// Stack run states.
+const (
+	StackRunRunning   = "running"
+	StackRunSucceeded = "succeeded"
+	StackRunFailed    = "failed"
+	StackRunStopped   = "stopped"
+)
+
 type Stack struct {
 	Base
 	ProjectID     uuid.UUID   `gorm:"type:uuid;not null;index"                      json:"project_id"`

@@ -369,7 +369,9 @@ func (s *StackService) Sync(ctx context.Context, stackID uuid.UUID, triggeredBy 
 
 	files, cleanup := s.gitFileSource(ctx, &stack)
 	defer cleanup()
-	applyResult, err := s.apply(ctx, stackID, triggeredBy, nil, files, applyOptions(opts))
+	o := applyOptions(opts)
+	o.Kind, o.Commit = "sync", sha
+	applyResult, err := s.apply(ctx, stackID, triggeredBy, nil, files, o)
 	if err != nil {
 		return nil, err
 	}
@@ -560,6 +562,11 @@ type ApplyResult struct {
 	Updated  []string
 	Deleted  []string
 	Deployed []string // services this apply rolled out
+	// Queued roll out after what they depend on has: a later layer of the
+	// compose file's depends_on, started once the one before it is up.
+	Queued []string
+	// RunID is the record this apply keeps of its rollout.
+	RunID    *uuid.UUID
 	Errors   []string
 	Warnings []string // what could not be carried over exactly, such as a UDP port
 }
@@ -663,12 +670,6 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		svcDef := project.Services[svcName]
 		specNames[svcName] = struct{}{}
 		retries, once := runOnce[svcName]
-		for dep, d := range svcDef.DependsOn {
-			if d.Condition == composetypes.ServiceConditionCompletedSuccessfully {
-				result.Warnings = append(result.Warnings, fmt.Sprintf(
-					"%s: starts alongside %s rather than after it finishes; it should retry until %s has run", svcName, dep, dep))
-			}
-		}
 
 		ext := decodeExt(svcDef.Extensions)
 		isDatabase := ext != nil && ext.Type == "database"
@@ -955,25 +956,40 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	deploy, warnings := rolloutPlan(changedSvcs)
 	result.Warnings = append(result.Warnings, warnings...)
 
+	var roll []rollItem
+	for i, id := range createdIDs {
+		name := ""
+		if i < len(result.Created) {
+			name = result.Created[i]
+		}
+		roll = append(roll, rollItem{ID: id, Name: name, Created: true})
+	}
+	for _, c := range deploy {
+		roll = append(roll, rollItem{ID: c.ID, Name: c.Name})
+	}
+	var layers [][]rollItem
 	if s.deployment.K8sConfigured() {
-		for i, id := range createdIDs {
-			name := ""
-			if i < len(result.Created) {
-				name = result.Created[i]
+		layers = rolloutLayers(roll, serviceLayers(project.Services))
+	}
+	run := s.startRun(ctx, stackID, triggerBy, opts, layers)
+	if run != nil {
+		result.RunID = &run.id
+	}
+	if len(layers) > 0 {
+		// The first layer now, so what cannot start at all - a build with
+		// nowhere to push - is in the result; the rest after it, in the order
+		// compose starts them, followed on the run's record.
+		started := s.triggerLayer(ctx, layers[0], triggerBy, result, run)
+		for _, l := range layers[1:] {
+			for _, it := range l {
+				result.Queued = append(result.Queued, it.Name)
 			}
-			if _, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: id, TriggeredBy: triggerBy}); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: created but not deployed: %v", name, err))
-				continue
-			}
-			result.Deployed = append(result.Deployed, name)
 		}
-		for _, c := range deploy {
-			if _, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: c.ID, TriggeredBy: triggerBy}); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: updated but not deployed: %v", c.Name, err))
-				continue
-			}
-			result.Deployed = append(result.Deployed, c.Name)
-		}
+		s.recordResult(ctx, run, result)
+		go s.rolloutInOrder(context.WithoutCancel(ctx), stack.Name, run, started, layers[1:], triggerBy)
+	} else {
+		s.recordResult(ctx, run, result)
+		s.finishRun(ctx, run)
 	}
 
 	return result, nil

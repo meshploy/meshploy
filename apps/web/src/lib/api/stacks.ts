@@ -30,8 +30,40 @@ export interface ApplyStackResult {
   deleted: string[]
   /** Services this apply rolled out. */
   deployed?: string[]
+  /** Services that roll out once what they depend on is up. */
+  queued?: string[]
+  /** The record of this apply's rollout, under the stack's runs. */
+  run_id?: string
   errors: string[]
   warnings?: string[]
+}
+
+export type StackRunStatus = "running" | "succeeded" | "failed" | "stopped" | "interrupted"
+export type RolloutStepStatus = "waiting" | "started" | "succeeded" | "failed" | "not_started"
+
+/** One service of a run's rollout, in its depends_on layer. */
+export interface RolloutStep {
+  name: string
+  service_id: string
+  layer: number
+  deployment_id?: string
+  status: RolloutStepStatus
+  error?: string
+}
+
+/** One Sync or Apply of a stack, and how its rollout went. */
+export interface StackRun {
+  id: string
+  stack_id: string
+  kind: "sync" | "apply"
+  triggered_by?: string
+  commit?: string
+  status: StackRunStatus
+  created_at: string
+  updated_at: string
+  finished_at?: string
+  result: { created: string[] | null; updated: string[] | null; deleted: string[] | null; errors: string[] | null; warnings: string[] | null }
+  rollout: RolloutStep[]
 }
 
 export interface DestroyStackResult {
@@ -139,6 +171,12 @@ export const stacks = {
       { method: "POST", body: JSON.stringify(body) },
       token
     ),
+
+  runs: (orgId: string, projectId: string, stackId: string, token: string) =>
+    apiFetch<StackRun[]>(`/api/v1/orgs/${orgId}/projects/${projectId}/stacks/${stackId}/runs`, {}, token),
+
+  run: (orgId: string, projectId: string, stackId: string, runId: string, token: string) =>
+    apiFetch<StackRun>(`/api/v1/orgs/${orgId}/projects/${projectId}/stacks/${stackId}/runs/${runId}`, {}, token),
 
   sync: (orgId: string, projectId: string, stackId: string, token: string) =>
     apiFetch<SyncStackResult>(

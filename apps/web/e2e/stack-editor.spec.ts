@@ -34,11 +34,32 @@ test.describe("A stack's compose file", () => {
     await expect(dialog).toHaveCount(0)
   })
 
+  // With an integration, the repository and branch are picked from what it
+  // can reach, as a new service's are; one it does not list says so.
+  test("choosing git access turns repository and branch into pickers", async ({ page }) => {
+    await goto(page, "/projects/00000000-0000-0000-0000-000000000003/stacks/00000000-0000-0000-0000-0000000000c2/editor")
+    await page.getByRole("button", { name: "Edit" }).click({ timeout: 10_000 })
+    const dialog = page.getByRole("dialog")
+    await dialog.getByRole("combobox").first().click()
+    await page.getByRole("option", { name: /Demo GitLab/ }).click()
+    await expect(dialog.getByRole("textbox")).toHaveCount(1) // only the compose file path is typed
+    await dialog.getByRole("combobox").nth(2).click()
+    await expect(page.getByRole("option", { name: "develop" })).toBeVisible()
+    await page.getByRole("option", { name: "develop" }).click()
+    await dialog.getByRole("button", { name: "Save" }).click()
+    await expect(dialog).toHaveCount(0)
+  })
+
   test("a pasted stack is applied from its header, on any tab", async ({ page }) => {
     await goto(page, "/projects/00000000-0000-0000-0000-000000000003/stacks/00000000-0000-0000-0000-00000000000c/services")
     await expect(page.getByRole("button", { name: "Sync" })).toHaveCount(0, { timeout: 10_000 })
     await page.getByRole("button", { name: "Apply" }).click()
-    await expect(page.getByText("Applied", { exact: true })).toBeVisible({ timeout: 10_000 })
+    // An apply opens its rollout, where it is followed and kept.
+    await expect(page.getByRole("heading", { name: /^Apply / })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Done").first()).toBeVisible()
+    await page.getByRole("link", { name: "All rollouts" }).click()
+    await expect(page.getByRole("heading", { name: "Rollouts" })).toBeVisible()
+    await expect(page.getByRole("link", { name: /Apply/ })).toHaveCount(1)
 
     await page.getByRole("link", { name: "Editor" }).click()
     await expect(page.getByRole("heading", { name: "Source" })).toHaveCount(0)

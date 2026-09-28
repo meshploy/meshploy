@@ -47,6 +47,31 @@ export function StackSourceDialog({ open, onOpenChange, stack, orgId, projectId,
     enabled: open,
   })
 
+  const hasAccess = integration !== NONE
+  const { data: repos = [], isFetching: reposLoading, isError: reposFailed, isSuccess: reposLoaded } = useQuery({
+    queryKey: ["git-repos", orgId, integration],
+    queryFn: () => gitIntegrations.repos(orgId, integration, token),
+    enabled: open && hasAccess,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+  const { data: branches = [], isFetching: branchesLoading, isSuccess: branchesLoaded } = useQuery({
+    queryKey: ["git-branches", orgId, integration, repo],
+    queryFn: () => gitIntegrations.branches(orgId, integration, repo, token),
+    enabled: open && hasAccess && !!repo.trim(),
+    staleTime: 2 * 60 * 1000,
+    retry: false,
+  })
+  // The stored value stays choosable while the list loads and when the
+  // integration does not list it - a token without access to the repository
+  // is exactly what that shows. Called "not listed" only once the list has
+  // arrived without it: a long list takes a moment, and said too early it read
+  // as the token missing access it has.
+  const repoKnown = repos.some((r) => r.full_name === repo)
+  const branchKnown = branches.includes(branch)
+  const repoMissing = reposLoaded && !reposLoading && !repoKnown
+  const branchMissing = branchesLoaded && !branchesLoading && !branchKnown
+
   const save = useMutation({
     mutationFn: () => stacksApi.update(orgId, projectId, stack.id, {
       git_integration_id: integration === NONE ? "" : integration,
@@ -94,14 +119,47 @@ export function StackSourceDialog({ open, onOpenChange, stack, orgId, projectId,
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Repository" hint={needsAccess
-            ? "owner/repo names no server: choose the integration it is on."
-            : "owner/repo on the integration's server, or a full URL."}>
-            <Input value={repo} onChange={(e) => setRepo(e.target.value)} className="font-mono h-9" />
-          </Field>
+          {hasAccess ? (
+            <Field label="Repository" hint={reposLoading ? "Loading what this integration can read…"
+              : reposFailed ? "Could not list this integration's repositories: is it authorized?"
+              : repo && repoMissing ? "This integration does not list this repository: its token may not reach it."
+              : undefined}>
+              <Select value={repo} onValueChange={(v) => {
+                const picked = repos.find((r) => r.full_name === v)
+                setRepo(v ?? "")
+                if (picked && picked.full_name !== repo) setBranch(picked.default_branch)
+              }}>
+                <SelectTrigger className="w-full h-9 font-mono">
+                  <SelectValue placeholder="Choose a repository">{repo}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {repo && !repoKnown && <SelectItem value={repo}>{repo}{repoMissing ? " (not listed)" : ""}</SelectItem>}
+                  {repos.map((r) => <SelectItem key={r.full_name} value={r.full_name}>{r.full_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : (
+            <Field label="Repository" hint={needsAccess
+              ? "owner/repo names no server: choose the integration it is on."
+              : "A public repository's full URL."}>
+              <Input value={repo} onChange={(e) => setRepo(e.target.value)} className="font-mono h-9" />
+            </Field>
+          )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Branch">
-              <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono h-9" />
+            <Field label="Branch" hint={hasAccess && branchesLoading ? "Loading branches…" : undefined}>
+              {hasAccess && repo ? (
+                <Select value={branch} onValueChange={(v) => setBranch(v ?? "")}>
+                  <SelectTrigger className="w-full h-9 font-mono">
+                    <SelectValue placeholder="Choose a branch">{branch}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branch && !branchKnown && <SelectItem value={branch}>{branch}{branchMissing ? " (not listed)" : ""}</SelectItem>}
+                    {branches.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="font-mono h-9" />
+              )}
             </Field>
             <Field label="Compose file">
               <Input value={path} onChange={(e) => setPath(e.target.value)} className="font-mono h-9" placeholder="docker-compose.yml" />

@@ -306,6 +306,8 @@ A project is its own production level; each level below it is a project of its o
 | PUT | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Update a stack's spec and variables |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}` | ✓ | Delete a stack |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/apply` | ✓ | Apply the stack spec - reconcile services. `deploy: false` writes the records and rolls nothing out; `files` carries what the spec names by path when the server cannot read it (a migration sending a git stack's repository files from the old checkout) |
+| GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/runs` | ✓ | The stack's Syncs and Applies, newest first, each with its rollout's state |
+| GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/runs/{runId}` | ✓ | One Sync or Apply: its services by `depends_on` layer, each with its deployment, and what the apply said |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/destroy` | ✓ | Destroy the services this stack created, keeping the stack |
 | GET | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/services` | ✓ | List services belonging to a stack |
 | POST | `/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/sync` | ✓ | Fetch spec from git source and re-apply |

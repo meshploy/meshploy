@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
 import { AlertTriangle, Loader2, PlayCircle, RefreshCw, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -20,9 +21,9 @@ import { invalidateProjectViews } from "@/lib/project-views"
 // the Editor and Services tabs, so the stack's own actions moved with the tab
 // you happened to be on.
 
-type Outcome =
-  | { kind: "apply" | "sync"; result: ApplyStackResult | SyncStackResult }
-  | { kind: "destroy"; result: DestroyStackResult }
+// Sync and Apply open their rollout, which goes on after the request; what
+// is kept here is Destroy's result, which has none.
+type Outcome = { kind: "destroy"; result: DestroyStackResult }
 
 export function useStackActions({ stack, orgId, projectId, token }: {
   stack: ApiStack | undefined
@@ -31,6 +32,7 @@ export function useStackActions({ stack, orgId, projectId, token }: {
   token: string
 }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const stackId = stack?.id ?? ""
   const isGit = !!stack?.git_mode
   const [outcome, setOutcome] = useState<Outcome | null>(null)
@@ -46,17 +48,19 @@ export function useStackActions({ stack, orgId, projectId, token }: {
     qc.invalidateQueries({ queryKey: ["stack-services", orgId, projectId, stackId] })
     qc.invalidateQueries({ queryKey: ["volumes", orgId, projectId] })
     qc.invalidateQueries({ queryKey: ["routes", orgId, projectId] })
+    qc.invalidateQueries({ queryKey: ["stack-runs", orgId, projectId, stackId] })
     invalidateProjectViews(qc, orgId, projectId)
   }
 
   const apply = useMutation({
     mutationFn: () => stacksApi.apply(orgId!, projectId, stackId, token),
-    onSuccess: (result) => { setOutcome({ kind: "apply", result }); refresh() },
+    onSuccess: (result) => { setOutcome(null); refresh(); openRollout(result) },
   })
   const sync = useMutation({
     mutationFn: () => stacksApi.sync(orgId!, projectId, stackId, token),
     onSuccess: (result) => {
-      setOutcome({ kind: "sync", result })
+      setOutcome(null)
+      openRollout(result)
       setWarning(result.warning && result.suggested_mode && result.suggested_mode !== stack?.git_mode
         ? { message: result.warning, mode: result.suggested_mode } : null)
       refresh()
@@ -78,6 +82,13 @@ export function useStackActions({ stack, orgId, projectId, token }: {
     queryFn: () => stacksApi.listServices(orgId!, projectId, stackId, token),
     enabled: !!orgId && !!stackId && confirmDestroy,
   })
+
+  // Where a Sync or Apply is followed: its run, on the Rollouts tab.
+  function openRollout(result: ApplyStackResult | SyncStackResult) {
+    if (!result.run_id) return
+    navigate({ to: "/projects/$id/stacks/$stackId/rollouts/$runId",
+      params: { id: projectId, stackId, runId: result.run_id } })
+  }
 
   const busy = apply.isPending || sync.isPending || destroy.isPending
   const failure = (apply.error || sync.error || destroy.error || switchMode.error) as Error | null
@@ -155,25 +166,16 @@ export function useStackActions({ stack, orgId, projectId, token }: {
 }
 
 function OutcomePanel({ outcome, onClose }: { outcome: Outcome; onClose: () => void }) {
-  const rows: [string, string[]][] = outcome.kind === "destroy"
-    ? [["Destroyed", outcome.result.destroyed ?? []], ["Volumes deleted", outcome.result.volumes ?? []],
-       ["Routes deleted", outcome.result.routes ?? []]]
-    // Tolerate a missing list rather than blanking the page: one absent field
-    // should not cost the user the outcome of their apply.
-    : [["Created", outcome.result.created ?? []], ["Updated", outcome.result.updated ?? []],
-       ["Rolled out", outcome.result.deployed ?? []], ["Unlinked", outcome.result.deleted ?? []]]
+  const rows: [string, string[]][] = [["Destroyed", outcome.result.destroyed ?? []],
+    ["Volumes deleted", outcome.result.volumes ?? []], ["Routes deleted", outcome.result.routes ?? []]]
   const errors = outcome.result.errors ?? []
-  const warnings = outcome.kind === "destroy" ? [] : outcome.result.warnings ?? []
   const shown = rows.filter(([, v]) => v.length > 0)
-  const title = { apply: "Applied", sync: "Synced", destroy: "Destroyed" }[outcome.kind]
   return (
     <div className="rounded-lg border border-border bg-card px-4 py-3 text-xs space-y-1.5">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium">
-          {title}{shown.length === 0 && errors.length === 0 && (
-            <span className="font-normal text-muted-foreground">
-              {outcome.kind === "destroy" ? ": nothing was left to remove" : ": nothing to change, the cluster already matches the file"}
-            </span>
+          Destroyed{shown.length === 0 && errors.length === 0 && (
+            <span className="font-normal text-muted-foreground">: nothing was left to remove</span>
           )}
         </p>
         <button type="button" onClick={onClose} aria-label="Dismiss" className="text-muted-foreground hover:text-foreground">
@@ -184,7 +186,6 @@ function OutcomePanel({ outcome, onClose }: { outcome: Outcome; onClose: () => v
         <p key={label}><span className="text-muted-foreground">{label}: </span>{v.join(", ")}</p>
       ))}
       {errors.map((e) => <p key={e} className="text-destructive">{e}</p>)}
-      {warnings.map((w) => <p key={w} className="text-amber-400/90">{w}</p>)}
     </div>
   )
 }

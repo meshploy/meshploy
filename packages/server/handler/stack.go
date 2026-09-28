@@ -75,6 +75,8 @@ type syncResultBody struct {
 	Updated       []string  `json:"updated"`
 	Deleted       []string  `json:"deleted"`
 	Deployed      []string  `json:"deployed"`
+	Queued        []string  `json:"queued"`
+	RunID         *string   `json:"run_id,omitempty"`
 	Errors        []string  `json:"errors"`
 	Warnings      []string  `json:"warnings"`
 	SuggestedMode string    `json:"suggested_mode,omitempty"`
@@ -135,6 +137,8 @@ type applyResultBody struct {
 	Updated  []string  `json:"updated"`
 	Deleted  []string  `json:"deleted"`
 	Deployed []string  `json:"deployed"`
+	Queued   []string  `json:"queued" doc:"Services that roll out once what they depend on is up"`
+	RunID    *string   `json:"run_id,omitempty" doc:"The record of this apply's rollout, under the stack's runs"`
 	Errors   []string  `json:"errors"`
 	Warnings []string  `json:"warnings"`
 }
@@ -277,6 +281,24 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: 200,
 	}, h.SyncStack)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-stack-runs",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/runs",
+		Summary:     "A stack's Syncs and Applies, newest first, with how each rollout went",
+		Tags:        []string{"Stacks"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ListStackRuns)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-stack-run",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/stacks/{stackId}/runs/{runId}",
+		Summary:     "One Sync or Apply of a stack, and its rollout service by service",
+		Tags:        []string{"Stacks"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetStackRun)
 }
 
 func (h *Handler) ListStacks(ctx context.Context, input *StackProjectPathInput) (*ListStacksOutput, error) {
@@ -415,6 +437,8 @@ func (h *Handler) SyncStack(ctx context.Context, input *SyncStackInput) (*SyncRe
 		Updated:       result.Updated,
 		Deleted:       result.Deleted,
 		Deployed:      result.Deployed,
+		Queued:        result.Queued,
+		RunID:         runIDString(result.RunID),
 		Errors:        result.Errors,
 		Warnings:      result.Warnings,
 		SuggestedMode: string(result.SuggestedMode),
@@ -495,6 +519,8 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 		Updated:  result.Updated,
 		Deleted:  result.Deleted,
 		Deployed: result.Deployed,
+		Queued:   result.Queued,
+		RunID:    runIDString(result.RunID),
 		Errors:   result.Errors,
 		Warnings: result.Warnings,
 	}}, nil
@@ -537,7 +563,60 @@ func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*Appl
 		Updated:  result.Updated,
 		Deleted:  result.Deleted,
 		Deployed: result.Deployed,
+		Queued:   result.Queued,
+		RunID:    runIDString(result.RunID),
 		Errors:   result.Errors,
 		Warnings: result.Warnings,
 	}}, nil
+}
+
+func runIDString(id *uuid.UUID) *string {
+	if id == nil {
+		return nil
+	}
+	v := id.String()
+	return &v
+}
+
+type StackRunsOutput struct {
+	Body []service.StackRunView
+}
+
+func (h *Handler) ListStackRuns(ctx context.Context, input *StackPathInput) (*StackRunsOutput, error) {
+	_, _, stackID, _, err := h.checkAccess(ctx, input.OrgID, input.StackID, db.ResourceStack, db.ActionView, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := h.svc.Stacks.ListRuns(ctx, stackID, 50)
+	if err != nil {
+		return nil, err
+	}
+	return &StackRunsOutput{Body: runs}, nil
+}
+
+type StackRunInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	StackID   string `path:"stackId"`
+	RunID     string `path:"runId"`
+}
+
+type StackRunOutput struct {
+	Body *service.StackRunView
+}
+
+func (h *Handler) GetStackRun(ctx context.Context, input *StackRunInput) (*StackRunOutput, error) {
+	_, _, stackID, _, err := h.checkAccess(ctx, input.OrgID, input.StackID, db.ResourceStack, db.ActionView, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	runID, err := uuid.Parse(input.RunID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid run id")
+	}
+	run, err := h.svc.Stacks.GetRun(ctx, stackID, runID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &StackRunOutput{Body: run}, nil
 }

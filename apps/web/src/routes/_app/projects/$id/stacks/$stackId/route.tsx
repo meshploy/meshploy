@@ -39,6 +39,7 @@ function StackLayout() {
   const tabs = [
     { label: "Overview", to: "/projects/$id/stacks/$stackId" as const },
     { label: "Services",     to: "/projects/$id/stacks/$stackId/services"     as const },
+    { label: "Rollouts",     to: "/projects/$id/stacks/$stackId/rollouts"     as const },
     { label: "Variables",    to: "/projects/$id/stacks/$stackId/variables"    as const },
     { label: "Editor",       to: "/projects/$id/stacks/$stackId/editor"       as const },
     ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/stacks/$stackId/permissions" as const }] : []),

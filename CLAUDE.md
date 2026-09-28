@@ -172,7 +172,7 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (48 CE tables)
+## packages/db — schema (49 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
@@ -181,7 +181,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 | Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Environments | `promotion_groups`, `promotion_group_members` |
-| Workloads | `stacks`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
+| Workloads | `stacks`, `stack_runs`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
 | Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups`, `job_variable_groups` |
 | Config Files | `config_files`, `service_config_files` |
 | Traffic | `routes`, `route_targets`, `tcp_routes`, `edge_fallbacks` |
