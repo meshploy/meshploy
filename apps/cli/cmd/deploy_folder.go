@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -43,7 +42,7 @@ another; one that does not exist yet is created.`,
 
 		name := deployFolderService
 		if name == "" {
-			name = serviceNameFor(folder.Name)
+			name = client.ServiceNameFor(folder.Name)
 		}
 		svc, err := c.GetServiceByName(orgID(), pid, name)
 		if err != nil {
@@ -101,18 +100,6 @@ func followDeployment(c *client.Client, pid, serviceID, deploymentID string) err
 		}
 		time.Sleep(3 * time.Second)
 	}
-}
-
-var notNameChars = regexp.MustCompile(`[^a-z0-9-]+`)
-
-// serviceNameFor makes a folder's name a service name: lower case, letters,
-// digits and dashes.
-func serviceNameFor(folder string) string {
-	n := strings.Trim(notNameChars.ReplaceAllString(strings.ToLower(folder), "-"), "-")
-	if n == "" {
-		return "app"
-	}
-	return n
 }
 
 func humanBytes(n int) string {

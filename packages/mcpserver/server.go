@@ -31,6 +31,7 @@ func New(c *client.Client, orgID string) *mcpsdk.MCPServer {
 	s.registerWriteTools(ms)
 	s.registerWriteToolsExtended(ms)
 	s.registerConfigFileTools(ms)
+	s.registerAppTools(ms)
 
 	// Extension tools last, so an EE tool can rely on the CE surface existing.
 	// toolHooks is empty in CE builds — nothing imports the EE module there.

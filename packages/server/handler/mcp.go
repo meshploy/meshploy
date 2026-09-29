@@ -20,6 +20,8 @@ import (
 //   - system backups = instance-wide operations
 //   - member/permission/invitation enumeration = discloses the org's humans
 //   - db_query / db_schema = live exec-into-pod surface (RCE-adjacent)
+//   - deploy_folder = reads a folder from the disk the server runs on: the
+//     agent's own for meshploy mcp, the gateway's here
 //
 // The local stdio server (meshploy mcp) keeps the full surface — that runs under
 // a developer's own login on their own machine, a different trust model.
@@ -33,6 +35,7 @@ var remoteExcludedTools = []string{
 	"list_invitations",
 	"db_query",
 	"db_schema",
+	"deploy_folder",
 }
 
 // MCPHandler serves the Model Context Protocol over Streamable HTTP at /mcp,

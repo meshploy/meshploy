@@ -530,6 +530,8 @@ Starts an MCP (Model Context Protocol) server over stdio, exposing Meshploy oper
 
 Deploying an app is one call: `apply_manifest` takes the compose, the values it interpolates as `${NAME}` and the contents of the files its `configs:` name. `list_templates`, `get_template` and `deploy_template` do the same from the one-click catalog, and `create_stack` can point a stack at a git repository for `sync_stack` to reconcile. Variables and prompt values are write-only: no tool reads them back, so a password an agent sets does not return through a transcript.
 
+An app the agent just wrote is two calls. `deploy_folder` does what `meshploy deploy` does from a folder on this machine: packs it, makes the service when it is missing, builds it and answers once it is up, with its link, or with the end of the build's log. `share_app` shares it with people by email, each getting a sign-in link; sharing is part of Enterprise and Meshploy Cloud, and on Community the tool answers with where to get it, for the agent to pass on.
+
 **Claude Code setup**: add it to the project's `.mcp.json`:
 
 ```json
@@ -543,7 +545,7 @@ Deploying an app is one call: `apply_manifest` takes the compose, the values it 
 }
 ```
 
-For an agent that shouldn't act as you, use the gateway's remote MCP endpoint at `https://console.<your-domain>/mcp` with an agent token instead. Create the agent in the dashboard under **Agents**, which shows the configuration for each client.
+For an agent that shouldn't act as you, use the gateway's remote MCP endpoint at `https://console.<your-domain>/mcp` with an agent token instead. Create the agent in the dashboard under **Agents**, which shows the configuration for each client. The remote endpoint has every tool but the operator ones and `deploy_folder`: a path there would be on the gateway, not the agent's machine.
 
 ---
 

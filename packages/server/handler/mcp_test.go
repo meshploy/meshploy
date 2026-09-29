@@ -33,7 +33,12 @@ func TestRemoteExcludedToolsAreRealAndRemoved(t *testing.T) {
 	}
 
 	// Core deploy tools must remain — the remote surface is narrowed, not gutted.
-	for _, keep := range []string{"list_resources", "create_service", "deploy_service", "create_stack", "apply_stack"} {
+	// share_app stays: it only calls the API. deploy_folder reads a path on the
+	// machine the server runs on, which for /mcp is the gateway.
+	if ms.GetTool("deploy_folder") != nil {
+		t.Error("deploy_folder is exposed remotely, where a path would be the gateway's own disk")
+	}
+	for _, keep := range []string{"list_resources", "create_service", "deploy_service", "create_stack", "apply_stack", "share_app"} {
 		if ms.GetTool(keep) == nil {
 			t.Errorf("expected core tool %q to remain on the remote surface", keep)
 		}

@@ -288,3 +288,24 @@ func (rules ignoreRules) match(rel string, isDir bool) bool {
 	}
 	return ignored
 }
+
+// ServiceNameFor makes a folder's name a service name: lower case, letters,
+// digits and dashes.
+func ServiceNameFor(folder string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(folder) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	name := strings.TrimRight(b.String(), "-")
+	if name == "" {
+		return "app"
+	}
+	return name
+}

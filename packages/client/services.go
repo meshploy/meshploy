@@ -27,6 +27,8 @@ type Deployment struct {
 	Image      string  `json:"image"`
 	DeployedAt *string `json:"deployed_at"`
 	CreatedAt  string  `json:"created_at"`
+	// Log is the build and rollout log, as far as it has got.
+	Log string `json:"log,omitempty"`
 }
 
 func (c *Client) ListServices(orgID, projectID string) ([]Service, error) {
