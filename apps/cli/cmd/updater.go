@@ -724,9 +724,11 @@ func apiHealth(ctx context.Context, c *http.Client, url string) string {
 }
 
 // currentUpgradeChannel is the channel the server is on now. main is what
-// server-upgrade --edge writes; anything else is stable.
+// server-upgrade --edge writes, and a local build is made from main, so it
+// upgrades to edge too; anything else is stable.
 func currentUpgradeChannel() string {
-	if readEnvVar("MESHPLOY_CHANNEL") == "main" {
+	switch readEnvVar("MESHPLOY_CHANNEL") {
+	case "main", localChannel:
 		return channelEdge
 	}
 	return channelStable

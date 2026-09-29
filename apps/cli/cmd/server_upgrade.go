@@ -115,7 +115,10 @@ Enterprise
 }
 
 type serverUpgradeOptions struct {
-	pat        string
+	pat string
+	// from is a local build's bundle (scripts/ship.sh): upgrade from it
+	// instead of GitHub and ghcr.
+	from       string
 	edge       bool
 	noSync     bool
 	noRollback bool
@@ -134,6 +137,10 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	o.noRollback, _ = cmd.Flags().GetBool("no-rollback")
 	o.ee, _ = cmd.Flags().GetBool("ee")
 	o.eeImage, _ = cmd.Flags().GetString("ee-image")
+	o.from, _ = cmd.Flags().GetString("from")
+	if o.from != "" && (o.edge || o.noSync || o.ee) {
+		return fmt.Errorf("--from installs a local build: it cannot be combined with --edge, --no-sync or --ee")
+	}
 
 	if !o.noSync && os.Getuid() != 0 {
 		return fmt.Errorf("must be run as root — try: sudo meshploy server-upgrade")
@@ -155,7 +162,18 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	// Download into a private directory first. Nothing live has changed yet,
 	// so a failed download leaves the server exactly as it was.
 	var staged, ref string
-	if !o.noSync {
+	if o.from != "" {
+		fmt.Printf("Upgrading from the local build in %s…\n", o.from)
+		var err error
+		staged, err = os.MkdirTemp("", "meshploy-upgrade-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(staged)
+		if err := stageLocalDeploy(o.from, staged); err != nil {
+			return err
+		}
+	} else if !o.noSync {
 		var err error
 		ref, err = upgradeRefFor(o.pat, o.edge)
 		if err != nil {
@@ -194,7 +212,10 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 
 	// Sync MESHPLOY_CHANNEL in .env so image pulls match the chosen channel.
 	channel := "latest"
-	if o.edge {
+	switch {
+	case o.from != "":
+		channel = localChannel
+	case o.edge:
 		channel = "main"
 	}
 	if err := syncEnvChannel(channel); err != nil {
@@ -232,9 +253,26 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 		}
 		pullDir = staged
 	}
-	fmt.Println("Pulling images…")
-	if err := pullStackImages(pullDir, runtime); err != nil {
-		return putBackBeforeRestart(snap, err)
+	var loaded []string
+	if o.from != "" {
+		if loaded, err = loadLocalImages(runtime, o.from); err != nil {
+			return putBackBeforeRestart(snap, err)
+		}
+		fmt.Println("Pulling the images not shipped…")
+		if err := ensureLocalImages(pullDir, runtime); err != nil {
+			return putBackBeforeRestart(snap, err)
+		}
+		if err := publishLocalBuilder(runtime, loaded); err != nil {
+			return putBackBeforeRestart(snap, err)
+		}
+	} else {
+		fmt.Println("Pulling images…")
+		if err := pullStackImages(pullDir, runtime); err != nil {
+			return putBackBeforeRestart(snap, err)
+		}
+		// A published release builds with its own builder, not one shipped
+		// with an earlier local build.
+		forgetLocalBuilder()
 	}
 
 	// Only with a known release: --no-sync installs nothing, so there is no
@@ -296,6 +334,12 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	// services whose files changed are recreated. Certificates live in the
 	// caddy_data volume and Headscale's state in its data directory; both
 	// survive the recreate.
+	for _, svc := range localServicesToRecreate(loaded) {
+		fmt.Printf("Recreating %s on the image just loaded…\n", svc)
+		if err := composeRun(runtime, "up", "-d", "--force-recreate", "--no-deps", svc); err != nil {
+			return fail(fmt.Errorf("recreate %s: %w", svc, err))
+		}
+	}
 	for _, svc := range servicesToRecreate(edgeChanges) {
 		fmt.Printf("Recreating %s to load its new configuration…\n", svc)
 		if err := composeRun(runtime, "up", "-d", "--force-recreate", svc); err != nil {
@@ -970,6 +1014,7 @@ func init() {
 	serverUpgradeCmd.Flags().Bool("no-sync", false, "Skip config download — only substitute Corefile, pull images, and restart")
 	serverUpgradeCmd.Flags().Bool("no-rollback", false, "On failure, leave the server as it is for inspection instead of putting the previous version back")
 	serverUpgradeCmd.Flags().Bool("ee", false, "Switch this install to the Enterprise images, API and console (requires an active licence)")
+	serverUpgradeCmd.Flags().String("from", "", "Upgrade from a local build's bundle (made by scripts/ship.sh) instead of GitHub; the server then runs on the local channel until an ordinary upgrade")
 	serverUpgradeCmd.Flags().String("ee-image", "", "Enterprise API image to use; defaults to the one the licence grants. The console image pairs with it by name")
 	rootCmd.AddCommand(serverUpgradeCmd)
 }

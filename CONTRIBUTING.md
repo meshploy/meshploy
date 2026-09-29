@@ -240,10 +240,24 @@ sudo meshploy update --edge
 sudo meshploy server-upgrade --edge
 ```
 
-To try an API change before merging, push your own image and set
-`MESHPLOY_API_IMAGE` in `/opt/meshploy/.env` to its repository (the tag still
-comes from `MESHPLOY_CHANNEL`), then run `docker compose up -d api` in
-`/opt/meshploy`.
+To try a change before it is pushed, ship it from your machine:
+
+```bash
+scripts/ship.sh <ssh-host>                     # api, web, proxy and the CLI
+scripts/ship.sh <ssh-host> api builder         # only what changed
+```
+
+It builds the images and the CLI locally (Docker or Podman; the CLI with your
+Go, or in a Go container without one), copies them with your `deploy/` to the
+server, and runs `sudo meshploy server-upgrade --from` there: the same staged
+upgrade with a backup, a health check and a rollback, but from the bundle
+instead of GitHub. The server then runs on `MESHPLOY_CHANNEL=local`; an image
+you did not ship keeps what it has on that tag, or comes from edge. A shipped
+builder goes to the gateway's own registry and `BUILDER_IMAGE` points at it.
+
+Builds are stamped as edge builds of your commit, so the console still offers
+the next edge build; taking it, or `sudo meshploy server-upgrade --edge`, puts
+the server back on the published images and the published builder.
 
 The database, certificates and Headscale state are preserved across upgrades.
 
