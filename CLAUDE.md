@@ -19,6 +19,7 @@ meshploy/
 │   ├── db/           # Shared GORM + PostgreSQL models (imported by api and proxy)
 │   ├── client/       # Typed Go REST client for the API (imported by cli and mcpserver)
 │   ├── mcpserver/    # MCP tool definitions (imported by cli for stdio, api for remote /mcp)
+│   ├── proxy/        # The edge proxy's code: route cache, handler, TCP routes (apps/proxy is its one-call main)
 │   ├── license/      # Enterprise licence verification: claims, keys, features
 │   ├── hostagent/    # Contract between the gateway's host agent (CLI) and the API: reports, firewall parsing, port verdicts
 │   ├── help/         # Meshploy explaining itself: topics/*.md, read by the console's help drawer, the docs' Concepts and (later) MCP
@@ -33,7 +34,7 @@ meshploy/
 ## Architecture overview
 
 - **apps/api** — Thin CE entrypoint: `main.go` calls `server.Main()`. The API itself lives in `packages/server` — business logic in `service/`, HTTP concerns in `handler/`, config in `config/`.
-- **apps/proxy** — Minimal L7 reverse proxy. Reads the `Host` header → in-memory route cache (backed by PostgreSQL, refreshed every 30s) → streams over WireGuard mesh to target node. Listens on port 8081.
+- **apps/proxy** — Minimal L7 reverse proxy, its code in `packages/proxy` (`apps/proxy/main.go` calls `proxy.Main()`, as the API calls `server.Main()`), so an edition can build its own proxy on it. Reads the `Host` header → in-memory route cache (backed by PostgreSQL, refreshed every 30s) → streams over WireGuard mesh to target node. Listens on port 8081.
 - **apps/cli** — Static Go binary (`/usr/local/bin/meshploy`). Wraps API calls and shells out to `install.sh` / `uninstall.sh` for node operations. Built with Cobra.
 - **packages/db** — Shared GORM models backed by **PostgreSQL**. `AutoMigrate` + supplementary partial unique indexes run on API startup via `db.Migrate()`. Exports an Extensible Migration Registry (`RegisterMigration`) for the EE open-core pattern. Imported by both `apps/api` and `apps/proxy`.
 - **packages/client** — Typed Go REST client for the Meshploy API. Imported by `apps/cli` (every command) and by `packages/mcpserver`. Lives in `packages/` so no app depends on another app.

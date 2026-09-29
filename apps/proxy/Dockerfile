@@ -1,4 +1,4 @@
-# Build context: monorepo root (go.work resolves packages/db)
+# Build context: monorepo root (go.work resolves packages/proxy and packages/db)
 #
 #   docker build -f apps/proxy/Dockerfile -t ghcr.io/meshploy/proxy:latest .
 #
@@ -11,6 +11,7 @@ WORKDIR /workspace
 COPY go.work go.work.sum* ./
 COPY apps/api/go.mod apps/api/go.sum* ./apps/api/
 COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
+COPY packages/proxy/go.mod packages/proxy/go.sum ./packages/proxy/
 COPY apps/cli/go.mod apps/cli/go.sum ./apps/cli/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
 # proxy doesn't import these, but go work sync needs every workspace module's
@@ -27,9 +28,11 @@ COPY packages/server/go.mod packages/server/go.sum* ./packages/server/
 # Only download deps for the modules we actually build here.
 RUN go work sync && \
     cd apps/proxy && go mod download && \
+    cd /workspace/packages/proxy && go mod download && \
     cd /workspace/packages/db && go mod download
 
 COPY apps/proxy ./apps/proxy
+COPY packages/proxy ./packages/proxy
 COPY packages/db ./packages/db
 
 WORKDIR /workspace/apps/proxy

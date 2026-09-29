@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meshploy/apps/proxy/internal/cache"
+	"github.com/meshploy/packages/proxy/cache"
 )
 
 type Handler struct {

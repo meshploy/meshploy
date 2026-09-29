@@ -24,14 +24,20 @@ Caddy (TLS) → Proxy (:8081) → WireGuard mesh → K3s worker node
 
 ## Directory structure
 
+The proxy's code is the `packages/proxy` module, so an edition can build its
+own proxy on it; this app is the image's entrypoint, one call to `proxy.Main()`.
+
 ```
 apps/proxy/
-├── main.go
-└── internal/
-    ├── cache/
-    │   └── cache.go    # In-memory route table, refreshed from DB every 30s
-    └── proxy/
-        └── handler.go  # ServeHTTP — Host lookup + reverse proxy
+└── main.go             # proxy.Main()
+
+packages/proxy/
+├── main.go             # Main: route cache, TCP routes, HTTP listeners
+├── handler.go          # ServeHTTP: Host lookup + reverse proxy
+├── cache/
+│   └── cache.go        # In-memory route table, refreshed from DB every 30s
+└── tcp/
+    └── forwarder.go    # Published TCP ports, one listener each
 ```
 
 ---

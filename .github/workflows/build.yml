@@ -10,6 +10,7 @@ on:
       # The console bundles the help topics.
       - "packages/help/**"
       - "apps/proxy/**"
+      - "packages/proxy/**"
       - "apps/builder/**"
       - "deploy/**"
       - "packages/db/**"
@@ -82,6 +83,7 @@ jobs:
 
             proxy:
               - "apps/proxy/**"
+              - "packages/proxy/**"
               - "packages/db/**"
               # go work sync needs every workspace module manifest present.
               - "packages/server/**"

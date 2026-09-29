@@ -98,6 +98,7 @@ meshploy/
 │   ├── db/           # Shared GORM models: all 41 tables, migrations, encryption
 │   ├── client/       # Typed Go client for the API, used by the CLI and the MCP server
 │   ├── mcpserver/    # MCP tool definitions: stdio through the CLI, remote at /mcp
+│   ├── proxy/        # The edge proxy's code (apps/proxy is its one-call main)
 │   └── license/      # Enterprise licence verification
 ├── deploy/
 │   ├── install.sh           # The installer

@@ -14,6 +14,7 @@ WORKDIR /workspace
 COPY go.work go.work.sum* ./
 COPY apps/api/go.mod apps/api/go.sum ./apps/api/
 COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
+COPY packages/proxy/go.mod packages/proxy/go.sum* ./packages/proxy/
 COPY apps/cli/go.mod apps/cli/go.sum ./apps/cli/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
 COPY packages/client/go.mod packages/client/go.sum* ./packages/client/

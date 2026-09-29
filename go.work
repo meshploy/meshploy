@@ -10,5 +10,6 @@ use (
 	./packages/hostagent
 	./packages/license
 	./packages/mcpserver
+	./packages/proxy
 	./packages/server
 )
