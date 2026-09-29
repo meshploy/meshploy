@@ -69,6 +69,18 @@ function RegisterPage() {
   return <FirstBootRegisterForm />
 }
 
+/** The setup token the installer passed in the URL's fragment, if any, removed from the address bar once read. */
+function tokenFromFragment(): string {
+  const params = new URLSearchParams(window.location.hash.slice(1))
+  const token = params.get("setup_token") ?? ""
+  if (token) {
+    params.delete("setup_token")
+    const rest = params.toString()
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search + (rest ? `#${rest}` : ""))
+  }
+  return token
+}
+
 function FirstBootRegisterForm() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
@@ -76,7 +88,9 @@ function FirstBootRegisterForm() {
   const [username, setUsername] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [setupToken, setSetupToken] = useState("")
+  // The browser installer links here with the token in the fragment, which no
+  // server ever sees; it is read once and taken out of the address bar.
+  const [setupToken, setSetupToken] = useState(tokenFromFragment)
   const [error, setError] = useState<string | null>(null)
 
   const registerMutation = useMutation({

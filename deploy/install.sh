@@ -1547,6 +1547,12 @@ NEUNIT
   echo -e "  ${BOLD}First-time setup${RESET}"
   echo -e "    Creating the owner account needs this one-time token:"
   echo -e "       ${BOLD}${CYAN}${SETUP_TOKEN}${RESET}"
+  # The same token in a link that opens the form filled in. It rides in the
+  # fragment, which a browser never sends, so it reaches no server log.
+  _REGISTER_AT="https://console.${DOMAIN}"
+  $EDGE_DEFERRED && _REGISTER_AT="http://localhost:5173"
+  echo -e "    Or open the form with it filled in:"
+  echo -e "       ${CYAN}${_REGISTER_AT}/register#setup_token=${SETUP_TOKEN}${RESET}"
   echo -e "    ${YELLOW}Keep it until you have registered. It is only accepted${RESET}"
   echo -e "    ${YELLOW}while the instance has no owner.${RESET}"
   echo -e "    Lost it?  ${BOLD}sudo meshploy setup-token show${RESET}  on this server."

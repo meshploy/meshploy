@@ -14,7 +14,7 @@ const testSetupToken = "ms_0123456789abcdef0123456789abcdef"
 func showOutput(t *testing.T, token string, open func() (bool, error)) string {
 	t.Helper()
 	var b bytes.Buffer
-	if err := printSetupToken(&b, token, open); err != nil {
+	if err := printSetupToken(&b, token, "gw.example.com", open); err != nil {
 		t.Fatal(err)
 	}
 	return b.String()
@@ -24,6 +24,11 @@ func TestShowPrintsTheTokenWhileUnclaimed(t *testing.T) {
 	out := showOutput(t, testSetupToken, func() (bool, error) { return true, nil })
 	if !strings.Contains(out, testSetupToken) {
 		t.Fatalf("token missing from output:\n%s", out)
+	}
+	// And a link that opens the form with it filled in, the token in the
+	// fragment so no server sees it.
+	if !strings.Contains(out, "https://console.gw.example.com/register#setup_token="+testSetupToken) {
+		t.Fatalf("no prefilled link:\n%s", out)
 	}
 }
 

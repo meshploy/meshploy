@@ -458,8 +458,8 @@ button:focus-visible { outline:none; border-color:var(--ring);
     <div class="next">
       <p class="next-title">Create your account</p>
       <p>
-        The console opens on a registration form. Use the same setup token you entered
-        here: the first account created owns this instance.
+        The console opens on a registration form with the setup token you entered here
+        already filled in: the first account created owns this instance.
       </p>
     </div>
 
@@ -1114,7 +1114,9 @@ button:focus-visible { outline:none; border-color:var(--ring);
     }
     var host = "console." + $("domain").value.trim();
     $("consoleHost").textContent = host;
-    $("consoleBtn").href = "https://" + host;
+    // The token rides in the fragment, which the browser never sends to a
+    // server, so it reaches no log; the register page fills it in and clears it.
+    $("consoleBtn").href = "https://" + host + "/register#setup_token=" + encodeURIComponent(token);
     api("check-domain", answers()).then(function (st) {
       renderChecks($("finalChecks"), st);
     });

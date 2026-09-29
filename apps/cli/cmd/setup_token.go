@@ -44,7 +44,7 @@ var setupTokenShowCmd = &cobra.Command{
 		if os.Getuid() != 0 {
 			return fmt.Errorf("setup-token show requires root; re-run with sudo")
 		}
-		return printSetupToken(cmd.OutOrStdout(), readEnvVar("SETUP_TOKEN"), func() (bool, error) {
+		return printSetupToken(cmd.OutOrStdout(), readEnvVar("SETUP_TOKEN"), readEnvVar("DOMAIN"), func() (bool, error) {
 			return registrationOpen(localAPI)
 		})
 	},
@@ -90,7 +90,7 @@ var setupTokenRotateCmd = &cobra.Command{
 // again, so printing it would hand the operator a string that looks usable and
 // is not. When the API cannot be reached the token is printed anyway, with that
 // said, because an operator asking for it is usually still mid-setup.
-func printSetupToken(w io.Writer, token string, open func() (bool, error)) error {
+func printSetupToken(w io.Writer, token, domain string, open func() (bool, error)) error {
 	if token == "" {
 		fmt.Fprintln(w, "This install has no setup token configured.")
 		fmt.Fprintln(w, "Registration is not gated by one, so the first account needs no token.")
@@ -110,6 +110,10 @@ func printSetupToken(w io.Writer, token string, open func() (bool, error)) error
 		fmt.Fprintf(w, "\n  Setup token:  %s\n\n", token)
 		fmt.Fprintln(w, "  Enter it on the console's registration page to create the first account.")
 		fmt.Fprintln(w, "  That account will own this instance.")
+		if domain != "" {
+			// In the fragment, which a browser never sends: the form reads it.
+			fmt.Fprintf(w, "\n  Or open the form with it filled in:\n      https://console.%s/register#setup_token=%s\n", domain, token)
+		}
 	}
 	return nil
 }
