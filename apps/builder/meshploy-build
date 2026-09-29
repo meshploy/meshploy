@@ -8,6 +8,10 @@
 #   GIT_BRANCH     branch to build
 #   GIT_USER       user presented with GIT_TOKEN (x-access-token, oauth2)
 #   GIT_TOKEN      access token; empty for a public repository
+#   SOURCE_URL     instead of the GIT_* ones: an uploaded folder, a tar.gz
+#                  blob in the registry, fetched with the registry's password
+#   SOURCE_DIGEST  sha256:<hex> the fetched archive must match
+#   SOURCE_NAME    the folder's name, for log lines
 #   BUILDER        railpack | dockerfile
 #   INSTALL_COMMAND, BUILD_COMMAND   optional: replace Railpack's own
 #   IMAGE_DEST     registry/image:tag to push to
@@ -20,8 +24,12 @@ set -euo pipefail
 log() { echo -e "\033[1;34m[meshploy-build]\033[0m $*"; }
 die() { echo -e "\033[1;31m[meshploy-build] ERROR:\033[0m $*" >&2; exit 1; }
 
-[[ -z "${GIT_URL:-}" && -z "${GIT_REPO:-}" ]] && die "GIT_URL is not set"
-[[ -z "${GIT_BRANCH:-}"  ]] && die "GIT_BRANCH is not set"
+if [[ -z "${SOURCE_URL:-}" ]]; then
+    [[ -z "${GIT_URL:-}" && -z "${GIT_REPO:-}" ]] && die "GIT_URL is not set"
+    [[ -z "${GIT_BRANCH:-}"  ]] && die "GIT_BRANCH is not set"
+else
+    [[ -z "${SOURCE_DIGEST:-}" ]] && die "SOURCE_DIGEST is not set"
+fi
 [[ -z "${IMAGE_DEST:-}"  ]] && die "IMAGE_DEST is not set"
 [[ -z "${REGISTRY_HOST:-}" ]] && die "REGISTRY_HOST is not set"
 
@@ -76,35 +84,68 @@ if [[ -n "${BUILD_COMMAND:-}" ]]; then
     RAILPACK_CMD_FLAGS+=(--build-cmd "${BUILD_COMMAND}")
 fi
 
-# ── Clone ─────────────────────────────────────────────────────────────────────
-# An API from before GIT_URL existed sends only GIT_REPO, which it always meant
-# as owner/repo on github.com.
-if [[ -z "${GIT_URL:-}" ]]; then
-    case "${GIT_REPO}" in
-        http://*|https://*) GIT_URL="${GIT_REPO}" ;;
-        *)                  GIT_URL="https://github.com/${GIT_REPO}.git" ;;
-    esac
-fi
+# ── Uploaded folder ───────────────────────────────────────────────────────────
+# A folder uploaded instead of a repository: fetched from the registry by its
+# digest, checked against it, and unpacked where a clone would be. The API
+# refused an archive with a path or a link leading out of the folder; it is
+# refused again here, before anything is written.
+fetch_upload() {
+    local archive=/tmp/source.tar.gz auth=()
+    [[ -n "${REGISTRY_USER:-}" ]] && auth=(--user "${REGISTRY_USER}:${REGISTRY_PASS:-}")
+    log "Fetching the uploaded folder ${SOURCE_NAME:-}…"
+    curl -fsSL "${auth[@]+"${auth[@]}"}" -o "${archive}" "${SOURCE_URL}" \
+        || die "Could not fetch the uploaded folder from the registry: upload it again"
+    echo "${SOURCE_DIGEST#sha256:}  ${archive}" | sha256sum -c - >/dev/null 2>&1 \
+        || die "The uploaded folder does not match its digest ${SOURCE_DIGEST}"
+    if tar -tzf "${archive}" | grep -qE '(^/|(^|/)\.\.(/|$))'; then
+        die "The uploaded folder has a path leading out of it"
+    fi
+    if tar -tvzf "${archive}" | grep -E '^l' | grep -qE ' -> (/|(.*/)?\.\.(/|$))'; then
+        die "The uploaded folder has a link leading out of it"
+    fi
+    mkdir -p "${WORKDIR}"
+    tar -xzf "${archive}" -C "${WORKDIR}" --no-same-owner
+    rm -f "${archive}"
+    cd "${WORKDIR}"
+    log "Unpacked $(find . -type f | wc -l) files"
+    # Read back by the API like a clone's: the digest stands in for the hash.
+    local hex="${SOURCE_DIGEST#sha256:}"
+    log "Commit: ${hex:0:12} Uploaded from ${SOURCE_NAME:-a folder}"
+}
 
-# The token goes to git as a header on this one command, through git's
-# environment config. It is never written into the URL: git records the remote
-# URL in .git/config, and a build that copies its context would carry the token
-# into the image.
-if [[ -n "${GIT_TOKEN:-}" ]]; then
-    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
-    GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s:%s' "${GIT_USER:-x-access-token}" "${GIT_TOKEN}" | base64 -w0)"
-    export GIT_CONFIG_VALUE_0
-fi
+if [[ -n "${SOURCE_URL:-}" ]]; then
+    fetch_upload
+else
+    # ── Clone ─────────────────────────────────────────────────────────────────────
+    # An API from before GIT_URL existed sends only GIT_REPO, which it always meant
+    # as owner/repo on github.com.
+    if [[ -z "${GIT_URL:-}" ]]; then
+        case "${GIT_REPO}" in
+            http://*|https://*) GIT_URL="${GIT_REPO}" ;;
+            *)                  GIT_URL="https://github.com/${GIT_REPO}.git" ;;
+        esac
+    fi
 
-log "Cloning ${GIT_REPO:-${GIT_URL}}@${GIT_BRANCH}…"
-GIT_TERMINAL_PROMPT=0 git clone --depth=1 --branch "${GIT_BRANCH}" "${GIT_URL}" "${WORKDIR}"
-# Nothing after the clone needs them, and the build tools inherit this
-# environment.
-unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_TOKEN
-cd "${WORKDIR}"
-log "Cloned successfully ($(git rev-parse --short HEAD))"
-# Read back by the API to record what was built: hash, then the subject line.
-log "Commit: $(git log -1 --format='%h %s')"
+    # The token goes to git as a header on this one command, through git's
+    # environment config. It is never written into the URL: git records the remote
+    # URL in .git/config, and a build that copies its context would carry the token
+    # into the image.
+    if [[ -n "${GIT_TOKEN:-}" ]]; then
+        export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+        GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s:%s' "${GIT_USER:-x-access-token}" "${GIT_TOKEN}" | base64 -w0)"
+        export GIT_CONFIG_VALUE_0
+    fi
+
+    log "Cloning ${GIT_REPO:-${GIT_URL}}@${GIT_BRANCH}…"
+    GIT_TERMINAL_PROMPT=0 git clone --depth=1 --branch "${GIT_BRANCH}" "${GIT_URL}" "${WORKDIR}"
+    # Nothing after the clone needs them, and the build tools inherit this
+    # environment.
+    unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_TOKEN
+    cd "${WORKDIR}"
+    log "Cloned successfully ($(git rev-parse --short HEAD))"
+    # Read back by the API to record what was built: hash, then the subject line.
+    log "Commit: $(git log -1 --format='%h %s')"
+fi
 
 # ── Subdirectory ──────────────────────────────────────────────────────────────
 # ROOT_DIR is set when the service's build.context points to a subdirectory.

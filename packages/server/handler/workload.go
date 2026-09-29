@@ -56,8 +56,11 @@ type CreateWorkloadInput struct {
 		MemoryLimit   string     `json:"memory_limit,omitempty"`
 		// Optional build config — a BuildConfig row is created alongside the
 		// Service when git_repo is provided.
-		GitIntegrationID      *string `json:"git_integration_id,omitempty"`
-		GitRepo               string  `json:"git_repo,omitempty"`
+		GitIntegrationID *string `json:"git_integration_id,omitempty"`
+		GitRepo          string  `json:"git_repo,omitempty"`
+		// FromUpload makes the build config with no repository: the source
+		// is a folder sent next to .../source.
+		FromUpload            bool    `json:"from_upload,omitempty" doc:"Built from a folder uploaded to .../source, not a repository"`
 		Branch                string  `json:"branch,omitempty"`
 		Builder               string  `json:"builder,omitempty"`
 		DockerfilePath        string  `json:"dockerfile_path,omitempty"`
@@ -391,6 +394,7 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 		MemoryLimit:               input.Body.MemoryLimit,
 		GitIntegrationID:          gitIntegrationID,
 		GitRepo:                   input.Body.GitRepo,
+		FromUpload:                input.Body.FromUpload && input.Body.GitRepo == "",
 		Branch:                    input.Body.Branch,
 		Builder:                   db.BuilderType(input.Body.Builder),
 		DockerfilePath:            input.Body.DockerfilePath,

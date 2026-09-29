@@ -77,8 +77,11 @@ type CreateWorkloadInput struct {
 
 	// Optional build config — when GitRepo is set, a BuildConfig row is
 	// created alongside the Service in the same transaction.
-	GitIntegrationID      *uuid.UUID
-	GitRepo               string
+	GitIntegrationID *uuid.UUID
+	GitRepo          string
+	// FromUpload makes the build config without a repository, for a folder
+	// uploaded afterwards (DeploymentService.UploadSource).
+	FromUpload            bool
 	Branch                string
 	Builder               db.BuilderType
 	DockerfilePath        string
@@ -256,7 +259,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	// when its stack spec asked for more.
 	setResources(service, in)
 
-	if in.GitRepo != "" {
+	if in.GitRepo != "" || in.FromUpload {
 		if err := validateBuilderResources(in.BuilderCPURequest, in.BuilderCPULimit, in.BuilderMemoryRequest, in.BuilderMemoryLimit); err != nil {
 			return nil, err
 		}
@@ -283,7 +286,7 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			}
 			service.Ports = append(service.Ports, *sp)
 		}
-		if in.GitRepo == "" {
+		if in.GitRepo == "" && !in.FromUpload {
 			return nil
 		}
 		builder := db.Builder(in.Builder)

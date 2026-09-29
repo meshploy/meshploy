@@ -85,4 +85,29 @@ expect "${REGISTRY}/smoke/railpack:ci" "railpack build says"
 build nixpacks railpack "${REGISTRY}/smoke/retired:ci"
 expect "${REGISTRY}/smoke/retired:ci" "railpack build says"
 
+# An uploaded folder: stored as a blob in the registry, as the API stores it,
+# and fetched by the build instead of a clone.
+log "Uploading dockerfile/ as a folder"
+tar -czf "${WORK}/upload.tar.gz" -C "${HERE}/app/dockerfile" .
+DIGEST="sha256:$(sha256sum "${WORK}/upload.tar.gz" | cut -d' ' -f1)"
+LOCATION="$(curl -fsS -D - -o /dev/null -X POST "http://${REGISTRY}/v2/smoke/upload-source/blobs/uploads/" \
+    | tr -d '\r' | sed -n 's/^[Ll]ocation: //p')"
+[[ "${LOCATION}" == http* ]] || LOCATION="http://${REGISTRY}${LOCATION}"
+curl -fsS -X PUT -H "Content-Type: application/octet-stream" --data-binary "@${WORK}/upload.tar.gz" \
+    "${LOCATION}$([[ "${LOCATION}" == *\?* ]] && echo '&' || echo '?')digest=${DIGEST}" >/dev/null \
+    || fail "could not store the folder in the registry"
+log "Building the uploaded folder with dockerfile"
+docker run --rm --privileged --network host \
+    -v "${RUN}-buildah:/var/lib/containers/storage" \
+    -v "${RUN}-buildkit:/tmp/buildkit-root" \
+    -e SOURCE_URL="http://${REGISTRY}/v2/smoke/upload-source/blobs/${DIGEST}" \
+    -e SOURCE_DIGEST="${DIGEST}" \
+    -e SOURCE_NAME=dockerfile \
+    -e BUILDER=dockerfile \
+    -e IMAGE_DEST="${REGISTRY}/smoke/uploaded:ci" \
+    -e REGISTRY_HOST="${REGISTRY}" \
+    -e BUILD_ENV_VARS="GREETING=from-an-upload" \
+    "${IMAGE}" || fail "dockerfile build of the uploaded folder"
+expect "${REGISTRY}/smoke/uploaded:ci" "dockerfile build says from-an-upload"
+
 log "All builds passed"

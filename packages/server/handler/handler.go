@@ -94,6 +94,10 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/logs",
 		h.GetServiceLogs)
 
+	// A folder uploaded as a service's source, streamed rather than buffered.
+	r.Post("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/source",
+		h.UploadServiceSource)
+
 	// WebSocket: node terminal
 	r.Get("/api/v1/orgs/{orgId}/nodes/{nodeId}/terminal", h.NodeTerminal)
 

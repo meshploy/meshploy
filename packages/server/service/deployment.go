@@ -126,8 +126,8 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		Preload("RegistryIntegration").
 		First(&bc).Error == nil
 
-	if !hasBc || bc.GitRepo == "" {
-		// No git source — deploy the pre-configured image directly (no build step).
+	if !hasBc || (bc.GitRepo == "" && !bc.BuildsFromUpload()) {
+		// No source to build — deploy the pre-configured image directly (no build step).
 		if svc.Image == "" {
 			return nil, fmt.Errorf("no image configured and no git source — set an image or configure a git source")
 		}
@@ -165,14 +165,18 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		SourceBranch: bc.Branch,
 		Log:          fmt.Sprintf("Build triggered by user %s\n", in.TriggeredBy),
 	}
+	if bc.BuildsFromUpload() {
+		// An uploaded folder has no branch; its commit line is the builder's.
+		deployment.SourceBranch = ""
+	}
 	if err := s.db.WithContext(ctx).Create(&deployment).Error; err != nil {
 		return nil, fmt.Errorf("create deployment record: %w", err)
 	}
 
 	// Resolve how the builder clones. A public repo has no integration and is
-	// cloned anonymously.
+	// cloned anonymously; an uploaded folder is not cloned at all.
 	var gitIntegration *db.GitIntegration
-	if bc.GitIntegrationID != nil {
+	if bc.GitIntegrationID != nil && !bc.BuildsFromUpload() {
 		var gi db.GitIntegration
 		if err := s.db.WithContext(ctx).First(&gi, "id = ?", bc.GitIntegrationID).Error; err != nil {
 			s.failDeployment(deployment.ID, "git integration not found; it may have been deleted")
@@ -180,10 +184,13 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		}
 		gitIntegration = &gi
 	}
-	gitCreds, err := s.git.cloneCredentials(ctx, gitIntegration, bc.GitRepo)
-	if err != nil {
-		s.failDeployment(deployment.ID, err.Error())
-		return &deployment, nil
+	var gitCreds gitCredentials
+	if !bc.BuildsFromUpload() {
+		gitCreds, err = s.git.cloneCredentials(ctx, gitIntegration, bc.GitRepo)
+		if err != nil {
+			s.failDeployment(deployment.ID, err.Error())
+			return &deployment, nil
+		}
 	}
 
 	// Same as the direct path: the service is deploying until the pipeline says
@@ -362,6 +369,19 @@ type runPipelineArgs struct {
 	registryPass string
 }
 
+// uploadedSource is where the build fetches an uploaded folder from; nil for
+// a build that clones.
+func (a runPipelineArgs) uploadedSource() *appk8s.UploadedSource {
+	if !a.bc.BuildsFromUpload() {
+		return nil
+	}
+	return &appk8s.UploadedSource{
+		URL:    uploadBlobURL(a.registryHost, a.bc.UploadRepo, a.bc.UploadDigest),
+		Digest: a.bc.UploadDigest,
+		Name:   a.bc.UploadName,
+	}
+}
+
 func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) {
 	// BUILDER_IMAGE overrides; otherwise the builder matching this API's
 	// channel. This used to be worked out here and then never passed on, so
@@ -417,6 +437,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		MemoryRequest:  a.bc.BuilderMemoryRequest,
 		CPULimit:       a.bc.BuilderCPULimit,
 		MemoryLimit:    a.bc.BuilderMemoryLimit,
+		Source:         a.uploadedSource(),
 	})
 	if err != nil {
 		s.failDeployment(a.deployment.ID, "failed to create build job: "+err.Error())

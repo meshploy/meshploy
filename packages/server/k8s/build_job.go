@@ -60,6 +60,9 @@ type BuildJobParams struct {
 	GitUser   string // presented with GitToken: x-access-token (GitHub), oauth2 (GitLab, Gitea)
 	GitBranch string
 	GitToken  string // empty for a public repository
+	// Source, when set, is an uploaded folder the builder fetches instead of
+	// cloning; the Git fields are then unused.
+	Source *UploadedSource
 	// Build method: "railpack" | "dockerfile"
 	Builder string
 	// Full destination image ref, e.g. "registry.example.com/myapp:abc1234"
@@ -92,6 +95,27 @@ type BuildJobParams struct {
 	// request when that is larger; empty CPU = no cap.
 	CPULimit    string
 	MemoryLimit string
+}
+
+// UploadedSource is a folder uploaded as a tar.gz and kept in the registry:
+// the builder fetches it from URL with the registry's credentials and checks
+// it against Digest before unpacking it.
+type UploadedSource struct {
+	URL    string
+	Digest string // sha256:<hex>
+	Name   string // the folder's name, for log lines
+}
+
+// sourceEnv is what tells the builder to fetch an uploaded folder.
+func sourceEnv(src *UploadedSource) []corev1.EnvVar {
+	if src == nil {
+		return nil
+	}
+	return []corev1.EnvVar{
+		{Name: "SOURCE_URL", Value: src.URL},
+		{Name: "SOURCE_DIGEST", Value: src.Digest},
+		{Name: "SOURCE_NAME", Value: src.Name},
+	}
 }
 
 // EnsureBuildCachePVC creates the buildah layer-cache PVC in the namespace if
@@ -219,7 +243,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 							// cannot take its node down; CPU only when asked, so builds still
 							// burst on spare capacity.
 							Resources: BuilderResources(p),
-							Env: []corev1.EnvVar{
+							Env: append([]corev1.EnvVar{
 								{Name: "GIT_REPO", Value: p.GitRepo},
 								{Name: "GIT_URL", Value: p.GitURL},
 								{Name: "GIT_USER", Value: p.GitUser},
@@ -236,7 +260,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "INSTALL_COMMAND", Value: p.InstallCommand},
 								{Name: "BUILD_COMMAND", Value: p.BuildCommand},
 								{Name: "CACHE_LIMIT_MB", Value: strconv.Itoa(p.CacheLimitMB)},
-							},
+							}, sourceEnv(p.Source)...),
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									// buildah (dockerfile) layer cache

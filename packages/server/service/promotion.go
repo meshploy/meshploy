@@ -270,12 +270,19 @@ func copyService(ctx context.Context, tx *gorm.DB, src db.Service, level uuid.UU
 	}
 	if bc := src.BuildConfig; bc != nil {
 		bcCopy := db.BuildConfig{
-			ServiceID:             dst.ID,
-			Builder:               bc.Builder,
-			GitIntegrationID:      bc.GitIntegrationID,
-			GitRepo:               bc.GitRepo,
-			Branch:                bc.Branch,
-			RootDir:               bc.RootDir,
+			ServiceID:        dst.ID,
+			Builder:          bc.Builder,
+			GitIntegrationID: bc.GitIntegrationID,
+			GitRepo:          bc.GitRepo,
+			Branch:           bc.Branch,
+			RootDir:          bc.RootDir,
+			// The same upload, so the copy builds what the original did.
+			UploadRepo:            bc.UploadRepo,
+			UploadDigest:          bc.UploadDigest,
+			UploadName:            bc.UploadName,
+			UploadSize:            bc.UploadSize,
+			UploadFiles:           bc.UploadFiles,
+			UploadedAt:            bc.UploadedAt,
 			DockerfilePath:        bc.DockerfilePath,
 			InstallCommand:        bc.InstallCommand,
 			BuildCommand:          bc.BuildCommand,

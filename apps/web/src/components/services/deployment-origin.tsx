@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, GitBranch, GitCommitHorizontal, Package, RefreshCw, RotateCcw } from "lucide-react"
+import { ArrowDown, ArrowUp, FolderUp, GitBranch, GitCommitHorizontal, Package, RefreshCw, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** Where a deployment's image came from, as a deployment or a board cell carries it. */
@@ -19,10 +19,19 @@ const sourceIcon = {
   redeploy: RefreshCw,
 } as const
 
+/** A build of an uploaded folder, which the builder reports as "Uploaded from <name>". */
+function fromFolder(o: DeploymentOrigin): boolean {
+  return o.source === "build" && !o.source_branch && !!o.source_commit_message?.startsWith("Uploaded from ")
+}
+
+function iconOf(o: DeploymentOrigin) {
+  return fromFolder(o) ? FolderUp : sourceIcon[o.source as keyof typeof sourceIcon] ?? GitBranch
+}
+
 /** The headline: built from a branch, or moved here from another level. */
 export function originTitle(o: DeploymentOrigin): string {
   switch (o.source) {
-    case "build": return o.source_branch ? `Built from ${o.source_branch}` : "Built here"
+    case "build": return o.source_branch ? `Built from ${o.source_branch}` : fromFolder(o) ? "Built from a folder" : "Built here"
     case "promotion": return `Promoted from ${o.from_level || "the level below"}`
     case "bring_down": return `Brought down from ${o.from_level || "the level above"}`
     case "rollback": return "Rolled back"
@@ -38,7 +47,7 @@ export function originTitle(o: DeploymentOrigin): string {
  */
 export function OriginLine({ origin, className }: { origin: DeploymentOrigin; className?: string }) {
   if (!origin.source) return null
-  const Icon = sourceIcon[origin.source as keyof typeof sourceIcon] ?? GitBranch
+  const Icon = iconOf(origin)
   const moved = origin.source === "promotion" || origin.source === "bring_down"
   return (
     <p
@@ -58,7 +67,7 @@ export function OriginLine({ origin, className }: { origin: DeploymentOrigin; cl
 /** The service page's strip: what is running here and where it came from. */
 export function OriginStrip({ origin, image }: { origin: DeploymentOrigin; image?: string }) {
   if (!origin.source) return null
-  const Icon = sourceIcon[origin.source as keyof typeof sourceIcon] ?? GitBranch
+  const Icon = iconOf(origin)
   const moved = origin.source === "promotion" || origin.source === "bring_down"
   return (
     <div

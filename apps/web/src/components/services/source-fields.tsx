@@ -13,9 +13,16 @@ import {
 import { cn } from "@/lib/utils"
 import { useEffect } from "react"
 import { Field, inputCls } from "@/components/services/form-primitives"
+import { FolderDrop, type CurrentUpload } from "@/components/services/folder-drop"
+import type { PackedFolder } from "@/lib/pack-folder"
+import type { ApiRegistryIntegration } from "@/lib/api"
+
+export type AppSourceKind = "git" | "image" | "upload"
 
 export interface SourceState {
-  source: "git" | "image"
+  source: AppSourceKind
+  /** The folder picked for an upload source, packed; sent when the form is saved. */
+  folder: PackedFolder | null
   image: string
   imageVisibility: "public" | "private"
   pullRegistryIntegrationId: string
@@ -35,9 +42,12 @@ export function SourceFields({
   value: f,
   onChange,
   pickDefaultRegistry = false,
+  currentUpload,
 }: {
   value: SourceState
   onChange: (patch: Partial<SourceState>) => void
+  /** What an upload service was last built from. */
+  currentUpload?: CurrentUpload
   /** A new service: choose the built-in registry (or the only one) for it,
    *  the way the builder is chosen for it. Off where a saved choice is shown. */
   pickDefaultRegistry?: boolean
@@ -85,10 +95,11 @@ export function SourceFields({
     <div className="space-y-4">
       <SegmentedControl
         value={f.source}
-        onValueChange={(v) => onChange({ source: v as "git" | "image" })}
+        onValueChange={(v) => onChange({ source: v as AppSourceKind })}
         options={[
-          { value: "git",   label: "Git repository" },
-          { value: "image", label: "Docker image" },
+          { value: "git",    label: "Git repository" },
+          { value: "image",  label: "Docker image" },
+          { value: "upload", label: "Folder" },
         ]}
         className="text-sm"
       />
@@ -137,6 +148,11 @@ export function SourceFields({
               </Select>
             </Field>
           )}
+        </div>
+      ) : f.source === "upload" ? (
+        <div className="space-y-4">
+          <FolderDrop value={f.folder} onChange={(folder) => onChange({ folder })} current={currentUpload} />
+          <BuildFields f={f} onChange={onChange} registryList={registryList} />
         </div>
       ) : (
         <div className="space-y-4">
@@ -261,83 +277,101 @@ export function SourceFields({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Builder">
-              <Select
-                value={f.builder}
-                onValueChange={(v) => onChange({ builder: (v ?? "railpack") as "railpack" | "dockerfile" })}
-              >
-                <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="railpack">Railpack</SelectItem>
-                  <SelectItem value="dockerfile">Dockerfile</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            {f.builder === "dockerfile" && (
-              <Field label="Dockerfile path">
-                <input
-                  value={f.dockerfilePath}
-                  onChange={(e) => onChange({ dockerfilePath: e.target.value })}
-                  placeholder="Dockerfile"
-                  className={inputCls}
-                />
-              </Field>
-            )}
-          </div>
-
-          {/* Left empty, Railpack works both out from the code, as it always
-              has; a Dockerfile holds its own steps. */}
-          {f.builder === "dockerfile" ? (
-            <p className="text-xs text-muted-foreground">The install and build steps are the Dockerfile&apos;s own.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-4" data-testid="build-commands">
-              <Field label="Install command" term="services.install-command">
-                <input
-                  value={f.installCommand}
-                  onChange={(e) => onChange({ installCommand: e.target.value })}
-                  placeholder="Worked out by Railpack"
-                  className={cn(inputCls, "font-mono")}
-                />
-              </Field>
-              <Field label="Build command" term="services.build-command">
-                <input
-                  value={f.buildCommand}
-                  onChange={(e) => onChange({ buildCommand: e.target.value })}
-                  placeholder="Worked out by Railpack"
-                  className={cn(inputCls, "font-mono")}
-                />
-              </Field>
-            </div>
-          )}
-
-          <Field label="Registry (push destination)" required>
-            <Select
-              value={f.registryIntegrationId}
-              onValueChange={(v) => onChange({ registryIntegrationId: v ?? "" })}
-            >
-              <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
-                <SelectValue
-                  placeholder={
-                    registryList.length === 0
-                      ? "No registries — add one in Integrations"
-                      : "Select a registry to push the built image…"
-                  }
-                >
-                  {registryList.find((r) => r.id === f.registryIntegrationId)?.name}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {registryList.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <BuildFields f={f} onChange={onChange} registryList={registryList} />
         </div>
       )}
     </div>
+  )
+}
+
+/** How the code is built and where the image goes: the same for a repository
+ *  and an uploaded folder. */
+function BuildFields({
+  f,
+  onChange,
+  registryList,
+}: {
+  f: SourceState
+  onChange: (patch: Partial<SourceState>) => void
+  registryList: ApiRegistryIntegration[]
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Builder">
+          <Select
+            value={f.builder}
+            onValueChange={(v) => onChange({ builder: (v ?? "railpack") as "railpack" | "dockerfile" })}
+          >
+            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="railpack">Railpack</SelectItem>
+              <SelectItem value="dockerfile">Dockerfile</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        {f.builder === "dockerfile" && (
+          <Field label="Dockerfile path">
+            <input
+              value={f.dockerfilePath}
+              onChange={(e) => onChange({ dockerfilePath: e.target.value })}
+              placeholder="Dockerfile"
+              className={inputCls}
+            />
+          </Field>
+        )}
+      </div>
+
+      {/* Left empty, Railpack works both out from the code, as it always
+          has; a Dockerfile holds its own steps. */}
+      {f.builder === "dockerfile" ? (
+        <p className="text-xs text-muted-foreground">The install and build steps are the Dockerfile&apos;s own.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-4" data-testid="build-commands">
+          <Field label="Install command" term="services.install-command">
+            <input
+              value={f.installCommand}
+              onChange={(e) => onChange({ installCommand: e.target.value })}
+              placeholder="Worked out by Railpack"
+              className={cn(inputCls, "font-mono")}
+            />
+          </Field>
+          <Field label="Build command" term="services.build-command">
+            <input
+              value={f.buildCommand}
+              onChange={(e) => onChange({ buildCommand: e.target.value })}
+              placeholder="Worked out by Railpack"
+              className={cn(inputCls, "font-mono")}
+            />
+          </Field>
+        </div>
+      )}
+
+      <Field label="Registry (push destination)" required>
+        <Select
+          value={f.registryIntegrationId}
+          onValueChange={(v) => onChange({ registryIntegrationId: v ?? "" })}
+        >
+          <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+            <SelectValue
+              placeholder={
+                registryList.length === 0
+                  ? "No registries — add one in Integrations"
+                  : "Select a registry to push the built image…"
+              }
+            >
+              {registryList.find((r) => r.id === f.registryIntegrationId)?.name}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {registryList.map((r) => (
+              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+    </>
   )
 }

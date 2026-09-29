@@ -147,10 +147,11 @@ function crud(kind: string, base: string, scoped = false) {
             node_port: p.is_public ? 30010 + db.services.length : 0,
           })
         )
-        if (input.git_repo)
+        if (input.git_repo || input.from_upload)
           buildConfigs[row.id] = {
             ...demoBuildConfig,
             ...input,
+            ...(input.from_upload ? { git_repo: "", git_integration_id: null, upload_digest: "", last_built_image: "" } : {}),
             service_id: row.id,
           }
       }
@@ -222,7 +223,8 @@ function crud(kind: string, base: string, scoped = false) {
         )
       }
       db[kind].push(row)
-      if (kind === "services") deploy(row.id)
+      // A folder service deploys when its folder arrives, not before.
+      if (kind === "services" && !input.from_upload) deploy(row.id)
       return json(sanitize(kind, row), 201)
     }),
     http.get(`${base}/:resourceId`, ({ params }) => {
@@ -391,6 +393,23 @@ function demoPlacement() {
   return { nodes, services }
 }
 
+/** The regular files in a tar.gz, read the way tar reads it. Throws on
+ *  anything that is not one. */
+async function countTarFiles(gz: Uint8Array): Promise<number> {
+  const tar = new Uint8Array(await new Response(new Blob([gz as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer())
+  let files = 0
+  for (let at = 0; at + 512 <= tar.length; ) {
+    const h = tar.subarray(at, at + 512)
+    if (h.every((b) => b === 0)) break
+    if (new TextDecoder().decode(h.subarray(257, 262)) !== "ustar") throw new Error("not a tar")
+    const size = parseInt(new TextDecoder().decode(h.subarray(124, 136)).replace(/\0.*$/, "").trim() || "0", 8)
+    const type = String.fromCharCode(h[156])
+    if (type === "0" || type === "\0") files++
+    at += 512 + Math.ceil(size / 512) * 512
+  }
+  return files
+}
+
 function deploymentsOf(serviceId: string) {
   return db.deployments
     .filter((d) => d.service_id === serviceId)
@@ -422,13 +441,19 @@ function deploy(serviceId: string) {
   const svc = find("services", serviceId)
   if (!svc) return null
   const bc = buildConfigs[serviceId]
+  const fromUpload = !!bc && !bc.git_repo && !!bc.upload_digest
   const deployment = record({
     service_id: serviceId,
     status: "pending",
     image: svc.image,
-    log: "[demo] Deployment queued",
+    log: fromUpload
+      ? `[demo] Deployment queued\n[meshploy-build] Fetching the uploaded folder ${bc.upload_name}…\n[meshploy-build] Unpacked ${bc.upload_files} files`
+      : "[demo] Deployment queued",
     deployed_at: null,
-    ...(bc
+    ...(fromUpload
+      // As the builder reports an upload: the digest stands in for a commit.
+      ? { source: "build", source_branch: "", source_commit: String(bc.upload_digest).slice(7, 19), source_commit_message: `Uploaded from ${bc.upload_name}` }
+      : bc
       ? { source: "build", source_branch: bc.branch || "main", source_commit: Math.random().toString(16).slice(2, 9), source_commit_message: "Demo commit" }
       : { source: "image" }),
   })
@@ -969,6 +994,37 @@ export const workspaceHandlers = [
       recovery_seconds: median(recoveries), promotion_seconds: median(promotions),
     }
     return json({ attention, stats, delivery })
+  }),
+  // A folder uploaded as a service's source: unpacked here as the API reads
+  // it, so a broken archive is refused as it would be.
+  http.post(`${S}/source`, async ({ params, request }) => {
+    const id = String(params.serviceId)
+    const svc = find("services", id)
+    if (!svc) return missing()
+    const bytes = new Uint8Array(await request.arrayBuffer())
+    let files = 0
+    try {
+      files = await countTarFiles(bytes)
+    } catch {
+      return json({ detail: "not a folder Meshploy can build: not a gzipped tar" }, 400)
+    }
+    if (files === 0) return json({ detail: "not a folder Meshploy can build: the folder is empty" }, 400)
+    const hex = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("")
+    const url = new URL(request.url)
+    const source = { digest: `sha256:${hex}`, name: url.searchParams.get("name") || "folder", size: bytes.length, files, uploaded_at: now() }
+    buildConfigs[id] = {
+      ...demoBuildConfig,
+      ...buildConfigs[id],
+      service_id: id,
+      git_repo: "",
+      upload_digest: source.digest,
+      upload_name: source.name,
+      upload_size: source.size,
+      upload_files: files,
+      uploaded_at: source.uploaded_at,
+    }
+    const deployment = url.searchParams.get("deploy") === "true" ? deploy(id) : undefined
+    return json({ source, deployment }, 201)
   }),
   http.post(`${S}/deployments`, ({ params }) => {
     const d = deploy(String(params.serviceId))

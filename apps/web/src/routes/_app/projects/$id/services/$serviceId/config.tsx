@@ -45,7 +45,8 @@ import { DeployWebhookURL } from "@/components/services/deploy-webhook"
 import { useReceiving } from "@/components/services/deploy-guard"
 import { TermInfo } from "@/help/term"
 import { formatRelativeTime } from "@/lib/utils"
-import { SourceFields, type SourceState } from "@/components/services/source-fields"
+import { SourceFields, type SourceState, type AppSourceKind } from "@/components/services/source-fields"
+import type { PackedFolder } from "@/lib/pack-folder"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/config"
@@ -445,7 +446,9 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
 
   // ── Form state ────────────────────────────────────────────────────────────
   const draft = useConfigDraft({
-    source: "git" as "git" | "image",
+    source: "git" as AppSourceKind,
+    // A new version of an uploaded folder, sent on save.
+    folder: null as PackedFolder | null,
     // git visibility: "public" = no auth needed; "private" = requires git integration
     gitVisibility: "private" as "public" | "private",
     image: "",
@@ -486,8 +489,11 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
   useEffect(() => {
     if (!service) return
     const isGit = !!bc?.git_repo
+    // Built from a folder: one was uploaded, or it was made to be and has no image.
+    const isUpload = !isGit && !!bc && (!!bc.upload_digest || !service.image)
     draft.sync({
-      source: isGit ? "git" : "image",
+      source: isGit ? "git" : isUpload ? "upload" : "image",
+      folder: null,
       gitVisibility: bc?.git_integration_id ? "private" : "public",
       image: service.image ?? "",
       imageVisibility: service.pull_registry_integration_id ? "private" : "public",
@@ -550,13 +556,19 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
         svcBody.pull_registry_integration_id = form.imageVisibility === "private" ? form.pullRegistryIntegrationId : ""
       }
       const updatedSvc = await servicesApi.update(orgId, projectId, serviceId, svcBody, token)
-      // Update build config when git source
-      if (form.source === "git") {
+      // A new version of the folder is stored, not deployed: saving never deploys.
+      if (form.source === "upload" && form.folder) {
+        await servicesApi.uploadSource(orgId, projectId, serviceId, form.folder.archive, form.folder.name, false, token)
+      }
+      // Update build config when built from a repository or a folder
+      if (form.source !== "image") {
+        const git = form.source === "git"
         await buildConfigsApi.update(orgId, projectId, serviceId, {
-          // public git: clear the integration; private git: send the selected one
-          git_integration_id: form.gitVisibility === "private" ? (form.gitIntegrationId || undefined) : "",
-          git_repo: form.gitRepo,
-          branch: form.gitBranch,
+          // public git: clear the integration; private git: send the selected one.
+          // A folder has neither, and clearing the repository is what makes it build.
+          git_integration_id: git && form.gitVisibility === "private" ? (form.gitIntegrationId || undefined) : "",
+          git_repo: git ? form.gitRepo : "",
+          branch: git ? form.gitBranch : undefined,
           builder: form.builder,
           dockerfile_path: form.builder === "dockerfile" ? form.dockerfilePath : undefined,
           install_command: form.installCommand.trim(),
@@ -611,12 +623,18 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           <SourceFields
             value={form as SourceState}
             onChange={patch}
+            currentUpload={bc?.upload_digest ? {
+              name: bc.upload_name ?? "folder",
+              files: bc.upload_files,
+              size: bc.upload_size,
+              uploadedAt: bc.uploaded_at,
+            } : undefined}
           />
         )}
       </Section>
 
       {/* ── Build ─────────────────────────────────────────────── */}
-      {form.source === "git" && (
+      {form.source !== "image" && (
         <Section title="Build" subtitle="Configure where and how the build job runs">
           <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">

@@ -1,13 +1,13 @@
 ---
 id: services
 title: Services & builds
-summary: What a service is, how Meshploy builds it from git or runs an image, and how a deploy, a rollback and a redeploy differ.
+summary: What a service is, how Meshploy builds it from git or a folder or runs an image, and how a deploy, a rollback and a redeploy differ.
 pages: [services]
 ---
 
 ## Services {#services}
 
-A **service** is one long-running workload in a project: a web app, an API, a worker. It runs from a container image, either one you name (`nginx:1.27`, `ghcr.io/you/app:v3`) or one Meshploy **builds from your git repository**.
+A **service** is one long-running workload in a project: a web app, an API, a worker. It runs from a container image, either one you name (`nginx:1.27`, `ghcr.io/you/app:v3`) or one Meshploy builds: from your **git repository**, or from a **folder** on your computer.
 
 A service has its own variables, ports, replicas and resource limits. Its page shows what it runs now and where that came from, its deployments, its pods and their logs, and a terminal into a running pod.
 
@@ -19,6 +19,14 @@ Meshploy clones the branch you choose and builds an image with one of two builde
 - **Dockerfile** builds your own Dockerfile, from the path you give.
 
 A build runs as a job on a **build node**, pushes the image to your registry (the built-in one, or a registry you connected), then deploys it. The build log streams on the deployment's page, and the deployment records the branch and commit it built.
+
+## Building from a folder {#folder}
+
+A service can be built from a **folder** instead of a repository: an app that is not in git yet, or one an agent just wrote. Choose **Folder** as its source and drop the folder on the page, or run `meshploy deploy ./my-app` from a terminal. Either way the folder is packed where it is, sent, and built as a clone would be, with the same builders.
+
+Some things are never sent: `.git`, installed dependencies such as `node_modules` (the build installs its own), and `.env` files, which hold secrets (an `.env.example` is kept). Neither is anything the folder's `.gitignore` or `.meshployignore` names. Up to 100 MB can be sent once packed.
+
+A new version replaces the last one: drop the folder again on the service's Configuration page, or run the command again. Rollback still goes back to earlier images. A deployment built from a folder says **Built from a folder**, and where a git build records its commit it records the first characters of the folder's fingerprint. Choosing a repository later builds from the repository instead.
 
 ## Commands {#commands}
 
@@ -47,7 +55,7 @@ A value can refer to another with `${NAME}`, so `DATABASE_URL=${PRIMARY_DB_URL}`
 
 ## Deploy, rollback and redeploy {#deploys}
 
-- **Deploy** builds from git, or deploys the configured image.
+- **Deploy** builds from git or the last folder sent, or deploys the configured image.
 - **Rollback** runs an earlier deployment's image again, as it was, from the Deployments tab. Any deployment whose image is still kept can be rolled back to; one whose image was removed says **image removed**.
 - **Redeploy** runs the current image again, for changed variables, and builds nothing.
 
@@ -93,11 +101,13 @@ A fix saves the setting; it reaches the running app on the next deploy, which th
 ## Common tasks {#how-to}
 
 - **Deploy from a repository.** New resource, choose Service, pick the git connection, repository and branch, then Deploy.
+- **Deploy a folder from your computer.** New resource, choose Service, choose **Folder** and drop the folder in, or run `meshploy deploy ./my-app`.
 - **Connect a database.** Attach the database's variable group on the service's Configuration tab, then use `${<NAME>_URL}` in a variable, and redeploy.
 - **Go back to the last good version.** Deployments tab, choose an earlier successful deployment, Rollback.
 
 ## Terms {#terms}
 
+- **Folder source** {#folder -> folder}: A service built from a folder sent from your computer, not a repository. Sent again, it replaces the last one.
 - **Build node** {#build-node -> building}: A node that runs image builds. The gateway is one by default; any node can be made one.
 - **Auto-deploy** {#auto-deploy -> auto-deploy}: Build and deploy on every push to the tracked branch.
 - **Watch paths** {#watch-paths -> auto-deploy}: Only pushes that change these folders deploy; for a repository holding more than one service.

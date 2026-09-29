@@ -253,18 +253,20 @@ type CreateServiceBody struct {
 	NodeID        *string           `json:"node_id,omitempty"`
 	EnvVars       string            `json:"env_vars,omitempty"`
 	Ports         []ServicePortBody `json:"ports,omitempty"`
-	Replicas      int     `json:"replicas,omitempty"`
-	CPURequest    string  `json:"cpu_request,omitempty"`
-	CPULimit      string  `json:"cpu_limit,omitempty"`
-	MemoryRequest string  `json:"memory_request,omitempty"`
-	MemoryLimit   string  `json:"memory_limit,omitempty"`
-	GitRepo       string  `json:"git_repo,omitempty"`
-	Branch        string  `json:"branch,omitempty"`
-	Builder       string  `json:"builder,omitempty"`
-	Type          string  `json:"type,omitempty"`
-	Engine        string  `json:"engine,omitempty"`
-	Version       string  `json:"version,omitempty"`
-	StorageGB     int     `json:"storage_gb,omitempty"`
+	Replicas      int               `json:"replicas,omitempty"`
+	CPURequest    string            `json:"cpu_request,omitempty"`
+	CPULimit      string            `json:"cpu_limit,omitempty"`
+	MemoryRequest string            `json:"memory_request,omitempty"`
+	MemoryLimit   string            `json:"memory_limit,omitempty"`
+	GitRepo       string            `json:"git_repo,omitempty"`
+	// FromUpload builds the service from a folder sent with UploadSource.
+	FromUpload bool   `json:"from_upload,omitempty"`
+	Branch     string `json:"branch,omitempty"`
+	Builder    string `json:"builder,omitempty"`
+	Type       string `json:"type,omitempty"`
+	Engine     string `json:"engine,omitempty"`
+	Version    string `json:"version,omitempty"`
+	StorageGB  int    `json:"storage_gb,omitempty"`
 	// Database credentials. Left empty the API names them after the service
 	// and generates a password; a migration sends the ones the data already
 	// uses, because the dump it will restore expects them.
@@ -306,7 +308,7 @@ type DatabaseConfig struct {
 	// Slug is what the database's Kubernetes objects are named from - its
 	// Deployment, its Service and its claim - which is not the service's own
 	// slug.
-	Slug string `json:"slug"`
+	Slug      string `json:"slug"`
 	Engine    string `json:"engine"`
 	Version   string `json:"version"`
 	StorageGB int    `json:"storage_gb"`

@@ -766,6 +766,17 @@ type BuildConfig struct {
 	GitRepo          string     `json:"git_repo"`
 	Branch           string     `gorm:"default:'main'"         json:"branch"`
 	RootDir          string     `gorm:"default:'.'"` // root of the app within the repo
+	// Uploaded source: a folder sent as a tar.gz instead of a repository,
+	// kept as a blob in the registry the service's images go to, in a
+	// repository of its own (UploadRepo). Built when GitRepo is empty; a Git
+	// source wins when both are set. Only the latest upload is kept: a
+	// rollback goes back to an image, never to a source.
+	UploadRepo   string     `gorm:"not null;default:''" json:"-"`
+	UploadDigest string     `gorm:"not null;default:''" json:"upload_digest,omitempty"` // sha256:<hex> of the tar.gz
+	UploadName   string     `gorm:"not null;default:''" json:"upload_name,omitempty"`   // the folder's name
+	UploadSize   int64      `gorm:"not null;default:0"  json:"upload_size,omitempty"`   // bytes, packed
+	UploadFiles  int        `gorm:"not null;default:0"  json:"upload_files,omitempty"`
+	UploadedAt   *time.Time `json:"uploaded_at,omitempty"`
 	// Dockerfile builder
 	DockerfilePath string `gorm:"default:'Dockerfile'" json:"dockerfile_path"`
 	// InstallCommand and BuildCommand replace what Railpack would
@@ -835,6 +846,12 @@ type BuildConfig struct {
 	Service             Service              `gorm:"foreignKey:ServiceID"                                        json:"-"`
 	GitIntegration      *GitIntegration      `gorm:"foreignKey:GitIntegrationID;constraint:OnDelete:SET NULL"    json:"-"`
 	RegistryIntegration *RegistryIntegration `gorm:"foreignKey:RegistryIntegrationID;constraint:OnDelete:SET NULL" json:"-"`
+}
+
+// BuildsFromUpload says a build takes the uploaded folder: there is one, and
+// no repository, which would win.
+func (bc BuildConfig) BuildsFromUpload() bool {
+	return bc.GitRepo == "" && bc.UploadDigest != ""
 }
 
 // DatabaseConfig holds managed-database settings. 1:1 with Service (type=database).

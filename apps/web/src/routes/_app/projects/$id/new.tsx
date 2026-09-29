@@ -75,6 +75,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import type { TCPZone } from "@/lib/api/routes"
 import { TermInfo } from "@/help/term"
 import { SourceFields, type SourceState } from "@/components/services/source-fields"
+import type { PackedFolder } from "@/lib/pack-folder"
 import { StackDetection, useStackDetection, type DetectionApplied } from "@/components/services/stack-detection"
 
 // ─── Route ───────────────────────────────────────────────────────────────────
@@ -94,7 +95,7 @@ export const Route = createFileRoute("/_app/projects/$id/new")({
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type ResourceType = "service" | "route" | "job" | "database" | "stack" | "volume" | "variable-group" | "config-file"
-type AppSource = "git" | "image"
+type AppSource = "git" | "image" | "upload"
 type Builder = "railpack" | "dockerfile"
 
 interface PortRow {
@@ -107,6 +108,8 @@ interface PortRow {
 
 interface FormState {
   source: AppSource
+  /** The folder for an upload source, packed in the browser. */
+  folder: PackedFolder | null
   name: string
   image: string
   imageVisibility: "public" | "private"
@@ -139,6 +142,7 @@ interface FormState {
 
 const INITIAL: FormState = {
   source: "git",
+  folder: null,
   name: "",
   image: "",
   imageVisibility: "public",
@@ -214,8 +218,16 @@ function NewResourcePage() {
     enabled: !!orgId,
   })
 
+  // A service made for a folder whose upload then failed: trying again sends
+  // the folder again, rather than making the service twice.
+  const [created, setCreated] = useState<ApiService | null>(null)
+
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (created && form.source === "upload" && form.folder) {
+        await servicesApi.uploadSource(orgId!, projectId, created.id, form.folder.archive, form.folder.name, true, token)
+        return created
+      }
       const body: CreateServiceBody = {
         name: form.name,
         ports: form.ports.map((p) => ({
@@ -239,11 +251,15 @@ function NewResourcePage() {
           body.pull_registry_integration_id = form.pullRegistryIntegrationId
         }
       } else {
-        if (form.gitVisibility === "private") {
-          body.git_integration_id = form.gitIntegrationId || undefined
+        if (form.source === "upload") {
+          body.from_upload = true
+        } else {
+          if (form.gitVisibility === "private") {
+            body.git_integration_id = form.gitIntegrationId || undefined
+          }
+          body.git_repo = form.gitRepo
+          body.branch   = form.gitBranch
         }
-        body.git_repo                 = form.gitRepo
-        body.branch                   = form.gitBranch
         body.builder                  = form.builder
         body.dockerfile_path          = form.builder === "dockerfile" ? form.dockerfilePath : undefined
         body.install_command          = form.builder !== "dockerfile" ? form.installCommand.trim() || undefined : undefined
@@ -258,6 +274,15 @@ function NewResourcePage() {
       const service = await servicesApi.create(orgId!, projectId, body, token)
       if (form.volumeAttachment) {
         await volumesApi.attach(orgId!, projectId, form.volumeAttachment.volumeId, { service_id: service.id, mount_path: form.volumeAttachment.mountPath }, token)
+      }
+      if (form.source === "upload" && form.folder) {
+        setCreated(service)
+        qc.invalidateQueries({ queryKey: ["services", orgId, projectId] })
+        try {
+          await servicesApi.uploadSource(orgId!, projectId, service.id, form.folder.archive, form.folder.name, true, token)
+        } catch (e) {
+          throw new Error(`${service.name} was created, but its folder did not upload: ${e instanceof Error ? e.message : e}. Try again to send it.`)
+        }
       }
       return service
     },
@@ -277,6 +302,8 @@ function NewResourcePage() {
     (form.source === "image"
       ? form.image.trim().length > 0 &&
         (form.imageVisibility === "public" || form.pullRegistryIntegrationId.length > 0)
+      : form.source === "upload"
+      ? form.folder !== null && form.registryIntegrationId.length > 0
       : form.gitRepo.length > 0 &&
         form.gitBranch.length > 0 &&
         form.registryIntegrationId.length > 0 &&
@@ -489,14 +516,17 @@ function ServiceForm({
       <Section title="Source" subtitle="Where should Meshploy pull the code or image from?">
         <SourceFields
           value={form as SourceState}
-          onChange={patch}
+          // A folder picked before the service is named names it.
+          onChange={(p) => patch(p.folder && !form.name.trim()
+            ? { ...p, name: p.folder.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") }
+            : p)}
           pickDefaultRegistry
         />
         {form.source === "git" && <StackDetection query={detection} applied={applied} />}
       </Section>
 
       {/* ── Section: Build ───────────────────────────────────── */}
-      {form.source === "git" && (
+      {form.source !== "image" && (
         <Section title="Build" subtitle="Configure where and how the build job runs">
           <div className="flex flex-col gap-3">
             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">

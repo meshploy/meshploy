@@ -158,6 +158,12 @@ export interface ApiBuildConfig {
   builder: "railpack" | "dockerfile" | "image"
   git_repo: string
   branch: string
+  /** The uploaded folder, when the service is built from one: built while git_repo is empty. */
+  upload_digest?: string
+  upload_name?: string
+  upload_size?: number
+  upload_files?: number
+  uploaded_at?: string | null
   dockerfile_path: string
   /** Replaces the builder's install step (Railpack); empty = Railpack's own. */
   install_command?: string
@@ -210,6 +216,8 @@ export interface CreateServiceBody {
   // Build config — a BuildConfig row is created server-side when git_repo is set
   git_integration_id?: string
   git_repo?: string
+  /** Built from a folder sent to .../source afterwards, not a repository. */
+  from_upload?: boolean
   branch?: string
   builder?: "railpack" | "dockerfile"
   dockerfile_path?: string
@@ -274,7 +282,24 @@ export interface UpdateBuildConfigBody {
   watch_paths?: string[]
 }
 
+/** A folder the API stored as a service's source. */
+export interface ApiUploadedSource {
+  digest: string
+  name: string
+  size: number
+  files: number
+  uploaded_at: string
+}
+
 export const services = {
+  /** Sends a packed folder (a tar.gz) as the service's source; deploys it when asked. */
+  uploadSource: (orgId: string, projectId: string, serviceId: string, archive: Blob, name: string, deploy: boolean, token: string) =>
+    apiFetch<{ source: ApiUploadedSource; deployment?: ApiDeployment }>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/source?name=${encodeURIComponent(name)}${deploy ? "&deploy=true" : ""}`,
+      { method: "POST", body: archive, headers: { "Content-Type": "application/gzip" } },
+      token
+    ),
+
   list: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiService[]>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/services`,

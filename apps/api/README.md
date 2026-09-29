@@ -291,6 +291,7 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/orgs/{orgId}/projects/{projectId}/image-retention` | ✓ | A level's services made on their own that keep every image they build |
 | POST | `/orgs/{orgId}/projects/{projectId}/image-retention` | ✓ | Make them keep their last 3 images, removing the rest now |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/redeploy` | ✓ | Run the current image again, without building; keeps where the image came from |
+| POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/source` | ✓ | Upload a folder, a tar.gz as the body, as the service's source (`?name=` its folder name, `?deploy=true` to deploy it). Needs the deploy permission; up to 100 MB; stored in the service's registry, only the latest kept |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/dependents` | ✓ | Services and jobs, at any level, whose variables come from this service today |
 | GET | `/orgs/{orgId}/projects/{projectId}/health` | ✓ | Services in a project that are not staying up, and why: out of memory (with the limit), crashing (with the exit code), image pull, cannot start; and each service's suggestions from its last build (`hints`), with their fixes |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/hints/{kind}/dismiss` | ✓ | Set aside one kind of suggestion (`start_command`, `memory`, `port`) for a service, for everyone |
