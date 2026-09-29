@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	db "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
 )
@@ -21,6 +22,35 @@ type TargetEntry struct {
 	TargetTLS        bool
 	RedirectHostname string // non-empty when this target is a redirect
 	RedirectCode     int    // 301 or 302
+
+	// Whose request this is, so a gate needs no lookup of its own. ServiceID
+	// is zero for a node or address target.
+	RouteID   uuid.UUID
+	ServiceID uuid.UUID
+	ProjectID uuid.UUID
+	OrgID     uuid.UUID
+}
+
+// entryFor is one target of a route as the proxy serves it.
+func entryFor(t db.RouteTarget, route *db.Route) TargetEntry {
+	entry := TargetEntry{
+		Path:       t.Path,
+		StripPath:  t.StripPath,
+		TargetIP:   t.TargetIP,
+		TargetPort: t.TargetPort,
+		TargetTLS:  t.TargetTLS,
+		RouteID:    route.ID,
+		ProjectID:  route.ProjectID,
+		OrgID:      route.OrganizationID,
+	}
+	if t.ServiceID != nil {
+		entry.ServiceID = *t.ServiceID
+	}
+	if t.RedirectRouteID != nil && t.RedirectRoute != nil {
+		entry.RedirectHostname = t.RedirectRoute.Hostname
+		entry.RedirectCode = t.RedirectCode
+	}
+	return entry
 }
 
 // Cache holds an in-memory snapshot of routes + targets, refreshed in the background.
@@ -108,18 +138,7 @@ func (c *Cache) load() error {
 		if t.Route == nil || t.Route.Hostname == "" || !t.Route.Published {
 			continue // a paused route answers as if it did not exist
 		}
-		entry := TargetEntry{
-			Path:       t.Path,
-			StripPath:  t.StripPath,
-			TargetIP:   t.TargetIP,
-			TargetPort: t.TargetPort,
-			TargetTLS:  t.TargetTLS,
-		}
-		if t.RedirectRouteID != nil && t.RedirectRoute != nil {
-			entry.RedirectHostname = t.RedirectRoute.Hostname
-			entry.RedirectCode = t.RedirectCode
-		}
-		m[t.Route.Hostname] = append(m[t.Route.Hostname], entry)
+		m[t.Route.Hostname] = append(m[t.Route.Hostname], entryFor(t, t.Route))
 	}
 	for k := range m {
 		sortEntries(m[k])
@@ -138,6 +157,16 @@ func (c *Cache) load() error {
 	c.mu.Unlock()
 	log.Printf("cache: loaded %d targets across %d hostnames", len(targets), len(m))
 	return nil
+}
+
+// Set replaces a hostname's entries until the next refresh; the refresh
+// itself replaces them all from the database.
+func (c *Cache) Set(hostname string, entries []TargetEntry) {
+	entries = append([]TargetEntry(nil), entries...)
+	sortEntries(entries)
+	c.mu.Lock()
+	c.routes[hostname] = entries
+	c.mu.Unlock()
 }
 
 // SetFallback replaces the fallback; the refresh does this from the database.
@@ -160,6 +189,9 @@ func (c *Cache) FallbackFor(hostname string) (string, bool) {
 }
 
 func (c *Cache) loadHostname(hostname string) []TargetEntry {
+	if c.db == nil {
+		return nil // a cache filled by Set alone, as in tests
+	}
 	var route db.Route
 	err := c.db.Where("hostname = ? AND published = ?", hostname, true).First(&route).Error
 	if err != nil {
@@ -178,18 +210,7 @@ func (c *Cache) loadHostname(hostname string) []TargetEntry {
 	}
 	entries := make([]TargetEntry, 0, len(targets))
 	for _, t := range targets {
-		entry := TargetEntry{
-			Path:       t.Path,
-			StripPath:  t.StripPath,
-			TargetIP:   t.TargetIP,
-			TargetPort: t.TargetPort,
-			TargetTLS:  t.TargetTLS,
-		}
-		if t.RedirectRouteID != nil && t.RedirectRoute != nil {
-			entry.RedirectHostname = t.RedirectRoute.Hostname
-			entry.RedirectCode = t.RedirectCode
-		}
-		entries = append(entries, entry)
+		entries = append(entries, entryFor(t, &route))
 	}
 	sortEntries(entries)
 	return entries

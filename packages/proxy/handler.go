@@ -49,6 +49,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if runGates(w, r, Target{Host: hostname, RouteID: entry.RouteID, ServiceID: entry.ServiceID,
+		ProjectID: entry.ProjectID, OrgID: entry.OrgID}) {
+		return
+	}
+
 	// Redirect target — respond immediately without proxying.
 	if entry.RedirectHostname != "" {
 		code := entry.RedirectCode

@@ -3,7 +3,7 @@ module github.com/meshploy/packages/proxy
 go 1.25.8
 
 require (
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.6.0
 	github.com/meshploy/packages/db v0.0.0-00010101000000-000000000000
 	gorm.io/gorm v1.31.1
 )
