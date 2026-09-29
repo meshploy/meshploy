@@ -4,6 +4,8 @@ import {
   ArrowRight,
   BookOpen,
   Check,
+  Circle,
+  GitBranch,
   Globe,
   Hammer,
   LayoutGrid,
@@ -13,7 +15,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react"
-import { NOTICE_GETTING_STARTED, domains as domainsApi, system as systemApi } from "@/lib/api"
+import { NOTICE_GETTING_STARTED, domains as domainsApi, gitIntegrations as gitApi, system as systemApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import type { Node, Project } from "@/types"
@@ -76,6 +78,12 @@ export function StartHere({
     enabled: !!orgId && wanted,
   })
 
+  const { data: gitList = [] } = useQuery({
+    queryKey: ["git-integrations", orgId],
+    queryFn: () => gitApi.list(orgId!, token),
+    enabled: !!orgId && wanted,
+  })
+
   const dismiss = useMutation({
     mutationFn: () => systemApi.dismissNotice(NOTICE_GETTING_STARTED, token),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["dismissed-notices"] }),
@@ -90,6 +98,7 @@ export function StartHere({
   const canRun = online.filter((n) => n.meshRole === "workload_builder" || n.meshRole === "workload")
   const canBuild = online.filter((n) => n.meshRole === "workload_builder" || n.meshRole === "builder")
   const verified = domainList.filter((d) => d.verified)
+  const git = gitList.filter((g) => g.connected)
 
   const next = nextStep(projects)
 
@@ -114,7 +123,7 @@ export function StartHere({
         </button>
       </div>
 
-      {/* Readiness: the three things that make a first deployment fail. */}
+      {/* Readiness: the three things that make a first deployment fail, then Git, which is optional. */}
       <div className="divide-y divide-border/40">
         <Readiness
           ok={canRun.length > 0}
@@ -150,6 +159,21 @@ export function StartHere({
           to="/settings"
           hash="domains"
           action="Set up the domain"
+        />
+        {/* Optional, so never a warning: public repositories, images and
+            folders deploy without it. A private repository and deploy on push
+            need it, which is why it comes before the first service. */}
+        <Readiness
+          ok={git.length > 0}
+          optional
+          icon={<GitBranch className="h-3.5 w-3.5" />}
+          okText="Git connected"
+          okDetail={git.map((g) => g.name).join(", ")}
+          warnText="Connect your Git provider"
+          warnDetail="GitHub, GitLab, Gitea or Bitbucket, to build private repositories and deploy on push. Public repositories, images and folders work without one."
+          to="/integrations/new"
+          search={{ category: "git" }}
+          action="Connect Git"
         />
       </div>
 
@@ -218,30 +242,36 @@ function Readiness({
   warnDetail,
   to,
   hash,
+  search,
   action,
+  optional,
 }: {
   ok: boolean
+  /** Not needed for a first deployment: shown as a choice, not a warning. */
+  optional?: boolean
   icon: React.ReactNode
   okText: string
   okDetail: string
   warnText: string
   warnDetail: string
-  to: "/nodes" | "/settings"
+  to: "/nodes" | "/settings" | "/integrations/new"
   hash?: string
+  search?: { category: "git" }
   action: string
 }) {
+  const warn = !ok && !optional
   return (
     <div className="flex flex-wrap items-center gap-3 px-5 py-3">
       <span
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-          ok ? "bg-primary/10 text-primary" : "bg-amber-500/10 text-amber-400"
+          ok ? "bg-primary/10 text-primary" : warn ? "bg-amber-500/10 text-amber-400" : "bg-secondary text-muted-foreground"
         }`}
       >
-        {ok ? <Check className="h-3 w-3" /> : <TriangleAlert className="h-3 w-3" />}
+        {ok ? <Check className="h-3 w-3" /> : warn ? <TriangleAlert className="h-3 w-3" /> : <Circle className="h-2.5 w-2.5" />}
       </span>
       <span className="text-muted-foreground/60">{icon}</span>
       <div className="flex-1 min-w-48">
-        <p className={`text-sm ${ok ? "text-foreground/90" : "text-amber-400"}`}>
+        <p className={`text-sm ${ok ? "text-foreground/90" : warn ? "text-amber-400" : "text-foreground/90"}`}>
           {ok ? okText : warnText}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{ok ? okDetail : warnDetail}</p>
@@ -250,6 +280,7 @@ function Readiness({
         <Link
           to={to}
           hash={hash}
+          search={search}
           className="text-xs text-primary hover:underline shrink-0"
         >
           {action} →
@@ -285,7 +316,7 @@ function nextStep(projects: Project[]): Step {
   if (empty) {
     return {
       title: `Add the first service to ${empty.name}`,
-      detail: "Build from a Git repository, or run an image you already have.",
+      detail: "Build from a Git repository or a folder, or run an image you already have.",
       action: "New service",
       to: "/projects/$id/new",
       params: { id: empty.id },

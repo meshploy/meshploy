@@ -29,6 +29,8 @@ test.describe("Start here", () => {
     await expect(page.getByText("Somewhere to build it")).toBeVisible()
     await expect(page.getByText("Your domain points here")).toBeVisible()
     await expect(page.getByText("demo.example.com")).toBeVisible()
+    // Git comes before the first service: optional, so never a warning.
+    await expect(page.getByText(/Git connected|Connect your Git provider/)).toBeVisible()
 
     // And a way on, whichever step this workspace is at.
     await expect(page.getByRole("link", { name: /A template/ })).toBeVisible()
