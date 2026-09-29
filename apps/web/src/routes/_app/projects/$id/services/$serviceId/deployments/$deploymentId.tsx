@@ -335,22 +335,39 @@ function DeploymentLogsPage() {
   )
 }
 
-const STEPS: { key: ApiDeployment["status"][]; label: string; sub: string }[] = [
+type Step = { key: ApiDeployment["status"][]; label: string; sub: string }
+
+const BUILD_STEPS: Step[] = [
   { key: ["pending"],            label: "Queued",         sub: "Waiting for a builder node" },
   { key: ["building"],           label: "Building",       sub: "Cloning repo & building image" },
   { key: ["deploying", "running"], label: "Deploying",    sub: "Rolling update to cluster" },
   { key: ["success"],            label: "Live",           sub: "All replicas healthy" },
 ]
 
-function stepIndex(status: ApiDeployment["status"]) {
+// A deployment that builds nothing - an image, a rollback, a promotion, a
+// redeploy - was shown the build's steps, ticked, as if a repository had been
+// cloned and built.
+const IMAGE_STEPS: Step[] = [
+  { key: ["pending"],            label: "Image",          sub: "As it is, no build" },
+  { key: ["deploying", "running"], label: "Deploying",    sub: "Pulling it & rolling out" },
+  { key: ["success"],            label: "Live",           sub: "All replicas healthy" },
+]
+
+function builds(d: ApiDeployment) {
+  return !!d.build_job_name || d.source === "build"
+}
+
+function stepIndex(steps: Step[], status: ApiDeployment["status"]) {
   if (status === "failed") return -1
-  return STEPS.findIndex((s) => s.key.includes(status))
+  return steps.findIndex((s) => s.key.includes(status))
 }
 
 // Where a failed deployment stopped, as its log shows: a failure records no
 // stage, and marking Queued failed for a rollout that failed after a finished
-// build pointed at the wrong step.
+// build pointed at the wrong step. A deployment with nothing to build can only
+// stop while deploying.
 function failedStep(d: ApiDeployment) {
+  if (!builds(d)) return 1
   const log = d.log ?? ""
   if (log.includes("Deployment applied") || log.includes("Rollout failed")) return 2
   if (d.build_job_name || log.includes("[meshploy-build]")) return 1
@@ -360,8 +377,9 @@ function failedStep(d: ApiDeployment) {
 function DeploymentStepper({ deployment }: { deployment: ApiDeployment }) {
   const status = deployment.status
   const failed = status === "failed"
+  const STEPS = builds(deployment) ? BUILD_STEPS : IMAGE_STEPS
   // Failed: the steps before the one it stopped at are done.
-  const current = failed ? failedStep(deployment) : stepIndex(status)
+  const current = failed ? failedStep(deployment) : stepIndex(STEPS, status)
 
   return (
     <div className="flex items-center">
