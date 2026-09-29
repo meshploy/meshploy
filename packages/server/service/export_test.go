@@ -89,3 +89,8 @@ func RequestRegistryGCForTest(s *Services, ctx context.Context, hostDir string, 
 func UseNodeK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Nodes.k8s = client
 }
+
+// UsePlacementK8sForTest gives the placement service a cluster client.
+func UsePlacementK8sForTest(s *Services, client kubernetes.Interface) {
+	s.Placement.k8s = client
+}

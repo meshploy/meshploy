@@ -1,7 +1,7 @@
 import { OptionSelect } from "@/components/layout/option-select"
 import { createFileRoute, Link, Outlet, useParams, useRouterState, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Box, Database, Globe, Layers, HardDrive, Variable, FileCog, Clock, Settings, Home, Plus, ArrowLeft, Loader2 } from "lucide-react"
+import { Box, Database, Globe, Layers, HardDrive, Variable, FileCog, Clock, Settings, Home, Plus, ArrowLeft, Loader2, Network } from "lucide-react"
 import { projects as projectsApi, services as servicesApi, toProject } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -24,6 +24,7 @@ function ProjectLayout() {
   const project = toProject(data)
   const tabs = [
     { segment: "", label: "Overview", icon: Home, count: null },
+    { segment: "map", label: "Map", icon: Network, count: null },
     { segment: "services", label: "Services", icon: Box, count: project.servicesCount },
     { segment: "databases", label: "Databases", icon: Database, count: project.databasesCount },
     { segment: "stacks", label: "Stacks", icon: Layers, count: project.stacksCount },

@@ -1,3 +1,4 @@
+import { shopRoutes, shopServices, shopStack, shopVolumes } from "./map-demo"
 import * as seed from "./data"
 
 // Demo-only, heterogeneous API records. Never imported by the production API client.
@@ -99,6 +100,7 @@ export const db: Record<string, DemoRecord[]> = {
     // Backed up, so a level's own copy of it can be cloned in the demo.
     { ...seed.demoServiceDb, has_backup: true },
     ...demoDatabases.map((d) => d.service),
+    ...shopServices,
     // web, built in staging from a newer commit than production runs, so the
     // board has a promotion waiting.
     {
@@ -121,9 +123,10 @@ export const db: Record<string, DemoRecord[]> = {
     },
   ],
   jobs: [seed.demoJob],
-  volumes: [{ ...seed.demoVolume, stack_id: null }],
+  volumes: [{ ...seed.demoVolume, stack_id: null }, ...shopVolumes],
   stacks: [
     seed.demoStack,
+    shopStack,
     // A stack whose file lives in git, as a migrated monorepo's does: carried
     // across with its file and not synced here yet.
     {
@@ -138,6 +141,7 @@ export const db: Record<string, DemoRecord[]> = {
     },
   ],
   routes: [
+    ...shopRoutes,
     // web's address in production and its derived one in staging, so the
     // board's cards have something to open.
     ...[
@@ -281,6 +285,9 @@ export const db: Record<string, DemoRecord[]> = {
   ],
   nodes: [seed.demoNodeGateway, seed.demoNodeWorker].map((n) => ({
     ...n,
+    // What runs where: the worker carries staging and the Experiments
+    // project too, so the workspace map has each level on a machine.
+    active_projects: n.id === seed.demoNodeWorker.id ? [...n.active_projects, stagingLevelId, secondProjectId] : n.active_projects,
     k3s_labels: {},
     public_ip: "203.0.113.10",
     created_at: seed.DEMO_NOW,

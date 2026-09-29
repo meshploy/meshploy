@@ -216,6 +216,10 @@ export const projects = {
     ),
 
   /** Services in the project that are not staying up, and advice from their last builds, by service id. */
+  /** Everything a level's map is drawn from, in one read. */
+  map: (orgId: string, projectId: string, token: string) =>
+    apiFetch<ApiProjectMap>(`/api/v1/orgs/${orgId}/projects/${projectId}/map`, {}, token),
+
   health: (orgId: string, projectId: string, token: string) =>
     apiFetch<{ services: Record<string, import("./services").ApiTrouble>; hints?: Record<string, import("./services").ApiHint[]> }>(
       `/api/v1/orgs/${orgId}/projects/${projectId}/health`,
@@ -311,4 +315,17 @@ export const projects = {
       { method: "DELETE" },
       token
     ),
+}
+
+/** A level's map, in one read: what each tab reads for itself. */
+export interface ApiProjectMap {
+  services: import("./services").ApiService[]
+  stacks: import("./stacks").ApiStack[]
+  routes: import("./routes").ApiDbRoute[]
+  volumes: import("./volumes").ApiVolume[]
+  /** Why a service is not staying up, by service id. */
+  troubles: Record<string, import("./services").ApiTrouble>
+  hints: Record<string, import("./services").ApiHint[]>
+  /** The services whose published variables each service reads, by service id. */
+  reads: Record<string, string[]>
 }

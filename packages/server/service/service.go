@@ -28,6 +28,8 @@ type Services struct {
 	Workloads       *WorkloadService
 	ConfigFiles     *ConfigFileService
 	Orphans         *OrphanService
+	Placement       *PlacementService
+	ProjectMaps     *ProjectMapService
 	Stacks          *StackService
 	Volumes         *VolumeService
 	Domains         *DomainService
@@ -261,6 +263,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Promotions:      &PromotionService{db: db, projects: projects, deployments: deployments, workloads: workloads, backups: backups},
 		ConfigFiles:     configFiles,
 		Orphans:         &OrphanService{db: db, k8s: k8sClient, workloads: workloads},
+		Placement:       &PlacementService{db: db, k8s: k8sClient, workloads: workloads},
 		Stacks:          &StackService{db: db, git: gitSvc, workload: workloads, volumes: volumes, routes: routes, configFiles: configFiles, deployment: deployments},
 		Nodes:           nodes,
 		Workloads:       workloads,
@@ -317,6 +320,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
 
+	svc.ProjectMaps = &ProjectMapService{db: db, workloads: workloads, stacks: svc.Stacks, routes: routes, volumes: volumes}
 	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions, orphans: svc.Orphans, workloads: workloads, metrics: nodes.GetNodeMetrics}
 	return svc
 }

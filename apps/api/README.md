@@ -231,6 +231,9 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Get the most recent active Headscale preauth key |
 | POST | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Generate a new Headscale preauth key for joining the WireGuard mesh |
 | GET | `/orgs/{orgId}/cluster/join-token` | ✓ | Get the k3s node token for joining the cluster |
+| GET | `/orgs/{orgId}/projects/{projectId}/map` | ✓ | Everything a level's map is drawn from, in one read: services, stacks, routes, volumes, troubles, build hints, and which services read another's published variables |
+| GET | `/orgs/{orgId}/placement` | ✓ | Org admins. Where every service runs: each node's allocatable room and what its pods request, each service's pods, requests, pinned node and the nodes its volumes' data is bound to |
+| GET | `/orgs/{orgId}/placement/nodes/{node}/what-if` | ✓ | Org admins. What would happen if the cluster node went down: per service, keeps running, moves (and where), or stays down and why. Nothing is stopped |
 | GET | `/orgs/{orgId}/cluster/mesh-health` | ✓ | Report whether the control plane can reach Headscale |
 | GET | `/orgs/{orgId}/cluster/orphans` | ✓ | List cluster workloads that no service owns |
 | DELETE | `/orgs/{orgId}/cluster/orphans/{namespace}/{name}` | ✓ | Remove a cluster workload that no service owns |

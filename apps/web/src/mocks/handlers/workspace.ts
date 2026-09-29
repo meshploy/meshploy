@@ -1,3 +1,6 @@
+import { forecastNodeDown } from "../forecast"
+import { cpuMillis, memoryBytes } from "@/components/forms/steppers"
+import { shopTroubles } from "../map-demo"
 import { http, HttpResponse } from "msw"
 import { parse } from "yaml"
 import {
@@ -288,7 +291,7 @@ function routeTarget(input: Record<string, any>, routeId: string) {
  * the browser tests set one here (POST .../__trouble) to see each place that
  * tells the reader.
  */
-const troubles: Record<string, Record<string, any>> = {}
+const troubles: Record<string, Record<string, any>> = { ...shopTroubles }
 
 /**
  * What the demo's builds found out about each app, by service id, as the
@@ -349,6 +352,45 @@ function keepingEveryImage(projectId: string) {
     .filter((s) => s.project_id === projectId && s.id === demoServiceWeb.id && !keptLast.has(s.id))
     .map((s) => ({ id: s.id, name: s.name, images_kept: deploymentsOf(s.id).filter((d) => d.status === "success").length }))
 }
+/** Where the demo's cluster would put a service's pod: a pinned service on its node, replicas spread over both, the rest on the worker. */
+function podNode(s: DemoRecord, i: number): string {
+  if (s.node_id) return find("nodes", s.node_id)?.k8s_node_name ?? "worker-1"
+  return (s.replicas || 1) > 1 ? ["worker-1", "gateway"][i % 2] : "worker-1"
+}
+
+/** The demo's placement, built as the server builds it from the cluster. */
+function demoPlacement() {
+  const levels = db.projects
+  const services = db.services
+    .filter((s) => levels.some((l) => l.id === s.project_id))
+    .map((s) => {
+      const level = find("projects", s.project_id)!
+      const root = level.parent_project_id ? find("projects", level.parent_project_id) ?? level : level
+      const running = s.status === "running" || s.status === "deploying"
+      const pods = running ? Array.from({ length: s.replicas || 1 }, (_, i) => ({ name: `${s.name}-demo${i}`, node: podNode(s, i), phase: "Running" })) : []
+      const mounted = db.volumes.some((v) => (v.mounts ?? []).some((m: DemoRecord) => m.service_id === s.id))
+      return {
+        id: s.id, name: s.name, level_id: level.id, level_name: level.env_name ?? "production", project_id: root.id, project_name: root.name,
+        type: s.type ?? "application", status: s.status ?? "stopped", run_once: !!s.run_once,
+        pinned_node: s.node_id ? find("nodes", s.node_id)?.k8s_node_name : undefined,
+        cpu_request_millis: cpuMillis(s.cpu_request ?? "") ?? 100, memory_request_bytes: memoryBytes(s.memory_request ?? "") ?? 128 * 1024 ** 2,
+        pods, data_on: mounted || s.type === "database" ? [...new Set(pods.map((p) => p.node))] : undefined,
+      }
+    })
+  const nodes = db.nodes.map((n) => {
+    const name = n.k8s_node_name ?? n.name
+    const on = services.flatMap((s) => s.pods.filter((p) => p.node === name).map(() => s))
+    return {
+      id: n.id, name: n.name, k8s_node_name: name, online: n.status === "online", control_plane: n.k3s_role === "server",
+      takes_workloads: n.status === "online" && !!n.k8s_member && n.mesh_role !== "builder" && n.mesh_role !== "mesh",
+      allocatable_cpu_millis: (n.cpu_cores ?? 0) * 1000, allocatable_memory_bytes: (n.memory_gb ?? 0) * 1024 ** 3,
+      requested_cpu_millis: on.reduce((t, s) => t + s.cpu_request_millis, 0),
+      requested_memory_bytes: on.reduce((t, s) => t + s.memory_request_bytes, 0),
+    }
+  })
+  return { nodes, services }
+}
+
 function deploymentsOf(serviceId: string) {
   return db.deployments
     .filter((d) => d.service_id === serviceId)
@@ -754,6 +796,24 @@ export const workspaceHandlers = [
       .slice(0, limit)
     return json(rows)
   }),
+  // A level's map in one read, as the API gives it.
+  http.get(`${P}/map`, ({ params }) => {
+    const mine = (kind: string) => (db[kind] ?? []).filter((r) => r.project_id === params.projectId).map((r) => sanitize(kind, r))
+    const services = mine("services")
+    const reads: Record<string, string[]> = {}
+    for (const svc of services) {
+      const owners = (db["variable-groups"] ?? [])
+        .filter((g) => (attachments[String(svc.id)] || []).includes(g.id) && g.service_id && g.service_id !== svc.id)
+        .map((g) => String(g.service_id))
+      if (owners.length) reads[String(svc.id)] = owners
+    }
+    return json({
+      services, stacks: mine("stacks"), routes: mine("routes"), volumes: mine("volumes"),
+      troubles: Object.fromEntries(Object.entries(troubles).filter(([id]) => find("services", id)?.project_id === params.projectId)),
+      hints: Object.fromEntries(db.services.filter((s) => s.project_id === params.projectId).map((s) => [s.id, hintsOf(s)]).filter(([, h]) => h.length > 0)),
+      reads,
+    })
+  }),
   http.get(`${P}/health`, ({ params }) =>
     json({
       services: Object.fromEntries(
@@ -949,6 +1009,11 @@ export const workspaceHandlers = [
   http.post(`${S}/reset`, ({ params }) =>
     json(deploy(String(params.serviceId)))
   ),
+  http.get(`${O}/placement`, () => json(demoPlacement())),
+  http.get(`${O}/placement/nodes/:node/what-if`, ({ params }) => {
+    const f = forecastNodeDown(demoPlacement(), String(params.node))
+    return f ? json(f) : missing()
+  }),
   http.get(`${S}/pods`, ({ params }) => {
     const s = find("services", params.serviceId)
     return json(
@@ -958,7 +1023,9 @@ export const workspaceHandlers = [
             phase: "Running",
             ready: true,
             restarts: 0,
-            node_name: "worker-1",
+            // Where the cluster would put it: a pinned service on its node,
+            // replicas spread over both, the rest on the worker.
+            node_name: podNode(s, i),
             started_at: now(),
           }))
         : []

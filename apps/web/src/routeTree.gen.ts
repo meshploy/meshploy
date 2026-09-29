@@ -41,6 +41,7 @@ import { Route as AppProjectsIdSettingsRouteImport } from './routes/_app/project
 import { Route as AppProjectsIdRoutesRouteImport } from './routes/_app/projects/$id/routes'
 import { Route as AppProjectsIdPipelinesRouteImport } from './routes/_app/projects/$id/pipelines'
 import { Route as AppProjectsIdNewRouteImport } from './routes/_app/projects/$id/new'
+import { Route as AppProjectsIdMapRouteImport } from './routes/_app/projects/$id/map'
 import { Route as AppProjectsIdDatabasesRouteImport } from './routes/_app/projects/$id/databases'
 import { Route as AppIntegrationsTabsStorageRouteImport } from './routes/_app/integrations/_tabs/storage'
 import { Route as AppIntegrationsTabsRegistriesRouteImport } from './routes/_app/integrations/_tabs/registries'
@@ -241,6 +242,11 @@ const AppProjectsIdPipelinesRoute = AppProjectsIdPipelinesRouteImport.update({
 const AppProjectsIdNewRoute = AppProjectsIdNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => AppProjectsIdRouteRoute,
+} as any)
+const AppProjectsIdMapRoute = AppProjectsIdMapRouteImport.update({
+  id: '/map',
+  path: '/map',
   getParentRoute: () => AppProjectsIdRouteRoute,
 } as any)
 const AppProjectsIdDatabasesRoute = AppProjectsIdDatabasesRouteImport.update({
@@ -531,6 +537,7 @@ export interface FileRoutesByFullPath {
   '/integrations/registries': typeof AppIntegrationsTabsRegistriesRoute
   '/integrations/storage': typeof AppIntegrationsTabsStorageRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
+  '/projects/$id/map': typeof AppProjectsIdMapRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
   '/projects/$id/routes': typeof AppProjectsIdRoutesRouteWithChildren
@@ -604,6 +611,7 @@ export interface FileRoutesByTo {
   '/integrations/registries': typeof AppIntegrationsTabsRegistriesRoute
   '/integrations/storage': typeof AppIntegrationsTabsStorageRoute
   '/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
+  '/projects/$id/map': typeof AppProjectsIdMapRoute
   '/projects/$id/new': typeof AppProjectsIdNewRoute
   '/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
@@ -678,6 +686,7 @@ export interface FileRoutesById {
   '/_app/integrations/_tabs/registries': typeof AppIntegrationsTabsRegistriesRoute
   '/_app/integrations/_tabs/storage': typeof AppIntegrationsTabsStorageRoute
   '/_app/projects/$id/databases': typeof AppProjectsIdDatabasesRoute
+  '/_app/projects/$id/map': typeof AppProjectsIdMapRoute
   '/_app/projects/$id/new': typeof AppProjectsIdNewRoute
   '/_app/projects/$id/pipelines': typeof AppProjectsIdPipelinesRoute
   '/_app/projects/$id/routes': typeof AppProjectsIdRoutesRouteWithChildren
@@ -755,6 +764,7 @@ export interface FileRouteTypes {
     | '/integrations/registries'
     | '/integrations/storage'
     | '/projects/$id/databases'
+    | '/projects/$id/map'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
     | '/projects/$id/routes'
@@ -828,6 +838,7 @@ export interface FileRouteTypes {
     | '/integrations/registries'
     | '/integrations/storage'
     | '/projects/$id/databases'
+    | '/projects/$id/map'
     | '/projects/$id/new'
     | '/projects/$id/pipelines'
     | '/projects/$id/settings'
@@ -901,6 +912,7 @@ export interface FileRouteTypes {
     | '/_app/integrations/_tabs/registries'
     | '/_app/integrations/_tabs/storage'
     | '/_app/projects/$id/databases'
+    | '/_app/projects/$id/map'
     | '/_app/projects/$id/new'
     | '/_app/projects/$id/pipelines'
     | '/_app/projects/$id/routes'
@@ -1175,6 +1187,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/projects/$id/new'
       preLoaderRoute: typeof AppProjectsIdNewRouteImport
+      parentRoute: typeof AppProjectsIdRouteRoute
+    }
+    '/_app/projects/$id/map': {
+      id: '/_app/projects/$id/map'
+      path: '/map'
+      fullPath: '/projects/$id/map'
+      preLoaderRoute: typeof AppProjectsIdMapRouteImport
       parentRoute: typeof AppProjectsIdRouteRoute
     }
     '/_app/projects/$id/databases': {
@@ -1595,6 +1614,7 @@ const AppProjectsIdStacksStackIdRouteRouteWithChildren =
 
 interface AppProjectsIdRouteRouteChildren {
   AppProjectsIdDatabasesRoute: typeof AppProjectsIdDatabasesRoute
+  AppProjectsIdMapRoute: typeof AppProjectsIdMapRoute
   AppProjectsIdNewRoute: typeof AppProjectsIdNewRoute
   AppProjectsIdPipelinesRoute: typeof AppProjectsIdPipelinesRoute
   AppProjectsIdRoutesRoute: typeof AppProjectsIdRoutesRouteWithChildren
@@ -1616,6 +1636,7 @@ interface AppProjectsIdRouteRouteChildren {
 
 const AppProjectsIdRouteRouteChildren: AppProjectsIdRouteRouteChildren = {
   AppProjectsIdDatabasesRoute: AppProjectsIdDatabasesRoute,
+  AppProjectsIdMapRoute: AppProjectsIdMapRoute,
   AppProjectsIdNewRoute: AppProjectsIdNewRoute,
   AppProjectsIdPipelinesRoute: AppProjectsIdPipelinesRoute,
   AppProjectsIdRoutesRoute: AppProjectsIdRoutesRouteWithChildren,

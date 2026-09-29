@@ -16,7 +16,7 @@ import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import type { Node, Project } from "@/types"
 import { NodeStatusDot } from "@/components/nodes/node-status-dot"
 import { Button } from "@/components/ui/button"
-import { projectColorHue } from "@/lib/utils"
+import { cn, projectColorHue } from "@/lib/utils"
 import { ExposureNotice } from "@/components/system/exposure-notice"
 import { StartHere } from "@/components/system/start-here"
 import { RecentActivity } from "@/components/system/recent-activity"
@@ -28,21 +28,37 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StatLine } from "@/components/system/stat-line"
 import { HelpButton } from "@/help/help-button"
 import { LevelDot } from "@/components/projects/environment-switcher"
+import { WorkspaceMap } from "@/components/map/workspace-map"
 
 export const Route = createFileRoute("/_app/")({
   // `?start` renders the getting-started panel on a workspace that is past it.
   // Not a debug flag so much as the only way to look at the first-run screen
   // without emptying a real workspace, and something a support answer can point
   // someone at.
-  validateSearch: (search: Record<string, unknown>): { start?: true } =>
-    search.start === true || search.start === "1" || search.start === "true"
-      ? { start: true }
-      : {},
+  validateSearch: (search: Record<string, unknown>): { start?: true; view?: OverviewView } => ({
+    ...(search.start === true || search.start === "1" || search.start === "true" ? { start: true as const } : {}),
+    ...(search.view === "map" || search.view === "summary" ? { view: search.view } : {}),
+  }),
   component: OverviewPage,
 })
 
+type OverviewView = "summary" | "map"
+
+// Which way the overview is read, remembered in this browser: the map for
+// someone who looks at it that way, the summary otherwise.
+const VIEW_KEY = "overview-view"
+function storedView(): OverviewView {
+  try { return localStorage.getItem(VIEW_KEY) === "map" ? "map" : "summary" } catch { return "summary" }
+}
+
 function OverviewPage() {
-  const { start } = Route.useSearch()
+  const { start, view: asked } = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const view: OverviewView = asked ?? storedView()
+  const setView = (v: OverviewView) => {
+    try { localStorage.setItem(VIEW_KEY, v) } catch { /* a private window: the choice lasts this visit */ }
+    navigate({ search: (prev) => ({ ...prev, view: v }), replace: true })
+  }
   const isAdmin = useIsAdmin()
   const token = useAuthStore((s) => s.token)!
   const org = useOrgStore((s) => s.currentOrg)
@@ -96,11 +112,27 @@ function OverviewPage() {
             Your projects, deployments, and nodes in one place.
           </p>
         </div>
-        {isAdmin && <Button size="sm" render={<Link to="/projects/new" />}>
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          New project
-        </Button>}
+        {/* The switch and the button one height, side by side, neither
+            giving way to the title beside them. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {projectList.length > 0 && (
+            <div className="flex h-8 items-stretch gap-0.5 rounded-lg border border-border/60 p-0.5" role="tablist" aria-label="Overview view">
+              {(["summary", "map"] as const).map((v) => (
+                <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
+                  className={cn("flex items-center rounded-md px-3 text-xs capitalize", view === v ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground")}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          )}
+          {isAdmin && <Button size="sm" className="h-8 shrink-0 px-3" render={<Link to="/projects/new" />}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            New project
+          </Button>}
+        </div>
       </div>
+
+      {view === "map" && projectList.length > 0 ? <WorkspaceMap /> : <>
 
       <StartHere nodes={nodeList} projects={projectList} forced={start} />
 
@@ -179,6 +211,7 @@ function OverviewPage() {
         <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 className="text-sm font-semibold">Infrastructure</h2><div className="mt-1">{load.reporting > 0 ? <MeshLoadSummary load={load} /> : <p className="text-xs text-muted-foreground">Connectivity and capacity across your mesh</p>}</div></div><Link to="/nodes" className="text-xs text-muted-foreground hover:text-primary">Manage nodes →</Link></div>
         {nodeList.length === 0 ? <p className="p-6 text-sm text-muted-foreground">Connect your first node to start deploying workloads.</p> : nodeList.map(n => <Link key={n.id} to="/nodes/$id" params={{ id: n.id }} className="flex flex-wrap items-center gap-4 px-5 py-4 border-b border-border/50 last:border-0 hover:bg-secondary/40"><div className="flex items-center gap-3 min-w-40 flex-1"><Server className="size-4 text-muted-foreground" /><div><p className="text-sm font-medium">{n.name}</p><p className="text-xs text-muted-foreground mt-1">{n.k3sRole === "server" ? "Control plane" : "Worker"} · {n.tailscaleIP}</p></div></div>{n.status === "online" ? <NodeLoadBars load={load.byNode[n.id]} /> : <div className="text-xs text-muted-foreground">{n.cpuCores} CPU · {n.memoryGB} GB memory</div>}<span className="flex items-center gap-2 text-xs capitalize min-w-20"><NodeStatusDot status={n.status} />{n.status}</span><ChevronRight className="size-4 text-muted-foreground" /></Link>)}
       </div>
+      </>}
     </div>
   )
 }

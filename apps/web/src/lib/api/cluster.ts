@@ -60,3 +60,69 @@ export const cluster = {
       token
     ),
 }
+
+// ── Placement: where everything runs, and what a node going down would do ──
+
+export interface ApiPlacementNode {
+  id: string
+  name: string
+  k8s_node_name: string
+  online: boolean
+  control_plane: boolean
+  /** The scheduler may put a service on it: in the cluster, online, not kept for builds or the mesh alone. */
+  takes_workloads: boolean
+  /** What Kubernetes leaves for pods, after its own reserve. */
+  allocatable_cpu_millis: number
+  allocatable_memory_bytes: number
+  /** What every pod on it asks for. */
+  requested_cpu_millis: number
+  requested_memory_bytes: number
+}
+
+export interface ApiPlacedService {
+  id: string
+  name: string
+  level_id: string
+  level_name: string
+  project_id: string
+  project_name: string
+  type: string
+  status: string
+  run_once?: boolean
+  /** The cluster node it is held to, when it is. */
+  pinned_node?: string
+  /** What one pod asks for. */
+  cpu_request_millis: number
+  memory_request_bytes: number
+  pods: { name: string; node: string; phase: string }[]
+  /** Nodes its volumes' data is bound to: a pod cannot leave them. */
+  data_on?: string[]
+}
+
+export interface ApiPlacement {
+  nodes: ApiPlacementNode[]
+  services: ApiPlacedService[]
+}
+
+export interface ApiServiceForecast {
+  service: ApiPlacedService
+  outcome: "keeps" | "moves" | "down"
+  on?: string[]
+  to?: string
+  reason?: string
+}
+
+export interface ApiNodeDownForecast {
+  node: string
+  /** The gateway: the control plane and the edge. Nothing is rescheduled, and no route answers from outside. */
+  control_plane: boolean
+  services: ApiServiceForecast[]
+}
+
+export const placement = {
+  /** Org admins only: it spans every project. */
+  get: (orgId: string, token: string) => apiFetch<ApiPlacement>(`/api/v1/orgs/${orgId}/placement`, {}, token),
+  /** What would happen if the cluster node went down. Nothing is stopped. */
+  nodeWhatIf: (orgId: string, node: string, token: string) =>
+    apiFetch<ApiNodeDownForecast>(`/api/v1/orgs/${orgId}/placement/nodes/${encodeURIComponent(node)}/what-if`, {}, token),
+}

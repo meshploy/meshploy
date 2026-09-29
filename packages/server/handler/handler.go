@@ -26,6 +26,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerProjectRoutes(api)
 	h.registerEnvironmentRoutes(api)
 	h.registerImageRetention(api)
+	h.registerPlacement(api)
 	h.registerPromotionRoutes(api)
 	h.registerNodeRoutes(api)
 	h.registerDiscoveryRoutes(api)
