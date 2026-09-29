@@ -475,3 +475,35 @@ test("production's config says what a push does while a group promotes into it",
   // The demo's production web deploys on push, to show the Bitbucket screens.
   await expect(page.getByTestId("receiving-autodeploy")).toContainText("Pushes to main build production directly, skipping staging", { timeout: 10_000 })
 })
+
+// A promotion that went wrong is taken back from the level it went into: each
+// service it moved runs what it ran before, and Promote is offered again,
+// since what is below is newer than what runs above once more.
+test("a promotion can be rolled back, and Promote comes back", async ({ page }) => {
+  await loginAsDemo(page)
+  await goto(page, `/projects/${DEMO_PROJECT_ID}`)
+  const board = page.getByRole("region", { name: "Environments" })
+  await expect(board).toBeVisible({ timeout: 10_000 })
+
+  await board.getByRole("button", { name: /Promote.*production/ }).click()
+  await page.getByRole("dialog").getByRole("button", { name: "Promote to production" }).click()
+  await expect(board.getByText("web:sha-4a1b9c2")).toHaveCount(2)
+  await expect(board.getByRole("button", { name: /Nothing newer for.*production/ })).toBeDisabled()
+
+  await board.getByRole("button", { name: "Roll back the promotion" }).click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toContainText("web")
+  await expect(dialog).toContainText("sha-4a1b9c2")
+  await dialog.getByRole("button", { name: /Roll back 1 service/ }).click()
+  await expect(dialog).toHaveCount(0)
+
+  await expect(board.getByText("web:sha-4a1b9c2")).toHaveCount(1)
+  await expect(board.getByRole("button", { name: "Roll back the promotion" })).toHaveCount(0)
+  await expect(board.getByRole("button", { name: /Promote.*production/ })).toBeEnabled()
+
+  // Staging still runs the image production rolled back from: promoting it
+  // again says so before it goes up.
+  await board.getByRole("button", { name: /Promote.*production/ }).click()
+  await expect(page.getByTestId("rolled-back-from")).toContainText("production rolled back from this image")
+  await expect(page.getByTestId("rolled-back-from")).toContainText("sha-4a1b9c2")
+})

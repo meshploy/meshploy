@@ -918,11 +918,26 @@ export const workspaceHandlers = [
     const d = find("deployments", params.deploymentId)
     return d ? json(d) : missing()
   }),
-  ...["rollback", "retry"].map((action) =>
-    http.post(`${S}/deployments/:deploymentId/${action}`, ({ params }) =>
-      json(deploy(String(params.serviceId)))
-    )
-  ),
+  // A rollback runs the chosen deployment's image again as it is, as the API's
+  // does: recorded as a rollback, carrying where that image came from.
+  http.post(`${S}/deployments/:deploymentId/rollback`, ({ params }) => {
+    const svc = find("services", String(params.serviceId))
+    const target = find("deployments", String(params.deploymentId))
+    if (!svc || !target) return missing()
+    if (target.image_removed_at) return json({ detail: "this deployment's image has been removed from the registry" }, 409)
+    svc.image = target.image
+    svc.latest_deploy_failed = false
+    const d = record({
+      service_id: svc.id, status: "success", image: target.image, build_job_name: "", deployed_at: now(),
+      log: `[demo] Rolling back to deployment ${String(target.id).slice(0, 8)} (${target.image})`,
+      source: "rollback", from_deployment_id: target.id, from_level: target.from_level,
+      source_branch: target.source_branch, source_commit: target.source_commit, source_commit_message: target.source_commit_message,
+      arrival: target.arrival ?? target.source, image_built_at: target.image_built_at ?? target.created_at,
+    })
+    db.deployments.unshift(d)
+    return json(d)
+  }),
+  http.post(`${S}/deployments/:deploymentId/retry`, ({ params }) => json(deploy(String(params.serviceId)))),
   ...["", "/record"].map((suffix) =>
     http.delete(`${S}/deployments/:deploymentId${suffix}`, ({ params }) => {
       db.deployments = db.deployments.filter(

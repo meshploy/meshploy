@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowRight, ArrowUpRight, Box, ExternalLink, Database, Loader2, Minus, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowRight, ArrowUpRight, Box, ExternalLink, Database, Loader2, Minus, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { projects as projectsApi, ApiError } from "@/lib/api"
+import { deployments as deploymentsApi, projects as projectsApi, ApiError } from "@/lib/api"
 import type { Board, BoardCell, BoardGroup, EnvironmentLevel } from "@/lib/api/projects"
 import { cn, formatRelativeTime } from "@/lib/utils"
 import { livePoll } from "@/lib/live-poll"
@@ -527,6 +527,7 @@ function GroupRow({
 }) {
   const qc = useQueryClient()
   const [confirming, setConfirming] = useState<{ from: EnvironmentLevel; to: EnvironmentLevel; overwrite: boolean } | null>(null)
+  const [rollingBack, setRollingBack] = useState<{ level: EnvironmentLevel; cells: BoardCell[] } | null>(null)
   const [editing, setEditing] = useState(false)
   const remove = useMutation({
     mutationFn: () => projectsApi.deleteGroup(orgId, projectId, group.id, token),
@@ -600,11 +601,23 @@ function GroupRow({
                 <ArrowRight className="h-3 w-3" /> {next.name}
               </Button>
             )}
+            {/* The latest change here was a promotion: it can be taken back.
+                Once it is, what is below is newer again, and Promote returns. */}
+            {at > 0 && cells.some((c) => c.source === "promotion") && (
+              <Button size="sm" variant="outline" className={cn("h-7 gap-1 text-xs", !next && "mt-auto")}
+                onClick={() => setRollingBack({ level: l, cells: cells.filter((c) => c.source === "promotion") })}>
+                <RotateCcw className="h-3 w-3" /> Roll back the promotion
+              </Button>
+            )}
           </div>
         )
       })}
       {editing && (
         <EditGroupDialog group={group} board={board} orgId={orgId} projectId={projectId} token={token} onClose={() => setEditing(false)} />
+      )}
+      {rollingBack && (
+        <RollbackPromotionDialog level={rollingBack.level} cells={rollingBack.cells} orgId={orgId} token={token}
+          onClose={() => setRollingBack(null)} />
       )}
       {confirming && (
         <PromoteDialog
@@ -621,7 +634,114 @@ function GroupRow({
   )
 }
 
-function PromoteDialog({
+/**
+ * Takes back a promotion into a level: each service it moved goes back to the
+ * image it ran before it, as a rollback. A service the promotion created there
+ * has nothing to go back to, and is said so.
+ */
+function RollbackPromotionDialog({ level, cells, orgId, token, onClose }: {
+  level: EnvironmentLevel; cells: BoardCell[]; orgId: string; token: string; onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const { data: plans, isLoading } = useQuery({
+    queryKey: ["rollback-plan", orgId, level.project_id, cells.map((c) => c.service_id).join()],
+    queryFn: async () => Promise.all(cells.map(async (c) => {
+      const deps = await deploymentsApi.list(orgId, level.project_id, c.service_id, token)
+      const current = deps.find((d) => d.status === "success")
+      const previous = current
+        ? deps.find((d) => d.status === "success" && d.id !== current.id && d.image && d.image !== current.image && !d.image_removed_at)
+        : undefined
+      return { cell: c, previous }
+    })),
+  })
+  const tag = (image: string) => image.split(":").pop() ?? image
+  const run = useMutation({
+    mutationFn: async () => {
+      for (const p of plans ?? []) {
+        if (p.previous) await deploymentsApi.rollback(orgId, level.project_id, p.cell.service_id, p.previous.id, token)
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["board", orgId] })
+      qc.invalidateQueries({ queryKey: ["deployments", orgId] })
+      qc.invalidateQueries({ queryKey: ["services", orgId] })
+      qc.invalidateQueries({ queryKey: ["project-map", orgId] })
+      onClose()
+    },
+  })
+  const doable = (plans ?? []).filter((p) => p.previous)
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Roll back the promotion into {level.name}?</DialogTitle>
+          <DialogDescription>
+            Each service it moved runs the image it ran before, as it was. Only images roll back: a migration it ran has already changed the data.
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+        ) : (
+          <div className="space-y-1.5 text-xs">
+            {(plans ?? []).map((p) => (
+              <div key={p.cell.service_id} className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
+                <span className="font-medium">{p.cell.service_name}</span>
+                {p.previous ? (
+                  <span className="font-mono text-muted-foreground">{tag(p.cell.image)} <ArrowRight className="inline h-3 w-3" /> <span className="text-foreground">{tag(p.previous.image)}</span></span>
+                ) : (
+                  <span className="text-muted-foreground">nothing before it here: stays</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {run.isError && <p className="text-xs text-destructive">{(run.error as Error).message}</p>}
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" size="sm" disabled={run.isPending || doable.length === 0} onClick={() => run.mutate()}>
+            {run.isPending && <Loader2 className="size-4 animate-spin" />}Roll back {doable.length === 1 ? "1 service" : `${doable.length} services`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * The services a promotion from `from` to `to` would move an image that `to`
+ * rolled back from: promoted there once, found wrong, and rolled back. Promote
+ * offers what the level below runs, and until it has a fix that is the same
+ * image, so it is said before it goes up again. Read from each target's
+ * deployments: a rollback, and the image it replaced.
+ */
+export function useRolledBackFrom(orgId: string, token: string, group: BoardGroup, from: EnvironmentLevel, to: EnvironmentLevel) {
+  const moves = planPromotion(group, from, to, true).moves
+  const targets = moves
+    .map((m) => ({ move: m, there: group.cells.find((c) => c.level_id === to.project_id && c.lineage_id === m.lineage_id) }))
+    .filter((t): t is { move: BoardCell; there: BoardCell } => !!t.there)
+  const { data = [] } = useQuery({
+    // What the target runs is in the key: a rollback there asks again.
+    queryKey: ["rolled-back-from", orgId, to.project_id, targets.map((t) => `${t.there.service_id}:${t.there.image}:${t.there.source}:${t.move.image}`).join()],
+    enabled: targets.length > 0,
+    queryFn: async () => {
+      const found: { service_name: string; image: string; at: string }[] = []
+      for (const t of targets) {
+        const deps = (await deploymentsApi.list(orgId, to.project_id, t.there.service_id, token)).filter((d) => d.status === "success")
+        // Newest first: a rollback, and the success before it is what it replaced.
+        for (let i = 0; i < deps.length - 1; i++) {
+          if (deps[i].source === "rollback" && deps[i + 1].image === t.move.image) {
+            found.push({ service_name: t.move.service_name, image: t.move.image, at: deps[i].created_at })
+            break
+          }
+        }
+      }
+      return found
+    },
+  })
+  return data
+}
+
+export function PromoteDialog({
   group,
   from,
   to,
@@ -645,6 +765,7 @@ function PromoteDialog({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", orgId] })
       qc.invalidateQueries({ queryKey: ["environments", orgId] })
+      qc.invalidateQueries({ queryKey: ["project-map", orgId] })
       onClose()
     },
   })
@@ -667,6 +788,7 @@ function PromoteDialog({
     ...plan.stays,
   ]
   const arriving = notes.filter((n) => n.new_there && !n.blocked && moves.some((c) => c.service_name === n.service_name))
+  const rolledBack = useRolledBackFrom(orgId, token, group, from, to).filter((r) => moves.some((m) => m.service_name === r.service_name))
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -736,6 +858,16 @@ function PromoteDialog({
                 </p>
               )
             })}
+          </div>
+        )}
+        {rolledBack.length > 0 && (
+          <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-300" data-testid="rolled-back-from">
+            {rolledBack.map((r) => (
+              <p key={r.service_name}>
+                <strong className="font-semibold">{r.service_name}</strong>: {to.name} rolled back from this image{" "}
+                ({shortImage(r.image)}) {formatRelativeTime(new Date(r.at))}. Promoting it puts it back as it was, unless it was rolled back for another reason.
+              </p>
+            ))}
           </div>
         )}
         {arriving.length > 0 && (
@@ -811,6 +943,7 @@ function NewGroupDialog({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", orgId] })
       qc.invalidateQueries({ queryKey: ["environments", orgId] })
+      qc.invalidateQueries({ queryKey: ["project-map", orgId] })
       onClose()
     },
   })
@@ -940,6 +1073,7 @@ function OwnDatabaseDialog({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", orgId] })
       qc.invalidateQueries({ queryKey: ["environments", orgId] })
+      qc.invalidateQueries({ queryKey: ["project-map", orgId] })
       onClose()
     },
   })
@@ -1179,6 +1313,7 @@ function RemoveFromLevelDialog({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", orgId] })
       qc.invalidateQueries({ queryKey: ["environments", orgId] })
+      qc.invalidateQueries({ queryKey: ["project-map", orgId] })
       onClose()
     },
   })
@@ -1239,7 +1374,7 @@ export function builtHere(cell: BoardCell | undefined, group: BoardGroup | null)
   return cell.arrival === "build" || cell.arrival === "image"
 }
 
-function planPromotion(group: BoardGroup, from: EnvironmentLevel, to: EnvironmentLevel, overwrite = false) {
+export function planPromotion(group: BoardGroup, from: EnvironmentLevel, to: EnvironmentLevel, overwrite = false) {
   const lineages = [...new Set(group.cells.map((c) => c.lineage_id))]
   const moves: BoardCell[] = []
   const stays: { name: string; reason: Skip }[] = []
