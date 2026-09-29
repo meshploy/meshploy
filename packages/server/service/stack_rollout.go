@@ -88,6 +88,11 @@ type changedService struct {
 	Name   string
 	Type   meshdb.ServiceType
 	Status meshdb.ServiceStatus
+	// NeverDeployed: it has no deployment at all, so it was never started,
+	// rather than stopped by someone. Unchanged is set when that is the only
+	// reason it is here.
+	NeverDeployed bool
+	Unchanged     bool
 }
 
 // rolloutPlan decides which of the services an apply changed it rolls out, and
@@ -97,11 +102,19 @@ type changedService struct {
 // a changed file means, and the failed case is how a bad image gets replaced. A
 // stopped service is never started, since an apply must not resurrect what an
 // operator deliberately stopped, and one already deploying is left to the
-// rollout in flight. A managed database is provisioned rather than deployed, so
+// rollout in flight.
+//
+// A service that was never deployed is not stopped, only not started yet: the
+// stack's first rollout stopped before it, or it was added with nothing to
+// run it. It goes, changed or not - "apply" means make the stack so, and after
+// a failed first rollout it is the only way the rest ever starts. A managed database is provisioned rather than deployed, so
 // a changed engine or size needs its own path and is only reported here.
 func rolloutPlan(changed []changedService) (deploy []changedService, warnings []string) {
 	for _, c := range changed {
 		switch {
+		case c.NeverDeployed && c.Status != meshdb.ServiceDeploying:
+			deploy = append(deploy, c)
+		case c.Unchanged:
 		case c.Type == meshdb.ServiceTypeDatabase:
 			warnings = append(warnings, fmt.Sprintf("%s changed: a managed database is not rolled out automatically", c.Name))
 		case c.Status == meshdb.ServiceRunning || c.Status == meshdb.ServiceFailed:
@@ -166,6 +179,61 @@ type rollItem struct {
 	ID      uuid.UUID
 	Name    string
 	Created bool
+	// Commit is what a build of it takes: the commit the stack's last sync
+	// read, for a service built from the stack's own repository and branch.
+	Commit string
+}
+
+// stackCommit is the commit a stack's rollout builds a service at: the one
+// its last sync read, when the service is built from the stack's own
+// repository and branch - so an apply builds what that sync saw, and only a
+// sync brings in anything newer. Empty builds the branch as it is now: a
+// pasted stack, one synced in compose-file-only mode, which records no
+// commit, or a service built from another repository.
+func (s *StackService) stackCommit(ctx context.Context, stack *meshdb.Stack, serviceID uuid.UUID) string {
+	if stack.GitLastSyncSHA == "" || !fromGit(*stack) {
+		return ""
+	}
+	var bc meshdb.BuildConfig
+	if s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&bc).Error != nil {
+		return ""
+	}
+	return pinnedCommit(*stack, bc)
+}
+
+// buildBehind says whether a service built from source needs building again:
+// when the commit the stack's last sync read is known, whether its last
+// successful build was of another; when it is not - a compose-file-only sync,
+// or a service built from another repository - a sync rebuilds it, since a
+// sync means taking the newest code, and an apply again does not.
+func buildBehind(pinned, lastBuilt string, sync bool) bool {
+	if pinned == "" {
+		return sync
+	}
+	return lastBuilt == "" || !strings.HasPrefix(pinned, lastBuilt)
+}
+
+// lastBuiltCommit is the commit a service's last successful build recorded.
+func (s *StackService) lastBuiltCommit(ctx context.Context, serviceID uuid.UUID) string {
+	var d meshdb.Deployment
+	err := s.db.WithContext(ctx).
+		Where("service_id = ? AND status = ? AND source_commit <> ''", serviceID, meshdb.DeploymentSuccess).
+		Order("created_at DESC").First(&d).Error
+	if err != nil {
+		return ""
+	}
+	return d.SourceCommit
+}
+
+// pinnedCommit is stackCommit's rule, given the service's build config.
+func pinnedCommit(stack meshdb.Stack, bc meshdb.BuildConfig) string {
+	if stack.GitLastSyncSHA == "" || !fromGit(stack) || bc.GitRepo == "" {
+		return ""
+	}
+	if normalizeRepoPath(bc.GitRepo) != normalizeRepoPath(stack.GitRepo) || bc.Branch != stack.GitBranch {
+		return ""
+	}
+	return stack.GitLastSyncSHA
 }
 
 // serviceLayers places each compose service after everything it depends_on:
@@ -227,7 +295,7 @@ func rolloutLayers(items []rollItem, layerOf map[string]int) [][]rollItem {
 func (s *StackService) triggerLayer(ctx context.Context, layer []rollItem, triggerBy uuid.UUID, result *ApplyResult, run *runTracker) []uuid.UUID {
 	var started []uuid.UUID
 	for _, it := range layer {
-		d, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: it.ID, TriggeredBy: triggerBy})
+		d, err := s.deployment.Trigger(ctx, TriggerInput{ServiceID: it.ID, TriggeredBy: triggerBy, Commit: it.Commit})
 		if err != nil {
 			verb := "updated"
 			if it.Created {
@@ -259,13 +327,18 @@ func (s *StackService) triggerLayer(ctx context.Context, layer []rollItem, trigg
 // deployments to finish - a step that runs once has completed, the rest are
 // up - starts the next, and stops at a layer that failed, since what depends
 // on it would only fail after it.
-func (s *StackService) rolloutInOrder(ctx context.Context, stack string, run *runTracker, previous []uuid.UUID, layers [][]rollItem, triggerBy uuid.UUID) {
+// A failure stops what depends on it, directly or through another service it
+// stopped, and nothing else: a failed admin tool used to stop every service
+// after it, most of which had never heard of it. dependsOn is each service's
+// depends_on, by name.
+func (s *StackService) rolloutInOrder(ctx context.Context, stack string, run *runTracker, previous []uuid.UUID, layers [][]rollItem, triggerBy uuid.UUID, dependsOn map[string][]string) {
+	blocked := map[string]string{} // a service held back -> the failure it waits on
 	for i := 0; ; i++ {
 		outcome, err := s.waitDeployments(ctx, previous, stackRolloutWait)
 		for id, status := range outcome {
 			run.stepByDeployment(id, status)
 		}
-		if err != nil || run.anyFailed() {
+		if err != nil {
 			if i < len(layers) {
 				log.Printf("stack %s: rollout stopped before %s: %v", stack, layerNames(layers[i]), err)
 			}
@@ -277,8 +350,52 @@ func (s *StackService) rolloutInOrder(ctx context.Context, stack string, run *ru
 			s.finishRun(ctx, run)
 			return
 		}
-		previous = s.triggerLayer(ctx, layers[i], triggerBy, nil, run)
+		for name := range run.failedNames() {
+			blocked[name] = name
+		}
+		toStart := holdBack(layers[i], dependsOn, blocked)
+		for _, it := range layers[i] {
+			if cause, held := blocked[it.Name]; held {
+				run.step(it.ID, func(st *RolloutStep) {
+					st.Status, st.Error = RolloutNotStarted, fmt.Sprintf("not started: it depends on %s, which failed", cause)
+				})
+			}
+		}
+		previous = s.triggerLayer(ctx, toStart, triggerBy, nil, run)
 	}
+}
+
+// holdBack is what of a layer may start: everything but what depends on a
+// failed service, or on one already held back. What it holds back it adds to
+// blocked, with the failure behind it, so a later layer holds back its own.
+func holdBack(layer []rollItem, dependsOn map[string][]string, blocked map[string]string) []rollItem {
+	var start []rollItem
+	for _, it := range layer {
+		cause := ""
+		for _, dep := range dependsOn[it.Name] {
+			if c, ok := blocked[dep]; ok {
+				cause = c
+				break
+			}
+		}
+		if cause == "" {
+			start = append(start, it)
+			continue
+		}
+		blocked[it.Name] = cause
+	}
+	return start
+}
+
+// dependsOnOf is each compose service's depends_on, by name.
+func dependsOnOf(services composetypes.Services) map[string][]string {
+	out := map[string][]string{}
+	for name, svc := range services {
+		for dep := range svc.DependsOn {
+			out[name] = append(out[name], dep)
+		}
+	}
+	return out
 }
 
 // stackRolloutWait is how long one layer may take, builds included.

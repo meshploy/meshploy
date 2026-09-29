@@ -76,3 +76,29 @@ func TestAFailedLayerStopsTheRest(t *testing.T) {
 	var nilRun *runTracker
 	nilRun.stopRest() // a run not kept is a no-op, not a panic
 }
+
+// A failure stops what depends on it, and what depends on that, and nothing
+// else: a failed admin tool stopped every service after it.
+func TestAFailureStopsOnlyWhatDependsOnIt(t *testing.T) {
+	item := func(name string) rollItem { return rollItem{ID: uuid.New(), Name: name} }
+	dependsOn := map[string][]string{
+		"pgadmin":  {"db"},
+		"api":      {"migrator"},
+		"reports":  {"pgadmin"},
+		"ui":       {"api"},
+		"exporter": {"reports"},
+	}
+	blocked := map[string]string{"pgadmin": "pgadmin"}
+
+	start := holdBack([]rollItem{item("api"), item("reports")}, dependsOn, blocked)
+	if len(start) != 1 || start[0].Name != "api" {
+		t.Errorf("layer 2 starts %+v, want api only", start)
+	}
+	start = holdBack([]rollItem{item("ui"), item("exporter")}, dependsOn, blocked)
+	if len(start) != 1 || start[0].Name != "ui" {
+		t.Errorf("layer 3 starts %+v, want ui only", start)
+	}
+	if blocked["exporter"] != "pgadmin" {
+		t.Errorf("exporter is held back for %q, want the failure behind it, pgadmin", blocked["exporter"])
+	}
+}

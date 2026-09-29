@@ -19,7 +19,12 @@ A stack's **variables** fill in `${NAME}` in its spec, so one spec serves with d
 
 ## Apply and destroy {#apply}
 
-**Apply** makes the cluster match the spec: new services are created and changed ones updated. A service taken out of the spec is **unlinked** from the stack, not deleted: it keeps running as a service of its own, for you to keep or delete.
+**Apply** makes the cluster match the spec: new services are created and changed ones updated, and any service that has never run is started, which is how the rest of a stack comes up after its first rollout stopped part way. A service someone stopped stays stopped. A service taken out of the spec is **unlinked** from the stack, not deleted: it keeps running as a service of its own, for you to keep or delete.
+
+On a stack from git the two are distinct, and nothing arrives from the repository except through a sync:
+
+- **Sync** fetches the branch's latest commit: its Compose file, the files it mounts, and, for a service built from the repository, the code at that commit. Then it applies.
+- **Apply again** applies the last sync as it was: the same file, the same mounted files, and the same commit for anything it builds. It fetches nothing, so it is the way to retry a rollout, or roll out a change made in Meshploy, without taking what has landed on the branch since. The repository itself is never kept: a sync reads what it needs and drops its clone.
 
 **Destroy** tears the stack's services down but keeps the stack and its spec, so applying again brings them back. Its volumes and routes are removed only if you choose to: a volume holds data, and a route holds a name someone may be using.
 
@@ -40,6 +45,7 @@ A stack runs a Compose file the way Docker Compose would, with Kubernetes undern
 ## Terms {#terms}
 
 - **Apply** {#apply -> apply}: Makes the cluster match the stack's spec. A service taken out of the spec is unlinked, not deleted.
+- **Apply again** {#apply-again -> apply}: On a stack from git, applies the last sync as it was, its commit included, fetching nothing. Only Sync brings in newer commits.
 - **Destroyed** {#destroyed -> apply}: The stack's services are torn down; the stack and its spec are kept, and applying again recreates them. Volumes and routes go only if you chose so.
 - **Run once** {#run-once -> compose}: A service that does its work and exits, run to completion on each deploy. Compose marks it by another service waiting for it to complete.
 - **Stack variables** {#variables -> sources}: Values filled in for ${NAME} in the stack's spec.

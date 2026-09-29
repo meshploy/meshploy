@@ -29,8 +29,11 @@ type GetStackOutput struct {
 }
 
 type CreateStackBody struct {
-	Name      string            `json:"name"`
-	Spec      string            `json:"spec"`
+	Name string `json:"name"`
+	// Spec is optional: a stack from git has none until it syncs, and an empty
+	// inline one is filled in the editor. Without omitempty Huma required it,
+	// and the console, which sends no spec for a git stack, could not make one.
+	Spec      string            `json:"spec,omitempty"`
 	Variables map[string]string `json:"variables,omitempty"`
 	// Git source
 	GitMode          string  `json:"git_mode,omitempty"` // "" | "file" | "repo"

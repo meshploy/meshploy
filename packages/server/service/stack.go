@@ -927,7 +927,19 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			if isDatabase || !portsDeclared {
 				wantPorts = portPrintsFromRows(existingSvc.Ports)
 			}
+			// A service built from source runs the image its build made; the
+			// file's image name is only compose's placeholder for it, so
+			// comparing the two called it changed on every apply, and every
+			// apply rebuilt it. What decides a rebuild is the code instead.
+			built := !isDatabase && (ext != nil && (ext.Source != nil || ext.Build != nil) || svcDef.Build != nil && svcDef.Build.Context != "")
+			if built {
+				want.Image = existingSvc.Image
+				delete(updates, "image")
+			}
 			changed := existingSvc.DeployedSpecHash != fingerprint(want, wantPorts)
+			if built && !changed {
+				changed = buildBehind(s.stackCommit(ctx, &stack, existingSvc.ID), s.lastBuiltCommit(ctx, existingSvc.ID), opts.Kind == "sync")
+			}
 			// The names it answers to are applied with its Services, so a change
 			// to them is a change to roll out.
 			aliases := composeAliases(&existingSvc, svcDef)
@@ -965,9 +977,12 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 				changed = true
 			}
 			result.Updated = append(result.Updated, svcName)
-			if changed {
+			// Never deployed: only created, never started - not stopped.
+			never := existingSvc.DeployedAt == nil
+			if changed || never {
 				changedSvcs = append(changedSvcs, changedService{
 					ID: existingSvc.ID, Name: svcName, Type: existingSvc.Type, Status: existingSvc.Status,
+					NeverDeployed: never, Unchanged: !changed,
 				})
 			}
 		}
@@ -1025,10 +1040,10 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		if i < len(result.Created) {
 			name = result.Created[i]
 		}
-		roll = append(roll, rollItem{ID: id, Name: name, Created: true})
+		roll = append(roll, rollItem{ID: id, Name: name, Created: true, Commit: s.stackCommit(ctx, &stack, id)})
 	}
 	for _, c := range deploy {
-		roll = append(roll, rollItem{ID: c.ID, Name: c.Name})
+		roll = append(roll, rollItem{ID: c.ID, Name: c.Name, Commit: s.stackCommit(ctx, &stack, c.ID)})
 	}
 	var layers [][]rollItem
 	if s.deployment.K8sConfigured() {
@@ -1049,7 +1064,7 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			}
 		}
 		s.recordResult(ctx, run, result)
-		go s.rolloutInOrder(context.WithoutCancel(ctx), stack.Name, run, started, layers[1:], triggerBy)
+		go s.rolloutInOrder(context.WithoutCancel(ctx), stack.Name, run, started, layers[1:], triggerBy, dependsOnOf(project.Services))
 	} else {
 		s.recordResult(ctx, run, result)
 		s.finishRun(ctx, run)

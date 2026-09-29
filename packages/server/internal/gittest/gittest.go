@@ -6,12 +6,14 @@
 package gittest
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/cgi"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -21,6 +23,21 @@ import (
 // Authorization header of every request so far ("" for none). The test is
 // skipped when git is not installed.
 func Serve(t testing.TB) (repoURL string, authHeaders func() []string) {
+	t.Helper()
+	url, seen, _ := serve(t, 1, true)
+	return url, seen
+}
+
+// ServeHistory is Serve with n commits on main, README reading "version 1"
+// to "version n", and returns their hashes, oldest first. byHash says whether
+// the server hands out a commit asked for by its hash, as GitHub and GitLab
+// do; without it only what a branch reaches is fetched.
+func ServeHistory(t testing.TB, n int, byHash bool) (repoURL string, authHeaders func() []string, commits []string) {
+	t.Helper()
+	return serve(t, n, byHash)
+}
+
+func serve(t testing.TB, n int, byHash bool) (repoURL string, authHeaders func() []string, commits []string) {
 	t.Helper()
 	gitBin, err := exec.LookPath("git")
 	if err != nil {
@@ -32,22 +49,37 @@ func Serve(t testing.TB) (repoURL string, authHeaders func() []string) {
 	if err := os.MkdirAll(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	run := func(dir string, args ...string) {
+	run := func(dir string, args ...string) string {
 		t.Helper()
 		cmd := exec.Command(gitBin, args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "HOME="+root, "GIT_CONFIG_NOSYSTEM=1")
-		if out, err := cmd.CombinedOutput(); err != nil {
+		out, err := cmd.CombinedOutput()
+		if err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
+		return strings.TrimSpace(string(out))
 	}
 	run(src, "init", "-q", "-b", "main")
-	if err := os.WriteFile(filepath.Join(src, "README"), []byte("hello\n"), 0o644); err != nil {
-		t.Fatal(err)
+	for i := 1; i <= n; i++ {
+		body := "hello\n"
+		if n > 1 {
+			body = fmt.Sprintf("version %d\n", i)
+		}
+		if err := os.WriteFile(filepath.Join(src, "README"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(src, "add", ".")
+		run(src, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", fmt.Sprintf("version %d", i))
+		commits = append(commits, run(src, "rev-parse", "HEAD"))
 	}
-	run(src, "add", ".")
-	run(src, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "init")
 	run(root, "clone", "-q", "--bare", src, filepath.Join(root, "repo.git"))
+	if byHash {
+		run(filepath.Join(root, "repo.git"), "config", "uploadpack.allowReachableSHA1InWant", "true")
+	} else {
+		// Refused over protocol v2 too, as a server that does not allow it.
+		run(filepath.Join(root, "repo.git"), "config", "uploadpack.allowAnySHA1InWant", "false")
+	}
 
 	backend := &cgi.Handler{
 		Path: gitBin,
@@ -68,5 +100,5 @@ func Serve(t testing.TB) (repoURL string, authHeaders func() []string) {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]string(nil), seen...)
-	}
+	}, commits
 }

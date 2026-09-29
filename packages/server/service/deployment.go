@@ -86,6 +86,10 @@ type TriggerInput struct {
 	ServiceID uuid.UUID
 	// TriggeredBy is the user ID (stored in deployment log).
 	TriggeredBy uuid.UUID
+	// Commit builds this commit of the service's branch rather than its
+	// newest: a stack's rollout passes what its last sync read, so an apply
+	// builds what that sync saw. Empty builds the branch as it is now.
+	Commit string
 }
 
 // Trigger creates a Deployment record, then fires off the build+deploy pipeline
@@ -168,6 +172,10 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 	if bc.BuildsFromUpload() {
 		// An uploaded folder has no branch; its commit line is the builder's.
 		deployment.SourceBranch = ""
+	} else if in.Commit != "" {
+		// Known before the build, which confirms it in its log.
+		deployment.SourceCommit = shortCommit(in.Commit)
+		deployment.Log += fmt.Sprintf("Building commit %s of %s, as the stack's last sync read it\n", shortCommit(in.Commit), bc.Branch)
 	}
 	if err := s.db.WithContext(ctx).Create(&deployment).Error; err != nil {
 		return nil, fmt.Errorf("create deployment record: %w", err)
@@ -207,6 +215,7 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		jobName:      jobName,
 		imageName:    imageName,
 		git:          gitCreds,
+		commit:       in.Commit,
 		registryHost: registryHost,
 		registryUser: registryUser,
 		registryPass: registryPass,
@@ -364,9 +373,18 @@ type runPipelineArgs struct {
 	jobName      string
 	imageName    string
 	git          gitCredentials
+	commit       string // "" = the branch's newest
 	registryHost string
 	registryUser string
 	registryPass string
+}
+
+// shortCommit is a commit hash as deployments show it.
+func shortCommit(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 // uploadedSource is where the build fetches an uploaded folder from; nil for
@@ -420,6 +438,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		GitURL:         a.git.URL,
 		GitUser:        a.git.User,
 		GitBranch:      a.bc.Branch,
+		GitCommit:      a.commit,
 		GitToken:       a.git.Token,
 		RootDir:        a.bc.RootDir,
 		DockerfilePath: a.bc.DockerfilePath,

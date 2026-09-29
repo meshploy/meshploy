@@ -166,6 +166,43 @@ func TestBuilderScriptStillAcceptsWhatAnOlderAPISends(t *testing.T) {
 	}
 }
 
+// A stack's rollout pins the commit its last sync read: the build takes that
+// commit, not the branch's newest, whether the server hands out a commit by
+// its hash or only what the branch reaches.
+func TestBuilderScriptBuildsThePinnedCommit(t *testing.T) {
+	for _, byHash := range []bool{true, false} {
+		url, _, commits := gittest.ServeHistory(t, 3, byHash)
+		_, env := jobEnv(t, BuildJobParams{
+			JobName: "build-app-1", Namespace: "demo", GitRepo: "group/app", GitURL: url,
+			GitBranch: "main", GitCommit: commits[0],
+			Builder: "none", ImageDest: "registry.example/app:1", RegistryHost: "registry.example",
+		})
+		if env["GIT_COMMIT"] != commits[0] {
+			t.Fatalf("GIT_COMMIT = %q", env["GIT_COMMIT"])
+		}
+		out, workdir := runBuilder(t, t.TempDir(), env)
+		readme, _ := os.ReadFile(filepath.Join(workdir, "README"))
+		if string(readme) != "version 1\n" {
+			t.Errorf("byHash=%v: built %q, want the pinned commit's version 1\n%s", byHash, readme, out)
+		}
+		if !strings.Contains(out, "Commit: "+commits[0][:7]) {
+			t.Errorf("byHash=%v: the log does not name the pinned commit:\n%s", byHash, out)
+		}
+	}
+}
+
+// Without a pin the branch's newest commit is built, as before.
+func TestBuilderScriptBuildsTheBranchWithoutAPin(t *testing.T) {
+	url, _, _ := gittest.ServeHistory(t, 3, true)
+	_, workdir := runBuilder(t, t.TempDir(), map[string]string{
+		"GIT_URL": url, "GIT_REPO": url, "GIT_BRANCH": "main",
+		"BUILDER": "none", "IMAGE_DEST": "registry.example/app:1", "REGISTRY_HOST": "registry.example",
+	})
+	if readme, _ := os.ReadFile(filepath.Join(workdir, "README")); string(readme) != "version 3\n" {
+		t.Errorf("built %q, want the newest", readme)
+	}
+}
+
 // ── WaitForJobWith ───────────────────────────────────────────────────────────
 
 // buildJobWithPod submits a build job to a fake cluster and gives it a pod in

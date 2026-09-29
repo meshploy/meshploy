@@ -214,7 +214,7 @@ func (s *StackService) composeFiles(
 			if rel == "" {
 				rel = obj.File
 			}
-			reason := "no files were sent or fetched with this apply"
+			reason := noFilesReason(stack)
 			if files != nil {
 				data, err := files(rel)
 				switch {
@@ -268,7 +268,7 @@ func (s *StackService) composeFiles(
 		}
 		label := fmt.Sprintf("bind mount of %s at %s", rel, v.Target)
 		if files == nil {
-			notes = append(notes, label+" left out: no files were sent or fetched with this apply")
+			notes = append(notes, label+" "+noFilesNote(stack))
 			continue
 		}
 		take := func(from, to string) bool {
@@ -413,4 +413,26 @@ func rawBindSources(spec string) map[string]string {
 		}
 	}
 	return out
+}
+
+// fromGit says a stack's files come from its repository, fetched by a sync.
+func fromGit(stack meshdb.Stack) bool {
+	return stack.GitMode != meshdb.StackGitModeRaw && stack.GitRepo != ""
+}
+
+// noFilesNote is what an apply with no files says about one: a git stack's
+// apply does not fetch - that is what a sync is for - and keeps what the last
+// sync fetched, which "left out" made sound removed.
+func noFilesNote(stack meshdb.Stack) string {
+	if fromGit(stack) {
+		return "kept as the last sync fetched it: an apply does not fetch, sync to take newer files"
+	}
+	return "left out: " + noFilesReason(stack)
+}
+
+func noFilesReason(stack meshdb.Stack) string {
+	if fromGit(stack) {
+		return "an apply does not fetch from the repository, so it keeps what the last sync fetched; sync to take newer files"
+	}
+	return "no files were sent or fetched with this apply"
 }

@@ -2317,14 +2317,16 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
   const [name, setName] = useState("")
   const [spec, setSpec] = useState(DEFAULT_STACK_SPEC)
 
-  // Git source state — default to the template source when arriving via a gallery deep-link
-  const [sourceMode, setSourceMode] = useState<StackSourceMode>(initialTemplateId ? "template" : "raw")
-  const [gitVisibility, setGitVisibility] = useState<StackGitVisibility>("public")
+  // Git source state — default to the template source when arriving via a gallery deep-link.
+  // Otherwise a private repository, cloned whole: most stacks build at least one
+  // service from its own folder, which a Compose file alone cannot resolve.
+  const [sourceMode, setSourceMode] = useState<StackSourceMode>(initialTemplateId ? "template" : "git")
+  const [gitVisibility, setGitVisibility] = useState<StackGitVisibility>("private")
   const [gitIntegrationId, setGitIntegrationId] = useState("")
   const [gitRepo, setGitRepo] = useState("")
   const [gitBranch, setGitBranch] = useState("main")
   const [gitPath, setGitPath] = useState("docker-compose.yml")
-  const [fetchMode, setFetchMode] = useState<StackFetchMode>("file")
+  const [fetchMode, setFetchMode] = useState<StackFetchMode>("repo")
 
   const { data: gitList = [] } = useQuery({
     queryKey: ["git-integrations", orgId],
@@ -2472,13 +2474,13 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
         </Section>
       )}
 
-      <Section title="Source" subtitle="Write a Compose spec inline, pull it from git, or start from a template.">
+      <Section title="Source" subtitle="Pull a Compose spec from git, write it inline, or start from a template.">
         <SegmentedControl
           value={sourceMode}
           onValueChange={(v) => setSourceMode(v as StackSourceMode)}
           options={[
-            { value: "raw", label: "Inline" },
             { value: "git", label: "Git" },
+            { value: "raw", label: "Inline" },
             { value: "template", label: "Template" },
           ]}
           className="text-sm"
@@ -2495,8 +2497,8 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
                 setGitBranch("main")
               }}
               options={[
-                { value: "public",  label: "Public" },
                 { value: "private", label: "Private" },
+                { value: "public",  label: "Public" },
               ]}
               className="text-sm"
             />
@@ -2621,8 +2623,8 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
                 value={fetchMode}
                 onValueChange={(v) => setFetchMode(v as StackFetchMode)}
                 options={[
-                  { value: "file", label: "Compose file only" },
                   { value: "repo", label: "Whole repo" },
+                  { value: "file", label: "Compose file only" },
                 ]}
                 className="text-sm w-fit"
               />

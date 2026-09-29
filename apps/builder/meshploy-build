@@ -8,6 +8,8 @@
 #   GIT_BRANCH     branch to build
 #   GIT_USER       user presented with GIT_TOKEN (x-access-token, oauth2)
 #   GIT_TOKEN      access token; empty for a public repository
+#   GIT_COMMIT     optional: build this commit of the branch rather than its
+#                  newest - what a stack's last sync read
 #   SOURCE_URL     instead of the GIT_* ones: an uploaded folder, a tar.gz
 #                  blob in the registry, fetched with the registry's password
 #   SOURCE_DIGEST  sha256:<hex> the fetched archive must match
@@ -136,8 +138,27 @@ else
         export GIT_CONFIG_VALUE_0
     fi
 
-    log "Cloning ${GIT_REPO:-${GIT_URL}}@${GIT_BRANCH}…"
-    GIT_TERMINAL_PROMPT=0 git clone --depth=1 --branch "${GIT_BRANCH}" "${GIT_URL}" "${WORKDIR}"
+    if [[ -n "${GIT_COMMIT:-}" ]]; then
+        # The commit a stack's last sync read, so an apply builds what that
+        # sync saw and not whatever the branch has now. Asked for by hash
+        # first, as GitHub, GitLab and Gitea allow; a server that refuses
+        # gets the branch's recent history, which holds any commit a recent
+        # sync read.
+        log "Cloning ${GIT_REPO:-${GIT_URL}}@${GIT_BRANCH} at ${GIT_COMMIT:0:12}…"
+        git init -q "${WORKDIR}"
+        git -C "${WORKDIR}" remote add origin "${GIT_URL}"
+        if GIT_TERMINAL_PROMPT=0 git -C "${WORKDIR}" fetch -q --depth=1 origin "${GIT_COMMIT}" 2>/dev/null; then
+            git -C "${WORKDIR}" checkout -q FETCH_HEAD
+        elif GIT_TERMINAL_PROMPT=0 git -C "${WORKDIR}" fetch -q --depth=200 origin "${GIT_BRANCH}" \
+            && git -C "${WORKDIR}" cat-file -e "${GIT_COMMIT}^{commit}" 2>/dev/null; then
+            git -C "${WORKDIR}" checkout -q "${GIT_COMMIT}"
+        else
+            die "Commit ${GIT_COMMIT} is not on ${GIT_BRANCH} any more (force-pushed, or over 200 commits back): sync the stack to build what the branch has now"
+        fi
+    else
+        log "Cloning ${GIT_REPO:-${GIT_URL}}@${GIT_BRANCH}…"
+        GIT_TERMINAL_PROMPT=0 git clone --depth=1 --branch "${GIT_BRANCH}" "${GIT_URL}" "${WORKDIR}"
+    fi
     # Nothing after the clone needs them, and the build tools inherit this
     # environment.
     unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_TOKEN

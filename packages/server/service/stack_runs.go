@@ -31,7 +31,7 @@ const (
 	RolloutStarted    = "started"     // building or deploying
 	RolloutSucceeded  = "succeeded"   // up, or run once and completed
 	RolloutFailed     = "failed"      // its deployment failed, or could not start
-	RolloutNotStarted = "not_started" // a layer before it failed
+	RolloutNotStarted = "not_started" // something it depends on failed
 )
 
 // RunResult is what the apply said, kept with the run.
@@ -99,6 +99,22 @@ func (r *runTracker) anyFailed() bool {
 		}
 	}
 	return false
+}
+
+// failedNames are the services whose deployment failed.
+func (r *runTracker) failedNames() map[string]bool {
+	out := map[string]bool{}
+	if r == nil {
+		return out
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, st := range r.steps {
+		if st.Status == RolloutFailed {
+			out[st.Name] = true
+		}
+	}
+	return out
 }
 
 // stopRest marks what never started as not started, because of a layer

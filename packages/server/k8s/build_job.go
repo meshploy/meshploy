@@ -59,6 +59,9 @@ type BuildJobParams struct {
 	GitURL    string // https clone URL, without credentials
 	GitUser   string // presented with GitToken: x-access-token (GitHub), oauth2 (GitLab, Gitea)
 	GitBranch string
+	// GitCommit builds this commit of the branch instead of its newest: a
+	// stack's rollout pins the commit its last sync read. Empty is the branch.
+	GitCommit string
 	GitToken  string // empty for a public repository
 	// Source, when set, is an uploaded folder the builder fetches instead of
 	// cloning; the Git fields are then unused.
@@ -248,6 +251,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "GIT_URL", Value: p.GitURL},
 								{Name: "GIT_USER", Value: p.GitUser},
 								{Name: "GIT_BRANCH", Value: p.GitBranch},
+								{Name: "GIT_COMMIT", Value: p.GitCommit},
 								{Name: "GIT_TOKEN", Value: p.GitToken},
 								{Name: "ROOT_DIR", Value: p.RootDir},
 								{Name: "DOCKERFILE_PATH", Value: p.DockerfilePath},

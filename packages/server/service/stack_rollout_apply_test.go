@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/service"
@@ -54,6 +55,8 @@ services:
 			var svc meshdb.Service
 			require.NoError(t, gdb.Where("project_id = ? AND name = ?", proj.ID, name).First(&svc).Error)
 			require.NoError(t, svcs.Workloads.MarkDeployed(ctx, svc.ID))
+			// And that it has run, as a finished deploy records.
+			require.NoError(t, gdb.Model(&svc).Update("deployed_at", time.Now()).Error)
 		}
 	}
 	setStatus := func(name string, status meshdb.ServiceStatus) {
@@ -220,6 +223,8 @@ func TestASkippedRolloutIsStillOwed(t *testing.T) {
 	var web meshdb.Service
 	require.NoError(t, gdb.Where("project_id = ?", proj.ID).First(&web).Error)
 	require.NoError(t, svcs.Workloads.MarkDeployed(ctx, web.ID))
+	// It has run, as a finished deploy records: stopped later means stopped.
+	require.NoError(t, gdb.Model(&web).Update("deployed_at", time.Now()).Error)
 
 	// A deploy is in flight, so this apply updates the record and rolls nothing
 	// out. That is deliberate: the rollout owns the outcome.

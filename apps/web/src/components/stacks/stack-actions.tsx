@@ -35,6 +35,7 @@ export function useStackActions({ stack, orgId, projectId, token }: {
   const navigate = useNavigate()
   const stackId = stack?.id ?? ""
   const isGit = !!stack?.git_mode
+  const synced = !!stack?.git_last_synced_at
   const [outcome, setOutcome] = useState<Outcome | null>(null)
   const [warning, setWarning] = useState<{ message: string; mode: string } | null>(null)
   const [confirmDestroy, setConfirmDestroy] = useState(false)
@@ -99,9 +100,17 @@ export function useStackActions({ stack, orgId, projectId, token }: {
         onClick={() => { setDeleteVolumes(false); setDeleteRoutes(false); setConfirmDestroy(true) }}>
         {destroy.isPending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}Destroy
       </Button>
-      <Button size="sm" variant={isGit ? "outline" : "default"} disabled={busy} onClick={() => apply.mutate()}
-        title={isGit ? "Apply the file stored with the stack, without fetching" : undefined}>
-        {apply.isPending ? <Loader2 className="size-4 animate-spin" /> : <PlayCircle className="size-4" />}Apply
+      {/* On a git stack Apply is the last sync again - its file, its mounted
+          files and, for what it builds, its commit - and never fetches:
+          only Sync brings in anything newer. Before a first sync there is
+          nothing to apply again. */}
+      <Button size="sm" variant={isGit ? "outline" : "default"} disabled={busy || (isGit && !synced)} onClick={() => apply.mutate()}
+        title={isGit
+          ? synced
+            ? `Apply the last sync again${stack.git_last_sync_sha ? `, commit ${stack.git_last_sync_sha.slice(0, 7)}` : ""}: nothing new is fetched`
+            : "Sync first: there is nothing to apply again yet"
+          : undefined}>
+        {apply.isPending ? <Loader2 className="size-4 animate-spin" /> : <PlayCircle className="size-4" />}{isGit ? "Apply again" : "Apply"}
       </Button>
       {isGit && (
         <Button size="sm" disabled={busy} onClick={() => sync.mutate()}>

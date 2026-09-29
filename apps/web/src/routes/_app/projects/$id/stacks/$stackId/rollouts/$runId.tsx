@@ -72,7 +72,8 @@ function RolloutPage() {
                         className="text-xs text-primary hover:underline">Log</Link>
                     )}
                   </div>
-                  {step.error && <p className="w-full text-xs text-destructive">{step.error}</p>}
+                  {/* Held back behind a failure is not a failure of its own. */}
+                  {step.error && <p className={`w-full text-xs ${step.status === "not_started" ? "text-muted-foreground" : "text-destructive"}`}>{step.error}</p>}
                 </div>
               ))}
             </div>
