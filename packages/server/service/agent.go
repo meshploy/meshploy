@@ -34,7 +34,7 @@ type AgentView struct {
 }
 
 var (
-	// ErrAgentOwnerRole — agents may never hold the org owner role.
+	// ErrAgentOwnerRole - agents may never hold the org owner role.
 	ErrAgentOwnerRole = errors.New("agents cannot be granted the owner role")
 	ErrAgentNotFound  = errors.New("agent not found")
 	ErrTokenNotFound  = errors.New("token not found")
@@ -250,7 +250,7 @@ func (s *AgentService) AddToken(ctx context.Context, orgID, agentID uuid.UUID, n
 	return plaintext, &tok, nil
 }
 
-// RevokeToken marks a token revoked. Idempotent — re-revoking is a no-op.
+// RevokeToken marks a token revoked. Idempotent - re-revoking is a no-op.
 func (s *AgentService) RevokeToken(ctx context.Context, orgID, agentID, tokenID uuid.UUID) error {
 	if err := s.requireAgentInOrg(ctx, orgID, agentID); err != nil {
 		return err

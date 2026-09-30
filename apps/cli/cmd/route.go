@@ -49,7 +49,7 @@ var routeListCmd = &cobra.Command{
 	},
 }
 
-// route create — supports three targeting modes:
+// route create - supports three targeting modes:
 //
 //	--service <name|id>          managed Meshploy service (IP resolved automatically)
 //	--node <name|id> --port N    any process running on a mesh node (no service required)

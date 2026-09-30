@@ -135,7 +135,7 @@ func resolveType(f *schema.Field) string {
 			return t
 		case t == "timestamptz", t == "timestamp with time zone":
 			return "timestamptz"
-		// GORM v1.31 sets DataType to Go primitive names — map them to Postgres types.
+		// GORM v1.31 sets DataType to Go primitive names - map them to Postgres types.
 		case t == "string":
 			return "varchar(500)"
 		case t == "time", t == "datetime":
@@ -218,7 +218,7 @@ func resolveDefault(f *schema.Field) string {
 	if dv == "false" {
 		return "FALSE"
 	}
-	// Already single-quoted by GORM tag (e.g. default:"'main'") — return as-is
+	// Already single-quoted by GORM tag (e.g. default:"'main'") - return as-is
 	if len(dv) >= 2 && dv[0] == '\'' && dv[len(dv)-1] == '\'' {
 		return dv
 	}

@@ -19,7 +19,7 @@ const (
 )
 
 // UserType discriminates human users from machine (agent) principals. Agents
-// share the users table and the entire membership/permission model — they differ
+// share the users table and the entire membership/permission model - they differ
 // only in authentication (token, not email+password). See AgentToken.
 type UserType string
 
@@ -47,11 +47,11 @@ const (
 type MeshRole string
 
 const (
-	// MeshRoleWorkloadBuilder (default) — accepts both customer workloads and build jobs.
+	// MeshRoleWorkloadBuilder (default) - accepts both customer workloads and build jobs.
 	MeshRoleWorkloadBuilder MeshRole = "workload_builder"
-	// MeshRoleWorkload — customer workloads only, no build jobs.
+	// MeshRoleWorkload - customer workloads only, no build jobs.
 	MeshRoleWorkload MeshRole = "workload"
-	// MeshRoleBuilder — build jobs only; tainted so customer workloads can't land here.
+	// MeshRoleBuilder - build jobs only; tainted so customer workloads can't land here.
 	MeshRoleBuilder MeshRole = "builder"
 	// MeshRoleMesh: on the mesh, not in the cluster. Nothing is scheduled on it,
 	// and routes reach its ports over the mesh. Chosen at install, which then
@@ -304,7 +304,7 @@ type User struct {
 
 // AgentToken is a bearer credential authenticating an agent principal. One agent
 // (a users row with Kind == UserAgent) may hold many tokens to support rotation.
-// The plaintext (format: magt-<hex>) is shown once at creation and never stored —
+// The plaintext (format: magt-<hex>) is shown once at creation and never stored -
 // only its SHA-256 hash is persisted, so the token is unrecoverable if lost.
 type AgentToken struct {
 	Base
@@ -323,7 +323,7 @@ type AgentToken struct {
 func (AgentToken) TableName() string { return "agent_tokens" }
 
 // InstalledLicense holds the Enterprise license token pasted by an admin.
-// At most one row exists per install — licenses are install-scoped for
+// At most one row exists per install - licenses are install-scoped for
 // self-hosted (Cloud uses org.plan instead, via a different Entitlements
 // implementation). The token is a signed, non-secret `mlic-` string verified
 // offline against an embedded public key, so it is stored as-is rather than
@@ -375,7 +375,7 @@ type Organization struct {
 	Name string `gorm:"not null"             json:"name"`
 	Slug string `gorm:"uniqueIndex;not null" json:"slug"`
 
-	// Headscale preauth key — persisted encrypted so it survives page navigation.
+	// Headscale preauth key - persisted encrypted so it survives page navigation.
 	// Populated by CreateHeadscalePreAuthKey, auto-cleared on expiry by GetHeadscalePreAuthKey.
 	HeadscalePreAuthKey       EncryptedString `gorm:"type:text" json:"-"`
 	HeadscalePreAuthKeyExpiry *time.Time      `                 json:"-"`
@@ -482,18 +482,12 @@ type VariableGroupItem struct {
 
 func (VariableGroupItem) TableName() string { return "variable_group_items" }
 
-// ServiceVariableGroup is the join between a service and a variable group.
-// All items in the group are injected as env vars on the next deploy.
 // ConfigFile is a file projected into a container at a path.
 //
-// Environment variables cover most configuration, but a good deal of software is
-// configured by file and nothing else — Zot's auth block, nginx, Prometheus. A
-// template can declare env and volumes; before this it could not supply a file,
-// so those images could only be deployed in whatever state they ship in.
-//
-// Content is encrypted at rest and never serialised back out, like a variable
-// group's values: these hold htpasswd hashes, TLS keys and credentials far more
-// often than not.
+// For software configured by file rather than environment: Zot's auth block,
+// nginx, Prometheus. Content is encrypted at rest and never serialised back
+// out, like a variable group's values: it is usually htpasswd hashes, TLS keys
+// and credentials.
 type ConfigFile struct {
 	Base
 	ProjectID uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
@@ -528,6 +522,8 @@ type ServiceConfigFile struct {
 
 func (ServiceConfigFile) TableName() string { return "service_config_files" }
 
+// ServiceVariableGroup is the join between a service and a variable group.
+// All items in the group are injected as env vars on the next deploy.
 type ServiceVariableGroup struct {
 	Base
 	ServiceID uuid.UUID `gorm:"type:uuid;not null;index" json:"service_id"`
@@ -576,24 +572,24 @@ type Node struct {
 	K3sLabels  JSONObject `gorm:"type:jsonb;default:'{}'"                      json:"k3s_labels"`
 	// e.g. {"meshploy.com/role": "builder", "topology.kubernetes.io/region": "us-east"}
 	MeshRole MeshRole `gorm:"type:varchar(20);not null;default:''" json:"mesh_role"`
-	// workload_builder | workload | builder — controls k8s labels/taints applied to this node
+	// workload_builder | workload | builder - controls k8s labels/taints applied to this node
 
-	// OS is what the machine runs, reported by the join script. Every node that
-	// joined before it was recorded ran install.sh, which is Linux only.
+	// OS is what the machine runs, reported by the join script. Empty is Linux:
+	// install.sh, the only other way in, runs on Linux alone.
 	OS NodeOS `gorm:"type:varchar(10);not null;default:'linux'" json:"os"`
 
-	// Public IP — set on gateway (server) nodes only; used for DNS instructions.
+	// Public IP - set on gateway (server) nodes only; used for DNS instructions.
 	PublicIP string `gorm:"not null;default:''" json:"public_ip"`
 
 	// ControlURL is the Headscale address this machine's Tailscale client was
 	// told to use when it joined, https://headscale.<primary at the time>. It
 	// decides whether a domain can be removed: take away the name a node's
 	// control connection goes to, and that node drops off the mesh. Empty on
-	// the gateway, which reaches Headscale over loopback, and on nodes that
-	// joined before it was recorded - those joined through the install domain.
+	// the gateway, which reaches Headscale over loopback; empty on another
+	// node means it joined through the install domain.
 	ControlURL string `gorm:"not null;default:''" json:"control_url,omitempty"`
 
-	// Capacity — populated by node agent heartbeat
+	// Capacity - populated by node agent heartbeat
 	CPUCores float32 `json:"cpu_cores"`
 	MemoryGB float32 `json:"memory_gb"`
 	DiskGB   float32 `json:"disk_gb"`
@@ -617,20 +613,10 @@ type Service struct {
 	Name      string      `gorm:"not null"                                     json:"name"`
 	Type      ServiceType `gorm:"type:varchar(15);not null;default:'application'" json:"type"`
 
-	// Slug is the Kubernetes object name, fixed when the service is created.
-	//
-	// Kubernetes names are derived from this rather than recomputed from Name,
-	// so renaming a service no longer renames its Deployment -- which used to
-	// mean delete-and-recreate, and left the old objects orphaned when anything
-	// went wrong midway.
-	//
-	// It also carries a random suffix when the plain name is already taken in
-	// the project, which is what lets the same template be deployed twice: the
-	// namespace is the project, so two stacks each with a service called "zot"
-	// would otherwise resolve to one Deployment.
-	//
-	// Empty on rows created before this existed. Those fall back to the name,
-	// so no existing workload is renamed and no migration is required.
+	// Slug is the Kubernetes object name, fixed when the service is created, so
+	// renaming a service never renames its objects. It carries a random suffix
+	// when the plain name is taken in the project, so the same template can be
+	// deployed twice into it. Empty falls back to the name.
 	Slug string `gorm:"index" json:"slug,omitempty"`
 
 	// Runtime image.
@@ -662,7 +648,7 @@ type Service struct {
 	// Merged with project-level env vars at deploy time; service keys win on conflict.
 	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
-	// Healthcheck probe — JSON-encoded []string command, zero int fields mean "use K8s default".
+	// Healthcheck probe - JSON-encoded []string command, zero int fields mean "use K8s default".
 	HealthcheckCmd             string `gorm:"type:text;default:''"  json:"healthcheck_cmd,omitempty"`
 	HealthcheckIntervalSecs    int32  `gorm:"default:0"             json:"healthcheck_interval_secs,omitempty"`
 	HealthcheckTimeoutSecs     int32  `gorm:"default:0"             json:"healthcheck_timeout_secs,omitempty"`
@@ -683,7 +669,7 @@ type Service struct {
 	// setup step - rather than one kept up: it runs as a Kubernetes Job on
 	// each deploy, and a successful run leaves it "completed". RunRetries is
 	// how often a failed run is tried again.
-	RunOnce    bool  `gorm:"not null;default:false" json:"run_once,omitempty"`
+	RunOnce bool `gorm:"not null;default:false" json:"run_once,omitempty"`
 	// LatestDeployFailed is set when a deployment of this service fails and
 	// cleared when one succeeds. A failed build leaves the service running
 	// what it ran before, so "running" alone did not say that what runs is
@@ -694,7 +680,7 @@ type Service struct {
 	// it. The Logs tab shows it while no pod runs.
 	LastLogs   string     `gorm:"type:text;not null;default:''" json:"-"`
 	LastLogsAt *time.Time `json:"-"`
-	RunRetries int32 `gorm:"not null;default:0" json:"run_retries,omitempty"`
+	RunRetries int32      `gorm:"not null;default:0" json:"run_retries,omitempty"`
 	// StartCommand is the console's start command: one line, run through the
 	// image's /bin/sh, so pipes and && work. Set, it replaces Command and Args
 	// and the image's own ENTRYPOINT and CMD; empty keeps them.
@@ -786,7 +772,7 @@ type BuildConfig struct {
 	BuildCommand   string     `gorm:"not null;default:''" json:"build_command,omitempty"`
 	BuildArgs      EnvVarsMap `gorm:"type:jsonb;default:'{}'" json:"build_args"`
 
-	// Build-time environment variables — KEY=VALUE, one per line.
+	// Build-time environment variables - KEY=VALUE, one per line.
 	// Passed to railpack (export) or dockerfile (--build-arg).
 	// Encrypted at rest; accessed via GET .../build-config/env-vars.
 	BuildEnvVars EncryptedString `gorm:"type:text" json:"-"`
@@ -811,7 +797,7 @@ type BuildConfig struct {
 	// nil = use the internal mesh registry (default, zero-config CE experience).
 	RegistryIntegrationID *uuid.UUID `gorm:"type:uuid" json:"registry_integration_id"`
 
-	// Populated after a successful build — used for the next deployment.
+	// Populated after a successful build - used for the next deployment.
 	LastBuiltImage string     `json:"last_built_image"`
 	LastBuiltAt    *time.Time `json:"last_built_at"`
 
@@ -827,7 +813,7 @@ type BuildConfig struct {
 	// the registry: what it can roll back to. Read, not stored.
 	ImagesKept int `gorm:"-" json:"images_kept"`
 
-	// Auto-deploy — when enabled, a push to the tracked branch triggers a new build.
+	// Auto-deploy - when enabled, a push to the tracked branch triggers a new build.
 	// Works via GitHub App webhook (for private repos) or a per-service deploy token.
 	AutoDeploy bool `gorm:"not null;default:false" json:"auto_deploy"`
 	// WatchPaths narrows deploy-on-push to the parts of a repository this
@@ -939,7 +925,7 @@ type Stack struct {
 	Status        StackStatus `gorm:"type:varchar(10);not null;default:'idle'"      json:"status"`
 	LastAppliedAt *time.Time  `json:"last_applied_at"`
 
-	// Git source fields — non-empty GitMode means the spec is managed from git.
+	// Git source fields - non-empty GitMode means the spec is managed from git.
 	GitMode          StackGitMode `gorm:"type:varchar(10);not null;default:''" json:"git_mode"`
 	GitRepo          string       `gorm:"not null;default:''"                  json:"git_repo"`
 	GitBranch        string       `gorm:"not null;default:'main'"              json:"git_branch"`
@@ -948,7 +934,7 @@ type Stack struct {
 	GitLastSyncedAt  *time.Time   `json:"git_last_synced_at"`
 	GitLastSyncSHA   string       `gorm:"not null;default:''"                  json:"git_last_sync_sha"`
 
-	// Template provenance — non-empty TemplateID means this stack was created from
+	// Template provenance - non-empty TemplateID means this stack was created from
 	// a template (a third stack source, alongside inline and git). Mirrors the
 	// git-source fields; the hook for "template update available" detection.
 	TemplateID      string `gorm:"not null;default:''" json:"template_id"`
@@ -977,7 +963,7 @@ type Stack struct {
 func (Stack) TableName() string { return "stacks" }
 
 // ---------------------------------------------------------------------------
-// Volumes — project-scoped persistent storage (backed by K8s PVCs)
+// Volumes - project-scoped persistent storage (backed by K8s PVCs)
 // ---------------------------------------------------------------------------
 
 type VolumeStatus string
@@ -985,7 +971,7 @@ type VolumeStatus string
 const (
 	// VolumeIdle means no storage has been provisioned yet because nothing has
 	// mounted the volume. With a WaitForFirstConsumer provisioner (k3s ships
-	// local-path) that is the normal resting state, not a failure in progress —
+	// local-path) that is the normal resting state, not a failure in progress -
 	// which is why it is not called "pending".
 	VolumeIdle VolumeStatus = "idle"
 	// VolumeReady means the claim is bound and the storage is usable.
@@ -1004,7 +990,7 @@ type Volume struct {
 	Status    VolumeStatus `gorm:"type:varchar(15);default:'idle'" json:"status"`
 	// NodeID pins where the volume is provisioned. nil = auto-schedule: the
 	// provisioner picks when the first pod mounts it (local-path uses
-	// WaitForFirstConsumer). Once the PVC is bound the choice is immutable —
+	// WaitForFirstConsumer). Once the PVC is bound the choice is immutable -
 	// local-path storage is node-local and cannot be moved.
 	NodeID *uuid.UUID `gorm:"type:uuid;index" json:"node_id"`
 	// StackID records the stack whose apply created this volume, so the UI can
@@ -1050,7 +1036,7 @@ func (NodeRegistrationToken) TableName() string { return "node_registration_toke
 // NodeProvisioningToken is a single-use token that allows exactly one worker
 // node to self-register. Generated by an admin before shipping a node; the
 // plaintext token is shown once (only the SHA-256 hash is stored). On first use
-// the node secret is issued and UsedAt is stamped — any further attempt with the
+// the node secret is issued and UsedAt is stamped - any further attempt with the
 // same token is rejected.
 type NodeProvisioningToken struct {
 	Base
@@ -1077,27 +1063,27 @@ func (NodeProvisioningToken) TableName() string { return "node_provisioning_toke
 // Domains
 // ---------------------------------------------------------------------------
 
-// Domain represents an org-owned base domain managed by the org's CoreDNS + Caddy.
-// CE limit: 1 domain per org (enforced in service layer). EE removes this limit.
-//
-// base_domain is immutable once set — users must add a new domain and delete the old one.
-// internal_subdomain and preview_subdomain are mutable (wildcard TLS makes renames cheap).
 // DNSMode is how a base domain's DNS is arranged, which decides what an
 // internal route's certificate can be. It is per domain, not per server: two
 // base domains on one gateway can differ.
 type DNSMode string
 
 const (
-	// DNSModeDelegation — the zone is delegated here by NS, so CoreDNS is
+	// DNSModeDelegation - the zone is delegated here by NS, so CoreDNS is
 	// authoritative for it and Caddy can answer DNS-01 by writing into the
 	// challenge zone. Internal names get a real wildcard certificate.
 	DNSModeDelegation DNSMode = "delegation"
-	// DNSModeOnDemand — DNS stays with the operator's provider. Public names are
+	// DNSModeOnDemand - DNS stays with the operator's provider. Public names are
 	// issued per hostname over HTTP-01; internal names have no way to be
 	// validated by a public CA and are signed by Caddy's own authority.
 	DNSModeOnDemand DNSMode = "ondemand"
 )
 
+// Domain represents an org-owned base domain managed by the org's CoreDNS + Caddy.
+// CE limit: 1 domain per org (enforced in service layer). EE removes this limit.
+//
+// base_domain is immutable once set - users must add a new domain and delete the old one.
+// internal_subdomain and preview_subdomain are mutable (wildcard TLS makes renames cheap).
 type Domain struct {
 	Base
 	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index"         json:"organization_id"`
@@ -1126,11 +1112,9 @@ type Domain struct {
 	// names keep serving - the console someone is on, the headscale name
 	// workers joined through - until it is retired and removed.
 	FormerPrimary bool `gorm:"not null;default:false"           json:"former_primary"`
-	// DNSMode has no default. A row that existed before the column was added
-	// cannot say which mode it was installed in, and guessing delegation is
-	// wrong for every on-demand gateway: the edge would then be rendered for
-	// an NS delegation nobody made, and certificates would stop renewing. It
-	// arrives empty and the API fills it from the install's DNS_MODE at start.
+	// DNSMode has no default: a guessed delegation would render the edge for
+	// an NS delegation nobody made, and certificates would stop renewing. Empty
+	// is filled by the API from the install's DNS_MODE at start.
 	DNSMode DNSMode `gorm:"not null;default:''"             json:"dns_mode"`
 	// RetiringAt is when somebody began retiring this domain. Set, it disappears
 	// from the base-domain picker so nothing new can attach to it, and the
@@ -1257,13 +1241,6 @@ const (
 	TCPRoutePaused  TCPRouteStatus = "paused"  // not published: the gateway holds no listener
 )
 
-// TCPRoute publishes one non-HTTP port on the gateway and forwards it over the
-// mesh to a service or a node.
-//
-// Separate from Route, which carries a hostname and paths: a raw TCP connection
-// has neither, so the gateway port is the whole address and is unique across
-// the gateway rather than per project. HTTP keeps its own path, where a
-// hostname distinguishes routes sharing port 443.
 // TCPRouteZone is where a forwarded port is reachable from.
 type TCPRouteZone string
 
@@ -1283,6 +1260,13 @@ const (
 	TCPZoneAddress TCPRouteZone = "address"
 )
 
+// TCPRoute publishes one non-HTTP port on the gateway and forwards it over the
+// mesh to a service or a node.
+//
+// Separate from Route, which carries a hostname and paths: a raw TCP connection
+// has neither, so the gateway port is the whole address and is unique across
+// the gateway rather than per project. HTTP keeps its own path, where a
+// hostname distinguishes routes sharing port 443.
 type TCPRoute struct {
 	Base
 	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index" json:"organization_id"`
@@ -1365,7 +1349,7 @@ type Deployment struct {
 	Status    DeploymentStatus `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
 	Image     string           `json:"image"` // image used for this specific deployment
 
-	// K8s artefacts — stored for auditing and rollback
+	// K8s artefacts - stored for auditing and rollback
 	AppliedManifest string `gorm:"type:text" json:"applied_manifest"` // K8s YAML applied
 	BuildJobName    string `json:"build_job_name"`                    // K8s Job name for the build
 
@@ -1375,7 +1359,7 @@ type Deployment struct {
 	// Where the image came from, so a level's board and a service's page can
 	// say whether it was built here or promoted from below, and from what.
 	// Source is build, promotion, bring_down, rollback or image (a configured
-	// image deployed as it is); empty on deployments from before it was kept.
+	// image deployed as it is); empty when unknown.
 	// SourceBranch and SourceCommit are the build's, carried along when the
 	// image moves between levels; FromLevel and FromDeploymentID name the
 	// level and deployment a promotion or bring-down took it from.
@@ -1424,7 +1408,7 @@ type Job struct {
 	Name      string     `gorm:"not null"                 json:"name"`
 	IsCron    bool       `gorm:"not null;default:false"   json:"is_cron"`
 
-	// Source — image only for now; git builds can be added later.
+	// Source - image only for now; git builds can be added later.
 	Image   string `gorm:"not null;default:''" json:"image"`
 	Command string `gorm:"not null;default:''" json:"command"` // overrides container CMD; space-separated
 
@@ -1434,7 +1418,7 @@ type Job struct {
 	MemoryRequest string `gorm:"not null;default:'128Mi'" json:"memory_request"`
 	MemoryLimit   string `gorm:"not null;default:'512Mi'" json:"memory_limit"`
 
-	// Env vars — AES-256-GCM encrypted, same pattern as Service.EnvVars.
+	// Env vars - AES-256-GCM encrypted, same pattern as Service.EnvVars.
 	EnvVars EncryptedString `gorm:"type:text" json:"-"`
 
 	// Cron-only fields (ignored when IsCron=false)
@@ -1442,7 +1426,7 @@ type Job struct {
 	ConcurrencyPolicy ConcurrencyPolicy `gorm:"type:varchar(10);not null;default:'Allow'" json:"concurrency_policy"`
 	HistoryLimit      int               `gorm:"not null;default:5"        json:"history_limit"` // how many completed JobRuns to retain
 
-	// Status — reflects the most recent run.
+	// Status - reflects the most recent run.
 	Status    JobStatus  `gorm:"type:varchar(10);not null;default:'idle'" json:"status"`
 	LastRunAt *time.Time `json:"last_run_at"`
 
@@ -1545,8 +1529,7 @@ type GitIntegration struct {
 	// the GitHub App's webhook, callback and setup URLs, or the address the
 	// repository push hooks deliver to. It is what the provider will call, so it
 	// decides whether a domain can be removed - take the name away and pushes
-	// stop arriving, with nothing said. Empty on integrations made before it was
-	// recorded; those registered the install's API_BASE_URL.
+	// stop arriving, with nothing said. Empty means the install's API_BASE_URL.
 	RegisteredAPIBase string `gorm:"not null;default:''" json:"-"`
 
 	// GitHub App credentials (auth_method="app" only). All encrypted at rest.
@@ -1723,7 +1706,7 @@ func (OrgInvitation) TableName() string { return "org_invitations" }
 // Official templates (is_official=true) are shipped by Meshploy; OrganizationID is null.
 // User templates (is_official=false) are private to an org.
 //
-// Manifest JSONB describes the services/configs to instantiate — think of it
+// Manifest JSONB describes the services/configs to instantiate - think of it
 // as a Meshploy-flavoured Compose/Helm values file resolved by the API at
 // deploy time.
 type Template struct {

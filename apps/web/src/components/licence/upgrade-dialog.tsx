@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
  * self-contained install into one that phones home, breaks on air-gapped and
  * egress-restricted networks, and reads as telemetry in an MIT repository.
  *
- * The query parameter marks the highest-intent source there is — someone
+ * The query parameter marks the highest-intent source there is - someone
  * already running Meshploy.
  */
 const LICENCE_URL = "https://meshploy.com/contact?topic=enterprise&src=console"
@@ -36,7 +36,7 @@ type Feature = {
 /**
  * One array drives both columns, so the comparison cannot drift between them.
  *
- * A feature list is marketing, not implementation — publishing it here costs
+ * A feature list is marketing, not implementation - publishing it here costs
  * nothing, unlike the code behind an Enterprise feature, which stays in the
  * private repository. Keep this honest: `available: false` renders as planned,
  * because advertising something that does not ship yet is how trials end in

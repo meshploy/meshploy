@@ -68,11 +68,8 @@ func (h *Handler) registerTerminalRoutes(api huma.API) {
 // wsUserFromTicket redeems the single-use ticket in the query string and
 // returns the user it identifies.
 //
-// This replaces passing the session JWT as `?token=`. A WebSocket handshake
-// from a browser cannot carry headers, so the credential must sit in the URL —
-// and URLs are logged. chimiddleware.Logger writes the full request URI to
-// stdout, which in a container image is a log file on disk, so every terminal
-// session used to persist a full-privilege bearer token in cleartext. A ticket
+// A browser's WebSocket handshake cannot carry headers, so the credential sits
+// in the URL, and URLs are logged. Never put the session JWT there: a ticket
 // is single-use and lives for TicketTTL, so the logged copy is inert.
 //
 // Redeeming only establishes identity. Every caller must still authorize the

@@ -33,7 +33,7 @@ export const useOrgStore = create<OrgStore>()(
   )
 )
 
-// true only when role is confirmed owner or admin — false while loading (null)
+// true only when role is confirmed owner or admin - false while loading (null)
 // so guards never flash-redirect before the fetch completes.
 export function useIsAdmin(): boolean {
   const role = useOrgStore((s) => s.currentRole)

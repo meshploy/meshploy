@@ -41,18 +41,17 @@ type ExposedPort struct {
 // firewall, and what Meshploy publishes if so.
 //
 // It is an advisory, not a verdict. The ports are what Meshploy binds, taken
-// from its own compose file and k3s -- not the result of probing, which the API
+// from its own compose file and k3s - not the result of probing, which the API
 // container could not do anyway. Whether they are actually reachable depends on
 // the operator's network: a cloud security group, a NAT gateway or an upstream
 // appliance is invisible from the host, and any of them may already contain
 // this. That is why the notice is dismissible rather than a nag.
 type Exposure struct {
 	// FirewallState is what install.sh saw on the host: none, ufw, firewalld,
-	// or unknown when it was never recorded (a dev box, or an install predating
-	// the check).
+	// or unknown when nothing was recorded (a dev box, or an older install).
 	FirewallState string `json:"firewall_state"`
 	// CheckedAt is when the installer looked, RFC3339. A point-in-time
-	// observation -- the console shows it so the notice never reads as live.
+	// observation - the console shows it so the notice never reads as live.
 	CheckedAt string `json:"checked_at,omitempty"`
 	// Ports is populated only when FirewallState is "none"; empty otherwise.
 	Ports []ExposedPort `json:"ports"`
@@ -70,7 +69,7 @@ type Exposure struct {
 // publishedPorts are the ports Meshploy binds on all interfaces on a gateway.
 //
 // Kept as a literal rather than parsed from docker-compose.yml because the API
-// container does not mount it -- and because two of these are k3s's, not
+// container does not mount it - and because two of these are k3s's, not
 // compose's. If a port here stops being published, this list is what has to
 // change with it.
 func publishedPorts() []ExposedPort {

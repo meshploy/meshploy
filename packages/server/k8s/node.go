@@ -74,7 +74,7 @@ func IsBuildNode(labels map[string]string) bool {
 }
 
 // SetNodeMeshRole applies the correct k8s label and taint to a node based on its
-// MeshRole. Safe to call repeatedly — it reconciles to the desired state each time.
+// MeshRole. Safe to call repeatedly - it reconciles to the desired state each time.
 //
 //   - workload_builder: adds builder label, no taint  → builds + workloads land here
 //   - workload:         removes builder label, no taint → workloads only
@@ -130,7 +130,7 @@ func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName 
 }
 
 // DeleteNode removes the node object from the k8s cluster. This does not stop
-// the k3s-agent process on the worker — the user must run k3s-agent-uninstall.sh
+// the k3s-agent process on the worker - the user must run k3s-agent-uninstall.sh
 // manually (or the future CLI will do it). Non-fatal if the node doesn't exist.
 func DeleteNode(ctx context.Context, client kubernetes.Interface, nodeName string) error {
 	err := client.CoreV1().Nodes().Delete(ctx, nodeName, metav1.DeleteOptions{})

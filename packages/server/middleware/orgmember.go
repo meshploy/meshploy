@@ -17,7 +17,7 @@ type MemberChecker func(ctx context.Context, orgID, userID uuid.UUID) error
 // org identified in the URL path (/api/v1/orgs/{orgId}/...).
 //
 // Unauthenticated requests and paths outside the org scope pass through
-// unchanged — downstream handlers call requireUser() for auth enforcement.
+// unchanged - downstream handlers call requireUser() for auth enforcement.
 // Membership results are cached per user+org for 30 seconds so the DB is not
 // hit on every request. On any lookup error the request is rejected (fail closed).
 func OrgMember(check MemberChecker) func(http.Handler) http.Handler {
@@ -31,7 +31,7 @@ func OrgMember(check MemberChecker) func(http.Handler) http.Handler {
 			}
 			userID, ok := UserFromContext(r.Context())
 			if !ok {
-				// No authenticated user — requireUser() in the handler will reject.
+				// No authenticated user - requireUser() in the handler will reject.
 				next.ServeHTTP(w, r)
 				return
 			}

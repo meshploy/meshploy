@@ -246,7 +246,7 @@ const SIBLING_LABELS: Partial<Record<ResourceType, string>> = {
 const PROJECT_RESOURCE_TYPES: ResourceType[] = ["service", "stack", "job", "volume", "route"]
 
 // state is what the row says under the name: the resource's own status, or for
-// a domain route -- which has none -- the zone it is served in.
+// a domain route - which has none - the zone it is served in.
 type Resource = { id: string; name: string; type: ResourceType; kind: string; state: string }
 
 // The tabs each kind has. Anything deeper than a tab belongs to the resource

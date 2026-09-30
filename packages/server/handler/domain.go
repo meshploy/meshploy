@@ -48,7 +48,7 @@ type DomainCheckInput struct {
 }
 
 func (h *Handler) registerDomainRoutes(api huma.API) {
-	// Internal endpoint — called by Caddy before issuing an On-Demand TLS cert.
+	// Internal endpoint - called by Caddy before issuing an On-Demand TLS cert.
 	// No auth: returns 200 if the hostname belongs to a verified custom-domain route.
 	huma.Register(api, huma.Operation{
 		OperationID: "domain-check",

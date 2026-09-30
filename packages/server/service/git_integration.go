@@ -97,7 +97,7 @@ type GitRepo struct {
 // InitGitHubIntegration creates a pending GitIntegration row (no credentials yet),
 // then returns the GitHub manifest-setup URL and manifest JSON the frontend must
 // POST to GitHub to create the GitHub App.
-// Each call creates a separate GitHub App — multiple pending integrations are allowed.
+// Each call creates a separate GitHub App - multiple pending integrations are allowed.
 func (s *GitIntegrationService) InitGitHubIntegration(
 	ctx context.Context,
 	orgID uuid.UUID,
@@ -277,7 +277,6 @@ func (s *GitIntegrationService) HandleGitHubCallback(ctx context.Context, instal
 
 // ─── Org-level integration management ────────────────────────────────────────
 
-// GetByID returns a single git integration by its ID (no org scoping — used internally).
 // InOrg reports whether the integration is orgID's. Every route that names an
 // integration asks, since its id alone would otherwise reach another org's
 // credentials.
@@ -293,6 +292,7 @@ func (s *GitIntegrationService) InOrg(ctx context.Context, orgID, id uuid.UUID) 
 	return nil
 }
 
+// GetByID returns a single git integration by its ID (no org scoping - used internally).
 func (s *GitIntegrationService) GetByID(ctx context.Context, id uuid.UUID) (*db.GitIntegration, error) {
 	var row db.GitIntegration
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
@@ -445,7 +445,7 @@ func (s *GitIntegrationService) ListBranches(ctx context.Context, integrationID 
 		return branches, nil
 	}
 
-	// GitHub App flow — credentials are on the integration row itself.
+	// GitHub App flow - credentials are on the integration row itself.
 	if integration.GHAppID == "" || string(integration.InstallationID) == "" {
 		return nil, huma.Error400BadRequest("GitHub App is not fully configured — complete setup and installation first")
 	}
@@ -764,7 +764,7 @@ func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uui
 		}
 		repos, err := listGitLabRepos(integration.BaseURL, token, integration.Groups)
 		if err == errUnauthorized {
-			// Token was rejected despite looking valid — force refresh and retry once.
+			// Token was rejected despite looking valid - force refresh and retry once.
 			token, err = s.resolveOAuthToken(ctx, &integration, true)
 			if err == errUnauthorized {
 				return nil, huma.Error401Unauthorized("access token expired — please reconnect the integration")
@@ -828,7 +828,7 @@ func (s *GitIntegrationService) ListRepos(ctx context.Context, integrationID uui
 		return repos, nil
 	}
 
-	// GitHub App flow — credentials are on the integration row itself.
+	// GitHub App flow - credentials are on the integration row itself.
 	if integration.GHAppID == "" || string(integration.InstallationID) == "" {
 		return nil, huma.Error400BadRequest("GitHub App is not fully configured — complete setup and installation first")
 	}

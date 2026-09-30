@@ -32,8 +32,6 @@ var (
 // repository, which is cloned anonymously.
 //
 // Every provider is handled here, so builds and stack syncs cannot drift apart.
-// Deploys used to assume a GitHub App for any integration, which failed every
-// GitLab and Gitea build before it started.
 func (s *GitIntegrationService) cloneCredentials(ctx context.Context, integration *db.GitIntegration, repo string) (gitCredentials, error) {
 	if integration == nil {
 		return gitCredentials{URL: repoCloneURL("https://github.com", repo)}, nil

@@ -410,7 +410,6 @@ func caddyDataDir() string {
 // the install directory, which is always this one.
 const meshployCaddyContainer = "meshploy-caddy-1"
 
-// startMeshployEdge brings Meshploy's Caddy up on 80 and 443.
 // meshployEdgeReady makes sure the edge's image is on this host before the
 // ports change hands.
 //
@@ -436,6 +435,7 @@ func meshployEdgeReady() error {
 	return nil
 }
 
+// startMeshployEdge brings Meshploy's Caddy up on 80 and 443.
 func startMeshployEdge() error {
 	out, err := migrate.ExecRunner{}.Output("docker", "compose", "-f", "/opt/meshploy/docker-compose.yml", "up", "-d", "caddy")
 	if err != nil {

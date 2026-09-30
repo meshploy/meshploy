@@ -108,7 +108,7 @@ function RouteDetailPage() {
     queryFn: () => routesApi.list(orgId!, projectId, token),
     enabled: !!orgId,
   })
-  // Other public/preview routes in same project — valid redirect targets
+  // Other public/preview routes in same project - valid redirect targets
   const redirectableRoutes = allRoutes.filter(
     (r) => r.id !== routeId && r.zone !== "internal"
   )
@@ -406,7 +406,7 @@ function TargetForm({
               ))}
             </SelectContent>
           </Select>
-          {/* Port selector — only shown when the selected service has multiple public HTTP ports */}
+          {/* Port selector - only shown when the selected service has multiple public HTTP ports */}
           {(() => {
             const selected = serviceList.find((s) => s.id === form.serviceId)
             const publicHTTP = selected?.ports?.filter((p) => p.is_public && p.is_http) ?? []

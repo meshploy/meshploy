@@ -231,7 +231,7 @@ func (s *PermissionService) IsAdminOrOwner(ctx context.Context, orgID, userID uu
 // VisibleProjectIDs returns the set of project IDs a member can see.
 // Includes projects with a direct project grant AND projects that are parent
 // of any service/stack/job the user has a grant on.
-// Returns (nil, true, nil) for admins/owners — caller should skip filtering.
+// Returns (nil, true, nil) for admins/owners - caller should skip filtering.
 func (s *PermissionService) VisibleProjectIDs(ctx context.Context, orgID, userID uuid.UUID) (map[uuid.UUID]bool, bool, error) {
 	admin, err := s.IsAdminOrOwner(ctx, orgID, userID)
 	if err != nil {

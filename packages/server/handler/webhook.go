@@ -92,7 +92,7 @@ func (h *Handler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	// Extract branch name from ref (e.g. "refs/heads/main" → "main").
 	branch := branchFromRef(payload.Ref)
 	if branch == "" {
-		// Tag push or other non-branch ref — ignore.
+		// Tag push or other non-branch ref - ignore.
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -104,7 +104,7 @@ func (h *Handler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 // DeployWebhook handles POST /api/v1/webhooks/deploy/{serviceId}?token=xxx.
 // Intended for public repos or any git provider without a native app integration.
 // The user copies this URL (with their service-specific token) into their repo's
-// webhook settings — any POST triggers a new build.
+// webhook settings - any POST triggers a new build.
 func (h *Handler) DeployWebhook(w http.ResponseWriter, r *http.Request) {
 	serviceIDStr := chi.URLParam(r, "serviceId")
 	serviceID, err := uuid.Parse(serviceIDStr)

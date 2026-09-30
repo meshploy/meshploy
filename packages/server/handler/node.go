@@ -22,7 +22,7 @@ import (
 )
 
 // NodeResponse extends db.Node with live data from Headscale and the K8s cluster.
-// If Headscale or K8s is unavailable the extra fields are zeroed — the DB data
+// If Headscale or K8s is unavailable the extra fields are zeroed - the DB data
 // is always returned.
 type NodeResponse struct {
 	db.Node
@@ -34,7 +34,7 @@ type NodeResponse struct {
 	HeadscaleExpiry   *time.Time `json:"headscale_expiry,omitempty"`
 	HeadscaleTags     []string   `json:"headscale_tags"`
 	HeadscaleUser     string     `json:"headscale_user,omitempty"`
-	// MagicDNS FQDN: {givenName}.mesh.{domain} — reachable from any node on the mesh
+	// MagicDNS FQDN: {givenName}.mesh.{domain} - reachable from any node on the mesh
 	HeadscaleFQDN string `json:"headscale_fqdn,omitempty"`
 
 	// K8s cluster membership
@@ -52,7 +52,7 @@ const enrichTimeout = 4 * time.Second
 
 // enrichNodes fetches headscale nodes and k8s cluster nodes concurrently, then
 // annotates each DB node. Errors from external sources are logged but never
-// propagated — callers always get at minimum the DB data.
+// propagated - callers always get at minimum the DB data.
 func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeResponse {
 	tctx, cancel := context.WithTimeout(ctx, enrichTimeout)
 	defer cancel()
@@ -326,7 +326,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		DefaultStatus: 204,
 	}, h.CancelNodeRemoval)
 
-	// Provisioning tokens — per-node single-use tokens (authenticated management)
+	// Provisioning tokens - per-node single-use tokens (authenticated management)
 	huma.Register(api, huma.Operation{
 		OperationID: "create-provisioning-token",
 		Method:      "POST",
@@ -336,7 +336,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.CreateProvisioningToken)
 
-	// Node registration token — authenticated management endpoints
+	// Node registration token - authenticated management endpoints
 	huma.Register(api, huma.Operation{
 		OperationID: "get-node-registration-token",
 		Method:      "GET",
@@ -355,7 +355,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GenerateNodeRegistrationToken)
 
-	// Unauthenticated — called by the worker install script over the mesh
+	// Unauthenticated - called by the worker install script over the mesh
 	huma.Register(api, huma.Operation{
 		OperationID: "self-register-node",
 		Method:      "POST",
@@ -364,7 +364,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 	}, h.SelfRegisterNode)
 
-	// Unauthenticated — called by the worker uninstall script over the mesh
+	// Unauthenticated - called by the worker uninstall script over the mesh
 	huma.Register(api, huma.Operation{
 		OperationID: "self-deregister-node",
 		Method:      "DELETE",
@@ -373,7 +373,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 	}, h.SelfDeregisterNode)
 
-	// K3s cluster join token — org-scoped, admin-only. Hands out a credential that
+	// K3s cluster join token - org-scoped, admin-only. Hands out a credential that
 	// lets a machine join the k3s cluster, so it is gated like its siblings
 	// GetNodeRegistrationToken and CreateProvisioningToken.
 	huma.Register(api, huma.Operation{
@@ -396,7 +396,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security: []map[string][]string{},
 	}, h.ProvisionNode)
 
-	// Headscale preauth key — org-scoped, admin-only. Get the most recent active
+	// Headscale preauth key - org-scoped, admin-only. Get the most recent active
 	// key, or generate a new one.
 	huma.Register(api, huma.Operation{
 		OperationID: "get-headscale-preauth-key",
@@ -416,7 +416,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.CreateHeadscalePreAuthKey)
 
-	// Orphaned workloads — org-scoped, admin-only. Read-only by design: it
+	// Orphaned workloads - org-scoped, admin-only. Read-only by design: it
 	// reports drift between the database and the cluster, it does not act on it.
 	huma.Register(api, huma.Operation{
 		OperationID: "list-orphan-workloads",
@@ -427,7 +427,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.ListOrphanWorkloads)
 
-	// Removing one orphan — org-scoped, admin-only. A per-item action a human
+	// Removing one orphan - org-scoped, admin-only. A per-item action a human
 	// takes, not a sweep: the operator has seen what it is and chosen it.
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-orphan-workload",
@@ -438,7 +438,7 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.DeleteOrphanWorkload)
 
-	// Mesh health — org-scoped, admin-only. Reports whether the API can still
+	// Mesh health - org-scoped, admin-only. Reports whether the API can still
 	// talk to Headscale, so a dead credential shows up in the UI instead of
 	// silently freezing node liveness.
 	huma.Register(api, huma.Operation{
@@ -567,7 +567,7 @@ func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*Delete
 	if err != nil {
 		return nil, notFound(err)
 	}
-	// The gateway/master node runs the control plane — deleting it would break
+	// The gateway/master node runs the control plane - deleting it would break
 	// everything. Block it at the API level regardless of UI state.
 	if node.K3sRole == db.K3sRoleServer {
 		return nil, huma.Error400BadRequest("the gateway node cannot be deleted")
@@ -672,7 +672,7 @@ type OrphanWorkloadsOutput struct {
 }
 
 // ListOrphanWorkloads reports what is running in the cluster that meshploy has
-// no record of — a delete that failed, a rename from before renames moved the
+// no record of - a delete that failed, a rename from before renames moved the
 // workload, a restore, or a manual kubectl change. Surfacing it is the point:
 // these are invisible otherwise, and an unowned Deployment holds real memory on
 // a node for as long as nobody looks.
@@ -746,7 +746,7 @@ func (h *Handler) GetMeshHealth(ctx context.Context, input *ClusterPathInput) (*
 
 // ClusterPathInput scopes the cluster-credential endpoints to an organization.
 // These endpoints hand out credentials that let a machine join the mesh and the
-// k3s cluster, so they are org-scoped and admin-only — matching their siblings
+// k3s cluster, so they are org-scoped and admin-only - matching their siblings
 // GetNodeRegistrationToken and CreateProvisioningToken.
 type ClusterPathInput struct {
 	OrgID string `path:"orgId"`
@@ -788,7 +788,7 @@ func (h *Handler) ProvisionNode(ctx context.Context, input *ProvisionNodeInput) 
 	return &ProvisionNodeOutput{Body: out}, nil
 }
 
-// SelfRegisterNode is unauthenticated — called by the worker install script
+// SelfRegisterNode is unauthenticated - called by the worker install script
 // over the WireGuard mesh after joining Headscale.
 // Accepts both mprov- (provisioning token, one-time) and mreg- (legacy org token).
 type SelfRegisterNodeInput struct {
@@ -798,7 +798,7 @@ type SelfRegisterNodeInput struct {
 		TailscaleIP string      `json:"tailscale_ip" minLength:"1"`
 		MeshRole    db.MeshRole `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder,mesh"`
 		// OS is what the join script runs on. Absent means Linux: install.sh
-		// sent none before it was recorded.
+		// sends none.
 		OS db.NodeOS `json:"os,omitempty" enum:"linux,darwin,windows"`
 	}
 }
@@ -846,7 +846,7 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	if strings.HasPrefix(input.Body.Token, "mprov-") {
 		node, nodeSecret, err = h.svc.Nodes.RegisterWithProvisioningToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole, input.Body.OS)
 	} else {
-		// Legacy org-wide mreg- token — no node secret issued
+		// Legacy org-wide mreg- token - no node secret issued
 		node, err = h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole, input.Body.OS)
 	}
 	if errors.Is(err, service.ErrNonLinuxClusterRole) {
@@ -891,7 +891,7 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	return out, nil
 }
 
-// SelfDeregisterNode is unauthenticated — called by the worker uninstall script.
+// SelfDeregisterNode is unauthenticated - called by the worker uninstall script.
 // Accepts either a per-node secret (node_secret, mprov flow) or the legacy
 // org registration token (token, mreg flow). At least one must be provided.
 type SelfDeregisterNodeInput struct {
@@ -920,7 +920,7 @@ func (h *Handler) SelfDeregisterNode(ctx context.Context, input *SelfDeregisterN
 			return nil, huma.Error401Unauthorized("invalid node secret")
 		}
 	case input.Body.Token != "":
-		// Legacy mreg token flow — verify token belongs to the same org
+		// Legacy mreg token flow - verify token belongs to the same org
 		orgID, err := h.svc.Nodes.OrgIDFromToken(ctx, input.Body.Token)
 		if err != nil {
 			return nil, huma.Error401Unauthorized("invalid or unknown registration token")
@@ -997,7 +997,7 @@ type HeadscalePreAuthKeyStatusOutput struct {
 	}
 }
 
-// HeadscalePreAuthKeyOutput is returned by POST — contains the full key from the CREATE response.
+// HeadscalePreAuthKeyOutput is returned by POST - contains the full key from the CREATE response.
 type HeadscalePreAuthKeyOutput struct {
 	Body struct {
 		Key          string    `json:"key"`
@@ -1030,7 +1030,7 @@ func (h *Handler) GetHeadscalePreAuthKey(ctx context.Context, input *ClusterPath
 		return out, nil
 	}
 	if time.Now().After(*org.HeadscalePreAuthKeyExpiry) {
-		// Key has expired — clear it so the UI prompts for a new one.
+		// Key has expired - clear it so the UI prompts for a new one.
 		if err := h.svc.Orgs.ClearHeadscalePreAuthKey(ctx, org.ID); err != nil {
 			log.Printf("warning: clear expired headscale preauth key for org %s: %v", org.ID, err)
 		}

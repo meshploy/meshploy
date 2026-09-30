@@ -21,7 +21,7 @@ type ExtensionContext struct {
 // Extension point: additional MCP tools.
 //
 // The CE binary never imports the EE module, so toolHooks stays empty in CE
-// builds — the same open-core pattern packages/db uses for RegisterMigration
+// builds - the same open-core pattern packages/db uses for RegisterMigration
 // and packages/server/handler uses for RegisterRoutes. An EE package registers
 // from its init():
 //
@@ -36,7 +36,7 @@ type ExtensionContext struct {
 // Tools registered here are exposed on both transports: the local stdio server
 // (meshploy mcp) and the gateway-served /mcp endpoint. The remote endpoint
 // strips tools by name via its denylist, so an operator-grade EE tool must be
-// added there too — being an extension does not exempt it.
+// added there too - being an extension does not exempt it.
 var toolHooks []func(*mcpsdk.MCPServer, ExtensionContext)
 
 // RegisterTools adds a callback that mounts additional tools. Callbacks run in

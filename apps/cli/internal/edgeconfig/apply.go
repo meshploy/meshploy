@@ -105,10 +105,8 @@ func Plan(files Files, dir string) ([]Change, error) {
 
 // staleZones finds generated zone files the render no longer produces.
 //
-// Only a file carrying the generated header is a candidate. A zone somebody
-// wrote by hand, and the {DOMAIN}-named templates an older install left in this
-// directory, are left exactly where they are: this decides what is stale, and
-// it must never decide that about a file it did not write.
+// Only a file carrying the generated header is a candidate: a zone somebody
+// wrote by hand, or a template an older install left, is never touched.
 func staleZones(files Files, dir string) ([]Change, error) {
 	entries, err := os.ReadDir(filepath.Join(dir, zonesDir))
 	if os.IsNotExist(err) {

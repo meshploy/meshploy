@@ -475,7 +475,7 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 }
 
 // GitHubAppCallback handles the redirect back from GitHub after manifest app creation.
-// GitHub sends ?code=&state= — we exchange code for credentials and store them on the
+// GitHub sends ?code=&state= - we exchange code for credentials and store them on the
 // GitIntegration row identified by the state token.
 func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
 	frontendURL := h.consoleAfterCallback(r)

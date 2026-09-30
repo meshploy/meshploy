@@ -23,7 +23,7 @@ import (
 //   - deploy_folder = reads a folder from the disk the server runs on: the
 //     agent's own for meshploy mcp, the gateway's here
 //
-// The local stdio server (meshploy mcp) keeps the full surface — that runs under
+// The local stdio server (meshploy mcp) keeps the full surface - that runs under
 // a developer's own login on their own machine, a different trust model.
 var remoteExcludedTools = []string{
 	"get_node_registration_token",
@@ -43,7 +43,7 @@ var remoteExcludedTools = []string{
 // under the calling agent's principal: tool calls are made against the API on
 // localhost carrying the agent's own bearer token, so every operation is
 // permission-scoped to exactly what the agent has been granted (the localhost
-// shortcut — see the agent-first plan, Phase 2).
+// shortcut - see the agent-first plan, Phase 2).
 func (h *Handler) MCPHandler(w http.ResponseWriter, r *http.Request) {
 	agentID, ok := middleware.UserFromContext(r.Context())
 	if !ok {

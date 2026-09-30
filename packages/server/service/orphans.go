@@ -97,7 +97,7 @@ func (s *OrphanService) List(ctx context.Context, orgID uuid.UUID) ([]OrphanWork
 //
 // The re-check is the point. The list the operator acted on was a snapshot, and
 // between rendering it and clicking Remove a service can have been created that
-// now owns this name — an apply, a rename landing, a deploy finishing. Deleting
+// now owns this name - an apply, a rename landing, a deploy finishing. Deleting
 // on the strength of the snapshot would take a live workload out from under it.
 //
 // Data is never removed as a side effect: deleteData has to be asked for.

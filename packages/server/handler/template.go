@@ -21,7 +21,7 @@ type TemplatePathInput struct {
 }
 
 // TemplateDetail carries the manifest plus the raw compose so the web UI can
-// prefill the stack editor. Variable *declarations* only — never resolved values.
+// prefill the stack editor. Variable *declarations* only - never resolved values.
 type TemplateDetail struct {
 	Manifest *templates.Manifest `json:"manifest"`
 	Compose  string              `json:"compose"`
@@ -113,7 +113,7 @@ func (h *Handler) GetTemplate(ctx context.Context, input *TemplatePathInput) (*G
 	return &GetTemplateOutput{Body: TemplateDetail{Manifest: tpl.Manifest, Compose: tpl.Compose}}, nil
 }
 
-// RefreshTemplatesInput carries no parameters — the catalog is a single global
+// RefreshTemplatesInput carries no parameters - the catalog is a single global
 // source, not a per-org one.
 type RefreshTemplatesInput struct{}
 

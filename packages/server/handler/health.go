@@ -30,7 +30,7 @@ func (h *Handler) Health(ctx context.Context, _ *struct{}) (*HealthOutput, error
 	out.Body.Status = "ok"
 	out.Body.Time = time.Now().UTC().Format(time.RFC3339)
 
-	// Ping the database — surface connectivity problems early.
+	// Ping the database - surface connectivity problems early.
 	if err := h.svc.System.Ping(ctx); err != nil {
 		out.Body.Status = "degraded"
 		out.Body.DB = err.Error()

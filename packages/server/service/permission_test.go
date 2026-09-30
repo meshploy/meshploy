@@ -128,7 +128,7 @@ func TestCheckAccess(t *testing.T) {
 	})
 
 	t.Run("project-level grant cascades to resource", func(t *testing.T) {
-		// member has project view — can view a hypothetical service within it
+		// member has project view - can view a hypothetical service within it
 		fakeServiceID := parseUUID(t, "00000000-0000-0000-0000-000000000001")
 		err := svcs.Permissions.CheckAccess(ctx, oID, mID, fakeServiceID, meshdb.ResourceService, meshdb.ActionView, &pID)
 		require.NoError(t, err)

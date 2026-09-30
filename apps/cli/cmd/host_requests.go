@@ -171,9 +171,6 @@ func runHostRequest(req hostagent.Request) hostagent.Task {
 // here it cannot read back.
 const migrateCredentialFile = "dokploy-credential.json"
 
-// takeMigrationCredential consumes the token the API left in the inbox and
-// checks the API accepts it, so a credential that would fail later fails now,
-// while somebody is watching.
 // errNoCredentialLeft is an inbox with no credential waiting in it.
 var errNoCredentialLeft = errors.New("no credential was left for this request")
 
@@ -186,6 +183,9 @@ func writeMigrationCredential(body []byte) error {
 	return writeFileAtomic(filepath.Join(hostagent.MigrateDir(hostDir), migrateCredentialFile), body, 0o600)
 }
 
+// takeMigrationCredential consumes the token the API left in the inbox and
+// checks the API accepts it, so a credential that would fail later fails now,
+// while somebody is watching.
 func takeMigrationCredential() ([]byte, error) {
 	cred, err := hostagent.TakeCredential(hostDir)
 	if err != nil {

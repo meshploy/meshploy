@@ -72,10 +72,10 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	// Mesh-only joins for machines install.sh cannot run on, public like it.
 	r.Get("/join/{script}", h.ServeJoinScript)
 
-	// Template icons — public image bytes, served for <img src>.
+	// Template icons - public image bytes, served for <img src>.
 	r.Get("/api/v1/templates/{templateId}/icon", h.ServeTemplateIcon)
 
-	// Remote MCP (Streamable HTTP) — authed by an agent token, permission-scoped.
+	// Remote MCP (Streamable HTTP) - authed by an agent token, permission-scoped.
 	r.Handle("/mcp", http.HandlerFunc(h.MCPHandler))
 	r.Handle("/mcp/*", http.HandlerFunc(h.MCPHandler))
 
@@ -105,7 +105,7 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	r.Get("/api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/{podName}/terminal",
 		h.ServiceTerminal)
 
-	// Inbound webhooks — no auth, validated by HMAC / deploy token
+	// Inbound webhooks - no auth, validated by HMAC / deploy token
 	r.Post("/api/v1/webhooks/github/{integrationId}", h.GitHubWebhook)
 	r.Post("/api/v1/webhooks/git/{provider}/{integrationId}", h.GitWebhook)
 	r.Post("/api/v1/webhooks/deploy/{serviceId}", h.DeployWebhook)

@@ -8,8 +8,8 @@ import (
 	svc "github.com/meshploy/packages/server/service"
 )
 
-// schemaProperties resolves a type through Huma's own reflection — the same
-// path that produces the response schema — and returns its property names.
+// schemaProperties resolves a type through Huma's own reflection - the same
+// path that produces the response schema - and returns its property names.
 func schemaProperties(t *testing.T, v any, name string) map[string]*huma.Schema {
 	t.Helper()
 	reg := huma.NewMapRegistry("#/components/schemas/", huma.DefaultSchemaNamer)
@@ -25,7 +25,7 @@ func schemaProperties(t *testing.T, v any, name string) map[string]*huma.Schema 
 
 // Huma's getFields drops any struct field failing IsExported() *before* it
 // checks whether the field is anonymous, so an embedded unexported type is
-// skipped whole. encoding/json promotes such fields, Huma does not — so a DTO
+// skipped whole. encoding/json promotes such fields, Huma does not - so a DTO
 // that marshals perfectly in a unit test can still reach the browser missing
 // most of itself, with no error anywhere.
 //
@@ -59,7 +59,7 @@ func TestConfigFileListSchemaCarriesEveryField(t *testing.T) {
 
 // ProjectWithCounts embeds two structs, and the project tab bar renders every
 // count from them. The embeds are of EXPORTED types, which is the only reason
-// Huma promotes their fields at all — so this pins the distinction rather than
+// Huma promotes their fields at all - so this pins the distinction rather than
 // leaving the tab counts resting on it silently.
 func TestProjectCountsSchemaCarriesEveryCount(t *testing.T) {
 	props := schemaProperties(t, svc.ProjectWithCounts{}, "ProjectWithCounts")

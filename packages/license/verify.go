@@ -25,7 +25,7 @@ var (
 // the caller can show details and enter a lapsed state; for any other error the
 // returned License is zero and must be treated as untrusted.
 //
-// Verify is the VERIFIER half — it needs only the public key, so it is safe to
+// Verify is the VERIFIER half - it needs only the public key, so it is safe to
 // ship in the open-source build.
 func Verify(pub ed25519.PublicKey, token string) (License, error) {
 	parts := strings.Split(token, ".")

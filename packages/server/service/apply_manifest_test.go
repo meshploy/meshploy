@@ -19,7 +19,7 @@ func TestApplyManifestUpsert(t *testing.T) {
 	pid := parseUUID(t, projID)
 	uid := parseUUID(t, userID)
 
-	// First apply — stack does not exist yet → created.
+	// First apply - stack does not exist yet → created.
 	r1, err := svcs.Stacks.ApplyManifest(ctx, pid, service.ManifestInput{Name: "app", Spec: validStackSpec}, uid)
 	require.NoError(t, err)
 	require.NotNil(t, r1.Stack)

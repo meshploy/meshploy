@@ -40,23 +40,23 @@ export interface VisualService {
   /**
    * The key this service has in the YAML document, or "" when the visual editor
    * created it. Renames are applied to that key so the rest of the service's
-   * YAML — every field the visual editor does not model — survives.
+   * YAML - every field the visual editor does not model - survives.
    */
   _origName: string
   serviceType: "app" | "database"
   name: string
-  // App — source
+  // App - source
   source: "image" | "git"
   image: string
   integrationId: string
   gitRepo: string
   gitBranch: string
-  // App — build (git only)
+  // App - build (git only)
   builder: VisualBuilder | ""  // "" = not set: apply builds with Railpack
   builderNodeName: string   // k8s_node_name or "" for auto
   builderCPURequest: string
   builderMemoryRequest: string
-  // App — deploy
+  // App - deploy
   port: number | ""
   replicas: number | ""
   nodeId: string            // node UUID or "" for auto
@@ -64,10 +64,10 @@ export interface VisualService {
   cpuLimit: string
   memoryRequest: string
   memoryLimit: string
-  // Environment — compose `environment`, as ordered pairs so the editor can
+  // Environment - compose `environment`, as ordered pairs so the editor can
   // hold a half-typed row without dropping it.
   env: { key: string; value: string }[]
-  // Volumes — compose `volumes`, kept as raw mount strings ("name:/path").
+  // Volumes - compose `volumes`, kept as raw mount strings ("name:/path").
   volumes: string[]
   /**
    * Keys present on this service in the YAML that the visual editor does not
@@ -264,7 +264,7 @@ export function yamlToVisual(spec: string): VisualService[] {
  * differs from what is already in the document.
  *
  * Replacing an unchanged block would rewrite it as a plain map and drop the
- * comments inside it — which is how a template's explanation of WHY a variable
+ * comments inside it - which is how a template's explanation of WHY a variable
  * is set disappears just because someone opened the visual tab. Leaving an
  * untouched block alone keeps both the comments and the author's chosen form
  * (map or "K=V" list).
@@ -305,12 +305,9 @@ function writeVolumes(doc: any, name: string, volumes: string[]) {
  * document, rather than rebuilding one from the visual model.
  *
  * The model only describes what the visual editor can edit: image, source,
- * build and deploy. A compose file holds much more — environment, volumes,
+ * build and deploy. A compose file holds much more - environment, volumes,
  * depends_on, healthcheck, command, labels, the top-level volumes and networks
- * blocks, and comments. Regenerating from the model deleted every one of them,
- * so merely opening the visual tab and switching back silently dropped a
- * service's volume mount and its environment, and the user then deployed a spec
- * that no longer persisted anything.
+ * blocks, and comments - which regenerating from the model would delete.
  *
  * Editing the parsed document preserves untouched keys and comments, and only
  * the fields the visual editor owns are written. A service the user did not
@@ -951,7 +948,7 @@ function AppFields({
           </Field>
         </div>
 
-        {/* Resource limits — collapsible */}
+        {/* Resource limits - collapsible */}
         <div className="rounded-lg border border-border/40">
           <Button
             variant="ghost"
@@ -989,7 +986,7 @@ function AppFields({
  * Environment, volumes, and a note of anything else the spec carries.
  *
  * Rendered for every service type. The visual and YAML tabs are two views of one
- * document, so a key that exists in the YAML has to be visible here too —
+ * document, so a key that exists in the YAML has to be visible here too -
  * otherwise the visual tab quietly under-reports what a service is, and editing
  * through it feels like it lost something even when it did not.
  */

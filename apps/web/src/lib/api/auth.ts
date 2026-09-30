@@ -3,7 +3,7 @@ import { apiFetch } from "./core"
 export const auth = {
   /**
    * Public, and called before login. `setup_required` reports a gateway that
-   * was installed but never given a domain — the console assumes one, so it is
+   * was installed but never given a domain - the console assumes one, so it is
    * gated on this rather than left to fail feature by feature.
    */
   status: () =>
@@ -25,7 +25,7 @@ export const auth = {
     }),
 
   /**
-   * `setupToken` gates the first registration on a server — the account created
+   * `setupToken` gates the first registration on a server - the account created
    * there owns the instance. Omitted when the installer issued no token, which
    * is the case for development and for installs predating it.
    */

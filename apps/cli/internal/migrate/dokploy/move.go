@@ -441,24 +441,14 @@ func (d MoveDeps) start(m GroupMember) error {
 	return d.waitHealthy(projectID, serviceID, m.Name)
 }
 
-// startStack applies a compose app, starts what it creates, and waits for it.
+// startStack applies a compose app's stack, which the move made ready before
+// anything stopped (readyStack), starts what it creates, and waits for it.
 //
-// A stack is not started, it is applied: what comes out are services, and they
-// are what a rollback stops - the stack itself stays, so a second attempt
-// reuses it rather than creating another.
-//
-// Each of those services is then started explicitly, and that is not
-// belt-and-braces. Applying a stack reconciles its shape, not its power state,
-// so a service prepare created stopped stays stopped; and after a rollback has
-// stopped them, re-applying does not bring them back either. Relying on the
-// apply to start them left a stack's deployment at zero replicas while the move
-// waited three minutes for a workload nothing had asked to run - found on a
-// real server, on a group that had been moved and rolled back once already.
-//
-// The apply is guarded by the journal because it only needs doing once. The
-// starts are not: they are idempotent, and they are the part a rollback undid.
-// startStack starts a compose app's stack, which the move made ready before
-// anything stopped (readyStack).
+// Each service is started explicitly: applying a stack reconciles its shape,
+// not its power state, so a service created stopped, or stopped by a rollback,
+// stays stopped. The apply is guarded by the journal because it only needs
+// doing once; the starts are not, being idempotent and the part a rollback
+// undoes.
 func (d MoveDeps) startStack(m GroupMember) error {
 	stackID, projectID := d.meshployIDs(m)
 	step := d.step(m.ID, "start")

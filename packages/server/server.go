@@ -41,7 +41,7 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 	// Build services first so the org-member middleware can reference them.
 	svc := service.New(db, cfg)
 
-	// Extension middleware, pre-auth phase. Empty in CE builds — the caller is
+	// Extension middleware, pre-auth phase. Empty in CE builds - the caller is
 	// not yet known here, so this is for transport concerns only.
 	for _, mw := range middlewareFor(0, PriorityBeforeAuth) {
 		r.Use(mw)
@@ -52,9 +52,9 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, agentFailLimiter))
 	r.Use(middleware.RequireAuth)
 	r.Use(middleware.PathRateLimiter(map[string]*middleware.IPRateLimiter{
-		// 5 attempts per minute per IP — brute-force protection
+		// 5 attempts per minute per IP - brute-force protection
 		"POST /api/v1/auth/login": middleware.NewIPRateLimiter(rate.Every(12), 5),
-		// 3 registrations per hour per IP — spam protection
+		// 3 registrations per hour per IP - spam protection
 		"POST /api/v1/auth/register": middleware.NewIPRateLimiter(rate.Limit(3.0/3600.0), 3),
 	}))
 	r.Use(middleware.OrgMember(func(ctx context.Context, orgID, userID uuid.UUID) error {

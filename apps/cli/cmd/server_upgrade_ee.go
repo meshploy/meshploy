@@ -175,7 +175,7 @@ func enterpriseImages() []string {
 // A pull rather than `manifest inspect`: podman's manifest command operates on
 // local manifest lists and does not answer "can I reach this remote image". The
 // product installer settled on the same probe for the same reason. Nothing is
-// wasted when it succeeds — `compose pull` runs moments later and finds the
+// wasted when it succeeds - `compose pull` runs moments later and finds the
 // layers already cached.
 func pullable(runtime, image string) bool {
 	return exec.Command(runtime, "pull", image+":"+pullChannel()).Run() == nil
@@ -185,7 +185,7 @@ func pullable(runtime, image string) bool {
 //
 // install.sh records the username it authenticated with, so a re-login here
 // uses the same account. Read from .env rather than the environment because
-// this command runs under sudo, which resets the environment by default — an
+// this command runs under sudo, which resets the environment by default - an
 // exported GHCR_USER would never reach us.
 //
 // The fallback covers an install that declined registry login, leaving nothing
@@ -234,7 +234,7 @@ func currentAPIImage() string {
 //
 // Best-effort by design. This command runs under sudo on the gateway, where the
 // saved CLI credentials belong to the invoking user's home directory and may
-// not be readable — and an unlicensed install has no scope at all. Neither is
+// not be readable - and an unlicensed install has no scope at all. Neither is
 // an error: the caller falls back to defaultEEImage or simply says nothing.
 func entitledRegistryScope() string {
 	// Deliberately not apiClient(): that exits the process when no credentials

@@ -19,7 +19,7 @@ func execCommander(ctx context.Context, name string, args ...string) ([]byte, er
 // closes it afterwards.
 //
 // install.sh opens 80, 443, 53 and 3478 and nothing else, so on a host with an
-// active firewall — which is most fresh cloud images — the setup page would be
+// active firewall - which is most fresh cloud images - the setup page would be
 // unreachable from the browser it was written for. Opening it here rather than
 // in install.sh keeps the rule's lifetime tied to the process that needs it: a
 // port left open after setup is a privileged installer left exposed.
@@ -35,7 +35,7 @@ func NewPortGuard() PortGuard {
 // Open adds a rule for the port and returns the function that removes it.
 //
 // Never fails the install: a host with no firewall, or one this does not know
-// how to drive, simply gets no rule — and the operator finds out by the page
+// how to drive, simply gets no rule - and the operator finds out by the page
 // not loading, which the printed URL already invites them to check. Refusing to
 // serve because a firewall could not be adjusted would be worse.
 func (g PortGuard) Open(ctx context.Context, port int) (close func(), opened bool) {

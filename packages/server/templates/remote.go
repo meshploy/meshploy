@@ -42,7 +42,7 @@ type RemoteCatalog struct {
 
 // NewRemoteCatalog builds a catalog over repo (e.g. "meshploy/meshploy-templates")
 // at ref, refreshing every refresh interval. fallback (may be nil) is served
-// while the live catalog is empty — pass NewEmbeddedCatalog() for the pinned
+// while the live catalog is empty - pass NewEmbeddedCatalog() for the pinned
 // snapshot so the catalog is never empty on a cold or offline start.
 func NewRemoteCatalog(repo, ref string, refresh time.Duration, fallback Catalog) *RemoteCatalog {
 	repo = strings.Trim(strings.TrimSpace(repo), "/")
@@ -190,7 +190,7 @@ func (c *RemoteCatalog) Refresh(ctx context.Context) error {
 
 	manifests, byID, err := c.fetchViaIndex(ctx)
 	if err != nil {
-		// No index.json (or unreadable) — fall back to per-template discovery.
+		// No index.json (or unreadable) - fall back to per-template discovery.
 		manifests, byID, err = c.fetchViaTree(ctx)
 		if err != nil {
 			c.setErr(err)
@@ -209,7 +209,7 @@ func (c *RemoteCatalog) Refresh(ctx context.Context) error {
 }
 
 // fetchViaIndex loads the catalog from a prebuilt index.json. Templates carry
-// only their manifest here — the compose is fetched lazily on Get.
+// only their manifest here - the compose is fetched lazily on Get.
 func (c *RemoteCatalog) fetchViaIndex(ctx context.Context) ([]*Manifest, map[string]*Template, error) {
 	b, err := c.fetchRaw(ctx, "index.json")
 	if err != nil {
@@ -261,7 +261,7 @@ func (c *RemoteCatalog) setErr(err error) {
 	log.Printf("templates: catalog refresh failed: %v", err)
 }
 
-// listIDs discovers template ids from the git tree — every templates/<id>/meta.yaml.
+// listIDs discovers template ids from the git tree - every templates/<id>/meta.yaml.
 func (c *RemoteCatalog) listIDs(ctx context.Context) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.treeURL, nil)
 	if err != nil {

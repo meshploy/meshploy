@@ -308,7 +308,7 @@ type AuthStatusOutput struct {
 	Body struct {
 		RegistrationOpen bool `json:"registration_open"`
 		// SetupRequired reports a gateway whose install never finished. The
-		// console assumes a domain -- every template needs one for its
+		// console assumes a domain - every template needs one for its
 		// subdomain, and a worker cannot join without Headscale's server_url --
 		// so it is gated on this rather than left to error feature by feature.
 		SetupRequired bool `json:"setup_required"`
@@ -332,7 +332,7 @@ func (h *Handler) AuthStatus(ctx context.Context, _ *struct{}) (*AuthStatusOutpu
 // setupRequired reports a gateway that was installed but never given a domain.
 //
 // The test is deliberately not "DOMAIN is empty". DOMAIN is optional, absent
-// from .env.example, and unset on every developer's machine -- gating on it
+// from .env.example, and unset on every developer's machine - gating on it
 // alone would lock local development out of the console the gate is meant to
 // protect.
 //

@@ -15,7 +15,7 @@ import (
 // published under this repository's MIT licence.
 //
 // Both talk to the API as the logged-in user, unlike `server-upgrade`, which
-// runs as root on the gateway. Do not sudo these — root has no saved
+// runs as root on the gateway. Do not sudo these - root has no saved
 // credentials and the call would fail to authenticate.
 var licenseCmd = &cobra.Command{
 	Use:     "license",

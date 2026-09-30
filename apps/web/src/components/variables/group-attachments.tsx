@@ -120,7 +120,7 @@ export function GroupAttachments({ owner, projectId }: { owner: GroupOwner; proj
   })
 
   const attachedIds = new Set(attached.map((g) => g.id))
-  // A service never offers its own generated group -- it always has it. A job
+  // A service never offers its own generated group - it always has it. A job
   // owns none, so every group in the project is on offer.
   const availableGroups = allGroups.filter(
     (g) => !attachedIds.has(g.id) && !(g.system_managed && !isJob && g.service_id === owner.id)

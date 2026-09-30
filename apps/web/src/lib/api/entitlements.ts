@@ -40,7 +40,7 @@ export const DEFAULT_ENTERPRISE_IMAGE = "ghcr.io/meshploy/api-ee"
 
 export const entitlements = {
   /**
-   * Readable by any authenticated user — the UI needs it to decide what to
+   * Readable by any authenticated user - the UI needs it to decide what to
    * render. It never returns the licence token itself, only the resulting tier
    * and feature list.
    */

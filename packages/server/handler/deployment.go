@@ -258,7 +258,7 @@ func (h *Handler) DeleteDeploymentRecord(ctx context.Context, input *DeploymentP
 	return nil, nil
 }
 
-// StreamDeploymentLogs is a raw SSE handler — registered via RegisterRaw, not Huma.
+// StreamDeploymentLogs is a raw SSE handler - registered via RegisterRaw, not Huma.
 // GET /api/v1/orgs/{orgId}/projects/{projectId}/services/{serviceId}/deployments/{deploymentId}/logs/stream
 func (h *Handler) StreamDeploymentLogs(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserFromContext(r.Context())

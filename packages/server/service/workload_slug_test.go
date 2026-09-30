@@ -13,7 +13,7 @@ import (
 
 // The namespace is the project, so two services sharing a Kubernetes name
 // resolve to one Deployment: deploying the same template twice had the second
-// silently overwrite the first. The first keeps the plain name — a suffix on
+// silently overwrite the first. The first keeps the plain name - a suffix on
 // every workload would be noise for the single-instance case that is normal.
 func TestWorkloadSlugSuffixesOnlyOnCollision(t *testing.T) {
 	ctx := context.Background()
@@ -31,7 +31,7 @@ func TestWorkloadSlugSuffixesOnlyOnCollision(t *testing.T) {
 }
 
 // A service created before the slug column exists has an empty slug and is
-// running under its display name. It must keep that name — and it must still
+// running under its display name. It must keep that name - and it must still
 // block a new service from claiming it, or the new one would adopt the running
 // workload.
 func TestLegacyServiceKeepsItsNameAndBlocksIt(t *testing.T) {

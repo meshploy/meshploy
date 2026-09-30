@@ -47,14 +47,14 @@ type CreateStackInput struct {
 	Spec      string
 	Variables map[string]string
 
-	// Git source — set when git_mode != ""
+	// Git source - set when git_mode != ""
 	GitMode          meshdb.StackGitMode
 	GitRepo          string
 	GitBranch        string
 	GitPath          string
 	GitIntegrationID *uuid.UUID
 
-	// Template provenance — set when the stack is created from a template.
+	// Template provenance - set when the stack is created from a template.
 	TemplateID      string
 	TemplateVersion string
 }
@@ -320,7 +320,7 @@ func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
 //
 // Services always go: they are the thing the stack is running, and a destroy
 // that left them is not a destroy. Volumes and routes are opt-in because each
-// destroys something the services themselves are not — stored data, and a
+// destroys something the services themselves are not - stored data, and a
 // hostname other people have been given.
 type DestroyOptions struct {
 	DeleteVolumes bool
@@ -338,7 +338,7 @@ type DestroyResult struct {
 }
 
 // Destroy removes what this stack created, leaving the stack and its spec
-// behind — the counterpart to Apply, in the sense terraform destroy is the
+// behind - the counterpart to Apply, in the sense terraform destroy is the
 // counterpart to terraform apply. Applying again recreates from the same spec.
 //
 // Order is load-bearing. Services go first: a volume cannot be deleted while it
@@ -644,7 +644,7 @@ type ApplyResult struct {
 }
 
 // ---------------------------------------------------------------------------
-// Apply — reconcile DB records from compose-go parsed spec
+// Apply - reconcile DB records from compose-go parsed spec
 // ---------------------------------------------------------------------------
 
 func (s *StackService) Apply(ctx context.Context, stackID uuid.UUID, triggerBy uuid.UUID, envOverrides map[string]string, opts ...ApplyOptions) (*ApplyResult, error) {
@@ -717,7 +717,7 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	// the salt starts with a letter, so it parses as an undefined variable and
 	// is replaced with nothing. That silently produced a truncated htpasswd and
 	// a registry whose generated password was rejected. nginx's $host, a shell
-	// script, a Prometheus rule -- all the same.
+	// script, a Prometheus rule - all the same.
 	//
 	// Interpolation stays on everywhere else, because service environment
 	// blocks are how stack variables reach a container.
@@ -1112,7 +1112,7 @@ func (s *StackService) resolveNamedVolumes(
 			First(&existing).Error; err == nil {
 			// Claim a volume this stack already owns by name. Without this an
 			// apply only ever links volumes it creates, so a volume from before
-			// stack ownership existed -- or from any earlier apply -- would stay
+			// stack ownership existed - or from any earlier apply - would stay
 			// unlinked forever and a destroy would not see it. Re-applying is
 			// therefore enough to repair the link.
 			if existing.StackID == nil {
@@ -1238,7 +1238,7 @@ func (s *StackService) applyBuildConfig(ctx context.Context, serviceID uuid.UUID
 			}
 		}
 	} else if stack != nil && stack.GitRepo != "" && svcDef.Build != nil {
-		// Service has a native build.context — inherit the stack's git source.
+		// Service has a native build.context - inherit the stack's git source.
 		gitRepo := stack.GitRepo
 		branch := stack.GitBranch
 		input.GitRepo = &gitRepo
@@ -1501,8 +1501,7 @@ func toRawURL(repoURL, branch, filePath string) (string, error) {
 // cloneRepo does a shallow clone into a temp directory and returns the path.
 // The credentials go to git as a header on this one command (see gitEnv), not
 // into the URL, where git would keep them in .git/config and repeat them in
-// its error output. They also used to be sent as GitHub's user name to every
-// provider.
+// its error output; the user name is the provider's own.
 func cloneRepo(ctx context.Context, creds gitCredentials, branch string) (string, error) {
 	dir, err := os.MkdirTemp("", "meshploy-stack-*")
 	if err != nil {
@@ -1553,12 +1552,6 @@ func jsonObjToStrMap(obj meshdb.JSONObject) map[string]string {
 	return m
 }
 
-// syncConfigFiles reconciles the files a stack service declares.
-//
-// Named per stack and service so re-applying updates the same row instead of
-// creating a second file at the same path — an apply is a reconcile, not an
-// append. Ownership is recorded so the stack page can show them and destroy can
-// find them, the same as services, volumes and routes.
 // uninterpolatedFiles parses the spec with interpolation disabled and returns
 // each service's declared files, keyed by service name, and the file: of each
 // config and secret exactly as written, keyed "configs/<name>" and
@@ -1607,6 +1600,12 @@ func (s *StackService) uninterpolatedFiles(ctx context.Context, spec string) (ma
 	return out, paths
 }
 
+// syncConfigFiles reconciles the files a stack service declares.
+//
+// Named per stack and service so re-applying updates the same row instead of
+// creating a second file at the same path - an apply is a reconcile, not an
+// append. Ownership is recorded so the stack page can show them and destroy can
+// find them, the same as services, volumes and routes.
 func (s *StackService) syncConfigFiles(
 	ctx context.Context,
 	stack meshdb.Stack,

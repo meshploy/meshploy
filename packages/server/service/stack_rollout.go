@@ -104,11 +104,10 @@ type changedService struct {
 // operator deliberately stopped, and one already deploying is left to the
 // rollout in flight.
 //
-// A service that was never deployed is not stopped, only not started yet: the
-// stack's first rollout stopped before it, or it was added with nothing to
-// run it. It goes, changed or not - "apply" means make the stack so, and after
-// a failed first rollout it is the only way the rest ever starts. A managed database is provisioned rather than deployed, so
-// a changed engine or size needs its own path and is only reported here.
+// A service that was never deployed is not stopped, only not started yet, so
+// it goes, changed or not: after a failed first rollout that is how the rest of
+// a stack starts. A managed database is provisioned rather than deployed, so a
+// changed engine or size needs its own path and is only reported here.
 func rolloutPlan(changed []changedService) (deploy []changedService, warnings []string) {
 	for _, c := range changed {
 		switch {
@@ -359,11 +358,8 @@ func (s *StackService) triggerLayer(ctx context.Context, layer []rollItem, trigg
 
 // rolloutInOrder follows a run to its end: it waits for each layer's
 // deployments to finish - a step that runs once has completed, the rest are
-// up - starts the next, and stops at a layer that failed, since what depends
-// on it would only fail after it.
-// A failure stops what depends on it, directly or through another service it
-// stopped, and nothing else: a failed admin tool used to stop every service
-// after it, most of which had never heard of it. dependsOn is each service's
+// up - then starts the next. A failure holds back only what depends on it,
+// directly or through a service it held back. dependsOn is each service's
 // depends_on, by name.
 func (s *StackService) rolloutInOrder(ctx context.Context, stack string, run *runTracker, previous []uuid.UUID, queued []rollItem, layers [][]rollItem, triggerBy uuid.UUID, dependsOn map[string][]string, maxBuilds int) {
 	blocked := map[string]string{} // a service held back -> the failure it waits on

@@ -18,7 +18,7 @@ import (
 )
 
 // setupDeploymentTest is setupStackTest plus the *gorm.DB, which these tests
-// need in order to drive a deployment's stored log directly -- there is no
+// need in order to drive a deployment's stored log directly - there is no
 // service-level API for "append a line as the rollout would".
 func setupDeploymentTest(t *testing.T) (*service.Services, *gorm.DB, uuid.UUID, string) {
 	t.Helper()
@@ -123,7 +123,7 @@ func TestStreamBuildLogsTailsStoredLogWhenThereIsNoBuild(t *testing.T) {
 	final := out.String()
 	assert.Contains(t, final, "All replicas healthy.")
 	assert.Contains(t, final, "event: done")
-	// Each line exactly once — a poll that re-sent from the start would repeat.
+	// Each line exactly once - a poll that re-sent from the start would repeat.
 	assert.Equal(t, 1, strings.Count(final, "Rolling out to cluster…"))
 }
 

@@ -14,18 +14,14 @@ import (
 	"github.com/google/uuid"
 )
 
-// Deploy on push, for every provider that is not a GitHub App.
-//
-// The machinery behind this was already provider-agnostic - a push finds every
-// service tracking that integration, repo and branch - but the only way in was
-// the GitHub App's own webhook. A GitLab or Gitea service could be marked
-// "deploy on push" and nothing would ever arrive. This is that missing door,
-// one shape for all of them:
+// Deploy on push, for every provider that is not a GitHub App: a push finds
+// every service tracking that integration, repository and branch. One shape
+// for all of them:
 //
 //	POST /api/v1/webhooks/git/{provider}/{integrationId}
 //
-// GitHub keeps its own route, unchanged, because its URL is baked into every
-// App manifest already created.
+// GitHub keeps its own route, because its URL is baked into every App
+// manifest already created.
 //
 // Each provider differs only in how it proves the delivery is genuine and where
 // it puts the repository and branch, which is all gitPushEvent covers.

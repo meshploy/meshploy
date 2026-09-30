@@ -2,14 +2,9 @@
  * Polling intervals for views that show a status.
  *
  * Statuses change without the browser doing anything: a rollout finishes, a
- * reconciler notices a pod has gone, a build fails. Polling only while a
- * resource is ALREADY transitional — the previous behaviour — meant a status
- * that settled stopped being watched, so a service going from running to failed
- * never appeared until the page was reloaded by hand. The pill was not stale for
- * a moment; it was stale until someone doubted it.
- *
- * So a status view always polls. Fast while something is visibly in motion,
- * slowly otherwise, which keeps a settled page cheap without letting it lie.
+ * reconciler notices a pod has gone, a build fails. So a status view always
+ * polls - fast while something is visibly in motion, slowly otherwise - or a
+ * settled status would stay stale until the page was reloaded.
  */
 export const LIVE_ACTIVE_MS = 3_000
 export const LIVE_SETTLED_MS = 15_000

@@ -9,7 +9,7 @@ import (
 // Extension point: additional HTTP routes.
 //
 // The CE binary never imports the EE module, so routeHooks stays empty in CE
-// builds — the same open-core pattern packages/db uses for RegisterMigration.
+// builds - the same open-core pattern packages/db uses for RegisterMigration.
 // An EE package registers from its init():
 //
 //	func init() { handler.RegisterRoutes(routes) }

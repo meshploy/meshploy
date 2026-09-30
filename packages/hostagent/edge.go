@@ -17,7 +17,7 @@ import (
 //
 // It exists as a file rather than a query because the generator must not need
 // the database. It runs at install, before Postgres exists, and during
-// `server-upgrade`, while Postgres is restarting -- and the host agent has
+// `server-upgrade`, while Postgres is restarting - and the host agent has
 // never held a database connection by design. The API writes a snapshot
 // whenever the set changes; everything downstream renders from the last one on
 // disk.
@@ -92,8 +92,8 @@ func (s EdgeSnapshot) HeadscalePortOrDefault() int {
 	return 8085
 }
 
-// MeshDomainOrDefault is MeshDomain, or mesh.<primary> for a snapshot written
-// before it was recorded.
+// MeshDomainOrDefault is MeshDomain, or mesh.<primary> for a snapshot that
+// does not say.
 func (s EdgeSnapshot) MeshDomainOrDefault() string {
 	if s.MeshDomain != "" {
 		return s.MeshDomain

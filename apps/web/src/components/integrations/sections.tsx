@@ -319,7 +319,7 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
     retry: false,
   })
 
-  // OAuth token expired and no refresh token available — user must re-authorize.
+  // OAuth token expired and no refresh token available - user must re-authorize.
   const needsReconnect = integration.connected && integration.auth_method === "oauth"
     && (reposError as { status?: number } | null)?.status === 401
 
@@ -464,7 +464,7 @@ function NotificationCard({ channel, onDelete, isDeleting, onToggle, isToggling 
  * Changing what an existing channel listens for.
  *
  * Without this a channel's events are fixed at creation, so the events added in
- * a release are unreachable for every channel made before it -- the same shape
+ * a release are unreachable for every channel made before it - the same shape
  * of problem as an event nothing could subscribe to.
  */
 function EditEventsDialog({ channel, open, onOpenChange }: {

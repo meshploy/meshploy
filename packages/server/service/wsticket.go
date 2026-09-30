@@ -28,7 +28,7 @@ type wsTicket struct {
 //
 // Browsers cannot set headers on a WebSocket handshake, so the credential has
 // to ride in the URL. Sending the session JWT there put a full-privilege bearer
-// token into every log that records request URIs — including this API's own
+// token into every log that records request URIs - including this API's own
 // chi request logger, whose output is the container log on disk. A ticket is
 // the smallest thing that closes that: it proves identity once, within seconds,
 // and is useless afterwards.
@@ -47,7 +47,7 @@ func NewTicketService() *TicketService {
 }
 
 // Mint issues a ticket for userID. The caller must already be authenticated by
-// the normal header-based middleware — a ticket carries no more authority than
+// the normal header-based middleware - a ticket carries no more authority than
 // the identity it names, and every terminal handler still runs its own
 // org/resource authorization after redeeming one.
 func (s *TicketService) Mint(userID uuid.UUID) (string, time.Time, error) {

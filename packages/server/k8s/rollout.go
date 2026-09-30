@@ -37,8 +37,8 @@ type RolloutResult struct {
 // reports what the cluster is doing while it happens.
 //
 // Applying a manifest only means the API server accepted it. Everything that
-// decides whether the workload runs -- scheduling, pulling the image, the
-// container starting and staying up -- happens afterwards and asynchronously.
+// decides whether the workload runs - scheduling, pulling the image, the
+// container starting and staying up - happens afterwards and asynchronously.
 // Treating the apply as success is what let a crash-looping service report
 // "Live, all replicas healthy".
 //
@@ -279,11 +279,9 @@ func terminalPodFailure(
 // revision's pods can be told from the previous one's. The current ReplicaSet is
 // the one the deployment's own revision annotation points at.
 //
-// Without this, a previous revision stuck in CrashLoopBackOff fails every
-// subsequent deploy: its pods match the deployment's labels, its BackOff events
-// are reported as the new rollout's, and terminalPodFailure gives up on a
-// container that the deploy was replacing. Stopping the service first made the
-// deploy work, which is the symptom that points straight here.
+// Without this, a previous revision stuck in CrashLoopBackOff would fail every
+// later deploy: its pods match the deployment's labels, and its failures would
+// be reported as the new rollout's.
 //
 // exact is false, with the deployment-wide selector, when the new revision
 // cannot be identified yet: the deployment controller has not seen the new

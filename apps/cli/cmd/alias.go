@@ -76,12 +76,12 @@ Examples:
 		}
 		dir := filepath.Dir(exePath)
 
-		// Specific name given — remove just that one.
+		// Specific name given - remove just that one.
 		if len(args) == 1 {
 			return removeAlias(filepath.Join(dir, args[0]))
 		}
 
-		// No name — scan directory for symlinks pointing to this binary.
+		// No name - scan directory for symlinks pointing to this binary.
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return fmt.Errorf("read directory: %w", err)

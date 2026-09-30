@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_app")({
     // A gateway with no domain cannot run most of the console: every template
     // needs a subdomain, routes need a hostname, and workers join through
     // headscale.<domain>. Gate once here rather than letting each feature fail
-    // on its own — a console whose main paths error is worse than one that says
+    // on its own - a console whose main paths error is worse than one that says
     // what is missing.
     //
     // Failure to reach the endpoint is deliberately not a gate. The console
@@ -65,7 +65,7 @@ function AppLayout() {
   const userId = useAuthStore((s) => s.userId)!
   const { currentOrg, setCurrentRole } = useOrgStore()
 
-  // Keep currentRole in sync with the server. staleTime of 5 min — no need to
+  // Keep currentRole in sync with the server. staleTime of 5 min - no need to
   // re-fetch on every navigation, but refreshes after an org switch (currentRole
   // is set to null by setCurrentOrg, which invalidates this query key).
   useQuery({

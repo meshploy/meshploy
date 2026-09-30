@@ -10,7 +10,7 @@ import (
 )
 
 // End to end through the real Store, the real ScriptRunner and the real HTTP
-// surface — everything except the cobra command and its root check. The only
+// surface - everything except the cobra command and its root check. The only
 // stand-in is install.sh itself, because the real one provisions a machine.
 func TestFullSetupFlow(t *testing.T) {
 	dir := t.TempDir()
@@ -38,7 +38,7 @@ echo "  ok  core services started"
 
 	h := srv.Config.Handler
 
-	// 1. The page renders before anything is authenticated — it has to, in order
+	// 1. The page renders before anything is authenticated - it has to, in order
 	//    to ask for the token.
 	if got := do(h, "GET", "/", "", "").Code; got != 200 {
 		t.Fatalf("setup page: want 200, got %d", got)
@@ -84,7 +84,7 @@ echo "  ok  core services started"
 		t.Error("the transcript should have been persisted")
 	}
 
-	// 6. A fresh process — the operator reloaded — resumes rather than restarts.
+	// 6. A fresh process - the operator reloaded - resumes rather than restarts.
 	reopened, err := NewStore(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ echo "  ok  core services started"
 }
 
 // The page is the only unauthenticated route, and it must carry nothing that
-// would let a passer-by act — it is served over plain HTTP on a public IP.
+// would let a passer-by act - it is served over plain HTTP on a public IP.
 func TestPageLeaksNothing(t *testing.T) {
 	store, _ := NewStore(t.TempDir())
 	_ = store.Update(func(st *State) {

@@ -3,7 +3,7 @@ import { demoStack } from "../data"
 import { db } from "../state"
 import { applyStack } from "./workspace"
 
-// Demo catalog — mirrors the shape the real API returns (manifest + compose).
+// Demo catalog - mirrors the shape the real API returns (manifest + compose).
 // Kept in-file since it's demo-only mock data specific to templates.
 const demoTemplates = [
   {

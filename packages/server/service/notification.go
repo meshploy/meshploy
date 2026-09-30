@@ -217,7 +217,7 @@ func (s *NotificationService) ForService(ctx context.Context, svc *meshdb.Servic
 }
 
 // Dispatch sends event to all enabled channels for the org that subscribe to it.
-// Errors are logged and swallowed — notification failures must not affect callers.
+// Errors are logged and swallowed - notification failures must not affect callers.
 func (s *NotificationService) Dispatch(ctx context.Context, orgID uuid.UUID, event string, data NotificationData) {
 	var channels []meshdb.NotificationChannel
 	if err := s.db.WithContext(ctx).
@@ -483,9 +483,8 @@ const (
 // EventDef describes one event to everything that needs to know about it: the
 // senders, and the console's picker.
 //
-// One catalogue rather than a map per concern. The console used to carry its
-// own hand-written list, and job.failed was dispatched for months while being
-// absent from it -- an event nobody could subscribe to, and so never delivered.
+// One catalogue rather than a map per concern, so the console's list cannot
+// miss an event the senders dispatch.
 type EventDef struct {
 	Event       string    `json:"event"`
 	Group       string    `json:"group"`

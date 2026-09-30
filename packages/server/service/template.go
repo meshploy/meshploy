@@ -15,7 +15,7 @@ import (
 
 // TemplateService deploys one-click templates. A template is a third stack
 // source: Deploy resolves its variables, substitutes them into the compose
-// (templates.PrepareSpec — the only deploy-time spec conversion), then lowers to
+// (templates.PrepareSpec - the only deploy-time spec conversion), then lowers to
 // the existing stack create + apply + route machinery.
 type TemplateService struct {
 	db      *gorm.DB
@@ -105,7 +105,7 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 	// Create a public route per exposed service, in the background.
 	//
 	// This cannot be done inline. A route target resolves to the service's
-	// NodePort, and that is assigned by the deployment -- which Apply starts in
+	// NodePort, and that is assigned by the deployment - which Apply starts in
 	// its own goroutine. Inline, the port is always still zero, so route
 	// creation returned "service has not been deployed yet" every single time
 	// and the error was discarded: a template declaring `expose` produced a
@@ -124,7 +124,7 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 // the second instance: "zot", then "zot-2", "zot-3".
 //
 // Stack names are not unique in the schema, so a second deploy of the same
-// template produced two stacks called "zot" -- and because a stack's volumes are
+// template produced two stacks called "zot" - and because a stack's volumes are
 // named "<stack>-<volume>", the second silently adopted the first's PVC and both
 // wrote to one disk. Numbering is right here rather than a random suffix: this
 // is a display name a person reads in a list, the k8s names that must never

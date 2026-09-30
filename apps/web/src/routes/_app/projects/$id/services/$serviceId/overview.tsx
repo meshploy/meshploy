@@ -132,7 +132,7 @@ function ServiceOverviewTab() {
   })
 
   // A TCP route publishes this database on the gateway, so its address is one
-  // more thing to connect with -- and the one to be careful with.
+  // more thing to connect with - and the one to be careful with.
   const { data: tcpList = [] } = useQuery({
     queryKey: ["tcp-routes", orgId, projectId],
     queryFn: () => tcpRoutes.list(orgId!, projectId, token),

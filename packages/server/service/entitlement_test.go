@@ -42,7 +42,7 @@ func entLicense() license.License {
 }
 
 // A stock CE build trusts no signing key, so nothing is entitled. This is the
-// safe default — an unconfigured build cannot accidentally unlock anything.
+// safe default - an unconfigured build cannot accidentally unlock anything.
 func TestEntitlementCEHasNothing(t *testing.T) {
 	database := newExtTestDB(t)
 	saved := LicensePublicKeys
@@ -231,7 +231,7 @@ func TestEntitlementNodeLimitWarnsWithoutBlocking(t *testing.T) {
 	if err := database.Create(&org).Error; err != nil {
 		t.Fatalf("org: %v", err)
 	}
-	// One gateway (never metered) and two workers — over a limit of 1.
+	// One gateway (never metered) and two workers - over a limit of 1.
 	for _, n := range []meshdb.Node{
 		{OrganizationID: org.ID, Name: "gw", TailscaleIP: "100.64.0.1", K3sRole: meshdb.K3sRoleServer},
 		{OrganizationID: org.ID, Name: "w1", TailscaleIP: "100.64.0.2", K3sRole: meshdb.K3sRoleAgent},
@@ -253,7 +253,7 @@ func TestEntitlementNodeLimitWarnsWithoutBlocking(t *testing.T) {
 	if !st.OverLimit {
 		t.Fatal("2 workers against a limit of 1 must report over-limit")
 	}
-	// Still licensed and still granting — a warning, not a gate.
+	// Still licensed and still granting - a warning, not a gate.
 	if !st.Licensed || !svc.Entitled(context.Background(), uuid.Nil, "sso") {
 		t.Fatal("exceeding the node limit must not disable the license")
 	}

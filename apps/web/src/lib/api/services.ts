@@ -213,7 +213,7 @@ export interface CreateServiceBody {
   memory_request?: string
   memory_limit?: string
   env_vars?: string
-  // Build config — a BuildConfig row is created server-side when git_repo is set
+  // Build config - a BuildConfig row is created server-side when git_repo is set
   git_integration_id?: string
   git_repo?: string
   /** Built from a folder sent to .../source afterwards, not a repository. */

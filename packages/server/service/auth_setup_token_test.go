@@ -21,7 +21,7 @@ func servicesWithSetupToken(t *testing.T, token string) *service.Services {
 }
 
 // The first account on a server owns it. Without a token, anyone who reaches
-// the box during the install window can claim it — which is exactly what
+// the box during the install window can claim it - which is exactly what
 // publishing the console on an IP would expose.
 func TestFirstRegistrationRequiresTheSetupToken(t *testing.T) {
 	ctx := context.Background()
@@ -62,7 +62,7 @@ func TestNoSetupTokenConfiguredLeavesRegistrationOpen(t *testing.T) {
 
 // The token only guards the empty-server window. Once an owner exists the
 // server is claimed, and that refusal must be reported as such rather than as a
-// token problem — the operator would otherwise go hunting for a token that
+// token problem - the operator would otherwise go hunting for a token that
 // would not have helped.
 func TestSetupTokenIsIrrelevantOnceClaimed(t *testing.T) {
 	ctx := context.Background()

@@ -42,7 +42,7 @@ func (s *RegistryService) Create(ctx context.Context, orgID uuid.UUID, in Create
 }
 
 func (s *RegistryService) Delete(ctx context.Context, id, orgID uuid.UUID) error {
-	// Prevent deleting the built-in registry — it is managed by the platform.
+	// Prevent deleting the built-in registry - it is managed by the platform.
 	var reg db.RegistryIntegration
 	if err := s.db.WithContext(ctx).Where("id = ? AND organization_id = ?", id, orgID).First(&reg).Error; err != nil {
 		return err
@@ -56,7 +56,7 @@ func (s *RegistryService) Delete(ctx context.Context, id, orgID uuid.UUID) error
 }
 
 // SeedBuiltin ensures a built-in registry row exists for the given org.
-// It is idempotent — calling it multiple times is safe.
+// It is idempotent - calling it multiple times is safe.
 func (s *RegistryService) SeedBuiltin(ctx context.Context, orgID uuid.UUID, endpoint string) error {
 	if endpoint == "" {
 		return nil

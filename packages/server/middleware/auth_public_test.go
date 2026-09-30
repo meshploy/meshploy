@@ -13,7 +13,7 @@ func public(method, path string) bool {
 // Regression guard for the auth bypass this file previously carried.
 //
 // `publicRules` used to contain the prefix rule "GET /api/", annotated as being
-// for the OpenAPI schema. It exempted EVERY GET under /api/ from RequireAuth —
+// for the OpenAPI schema. It exempted EVERY GET under /api/ from RequireAuth -
 // and Huma serves its spec at /openapi, /docs and /schemas, so it never served
 // that purpose. Only per-handler checks stood between an unauthenticated caller
 // and the data; a handler that omitted one served openly, which was observed
@@ -57,7 +57,7 @@ func TestGenuinelyPublicRoutesStayPublic(t *testing.T) {
 		{http.MethodGet, "/api/v1/github/app-callback"},
 		{http.MethodGet, "/api/v1/gitlab/callback"},
 		{http.MethodGet, "/api/v1/gitea/callback"},
-		// WebSocket terminals — the browser API cannot set headers, so these
+		// WebSocket terminals - the browser API cannot set headers, so these
 		// validate a JWT from ?token= themselves.
 		{http.MethodGet, "/api/v1/orgs/o1/nodes/n1/terminal"},
 		{http.MethodGet, "/api/v1/orgs/o1/projects/p1/services/s1/pods/pod1/terminal"},
@@ -95,11 +95,11 @@ func TestExemptionsAreMethodScoped(t *testing.T) {
 // path embedded "/terminal" or "/self-register" skipped authentication.
 func TestPatternsAreAnchoredNotSubstrings(t *testing.T) {
 	shouldBeProtected := []struct{ method, path string }{
-		// "/terminal" is a suffix rule — an embedded occurrence must not match.
+		// "/terminal" is a suffix rule - an embedded occurrence must not match.
 		{http.MethodGet, "/api/v1/orgs/o1/terminal/secrets"},
 		{http.MethodGet, "/api/v1/terminals"},
 		{http.MethodGet, "/mcp/terminal/x"},
-		// "/self-register" is exact — neighbouring paths must not match.
+		// "/self-register" is exact - neighbouring paths must not match.
 		{http.MethodPost, "/api/v1/nodes/self-register/all"},
 		{http.MethodPost, "/api/v1/evil/self-register"},
 		{http.MethodPost, "/api/v1/nodes/provision/all"},
@@ -130,7 +130,7 @@ func TestHumaDocEndpointsAreNotSilentlyExempt(t *testing.T) {
 }
 
 // The template icon exemption is anchored at both ends. The catalog list and the
-// template detail sit under the same prefix and must stay protected -- the
+// template detail sit under the same prefix and must stay protected - the
 // detail carries the compose spec.
 func TestTemplateIconExemptionIsNarrow(t *testing.T) {
 	if !public(http.MethodGet, "/api/v1/templates/pgadmin/icon") {
@@ -157,7 +157,7 @@ func TestTemplateIconExemptionIsNarrow(t *testing.T) {
 // Caddy asks these before issuing a certificate and cannot attach an
 // Authorization header, and it reads any non-2xx as "deny". While they returned
 // 401 the self-managed-DNS install issued no certificate at all, and custom
-// domains got none in either DNS mode — with nothing logged, because a denial
+// domains got none in either DNS mode - with nothing logged, because a denial
 // is a normal answer.
 //
 // They were public under the old blanket "GET /api/" rule and were overlooked

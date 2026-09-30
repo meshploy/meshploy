@@ -35,7 +35,7 @@ func FromEnv() (*gorm.DB, error) {
 // CE code calls Migrate() which runs all CE AutoMigrate + the eeHooks slice.
 // The EE module registers its own migrations via RegisterMigration() from an
 // init() function. Because the CE binary never imports the EE module, eeHooks
-// stays empty in CE builds — the CE codebase remains completely unaware of EE.
+// stays empty in CE builds - the CE codebase remains completely unaware of EE.
 // ---------------------------------------------------------------------------
 
 var eeHooks []func(*gorm.DB) error
@@ -152,7 +152,7 @@ func Migrate(db *gorm.DB) error {
 
 // applyConstraints creates DB-level constraints that GORM's AutoMigrate
 // cannot express via struct tags alone, and ensures all FK constraints carry
-// the correct ON DELETE behavior (idempotent — safe to run on every startup).
+// the correct ON DELETE behavior (idempotent - safe to run on every startup).
 func applyConstraints(db *gorm.DB) error {
 	stmts := []string{
 		// Exactly one owner per organization
@@ -223,7 +223,7 @@ func applyConstraints(db *gorm.DB) error {
 		// Routes: derived from what they point at rather than from a name. A route
 		// whose targets all resolve to services of one stack was created for that
 		// stack; one spanning several stacks, or mixing stack and standalone
-		// services, is deliberately left unclaimed -- destroying it would remove a
+		// services, is deliberately left unclaimed - destroying it would remove a
 		// hostname another stack is still serving.
 		`UPDATE routes r SET stack_id = sub.stack_id
 		 FROM (
@@ -235,18 +235,16 @@ func applyConstraints(db *gorm.DB) error {
 		 ) sub
 		 WHERE r.id = sub.route_id AND r.stack_id IS NULL`,
 
-		// A database's port is internal and not HTTP, but the service_ports model
-		// used to carry `default:true` on both flags, so GORM stored the false
-		// the code passed as true. The discovery variables then advertised the
-		// database as an http:// URL. Only databases are repaired: for an
-		// application, whether a port was meant to be public cannot be told
-		// from the row.
+		// A database's port is internal and not HTTP; one stored as public HTTP
+		// makes discovery advertise it as an http:// URL. Only databases are
+		// repaired: whether an application's port is meant to be public cannot
+		// be told from the row.
 		`UPDATE service_ports sp SET is_http = false, is_public = false
 		 FROM services s
 		 WHERE sp.service_id = s.id AND s.type = 'database'
 		   AND (sp.is_http OR sp.is_public)`,
 
-		// Drop old single-port columns from services (idempotent — no-op when already absent)
+		// Drop old single-port columns from services (idempotent - no-op when already absent)
 		`ALTER TABLE services DROP COLUMN IF EXISTS port`,
 		`ALTER TABLE services DROP COLUMN IF EXISTS node_port`,
 
@@ -256,10 +254,8 @@ func applyConstraints(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_primary_domain_per_org
 		 ON domains (organization_id)
 		 WHERE is_primary`,
-		// Promote the seeded domain on installs that predate the column. An org
-		// had exactly one domain before this, so the oldest is the right pick;
-		// the NOT EXISTS guard makes it idempotent and stops it ever demoting or
-		// second-guessing a primary somebody has since chosen.
+		// An org with no primary domain gets its oldest one. The NOT EXISTS
+		// guard keeps it idempotent and never overrides a primary someone chose.
 		`UPDATE domains d SET is_primary = true
 		 WHERE d.id IN (
 		     SELECT DISTINCT ON (organization_id) id FROM domains
@@ -347,7 +343,7 @@ func applyConstraints(db *gorm.DB) error {
 		{"deployments", "service_id", "services", "CASCADE"},
 		{"backup_configs", "service_id", "services", "CASCADE"},
 		// Join tables and volume mounts also hang off a service. Without these the
-		// FK defaults to NO ACTION and deleting a service fails outright — the
+		// FK defaults to NO ACTION and deleting a service fails outright - the
 		// attachment rows are bookkeeping, not something to preserve past the
 		// service they describe.
 		{"service_variable_groups", "service_id", "services", "CASCADE"},

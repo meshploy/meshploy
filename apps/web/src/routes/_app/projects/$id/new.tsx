@@ -1616,7 +1616,7 @@ function TCPRouteFields({ projectId }: { projectId: string }) {
   // The service's own port is what a client expects to type, so it is offered
   // first; otherwise the first free port above 10000, high enough to be clear
   // of the well-known ones. Only the gateway's own ports and published routes
-  // are knowable from here -- something else on the host may still hold one,
+  // are knowable from here - something else on the host may still hold one,
   // which is why the route reports whether it could actually bind.
   const findFreePort = () => {
     const inUse = new Set([...reserved, ...taken.map((r) => r.gateway_port)])
@@ -2317,7 +2317,7 @@ function StackForm({ projectId, initialTemplateId }: { projectId: string; initia
   const [name, setName] = useState("")
   const [spec, setSpec] = useState(DEFAULT_STACK_SPEC)
 
-  // Git source state — default to the template source when arriving via a gallery deep-link.
+  // Git source state - default to the template source when arriving via a gallery deep-link.
   // Otherwise a private repository, cloned whole: most stacks build at least one
   // service from its own folder, which a Compose file alone cannot resolve.
   const [sourceMode, setSourceMode] = useState<StackSourceMode>(initialTemplateId ? "template" : "git")

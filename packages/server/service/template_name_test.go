@@ -6,7 +6,7 @@ import (
 )
 
 // A stack's volumes are named "<stack>-<volume>", and resolveNamedVolumes looks
-// one up by (project, name) — so two stacks called "zot" made the second adopt
+// one up by (project, name) - so two stacks called "zot" made the second adopt
 // the first's PVC, with both writing to one disk and nothing reporting it.
 // Numbering the stack keeps the volume names apart.
 func TestNextFreeNameNumbersFromTheSecond(t *testing.T) {

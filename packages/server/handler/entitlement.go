@@ -10,7 +10,7 @@ import (
 // The entitlement endpoints exist in CE, not just EE.
 //
 // CE returns an empty feature list, so the web app has one code path instead of
-// special-casing a 404. CE also verifies a pasted token — a valid license on a
+// special-casing a 404. CE also verifies a pasted token - a valid license on a
 // CE binary unlocks nothing, because EE features are not compiled in, but
 // verifying lets the UI tell the admin the token is good and what to do next
 // (switch to the EE image). That guidance is only possible if CE can check the
@@ -47,7 +47,7 @@ func (h *Handler) registerEntitlementRoutes(api huma.API) {
 }
 
 // GetEntitlements is readable by any authenticated user: the UI needs it on
-// every page load to decide what to render, and it exposes no secret — the
+// every page load to decide what to render, and it exposes no secret - the
 // token itself is never returned, only the tier and feature list.
 func (h *Handler) GetEntitlements(ctx context.Context, _ *struct{}) (*EntitlementsOutput, error) {
 	userID, err := requireUser(ctx)

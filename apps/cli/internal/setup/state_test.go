@@ -30,7 +30,7 @@ func TestStateSurvivesARestart(t *testing.T) {
 	s.Append("pulling images")
 	s.Append("starting postgres")
 
-	// A second process — the operator reloaded, or the server was restarted.
+	// A second process - the operator reloaded, or the server was restarted.
 	again, err := NewStore(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestStateSurvivesARestart(t *testing.T) {
 	}
 }
 
-// A corrupt state file must not brick the installer — starting over is
+// A corrupt state file must not brick the installer - starting over is
 // recoverable, refusing to start is not.
 func TestCorruptStateStartsOverRatherThanFailing(t *testing.T) {
 	dir := t.TempDir()
@@ -116,7 +116,7 @@ func TestClearRemovesTheStateFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".setup-state.json")); !os.IsNotExist(err) {
 		t.Error("the state file should be gone")
 	}
-	// And clearing twice is not an error — the command may be re-run.
+	// And clearing twice is not an error - the command may be re-run.
 	if err := s.Clear(); err != nil {
 		t.Errorf("clearing an already-clear install must be a no-op: %v", err)
 	}

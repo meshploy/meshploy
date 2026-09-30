@@ -28,7 +28,7 @@ func TestExposureIgnoresNonGateways(t *testing.T) {
 	require.NoError(t, err)
 
 	// A developer running the API locally must never be told their machine is
-	// exposed -- the same signal the setup gate uses.
+	// exposed - the same signal the setup gate uses.
 	require.Equal(t, "unknown", got.FirewallState)
 	require.Empty(t, got.Ports)
 }

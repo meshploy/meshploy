@@ -12,7 +12,7 @@ import (
 // Public-key helpers only.
 //
 // Keypair generation and every private-key helper stay with the issuer in
-// meshploy-admin. Verifying a license requires only the public key — that
+// meshploy-admin. Verifying a license requires only the public key - that
 // asymmetry is what lets this package ship in the open-source build without
 // giving anyone the ability to mint a license.
 

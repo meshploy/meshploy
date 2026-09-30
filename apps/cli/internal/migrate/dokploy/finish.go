@@ -112,12 +112,9 @@ func PlanFinish(d FinishDeps) FinishScope {
 			owned[name] = true
 			byID[it.ID] = it
 			// The plan's verdict is what a workload *could* do, and it is only
-			// the answer here when there is no journal to ask. A verdict of
-			// needs_you means a question with a default - every bind mount
-			// raises one - and such a workload moves perfectly well. Counting
-			// only Moves left the stopped Dokploy copy of anything with a bind
-			// mount behind after a completed migration, which is how this was
-			// found.
+			// the answer here when there is no journal to ask. needs_you means
+			// a question with a default - every bind mount raises one - and such
+			// a workload moves too, so its Dokploy copy is removed as well.
 			if d.Journal == nil && it.Verdict == Moves {
 				moved[name] = true
 			}

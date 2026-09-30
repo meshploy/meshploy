@@ -26,8 +26,6 @@ type TCPRouteService struct {
 	hostDir string
 }
 
-// withHostFirewall reads the host agent's last report once and says, for each
-// route, what the host firewall does with its port.
 // zoneAddressName names what a zone binds, for a sentence.
 func zoneAddressName(z db.TCPRouteZone) string {
 	switch z {
@@ -41,6 +39,8 @@ func zoneAddressName(z db.TCPRouteZone) string {
 	return "every interface"
 }
 
+// withHostFirewall reads the host agent's last report once and says, for each
+// route, what the host firewall does with its port.
 func (s *TCPRouteService) withHostFirewall(routes []db.TCPRoute) {
 	if s.hostDir == "" || len(routes) == 0 {
 		return

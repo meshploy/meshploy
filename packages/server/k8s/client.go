@@ -13,7 +13,7 @@ import (
 // against when K3S_SERVER_URL rewrites the address.
 //
 // k3s issues its serving certificate for the in-cluster service names, so
-// every cluster carries this one — it is what in-cluster clients rely on. A
+// every cluster carries this one - it is what in-cluster clients rely on. A
 // cluster with an unusual --tls-san set can override it with
 // K3S_TLS_SERVER_NAME.
 const DefaultTLSServerName = "kubernetes.default.svc.cluster.local"
@@ -39,7 +39,7 @@ type Options struct {
 // NewClient returns a Kubernetes clientset.
 // If kubeconfigPath is set it loads that file; otherwise it falls back to
 // in-cluster config (works when the API pod runs inside K3s).
-// An optional serverURL overrides the server address in the kubeconfig — useful
+// An optional serverURL overrides the server address in the kubeconfig - useful
 // when the API runs in Docker and the kubeconfig points to 127.0.0.1.
 func NewClient(kubeconfigPath string, serverURL ...string) (*kubernetes.Clientset, error) {
 	cs, _, err := NewClientWithConfig(kubeconfigPath, serverURL...)
@@ -65,12 +65,9 @@ func NewClientWithConfig(kubeconfigPath string, serverURL ...string) (*kubernete
 // certificate is issued for the in-cluster names and the node address, not for
 // a name like host.meshploy.internal.
 //
-// This previously resolved that by setting Insecure and discarding the CA,
-// which silently disabled authentication of the connection on the standard
-// Docker deployment — the one deploy/docker-compose.yml configures by default.
-// That connection carries cluster-admin credentials. Pinning ServerName instead
-// keeps the chain verified against the cluster CA while tolerating the address
-// rewrite, which is what was actually needed.
+// So ServerName is pinned to a name the certificate carries: the chain stays
+// verified against the cluster CA while the address is rewritten. Never set
+// Insecure instead - this connection carries cluster-admin credentials.
 func NewClientWithOptions(opts Options) (*kubernetes.Clientset, *rest.Config, error) {
 	var cfg *rest.Config
 	var err error

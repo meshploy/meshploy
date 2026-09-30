@@ -26,7 +26,7 @@ import (
 )
 
 // ErrK8sNotConfigured is returned when an operation needs a cluster and this
-// instance has none -- the documented local-dev state, where mesh and cluster
+// instance has none - the documented local-dev state, where mesh and cluster
 // features are no-ops. It is an instance-level condition, not a per-resource
 // failure: a caller that fans out over many resources should check it once and
 // skip, rather than reporting the same sentence once per resource.
@@ -131,7 +131,7 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		First(&bc).Error == nil
 
 	if !hasBc || (bc.GitRepo == "" && !bc.BuildsFromUpload()) {
-		// No source to build — deploy the pre-configured image directly (no build step).
+		// No source to build - deploy the pre-configured image directly (no build step).
 		if svc.Image == "" {
 			return nil, fmt.Errorf("no image configured and no git source — set an image or configure a git source")
 		}
@@ -246,7 +246,7 @@ func (s *DeploymentService) triggerDirectDeploy(ctx context.Context, svc *db.Ser
 	// Mark the service as deploying for the duration.
 	//
 	// Nothing set this before, so a service kept whatever status it had while a
-	// deploy ran -- "stopped" for a freshly created one -- and its stack rolled
+	// deploy ran - "stopped" for a freshly created one - and its stack rolled
 	// that up as idle. The UI showed a deployment in progress beside a service
 	// claiming to be stopped, inside a stack claiming to be idle.
 	s.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", svc.ID).
@@ -402,8 +402,7 @@ func (a runPipelineArgs) uploadedSource() *appk8s.UploadedSource {
 
 func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) {
 	// BUILDER_IMAGE overrides; otherwise the builder matching this API's
-	// channel. This used to be worked out here and then never passed on, so
-	// the override did nothing and every job ran the stable builder.
+	// channel. It is passed to the job below.
 	builderImage := s.cfg.BuilderImage
 	if builderImage == "" {
 		builderImage = appk8s.DefaultBuilderImage()
@@ -463,9 +462,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 		return
 	}
 
-	// Queued until a node takes the pod; only then is it building. It used to
-	// be marked building here, so the console ticked "Queued" while the pod
-	// still had nowhere to run.
+	// Queued until a node takes the pod; only then is it building.
 	s.setStatus(a.deployment.ID, db.DeploymentPending, "Build job created: "+a.jobName+"\nWaiting for a build node…")
 	s.followBuild(ctx, a)
 }
@@ -579,7 +576,7 @@ func (s *DeploymentService) followBuild(ctx context.Context, a runPipelineArgs) 
 		}
 	}
 
-	// Follow the rollout rather than reporting the apply as the outcome -- see
+	// Follow the rollout rather than reporting the apply as the outcome - see
 	// the note on WatchRollout. A built image that starts and immediately exits
 	// is a failed deploy, not a successful one.
 	depLog := result.Log + "\nDeployment applied. Waiting for the rollout…\n"
@@ -622,8 +619,8 @@ func (s *DeploymentService) setStatus(id uuid.UUID, status db.DeploymentStatus, 
 // succeedDeployment writes the terminal state of a deployment that worked, and
 // tells the org about it.
 //
-// It exists because three of the four paths that finish a deployment -- a
-// direct image deploy, a rollback, a database provision -- wrote the rows
+// It exists because three of the four paths that finish a deployment - a
+// direct image deploy, a rollback, a database provision - wrote the rows
 // themselves and dispatched nothing, so a stack deploy, which is always
 // image-based, was silent on success while its failures were reported. The
 // notification belongs with the write, not beside it.
@@ -691,10 +688,9 @@ func (s *DeploymentService) failDeployment(id uuid.UUID, reason string) {
 	// A failed deployment leaves running what ran before: a build that fails
 	// never touches the cluster. So a service that had deployed goes back to
 	// running, which the status reconciler then checks against the cluster,
-	// and one that never reached the cluster is failed. It used to be marked stopped, which
-	// the reconciler leaves alone - stopped is how an operator's stop reads -
-	// and a service serving on its old image read as down. Either way the
-	// failure is recorded, and shown beside the status.
+	// and one that never reached the cluster is failed - never stopped, which
+	// is how an operator's stop reads. Either way the failure is recorded, and
+	// shown beside the status.
 	var svc db.Service
 	if err := s.db.Where("id = (?)", s.db.Model(&db.Deployment{}).Select("service_id").Where("id = ?", id)).
 		First(&svc).Error; err == nil {
@@ -968,9 +964,7 @@ func (s *DeploymentService) defaultRegistry(ctx context.Context, serviceID uuid.
 // Repositories are compared normalized because the two sides are written by
 // different hands: the picker stores what the provider calls the repository
 // (owner/name, or a GitLab group/subgroup/project path), while a repository
-// typed in by hand is often a full https URL. Comparing those literally made
-// auto-deploy do nothing at all, silently, which is the worst way for this to
-// fail.
+// typed in by hand is often a full https URL.
 func (s *DeploymentService) FindAndTriggerForPush(ctx context.Context, integrationID uuid.UUID, repo, branch string, changed []string) {
 	var configs []db.BuildConfig
 	s.db.WithContext(ctx).
@@ -1067,7 +1061,7 @@ func (s *DeploymentService) Cancel(ctx context.Context, deploymentID uuid.UUID) 
 	if d.Status != db.DeploymentBuilding && d.Status != db.DeploymentDeploying && d.Status != db.DeploymentPending {
 		return fmt.Errorf("deployment is not active")
 	}
-	// Delete the K8s Job — this terminates the build pod immediately.
+	// Delete the K8s Job - this terminates the build pod immediately.
 	if s.k8s != nil && d.BuildJobName != "" {
 		var svc db.Service
 		if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", d.ServiceID).Error; err == nil {
@@ -1450,7 +1444,7 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 		flush()
 	}
 
-	// Completed deployment — replay stored log then close.
+	// Completed deployment - replay stored log then close.
 	if !deploymentInFlight(d.Status) {
 		for _, line := range strings.Split(d.Log, "\n") {
 			sendLine(line)
@@ -1464,7 +1458,7 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	//
 	// Checked before the cluster is: tailing a stored log needs no Kubernetes,
 	// and on an instance without it that log holds the reason the deployment is
-	// going nowhere — the one thing worth streaming.
+	// going nowhere - the one thing worth streaming.
 	if d.BuildJobName == "" {
 		s.streamStoredLog(ctx, d.ID, 0, sendLine)
 		sendDone()
@@ -1484,8 +1478,8 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	}
 	namespace := svc.Project.Slug
 
-	// Everything already written before the build pod exists — "Build triggered
-	// by user …" and any early failure — so the stream is not blank while the
+	// Everything already written before the build pod exists - "Build triggered
+	// by user …" and any early failure - so the stream is not blank while the
 	// pod is scheduled.
 	replayed := 0
 	if d.Log != "" {
@@ -1505,7 +1499,7 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 		return nil
 	}
 
-	// Stream pod logs — wait for the container to be running first (image pull
+	// Stream pod logs - wait for the container to be running first (image pull
 	// can take tens of seconds). Retry up to 3 minutes.
 	sendLine(fmt.Sprintf("Streaming logs from pod %s", podName))
 	flush()
@@ -1515,7 +1509,7 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	for {
 		req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 			Follow: true,
-			// No TailLines — replay all existing output then follow new lines.
+			// No TailLines - replay all existing output then follow new lines.
 			// Needed so reconnecting clients catch up on already-written log output.
 		})
 		var err error
@@ -1524,7 +1518,7 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 			break
 		}
 		if time.Now().After(streamDeadline) {
-			// Give up — kubelet unreachable or container never started.
+			// Give up - kubelet unreachable or container never started.
 			sendLine("Warning: cannot stream live logs (" + err.Error() + ")")
 			sendLine("Replaying stored log output:")
 			var snap db.Deployment
@@ -1579,7 +1573,7 @@ func deploymentInFlight(status db.DeploymentStatus) bool {
 // emitting each new complete line until the deployment finishes.
 //
 // This is the only log an image-based deploy has. Nothing is built, so there is
-// no build pod to follow -- the rollout writes its progress with appendLog and
+// no build pod to follow - the rollout writes its progress with appendLog and
 // that is the whole story. Without this the stream sat waiting for a pod that
 // would never exist, and the lines only appeared on a reload, once the finished
 // deployment took the replay path instead.
@@ -1905,8 +1899,6 @@ func (s *DeploymentService) waitForBuildPod(ctx context.Context, namespace, jobN
 	}
 }
 
-// runtimeEnvVars parses a raw .env block into K8s EnvVar slice and ensures
-// PORT is set to the container port. The user-supplied value wins if present.
 // rolloutTimeout bounds how long a deploy waits for replicas to become
 // available. Generous, because a first pull of a large image on a slow link is
 // legitimately slow; a container the cluster has already given up on is
@@ -1948,6 +1940,8 @@ func (s *DeploymentService) configMountsFor(ctx context.Context, serviceID uuid.
 	return mounts
 }
 
+// runtimeEnvVars parses a raw .env block into K8s EnvVar slice and ensures
+// PORT is set to the container port. The user-supplied value wins if present.
 func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
 	portStr := fmt.Sprintf("%d", port)
 	hasPort := false
@@ -2027,7 +2021,6 @@ func mergeSecretEnvs(envs []corev1.EnvVar, secrets map[string]string) []corev1.E
 	return envs
 }
 
-// slugify converts a name to a K8s-safe lowercase slug.
 // buildEnv is the build block with its ${…} references filled in.
 //
 // The references may name a runtime variable or one from an attached group, so
@@ -2140,7 +2133,7 @@ func (s *DeploymentService) applyInClusterService(ctx context.Context, svc *db.S
 //
 // Every path that names a cluster object for a service must go through this.
 // Deploying under one name while status, stop, delete and exec look for another
-// is not a cosmetic mismatch -- it leaves a running workload nothing can see or
+// is not a cosmetic mismatch - it leaves a running workload nothing can see or
 // remove, which is how the orphaned Deployments happened.
 //
 // Slug is empty on rows created before it existed; those keep resolving to the
@@ -2152,6 +2145,7 @@ func appK8sName(svc *db.Service) string {
 	return slugify(svc.Name)
 }
 
+// slugify converts a name to a K8s-safe lowercase slug.
 func slugify(s string) string {
 	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, " ", "-")
@@ -2307,7 +2301,7 @@ func (s *DeploymentService) applyDatabaseWorkload(ctx context.Context, svc *db.S
 		return fmt.Errorf("failed to apply K8s service: %w", err)
 	}
 	// Publish the database under its service name too. A compose spec reaches
-	// a database by the name its author wrote -- "umami-db" -- while the
+	// a database by the name its author wrote - "umami-db" - while the
 	// workload is deployed under a suffixed slug, so without this the
 	// connection string in every database-backed template resolves to nothing
 	// in the cluster. Best-effort: the suffixed name still works, and losing

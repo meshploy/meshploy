@@ -20,7 +20,7 @@ export function TabBar() {
 
   return (
     <div role="group" aria-label="Open sessions" className="flex items-end gap-0 border-b border-border/40 bg-background overflow-x-auto shrink-0 scrollbar-none">
-      {/* Main tab — always first */}
+      {/* Main tab - always first */}
       <Tab
         label="Main"
         icon={<Home className="h-3 w-3" />}

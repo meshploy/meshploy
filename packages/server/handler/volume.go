@@ -52,7 +52,7 @@ type CreateVolumeBody struct {
 }
 
 // SetVolumeNodeBody changes where a volume is provisioned. Only takes effect
-// while the claim is unbound — node-local storage cannot be moved once written.
+// while the claim is unbound - node-local storage cannot be moved once written.
 type SetVolumeNodeBody struct {
 	NodeID *string `json:"node_id"` // null = auto-schedule
 }
@@ -352,7 +352,7 @@ func (h *Handler) AttachVolume(ctx context.Context, input *AttachVolumeInput) (*
 }
 
 func (h *Handler) DetachVolume(ctx context.Context, input *VolumeMountPathInput) (*struct{}, error) {
-	// ServiceID not in path — check project-level update as the target service's parent
+	// ServiceID not in path - check project-level update as the target service's parent
 	if _, _, _, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionUpdate, ""); err != nil {
 		return nil, err
 	}

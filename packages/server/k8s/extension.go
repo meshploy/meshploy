@@ -9,7 +9,7 @@ import (
 // Extension point: mutate Kubernetes Jobs before they are submitted.
 //
 // This lives in the k8s package rather than the service layer because the Job
-// object is constructed here — CreateBuildJob, CreateRunJob and ApplyCronJob are
+// object is constructed here - CreateBuildJob, CreateRunJob and ApplyCronJob are
 // the only three places one is built, and a mutator must see the final object
 // immediately before the API call. Hooking at the service layer would miss two
 // of the three and observe an unbuilt spec.

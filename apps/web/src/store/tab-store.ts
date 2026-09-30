@@ -58,7 +58,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
   openTab: (tab) => {
     const existing = get().tabs.find((t) => t.id === tab.id)
     if (existing) {
-      // Already open — just focus it.
+      // Already open - just focus it.
       set({ activeTabId: tab.id })
       return
     }

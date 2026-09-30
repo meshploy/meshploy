@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// .env is the only file in /opt/meshploy that survives an upgrade — the deploy
-// tarball overwrites everything else — so these helpers are load-bearing. A
+// .env is the only file in /opt/meshploy that survives an upgrade - the deploy
+// tarball overwrites everything else - so these helpers are load-bearing. A
 // rewrite that dropped or corrupted a line would take the install's database
 // credentials with it.
 
@@ -73,7 +73,7 @@ func TestSetEnvVarAppendsWhenAbsent(t *testing.T) {
 	}
 }
 
-// A key that is a prefix of another must not be confused for it — matching on a
+// A key that is a prefix of another must not be confused for it - matching on a
 // bare prefix would rewrite the wrong line.
 func TestSetEnvVarDoesNotMatchAPrefixOfAnotherKey(t *testing.T) {
 	path := withEnvFile(t, "MESHPLOY_API_IMAGE_OLD=keep-me\nDOMAIN=example.com\n")

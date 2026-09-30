@@ -26,13 +26,13 @@ type PortSpec struct {
 	NodePort int32  // existing NodePort to preserve on update; 0 = let K8s assign
 }
 
-// WorkloadParams describes a service to deploy.
 // ConfigFileMount is one file projected into the container at a path.
 type ConfigFileMount struct {
 	Path    string // absolute path inside the container
 	Content string
 }
 
+// WorkloadParams describes a service to deploy.
 type WorkloadParams struct {
 	// ConfigFiles are rendered into one Secret for this workload and mounted
 	// individually by subPath. See applyConfigSecret.
@@ -45,7 +45,7 @@ type WorkloadParams struct {
 	Replicas  int32
 	Env       []corev1.EnvVar
 
-	// Empty means "use the platform default" — see DefaultResources. A workload
+	// Empty means "use the platform default" - see DefaultResources. A workload
 	// with no limit at all is not a lighter workload, it is an unbounded one:
 	// it can take the whole node with it, and on the gateway that is the control
 	// plane as well.
@@ -210,8 +210,8 @@ func workloadPod(p WorkloadParams) (map[string]string, corev1.PodSpec) {
 	// hide the rest of the directory and, for most images, stop the process
 	// starting. subPath places the single file beside what the image ships.
 	//
-	// The trade is that a subPath mount does not receive updates — it is a copy
-	// taken at start — so a changed file reaches a running pod only on re-apply.
+	// The trade is that a subPath mount does not receive updates - it is a copy
+	// taken at start - so a changed file reaches a running pod only on re-apply.
 	// Every path that edits or detaches a config file re-applies for that reason.
 	if len(p.ConfigFiles) > 0 {
 		const cfgVol = "meshploy-config"
@@ -318,7 +318,7 @@ func ApplyService(ctx context.Context, client kubernetes.Interface, name, namesp
 //
 // It is generous because a runtime sizes itself from the CGROUP LIMIT rather
 // than from what it needs. Node derives V8's heap from it, and the JVM its
-// max heap, so a tight ceiling does not merely constrain a process -- it makes
+// max heap, so a tight ceiling does not merely constrain a process - it makes
 // the runtime choose a heap too small to work in, and the process aborts inside
 // its own limit without ever being marked OOMKilled.
 //
@@ -353,7 +353,7 @@ func withResourceDefaults(p *WorkloadParams) {
 // workload under a different name, selecting the same pods.
 //
 // A managed database's Deployment carries a random suffix, so its Service is
-// "umami-db-5e9871" while a compose spec addresses it as "umami-db" — the name
+// "umami-db-5e9871" while a compose spec addresses it as "umami-db" - the name
 // the author wrote, and the name compose semantics promise will resolve. Without
 // an alias that hostname does not exist in the cluster, and because an unmatched
 // name falls through to the mesh search domain it resolves to the gateway's
@@ -603,9 +603,9 @@ func DeleteDatabasePVC(ctx context.Context, client kubernetes.Interface, name, n
 // when there is no such Service or port.
 //
 // The assignment is made by the cluster and only mirrored into the database
-// afterwards, so the cluster is the authority. When the two disagree — a deploy
+// afterwards, so the cluster is the authority. When the two disagree - a deploy
 // that assigned the port but failed before recording it, or a service deployed
-// by an older version — this is where the real answer is.
+// by an older version - this is where the real answer is.
 func GetNodePort(ctx context.Context, client kubernetes.Interface, name, namespace string, port int32) (int32, error) {
 	if client == nil {
 		return 0, nil
@@ -638,7 +638,7 @@ func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name
 		}
 	}
 
-	// No public ports — delete the NodePort service if it exists.
+	// No public ports - delete the NodePort service if it exists.
 	if len(publicPorts) == 0 {
 		err := client.CoreV1().Services(namespace).Delete(ctx, npName, metav1.DeleteOptions{})
 		if err != nil && !k8serrors.IsNotFound(err) {
@@ -683,7 +683,7 @@ func ApplyNodePortService(ctx context.Context, client kubernetes.Interface, name
 		return nil, err
 	}
 
-	// Preserve existing NodePorts by name so they don't change on update -- but
+	// Preserve existing NodePorts by name so they don't change on update - but
 	// only where the caller asks for none. A non-zero request is a deliberate
 	// choice (an operator naming the port a database should answer on), and
 	// preserving over it would make that port impossible to change.

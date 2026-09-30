@@ -21,7 +21,7 @@ const ACTION_LABELS: Record<ResourceAction, string> = {
 
 /**
  * PrincipalPermissions renders the project-level permission grid for any
- * principal — a human member or an agent. Both are just a user id from the
+ * principal - a human member or an agent. Both are just a user id from the
  * permission system's point of view, so this component is shared between the
  * Users detail page and the Agents detail page.
  */

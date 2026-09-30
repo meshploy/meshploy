@@ -17,13 +17,8 @@ func (c *Client) ListProjects(orgID string) ([]Project, error) {
 	return decode[[]Project](resp)
 }
 
-// CreateProject makes a project, deriving its slug from the name.
-//
-// The slug is the Kubernetes namespace, so the API requires one and constrains
-// it to [a-z0-9-]. This used to send only the name, which the API refused with
-// "expected required property slug to be present" - so `meshploy project
-// create`, the MCP tool and anything else on this client could not create a
-// project at all.
+// CreateProject makes a project, deriving its slug from the name: the slug is
+// the Kubernetes namespace, which the API requires, constrained to [a-z0-9-].
 func (c *Client) CreateProject(orgID, name string) (*Project, error) {
 	return c.CreateProjectWithSlug(orgID, name, ProjectSlug(name))
 }

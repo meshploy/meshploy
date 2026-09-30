@@ -255,9 +255,7 @@ func (s *StackService) GetRun(ctx context.Context, stackID, runID uuid.UUID) (*S
 
 // ResumeRuns carries on the stack rollouts an API restart left running: the
 // layers still waiting start as their dependencies come up, as they would have,
-// and the run is closed when they are done. Without it a restart left the run
-// "running" until it was shown as interrupted, and the services after the
-// layer in flight never started.
+// and the run is closed when they are done.
 func (s *StackService) ResumeRuns(ctx context.Context) {
 	var rows []meshdb.StackRun
 	if err := s.db.WithContext(ctx).Where("status = ?", meshdb.StackRunRunning).Find(&rows).Error; err != nil {

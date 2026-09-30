@@ -53,11 +53,8 @@ type Status struct {
 	RegistryScope string `json:"registry_scope,omitempty"`
 
 	// CanActivate reports whether this build trusts any signing key, so a
-	// pasted licence can be verified and stored at all.
-	//
-	// The UI used to read this as the edition too (keys meant Enterprise). That
-	// stops holding once Community verifies licences, which is what Edition is
-	// for; the console keeps the old reading only for APIs older than Edition.
+	// pasted licence can be verified and stored at all. Which binary answers is
+	// Edition, not this.
 	CanActivate bool `json:"can_activate"`
 
 	// Edition is "community" or "enterprise": which binary is answering,
@@ -71,7 +68,7 @@ type Status struct {
 // One interface, two sources: self-hosted verifies an offline `mlic-` token
 // (install-scoped, so orgID is ignored), while Cloud will read org.plan
 // (org-scoped). Feature code calls Entitled(ctx, orgID, "sso") and never knows
-// which is behind it — that is what makes Cloud cheap to add later.
+// which is behind it - that is what makes Cloud cheap to add later.
 type Entitlements interface {
 	Entitled(ctx context.Context, orgID uuid.UUID, feature string) bool
 	Describe(ctx context.Context, orgID uuid.UUID) (Status, error)
@@ -105,7 +102,7 @@ func trustedKeys() []string {
 
 // load reads and verifies the stored token, caching the result. Verification is
 // cheap but pointless per-request, and the token only changes when an admin
-// pastes a new one — which calls Invalidate.
+// pastes a new one - which calls Invalidate.
 func (s *EntitlementService) load(ctx context.Context) {
 	s.mu.RLock()
 	done := s.loaded
@@ -154,7 +151,7 @@ func (s *EntitlementService) load(ctx context.Context) {
 			s.active = true
 			return
 		case errors.Is(err, license.ErrExpired):
-			// Signature is good — degrade, don't brick. Keep the claims so the
+			// Signature is good - degrade, don't brick. Keep the claims so the
 			// UI can show renewal details, but grant nothing.
 			s.claims = claims
 			s.reason = "license expired"
@@ -221,7 +218,7 @@ func (s *EntitlementService) Describe(ctx context.Context, _ uuid.UUID) (Status,
 
 	// Soft node metering: worker nodes only. The gateway is fixed overhead, so
 	// counting it would make the HA-gateway feature consume the allowance.
-	// Over-limit is reported, never enforced — blocking node registration would
+	// Over-limit is reported, never enforced - blocking node registration would
 	// make the paid edition more restrictive than CE, and would break scaling
 	// during an incident over an accounting matter.
 	if active && claims.NodeLimit > 0 {
@@ -239,7 +236,7 @@ func (s *EntitlementService) Describe(ctx context.Context, _ uuid.UUID) (Status,
 // Activate verifies a token before storing it, so an admin gets immediate
 // feedback rather than silently saving something that will never work.
 //
-// A valid token stored on a CE binary still unlocks nothing — EE features are
+// A valid token stored on a CE binary still unlocks nothing - EE features are
 // not compiled in. That is the point: the real gate is the private EE image,
 // which is why MIT on CE is safe. The message tells the admin exactly that.
 func (s *EntitlementService) Activate(ctx context.Context, token string, byUser uuid.UUID) (Status, error) {

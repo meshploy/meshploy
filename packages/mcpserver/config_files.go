@@ -13,7 +13,7 @@ import (
 
 // resolveConfigFile accepts an ID or a name, matching how every other resource
 // reference in this server behaves. There is no by-name endpoint, so it filters
-// the project listing -- cheap, and it keeps the API surface smaller.
+// the project listing - cheap, and it keeps the API surface smaller.
 func (s *srv) resolveConfigFile(projectID, ref string) (*client.ConfigFile, error) {
 	files, err := s.c.ListConfigFiles(s.orgID, projectID)
 	if err != nil {
@@ -111,7 +111,7 @@ func (s *srv) handleListConfigFiles(_ context.Context, req mcp.CallToolRequest) 
 	}
 
 	// The listing carries attached service names, so filtering by service needs
-	// no second call -- but the caller may have passed an ID, and the names are
+	// no second call - but the caller may have passed an ID, and the names are
 	// what came back, so resolve to a name first.
 	var wantName string
 	if serviceRef != "" {

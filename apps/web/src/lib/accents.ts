@@ -1,7 +1,7 @@
 export interface AccentColor {
   id: string
   label: string
-  // oklch value used in dark mode — also the swatch color
+  // oklch value used in dark mode - also the swatch color
   value: string
 }
 

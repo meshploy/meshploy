@@ -614,12 +614,9 @@ func (a ClientAPI) RunningPod(projectID, serviceID string) (string, error) {
 // application responding, and a migration has no business deciding which status
 // codes an app is allowed to return.
 //
-// The one answer that means nothing is the edge's own redirect to HTTPS. Every
-// hostname on a Dokploy server gets one before any backend is consulted, so a
-// probe that stopped there passed whatever happened behind it - including a
-// move that left the domain answering 502. When the edge redirects to HTTPS,
-// the probe follows it back to the same edge over TLS, which is the request
-// that actually reaches the application.
+// The one answer that means nothing is the edge's own redirect to HTTPS, which
+// every hostname gets before any backend is consulted: the probe follows it
+// back to the same edge over TLS, the request that reaches the application.
 type HTTPProbe struct {
 	// Addr is where the edge listens, "127.0.0.1:80" unless something else
 	// holds the port.

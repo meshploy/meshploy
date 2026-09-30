@@ -124,7 +124,7 @@ type ExposureOutput struct {
 }
 
 // GetExposure is deliberately readable by any authenticated member rather than
-// admins only: it reports nothing an operator could act on maliciously -- the
+// admins only: it reports nothing an operator could act on maliciously - the
 // ports are Meshploy's own published defaults, documented in the compose file --
 // and hiding it from the person who happens to be signed in is how it goes
 // unnoticed.

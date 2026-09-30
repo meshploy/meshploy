@@ -17,7 +17,7 @@ import (
 
 // These tests pin the authorization contract of the cluster-credential
 // endpoints. They hand out credentials that let a machine join the WireGuard
-// mesh and the k3s cluster, so they must be admin-only — matching their
+// mesh and the k3s cluster, so they must be admin-only - matching their
 // siblings GetNodeRegistrationToken and CreateProvisioningToken.
 //
 // Regression guard: all three previously called only requireUser, so any
@@ -94,7 +94,7 @@ func setupClusterAuthz(t *testing.T) (h *Handler, orgID string, adminCtx, member
 	org := orgs[0]
 
 	// Registration is single-owner, so a second principal joins via the
-	// invitation flow — the same approach the service-layer tests use.
+	// invitation flow - the same approach the service-layer tests use.
 	inv, err := svc.Orgs.CreateInvitation(ctx, org.ID, owner.ID, "member@example.com", db.RoleMember)
 	if err != nil {
 		t.Fatalf("create invitation: %v", err)

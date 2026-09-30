@@ -50,7 +50,7 @@ func TestJobMutatorNoopInCE(t *testing.T) {
 	}
 }
 
-// A mutator sees the real object and its edits persist — this is what per-org
+// A mutator sees the real object and its edits persist - this is what per-org
 // build isolation relies on.
 func TestJobMutatorMutatesInPlace(t *testing.T) {
 	withMutators(t, &fakeMutator{stamp: "ee"})

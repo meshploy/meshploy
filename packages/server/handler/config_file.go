@@ -10,7 +10,7 @@ import (
 
 // Config files are gated on the project, not on a resource type of their own.
 //
-// ResourceType covers what gets delegated individually — a service, a job, a
+// ResourceType covers what gets delegated individually - a service, a job, a
 // route. Nobody hands someone a single config file, and variable groups and
 // volumes are already project-gated for the same reason.
 func (h *Handler) registerConfigFileRoutes(api huma.API) {
@@ -100,20 +100,10 @@ type configFileServiceRef struct {
 	Name string `json:"name"`
 }
 
-// configFileDetailDTO repeats configFileDTO's fields rather than embedding it,
-// and that is load-bearing rather than sloppy.
-//
-// Huma builds the response schema with its own reflection, and getFields skips
-// any field failing IsExported() BEFORE it looks at whether the field is
-// anonymous (huma/v2 schema.go). An embedded *unexported* type is therefore
-// dropped whole -- encoding/json promotes its fields, Huma does not, and the
-// response silently arrives with only the outer fields. That shipped: the
-// detail page rendered a config file with no name, no path and no size while
-// attached_services and updated_at came through fine.
-//
-// Embedding an exported type would also work. Spelling the fields out keeps
-// every DTO in this file unexported and makes the wire shape readable in one
-// place, which is worth more than the seven duplicated lines.
+// configFileDetailDTO repeats configFileDTO's fields rather than embedding it:
+// Huma drops an embedded *unexported* type whole (encoding/json promotes its
+// fields, Huma does not), and the response would silently lose them. Spelling
+// them out keeps every DTO here unexported and the wire shape in one place.
 type configFileDetailDTO struct {
 	ID               string                 `json:"id"`
 	Name             string                 `json:"name"`

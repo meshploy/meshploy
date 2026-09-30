@@ -13,14 +13,13 @@ import (
 // operator can often answer the question and move it; sometimes there is no
 // answer they want to give.
 //
-// Cutover used to refuse while any group was unmoved, which turned one
-// unanswerable question into a migration that could never finish. So the rule
-// is narrower: a group that **can** move must move first - there is no reason
-// not to - and a group that cannot is left where it is, with its domains named
-// before the ports change hands. They stop being served at that moment: the old
-// edge that served them is stopped, and Meshploy has no route for a workload it
-// was never given. The workload keeps running, and finish still refuses to
-// remove it.
+// Cutover does not wait for every group, or one unanswerable question would
+// stop a migration for good. The rule: a group that **can** move must move
+// first - there is no reason not to - and a group that cannot is left where it
+// is, with its domains named before the ports change hands. They stop being
+// served at that moment: the old edge that served them is stopped, and Meshploy
+// has no route for a workload it was never given. The workload keeps running,
+// and finish still refuses to remove it.
 
 // GroupDomains are the hostnames a group serves.
 func GroupDomains(plan Plan, g Group) []string {

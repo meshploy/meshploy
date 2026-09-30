@@ -147,7 +147,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
  *
  * Detaching is allowed while the service runs and re-applies immediately. The
  * mount is a copy taken at container start, so without the re-apply the file
- * would linger in the running pod and vanish at some later restart — failing
+ * would linger in the running pod and vanish at some later restart - failing
  * for a reason nobody would connect to this action.
  */
 function ConfigFilesSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
@@ -1454,7 +1454,7 @@ function DatabaseNetworkSection({ projectId, serviceId, dbPort, serviceName }: {
   const route = tcpList.find((r) => r.service_id === serviceId)
 
   // A gateway port is unique across the gateway, so the whole org is what says
-  // whether one is free -- another project's route takes it just as surely.
+  // whether one is free - another project's route takes it just as surely.
   const { data: usage } = useQuery({
     queryKey: ["tcp-port-usage", orgId],
     queryFn: () => tcpRoutesApi.usage(orgId, token),

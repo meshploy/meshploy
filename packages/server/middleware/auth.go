@@ -21,7 +21,7 @@ const AgentTokenPrefix = "magt-"
 // service layer (AgentService.ResolveToken) so middleware stays db-agnostic.
 type AgentResolver func(ctx context.Context, rawToken string) (uuid.UUID, bool)
 
-// Auth is a soft middleware — it sets the user ID in context if a valid Bearer
+// Auth is a soft middleware - it sets the user ID in context if a valid Bearer
 // credential is present, but does not block requests without one. Handlers that
 // require authentication must call RequireUser.
 //
@@ -45,7 +45,7 @@ func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLim
 
 			tokenStr := strings.TrimPrefix(raw, "Bearer ")
 
-			// Agent token path — resolve to a principal id and set the same ctx key.
+			// Agent token path - resolve to a principal id and set the same ctx key.
 			if strings.HasPrefix(tokenStr, AgentTokenPrefix) {
 				if resolveAgent != nil {
 					if agentID, ok := resolveAgent(r.Context(), tokenStr); ok {
@@ -98,7 +98,7 @@ func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLim
 }
 
 // ContextWithUser returns a copy of ctx carrying userID as the authenticated
-// principal. This is the only place the principal is written — Auth() uses it
+// principal. This is the only place the principal is written - Auth() uses it
 // for both the JWT and agent-token paths, and tests use it to construct an
 // authenticated context without going through HTTP.
 func ContextWithUser(ctx context.Context, userID uuid.UUID) context.Context {
@@ -184,15 +184,15 @@ var publicRules = []publicRule{
 	// authenticated POST and is deliberately NOT listed here.
 	{Method: "GET", Path: "/terminal", Match: matchSuffix},
 
-	// Invitation accept flow — the invitee has no account yet. The invite token
+	// Invitation accept flow - the invitee has no account yet. The invite token
 	// in the path is the credential.
 	{Method: "GET", Path: "/api/v1/invitations/", Match: matchPrefix},
 	{Method: "POST", Path: "/api/v1/invitations/", Match: matchPrefix},
 
-	// Inbound webhooks — validated by HMAC signature or per-service deploy token.
+	// Inbound webhooks - validated by HMAC signature or per-service deploy token.
 	{Method: "POST", Path: "/api/v1/webhooks/", Match: matchPrefix},
 
-	// Template icons — catalog images rendered as <img src>, which cannot carry
+	// Template icons - catalog images rendered as <img src>, which cannot carry
 	// an Authorization header. Anchored at both ends so only the icon route is
 	// exempt: the catalog list and the template detail (which carries the
 	// compose spec) still require authentication.
@@ -201,10 +201,7 @@ var publicRules = []publicRule{
 	// Caddy's TLS "ask" endpoints. Caddy calls these before issuing a
 	// certificate and its ask mechanism cannot attach an Authorization header,
 	// so they meet the criterion above exactly. It also treats any non-2xx as
-	// "deny" -- while these answered 401 the on-demand DNS mode issued no
-	// certificate for anything, and custom domains got none in either mode.
-	// They were public under the old blanket "GET /api/" rule and were missed
-	// when it was removed.
+	// "deny", so behind authentication no certificate would ever be issued.
 	//
 	// Deliberately not gated on a source address: the API runs in a container
 	// published on :4000 and Caddy proxies api.<DOMAIN> to that same port, so
@@ -212,7 +209,7 @@ var publicRules = []publicRule{
 	// Deliberately not gated on a shared secret either: a key that drifts out of
 	// sync on an upgrade would silently stop all certificate issuance again,
 	// which is a worse failure than the disclosure. Both are read-only and
-	// answer only "is this hostname configured here" -- already observable by
+	// answer only "is this hostname configured here" - already observable by
 	// requesting the hostname and seeing whether it serves.
 	{Method: "GET", Path: "/api/v1/internal/domain-check", Match: matchExact},
 	{Method: "GET", Path: "/api/v1/internal/ondemand-tls-check", Match: matchExact},

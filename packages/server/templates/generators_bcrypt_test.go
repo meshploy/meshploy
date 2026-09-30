@@ -8,7 +8,7 @@ import (
 )
 
 // A derived generator has to see the value it hashes, whichever order the two
-// variables are declared in -- the second pass exists precisely so a template
+// variables are declared in - the second pass exists precisely so a template
 // author does not have to think about ordering.
 func TestResolveBcryptHashesReferencedVariable(t *testing.T) {
 	for _, order := range []string{"hash-first", "hash-last"} {

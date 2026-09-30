@@ -31,8 +31,7 @@ const (
 	Skipped = "skipped"
 	// Undone marks a step a rollback reversed. It clears the step's done mark,
 	// so a later run does the work again rather than skipping what is no longer
-	// there - a move that was rolled back and tried again waited forever for a
-	// service it never restarted.
+	// there.
 	Undone = "undone"
 )
 

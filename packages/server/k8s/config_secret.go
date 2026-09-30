@@ -15,7 +15,7 @@ import (
 // One Secret per workload, not one per config file. A file shared by several
 // services could be a single shared Secret, but that object would belong to no
 // one: nothing deletes it when the last service detaches, and it survives with
-// no record pointing at it — the same way a Deployment outlived its service and
+// no record pointing at it - the same way a Deployment outlived its service and
 // ran unnoticed for months. A per-workload Secret is owned by one workload and
 // dies with it.
 func configSecretName(workload string) string { return workload + "-config" }

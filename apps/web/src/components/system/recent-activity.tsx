@@ -10,17 +10,11 @@ import { originTitle } from "@/components/services/deployment-origin"
 /**
  * What has happened in this workspace lately.
  *
- * The overview used to spend its largest panel on the mesh diagram, which says
- * the same thing every day on a mesh that does not change, and says it again
- * three panels lower where the nodes are listed with their status. It still
- * exists, on the cluster page, where someone goes to look at the mesh on
- * purpose.
- *
- * This answers the question a dashboard is actually opened for: what ran, and
- * did it work. Two things in Meshploy run and then either worked or did not - a
- * deployment and a job run - and both are here, interleaved by time. A failure
- * is the entry most worth seeing, so nothing filters by status: a cron that
- * failed at three in the morning is exactly what this panel is for.
+ * The overview's largest panel answers the question a dashboard is opened for:
+ * what ran, and did it work. Two things in Meshploy run and then either worked
+ * or did not - a deployment and a job run - and both are here, interleaved by
+ * time. A failure is the entry most worth seeing, so nothing filters by status:
+ * a cron that failed at three in the morning is exactly what this panel is for.
  *
  * Scoped server-side to the projects the caller can see, the same way the
  * project list is: a feed is a good way to leak the names of projects somebody

@@ -10,8 +10,7 @@ import (
 	"strings"
 )
 
-// ErrSharingUnavailable is an API without app sharing: Community, where
-// sharing is not part of the product. Enterprise and Meshploy Cloud add it.
+// ErrSharingUnavailable is an API with no sharing route.
 var ErrSharingUnavailable = errors.New("sharing an app with people needs Meshploy Enterprise or Meshploy Cloud")
 
 // ShareBody is who an app is shared with, and as what.

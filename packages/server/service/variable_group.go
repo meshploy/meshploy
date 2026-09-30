@@ -62,7 +62,7 @@ func (s *VariableGroupService) ListForService(ctx context.Context, serviceID uui
 }
 
 // ListForJob returns the groups attached to a job. A job has no system-managed
-// group of its own -- it owns no database -- so every group here was attached
+// group of its own - it owns no database - so every group here was attached
 // deliberately.
 func (s *VariableGroupService) ListForJob(ctx context.Context, jobID uuid.UUID) ([]db.VariableGroup, error) {
 	var jvgs []db.JobVariableGroup
@@ -188,7 +188,7 @@ var nonAlphanumRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
 // serviceDNSName is the in-cluster address of a service.
 //
-// It is built from the K8s Service name — the slugified service name — not the
+// It is built from the K8s Service name - the slugified service name - not the
 // service name itself. A name carrying a space or a capital ("My DB") is not a
 // legal DNS label, and a database's workload is deployed under a suffixed slug,
 // so addressing either by its raw name produced a hostname that does not exist.
@@ -254,14 +254,10 @@ func (s *VariableGroupService) UpsertSystemGroup(ctx context.Context, svc *db.Se
 	// variables exist so OTHER services can reach this one; a service already
 	// knows its own address, and `runtimeEnvVars` injects its PORT separately.
 	//
-	// Injecting them into the service itself actively breaks applications. The
-	// key is derived from the service's own name, so an application whose own
-	// configuration variable follows the same pattern gets it silently
-	// overwritten with a value meaning something else. Uptime Kuma reads
-	// `UPTIME_KUMA_HOST` as the address to BIND; a service named `uptime-kuma`
-	// was handed its own cluster FQDN there and crash-looped on EADDRNOTAVAIL,
-	// because a pod cannot bind a Service address. Self-attachment is also the
-	// only case where that collision is systematic rather than coincidental.
+	// Injecting them into the service itself breaks applications: the keys
+	// derive from the service's own name, so an application's own variable of
+	// the same pattern is overwritten - Uptime Kuma reads `UPTIME_KUMA_HOST` as
+	// the address to bind, and a Service address cannot be bound.
 	//
 	// Any prior self-attachment is removed, so existing services are repaired on
 	// their next deploy rather than staying broken until recreated.
@@ -294,7 +290,7 @@ func buildServiceItems(prefix, host string, ports []db.ServicePort) []db.Variabl
 	for _, p := range ports {
 		addr := fmt.Sprintf("%s:%d", host, p.Port)
 		if p.IsPrimary {
-			// Primary port — no name suffix
+			// Primary port - no name suffix
 			add(prefix+"_HOST", host)
 			add(prefix+"_PORT", fmt.Sprintf("%d", p.Port))
 			if p.IsHTTP {
@@ -303,7 +299,7 @@ func buildServiceItems(prefix, host string, ports []db.ServicePort) []db.Variabl
 				add(prefix+"_ADDR", addr)
 			}
 		} else {
-			// Named non-primary port — suffix with uppercased port name
+			// Named non-primary port - suffix with uppercased port name
 			portPrefix := prefix + "_" + nonAlphanumRe.ReplaceAllString(strings.ToUpper(p.Name), "_")
 			add(portPrefix+"_PORT", fmt.Sprintf("%d", p.Port))
 			if p.IsHTTP {
@@ -381,9 +377,6 @@ func mergeItems(base, extra []db.VariableGroupItem) []db.VariableGroupItem {
 	return append(out, extra...)
 }
 
-// CollectEnvVars loads all variable groups attached to a service and returns
-// them as a flat key→value map, ready for injection into the K8s Deployment.
-// Items from later-attached groups win on key conflict.
 // AttachJob and DetachJob mirror Attach and Detach. Nothing is redeployed: a
 // job has nothing running, so the next run reads the new values.
 func (s *VariableGroupService) AttachJob(ctx context.Context, jobID, groupID uuid.UUID) error {
@@ -416,6 +409,9 @@ func (s *VariableGroupService) CollectEnvVarsForJob(ctx context.Context, jobID u
 	return flattenGroups(groups), nil
 }
 
+// CollectEnvVars loads all variable groups attached to a service and returns
+// them as a flat key→value map, ready for injection into the K8s Deployment.
+// Items from later-attached groups win on key conflict.
 func (s *VariableGroupService) CollectEnvVars(ctx context.Context, serviceID uuid.UUID) (map[string]string, error) {
 	groups, err := s.ListForService(ctx, serviceID)
 	if err != nil {

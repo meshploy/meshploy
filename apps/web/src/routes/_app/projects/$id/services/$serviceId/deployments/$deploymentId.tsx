@@ -132,7 +132,7 @@ function DeploymentLogsPage() {
     const url = `/api/v1/orgs/${orgId}/projects/${projectId}/services/${serviceId}/deployments/${deploymentId}/logs/stream`
 
     ;(async () => {
-      // Reconnect on network drops — long builds can outlive proxy timeouts.
+      // Reconnect on network drops - long builds can outlive proxy timeouts.
       // The server replays all existing log from the start on reconnect so we
       // clear and re-render rather than appending duplicates.
       const MAX_RETRIES = 50
@@ -151,7 +151,7 @@ function DeploymentLogsPage() {
             return
           }
 
-          // Reset log on each reconnect — server replays full history
+          // Reset log on each reconnect - server replays full history
           setLogLines([])
           const reader = res.body.getReader()
           const decoder = new TextDecoder()
@@ -184,7 +184,7 @@ function DeploymentLogsPage() {
             }
           }
 
-          // Stream ended cleanly without a done event — treat as complete
+          // Stream ended cleanly without a done event - treat as complete
           if (!completed) {
             setStreamDone(true)
             setStreaming(false)
@@ -423,7 +423,7 @@ function DeploymentStepper({ deployment }: { deployment: ApiDeployment }) {
                 <p className="text-[11px] text-muted-foreground/40 mt-0.5">{step.sub}</p>
               </div>
             </div>
-            {/* Connector — touches box borders */}
+            {/* Connector - touches box borders */}
             {i < STEPS.length - 1 && (
               <div className={`flex-1 h-px ${lineCls}`} />
             )}

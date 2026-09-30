@@ -574,7 +574,7 @@ function ProvisioningTokensPanel() {
           onClick={() => generate()}
           // !orgId is required: this panel has no query to gate on, so nothing
           // else stops a click during the window before the org store hydrates
-          // — which would POST to /orgs/undefined/provisioning-tokens.
+          // - which would POST to /orgs/undefined/provisioning-tokens.
           disabled={generating || !orgId}
         >
           {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
@@ -741,7 +741,7 @@ function HeadscalePreAuthKeyPanel() {
   // activeKey: populated from stored key (GET) or freshly generated key (POST via setQueryData)
   const activeKey = data?.key || ""
 
-  // Headscale not configured — GET returns empty headscale_url
+  // Headscale not configured - GET returns empty headscale_url
   const unavailable = !isLoading && !headscaleUrl
 
   const tailscaleCmd = activeKey
@@ -777,7 +777,7 @@ function HeadscalePreAuthKeyPanel() {
           <p className="text-sm text-muted-foreground">Headscale is not configured on this gateway.</p>
         ) : (
           <>
-            {/* Headscale server URL — always visible so users can copy it during worker install */}
+            {/* Headscale server URL - always visible so users can copy it during worker install */}
             <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground font-medium">Headscale server URL</p>
               <div className="flex items-center gap-2">
@@ -792,7 +792,7 @@ function HeadscalePreAuthKeyPanel() {
 
             {activeKey ? (
               <>
-                {/* Key display — shown whenever a valid stored key exists (survives page navigation) */}
+                {/* Key display - shown whenever a valid stored key exists (survives page navigation) */}
                 <div className="space-y-1.5">
                   <p className="text-xs text-muted-foreground font-medium">Preauth key</p>
                   <div className="flex items-center gap-2">

@@ -77,7 +77,7 @@ func TestPostgresPasswordIsNotPassedThrough(t *testing.T) {
 	}
 }
 
-// stderr belongs in the same transcript as stdout, in the order it happened —
+// stderr belongs in the same transcript as stdout, in the order it happened -
 // the operator is reading one log, not correlating two.
 func TestStderrIsInterleavedIntoTheTranscript(t *testing.T) {
 	r := fakeScript(t, `

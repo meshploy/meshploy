@@ -22,20 +22,12 @@ const statusReconcileInterval = 30 * time.Second
 // otherwise be read as news.
 var reconciledStatuses = []db.ServiceStatus{db.ServiceRunning, db.ServiceDeploying, db.ServiceFailed}
 
-// StartStatusReconciler keeps a service's stored status honest.
+// StartStatusReconciler keeps a service's stored status honest: what the
+// cluster runs, not whether the last API call returned without error.
 //
-// Status used to be written from whether an API call returned without error —
-// Start wrote "running" because scaling succeeded, even when the resulting pod
-// could never be scheduled. The row then reported a service that was not
-// running and never would be, with the real reason only visible in kubectl.
-//
-// A stopped service is left alone: that is a decision someone made, and this
-// must not overrule it. Running, deploying and failed ones are all examined.
-//
-// Failure is not a decision, it is what the cluster last reported, so a service
-// that recovers has to be allowed to say so. Leaving failed out meant a service
-// stayed failed forever once it had been: a Keycloak whose pod was healthy
-// again still read as failed, and the only way back was another deploy.
+// A stopped service is left alone: that is a decision someone made. Running,
+// deploying and failed ones are all examined - failure is only what the
+// cluster last reported, so a service that recovers is allowed to say so.
 func (s *WorkloadService) StartStatusReconciler(ctx context.Context) {
 	if s.k8s == nil {
 		return
@@ -104,7 +96,7 @@ func (s *WorkloadService) reconcileStatuses(ctx context.Context) {
 		}
 		// A deploy that reported success and then fell over is only visible
 		// here: no deployment row changes, so no deploy event fires. This is
-		// the Keycloak case -- green in the console, failing in the cluster.
+		// the Keycloak case - green in the console, failing in the cluster.
 		s.announce(ctx, svc, was, want)
 	}
 }
@@ -129,7 +121,7 @@ func (s *WorkloadService) reconcileStackStatuses(ctx context.Context) {
 		// interrupted. Skipping it for a grace period was worse in a subtler way:
 		// deriveStackStatus returns "applying" for a stack whose services are
 		// still rolling out, so the reconciler wrote that value and then read it
-		// back as "an apply is in flight" and refused to look again — locking
+		// back as "an apply is in flight" and refused to look again - locking
 		// itself out of correcting its own write for the length of the grace.
 		//
 		// Nothing is skipped now. A reconciler write during an apply is harmless:

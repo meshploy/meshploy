@@ -107,7 +107,7 @@ func (s *NodeService) checkNodeOnlineStatus(ctx context.Context, offlineNotified
 			}
 		}
 		if !known && node.HeadscaleID == "" {
-			// Never linked to a mesh peer at all -- a row registered out of band
+			// Never linked to a mesh peer at all - a row registered out of band
 			// that never joined. There is no online -> offline transition here,
 			// so stay quiet rather than inventing one.
 			continue
@@ -151,14 +151,14 @@ func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tails
 	if len(role) > 0 && role[0] != "" {
 		k3sRole = role[0]
 	}
-	// Meter worker nodes only — the gateway is fixed overhead, not capacity,
+	// Meter worker nodes only - the gateway is fixed overhead, not capacity,
 	// and counting it would make an HA gateway consume the customer's allowance.
 	if k3sRole != db.K3sRoleServer {
 		if err := checkQuota(ctx, orgID, QuotaNode); err != nil {
 			return nil, err
 		}
 	}
-	// Server nodes are the running gateway — seed them as online.
+	// Server nodes are the running gateway - seed them as online.
 	// Agent nodes start offline until their first heartbeat.
 	status := db.NodeOffline
 	if k3sRole == db.K3sRoleServer {
@@ -329,8 +329,7 @@ var ErrNonLinuxClusterRole = errors.New("only a Linux machine can join the clust
 // refuses a cluster role for one that is not Linux. It runs before a node is
 // created or a token spent, so a refused machine costs nothing to retry.
 //
-// An empty OS is Linux: install.sh sent none before it was recorded, and it
-// runs nowhere else.
+// An empty OS is Linux: install.sh sends none, and runs nowhere else.
 func joinRole(requested db.MeshRole, nodeOS db.NodeOS) (db.MeshRole, db.NodeOS, error) {
 	if nodeOS == "" {
 		nodeOS = db.NodeOSLinux
@@ -350,7 +349,7 @@ func joinRole(requested db.MeshRole, nodeOS db.NodeOS) (db.MeshRole, db.NodeOS, 
 // ─── Provisioning tokens ──────────────────────────────────────────────────────
 
 // CreateProvisioningToken generates a single-use provisioning token for the org.
-// Format: mprov-<32 random hex bytes>. The plaintext is returned once — only
+// Format: mprov-<32 random hex bytes>. The plaintext is returned once - only
 // its SHA-256 hash is persisted.
 func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UUID, label string, expiresAt *time.Time, meshRole ...db.MeshRole) (string, *db.NodeProvisioningToken, error) {
 	raw := make([]byte, 32)
@@ -359,13 +358,9 @@ func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UU
 	}
 	plaintext := "mprov-" + hex.EncodeToString(raw)
 
-	// A token with no expiry given gets one anyway.
-	//
-	// This is a credential that joins a machine to the mesh, and it is made to
-	// be pasted into a terminal within the minute. Before this, one generated
-	// and then abandoned - a wrong role picked, a tab closed - stayed valid for
-	// ever, unlisted and unrevokable. A caller who genuinely needs longer says
-	// so; nobody who forgot has to.
+	// A token with no expiry given gets one anyway: it joins a machine to the
+	// mesh and is made to be pasted within the minute, so an abandoned one must
+	// not stay valid for ever. A caller who needs longer says so.
 	if expiresAt == nil {
 		at := time.Now().Add(provisioningTokenTTL)
 		expiresAt = &at

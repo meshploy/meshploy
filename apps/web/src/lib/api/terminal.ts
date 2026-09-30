@@ -10,7 +10,7 @@ export const terminal = {
    * Mint a single-use ticket for a terminal WebSocket.
    *
    * The browser WebSocket API cannot set an Authorization header, so the
-   * credential has to travel in the URL — where it is captured by request logs.
+   * credential has to travel in the URL - where it is captured by request logs.
    * Sending the session token there meant every terminal session wrote a
    * full-privilege bearer token to the API's logs in cleartext. This ticket is
    * single-use and expires in seconds, so a logged copy is inert.

@@ -2,7 +2,7 @@
 // plus a meta.yaml) into a deployable Meshploy stack spec.
 //
 // Where conversion happens: because a template's compose already carries the
-// x-meshploy blocks, it IS the Meshploy spec — there is no format conversion at
+// x-meshploy blocks, it IS the Meshploy spec - there is no format conversion at
 // deploy time. The only deploy-time transform is variable substitution
 // (resolve generators + prompted values → replace ${VAR}). The heavy
 // compose→DB-records reconciliation is the existing StackService.Apply, not here.
@@ -37,7 +37,7 @@ type Links struct {
 // Variable is one deploy-time input: either prompted (user-supplied) or
 // generated. A subdomain generator carries an Expose block (web-facing
 // service/port) and drives routing rather than env substitution. Only
-// declarations are exposed over the API — never resolved values.
+// declarations are exposed over the API - never resolved values.
 type Variable struct {
 	Key      string  `yaml:"key"      json:"key"`
 	Prompt   string  `yaml:"prompt"   json:"prompt,omitempty"`

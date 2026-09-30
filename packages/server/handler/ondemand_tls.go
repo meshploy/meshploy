@@ -52,7 +52,7 @@ func (h *Handler) OnDemandTLSCheck(ctx context.Context, input *OnDemandTLSCheckI
 		return &struct{}{}, nil
 	}
 
-	// Verified custom domain — same gate the delegation path uses.
+	// Verified custom domain - same gate the delegation path uses.
 	if h.svc.Routes.IsCustomDomainVerified(ctx, host) {
 		return &struct{}{}, nil
 	}

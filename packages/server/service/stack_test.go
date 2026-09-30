@@ -92,7 +92,7 @@ func TestStackApply(t *testing.T) {
 		result, err := svcs.Stacks.Apply(ctx, stack.ID, uid, nil)
 		require.NoError(t, err)
 		assert.NotNil(t, result.Stack)
-		// Two services defined in the spec — both should be created.
+		// Two services defined in the spec - both should be created.
 		assert.Len(t, result.Created, 2)
 		assert.Empty(t, result.Errors)
 	})

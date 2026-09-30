@@ -98,7 +98,7 @@ func (s *ConfigFileService) Create(ctx context.Context, projectID uuid.UUID, in 
 // Editing propagates, which is where this differs from a volume: changing a
 // volume affects nothing else, changing a config file changes it for every
 // attached service. They are all re-applied so the running files match what the
-// UI shows — a subPath mount is a one-time copy, so without this the change is
+// UI shows - a subPath mount is a one-time copy, so without this the change is
 // invisible until each service happens to restart.
 func (s *ConfigFileService) Update(ctx context.Context, fileID uuid.UUID, in CreateConfigFileInput) (*db.ConfigFile, error) {
 	if err := in.validate(); err != nil {
@@ -159,7 +159,7 @@ func (s *ConfigFileService) Attach(ctx context.Context, fileID, serviceID uuid.U
 // Detach removes a file from a service and re-applies it immediately.
 //
 // Not blocked, even while the service runs: refusing would mean a service could
-// not be reconfigured without deleting it. The re-apply is what makes it safe —
+// not be reconfigured without deleting it. The re-apply is what makes it safe -
 // a subPath mount is a copy, so the running pod keeps the file after detach, and
 // without re-applying the change would surface only at some later restart,
 // failing for a reason nobody connects to this action.

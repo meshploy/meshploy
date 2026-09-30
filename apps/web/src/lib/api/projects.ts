@@ -8,7 +8,7 @@ export interface ApiProject {
   organization_id: string
   created_at: string
   updated_at: string
-  // Resource counts — embedded by the list endpoint (single SQL aggregation).
+  // Resource counts - embedded by the list endpoint (single SQL aggregation).
   services_count: number
   databases_count: number
   routes_count: number

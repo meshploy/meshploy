@@ -9,7 +9,7 @@ import "sort"
 // (meshploy-admin), the verifier that reads them (this repository), the
 // Enterprise code that gates on them, and Cloud, which will derive the same
 // names from a plan rather than a token. Only this package is imported by all
-// of them — the Enterprise repository cannot hold the list, because the public
+// of them - the Enterprise repository cannot hold the list, because the public
 // repository is forbidden from importing it.
 //
 // Publishing the names costs nothing. They are identifiers, not implementations;
@@ -46,7 +46,7 @@ func IsKnownFeature(name string) bool { return knownFeatures[name] }
 // UnknownFeatures returns the entries of names this build does not recognise,
 // in the order given.
 //
-// Intended for the ISSUING side only. A typo there — "ss0" for "sso" — produces
+// Intended for the ISSUING side only. A typo there - "ss0" for "sso" - produces
 // a token that signs, verifies, and activates cleanly while granting nothing,
 // because the gate looks for a string that is not in the claim set. Nothing
 // fails; the customer simply does not get what they paid for, and the first

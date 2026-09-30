@@ -16,7 +16,7 @@ type ProjectService struct {
 }
 
 // ProjectCounts holds per-project resource counts returned alongside the project list.
-// Add new fields here as new resource types are introduced — the SQL query in
+// Add new fields here as new resource types are introduced - the SQL query in
 // ListWithCounts uses a single CASE-based aggregation so adding a field is one line.
 type ProjectCounts struct {
 	ProjectID        uuid.UUID `gorm:"column:project_id"`

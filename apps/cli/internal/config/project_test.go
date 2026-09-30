@@ -55,7 +55,7 @@ func TestLoadProjectLink_WalksUp(t *testing.T) {
 		t.Fatalf("SaveProjectLink: %v", err)
 	}
 
-	// Load from sub — should walk up and find it
+	// Load from sub - should walk up and find it
 	chdir(t, sub)
 	link, err := config.LoadProjectLink()
 	if err != nil {

@@ -64,18 +64,18 @@ type CreateWorkloadInput struct {
 	Command []string    // replaces the image's ENTRYPOINT; empty keeps it
 	Args    []string    // replaces the image's CMD; empty keeps it
 
-	// PullRegistryIntegrationID — credentials for pulling a private runtime image.
+	// PullRegistryIntegrationID - credentials for pulling a private runtime image.
 	// Set at create time for image-source services; nil = public image.
 	PullRegistryIntegrationID *uuid.UUID
 
-	// K8s resource spec — optional, defaults applied by the model
+	// K8s resource spec - optional, defaults applied by the model
 	CPURequest    string
 	CPULimit      string
 	MemoryRequest string
 	MemoryLimit   string
 	Replicas      int
 
-	// Optional build config — when GitRepo is set, a BuildConfig row is
+	// Optional build config - when GitRepo is set, a BuildConfig row is
 	// created alongside the Service in the same transaction.
 	GitIntegrationID *uuid.UUID
 	GitRepo          string
@@ -95,7 +95,7 @@ type CreateWorkloadInput struct {
 	BuilderCPULimit       string // "" = no cap
 	BuilderMemoryLimit    string // "" = 4Gi, or the request when larger
 
-	// Database-specific fields — used when Type == "database"
+	// Database-specific fields - used when Type == "database"
 	Type       db.ServiceType
 	Engine     db.DatabaseEngine
 	Version    string
@@ -118,7 +118,7 @@ func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.S
 	return services, err
 }
 
-// Get fetches a service scoped to its project — use this in handler layer.
+// Get fetches a service scoped to its project - use this in handler layer.
 func (s *WorkloadService) Get(ctx context.Context, serviceID, projectID uuid.UUID) (*db.Service, error) {
 	var service db.Service
 	err := s.db.WithContext(ctx).Preload("Ports").
@@ -126,7 +126,7 @@ func (s *WorkloadService) Get(ctx context.Context, serviceID, projectID uuid.UUI
 	return &service, err
 }
 
-// getByID fetches a service by ID only — for internal use within the service layer.
+// getByID fetches a service by ID only - for internal use within the service layer.
 func (s *WorkloadService) getByID(ctx context.Context, serviceID uuid.UUID) (*db.Service, error) {
 	var service db.Service
 	err := s.db.WithContext(ctx).Preload("Ports").First(&service, "id = ?", serviceID).Error
@@ -351,7 +351,7 @@ func dbSlug(name string) string {
 // random suffix when it is not.
 //
 // The namespace is the project, so two services sharing a name resolve to one
-// Deployment -- deploying the same template twice would have had the second
+// Deployment - deploying the same template twice would have had the second
 // silently overwrite the first, and adopt its volume. Suffixing only on
 // collision keeps the ordinary single-instance case addressable as plain "zot"
 // rather than making every workload carry a suffix nobody needs.
@@ -410,9 +410,8 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 	if in.Engine == "" {
 		in.Engine = db.DatabasePostgres
 	}
-	// An engine nobody knows used to be accepted: it fell through to Postgres's
-	// image name with an empty tag, creating "postgres:" - a database that can
-	// never pull. Say which engines exist instead.
+	// An unknown engine is refused, naming the ones that exist, rather than
+	// falling through to an image that can never pull ("postgres:").
 	if defaultDBVersion(in.Engine) == "" {
 		return nil, huma.Error422UnprocessableEntity(fmt.Sprintf(
 			"%q is not a database engine Meshploy manages: postgres, mysql, redis, mongodb, dragonfly or clickhouse", in.Engine))
@@ -521,7 +520,7 @@ func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.S
 		// Re-apply the whole spec rather than scaling what is already in the
 		// cluster. Scaling resurrects whatever K8s happens to hold, which may be
 		// a Deployment left behind by a deleted service of the same name, or a
-		// spec from before the image, env, node or volumes changed — starting a
+		// spec from before the image, env, node or volumes changed - starting a
 		// service must not silently run stale configuration.
 		//
 		// ReapplyService only acts on a running service, so the status is written
@@ -688,8 +687,8 @@ func applyDatabaseMeshExposure(ctx context.Context, k8s kubernetes.Interface, dc
 
 // k8sName returns the Deployment name backing a service.
 //
-// A database's Deployment carries a random suffix — "umami-db" is deployed as
-// "umami-db-5e9871" — so its name cannot be derived from the service name. Any
+// A database's Deployment carries a random suffix - "umami-db" is deployed as
+// "umami-db-5e9871" - so its name cannot be derived from the service name. Any
 // cluster call that assumes it can silently addresses a workload that does not
 // exist: stopping a database reported success while it kept serving, deleting
 // one left its Deployment, Service and PVC orphaned, and the status reconciler
@@ -708,7 +707,7 @@ func (s *WorkloadService) k8sName(ctx context.Context, svc *db.Service) string {
 func workloadName(ctx context.Context, gdb *gorm.DB, svc *db.Service) string {
 	if svc.Type != db.ServiceTypeDatabase {
 		// Stored at creation. Empty on rows that predate the column, which fall
-		// back to the name they were already deployed under -- so nothing that
+		// back to the name they were already deployed under - so nothing that
 		// is running gets renamed and no backfill is needed.
 		if svc.Slug != "" {
 			return svc.Slug
@@ -748,7 +747,7 @@ func (s *WorkloadService) GetK8sInfo(ctx context.Context, serviceID uuid.UUID) (
 func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error {
 	// Remove the cluster workload before the row. Deleting only the record
 	// leaves the Deployment and Service running under the same name, and a later
-	// service with that name silently adopts the orphan — inheriting its image,
+	// service with that name silently adopts the orphan - inheriting its image,
 	// env and volume claims.
 	//
 	// A failure here is returned rather than ignored: dropping the row while the
@@ -794,7 +793,7 @@ type UpdateWorkloadInput struct {
 }
 
 func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in UpdateWorkloadInput) (*db.Service, error) {
-	// A rename changes the K8s object's name, and K8s names are immutable — the
+	// A rename changes the K8s object's name, and K8s names are immutable - the
 	// old Deployment and Service cannot follow, they have to be replaced.
 	//
 	// Nothing did that before: the row was renamed and the cluster was left
@@ -808,14 +807,9 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	if err := s.db.WithContext(ctx).Preload("Project").First(&before, "id = ?", serviceID).Error; err != nil {
 		return nil, err
 	}
-	// A rename only moves the cluster workload for services with no stored slug
-	// -- rows from before the slug existed, whose Kubernetes name is still
-	// derived from their display name.
-	//
-	// Once a slug is stored the two are independent: renaming changes what the
-	// UI shows and nothing in the cluster, so there is no old Deployment to
-	// clean up. That removes the delete-and-recreate a rename used to trigger,
-	// and with it the orphan left behind whenever it failed partway.
+	// A rename moves the cluster workload only for a service with no stored
+	// slug, whose Kubernetes name still derives from its display name. With a
+	// slug, renaming changes what the console shows and nothing in the cluster.
 	renamedFrom := ""
 	if in.Name != nil && before.Type != db.ServiceTypeDatabase && before.Slug == "" {
 		if old, want := slugify(before.Name), slugify(*in.Name); old != want {
@@ -903,9 +897,8 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 		}
 	}
 
-	// A target-node change has to reach the running workload, not just the row.
-	// Previously the value was saved and silently ignored until the next deploy,
-	// so the UI reported a placement the cluster was not honouring.
+	// A target-node change reaches the running workload now, not at the next
+	// deploy, or the console would show a placement the cluster is not honouring.
 	if in.UpdateNode {
 		if err := s.applyNodePin(ctx, serviceID, in.NodeID); err != nil {
 			return nil, err
@@ -913,7 +906,7 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 	}
 
 	// Replace the workload under its new name: remove the old objects, then
-	// re-apply from the freshly renamed row. Order matters — the old Deployment
+	// re-apply from the freshly renamed row. Order matters - the old Deployment
 	// goes first so the two never coexist, which is what produced a duplicate.
 	//
 	// Best-effort by design: the rename itself has already been committed, and

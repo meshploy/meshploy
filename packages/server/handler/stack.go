@@ -152,7 +152,7 @@ type applyResultBody struct {
 }
 
 // DestroyStackBody selects how far the destroy goes. Both default to false, so
-// a caller that sends an empty body destroys only the services -- the choice
+// a caller that sends an empty body destroys only the services - the choice
 // that cannot lose data or take a published hostname out of service.
 type DestroyStackBody struct {
 	DeleteVolumes bool `json:"delete_volumes" doc:"Also delete the volumes this stack created, and the data in them"`
@@ -257,7 +257,7 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 		DefaultStatus: 200,
 	}, h.ApplyStack)
 
-	// Destroy — the counterpart to apply. Gated on ActionDeploy like apply
+	// Destroy - the counterpart to apply. Gated on ActionDeploy like apply
 	// itself: the pair are the same authority over what this stack is running.
 	huma.Register(api, huma.Operation{
 		OperationID:   "destroy-stack",

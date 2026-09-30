@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 	appk8s.RolloutSettle = 0
 
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
-		// Use the existing local Postgres — create isolated DBs per test.
+		// Use the existing local Postgres - create isolated DBs per test.
 		pgDSN = dsn
 		os.Exit(m.Run())
 		return
@@ -72,7 +72,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// newTestDB creates an isolated database per test — each gets its own schema.
+// newTestDB creates an isolated database per test - each gets its own schema.
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	n := dbSeq.Add(1)

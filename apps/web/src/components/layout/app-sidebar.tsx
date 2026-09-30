@@ -230,7 +230,7 @@ export function AppSidebar() {
       <nav onClick={e => { if (!e.metaKey && !e.ctrlKey && (e.target as Element).closest("a")) useTabStore.getState().setActiveTab(null) }} className="flex flex-col p-2 flex-1 min-h-0 overflow-y-auto gap-4">
         {navGroups.filter((g) => !g.adminOnly || isAdmin).map((group, gi) => (
           <div key={gi} className="flex flex-col gap-0.5">
-            {/* Group label — only in expanded mode */}
+            {/* Group label - only in expanded mode */}
             {group.label && !sidebarCollapsed && (
               <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 {group.label}

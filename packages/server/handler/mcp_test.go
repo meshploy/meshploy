@@ -9,7 +9,7 @@ import (
 
 // TestRemoteExcludedToolsAreRealAndRemoved verifies that every tool named in
 // remoteExcludedTools actually exists on the full MCP surface (so a typo can't
-// silently leave a dangerous tool exposed) and that DeleteTools removes them —
+// silently leave a dangerous tool exposed) and that DeleteTools removes them -
 // while leaving the core deploy tools intact. No running API/cluster required:
 // mcpserver.New only registers tool closures; listing never calls the client.
 func TestRemoteExcludedToolsAreRealAndRemoved(t *testing.T) {
@@ -32,7 +32,7 @@ func TestRemoteExcludedToolsAreRealAndRemoved(t *testing.T) {
 		}
 	}
 
-	// Core deploy tools must remain — the remote surface is narrowed, not gutted.
+	// Core deploy tools must remain - the remote surface is narrowed, not gutted.
 	// share_app stays: it only calls the API. deploy_folder reads a path on the
 	// machine the server runs on, which for /mcp is the gateway.
 	if ms.GetTool("deploy_folder") != nil {

@@ -32,7 +32,7 @@ var (
 //
 // It lives in the CLI because the binary is already on the box before any
 // container is: get.sh installs it, then calls `meshploy node install`. That
-// also sidesteps the trap that rules out a container here — a container cannot
+// also sidesteps the trap that rules out a container here - a container cannot
 // bind the mesh IP during phase 1, because tailscale0 does not exist yet.
 var setupServeCmd = &cobra.Command{
 	Use:   "serve",
@@ -72,7 +72,7 @@ plain HTTP, because no certificate exists yet.`,
 		}
 		// Seed from .env so a re-run edits the current configuration rather than
 		// starting blank. This is what makes "change the domain" work: there is
-		// no console-side form for it — the API container mounts two read-only
+		// no console-side form for it - the API container mounts two read-only
 		// files and has no Docker socket, so it cannot rewrite the CoreDNS and
 		// Headscale configs the domain is baked into, nor restart them. Serving
 		// setup again is the supported way to change it, and install.sh
@@ -111,7 +111,7 @@ plain HTTP, because no certificate exists yet.`,
 		}
 
 		// install.sh opens 80, 443, 53 and 3478 and nothing else, so on a host
-		// with an active firewall — most fresh cloud images — this page would
+		// with an active firewall - most fresh cloud images - this page would
 		// otherwise be unreachable from the browser it exists for. The rule is
 		// owned by this process and removed when it stops: a setup port left
 		// open afterwards is a privileged installer left exposed.
@@ -140,7 +140,7 @@ plain HTTP, because no certificate exists yet.`,
 		defer stop()
 		go func() {
 			// Either the operator interrupts, or they finish and leave for the
-			// console. Both stop the installer — leaving it listening once it is
+			// console. Both stop the installer - leaving it listening once it is
 			// no longer needed is the liability.
 			select {
 			case <-ctx.Done():
@@ -177,7 +177,7 @@ func setupURLs(publicIP string, addr net.Addr) []string {
 
 // setupCmd groups the browser-driven install. Kept separate from setup-token,
 // which is referenced by name in install.sh output and in the API's error when
-// a registration is refused — renaming that would break printed instructions.
+// a registration is refused - renaming that would break printed instructions.
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Browser-driven installation of this gateway",

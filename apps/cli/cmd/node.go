@@ -175,7 +175,7 @@ Examples:
 			return fmt.Errorf("upload uninstall script: %w", err)
 		}
 
-		// Step 2: execute with PTY — sudo can prompt for password, script handles
+		// Step 2: execute with PTY - sudo can prompt for password, script handles
 		// k3s removal, self-deregistration via /etc/meshploy/node.conf, and Tailscale logout.
 		step2 := exec.Command("ssh", append(baseArgs, "-t", sshTarget,
 			fmt.Sprintf("TERM=xterm-256color bash %s --worker --yes; _rc=$?; rm -f %s; exit $_rc", tmpScript, tmpScript))...)
@@ -244,7 +244,7 @@ k3s setup, Headscale registration, and saves /etc/meshploy/node.conf.`,
 		// Forward the install script's own flags.
 		//
 		// These were not declared, so `meshploy node install --reinstall` died
-		// on "unknown flag" before it ever reached the script -- and get.sh
+		// on "unknown flag" before it ever reached the script - and get.sh
 		// dispatches through exactly this command, which made the documented
 		// `--reinstall` / `--wipe-data` bootstrap unusable.
 		var scriptArgs []string
@@ -468,7 +468,7 @@ Examples:
 		for k, v := range envVars {
 			envParts = append(envParts, k+"="+shellQuote(v))
 		}
-		// bash -s -- --auto: positional args after "--" are passed to the script as $@.
+		// bash -s - --auto: positional args after "--" are passed to the script as $@.
 		remoteCmd := fmt.Sprintf("env %s bash -s -- --auto", strings.Join(envParts, " "))
 		sshArgs = append(sshArgs, remoteCmd)
 

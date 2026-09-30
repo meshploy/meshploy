@@ -34,7 +34,7 @@ func New(c *client.Client, orgID string) *mcpsdk.MCPServer {
 	s.registerAppTools(ms)
 
 	// Extension tools last, so an EE tool can rely on the CE surface existing.
-	// toolHooks is empty in CE builds — nothing imports the EE module there.
+	// toolHooks is empty in CE builds - nothing imports the EE module there.
 	ec := ExtensionContext{Client: c, OrgID: orgID}
 	for _, fn := range toolHooks {
 		fn(ms, ec)
@@ -44,8 +44,8 @@ func New(c *client.Client, orgID string) *mcpsdk.MCPServer {
 
 // jsonResult serialises data and wraps it in a tool result.
 //
-// MCP defines structuredContent as a JSON OBJECT. Anything else -- an array, a
-// null, a bare string or number -- is rejected outright by a spec-compliant
+// MCP defines structuredContent as a JSON OBJECT. Anything else - an array, a
+// null, a bare string or number - is rejected outright by a spec-compliant
 // client: every list_* tool failed with "expected record, received array" and
 // was unusable, on both the remote endpoint and the local stdio server.
 //
@@ -69,7 +69,7 @@ func jsonResult(data any) (*mcp.CallToolResult, error) {
 	var structured any = data
 	switch {
 	case strings.HasPrefix(text, "{"):
-		// Already an object — pass it through unchanged.
+		// Already an object - pass it through unchanged.
 	case strings.HasPrefix(text, "["):
 		var items []json.RawMessage
 		_ = json.Unmarshal([]byte(text), &items)

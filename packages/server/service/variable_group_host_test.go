@@ -10,7 +10,7 @@ import (
 // Service-discovery hostnames must be the K8s Service name. The service name
 // itself is not one: it may contain spaces or capitals, which are not legal in
 // a DNS label, and a database's workload carries a suffixed slug. A hostname
-// that does not exist in the cluster does not fail loudly either — it falls
+// that does not exist in the cluster does not fail loudly either - it falls
 // through to the mesh search domain and resolves to the gateway.
 func TestServiceDiscoveryHostIsADNSName(t *testing.T) {
 	cases := []struct {

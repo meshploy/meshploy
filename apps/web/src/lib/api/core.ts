@@ -4,7 +4,7 @@ declare global {
   }
 }
 
-// In production: BASE is "" — all paths (/api/v1/...) are relative, Caddy routes /api/* to port 4000.
+// In production: BASE is "" - all paths (/api/v1/...) are relative, Caddy routes /api/* to port 4000.
 // In dev: BASE is "http://localhost:4000" so the full path becomes http://localhost:4000/api/v1/...
 const BASE = import.meta.env.VITE_DEMO_MODE === "true" ? "" :
   window.__MESHPLOY_CONFIG__?.apiUrl ??

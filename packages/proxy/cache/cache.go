@@ -115,7 +115,7 @@ func (c *Cache) Get(hostname, path string) (TargetEntry, bool) {
 		c.routes[hostname] = entries
 		c.mu.Unlock()
 	} else if !ok {
-		// Full cache miss — query DB (also tries wildcard pattern in DB).
+		// Full cache miss - query DB (also tries wildcard pattern in DB).
 		entries = c.loadHostname(hostname)
 		if len(entries) == 0 {
 			return TargetEntry{}, false

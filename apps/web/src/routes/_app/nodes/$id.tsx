@@ -365,7 +365,7 @@ function NodeDetailPage() {
       )}
 
       <ResourceIntro title="Capacity and utilization" description={computed ? "Live measurements from this node. Open Metrics for detailed monitoring." : node.os === "windows" ? "Metrics are not collected from Windows nodes yet." : "Reported hardware capacity. Live utilization is not available yet."}/>
-      {/* Live metrics cards — only rendered when node_exporter is reachable */}
+      {/* Live metrics cards - only rendered when node_exporter is reachable */}
       {computed && (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
           <MetricCard
@@ -402,7 +402,7 @@ function NodeDetailPage() {
         </div>
       )}
 
-      {/* Static spec cards — hidden when live metrics replace them */}
+      {/* Static spec cards - hidden when live metrics replace them */}
       {!computed && (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
           <SpecCard icon={<Cpu className="h-4 w-4" />} label="CPU" value={node.cpuCores ? `${node.cpuCores} cores` : "—"} />

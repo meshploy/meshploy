@@ -14,13 +14,9 @@ import (
 	"github.com/meshploy/packages/client"
 )
 
-// The two tools that take an app an agent just wrote to people: deploy the
-// folder it is in, then share it. deploy_folder reads the agent's own disk, so
-// it only makes sense on the local server (meshploy mcp); the remote /mcp
-// strips it, since a path there would be the gateway's. share_app is offered
-// everywhere, Community included, where it answers that sharing needs
-// Enterprise or Meshploy Cloud: the agent tells its user, and nothing of
-// sharing is in Community beyond this call.
+// deploy_folder reads the disk the MCP server runs on, so the remote /mcp,
+// where that disk is the gateway's, strips it. share_app calls the API's share
+// route, and says so plainly where there is none.
 
 // deployWait bounds how long deploy_folder follows a deployment: a first
 // Railpack build without cache can take several minutes.

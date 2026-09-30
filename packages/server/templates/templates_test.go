@@ -7,7 +7,7 @@ import (
 )
 
 // fixtureFS is a self-contained template used to exercise the conversion engine.
-// It is NOT a copy of the catalog — the real catalog lives in the meshploy-
+// It is NOT a copy of the catalog - the real catalog lives in the meshploy-
 // templates repo and is validated there. This only tests engine behaviour.
 func fixtureFS() fstest.MapFS {
 	return fstest.MapFS{
@@ -62,7 +62,7 @@ func TestPrepareSpec(t *testing.T) {
 		t.Errorf("resolved spec still has placeholders: %v", refs)
 	}
 	// The x-meshploy block survives: the compose IS the meshploy spec, no format
-	// conversion — only substitution.
+	// conversion - only substitution.
 	if !strings.Contains(spec, "x-meshploy") {
 		t.Error("resolved spec lost the x-meshploy block")
 	}

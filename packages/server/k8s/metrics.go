@@ -65,7 +65,7 @@ func GetPodMetrics(ctx context.Context, restCfg *rest.Config, namespace, labelSe
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusServiceUnavailable {
-		// metrics-server not installed — return empty, not an error
+		// metrics-server not installed - return empty, not an error
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {

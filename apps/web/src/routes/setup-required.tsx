@@ -13,7 +13,7 @@ import { auth } from "@/lib/api"
 export const Route = createFileRoute("/setup-required")({
   loader: async () => {
     const status = await auth.status()
-    // Nothing to do here once a domain is configured — never strand someone on
+    // Nothing to do here once a domain is configured - never strand someone on
     // this page after they have fixed the thing it complains about.
     if (!status.setup_required) throw redirect({ to: "/" })
     return status

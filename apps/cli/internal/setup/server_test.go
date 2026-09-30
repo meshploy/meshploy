@@ -83,7 +83,7 @@ func TestEveryAPIRouteRequiresTheToken(t *testing.T) {
 	}
 }
 
-// The page itself is not gated — it has to render in order to ask for the
+// The page itself is not gated - it has to render in order to ask for the
 // token. It must carry nothing sensitive, which is why state lives behind /api.
 func TestPageIsServedWithoutAToken(t *testing.T) {
 	_, h := newTestServer(t, &fakeRunner{})
@@ -138,7 +138,7 @@ func TestAnswersAreValidated(t *testing.T) {
 }
 
 // A browser that reconnects mid-install must see the output it missed, not an
-// empty pane — otherwise a reload looks like the install stopped.
+// empty pane - otherwise a reload looks like the install stopped.
 func TestInstallReplaysTheTranscriptThenStreams(t *testing.T) {
 	s, h := newTestServer(t, &fakeRunner{lines: []string{"starting postgres", "done"}})
 	_ = s.store.Update(func(st *State) {
@@ -260,7 +260,7 @@ func TestClosingTheBrowserDoesNotStopTheInstall(t *testing.T) {
 }
 
 // Installing before the answers are valid must be refused, not attempted with
-// an empty domain — which would generate a broken Headscale config.
+// an empty domain - which would generate a broken Headscale config.
 func TestInstallRefusedWithoutAnswers(t *testing.T) {
 	_, h := newTestServer(t, &fakeRunner{})
 	if got := do(h, "POST", "/api/install", "ms_token", "").Code; got != http.StatusBadRequest {
@@ -299,7 +299,7 @@ func TestCompleteStopsTheServerAndClearsState(t *testing.T) {
 	}
 }
 
-// Completing is token-gated like everything else — otherwise a passer-by could
+// Completing is token-gated like everything else - otherwise a passer-by could
 // shut the installer down mid-setup.
 func TestCompleteRequiresTheToken(t *testing.T) {
 	_, h := newTestServer(t, &fakeRunner{})

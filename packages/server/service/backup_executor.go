@@ -245,11 +245,9 @@ func (s *BackupService) execBackup(ctx context.Context, cfgID uuid.UUID) {
 	if !cfg.Enabled {
 		return
 	}
-	// A stopped database has nothing to dump, and stopping one is something an
-	// operator chose to do. Backing it up cannot succeed, so this used to go
-	// looking for a pod, fail to find one, and report a failed backup - with a
-	// notification - every night until somebody noticed. The run is recorded as
-	// skipped and the schedule moves on.
+	// A stopped database has nothing to dump, and stopping it was an
+	// operator's choice: the run is recorded as skipped, not failed, and the
+	// schedule moves on.
 	if cfg.Service.Status == db.ServiceStopped {
 		log.Printf("backup %s: %s is stopped, nothing to back up", cfgID, cfg.Service.Name)
 		s.markSkipped(ctx, &cfg)

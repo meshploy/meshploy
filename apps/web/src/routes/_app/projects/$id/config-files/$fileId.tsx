@@ -99,7 +99,7 @@ export const Route = createFileRoute("/_app/projects/$id/config-files/$fileId")(
  *
  * Detaching re-applies the service immediately. A `subPath` mount is a copy
  * taken at container start, so without that re-apply the file would linger in
- * the running pod and vanish at some later restart — failing for a reason
+ * the running pod and vanish at some later restart - failing for a reason
  * nobody would connect back to this action.
  */
 function AttachmentsSection({

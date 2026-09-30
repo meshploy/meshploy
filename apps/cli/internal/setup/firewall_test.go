@@ -50,7 +50,7 @@ func guard(r *recorder, present ...string) PortGuard {
 }
 
 // The installer opens 80, 443, 53 and 3478 and nothing else, so without this
-// the setup page is unreachable on any host with an active firewall — which is
+// the setup page is unreachable on any host with an active firewall - which is
 // most fresh cloud images.
 func TestUFWPortIsOpenedAndClosed(t *testing.T) {
 	r := &recorder{outputs: map[string]string{"ufw status": "Status: active"}}
@@ -90,7 +90,7 @@ func TestFirewalldRuleIsNotPermanent(t *testing.T) {
 }
 
 // An installed but inactive firewall needs no rule, and must not be started on
-// the operator's behalf — that would change the host's security posture as a
+// the operator's behalf - that would change the host's security posture as a
 // side effect of running an installer.
 func TestInactiveFirewallIsLeftAlone(t *testing.T) {
 	r := &recorder{outputs: map[string]string{"ufw status": "Status: inactive"}}

@@ -21,7 +21,7 @@ const (
 	// genBcryptPrefix marks a DERIVED generator, written `bcrypt(OTHER_KEY)`.
 	// It produces a bcrypt hash of another variable's resolved value, so a
 	// template can write a credential's hash into an htpasswd file instead of
-	// the credential. Handled in Resolve -- unlike every other generator it
+	// the credential. Handled in Resolve - unlike every other generator it
 	// needs the other variables to exist first.
 	//
 	// Note what this does NOT buy: PrepareSpec substitutes into the compose and
@@ -49,7 +49,7 @@ func bcryptRef(generate string) (string, bool) {
 //
 // Cost 10 is Apache's htpasswd default. Higher costs are better for a login
 // endpoint, but a registry authenticates every layer of every pull, and the
-// hash is checked on each -- cost 12 would turn a docker pull into a CPU-bound
+// hash is checked on each - cost 12 would turn a docker pull into a CPU-bound
 // operation on the gateway. 10 is the right point for this use.
 func bcryptHash(value string) (string, error) {
 	h, err := bcrypt.GenerateFromPassword([]byte(value), 10)
@@ -61,7 +61,7 @@ func bcryptHash(value string) (string, error) {
 
 const alphanumeric = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
-// base64url alphabet without padding — URL/shell-safe, no '+' '/' '='.
+// base64url alphabet without padding - URL/shell-safe, no '+' '/' '='.
 const base64urlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 // generateValue produces a value for a value-generator name. The "subdomain"

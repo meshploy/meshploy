@@ -37,7 +37,7 @@ function ConfigFilesPage() {
   const files = data?.files ?? []
 
   // Creating and editing both have their own page now; the list keeps only the
-  // one action that needs no form -- deleting a file nothing mounts.
+  // one action that needs no form - deleting a file nothing mounts.
   const [deleteTarget, setDeleteTarget] = useState<ApiConfigFile | null>(null)
 
   const remove = useMutation({

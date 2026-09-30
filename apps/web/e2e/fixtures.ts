@@ -6,7 +6,7 @@ export const DEMO_PASSWORD = "demo"
 async function blockExternalResources(page: Page) {
   await page.route("https://fonts.googleapis.com/**", (route) => route.abort())
   await page.route("https://fonts.gstatic.com/**", (route) => route.abort())
-  // config.js is optional runtime config — serve as empty JS so it doesn't block parsing
+  // config.js is optional runtime config - serve as empty JS so it doesn't block parsing
   await page.route("**/config.js", (route) =>
     route.fulfill({ contentType: "application/javascript", body: "" })
   )

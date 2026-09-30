@@ -1,7 +1,7 @@
 // Command sync-builtin refreshes the embedded fallback snapshot
 // (packages/server/templates/builtin) from the meshploy-templates repo.
 //
-// The embed is a curated *subset* of the catalog — the handful of staples a
+// The embed is a curated *subset* of the catalog - the handful of staples a
 // fresh or offline install shows before/without a live fetch. This tool pulls
 // each listed template's meta.yaml + docker-compose.yml + icon from GitHub raw
 // and writes them into the snapshot; the id list is authoritative (dirs not in

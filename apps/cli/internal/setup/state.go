@@ -10,7 +10,7 @@ import (
 )
 
 // Phase is how far the install has got. Persisted, so closing the browser
-// mid-install resumes rather than restarting — a wizard that can only be
+// mid-install resumes rather than restarting - a wizard that can only be
 // completed in one sitting trades one dead end for another.
 type Phase string
 

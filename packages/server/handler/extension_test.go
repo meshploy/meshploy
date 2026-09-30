@@ -57,7 +57,7 @@ func TestExtensionRouteIsMountedAndServes(t *testing.T) {
 		})
 	})
 
-	// Non-nil services so the accessor assertion above is meaningful — an
+	// Non-nil services so the accessor assertion above is meaningful - an
 	// extension must be able to reach the aggregate it was handed.
 	_, api := humatest.New(t, huma.DefaultConfig("test", "1.0.0"))
 	h := New(nil, &service.Services{})
@@ -69,7 +69,7 @@ func TestExtensionRouteIsMountedAndServes(t *testing.T) {
 	}
 }
 
-// Multiple extensions compose — Custom-EE layers on top of EE, so both must mount.
+// Multiple extensions compose - Custom-EE layers on top of EE, so both must mount.
 func TestMultipleExtensionRoutesCompose(t *testing.T) {
 	mk := func(id, path string) func(huma.API, *Handler) {
 		return func(api huma.API, _ *Handler) {

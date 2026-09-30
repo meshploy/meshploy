@@ -44,7 +44,7 @@ func newCACertPEM(t *testing.T) []byte {
 //
 // Regression guard: the rewrite used to set Insecure and discard the CA, which
 // silently disabled authentication of a connection carrying cluster-admin
-// credentials — on the standard Docker deployment, which sets K3S_SERVER_URL by
+// credentials - on the standard Docker deployment, which sets K3S_SERVER_URL by
 // default. No cluster is needed here: everything asserted is config assembly,
 // which is exactly where the bug lived.
 
@@ -122,7 +122,7 @@ func TestTLSServerNameIsOverridable(t *testing.T) {
 	}
 }
 
-// The escape hatch still works, and still drops the CA — client-go rejects a
+// The escape hatch still works, and still drops the CA - client-go rejects a
 // config that sets both.
 func TestSkipTLSVerifyIsExplicitOnly(t *testing.T) {
 	_, cfg, err := NewClientWithOptions(Options{
@@ -159,7 +159,7 @@ func TestNoOverrideLeavesTheKubeconfigAlone(t *testing.T) {
 	}
 }
 
-// The old two-argument entry point must carry the same guarantee — it is what
+// The old two-argument entry point must carry the same guarantee - it is what
 // any out-of-tree caller still uses.
 func TestLegacyConstructorAlsoVerifies(t *testing.T) {
 	_, cfg, err := NewClientWithConfig(writeKubeconfig(t), "https://host.meshploy.internal:6443")

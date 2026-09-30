@@ -882,8 +882,8 @@ func syncEnvChannel(channel string) error {
 
 // setEnvVar rewrites KEY=value in /opt/meshploy/.env, appending it when absent.
 //
-// .env is the only configuration that survives an upgrade — the deploy tarball
-// overwrites everything else in that directory — so it is where a setting that
+// .env is the only configuration that survives an upgrade - the deploy tarball
+// overwrites everything else in that directory - so it is where a setting that
 // must outlive `server-upgrade` belongs.
 func setEnvVar(key, value string) error {
 	envFile := meshployInstDir + "/.env"

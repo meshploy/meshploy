@@ -54,7 +54,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Redirect target — respond immediately without proxying.
+	// Redirect target - respond immediately without proxying.
 	if entry.RedirectHostname != "" {
 		code := entry.RedirectCode
 		if code == 0 {

@@ -29,7 +29,7 @@ func loadZotExt(t *testing.T) *meshployExt {
 		t.Skip("meshploy-templates checkout not present")
 	}
 	// The catalog spec is unresolved here; ${ZOT_HTPASSWD} is a placeholder,
-	// which is fine -- this test is about structure surviving the parse.
+	// which is fine - this test is about structure surviving the parse.
 	proj, err := loader.LoadWithContext(context.Background(), composetypes.ConfigDetails{
 		ConfigFiles: []composetypes.ConfigFile{{Filename: "docker-compose.yml", Content: spec}},
 	}, func(o *loader.Options) {
@@ -86,7 +86,7 @@ func TestZotComposeCarriesConfigFiles(t *testing.T) {
 // A config file's body is literal data, and compose-go expands $NAME in the
 // spec. A bcrypt hash is $2a$10$<salt>… and the salt starts with a letter, so
 // the interpolating parse the apply path uses reads it as an undefined variable
-// and deletes it — leaving a truncated hash, an htpasswd that matches nothing,
+// and deletes it - leaving a truncated hash, an htpasswd that matches nothing,
 // and a registry that rejects its own generated password with no error anywhere.
 //
 // This runs the loader exactly as Apply does, which the parse test above does

@@ -37,7 +37,7 @@ func detectEdition() string {
 // registration order.
 const (
 	// PriorityBeforeAuth runs before the principal is resolved. Use only for
-	// transport concerns (tracing, request shaping) — the caller is unknown here.
+	// transport concerns (tracing, request shaping) - the caller is unknown here.
 	PriorityBeforeAuth = 100
 
 	// PriorityAfterAuth runs once the principal is in context and org membership
@@ -52,7 +52,7 @@ type extMiddleware struct {
 	mw       func(http.Handler) http.Handler
 }
 
-// middlewareHooks stays empty in CE builds — the CE binary never imports EE.
+// middlewareHooks stays empty in CE builds - the CE binary never imports EE.
 var middlewareHooks []extMiddleware
 
 // RegisterMiddleware adds HTTP middleware at the given priority. Call from an

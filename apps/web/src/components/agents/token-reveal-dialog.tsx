@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 
 /**
  * TokenRevealDialog shows a freshly-minted agent token exactly once. Mirrors the
- * one-time secret pattern used for node provisioning tokens on the Cluster page —
+ * one-time secret pattern used for node provisioning tokens on the Cluster page -
  * amber "shown once" warning + copy affordances. Optionally surfaces the remote
  * MCP connect endpoint so the pair can be pasted straight into an agent platform.
  */

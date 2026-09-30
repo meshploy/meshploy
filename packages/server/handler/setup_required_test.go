@@ -5,7 +5,7 @@ import "testing"
 // The gate must fire on a half-configured gateway and stay silent on a
 // developer's machine. DOMAIN is optional, missing from .env.example and unset
 // in local development, so gating on it alone would lock every developer out of
-// the console — breaking a working flow to protect one that is not.
+// the console - breaking a working flow to protect one that is not.
 func TestSetupRequired(t *testing.T) {
 	cases := []struct {
 		name                                    string

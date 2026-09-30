@@ -8,7 +8,7 @@ import (
 
 // Extension point: per-org resource quotas.
 //
-// CE ships no quotas — quotaCheckers stays empty because the CE binary never
+// CE ships no quotas - quotaCheckers stays empty because the CE binary never
 // imports the EE module. EE's MSP mode registers a checker so one install can
 // host many orgs with enforced limits, which is also the foundation Meshploy
 // Cloud reuses.

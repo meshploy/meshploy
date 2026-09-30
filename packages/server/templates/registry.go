@@ -52,7 +52,7 @@ type Registry struct {
 
 // NewRegistry builds a registry over fsys, reading template dirs under root
 // (e.g. os.DirFS("/etc/meshploy/templates"), "templates"). A nil registry is a
-// valid "no catalog configured" state — callers guard for it.
+// valid "no catalog configured" state - callers guard for it.
 func NewRegistry(fsys fs.FS, root string) *Registry {
 	return &Registry{fsys: fsys, root: root}
 }

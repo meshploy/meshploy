@@ -1,7 +1,7 @@
 import { apiFetch } from "./core"
 
 /**
- * A config file's `content` is never returned by the API — it is stored
+ * A config file's `content` is never returned by the API - it is stored
  * encrypted and write-only, the same as a variable group's values. `size` is
  * carried instead so the UI can show that something is there without carrying
  * an htpasswd hash or a TLS key into the browser.

@@ -37,7 +37,7 @@ type TargetInput struct {
 	ServicePortID *uuid.UUID // which port to route to; nil = primary port
 	NodeID        *uuid.UUID
 	Port          int
-	// Pre-resolved (optional override — skips auto-resolution)
+	// Pre-resolved (optional override - skips auto-resolution)
 	TargetIP   string
 	TargetPort int
 	// TargetTLS: the target speaks HTTPS, so the hop to it does too. Only
@@ -47,7 +47,7 @@ type TargetInput struct {
 	// AllowUnresolved keeps a target whose service has no NodePort yet, for a
 	// route created paused. Publishing resolves it.
 	AllowUnresolved bool
-	// Redirect target — mutually exclusive with ServiceID / NodeID
+	// Redirect target - mutually exclusive with ServiceID / NodeID
 	RedirectRouteID *uuid.UUID
 	RedirectCode    int // 301 or 302; defaults to 301 if zero
 }
@@ -658,7 +658,6 @@ func (s *RouteService) resolvePausedTargets(ctx context.Context, route *db.Route
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-// validateRedirectTarget enforces zone and chain rules when a redirect target is requested.
 // serviceInOrg reports whether this service belongs to the organisation, by the
 // project that owns it. A target naming a service from elsewhere is a 404 and
 // not a 403: the caller has no business knowing the id exists.
@@ -676,6 +675,7 @@ func (s *RouteService) serviceInOrg(ctx context.Context, orgID, serviceID uuid.U
 	return nil
 }
 
+// validateRedirectTarget enforces zone and chain rules when a redirect target is requested.
 func (s *RouteService) validateRedirectTarget(ctx context.Context, routeID uuid.UUID, zone db.RouteZone, in *TargetInput) error {
 	if in.RedirectRouteID == nil {
 		return nil
@@ -787,8 +787,8 @@ func (s *RouteService) resolveTarget(ctx context.Context, orgID uuid.UUID, in *T
 		}
 		// A missing NodePort in the row does not mean the service is undeployed.
 		// The cluster assigns the port and the row only mirrors it afterwards, so
-		// a deploy that assigned one but failed before recording it — or a service
-		// deployed by an older version — leaves a running workload with a zero
+		// a deploy that assigned one but failed before recording it - or a service
+		// deployed by an older version - leaves a running workload with a zero
 		// here. Refusing on that basis told people to deploy a service that had
 		// been serving traffic for months.
 		//
@@ -847,8 +847,8 @@ func (s *RouteService) resolveTarget(ctx context.Context, orgID uuid.UUID, in *T
 			return nil, huma.Error400BadRequest("a target port must be between 1 and 65535")
 		}
 	} else {
-		// Nothing to dial. This used to be accepted, and produced a route that
-		// answered every request with a proxy error.
+		// Nothing to dial: refused, or the route would answer every request
+		// with a proxy error.
 		return nil, huma.Error400BadRequest("a target needs a service, a node, an address, or a route to redirect to")
 	}
 

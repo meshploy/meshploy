@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// The ticket exists to make a credential that appears in a URL — and therefore
-// in request logs — worthless to whoever reads that log later. Both properties
+// The ticket exists to make a credential that appears in a URL - and therefore
+// in request logs - worthless to whoever reads that log later. Both properties
 // that deliver it are pinned here: one redemption only, and a short life.
 
 func TestTicketRedeemsOnceAndReturnsTheMintingUser(t *testing.T) {

@@ -160,7 +160,7 @@ func TestQuotaBlocksRealProjectCreate(t *testing.T) {
 	}
 	orgID := orgs[0].ID
 
-	// Without a checker the create succeeds — CE behaviour.
+	// Without a checker the create succeeds - CE behaviour.
 	withQuota(t, nil)
 	if _, err := svcs.Projects.Create(context.Background(), orgID, "allowed", "allowed"); err != nil {
 		t.Fatalf("CE build must allow project creation: %v", err)

@@ -188,7 +188,6 @@ func parseLabels(s string) map[string]string {
 	return labels
 }
 
-// ParseBindSources reads `docker inspect --format '{{.Name}}|<sources;>'`.
 // ContainerDetail is what one `docker inspect` line carries beyond `docker ps`.
 type ContainerDetail struct {
 	NetworkMode string

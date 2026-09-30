@@ -201,7 +201,7 @@ type K3sJoinToken struct {
 	ServerURL string `json:"server_url"`
 }
 
-// Cluster-credential endpoints are org-scoped and admin-only — they hand out
+// Cluster-credential endpoints are org-scoped and admin-only - they hand out
 // credentials that let a machine join the mesh and the k3s cluster.
 
 func (c *Client) GetK3sJoinToken(orgID string) (K3sJoinToken, error) {

@@ -27,7 +27,7 @@ type Config struct {
 	APIBaseURL  string // API_BASE_URL    e.g. https://api.meshploy.io  (defaults to http://localhost:4000)
 	FrontendURL string // FRONTEND_URL    e.g. http://localhost:5173   (defaults to http://localhost:5173)
 
-	// Kubernetes — optional; build+deploy features require K3s connectivity.
+	// Kubernetes - optional; build+deploy features require K3s connectivity.
 	KubeconfigPath string // KUBECONFIG      path to kubeconfig file; empty = in-cluster config
 	K3sServerURL   string // K3S_SERVER_URL  override k3s API server URL (e.g. when running in Docker)
 	BuilderImage   string // BUILDER_IMAGE   override the builder container image
@@ -42,7 +42,7 @@ type Config struct {
 	K3sTLSServerName string // K3S_TLS_SERVER_NAME  empty = k8s.DefaultTLSServerName
 	K3sSkipTLSVerify bool   // K3S_SKIP_TLS_VERIFY  escape hatch; disables authentication of the connection
 
-	// Gateway seeding — set by install.sh on master nodes.
+	// Gateway seeding - set by install.sh on master nodes.
 	// When present, the first user to register gets a gateway node + domain pre-created.
 	Domain          string // DOMAIN           base domain (e.g. meshp.example.com)
 	GatewayIP       string // MESH_IP          WireGuard IP of the gateway node
@@ -55,8 +55,8 @@ type Config struct {
 	// it cannot inspect the host firewall itself; recording the installer's
 	// finding is the only way the console can know.
 	//
-	// Empty means "never recorded" — a dev box, or a gateway installed before
-	// this was written — and is reported as unknown rather than as a problem.
+	// Empty means "never recorded" - a dev box, or an older gateway - and is
+	// reported as unknown rather than as a problem.
 	// The value is a point-in-time observation, not live state: install.sh
 	// rewrites .env on every run, so a re-install or server-upgrade refreshes it.
 	FirewallState     string // FIREWALL_STATE       none | ufw | firewalld
@@ -85,13 +85,13 @@ type Config struct {
 	// already has an owner refuses registration outright.
 	SetupToken string // SETUP_TOKEN
 
-	// Built-in registry — set when docker-compose includes the registry:2 service.
+	// Built-in registry - set when docker-compose includes the registry:2 service.
 	// Format: <host>:<port>, e.g. "100.64.0.1:5000" (mesh IP of gateway).
 	// When set, a registry_integrations row is auto-seeded for every org on startup.
 	BuiltinRegistryEndpoint string // BUILTIN_REGISTRY_ENDPOINT
 
 	// TemplateDir is a local directory of one-click templates (<dir>/<id>/...).
-	// When set it overrides the remote catalog — used for local dev, offline, or
+	// When set it overrides the remote catalog - used for local dev, offline, or
 	// air-gapped installs. Empty = fetch the catalog from TemplateRepo.
 	TemplateDir string // TEMPLATE_DIR
 

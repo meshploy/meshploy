@@ -32,7 +32,7 @@ type AuthService struct {
 	onFirstRegistration func(ctx context.Context, orgID uuid.UUID)
 
 	// setupToken, when set, must be presented to claim a server that has no
-	// users yet. Empty means no check — see config.SetupToken.
+	// users yet. Empty means no check - see config.SetupToken.
 	setupToken string
 }
 
@@ -71,7 +71,7 @@ func (s *AuthService) RegistrationOpen(ctx context.Context) (bool, error) {
 }
 
 // Register creates a new user and provisions a default organization with the
-// user as owner — all within a single transaction.
+// user as owner - all within a single transaction.
 // Returns an error if any user already exists (registration is first-boot only).
 func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User, error) {
 	open, err := s.RegistrationOpen(ctx)
@@ -84,7 +84,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User,
 
 	// The first account on a server owns it, so claiming one must require
 	// something only the operator has: the token install.sh printed. Compared in
-	// constant time -- it is a bearer credential, and a comparison that returns
+	// constant time - it is a bearer credential, and a comparison that returns
 	// early leaks its prefix to anyone who can time the request.
 	if s.setupToken != "" &&
 		subtle.ConstantTimeCompare([]byte(in.SetupToken), []byte(s.setupToken)) != 1 {
@@ -293,7 +293,7 @@ func (s *AuthService) GetMe(ctx context.Context, userID uuid.UUID) (*db.User, er
 
 // SetupTOTP generates a new TOTP secret, persists it (not yet enabled), and
 // returns the otpauth:// URL (for QR code) and the raw base32 secret.
-// Returns an error if 2FA is already enabled — user must disable first.
+// Returns an error if 2FA is already enabled - user must disable first.
 func (s *AuthService) SetupTOTP(ctx context.Context, userID uuid.UUID) (otpURL, secret string, err error) {
 	var user db.User
 	if err = s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
@@ -322,7 +322,7 @@ func (s *AuthService) SetupTOTP(ctx context.Context, userID uuid.UUID) (otpURL, 
 
 // VerifyAndEnableTOTP verifies the given TOTP code against the pending secret,
 // enables 2FA, generates 8 one-time recovery codes, and returns the raw codes
-// (only shown once — caller must display them to the user immediately).
+// (only shown once - caller must display them to the user immediately).
 func (s *AuthService) VerifyAndEnableTOTP(ctx context.Context, userID uuid.UUID, code string) ([]string, error) {
 	var user db.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
@@ -405,7 +405,7 @@ func (s *AuthService) CompleteRecoveryLogin(ctx context.Context, mfaToken, rawCo
 		return CompleteTOTPLoginResult{}, errors.New("invalid MFA token")
 	}
 
-	// Normalize: strip dash, lowercase — matches how they were hashed at generation.
+	// Normalize: strip dash, lowercase - matches how they were hashed at generation.
 	normalized := strings.ReplaceAll(strings.ToLower(rawCode), "-", "")
 	h := sha256.Sum256([]byte(normalized))
 	hash := hex.EncodeToString(h[:])

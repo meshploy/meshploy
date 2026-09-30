@@ -132,7 +132,7 @@ func (s *VolumeService) PVCStatus(ctx context.Context, volumeID uuid.UUID) (appk
 // Node-local storage cannot be moved, so this only succeeds while the claim is
 // unbound: the claim is recreated with the new pin (nothing has been written to
 // it yet, so there is no data to lose). A bound claim is refused with an
-// explanation rather than silently accepting a change that cannot take effect —
+// explanation rather than silently accepting a change that cannot take effect -
 // the failure mode otherwise is a pod that stays Pending forever against a node
 // it can never reach.
 func (s *VolumeService) SetNode(ctx context.Context, volumeID uuid.UUID, nodeID *uuid.UUID) (*db.Volume, error) {

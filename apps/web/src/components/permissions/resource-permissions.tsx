@@ -167,7 +167,7 @@ function UserGrantRow({ user, pending, onToggle }: {
           const isLoading = pending.has(`${user.userId}-${action}`)
 
           if (fromProject) {
-            // Locked — comes from project grant
+            // Locked - comes from project grant
             return (
               <span
                 key={action}
@@ -180,7 +180,7 @@ function UserGrantRow({ user, pending, onToggle }: {
             )
           }
 
-          // Toggleable — resource-level only
+          // Toggleable - resource-level only
           return (
             <button
               key={action}

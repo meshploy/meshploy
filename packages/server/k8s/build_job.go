@@ -85,7 +85,7 @@ type BuildJobParams struct {
 	// CacheLimitMB is what the builder trims its cache back under after a
 	// build; 0 leaves it to grow.
 	CacheLimitMB int
-	// Build-time env vars — KEY=VALUE, one per line.
+	// Build-time env vars - KEY=VALUE, one per line.
 	// Forwarded to railpack (export), dockerfile (--build-arg).
 	BuildEnvVars string
 	// BuilderNode pins the job to a specific K8s node name (k8s_node_name).
@@ -194,7 +194,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 					// Use ndots:1 so external hostnames like github.com are
 					// queried directly without appending cluster search domains.
 					// Alpine's musl libc resolver sends all search domain variants
-					// in parallel and picks the first response — without this,
+					// in parallel and picks the first response - without this,
 					// github.com.mesh.<domain> matches the wildcard zone and
 					// returns the gateway IP instead of the real GitHub IP.
 					// dnsPolicy None + explicit nameservers: bypass CoreDNS entirely.
@@ -291,7 +291,7 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 	}
 
 	// Extension mutators run last, on the final object. A mutator that errors
-	// aborts submission — build isolation must fail closed rather than let an
+	// aborts submission - build isolation must fail closed rather than let an
 	// unisolated build run. No-op in CE builds.
 	if err := applyJobMutators(ctx, JobBuild, job); err != nil {
 		return err

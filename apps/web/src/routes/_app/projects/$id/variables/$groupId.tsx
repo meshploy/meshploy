@@ -366,7 +366,7 @@ function GroupDetailPage() {
 
         </div><aside className="space-y-6 min-w-0">
         <ResourcePanel title="How values reach services"><p className="text-sm text-muted-foreground leading-relaxed">Variables are injected when a service deploys. After changing values, deploy the consuming services to use the new configuration.</p><ResourceFact label="Group">{group.name}</ResourceFact><ResourceFact label="Management">{group.system_managed ? "System" : "Workspace"}</ResourceFact></ResourcePanel>
-        {/* Attached services — hidden for system-managed groups */}
+        {/* Attached services - hidden for system-managed groups */}
         {!group.system_managed && (
           <Section title="Attached services" subtitle="Services that will receive these variables on next deploy.">
             <div className="space-y-2">

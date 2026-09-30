@@ -22,8 +22,7 @@ type Target struct {
 // through. Gates run in the order registered; the first to answer wins.
 //
 // Community registers none, so the proxy serves every route as it always has.
-// A build that adds one (Enterprise sign-in, later wake-on-request) registers
-// it from an init() before Main runs.
+// A build that adds one registers it from an init() before Main runs.
 type Gate func(w http.ResponseWriter, r *http.Request, t Target) (answered bool)
 
 var (

@@ -123,7 +123,7 @@ function SelectItem({
       )}
       {...props}
     >
-      {/* Always-present fixed-width slot — checkmark appears inside when selected */}
+      {/* Always-present fixed-width slot - checkmark appears inside when selected */}
       <span className="flex size-4 shrink-0 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
           <CheckIcon className="size-3.5" />

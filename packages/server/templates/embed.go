@@ -8,12 +8,12 @@ import "embed"
 // (cold start, offline, air-gapped). A successful live fetch supersedes it.
 //
 // Keep this in sync with the meshploy-templates repo. It is a resilience floor,
-// not the source of truth — it need not contain the entire catalog, just enough
+// not the source of truth - it need not contain the entire catalog, just enough
 // that a fresh or disconnected install is never empty.
 //
 // Refresh the snapshot with `go generate ./templates/` from packages/server.
 // The -ids list below is the curated set of templates to embed (authoritative
-// — edit it to add/remove staples as the catalog grows).
+// - edit it to add/remove staples as the catalog grows).
 //
 //go:generate go run ../../../apps/api/tools/sync-builtin -ids pgadmin -out builtin
 //go:embed builtin

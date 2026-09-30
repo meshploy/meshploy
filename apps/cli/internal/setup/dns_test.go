@@ -55,7 +55,7 @@ func TestOnDemandReadyWhenRecordsPointHere(t *testing.T) {
 	}
 }
 
-// Pointing somewhere else is the common mistake — an old server, or a
+// Pointing somewhere else is the common mistake - an old server, or a
 // proxied record. It must read as "not here yet", not as success.
 func TestOnDemandNotReadyWhenPointingElsewhere(t *testing.T) {
 	r := fakeResolver{hosts: map[string][]string{

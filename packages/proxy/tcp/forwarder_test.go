@@ -70,7 +70,7 @@ func TestForwardsBothWays(t *testing.T) {
 	if _, err := conn.Write([]byte("select 1")); err != nil {
 		t.Fatal(err)
 	}
-	// Say "that is all I have" — the echo has not been read yet, and dropping
+	// Say "that is all I have" - the echo has not been read yet, and dropping
 	// the whole connection here is what loses a server's last reply.
 	if err := conn.(*net.TCPConn).CloseWrite(); err != nil {
 		t.Fatal(err)

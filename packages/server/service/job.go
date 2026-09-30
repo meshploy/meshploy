@@ -257,7 +257,7 @@ func (s *JobService) Update(ctx context.Context, jobID uuid.UUID, in UpdateJobIn
 		if row.IsCron && row.Schedule != "" {
 			s.applyCronJob(ctx, &row)
 		} else if in.IsCron != nil && !*in.IsCron {
-			// Disabled scheduling — remove the CronJob if it exists.
+			// Disabled scheduling - remove the CronJob if it exists.
 			var project db.Project
 			if s.db.WithContext(ctx).First(&project, "id = ?", row.ProjectID).Error == nil {
 				_ = appk8s.DeleteCronJob(ctx, s.k8s, project.Slug, row.K8sName)
@@ -453,7 +453,7 @@ func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, 
 	s.db.WithContext(ctx).Model(job).Update("status", db.JobStatusPending)
 
 	if s.k8s == nil {
-		// No k8s — leave pending (dev mode without a cluster).
+		// No k8s - leave pending (dev mode without a cluster).
 		return &run, nil
 	}
 

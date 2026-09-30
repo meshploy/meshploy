@@ -37,7 +37,7 @@ import { livePoll } from "@/lib/live-poll"
  *
  * Two values matter and they are not the same: the *requested* node stored on
  * the volume, and the node the claim is actually bound to. Local-path storage
- * cannot be moved, so once a claim binds, the request is frozen — and any
+ * cannot be moved, so once a claim binds, the request is frozen - and any
  * service mounting it is pinned to that node too. Surfacing the bound node here
  * is what turns "pod stuck Pending forever" into an obvious cause.
  */
@@ -643,7 +643,7 @@ function VolumeDetailPage() {
     queryKey: ["volume", orgId, projectId, volumeId],
     queryFn: () => volumesApi.get(orgId, projectId, volumeId, token),
     enabled: !!orgId,
-    // A settled volume is still watched, slowly: "ready" is not permanent — a
+    // A settled volume is still watched, slowly: "ready" is not permanent - a
     // bound claim whose node leaves the cluster becomes failed with nothing the
     // browser did, and that is exactly the change the pill has to show.
     refetchInterval: livePoll<{ status: string }>((d) => d.status === "failed"),

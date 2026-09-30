@@ -196,7 +196,7 @@ function LicenseSection() {
         </div>
       )}
 
-      {/* A licence that is installed but not in force — expired, wrong domain,
+      {/* A licence that is installed but not in force - expired, wrong domain,
           over its node limit. Silence here would look like a broken install. */}
       {ent?.problem && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">

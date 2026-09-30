@@ -35,7 +35,7 @@ func TestConfigFileValidation(t *testing.T) {
 }
 
 // Content is write-only. It round-trips through the encrypted column, but a
-// listing must never carry it — these hold htpasswd hashes and TLS keys.
+// listing must never carry it - these hold htpasswd hashes and TLS keys.
 func TestConfigFileContentIsStoredButNotListed(t *testing.T) {
 	ctx := context.Background()
 	svcs, _, projID, _ := setupStackTest(t)
@@ -79,7 +79,7 @@ func TestConfigFileDeleteBlockedWhileAttached(t *testing.T) {
 	require.NoError(t, svcs.ConfigFiles.Delete(ctx, file.ID))
 }
 
-// One file, several services — the reason this is a project-scoped resource
+// One file, several services - the reason this is a project-scoped resource
 // with an attachment table rather than a field on the service.
 func TestConfigFileAttachesToManyServices(t *testing.T) {
 	ctx := context.Background()
@@ -117,7 +117,7 @@ func TestConfigFileAttachesToManyServices(t *testing.T) {
 
 // A caller is authorised against a project, never against a file. So a file id
 // that resolves but belongs to a different project has to come back as
-// not-found -- otherwise knowing an id is enough to read another project's
+// not-found - otherwise knowing an id is enough to read another project's
 // config, which is exactly what the project gate exists to prevent.
 func TestConfigFileGetIsScopedToItsProject(t *testing.T) {
 	ctx := context.Background()

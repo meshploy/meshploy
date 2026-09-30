@@ -56,8 +56,8 @@ type HeadscaleService struct {
 	client *http.Client
 
 	// Health of the last observed call. A dead Headscale credential degrades
-	// the mesh silently -- node liveness freezes at its last known value while
-	// the UI keeps presenting it as current -- so the outcome is recorded and
+	// the mesh silently - node liveness freezes at its last known value while
+	// the UI keeps presenting it as current - so the outcome is recorded and
 	// surfaced rather than only logged.
 	mu           sync.RWMutex
 	lastErr      string
@@ -68,8 +68,8 @@ type HeadscaleService struct {
 
 // HeadscaleHealth is a point-in-time view of the API's ability to talk to
 // Headscale. Unauthorized is tracked separately from a generic failure because
-// an expired or wrong API key never recovers on its own -- it needs an operator
-// to mint a new one -- whereas a timeout usually does.
+// an expired or wrong API key never recovers on its own - it needs an operator
+// to mint a new one - whereas a timeout usually does.
 type HeadscaleHealth struct {
 	Checked       bool       `json:"checked"`
 	Healthy       bool       `json:"healthy"`

@@ -308,7 +308,7 @@ func (s *BackupService) schedulerTick(ctx context.Context) {
 
 // StartRetentionReaper runs once at startup then every 24 hours. It enforces
 // retention_days for every backup config regardless of whether a backup ran
-// recently — handles changed policies, long-failing configs, and disabled
+// recently - handles changed policies, long-failing configs, and disabled
 // configs that still have old objects in S3.
 func (s *BackupService) StartRetentionReaper(ctx context.Context) {
 	// Short initial delay to let the API finish starting up before hitting S3.

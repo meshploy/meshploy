@@ -14,13 +14,9 @@ import (
 // cheap on a project with many volumes.
 const volumeReconcileInterval = 30 * time.Second
 
-// StartVolumeStatusReconciler keeps a volume's stored status honest.
-//
-// Status used to be written from whether the create call returned — a volume was
-// marked ready because Kubernetes accepted the claim, not because storage
-// existed. Claims that never bound therefore read as ready for months, and a
-// claim deleted outside Meshploy still read as ready while every pod mounting it
-// stayed unschedulable.
+// StartVolumeStatusReconciler keeps a volume's stored status honest: ready
+// means its claim is bound, not that Kubernetes accepted it, and a claim
+// deleted outside Meshploy does not read as ready.
 func (s *VolumeService) StartVolumeStatusReconciler(ctx context.Context) {
 	if s.k8s == nil {
 		return

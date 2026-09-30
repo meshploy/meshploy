@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/auth-store"
  * publishes as a result.
  *
  * This is an advisory, not a verdict, and the copy says so. Meshploy does not
- * manage the operator's firewall — a cloud security group, a NAT gateway or an
+ * manage the operator's firewall - a cloud security group, a NAT gateway or an
  * upstream appliance is invisible from the host and may already cover every
  * port listed here. That is why it can be dismissed rather than nagging: the
  * operator knows things the installer cannot see.

@@ -53,7 +53,7 @@ type VersionInfo struct {
 const minForcedCheck = 30 * time.Second
 
 // buildCommit returns the commit an edge build was cut from, taken from the
-// "+sha" suffix its version carries. Empty when the build has none — a release
+// "+sha" suffix its version carries. Empty when the build has none - a release
 // build, a local one, or an image from before edge builds recorded it.
 func buildCommit(current string) string {
 	for i := 0; i < len(current); i++ {
@@ -140,7 +140,7 @@ func (s *SystemService) fetchVersionInfo(ctx context.Context) VersionInfo {
 	// An edge build tracks main, so it is measured against main's newest build. Asking
 	// whether a release is newer would be answering a question it did not ask:
 	// the moment a release lands the comparison reads as parity, and at the next
-	// one as "please upgrade" -- to code the build may already contain.
+	// one as "please upgrade" - to code the build may already contain.
 	if info.Channel == channelEdge {
 		return s.edgeVersionInfo(ctx, info)
 	}
@@ -174,13 +174,10 @@ func (s *SystemService) fetchVersionInfo(ctx context.Context) VersionInfo {
 	latest := stripV(release.TagName)
 	info.Latest = latest
 	info.ReleaseURL = release.HTMLURL
-	// An edge build tracks main, so releases are not the thing it is behind.
-	// It carries the version of the release it was cut after, which means the
-	// moment that release is published the comparison reads as parity and then,
-	// at the next release, as "please upgrade" — to code the build may already
-	// contain. Neither answer is true, so it is not offered: the channel and the
-	// commit are shown instead, and "meshploy server-upgrade --edge" is how an
-	// edge install moves forward.
+	// An edge build tracks main, so a release is not what it is behind: its
+	// version is the release it was cut after, and comparing the two would
+	// offer "upgrades" to code it may already contain. The channel and commit
+	// are shown instead, and "meshploy server-upgrade --edge" moves it forward.
 	if info.Channel != channelEdge {
 		info.UpdateAvailable = isNewer(latest, current)
 	}
@@ -233,7 +230,7 @@ func isNewer(latest, current string) bool {
 func (s *SystemService) edgeVersionInfo(ctx context.Context, info VersionInfo) VersionInfo {
 	running := buildCommit(info.Current)
 	if running == "" {
-		// Nothing to compare against — an older edge image that did not record
+		// Nothing to compare against - an older edge image that did not record
 		// its commit. Claiming either answer would be a guess.
 		return info
 	}

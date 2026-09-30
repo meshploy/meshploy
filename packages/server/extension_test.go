@@ -26,7 +26,7 @@ func TestMiddlewareForSelectsByPhase(t *testing.T) {
 	}
 }
 
-// A middleware must appear in exactly one phase — double-application would run
+// A middleware must appear in exactly one phase - double-application would run
 // audit logging (or any extension) twice per request.
 func TestMiddlewarePhasesDoNotOverlap(t *testing.T) {
 	saved := middlewareHooks

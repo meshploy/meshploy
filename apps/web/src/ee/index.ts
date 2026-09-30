@@ -1,4 +1,4 @@
-// EE slot — intentionally empty in the open-source build.
+// EE slot - intentionally empty in the open-source build.
 //
 // The EE image build overlays this file with real entries before running Vite,
 // so EE routes and nav items appear only in that bundle. Keeping the slot empty
@@ -7,8 +7,8 @@
 //
 // This is about licensing more than secrecy. A customer can always read the
 // JavaScript they were served; what the empty slot prevents is EE features
-// being published under this repository's MIT licence, where anyone — including
-// someone who never paid — could legally fork them.
+// being published under this repository's MIT licence, where anyone - including
+// someone who never paid - could legally fork them.
 //
 // Do not add CE features here.
 

@@ -40,7 +40,7 @@ func TestConfigFileToolsAreRegistered(t *testing.T) {
 }
 
 // A config file's body is never returned by the API, and the agent-facing type
-// must not grow a field that implies otherwise -- a content field would be
+// must not grow a field that implies otherwise - a content field would be
 // silently empty, which reads as "the file is empty" rather than "not shown".
 func TestMCPConfigFileCarriesNoContent(t *testing.T) {
 	b, err := json.Marshal(toMCPConfigFile(client.ConfigFile{

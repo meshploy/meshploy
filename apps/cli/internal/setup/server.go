@@ -23,7 +23,7 @@ type Runner interface {
 //
 // Every /api route is gated on the setup token. The service writes .env,
 // generates config and drives compose, and it listens on a public IP over plain
-// HTTP because no certificate exists yet — so the token is the only thing
+// HTTP because no certificate exists yet - so the token is the only thing
 // standing between a stranger and a privileged installer.
 type Server struct {
 	store    *Store
@@ -88,7 +88,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Header only. A query-string fallback existed for EventSource, which
-		// cannot set headers -- the page now reads the stream with fetch, so the
+		// cannot set headers - the page now reads the stream with fetch, so the
 		// token never has to travel somewhere access logs record it.
 		got := r.Header.Get("X-Setup-Token")
 		if s.token == "" ||
@@ -122,7 +122,7 @@ func (s *Server) checkDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Checking does not commit anything. The operator is expected to try a
-	// domain, see what resolves, and change it — that loop is the point.
+	// domain, see what resolves, and change it - that loop is the point.
 	writeJSON(w, http.StatusOK, CheckDomain(r.Context(), s.resolver, in.Domain, in.PublicIP, in.DNSMode))
 }
 
@@ -354,7 +354,7 @@ func (s *Server) doInstall(run *installRun, a Answers) {
 //
 // Deliberately does not check that a certificate exists. In on-demand mode one
 // is issued per hostname on first request, so requiring it would strand an
-// operator whose install is in fact correct — the failure this whole feature
+// operator whose install is in fact correct - the failure this whole feature
 // exists to remove.
 func (s *Server) complete(w http.ResponseWriter, _ *http.Request) {
 	if err := s.store.Clear(); err != nil {

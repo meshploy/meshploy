@@ -1,4 +1,4 @@
-// Package setup backs `meshploy setup serve` — the browser-driven install.
+// Package setup backs `meshploy setup serve` - the browser-driven install.
 //
 // It lives in the CLI rather than in a container because the CLI binary is
 // already on the box before any container starts, runs on the host as root
@@ -121,7 +121,7 @@ func CheckDomain(ctx context.Context, r Resolver, domain, publicIP, mode string)
 //
 // The bar is "the records point here", not "TLS works". In on-demand mode a
 // certificate is issued per hostname on first request, so requiring one would
-// block an install that is in fact correct — and would trap the operator on the
+// block an install that is in fact correct - and would trap the operator on the
 // step, which is the failure this whole feature exists to remove.
 func readiness(st DomainStatus) (bool, string) {
 	var unresolved []string

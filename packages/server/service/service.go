@@ -65,7 +65,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		c = cfg[0]
 	}
 
-	// K8s client is optional — log a warning if not available.
+	// K8s client is optional - log a warning if not available.
 	var k8sClient kubernetes.Interface
 	var k8sRestCfg *rest.Config
 	if c != nil {
@@ -300,7 +300,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		K8sRestConfig: k8sRestCfg,
 	}
 
-	// Template service — depends on the stack + route services, so wire it after
+	// Template service - depends on the stack + route services, so wire it after
 	// the aggregate is built. The catalog is remote (GitHub) by default, or a
 	// local dir when TEMPLATE_DIR is set.
 	svc.Templates = &TemplateService{

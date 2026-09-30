@@ -39,9 +39,7 @@ import (
 
 // IDLookup maps a group member to what stage 1 created for it: its Meshploy
 // service and project. It belongs to the move, which reads the journal, and is
-// passed to each phase rather than held here - held here as well, it was left
-// unset by the one caller that mattered, and every database looked as though
-// stage 1 had never run.
+// passed to each phase rather than held here, so no caller can leave it unset.
 type IDLookup func(GroupMember) (serviceID, projectID string)
 
 // DataAPI is what copying data needs from Meshploy, beyond what the move

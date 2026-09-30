@@ -6,7 +6,7 @@ import (
 	"github.com/meshploy/packages/client"
 )
 
-// Lean projection types — only fields Claude needs. Metadata (created_at,
+// Lean projection types - only fields Claude needs. Metadata (created_at,
 // updated_at, slug, project_id, k8s_name) is intentionally excluded.
 
 type MCPService struct {

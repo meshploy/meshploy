@@ -54,7 +54,7 @@ type CreateWorkloadInput struct {
 		CPULimit      string     `json:"cpu_limit,omitempty"`
 		MemoryRequest string     `json:"memory_request,omitempty"`
 		MemoryLimit   string     `json:"memory_limit,omitempty"`
-		// Optional build config — a BuildConfig row is created alongside the
+		// Optional build config - a BuildConfig row is created alongside the
 		// Service when git_repo is provided.
 		GitIntegrationID *string `json:"git_integration_id,omitempty"`
 		GitRepo          string  `json:"git_repo,omitempty"`
@@ -74,7 +74,7 @@ type CreateWorkloadInput struct {
 		BuilderMemoryRequest string `json:"builder_memory_request,omitempty"`
 		BuilderCPULimit      string `json:"builder_cpu_limit,omitempty" doc:"Empty: no cap"`
 		BuilderMemoryLimit   string `json:"builder_memory_limit,omitempty" doc:"Empty: 4Gi, or the request when larger"`
-		// Database-specific fields — only used when type == "database"
+		// Database-specific fields - only used when type == "database"
 		Type       string `json:"type,omitempty"`        // "application" | "database"
 		Engine     string `json:"engine,omitempty"`      // "postgres" | "mysql" | "redis" | "mongodb"
 		Version    string `json:"version,omitempty"`     // e.g. "16", "8.0", "7"
@@ -82,7 +82,7 @@ type CreateWorkloadInput struct {
 		DBName     string `json:"db_name,omitempty"`     // defaults to service name
 		DBUser     string `json:"db_user,omitempty"`     // defaults to service name
 		DBPassword string `json:"db_password,omitempty"` // auto-generated if empty
-		// PullRegistryIntegrationID — credentials for pulling a private runtime image.
+		// PullRegistryIntegrationID - credentials for pulling a private runtime image.
 		// Set for image-source services; "" = clear (public image), nil = not set.
 		PullRegistryIntegrationID *string `json:"pull_registry_integration_id,omitempty"`
 	}
