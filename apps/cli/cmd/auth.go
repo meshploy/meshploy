@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"syscall"
 
 	"github.com/meshploy/apps/cli/internal/config"
 	"github.com/meshploy/packages/client"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 var authCmd = &cobra.Command{
@@ -31,36 +29,32 @@ var loginCmd = &cobra.Command{
 		}
 		apiURL = strings.TrimRight(apiURL, "/")
 
+		sc := bufio.NewScanner(os.Stdin)
 		email, _ := cmd.Flags().GetString("email")
 		if email == "" {
 			fmt.Print("Email: ")
-			scanner := bufio.NewScanner(os.Stdin)
-			scanner.Scan()
-			email = strings.TrimSpace(scanner.Text())
+			sc.Scan()
+			email = strings.TrimSpace(sc.Text())
 		}
 
-		fmt.Print("Password: ")
-		passBytes, err := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
+		password, err := readSecret(sc, "Password")
 		if err != nil {
-			return fmt.Errorf("read password: %w", err)
+			return err
 		}
 
 		c := client.New(apiURL, "")
-		result, err := c.Login(email, string(passBytes))
+		result, err := c.Login(email, password)
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
 
 		token := result.Token
 		if result.TOTPRequired {
-			fmt.Print("Two-factor code: ")
-			codeBytes, err := term.ReadPassword(int(syscall.Stdin))
-			fmt.Println()
+			code, err := readSecret(sc, "Two-factor code")
 			if err != nil {
-				return fmt.Errorf("read code: %w", err)
+				return err
 			}
-			token, err = c.CompleteTOTPLogin(result.MFAToken, strings.TrimSpace(string(codeBytes)))
+			token, err = c.CompleteTOTPLogin(result.MFAToken, strings.TrimSpace(code))
 			if err != nil {
 				return fmt.Errorf("2FA verification failed: %w", err)
 			}

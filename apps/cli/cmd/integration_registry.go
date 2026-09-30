@@ -4,12 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"syscall"
 	"text/tabwriter"
 
 	"github.com/meshploy/packages/client"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 var integrationRegistryCmd = &cobra.Command{
@@ -114,13 +112,10 @@ func runRegistryAdd(_ *cobra.Command, _ []string) error {
 	}
 
 	// Password (hidden)
-	fmt.Printf("%s: ", p.passLabel)
-	passBytes, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println()
+	password, err := readSecret(sc, p.passLabel)
 	if err != nil {
-		return fmt.Errorf("read password: %w", err)
+		return err
 	}
-	password := string(passBytes)
 	if password == "" {
 		return fmt.Errorf("%s is required", p.passLabel)
 	}

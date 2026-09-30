@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"syscall"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 var integrationCmd = &cobra.Command{
@@ -136,13 +134,10 @@ func wizardGitLabGitea(sc *bufio.Scanner, provider string) error {
 	}
 
 	if authMethod == "pat" {
-		fmt.Printf("Personal access token: ")
-		tokenBytes, err := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
+		pat, err := readSecret(sc, "Personal access token")
 		if err != nil {
-			return fmt.Errorf("read token: %w", err)
+			return err
 		}
-		pat := string(tokenBytes)
 		if pat == "" {
 			return fmt.Errorf("token is required")
 		}
@@ -167,13 +162,10 @@ func wizardGitLabGitea(sc *bufio.Scanner, provider string) error {
 		return fmt.Errorf("client ID is required")
 	}
 
-	fmt.Printf("%s: ", clientSecretLabel)
-	secretBytes, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println()
+	clientSecret, err := readSecret(sc, clientSecretLabel)
 	if err != nil {
-		return fmt.Errorf("read secret: %w", err)
+		return err
 	}
-	clientSecret := string(secretBytes)
 	if clientSecret == "" {
 		return fmt.Errorf("client secret is required")
 	}
