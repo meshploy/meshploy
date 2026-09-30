@@ -200,7 +200,10 @@ services:
   # Resolves *.{DOMAIN} and *.internal.{DOMAIN} routes via DB → mesh IP + port.
   # Receives wildcard traffic from Caddy.
   proxy:
-    image: ghcr.io/meshploy/proxy:${MESHPLOY_CHANNEL:-latest}
+    # Overridable like the API's: an Enterprise install runs the Enterprise
+    # proxy (proxy-ee). Set MESHPLOY_PROXY_IMAGE in .env; `server-upgrade --ee`
+    # sets it with the API's.
+    image: ${MESHPLOY_PROXY_IMAGE:-ghcr.io/meshploy/proxy}:${MESHPLOY_CHANNEL:-latest}
     restart: unless-stopped
     # Host networking, as Caddy and CoreDNS already run: a TCP route opens a
     # port the operator chose, which a published-port list fixed at build time

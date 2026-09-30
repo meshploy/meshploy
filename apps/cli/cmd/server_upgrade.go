@@ -239,6 +239,9 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 			return putBackBeforeRestart(snap, err)
 		}
 	} else {
+		if err := completeEEImages(); err != nil {
+			return putBackBeforeRestart(snap, err)
+		}
 		eeNotice(currentAPIImage(), scope)
 	}
 

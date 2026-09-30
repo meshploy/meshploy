@@ -10,13 +10,23 @@ import (
 	"github.com/meshploy/packages/license"
 )
 
-// ceImage and ceWebImage are the stock API and console images.
-// MESHPLOY_API_IMAGE and MESHPLOY_WEB_IMAGE override the repository half of
-// docker-compose.yml's `image:`; unset means these.
+// ceImage, ceWebImage and ceProxyImage are the stock API, console and proxy
+// images. MESHPLOY_API_IMAGE, MESHPLOY_WEB_IMAGE and MESHPLOY_PROXY_IMAGE
+// override the repository half of docker-compose.yml's `image:`; unset means
+// these.
 const (
-	ceImage    = "ghcr.io/meshploy/api"
-	ceWebImage = "ghcr.io/meshploy/web"
+	ceImage      = "ghcr.io/meshploy/api"
+	ceWebImage   = "ghcr.io/meshploy/web"
+	ceProxyImage = "ghcr.io/meshploy/proxy"
 )
+
+// pairedImages are the images that ship with the API image, by the .env key
+// that selects each: every edition publishes its console and proxy beside its
+// API.
+var pairedImages = []struct{ key, what, component, ce string }{
+	{"MESHPLOY_WEB_IMAGE", "console", "web", ceWebImage},
+	{"MESHPLOY_PROXY_IMAGE", "proxy", "proxy", ceProxyImage},
+}
 
 // productRefLabel is stamped on every Enterprise image by its build: vX.Y.Z for
 // an image built from that Community release, main for one built from main.
@@ -41,42 +51,71 @@ func eeImageFromScope(scope string) (string, error) {
 	return scope, nil
 }
 
-// pairedWebImage returns the console image that ships with an API image: the
-// same repository with the leading "api" of its name replaced by "web", so
-// ghcr.io/meshploy/api-ee-acme pairs with ghcr.io/meshploy/web-ee-acme. A
-// licence names only the API image; the Enterprise build publishes both under
-// these names.
-func pairedWebImage(apiImage string) (string, error) {
+// pairedImage returns the image of component that ships with an API image: the
+// same repository with the leading "api" of its name replaced by component, so
+// ghcr.io/meshploy/api-ee-acme pairs with ghcr.io/meshploy/web-ee-acme and
+// ghcr.io/meshploy/proxy-ee-acme. A licence names only the API image; the
+// Enterprise build publishes the others under these names.
+func pairedImage(apiImage, component string) (string, error) {
 	dir, name := "", apiImage
 	if i := strings.LastIndex(apiImage, "/"); i >= 0 {
 		dir, name = apiImage[:i+1], apiImage[i+1:]
 	}
 	if !strings.HasPrefix(name, "api") {
-		return "", fmt.Errorf("cannot tell which console image goes with %s: the Enterprise images are named api-ee… and web-ee…", apiImage)
+		return "", fmt.Errorf("cannot tell which %s image goes with %s: the Enterprise images are named api-ee…, web-ee… and proxy-ee…", component, apiImage)
 	}
-	return dir + "web" + strings.TrimPrefix(name, "api"), nil
+	return dir + component + strings.TrimPrefix(name, "api"), nil
 }
 
-// applyEEImage points MESHPLOY_API_IMAGE and MESHPLOY_WEB_IMAGE at the
-// Enterprise images and makes sure the host can pull both.
+// completeEEImages sets the console and proxy images an Enterprise install is
+// missing to the ones paired with its API image. An install switched before
+// its edition published a proxy has only the first two set, and would
+// otherwise keep running the Community proxy beside the Enterprise API.
+func completeEEImages() error {
+	api := currentAPIImage()
+	if api == ceImage {
+		return nil
+	}
+	for _, p := range pairedImages {
+		if readEnvVar(p.key) != "" {
+			continue
+		}
+		image, err := pairedImage(api, p.component)
+		if err != nil {
+			return err
+		}
+		if err := setEnvVar(p.key, image); err != nil {
+			return fmt.Errorf("set %s: %w", p.key, err)
+		}
+		fmt.Printf("✔  Set the %s image to %s, which ships with %s\n", p.what, image, api)
+	}
+	return nil
+}
+
+// applyEEImage points MESHPLOY_API_IMAGE and its paired images at the
+// Enterprise images and makes sure the host can pull them all.
 //
 // The images are the only difference between a CE and an EE install: the
 // licence is already stored server-side, and every feature gate reads it at
-// runtime. So "upgrading" is two env vars plus a restart, which is why this
+// runtime. So "upgrading" is three env vars plus a restart, which is why this
 // lives in server-upgrade rather than being a separate workflow.
 func applyEEImage(runtime, image, pat string) error {
 	if image == "" {
 		image = defaultEEImage
 	}
-	web, err := pairedWebImage(image)
-	if err != nil {
-		return err
+	type choice struct{ key, what, image string }
+	choices := []choice{{"MESHPLOY_API_IMAGE", "API", image}}
+	images := []string{image}
+	for _, p := range pairedImages {
+		paired, err := pairedImage(image, p.component)
+		if err != nil {
+			return err
+		}
+		choices = append(choices, choice{p.key, p.what, paired})
+		images = append(images, paired)
 	}
 
-	for _, v := range []struct{ key, what, image string }{
-		{"MESHPLOY_API_IMAGE", "API", image},
-		{"MESHPLOY_WEB_IMAGE", "console", web},
-	} {
+	for _, v := range choices {
 		if readEnvVar(v.key) == v.image {
 			fmt.Printf("✔  The %s image is already %s\n", v.what, v.image)
 			continue
@@ -90,8 +129,7 @@ func applyEEImage(runtime, image, pat string) error {
 	// Private images need credentials, granted per package, so each is checked.
 	// Checking before the pull names the cause rather than surfacing as a
 	// compose error.
-	images := []string{image, web}
-	fmt.Printf("Checking access to %s…\n", strings.Join(images, " and "))
+	fmt.Printf("Checking access to %s…\n", strings.Join(images, ", "))
 	missing := firstUnpullable(runtime, images)
 	if missing == "" {
 		return nil
@@ -111,7 +149,7 @@ func applyEEImage(runtime, image, pat string) error {
 	if err := login.Run(); err != nil {
 		return fmt.Errorf("%s login ghcr.io: %w\n"+
 			"The token must carry read:packages, must not have expired, and must "+
-			"belong to an account granted read on both packages", runtime, err)
+			"belong to an account granted read on every Enterprise package", runtime, err)
 	}
 	if missing := firstUnpullable(runtime, images); missing != "" {
 		return fmt.Errorf("authenticated to ghcr.io, but %s is still not pullable: "+
@@ -163,8 +201,10 @@ func enterpriseImages() []string {
 	if v := readEnvVar("MESHPLOY_API_IMAGE"); v != "" && v != ceImage {
 		out = append(out, v)
 	}
-	if v := readEnvVar("MESHPLOY_WEB_IMAGE"); v != "" && v != ceWebImage {
-		out = append(out, v)
+	for _, p := range pairedImages {
+		if v := readEnvVar(p.key); v != "" && v != p.ce {
+			out = append(out, v)
+		}
 	}
 	return out
 }

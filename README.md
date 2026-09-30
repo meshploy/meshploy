@@ -357,7 +357,7 @@ Installing, reinstalling and removing all go through the install script:
 
 ## Enterprise
 
-Community is complete and stays free: everything above is Apache-2.0, with one organization per server. Enterprise adds organizational features under a licence (the console's **Settings → Licence → Compare editions** lists them) and runs as a separate pair of private images, `ghcr.io/meshploy/api-ee` and `ghcr.io/meshploy/web-ee`, built from the same source and version as each Community release.
+Community is complete and stays free: everything above is Apache-2.0, with one organization per server. Enterprise adds organizational features under a licence (the console's **Settings → Licence → Compare editions** lists them) and runs as separate private images, `ghcr.io/meshploy/api-ee`, `web-ee` and `proxy-ee`, built from the same source and version as each Community release.
 
 Moving a server to Enterprise keeps its data and settings:
 

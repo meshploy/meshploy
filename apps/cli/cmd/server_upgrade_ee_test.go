@@ -150,23 +150,66 @@ func TestEEImageFromScope(t *testing.T) {
 	}
 }
 
-// A licence names only the API image; the console image is found by name.
-func TestPairedWebImage(t *testing.T) {
-	for api, web := range map[string]string{
-		"ghcr.io/meshploy/api-ee":         "ghcr.io/meshploy/web-ee",
-		"ghcr.io/meshploy/api-ee-acme":    "ghcr.io/meshploy/web-ee-acme",
-		"registry.local:5000/team/api-ee": "registry.local:5000/team/web-ee",
-		"ghcr.io/meshploy/api":            "ghcr.io/meshploy/web",
+// A licence names only the API image; the console and proxy images are found
+// by name.
+func TestPairedImage(t *testing.T) {
+	for api, want := range map[string][2]string{
+		"ghcr.io/meshploy/api-ee":         {"ghcr.io/meshploy/web-ee", "ghcr.io/meshploy/proxy-ee"},
+		"ghcr.io/meshploy/api-ee-acme":    {"ghcr.io/meshploy/web-ee-acme", "ghcr.io/meshploy/proxy-ee-acme"},
+		"registry.local:5000/team/api-ee": {"registry.local:5000/team/web-ee", "registry.local:5000/team/proxy-ee"},
+		"ghcr.io/meshploy/api":            {"ghcr.io/meshploy/web", "ghcr.io/meshploy/proxy"},
 	} {
-		if got, err := pairedWebImage(api); err != nil || got != web {
-			t.Errorf("%s: got %q, %v; want %s", api, got, err, web)
+		for i, component := range []string{"web", "proxy"} {
+			if got, err := pairedImage(api, component); err != nil || got != want[i] {
+				t.Errorf("%s %s: got %q, %v; want %s", api, component, got, err, want[i])
+			}
 		}
 	}
 	// A name the convention does not cover must not be guessed at.
 	for _, api := range []string{"ghcr.io/meshploy/ee-acme", "ghcr.io/api/custom", "custom"} {
-		if got, err := pairedWebImage(api); err == nil {
+		if got, err := pairedImage(api, "web"); err == nil {
 			t.Errorf("%s: got %q, want a refusal", api, got)
 		}
+	}
+}
+
+// An Enterprise install switched before its edition had a proxy image gets the
+// paired one, rather than running the Community proxy beside the Enterprise API.
+func TestCompleteEEImagesFillsOnlyWhatIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	orig := meshployInstDir
+	meshployInstDir = dir
+	t.Cleanup(func() { meshployInstDir = orig })
+
+	env := "MESHPLOY_API_IMAGE=ghcr.io/meshploy/api-ee-acme\nMESHPLOY_WEB_IMAGE=registry.local/custom-web\n"
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := completeEEImages(); err != nil {
+		t.Fatal(err)
+	}
+	if got := readEnvVar("MESHPLOY_PROXY_IMAGE"); got != "ghcr.io/meshploy/proxy-ee-acme" {
+		t.Errorf("proxy image = %q, want the one paired with the API", got)
+	}
+	if got := readEnvVar("MESHPLOY_WEB_IMAGE"); got != "registry.local/custom-web" {
+		t.Errorf("console image = %q, want the one already chosen", got)
+	}
+}
+
+func TestCompleteEEImagesLeavesCommunityAlone(t *testing.T) {
+	dir := t.TempDir()
+	orig := meshployInstDir
+	meshployInstDir = dir
+	t.Cleanup(func() { meshployInstDir = orig })
+
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := completeEEImages(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, ".env")); string(got) != "DOMAIN=example.com\n" {
+		t.Errorf(".env = %q, want it untouched", got)
 	}
 }
 

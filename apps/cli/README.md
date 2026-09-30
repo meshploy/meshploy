@@ -103,7 +103,7 @@ Must be run as root on the **gateway server**.
 
 Protected files are never overwritten: `.env`, DNS zone files, and Headscale config keep their runtime-rendered values. `coredns/Corefile` is replaced and re-rendered from `.env`. On a gateway using self-managed DNS (`DNS_MODE=ondemand`), the on-demand Caddyfile is put back after the sync, and Caddy is recreated whenever its configuration changed.
 
-`--ee` switches the install to the Enterprise images, API and console, named by the activated licence (it sets `MESHPLOY_API_IMAGE` and `MESHPLOY_WEB_IMAGE` in `.env`). The Enterprise images are built from each release shortly after it; until the ones for the release being installed are published, an Enterprise upgrade or switch stops after the pull with nothing changed.
+`--ee` switches the install to the Enterprise images, API, console and proxy, named by the activated licence (it sets `MESHPLOY_API_IMAGE`, `MESHPLOY_WEB_IMAGE` and `MESHPLOY_PROXY_IMAGE` in `.env`). An upgrade of an Enterprise install that is missing the console or proxy image sets the one paired with its API. The Enterprise images are built from each release shortly after it; until the ones for the release being installed are published, an Enterprise upgrade or switch stops after the pull with nothing changed.
 
 The upgrade runs with the CLI you have installed, so run `sudo meshploy update` (or `update --edge`) first.
 
@@ -111,8 +111,8 @@ The upgrade runs with the CLI you have installed, so run `sudo meshploy update` 
 |---|---|
 | `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |
 | `--no-rollback` | On failure, leave the server as it is for inspection instead of putting the previous version back |
-| `--ee` | Switch to the Enterprise images, API and console, named by the activated licence |
-| `--ee-image <image>` | The Enterprise API image to switch to, instead of the licence's (`ghcr.io/meshploy/api-ee` or a vendor build of it). The console image pairs with it by name: `api-ee-acme` with `web-ee-acme` |
+| `--ee` | Switch to the Enterprise images, API, console and proxy, named by the activated licence |
+| `--ee-image <image>` | The Enterprise API image to switch to, instead of the licence's (`ghcr.io/meshploy/api-ee` or a vendor build of it). The console and proxy images pair with it by name: `api-ee-acme` with `web-ee-acme` and `proxy-ee-acme` |
 | `--token <pat>` | GitHub personal access token (or set `GITHUB_PAT`), required if the repo is private. With `--ee`, also used to log in to `ghcr.io` when the gateway cannot pull the Enterprise images yet (needs `read:packages`) |
 
 ---

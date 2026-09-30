@@ -216,7 +216,7 @@ function LicenseSection() {
             have no Enterprise features built in. They take effect after switching
             to the Enterprise images:{" "}
             <span className="font-mono text-foreground">{ent.registry_scope || DEFAULT_ENTERPRISE_IMAGE}</span>{" "}
-            and its console. Your data and settings stay.
+            with its console and proxy. Your data and settings stay.
           </p>
           {/* The last switch to Enterprise failed, most often for want of
               registry access, which only the gateway's root can grant. */}

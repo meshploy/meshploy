@@ -450,8 +450,9 @@ func TestServerUpgradeAcceptsEnterpriseImagesFromTheRelease(t *testing.T) {
 	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if *inspected != 2 {
-		t.Errorf("checked %d images, want the API and the console", *inspected)
+	// The proxy is filled in beside them, so it is held to the release too.
+	if *inspected != 3 {
+		t.Errorf("checked %d images, want the API, the console and the proxy", *inspected)
 	}
 
 	// On edge the images are built from main.
@@ -627,7 +628,8 @@ func TestServerUpgradeOnPodmanPullsEachImageAndRecreates(t *testing.T) {
 	wantPulls := [][]string{
 		{"pull", "--quiet", "docker.io/library/postgres:17-alpine"},
 		{"pull", "--quiet", "ghcr.io/meshploy/api-ee:latest"},
-		{"pull", "--quiet", "ghcr.io/meshploy/web:latest"},
+		// The console the Enterprise API ships with, filled in beside it.
+		{"pull", "--quiet", "ghcr.io/meshploy/web-ee:latest"},
 	}
 	if !reflect.DeepEqual(fx.tags, wantPulls) {
 		t.Errorf("podman ran %v, want %v", fx.tags, wantPulls)

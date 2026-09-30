@@ -54,7 +54,7 @@ export interface ChannelSwitchTarget {
 
 /** A switch from the Community images to the Enterprise ones. */
 export interface EnterpriseSwitchTarget {
-  /** The Enterprise API image the licence grants; its console image pairs by name. */
+  /** The Enterprise API image the licence grants; its console and proxy images pair by name. */
   image: string
 }
 
@@ -172,7 +172,7 @@ export function UpgradeDialog({
             {toEnterprise ? (
               <>
                 From the Community images to{" "}
-                <code className="font-mono text-xs">{toEnterprise.image}</code> and its console
+                <code className="font-mono text-xs">{toEnterprise.image}</code>, with its console and proxy
               </>
             ) : switchTo ? (
               <>
@@ -377,8 +377,8 @@ function IdleBody({
       )}
       {toEnterprise && (
         <p>
-          The API and console move to the Enterprise images; your data, settings and licence stay.
-          The gateway needs read access to both images on the registry. If it has none, nothing
+          The API, console and proxy move to the Enterprise images; your data, settings and licence stay.
+          The gateway needs read access to all three images on the registry. If it has none, nothing
           changes and this tells you how to give it.
         </p>
       )}
