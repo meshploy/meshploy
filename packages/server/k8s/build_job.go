@@ -91,7 +91,7 @@ type BuildJobParams struct {
 	// BuilderNode pins the job to a specific K8s node name (k8s_node_name).
 	// Empty = use NodeSelector meshploy.com/role=builder (auto-schedule).
 	BuilderNode string
-	// Resource requests for the build pod. Empty = defaults (1000m / 1Gi).
+	// Resource requests for the build pod. Empty = defaults (250m / 1Gi).
 	CPURequest    string
 	MemoryRequest string
 	// Resource limits. Empty memory = DefaultBuilderMemoryLimit, raised to the
@@ -495,9 +495,12 @@ func builderImageOr(image string) string {
 // Builds commonly peak at 2 to 3 GiB; a larger request raises the cap with it.
 const DefaultBuilderMemoryLimit = "4Gi"
 
-// A build's requests when its build config sets none.
+// A build's requests when its build config sets none. The CPU request is what
+// the scheduler reserves, not a cap - a build has no CPU limit and uses every
+// idle core - so it is kept small: a whole CPU reserved per build left a small
+// server with its services running no room to place any build at all.
 const (
-	DefaultBuilderCPURequest    = "1000m"
+	DefaultBuilderCPURequest    = "250m"
 	DefaultBuilderMemoryRequest = "1Gi"
 )
 

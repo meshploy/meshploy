@@ -16,7 +16,7 @@ import (
 
 // appDefaults is what the fill writes for an app service's deploy settings.
 func appDefaults(indent, port string) string {
-	lines := []string{"replicas: 1", "cpu_request: 100m", "cpu_limit: 1000m", "memory_request: 256Mi", "memory_limit: 1Gi"}
+	lines := []string{"replicas: 1", "cpu_request: 25m", "cpu_limit: 1000m", "memory_request: 256Mi", "memory_limit: 1Gi"}
 	if port != "" {
 		lines = append([]string{"port: " + port}, lines...)
 	}
@@ -102,7 +102,7 @@ services:
         port: 8080
         memory_limit: 2Gi
         replicas: 1
-        cpu_request: 100m
+        cpu_request: 25m
         cpu_limit: 1000m
         memory_request: 256Mi
 
@@ -158,13 +158,13 @@ func TestFillMeshployDefaultsForDatabasesAndGitServices(t *testing.T) {
       deploy:
         port: 3000
         replicas: 1
-        cpu_request: 100m
+        cpu_request: 25m
         cpu_limit: 1000m
         memory_request: 256Mi
         memory_limit: 1Gi
       build:
         builder: railpack
-        builder_cpu_request: 1000m
+        builder_cpu_request: 250m
         builder_memory_request: 1Gi
 `, got, "a version is quoted: unquoted, 7 is a number and the block would not decode")
 }

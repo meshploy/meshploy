@@ -159,7 +159,7 @@ const INITIAL: FormState = {
   registryIntegrationId: "",
   nodeId: null,
   builderNodeName: null,
-  builderCPURequest: "1000m",
+  builderCPURequest: "",
   builderMemoryRequest: "1Gi",
   builderCPULimit: "",
   builderMemoryLimit: "",
@@ -553,7 +553,7 @@ function ServiceForm({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Builder CPU request">
-              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPURequest} onChange={(v) => patch({ builderCPURequest: v })} emptyLabel="Default (1 CPU)" aria-label="Builder CPU request" />
+              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPURequest} onChange={(v) => patch({ builderCPURequest: v })} emptyLabel="Default (0.25 CPU)" aria-label="Builder CPU request" />
             </Field>
             <Field label="Builder CPU limit">
               <CpuStepper max={builderCap.cpuMillis} value={form.builderCPULimit} onChange={(v) => patch({ builderCPULimit: v })} emptyLabel="No cap" aria-label="Builder CPU limit" />

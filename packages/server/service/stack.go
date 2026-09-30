@@ -760,7 +760,7 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		}
 
 		replicas := defaultReplicas
-		cpuRequest, cpuLimit := appk8s.DefaultCPURequest, appk8s.DefaultCPULimit
+		cpuRequest, cpuLimit := stackCPURequest, appk8s.DefaultCPULimit
 		memRequest, memLimit := appk8s.DefaultMemoryRequest, appk8s.DefaultMemoryLimit
 		declared := composeResources(svcDef)
 		var nodeID *uuid.UUID

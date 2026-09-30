@@ -796,7 +796,7 @@ type BuildConfig struct {
 	BuilderNode string `gorm:"not null;default:''" json:"builder_node"`
 
 	// Resource requests for the build job pod.
-	// Empty = use service layer defaults (1000m CPU, 1Gi memory).
+	// Empty = use service layer defaults (250m CPU, 1Gi memory).
 	BuilderCPURequest    string `gorm:"not null;default:''" json:"builder_cpu_request"`
 	BuilderMemoryRequest string `gorm:"not null;default:''" json:"builder_memory_request"`
 

@@ -218,7 +218,7 @@ export const demoBuildConfig = {
   registry_integration_id: null,
   git_integration_id: DEMO_GIT_GITLAB_ID,
   builder_node: "",
-  builder_cpu_request: "1000m",
+  builder_cpu_request: "",
   builder_memory_request: "1Gi",
   last_built_image: "ghcr.io/demo/api:abc1234",
   last_built_at: DEMO_NOW,

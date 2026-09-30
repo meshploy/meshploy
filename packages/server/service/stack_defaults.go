@@ -24,6 +24,13 @@ const (
 
 // storedSpec is the spec a stack keeps. A pasted one gets its defaults written
 // out; a git one is kept as the repo has it, since every sync replaces it.
+// stackCPURequest is what a stack's service reserves of CPU when its file
+// declares none. A stack is many services, most of them idle most of the time;
+// at a service's usual 100m, eighteen of them reserved nearly a whole CPU of a
+// two-CPU server and left no room to place a build. Only the reservation is
+// smaller: the limit, what a service may use when busy, is unchanged.
+const stackCPURequest = "25m"
+
 func storedSpec(spec string, mode meshdb.StackGitMode, repo string) string {
 	if mode != meshdb.StackGitModeRaw || repo != "" {
 		return spec
@@ -122,7 +129,7 @@ func meshployDefaults(svc, xm *yaml.Node) []meshploySection {
 		value    string
 		declared bool
 	}{
-		{"cpu_request", appk8s.DefaultCPURequest, mappingValue(reservations, "cpus") != nil},
+		{"cpu_request", stackCPURequest, mappingValue(reservations, "cpus") != nil},
 		{"cpu_limit", appk8s.DefaultCPULimit, mappingValue(svc, "cpus") != nil || mappingValue(limits, "cpus") != nil},
 		{"memory_request", appk8s.DefaultMemoryRequest, mappingValue(svc, "mem_reservation") != nil || mappingValue(reservations, "memory") != nil},
 		{"memory_limit", appk8s.DefaultMemoryLimit, mappingValue(svc, "mem_limit") != nil || mappingValue(limits, "memory") != nil},

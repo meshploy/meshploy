@@ -465,7 +465,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
     startCommand: "",
     registryIntegrationId: "",
     builderNodeName: "" as string,
-    builderCPURequest: "1000m",
+    builderCPURequest: "",
     builderMemoryRequest: "1Gi",
     builderCPULimit: "",
     builderMemoryLimit: "",
@@ -508,7 +508,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
       startCommand: service.start_command ?? "",
       registryIntegrationId: bc?.registry_integration_id ?? "",
       builderNodeName: bc?.builder_node ?? "",
-      builderCPURequest: bc?.builder_cpu_request || "1000m",
+      builderCPURequest: bc?.builder_cpu_request ?? "",
       builderMemoryRequest: bc?.builder_memory_request || "1Gi",
       builderCPULimit: bc?.builder_cpu_limit ?? "",
       builderMemoryLimit: bc?.builder_memory_limit ?? "",
@@ -651,7 +651,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Builder CPU request">
-              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPURequest} onChange={(v) => patch({ builderCPURequest: v })} emptyLabel="Default (1 CPU)" aria-label="Builder CPU request" />
+              <CpuStepper max={builderCap.cpuMillis} value={form.builderCPURequest} onChange={(v) => patch({ builderCPURequest: v })} emptyLabel="Default (0.25 CPU)" aria-label="Builder CPU request" />
             </Field>
             <Field label="Builder CPU limit">
               <CpuStepper max={builderCap.cpuMillis} value={form.builderCPULimit} onChange={(v) => patch({ builderCPULimit: v })} emptyLabel="No cap" aria-label="Builder CPU limit" />

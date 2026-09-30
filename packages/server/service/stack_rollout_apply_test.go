@@ -183,7 +183,7 @@ services:
 	require.NoError(t, gdb.Where("project_id = ? AND name = ?", proj.ID, "web").First(&web).Error)
 	assert.Equal(t, "2000m", web.CPULimit)
 	assert.Equal(t, "2Gi", web.MemoryLimit)
-	assert.Equal(t, "100m", web.CPURequest, "and the defaults for what the spec leaves out")
+	assert.Equal(t, "25m", web.CPURequest, "and the defaults for what the spec leaves out")
 	assert.Equal(t, "256Mi", web.MemoryRequest)
 }
 

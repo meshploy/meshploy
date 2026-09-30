@@ -26,7 +26,7 @@ func TestValidateBuilderResources(t *testing.T) {
 		{"", "lots", "", ""},
 		{"2", "1", "", ""},
 		{"", "", "2Gi", "1Gi"},
-		{"", "500m", "", ""}, // below the default 1000m request
+		{"", "100m", "", ""}, // below the default 250m request
 	}
 	for _, c := range bad {
 		err := validateBuilderResources(c[0], c[1], c[2], c[3])

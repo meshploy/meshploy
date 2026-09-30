@@ -90,7 +90,7 @@ type CreateWorkloadInput struct {
 	StartCommand          string // "" = the image's own
 	RegistryIntegrationID *uuid.UUID
 	BuilderNode           string // "" = auto-schedule on any builder node
-	BuilderCPURequest     string // "" = default (1000m)
+	BuilderCPURequest     string // "" = default (250m)
 	BuilderMemoryRequest  string // "" = default (1Gi)
 	BuilderCPULimit       string // "" = no cap
 	BuilderMemoryLimit    string // "" = 4Gi, or the request when larger
@@ -1061,7 +1061,7 @@ type UpdateBuildConfigInput struct {
 	// build.args names them; nil = no change.
 	BuildArgs            *map[string]string
 	BuilderNode          *string // nil = no change; "" = auto-schedule
-	BuilderCPURequest    *string // nil = no change; "" = use default (1000m)
+	BuilderCPURequest    *string // nil = no change; "" = use default (250m)
 	BuilderMemoryRequest *string // nil = no change; "" = use default (1Gi)
 	BuilderCPULimit      *string // nil = no change; "" = no cap
 	BuilderMemoryLimit   *string // nil = no change; "" = 4Gi, or the request when larger
