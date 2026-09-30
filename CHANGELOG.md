@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.1](https://github.com/meshploy/meshploy/compare/v0.19.0...v0.19.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **console:** the account menu links the docs, every page enters the same way, and the mark is shared ([7ef8f2f](https://github.com/meshploy/meshploy/commit/7ef8f2fb7211ee6d4746e9d29a3e6aea574ec5e7))
+* **extensions:** GitHub connections return to where they were started, and an edition's overlay can be developed and mocked in place ([b20e849](https://github.com/meshploy/meshploy/commit/b20e84970a81a0024dccbd673f84b9b922fae5a6))
+
 ## [0.19.0](https://github.com/meshploy/meshploy/compare/v0.18.0...v0.19.0) (2026-09-30)
 
 
