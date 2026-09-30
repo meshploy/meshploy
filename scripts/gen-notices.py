@@ -45,14 +45,15 @@ LICENSE_FILE = re.compile(r"^(licen[sc]e|copying|unlicense|notice)([.-].*)?$", r
 # text says about itself; a text it cannot place is listed as unknown rather
 # than guessed at.
 # Titles, matched against the head of the text only. Searching the whole body
-# put every MPL-2.0 module in the GPL bucket, since MPL section 3.3 names the
-# GNU licences.
+# puts MPL-2.0 and EPL-2.0 in the GPL bucket, since both name the GNU licences
+# as secondary licences.
 TITLES = [
     ("AGPL-3.0", "gnu affero general public license"),
     ("SSPL", "server side public license"),
     ("LGPL", "gnu lesser general public license"),
     ("GPL", "gnu general public license"),
     ("MPL-2.0", "mozilla public license"),
+    ("EPL-2.0", "eclipse public license"),
     ("Apache-2.0", "apache license"),
     ("OFL-1.1", "sil open font license"),
 ]
