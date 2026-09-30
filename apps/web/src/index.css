@@ -243,8 +243,9 @@ a {
   margin-inline: auto;
   padding: 30px;
 }
-.console-page:has(> h1),
-.console-page:has(> div > h1) {
+/* A page settles in once it has its title, wherever its header puts it: a
+   loading state has none, so the page enters once, with its content. */
+.console-page:has(h1) {
   animation: console-enter 180ms ease-out;
 }
 .console-page h1 {

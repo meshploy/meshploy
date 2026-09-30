@@ -9,10 +9,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { LogOut, User } from "lucide-react"
+import { BookOpen, ExternalLink, LogOut, User } from "lucide-react"
 import { auth } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+
+const DOCS_URL = "https://docs.meshploy.com"
+
+// Room enough to read and to hit: the menu is opened for one choice.
+const item = "gap-2.5 px-2.5 py-2 text-sm"
 
 function initials(username: string) {
   const parts = username.trim().split(/[\s_-]+/)
@@ -49,8 +54,8 @@ export function UserMenu() {
           </AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[220px]">
-        <DropdownMenuLabel className="font-normal">
+      <DropdownMenuContent align="end" className="w-60 p-1.5">
+        <DropdownMenuLabel className="px-2.5 py-2 font-normal">
           <div className="flex flex-col gap-0.5">
             <p className="text-sm font-medium">{me?.username ?? "—"}</p>
             <p className="text-xs text-muted-foreground truncate">{me?.email ?? ""}</p>
@@ -58,15 +63,20 @@ export function UserMenu() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          className="gap-2 text-sm"
+          className={item}
           onClick={() => navigate({ to: "/account" })}
         >
           <User className="h-3.5 w-3.5" />
           Account
         </DropdownMenuItem>
+        <DropdownMenuItem className={item} render={<a href={DOCS_URL} target="_blank" rel="noopener noreferrer" />}>
+          <BookOpen className="h-3.5 w-3.5" />
+          Docs
+          <ExternalLink className="ml-auto h-3 w-3 text-muted-foreground" />
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          className="gap-2 text-sm text-destructive focus:text-destructive"
+          className={`${item} text-destructive focus:text-destructive`}
           onClick={signOut}
         >
           <LogOut className="h-3.5 w-3.5" />
