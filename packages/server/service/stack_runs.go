@@ -3,9 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
 	"gorm.io/gorm"
@@ -247,4 +251,94 @@ func (s *StackService) GetRun(ctx context.Context, stackID, runID uuid.UUID) (*S
 	}
 	v := runView(row)
 	return &v, nil
+}
+
+// ResumeRuns carries on the stack rollouts an API restart left running: the
+// layers still waiting start as their dependencies come up, as they would have,
+// and the run is closed when they are done. Without it a restart left the run
+// "running" until it was shown as interrupted, and the services after the
+// layer in flight never started.
+func (s *StackService) ResumeRuns(ctx context.Context) {
+	var rows []meshdb.StackRun
+	if err := s.db.WithContext(ctx).Where("status = ?", meshdb.StackRunRunning).Find(&rows).Error; err != nil {
+		log.Printf("resume stack rollouts: %v", err)
+		return
+	}
+	for _, row := range rows {
+		go s.resumeRun(context.WithoutCancel(ctx), row)
+	}
+	if len(rows) > 0 {
+		log.Printf("resume stack rollouts: carrying on %d after the restart", len(rows))
+	}
+}
+
+func (s *StackService) resumeRun(ctx context.Context, row meshdb.StackRun) {
+	var steps []RolloutStep
+	_ = json.Unmarshal([]byte(row.Rollout), &steps)
+	r := &runTracker{id: row.ID, steps: steps}
+	var result RunResult
+	_ = json.Unmarshal([]byte(row.Result), &result)
+	r.errors = len(result.Errors) > 0
+
+	var stack meshdb.Stack
+	if err := s.db.WithContext(ctx).First(&stack, "id = ?", row.StackID).Error; err != nil {
+		r.stopRest()
+		s.finishRun(ctx, r)
+		return
+	}
+	previous, queued, layers := resumePlan(steps, func(st RolloutStep) rollItem {
+		return rollItem{ID: st.ServiceID, Name: st.Name,
+			Commit: s.stackCommit(ctx, &stack, st.ServiceID), Builds: s.buildsFromSource(ctx, st.ServiceID)}
+	})
+	triggerBy := uuid.Nil
+	if row.TriggeredBy != nil {
+		triggerBy = *row.TriggeredBy
+	}
+	r.save(ctx, s.db) // fresh again, not shown as interrupted while it goes on
+	s.rolloutInOrder(ctx, stack.Name, r, previous, queued, layers, triggerBy, s.dependsOnOfSpec(ctx, &stack), stack.MaxParallelBuilds)
+}
+
+// resumePlan reads where a run stood from its steps: the deployments of the
+// layer in flight, what of that layer waited for a place under the build cap,
+// and the layers after it, in order.
+func resumePlan(steps []RolloutStep, item func(RolloutStep) rollItem) (previous []uuid.UUID, queued []rollItem, layers [][]rollItem) {
+	current := -1
+	for _, st := range steps {
+		if st.Status != RolloutWaiting && st.Status != RolloutNotStarted && st.Layer > current {
+			current = st.Layer
+		}
+	}
+	byLayer := map[int][]rollItem{}
+	var keys []int
+	for _, st := range steps {
+		switch {
+		case st.Layer == current && st.DeploymentID != nil:
+			previous = append(previous, *st.DeploymentID)
+		case st.Status == RolloutWaiting && st.Layer == current:
+			queued = append(queued, item(st))
+		case st.Status == RolloutWaiting && st.Layer > current:
+			if _, ok := byLayer[st.Layer]; !ok {
+				keys = append(keys, st.Layer)
+			}
+			byLayer[st.Layer] = append(byLayer[st.Layer], item(st))
+		}
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		layers = append(layers, byLayer[k])
+	}
+	return previous, queued, layers
+}
+
+// dependsOnOfSpec is the depends_on of the stack's services, from its spec.
+func (s *StackService) dependsOnOfSpec(ctx context.Context, stack *meshdb.Stack) map[string][]string {
+	project, err := loader.LoadWithContext(ctx, composetypes.ConfigDetails{
+		WorkingDir:  "/",
+		ConfigFiles: []composetypes.ConfigFile{{Filename: "docker-compose.yml", Content: []byte(stack.Spec)}},
+		Environment: jsonObjToStrMap(stack.Variables),
+	}, loader.WithSkipValidation)
+	if err != nil {
+		return nil
+	}
+	return dependsOnOf(project.Services)
 }

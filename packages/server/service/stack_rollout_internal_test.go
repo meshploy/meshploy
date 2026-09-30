@@ -126,3 +126,35 @@ func TestACapOnParallelBuildsQueuesTheRest(t *testing.T) {
 		t.Errorf("no cap held back %v", names(later))
 	}
 }
+
+// A run picked up after a restart goes on from the layer it was in: that
+// layer's deployments are waited on, what it still queued under the build cap
+// starts after them, and the waiting layers follow in order.
+func TestAResumedRunGoesOnFromTheLayerItWasIn(t *testing.T) {
+	d1, d2 := uuid.New(), uuid.New()
+	steps := []RolloutStep{
+		{Name: "db", ServiceID: uuid.New(), Layer: 0, Status: RolloutSucceeded, DeploymentID: &d1},
+		{Name: "api", ServiceID: uuid.New(), Layer: 1, Status: RolloutStarted, DeploymentID: &d2},
+		{Name: "worker", ServiceID: uuid.New(), Layer: 1, Status: RolloutWaiting},
+		{Name: "ui", ServiceID: uuid.New(), Layer: 3, Status: RolloutWaiting},
+		{Name: "proxy", ServiceID: uuid.New(), Layer: 2, Status: RolloutWaiting},
+	}
+	item := func(st RolloutStep) rollItem { return rollItem{ID: st.ServiceID, Name: st.Name} }
+	previous, queued, layers := resumePlan(steps, item)
+	if len(previous) != 1 || previous[0] != d2 {
+		t.Errorf("previous %v, want the api's deployment", previous)
+	}
+	if len(queued) != 1 || queued[0].Name != "worker" {
+		t.Errorf("queued %+v", queued)
+	}
+	if len(layers) != 2 || layers[0][0].Name != "proxy" || layers[1][0].Name != "ui" {
+		t.Errorf("layers %+v", layers)
+	}
+
+	// A run a restart caught before anything started starts from its first layer.
+	fresh := []RolloutStep{{Name: "db", Layer: 0, Status: RolloutWaiting}, {Name: "api", Layer: 1, Status: RolloutWaiting}}
+	previous, queued, layers = resumePlan(fresh, item)
+	if len(previous) != 0 || len(queued) != 0 || len(layers) != 2 || layers[0][0].Name != "db" {
+		t.Errorf("fresh: %v %v %+v", previous, queued, layers)
+	}
+}

@@ -467,7 +467,13 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	// be marked building here, so the console ticked "Queued" while the pod
 	// still had nowhere to run.
 	s.setStatus(a.deployment.ID, db.DeploymentPending, "Build job created: "+a.jobName+"\nWaiting for a build node…")
+	s.followBuild(ctx, a)
+}
 
+// followBuild waits for a deployment's build job, then deploys what it built.
+// It is the part of a pipeline an API restart can pick up again: the job goes
+// on in the cluster whatever happens to the process that started it.
+func (s *DeploymentService) followBuild(ctx context.Context, a runPipelineArgs) {
 	// Wait for the job to finish (up to 60 minutes).
 	// First-time builds without layer cache (railpack native snapshotter, large
 	// repos) can easily exceed 30 minutes.

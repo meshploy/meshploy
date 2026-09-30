@@ -316,6 +316,17 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go backups.StartScheduler(context.Background())
 	go backups.StartRetentionReaper(context.Background())
 	go deployments.StartRegistryGC(context.Background())
+	// What an API restart left in flight - a build being waited on, a rollout
+	// being watched, a stack rolling out layer by layer - is picked up again
+	// once the process has settled, instead of left "pending" for good.
+	if c != nil && deployments.K8sConfigured() {
+		go func() {
+			time.Sleep(resumeAfter)
+			ctx := context.Background()
+			deployments.ResumeInFlight(ctx)
+			svc.Stacks.ResumeRuns(ctx)
+		}()
+	}
 	go notif.StartDeliveryReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
