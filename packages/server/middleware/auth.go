@@ -133,27 +133,31 @@ type publicRule struct {
 	Suffix string
 }
 
+// RegisterPublicPath adds an exact route an extension serves without a
+// session, because its request carries a credential of another kind - a
+// one-time token, a signed link - as publicRules' entries are justified. Call
+// it from init(), before the server starts. The CE binary registers none.
+func RegisterPublicPath(method, path string) {
+	publicRules = append(publicRules, publicRule{Method: method, Path: path, Match: matchExact})
+}
+
 // publicRules are the routes that do not require an authenticated principal.
 //
 // Every entry must be justified by the route being unable to carry an
-// Authorization header — a bootstrap step, a third-party redirect, or a
+// Authorization header - a bootstrap step, a third-party redirect, or a
 // machine credential of a different kind. Anything a logged-in browser calls
 // normally does NOT belong here.
 //
-// Rules are anchored and method-scoped. A previous version carried
-// `"GET /api/"` as a prefix rule (annotated "OpenAPI schema served by Huma"),
-// which exempted *every GET under /api/* from authentication — and it did not
-// even serve its stated purpose, since Huma mounts its spec at /openapi, /docs
-// and /schemas. Only per-handler checks were holding the line; a handler that
-// omitted one served unauthenticated. That was verified against a running
-// binary, not theorised.
+// Rules are anchored and method-scoped. Never add a prefix rule under /api/:
+// it exempts every route beneath it, leaving each handler's own check as the
+// only line of defence.
 var publicRules = []publicRule{
 	{Method: "GET", Path: "/health", Match: matchExact},
 	{Method: "GET", Path: "/api/v1/auth/status", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/auth/login", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/auth/register", Match: matchExact},
 
-	// MFA second-factor steps — no Bearer token exists yet at this point.
+	// MFA second-factor steps - no Bearer token exists yet at this point.
 	{Method: "POST", Path: "/api/v1/auth/totp", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/auth/recovery", Match: matchExact},
 

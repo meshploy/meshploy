@@ -54,6 +54,9 @@ type Services struct {
 	Headscale       *HeadscaleService    // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
 	K8sRestConfig   *rest.Config         // nil if KUBECONFIG unavailable
+	// DB is the database, for an extension's own tables. Core code goes
+	// through the services above.
+	DB *gorm.DB
 }
 
 func New(db *gorm.DB, cfg ...*config.Config) *Services {
@@ -254,6 +257,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	agents := &AgentService{db: db, notif: notif}
 
 	svc := &Services{
+		DB:              db,
 		Auth:            auth,
 		Entitlements:    entitlements,
 		Agents:          agents,

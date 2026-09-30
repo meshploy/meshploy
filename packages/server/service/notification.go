@@ -848,7 +848,11 @@ func sendEmail(ch meshdb.NotificationChannel, n notice, cfg meshdb.OrgEmailConfi
 	if err != nil {
 		return fmt.Errorf("build email: %w", err)
 	}
+	return deliverEmail(cfg, to, msg)
+}
 
+// deliverEmail hands one message to the org's SMTP server.
+func deliverEmail(cfg meshdb.OrgEmailConfig, to string, msg []byte) error {
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	auth := smtp.PlainAuth("", cfg.Username, string(cfg.Password), cfg.Host)
 
@@ -860,6 +864,7 @@ func sendEmail(ch meshdb.NotificationChannel, n notice, cfg meshdb.OrgEmailConfi
 	// server offers it; UseTLS makes that upgrade required.
 	implicitTLS := cfg.Port == 465 || cfg.Port == 2465
 	var conn net.Conn
+	var err error
 	if implicitTLS {
 		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsCfg)
 	} else {

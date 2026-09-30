@@ -18,6 +18,7 @@ const (
 	FeatureSSO         = "sso"
 	FeatureAuditLog    = "audit-log"
 	FeatureMultiTenant = "multi-tenancy"
+	FeatureApps        = "apps"
 )
 
 // knownFeatures is the set every recognised flag belongs to.
@@ -25,6 +26,7 @@ var knownFeatures = map[string]bool{
 	FeatureSSO:         true,
 	FeatureAuditLog:    true,
 	FeatureMultiTenant: true,
+	FeatureApps:        true,
 }
 
 // KnownFeatures returns every recognised flag, sorted, for help text and error

@@ -2,6 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"mime"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
@@ -78,4 +83,25 @@ func (s *EmailConfigService) Delete(ctx context.Context, orgID uuid.UUID) error 
 	return s.db.WithContext(ctx).
 		Where("organization_id = ?", orgID).
 		Delete(&db.OrgEmailConfig{}).Error
+}
+
+// ErrNoEmailConfig is an org with no SMTP settings to send with.
+var ErrNoEmailConfig = errors.New("this workspace has no email settings: add them under Integrations, Email")
+
+// Send mails a plain-text message with the org's SMTP settings, as
+// notifications do, for an extension to reach people.
+func (s *EmailConfigService) Send(ctx context.Context, orgID uuid.UUID, to, subject, body string) error {
+	cfg, err := s.Get(ctx, orgID)
+	if err != nil || cfg == nil || cfg.Host == "" {
+		return ErrNoEmailConfig
+	}
+	from := cfg.FromAddress
+	if cfg.FromName != "" {
+		from = mime.QEncoding.Encode("utf-8", cfg.FromName) + " <" + cfg.FromAddress + ">"
+	}
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n",
+		from, to, mime.QEncoding.Encode("utf-8", subject), time.Now().Format(time.RFC1123Z))
+	msg.WriteString(strings.ReplaceAll(body, "\n", "\r\n"))
+	return deliverEmail(*cfg, to, []byte(msg.String()))
 }
