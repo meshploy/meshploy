@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -465,7 +466,7 @@ func pgxRowsToResult(rows pgx.Rows) (*QueryResult, error) {
 		}
 		row := make([]interface{}, len(vals))
 		for i, v := range vals {
-			row[i] = fmt.Sprintf("%v", v)
+			row[i] = pgText(v)
 		}
 		allRows = append(allRows, row)
 		if len(allRows) >= maxRows {
@@ -476,6 +477,32 @@ func pgxRowsToResult(rows pgx.Rows) (*QueryResult, error) {
 		allRows = [][]interface{}{}
 	}
 	return &QueryResult{Columns: cols, Rows: allRows, Count: len(allRows)}, nil
+}
+
+// pgText is a value as Postgres would print it: a numeric as its digits, a
+// uuid as its string, a time in RFC 3339, NULL as null. pgx decodes some types
+// into structs and arrays that %v alone prints as Go syntax.
+func pgText(v any) any {
+	switch x := v.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		return x.Format(time.RFC3339Nano)
+	case [16]byte:
+		return uuid.UUID(x).String()
+	case []byte:
+		return string(x)
+	case driver.Valuer:
+		dv, err := x.Value()
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		if dv == nil {
+			return nil
+		}
+		return pgText(dv)
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 func sqlRowsToResult(rows *sql.Rows) (*QueryResult, error) {
