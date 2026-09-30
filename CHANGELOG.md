@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.19.0](https://github.com/meshploy/meshploy/compare/v0.18.0...v0.19.0) (2026-09-30)
+
+
+### Features
+
+* **builder:** build with Railpack where Nixpacks was, keep services that name Nixpacks building, fix Buildah's network and short image names and Railpack apps in a subfolder, and smoke-test the image before it is pushed ([a225321](https://github.com/meshploy/meshploy/commit/a22532107e68a4e19b8e49cde081ae16dc71e61a))
+* **builds:** cap each project's build cache, and warn on a filling disk or a leftover workload ([0539245](https://github.com/meshploy/meshploy/commit/0539245a908bd8a96d830fd6569abbcbe6fa4260))
+* **cli:** ship a local build to a gateway with scripts/ship.sh and server-upgrade --from, back to published images on the next upgrade ([5439f92](https://github.com/meshploy/meshploy/commit/5439f92e3cb701caf19af6b7385eb40199935f22))
+* **console:** Start here offers connecting Git before the first service, as an option rather than a warning ([ff1d931](https://github.com/meshploy/meshploy/commit/ff1d931111694d097cb89844ce2855145b440c7e))
+* **console:** step resources with - and + through sizes the target node can hold, instead of typing them ([8c7c0c2](https://github.com/meshploy/meshploy/commit/8c7c0c2215e2af09e009a64d0533478951a7e361))
+* **console:** the licence card says what is licensed in plain words, and hides the replace box until asked ([2a070ab](https://github.com/meshploy/meshploy/commit/2a070abc99f41099a988465a46ae9fca5d243e84))
+* **deploy:** a deployment or stack rollout in flight when the API restarts is picked up again, or ended saying why ([bd5aaa8](https://github.com/meshploy/meshploy/commit/bd5aaa8397f2cb19fe67d1d3f23c7e01e4e7423b))
+* **deploy:** an edition's proxy image is chosen like its API and console, and server-upgrade --ee sets all three ([dd741c5](https://github.com/meshploy/meshploy/commit/dd741c5cc6ff87fc8924aca829acfbd142206b50))
+* **deploy:** build a service from a folder, uploaded from the console or with meshploy deploy, kept in the registry ([0f1b405](https://github.com/meshploy/meshploy/commit/0f1b405ac09adea27076897b28c769a71d9e9b28))
+* **environments:** roll back a promotion from the board, and warn before promoting an image a level rolled back from ([333974b](https://github.com/meshploy/meshploy/commit/333974bb494936c9c963e17b393336e77bd466ba))
+* **environments:** show where each image came from, open routes from cards, delete levels, and break down resource counts ([dbd32d2](https://github.com/meshploy/meshploy/commit/dbd32d2b3de2791c7c9fa0f608315ce1740540ad))
+* **extensions:** hooks for an edition to add console pages, redirect its own host, badge projects and serve another name as the console ([6d82fa0](https://github.com/meshploy/meshploy/commit/6d82fa011fc21c5e2017b5d03e672c96d61d036b))
+* **help:** explain every feature in place, from one text shared by the console, the docs' Concepts and later MCP ([f276af8](https://github.com/meshploy/meshploy/commit/f276af8401d15c31d4d774870b025f99a43cbe3a))
+* **maps:** a map of each level and of the workspace around its nodes, with what-ifs, promote and roll back, on placement and project-map endpoints ([0a7ba30](https://github.com/meshploy/meshploy/commit/0a7ba3037be09f57ef4cee6921ff8fbe8968b0fa))
+* **mcp:** deploy_folder and share_app, the second answering on Community where sharing is, deploy_folder kept off the remote endpoint ([7966d98](https://github.com/meshploy/meshploy/commit/7966d983b05e74294f7f9be32c6a24b1004ea91a))
+* **mesh:** run Meshploy's mesh on its own tailscaled beside the machine's Tailscale, and install on free ports beside what holds the defaults ([1820966](https://github.com/meshploy/meshploy/commit/1820966f76c1c96fe3432a03d2896377f57bf612))
+* **migrate:** move compose apps on the images they run, read their files into the plan, and let answered groups move ([7f80d55](https://github.com/meshploy/meshploy/commit/7f80d557e64bafe831407a1ed34f73412fdcde0e))
+* **migrate:** take the edge first and move compose apps whole, with their data, files, ports, limits and start order, and routes that keep to the port a domain named ([62df170](https://github.com/meshploy/meshploy/commit/62df170ebaab86abc0a24e698af34236dedf8d27))
+* **nodes:** join a Mac or a Windows machine to the mesh as a mesh-only node ([b6032b7](https://github.com/meshploy/meshploy/commit/b6032b7b0097bd9dae25ca012ec9686d758a1d62))
+* **overview:** show what needs attention, each project's levels, where deployments came from, and delivery over two weeks ([6883844](https://github.com/meshploy/meshploy/commit/688384429f1750ce34af84413ec1a1cfade26092))
+* **projects:** add environment levels, with promotion groups, borrowing, derived hostnames and own databases ([d99d306](https://github.com/meshploy/meshploy/commit/d99d3066f38d9284b953d69ad9396aabf867f068))
+* **proxy:** a gate hook that sees each routed request, with whose route it is, before its app does ([6aefc8b](https://github.com/meshploy/meshploy/commit/6aefc8b59ddfd559da3b1f97c965e886c4417414))
+* **routes:** link a route's target to its service ([a0fe1f1](https://github.com/meshploy/meshploy/commit/a0fe1f11e4ebed03b610de43d48c27562a5e4616))
+* **server:** hooks for extensions to add public paths, send email and keep their own tables ([346036e](https://github.com/meshploy/meshploy/commit/346036ed121295bf1a7d88524beda8064a3dfa32))
+* **services:** add install, build and start commands, and default to the built-in registry ([8828c5f](https://github.com/meshploy/meshploy/commit/8828c5f0c6e1defa5692d3547a7787fdbdddd9ea))
+* **services:** fill in a new service from what its repository is ([0d7402b](https://github.com/meshploy/meshploy/commit/0d7402bd72b471a1711cdf986940056e51537035))
+* **services:** say why a service keeps dying, wherever it shows ([ca24196](https://github.com/meshploy/meshploy/commit/ca2419678a418b29bbfefd445e2bd976996fdf57))
+* **services:** suggest fixes from what the build found out about the app ([aefce06](https://github.com/meshploy/meshploy/commit/aefce063abda50f38445a3e6a1d503c1a6379f52))
+* **setup:** open the register form with the setup token filled in, from the installer, the browser setup and setup-token show ([98ebe08](https://github.com/meshploy/meshploy/commit/98ebe082d45a9af72dc40dfb12516cc569e3fc72))
+* **stacks:** a new stack is a private repository cloned whole and can be created from the console; Apply again rolls out the last sync at its commit, starts what never ran, and a failure stops only what depends on it ([ce78f27](https://github.com/meshploy/meshploy/commit/ce78f27b6704a719cf869d334e57a5aa35955b9a))
+* **stacks:** an optional cap on how many services a rollout builds at once, so a small server is not run out of memory ([6f545e3](https://github.com/meshploy/meshploy/commit/6f545e37ac577a69c54e75a42ce66b17ae23eff7))
+* **stacks:** put Sync, Apply and Destroy in the stack's header, and show and edit where a git stack's file comes from ([3f6e336](https://github.com/meshploy/meshploy/commit/3f6e336393b51e96692500d21db9fea7f2ecbf1e))
+* **stacks:** roll a stack out in depends_on order, follow each Sync and Apply on its Rollouts tab, and pick a git stack's repository and branch from its provider ([c8c48be](https://github.com/meshploy/meshploy/commit/c8c48be9a232d1ecb559731cbc75be0dbdc40e21))
+* **stacks:** run compose files as written: names on any port, Dockerfile builds, run-once services, repository files, ports published on one address ([5daf7e1](https://github.com/meshploy/meshploy/commit/5daf7e171cb444f77b807944381259fabd5c4737))
+
+
+### Bug Fixes
+
+* **builder:** builds reuse their cache, on overlayfs rather than a full copy per step, and builds in one project take the cache in turn instead of clearing it under each other ([2040e83](https://github.com/meshploy/meshploy/commit/2040e83280558c271a3affa9b8265ef3ccc264cf))
+* **cli:** password and token prompts read piped input when there is no terminal, and say how to give one when there is neither ([34f38b3](https://github.com/meshploy/meshploy/commit/34f38b3638e44d2d6a5180e576f42fe80d352783))
+* **console:** a deployment that builds nothing shows Image, Deploying, Live, not a clone and build it never did ([b6a90f3](https://github.com/meshploy/meshploy/commit/b6a90f3fcbba22bfc3262b72a54d3ec7c9eaeb25))
+* **console:** drop the outdated domain section from settings, and align the new-level placement controls ([2505ff8](https://github.com/meshploy/meshploy/commit/2505ff8c93c309f0bfe17e5f8d20f2da8074667b))
+* **console:** toggle comments with Ctrl+/ in variable editors ([6430578](https://github.com/meshploy/meshploy/commit/64305789ce18fa2da284c286228fdd5d92708929))
+* **db:** query results show numerics, uuids, times and nulls as Postgres prints them ([6965ac2](https://github.com/meshploy/meshploy/commit/6965ac2ba8cbb2a3e352348a0209962c672f61bc))
+* **deploy:** count a rollout as a success only once its new pods have stayed up without restarting ([c7c1e7b](https://github.com/meshploy/meshploy/commit/c7c1e7bdb8a75f7f7dce780b1a62e3f9dba72086))
+* **deploy:** judge a rollout only on the new revision's pods, and show the step a failed deployment stopped at ([bc52d63](https://github.com/meshploy/meshploy/commit/bc52d6327e2a312fb3ee0014caf7edc052ba4485))
+* **deployments:** open the log at its latest line, and mark only the lines that matter ([c356098](https://github.com/meshploy/meshploy/commit/c356098c7895df5c368f0c9d0c10c876a38dd640))
+* **deploy:** push to the org's registry when a service names none, and keep a service running after a failed build with a "latest build failed" tag ([f056a42](https://github.com/meshploy/meshploy/commit/f056a4263161408d8aee3594beefbd86334b4c23))
+* **environments:** never read variables from a lower level, mark and overwrite hotfixes, and stop failing quietly on deletes and job runs ([271103f](https://github.com/meshploy/meshploy/commit/271103fce1ffccedaeda82838b038b5fef2cd974))
+* **git:** refuse another organization's git integration on every route that names one ([9341eb3](https://github.com/meshploy/meshploy/commit/9341eb36daea5a1bf48bdd394ed89f0345da9ea8))
+* **install:** keep the mesh setup out of the helpers the re-run test sources ([66b04a6](https://github.com/meshploy/meshploy/commit/66b04a6e1dd624a8ab65408fc86573b907b3da94))
+* **logs:** show a crash-looping service's last run, and keep a stopped service's last lines for its Logs tab ([5cd93cf](https://github.com/meshploy/meshploy/commit/5cd93cffa919f6983975c9f8ffa317d2db9f47a1))
+* **nodes:** install the k3s release the gateway runs on a joining worker, never a newer one ([a12e127](https://github.com/meshploy/meshploy/commit/a12e12704bf3e5b5559eb6227861db6858cab866))
+* **nodes:** let a provisioned node remove itself with its own secret, not the token it spent ([2a89fd8](https://github.com/meshploy/meshploy/commit/2a89fd852e30124bb5ad6ccad4818d9923a6aafd))
+* **notices:** an EPL-2.0 licence is read by its title rather than taken for GPL, and the console's notices list the map's libraries ([906da14](https://github.com/meshploy/meshploy/commit/906da14e39aa8eeaa8510097a567733e636fecc1))
+* **resources:** a build reserves a quarter of a CPU and a stack's service 25m, so a small server running a stack can still place a build ([6404bea](https://github.com/meshploy/meshploy/commit/6404bea29f7d416cfc60d3c0a9f83bda75a2d275))
+* **rollback:** keep a service's last 3 images by default and actually remove older ones, roll back to any image still kept, let a stack choose for its services, and garbage-collect the registry weekly ([9fa5078](https://github.com/meshploy/meshploy/commit/9fa5078d13fd1a6935c6f989f32ee28c6aff4394))
+* **routes:** issue certificates for names under a wildcard route ([ccfb68f](https://github.com/meshploy/meshploy/commit/ccfb68f7c6145d482adfe5a4a626aa4da9955ae5))
+* **variables:** publish the address a service really runs at ([ed661cd](https://github.com/meshploy/meshploy/commit/ed661cd83cac43b38927afe2acc42fc4fba2cc2f))
+* **web:** list the licences of the chart library's dependencies ([d204cba](https://github.com/meshploy/meshploy/commit/d204cba25db88bcac994bdf7a7485a6f594dbcfd))
+
 ## [0.18.0](https://github.com/meshploy/meshploy/compare/v0.17.0...v0.18.0) (2026-09-23)
 
 
