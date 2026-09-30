@@ -102,7 +102,11 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 	ctx context.Context,
 	orgID uuid.UUID,
 	githubOrg string,
+	startedFrom string,
 ) (row *db.GitIntegration, githubURL, manifest string, err error) {
+	if startedFrom == "console" || !IsConsoleName(startedFrom) {
+		startedFrom = ""
+	}
 	autoName := "github-" + time.Now().UTC().Format("20060102-150405")
 	apiBase := s.apiBase(orgID)
 	row = &db.GitIntegration{
@@ -111,6 +115,7 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 		AuthMethod:        "app",
 		Name:              autoName,
 		RegisteredAPIBase: apiBase,
+		StartedFrom:       startedFrom,
 	}
 	if err = s.db.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, "", "", huma.Error500InternalServerError("failed to create git integration")
@@ -234,6 +239,25 @@ func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, integratio
 		installURL += fmt.Sprintf("&suggested_target_id=%d", targetID)
 	}
 	return installURL, nil
+}
+
+// StartedFrom is the platform name the connection a callback's state names was
+// begun from, or "" for the console, which is also the answer for a state that
+// does not verify.
+func (s *GitIntegrationService) StartedFrom(ctx context.Context, state string) string {
+	idText, err := validateState(state, s.cfg.JWTSecret)
+	if err != nil {
+		return ""
+	}
+	id, err := uuid.Parse(idText)
+	if err != nil {
+		return ""
+	}
+	var row db.GitIntegration
+	if s.db.WithContext(ctx).Select("started_from").First(&row, id).Error != nil {
+		return ""
+	}
+	return row.StartedFrom
 }
 
 // HandleGitHubCallback validates the install state, sets InstallationID on the

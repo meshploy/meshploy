@@ -67,6 +67,20 @@ func RegisterConsoleName(name string) {
 	platformReservedSubdomains[name] = true
 }
 
+// IsConsoleName reports whether name is served as the console: "console"
+// itself, or a name an extension registered.
+func IsConsoleName(name string) bool {
+	if name == "console" {
+		return true
+	}
+	for _, n := range consoleNames {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 // edgeSnapshot turns the domains table into what the generator renders from.
 //
 // Only verified domains: an unverified one has no DNS pointing here, so a site

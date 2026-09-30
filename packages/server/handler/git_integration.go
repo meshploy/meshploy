@@ -107,6 +107,9 @@ type InitGitHubIntegrationInput struct {
 	OrgID string `path:"orgId"`
 	Body  struct {
 		GithubOrg string `json:"github_org,omitempty"`
+		// StartedFrom is the platform name the browser starts from, for
+		// GitHub's redirects to return it there. Empty is the console.
+		StartedFrom string `json:"started_from,omitempty"`
 	}
 }
 
@@ -183,7 +186,7 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		if err != nil {
 			return nil, err
 		}
-		row, githubURL, manifest, err := h.svc.GitIntegrations.InitGitHubIntegration(ctx, orgID, in.Body.GithubOrg)
+		row, githubURL, manifest, err := h.svc.GitIntegrations.InitGitHubIntegration(ctx, orgID, in.Body.GithubOrg, in.Body.StartedFrom)
 		if err != nil {
 			return nil, err
 		}
@@ -478,9 +481,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 // GitHub sends ?code=&state= - we exchange code for credentials and store them on the
 // GitIntegration row identified by the state token.
 func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
-	frontendURL := h.consoleAfterCallback(r)
-
 	q := r.URL.Query()
+	frontendURL := h.consoleAfterCallback(r, h.svc.GitIntegrations.StartedFrom(r.Context(), q.Get("state")))
+
 	code := q.Get("code")
 	state := q.Get("state")
 
@@ -499,7 +502,7 @@ func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
 
 // GitLabOAuthCallback handles the redirect back from GitLab after OAuth authorization.
 func (h *Handler) GitLabOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	frontendURL := h.consoleAfterCallback(r)
+	frontendURL := h.consoleAfterCallback(r, "")
 	q := r.URL.Query()
 	code, state := q.Get("code"), q.Get("state")
 	if code == "" || state == "" {
@@ -515,7 +518,7 @@ func (h *Handler) GitLabOAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 // GiteaOAuthCallback handles the redirect back from Gitea after OAuth authorization.
 func (h *Handler) GiteaOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	frontendURL := h.consoleAfterCallback(r)
+	frontendURL := h.consoleAfterCallback(r, "")
 	q := r.URL.Query()
 	code, state := q.Get("code"), q.Get("state")
 	if code == "" || state == "" {
@@ -532,7 +535,7 @@ func (h *Handler) GiteaOAuthCallback(w http.ResponseWriter, r *http.Request) {
 // BitbucketOAuthCallback handles the redirect back from Bitbucket after OAuth
 // authorization.
 func (h *Handler) BitbucketOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	frontendURL := h.consoleAfterCallback(r)
+	frontendURL := h.consoleAfterCallback(r, "")
 	q := r.URL.Query()
 	code, state := q.Get("code"), q.Get("state")
 	if code == "" || state == "" {
@@ -548,9 +551,9 @@ func (h *Handler) BitbucketOAuthCallback(w http.ResponseWriter, r *http.Request)
 
 // GitHubCallback handles the redirect back from GitHub after App installation.
 func (h *Handler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
-	frontendURL := h.consoleAfterCallback(r)
-
 	q := r.URL.Query()
+	frontendURL := h.consoleAfterCallback(r, h.svc.GitIntegrations.StartedFrom(r.Context(), q.Get("state")))
+
 	installationID := q.Get("installation_id")
 	setupAction := q.Get("setup_action")
 	state := q.Get("state")
@@ -583,7 +586,11 @@ func (h *Handler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 // The Host header is the caller's to write, so it is honoured only for a domain
 // this gateway serves the platform on. Anything else is an open redirect waiting
 // to be used, and falls back to the primary's console.
-func (h *Handler) consoleAfterCallback(r *http.Request) string {
+func (h *Handler) consoleAfterCallback(r *http.Request, startedFrom string) string {
+	name := "console"
+	if startedFrom != "" && service.IsConsoleName(startedFrom) {
+		name = startedFrom
+	}
 	host := strings.ToLower(r.Host)
 	if i := strings.LastIndexByte(host, ':'); i >= 0 {
 		host = host[:i]
@@ -591,10 +598,10 @@ func (h *Handler) consoleAfterCallback(r *http.Request) string {
 	if h.svc != nil && h.svc.Domains != nil {
 		for _, prefix := range []string{"api.", "console."} {
 			if base, ok := strings.CutPrefix(host, prefix); ok && h.svc.Domains.ServesPlatform(r.Context(), base) {
-				return "https://console." + base
+				return "https://" + name + "." + base
 			}
 		}
-		if u := h.svc.Domains.GatewayPlatformURL(r.Context(), "console"); u != "" {
+		if u := h.svc.Domains.GatewayPlatformURL(r.Context(), name); u != "" {
 			return u
 		}
 	}

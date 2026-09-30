@@ -51,8 +51,22 @@ func TestCallbackReturnsToTheConsoleItCameThroughAndNowhereElse(t *testing.T) {
 	} {
 		r := httptest.NewRequest("GET", "/api/v1/gitea/callback", nil)
 		r.Host = c.host
-		if got := h.consoleAfterCallback(r); got != c.want {
+		if got := h.consoleAfterCallback(r, ""); got != c.want {
 			t.Errorf("Host %q: redirect to %q, want %q", c.host, got, c.want)
+		}
+	}
+
+	// A connection begun on another name an edition serves as the console
+	// returns there; a name nothing serves is never somewhere to send anyone.
+	service.RegisterConsoleName("door")
+	for _, c := range []struct{ from, want string }{
+		{"door", "https://door.new.test"},
+		{"elsewhere", "https://console.new.test"},
+	} {
+		r := httptest.NewRequest("GET", "/api/v1/github/callback", nil)
+		r.Host = "api.new.test"
+		if got := h.consoleAfterCallback(r, c.from); got != c.want {
+			t.Errorf("started from %q: redirect to %q, want %q", c.from, got, c.want)
 		}
 	}
 }

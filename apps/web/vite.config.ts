@@ -8,6 +8,22 @@ import path from "path"
 const isDemo = process.env.VITE_DEMO_MODE === "true"
 
 /**
+ * EDITION_WEB_DIR serves an edition's overlay in place of src/ee while
+ * developing, without copying it into this tree: `@/ee` resolves there, and
+ * Tailwind scans it for classes. The image build lays the overlay over src/ee
+ * instead, and needs neither.
+ */
+const editionDir = process.env.EDITION_WEB_DIR ? path.resolve(process.env.EDITION_WEB_DIR) : undefined
+
+function editionSource(dir: string): Plugin {
+  return {
+    name: "edition-source",
+    enforce: "pre",
+    transform: (code, id) => (id.endsWith("/src/index.css") ? `@source "${dir}";\n${code}` : undefined),
+  }
+}
+
+/**
  * The help topics (packages/help/topics/*.md), bundled as virtual:help-topics:
  * one text, read by the console's help drawer, the docs site and the MCP
  * server. HELP_DIR points elsewhere where the repository is not laid out
@@ -53,14 +69,17 @@ export default defineConfig({
       generatedRouteTree: "./src/routeTree.gen.ts",
     }),
     react(),
+    ...(editionDir ? [editionSource(editionDir)] : []),
     tailwindcss(),
     helpTopics(),
   ],
   resolve: {
     alias: {
+      ...(editionDir && { "@/ee": editionDir }),
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  ...(editionDir && { server: { fs: { allow: [__dirname, editionDir] } } }),
   // In demo mode, force relative API paths so MSW service worker can intercept them
   ...(isDemo && {
     define: {

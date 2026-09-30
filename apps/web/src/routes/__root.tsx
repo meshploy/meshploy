@@ -9,8 +9,8 @@ export const Route = createRootRoute({
   // An edition serving another face on another host keeps its visitors on
   // its own pages; the console's own door serves everything as it is.
   beforeLoad: ({ location }) => {
-    const to = eeRedirect(location.pathname)
-    if (to && to !== location.pathname) throw redirect({ href: to })
+    const to = eeRedirect(location.href)
+    if (to && to !== location.href) throw redirect({ href: to })
   },
   component: RootLayout,
 })

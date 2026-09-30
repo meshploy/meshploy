@@ -43,11 +43,12 @@ export type EeRouteSet = { root?: AnyRoute[]; console?: AnyRoute[] }
 export const eeRoutes = (_parents: EeRouteParents): EeRouteSet => ({})
 
 /**
- * Where the door the console is opened through sends a path, or undefined to
- * serve it as it is. Asked on every navigation, so an edition serving another
- * face on another host can keep that host's visitors on its own pages.
+ * Where the door the console is opened through sends a location (its path
+ * and query), or undefined to serve it as it is. Asked on every navigation, so
+ * an edition serving another face on another host can keep that host's
+ * visitors on its own pages.
  */
-export const eeRedirect = (_pathname: string): string | undefined => undefined
+export const eeRedirect = (_href: string): string | undefined => undefined
 
 /** Drawn beside a project's name wherever the console lists or heads it. */
 export const EeProjectBadge: React.ComponentType<{ projectId: string }> | null = null

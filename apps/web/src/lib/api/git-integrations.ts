@@ -43,7 +43,8 @@ export const gitIntegrations = {
   list: (orgId: string, token: string) =>
     apiFetch<ApiGitIntegration[]>(`/api/v1/orgs/${orgId}/git-integrations`, {}, token),
 
-  initGitHub: (orgId: string, body: { github_org?: string }, token: string) =>
+  /** `started_from` is the platform name GitHub's redirects return the browser to; empty is the console. */
+  initGitHub: (orgId: string, body: { github_org?: string; started_from?: string }, token: string) =>
     apiFetch<{ integration: ApiGitIntegration; github_url: string; manifest: string }>(
       `/api/v1/orgs/${orgId}/git-integrations/github`,
       { method: "POST", body: JSON.stringify(body) },

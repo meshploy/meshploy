@@ -1532,6 +1532,11 @@ type GitIntegration struct {
 	// stop arriving, with nothing said. Empty means the install's API_BASE_URL.
 	RegisteredAPIBase string `gorm:"not null;default:''" json:"-"`
 
+	// StartedFrom is the platform name the connection was begun from, where
+	// the provider's redirects send the browser back to: empty for the
+	// console, or a name an edition serves as the console is.
+	StartedFrom string `gorm:"not null;default:''" json:"-"`
+
 	// GitHub App credentials (auth_method="app" only). All encrypted at rest.
 	GHAppID         string          `gorm:"not null;default:''" json:"-"`
 	GHAppSlug       string          `gorm:"not null;default:''" json:"gh_app_slug,omitempty"` // exposed for pending card display
