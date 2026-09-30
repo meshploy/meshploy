@@ -472,8 +472,8 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 // on in the cluster whatever happens to the process that started it.
 func (s *DeploymentService) followBuild(ctx context.Context, a runPipelineArgs) {
 	// Wait for the job to finish (up to 60 minutes).
-	// First-time builds without layer cache (railpack native snapshotter, large
-	// repos) can easily exceed 30 minutes.
+	// A first build of a large repository, with no cache, can exceed 30
+	// minutes.
 	result := appk8s.WaitForJobWith(ctx, s.k8s, a.namespace, a.jobName, appk8s.JobWaitOptions{
 		Timeout:       60 * time.Minute,
 		Unschedulable: buildUnschedulableGrace,

@@ -311,13 +311,36 @@ case "${BUILDER}" in
   insecure = true
 EOF
 
+    # auto is overlayfs wherever the cache volume supports it, native
+    # elsewhere. native stores every step as a full copy of the filesystem,
+    # about a gigabyte for a Node build: slow to write, and enough to push the
+    # cache over its limit so each build's trim deletes the steps the next one
+    # needs.
+    # Every build in a project shares one cache, and one BuildKit may use it
+    # at a time: a second daemon on the same root cannot start. So a build
+    # waits for the others in its project, and after BUILDKIT_LOCK_WAIT seconds
+    # builds without the cache rather than wait longer.
+    BUILDKIT_ROOT=/tmp/buildkit-root
+    exec 9>"${BUILDKIT_ROOT}/.build.lock"
+    waited=0
+    until flock -n 9; do
+        if (( waited == 0 )); then log "Waiting for another build in this project to finish with the build cache…"; fi
+        if (( waited >= ${BUILDKIT_LOCK_WAIT:-1200} )); then
+            log "Still busy after $(( waited / 60 )) minutes: building without the cache."
+            BUILDKIT_ROOT="$(mktemp -d /tmp/buildkit-private.XXXXXX)"
+            break
+        fi
+        sleep 5
+        waited=$(( waited + 5 ))
+    done
+
     start_buildkitd() {
         rm -f "${BUILDKIT_SOCK}"
         > /tmp/buildkitd.log          # reset log so readiness grep is unambiguous
         buildkitd \
             --addr "unix://${BUILDKIT_SOCK}" \
-            --root "/tmp/buildkit-root" \
-            --oci-worker-snapshotter=native \
+            --root "${BUILDKIT_ROOT}" \
+            --oci-worker-snapshotter=auto \
             --config /tmp/buildkit-config/buildkitd.toml \
             2>/tmp/buildkitd.log &
         BUILDKITD_PID=$!
@@ -346,12 +369,21 @@ EOF
         log "buildkitd unresponsive — clearing stale PVC state and restarting…"
         kill "${BUILDKITD_PID}" 2>/dev/null || true
         sleep 2
-        # /tmp/buildkit-root is a PVC subpath mount — the mount point itself
-        # cannot be deleted ("Resource busy"). Delete only its contents.
-        find /tmp/buildkit-root -mindepth 1 -delete 2>/dev/null || true
+        # Safe only because this build holds the cache's lock, so no other
+        # daemon is using it. The root is a PVC subpath mount, which cannot
+        # itself be deleted ("Resource busy"): delete only its contents,
+        # keeping the lock file this build holds.
+        find "${BUILDKIT_ROOT}" -mindepth 1 ! -name .build.lock -delete 2>/dev/null || true
         start_buildkitd
         wait_buildkitd_ready 30 \
             || { cat /tmp/buildkitd.log; die "buildkitd failed to start after state reset"; }
+    fi
+
+    # A cache kept by the native snapshotter is never read once overlayfs is
+    # in use, and holds gigabytes.
+    if [[ -d "${BUILDKIT_ROOT}/runc-overlayfs" && -d "${BUILDKIT_ROOT}/runc-native" ]]; then
+        log "Removing the build cache kept in the old format…"
+        rm -rf "${BUILDKIT_ROOT}/runc-native"
     fi
 
     # Generate the railpack build plan, then drive BuildKit directly via buildctl.
