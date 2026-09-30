@@ -89,3 +89,19 @@ func TestEdgeSnapshotRejectsSyntaxInAName(t *testing.T) {
 		}
 	}
 }
+
+// Console names are written into the Caddyfile and the zones as they are, so
+// only a plain label the platform does not already serve gets through.
+func TestEdgeSnapshotChecksConsoleNames(t *testing.T) {
+	for name, ok := range map[string]bool{
+		"apps": true, "my-apps": true,
+		"apps.more": false, "": false, "a b": false, "{": false,
+		"console": false, "api": false, "headscale": false, "internal": false,
+	} {
+		s := okSnapshot()
+		s.ConsoleNames = []string{name}
+		if err := s.Validate(); (err == nil) != ok {
+			t.Errorf("%q: Validate() = %v, want ok=%v", name, err, ok)
+		}
+	}
+}

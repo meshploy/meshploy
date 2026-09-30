@@ -24,6 +24,9 @@ $ORIGIN {{ .BaseDomain }}.
 headscale   IN A    {{ .PublicIP }}
 api         IN A    {{ .PublicIP }}
 console     IN A    {{ .PublicIP }}
+{{- range .ConsoleNames }}
+{{ printf "%-11s" . }} IN A    {{ $.PublicIP }}
+{{- end }}
 
 ; Wildcard - every other *.{{ .BaseDomain }} → gateway, routed by the proxy
 *           IN A    {{ .PublicIP }}
@@ -38,6 +41,9 @@ _acme-challenge IN NS ns1.{{ .BaseDomain }}.
 _acme-challenge.headscale   IN CNAME  _acme-challenge.{{ .BaseDomain }}.
 _acme-challenge.api         IN CNAME  _acme-challenge.{{ .BaseDomain }}.
 _acme-challenge.console     IN CNAME  _acme-challenge.{{ .BaseDomain }}.
+{{- range .ConsoleNames }}
+{{ printf "%-27s" (print "_acme-challenge." .) }} IN CNAME  _acme-challenge.{{ $.BaseDomain }}.
+{{- end }}
 
 ; Internal wildcard challenge - NS delegation rather than CNAME, so CertMagic
 ; can query the authoritative zone directly.

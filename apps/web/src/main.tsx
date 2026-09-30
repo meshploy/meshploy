@@ -2,9 +2,20 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { AnyRoute } from "@tanstack/react-router"
 import { routeTree } from "./routeTree.gen"
+import { Route as consoleLayout } from "./routes/_app"
+import { eeRoutes } from "@/ee"
 import { useAuthStore } from "@/store/auth-store"
 import "./index.css"
+
+// An edition's routes join the generated tree before the router reads it.
+const extra = eeRoutes({ root: routeTree, console: consoleLayout })
+const addTo = (parent: AnyRoute, routes: AnyRoute[] = []) => {
+  if (routes.length > 0) parent.addChildren([...((parent.children as AnyRoute[] | undefined) ?? []), ...routes])
+}
+addTo(consoleLayout, extra.console)
+addTo(routeTree, extra.root)
 
 const router = createRouter({ routeTree })
 

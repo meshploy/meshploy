@@ -66,6 +66,8 @@ type caddyData struct {
 	// The gateway's loopback ports Caddy forwards to.
 	ProxyPort     int
 	HeadscalePort int
+	// Served beside console.<domain>, as it is.
+	ConsoleNames []string
 }
 
 // HeadscaleConfig is the one generated file that is not reloaded in place:
@@ -87,6 +89,7 @@ type zoneData struct {
 	MeshIP            string
 	Origin            string
 	Serial            string
+	ConsoleNames      []string
 }
 
 // Render produces every file the edge needs. It writes nothing: the caller
@@ -107,6 +110,7 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 		SnapshotPath: SnapshotPath, PublicIP: snap.PublicIP, MeshIP: snap.MeshIP,
 		Domains: domains, Primary: *snap.Primary(), MeshDomain: snap.MeshDomainOrDefault(),
 		ProxyPort: snap.ProxyPortOrDefault(), HeadscalePort: snap.HeadscalePortOrDefault(),
+		ConsoleNames: snap.ConsoleNames,
 	}
 	caddyfile, err := execute(tmpl, "Caddyfile.tmpl", data)
 	if err != nil {
@@ -134,6 +138,7 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 			PublicIP:          snap.PublicIP,
 			MeshIP:            snap.MeshIP,
 			Serial:            zoneSerial,
+			ConsoleNames:      snap.ConsoleNames,
 		}
 		// The mesh zone is served whatever the mode: Headscale pushes split DNS
 		// for it to every node, so CoreDNS has to answer it on the mesh address

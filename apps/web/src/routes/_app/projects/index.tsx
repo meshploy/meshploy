@@ -10,6 +10,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import { formatRelativeTime, projectColorHue } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { ProjectBadge } from "@/components/projects/project-badge"
 
 export const Route = createFileRoute("/_app/projects/")({
   component: ProjectsPage,
@@ -135,7 +136,7 @@ function ProjectCard({ project, list }: { project: Project; list: boolean }) {
             />
           </div>
           <div>
-            <p className="text-sm font-semibold text-foreground leading-tight">{project.name}</p>
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground leading-tight">{project.name}<ProjectBadge projectId={project.id} /></p>
             <span className="text-xs text-muted-foreground">{project.slug}</span>
           </div>
         </div>

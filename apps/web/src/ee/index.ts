@@ -12,6 +12,8 @@
 //
 // Do not add CE features here.
 
+import type { AnyRoute } from "@tanstack/react-router"
+
 export type EeNavItem = {
   href: string
   /** Same shape as the sidebar's built-in items: a component, not an element. */
@@ -29,3 +31,23 @@ export type EeNavItem = {
 }
 
 export const eeNavItems: EeNavItem[] = []
+
+/**
+ * Routes an edition adds to the console, made in code with `createRoute`:
+ * `root` routes hang off the root, with a layout of their own; `console`
+ * routes sit inside the console's layout, behind its sign-in. Given the two
+ * parents so each route can name its own in `getParentRoute`.
+ */
+export type EeRouteParents = { root: AnyRoute; console: AnyRoute }
+export type EeRouteSet = { root?: AnyRoute[]; console?: AnyRoute[] }
+export const eeRoutes = (_parents: EeRouteParents): EeRouteSet => ({})
+
+/**
+ * Where the door the console is opened through sends a path, or undefined to
+ * serve it as it is. Asked on every navigation, so an edition serving another
+ * face on another host can keep that host's visitors on its own pages.
+ */
+export const eeRedirect = (_pathname: string): string | undefined => undefined
+
+/** Drawn beside a project's name wherever the console lists or heads it. */
+export const EeProjectBadge: React.ComponentType<{ projectId: string }> | null = null

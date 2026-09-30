@@ -49,6 +49,24 @@ func (s *SystemService) PublishEdge(ctx context.Context, orgID, by uuid.UUID) er
 	return s.queueEdgeApply(by)
 }
 
+// consoleNames are the platform subdomains an extension serves as the
+// console, beside console.<domain>, in the order registered.
+var consoleNames []string
+
+// RegisterConsoleName serves name.<domain> as the console is, on every domain
+// that serves the platform's names, and keeps routes off it. Call it from
+// init(), before the server starts; the name must be one plain label. The CE
+// binary registers none.
+func RegisterConsoleName(name string) {
+	for _, n := range consoleNames {
+		if n == name {
+			return
+		}
+	}
+	consoleNames = append(consoleNames, name)
+	platformReservedSubdomains[name] = true
+}
+
 // edgeSnapshot turns the domains table into what the generator renders from.
 //
 // Only verified domains: an unverified one has no DNS pointing here, so a site
@@ -63,9 +81,10 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 		return nil, err
 	}
 	snap := hostagent.EdgeSnapshot{
-		PublicIP:  s.cfg.PublicIP,
-		MeshIP:    s.cfg.GatewayIP,
-		WrittenAt: time.Now().UTC(),
+		PublicIP:     s.cfg.PublicIP,
+		MeshIP:       s.cfg.GatewayIP,
+		WrittenAt:    time.Now().UTC(),
+		ConsoleNames: append([]string(nil), consoleNames...),
 	}
 	for _, d := range domains {
 		mode := string(d.DNSMode)

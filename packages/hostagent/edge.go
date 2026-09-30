@@ -74,6 +74,10 @@ type EdgeSnapshot struct {
 	// the host fills them from its .env before rendering. Zero is the default.
 	ProxyPort     int `json:"proxy_port,omitempty"`
 	HeadscalePort int `json:"headscale_port,omitempty"`
+	// ConsoleNames are further platform subdomains served as the console
+	// is, beside console.<domain>: an edition's own door onto the same web
+	// app and API. Empty in Community.
+	ConsoleNames []string `json:"console_names,omitempty"`
 }
 
 // ProxyPortOrDefault is ProxyPort, or 8081.
@@ -180,6 +184,17 @@ func (s EdgeSnapshot) Validate() error {
 	}
 	if primaries != 1 {
 		return fmt.Errorf("edge snapshot names %d primary domains, want exactly 1", primaries)
+	}
+	for _, n := range s.ConsoleNames {
+		// Written into the Caddyfile and the zones as it is: one plain label,
+		// never a name the platform already serves.
+		if err := validEdgeName(n); err != nil || strings.Contains(n, ".") {
+			return fmt.Errorf("console name %q must be a single label", n)
+		}
+		switch n {
+		case "console", "api", "headscale", "ns1", s.Primary().InternalSubdomain:
+			return fmt.Errorf("console name %q is already one of the platform's", n)
+		}
 	}
 	if s.MeshDomain != "" {
 		if err := validEdgeName(s.MeshDomain); err != nil {

@@ -51,7 +51,7 @@ api.{{ .BaseDomain }} {
 }
 
 # ── Meshploy console ─────────────────────────────────────────────────────────
-console.{{ .BaseDomain }} {
+console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {{ . }}.{{ $base }}{{ end }} {
 {{- template "named_tls" . }}
     handle /api/* {
         reverse_proxy localhost:4000 {

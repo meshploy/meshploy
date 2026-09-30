@@ -457,3 +457,23 @@ func TestRenderForwardsToTheChosenLoopbackPorts(t *testing.T) {
 	assert.NotContains(t, caddy, "localhost:8081")
 	assert.NotContains(t, caddy, "localhost:8085")
 }
+
+// An edition's own door is served as the console is, with its own name in
+// DNS and a certificate as the console's is obtained.
+func TestConsoleNamesAreServedAsTheConsole(t *testing.T) {
+	snap := snapshot(domain("example.com", hostagent.EdgeDNSDelegation, true))
+	snap.ConsoleNames = []string{"apps"}
+	files, err := Render(snap)
+	require.NoError(t, err)
+
+	assert.Contains(t, files["caddy/Caddyfile"], "console.example.com, apps.example.com {")
+	zone := files["coredns/zones/example.com"]
+	assert.Regexp(t, `(?m)^apps\s+IN A\s+`, zone)
+	assert.Regexp(t, `(?m)^_acme-challenge\.apps\s+IN CNAME\s+_acme-challenge\.example\.com\.$`, zone)
+
+	snap = snapshot(domain("example.com", hostagent.EdgeDNSOnDemand, true))
+	snap.ConsoleNames = []string{"apps"}
+	files, err = Render(snap)
+	require.NoError(t, err)
+	assert.Contains(t, files["caddy/Caddyfile"], "console.example.com, apps.example.com {\n    tls force_automate")
+}

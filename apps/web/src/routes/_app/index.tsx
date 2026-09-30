@@ -29,6 +29,7 @@ import { StatLine } from "@/components/system/stat-line"
 import { HelpButton } from "@/help/help-button"
 import { LevelDot } from "@/components/projects/environment-switcher"
 import { WorkspaceMap } from "@/components/map/workspace-map"
+import { ProjectBadge } from "@/components/projects/project-badge"
 
 export const Route = createFileRoute("/_app/")({
   // `?start` renders the getting-started panel on a workspace that is past it.
@@ -266,7 +267,7 @@ function ProjectRow({ project, waiting, deploys }: { project: Project; waiting: 
         style={{ background: `oklch(0.72 0.17 ${hue})` }}
       />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground leading-tight truncate">{project.name}</p>
+        <p className="flex items-center gap-1.5 text-sm font-medium text-foreground leading-tight"><span className="truncate">{project.name}</span><ProjectBadge projectId={project.id} /></p>
         <p className="text-xs text-muted-foreground">
           {project.servicesCount} service{project.servicesCount !== 1 ? "s" : ""} · {project.routesCount} route{project.routesCount !== 1 ? "s" : ""}
         </p>

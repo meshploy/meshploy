@@ -8,6 +8,7 @@ import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { livePoll } from "@/lib/live-poll"
 import { EnvironmentSwitcher, LevelDot } from "@/components/projects/environment-switcher"
+import { ProjectBadge } from "@/components/projects/project-badge"
 
 export const Route = createFileRoute("/_app/projects/$id")({ component: ProjectLayout })
 function ProjectLayout() {
@@ -41,7 +42,7 @@ function ProjectLayout() {
   return <div className="project-layout">
     <aside className="project-navigation" aria-label="Project navigation">
       <Link to="/projects" className="flex items-center gap-2 px-2 text-xs text-muted-foreground"><ArrowLeft className="h-3.5 w-3.5" />Projects</Link>
-      <div className="project-identity"><p className="font-semibold text-sm">{project.name}</p><p className="text-xs text-muted-foreground mt-1 font-mono">{project.slug}</p>{orgId && <EnvironmentSwitcher orgId={orgId} projectId={id} section={active} token={token} />}</div>
+      <div className="project-identity"><p className="flex items-center gap-1.5 font-semibold text-sm">{project.name}<ProjectBadge projectId={project.id} /></p><p className="text-xs text-muted-foreground mt-1 font-mono">{project.slug}</p>{orgId && <EnvironmentSwitcher orgId={orgId} projectId={id} section={active} token={token} />}</div>
       <nav>{tabs.map(t => <Link key={t.segment} to={destination(t.segment)} activeOptions={{ exact: true }} className={active === t.segment ? "active" : ""} aria-current={active === t.segment ? "page" : undefined}><t.icon className="h-4 w-4" />{t.label}{t.count != null && <span className="project-count">{t.count}</span>}</Link>)}</nav>
       <Button className="w-full mt-6 gap-2" variant="outline" render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="h-4 w-4" />New resource</Button>
     </aside>
