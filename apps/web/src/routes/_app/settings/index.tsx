@@ -14,6 +14,7 @@ import {
   backups as backupsApi,
   entitlements as entitlementsApi,
   editionOf,
+  featureLabel,
   ApiError,
   type ApiStorageIntegration,
   type ApiSystemBackupConfig,
@@ -97,6 +98,7 @@ function LicenseSection() {
   const [error, setError] = useState<string | null>(null)
   const [comparing, setComparing] = useState(false)
   const [switching, setSwitching] = useState(false)
+  const [replacing, setReplacing] = useState(false)
 
   const { data: ent, isLoading } = useQuery({
     queryKey: ["entitlements"],
@@ -120,6 +122,7 @@ function LicenseSection() {
       qc.setQueryData(["entitlements"], updated)
       setLicenseToken("")
       setError(null)
+      setReplacing(false)
     },
     // The API's messages are already written for an operator ("this license has
     // expired", "not valid for this install's domain"), so show them verbatim
@@ -140,16 +143,19 @@ function LicenseSection() {
 
   const active = ent?.licensed && !ent.expired
   const community = ent ? editionOf(ent) === "community" : true
+  const showForm = !active || replacing
 
   return (
     <Section
       title="Licence"
       subtitle={
-        !active
-          ? "Community Edition"
+        active
+          ? community
+            ? "Licensed, but running the Community image"
+            : "Enterprise features are on for this server"
           : community
-            ? "Licensed, running the Community image"
-            : "This install is licensed for Enterprise features"
+            ? "Community Edition"
+            : "Enterprise image, no licence active"
       }
       // Only offered when there is something to upgrade to. On a licensed
       // install this would be pure noise.
@@ -163,36 +169,43 @@ function LicenseSection() {
     >
       <UpgradeDialog open={comparing} onOpenChange={setComparing} />
       {active && ent && (
-        <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
+        <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-3.5 space-y-3">
           <div className="flex items-center gap-2">
-            <Check className="h-3.5 w-3.5 text-primary shrink-0" />
-            <span className="text-sm font-medium">{ent.tier ?? "Enterprise"}</span>
-            {ent.customer && (
-              <span className="text-xs text-muted-foreground">· {ent.customer}</span>
-            )}
+            <Check className="h-4 w-4 text-primary shrink-0" />
+            <span className="text-sm font-medium">{featureLabel(ent.tier ?? "enterprise")} licence</span>
           </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-2 text-xs">
+            {ent.customer && (
+              <>
+                <dt className="text-muted-foreground">Licensed to</dt>
+                <dd>{ent.customer}</dd>
+              </>
+            )}
             {ent.expires_at && (
               <>
                 <dt className="text-muted-foreground">Expires</dt>
-                <dd>{new Date(ent.expires_at).toLocaleDateString()}</dd>
+                <dd>{expiryText(ent.expires_at)}</dd>
               </>
             )}
             <dt className="text-muted-foreground">Nodes</dt>
             <dd className={cn(ent.over_limit && "text-destructive")}>
-              {ent.node_count}
-              {ent.node_limit ? ` / ${ent.node_limit}` : " (unlimited)"}
+              {ent.node_limit
+                ? `${ent.node_count} of ${ent.node_limit}`
+                : `Unlimited, ${ent.node_count} in use`}
             </dd>
+            {ent.features.length > 0 && (
+              <>
+                <dt className="text-muted-foreground pt-0.5">Features</dt>
+                <dd className="flex flex-wrap gap-1.5">
+                  {ent.features.map((f) => (
+                    <span key={f} className="text-[11px] px-2 py-0.5 rounded-md border border-border/60 bg-muted/40">
+                      {featureLabel(f)}
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
           </dl>
-          {ent.features.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-1">
-              {ent.features.map((f) => (
-                <span key={f} className="text-[11px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
-                  {f}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -275,10 +288,16 @@ function LicenseSection() {
             </code>
           </div>
         </div>
+      ) : !showForm ? (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setReplacing(true)}>
+            Replace licence
+          </Button>
+        </div>
       ) : (
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">
-            {active ? "Replace licence" : "Activate a licence"}
+            {active ? "New licence" : "Activate a licence"}
           </label>
           <textarea
             value={licenseToken}
@@ -291,7 +310,16 @@ function LicenseSection() {
           {error && (
             <p className="text-xs text-destructive mt-1">{error}</p>
           )}
-          <div className="flex justify-end mt-2">
+          <div className="flex justify-end gap-2 mt-2">
+            {active && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setReplacing(false); setLicenseToken(""); setError(null) }}
+              >
+                Cancel
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={() => activate()}
@@ -305,6 +333,15 @@ function LicenseSection() {
       )}
     </Section>
   )
+}
+
+// expiryText is a licence's end date, with how far off it is.
+function expiryText(iso: string): string {
+  const at = new Date(iso)
+  const date = at.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+  const days = Math.ceil((at.getTime() - Date.now()) / 86_400_000)
+  if (days <= 0) return date
+  return `${date}, in ${days} ${days === 1 ? "day" : "days"}`
 }
 
 function AppearanceSection() {

@@ -26,6 +26,19 @@ export interface ApiEntitlements {
   edition?: "community" | "enterprise"
 }
 
+const FEATURE_LABELS: Record<string, string> = {
+  sso: "Single sign-on",
+  "audit-log": "Audit logging",
+  "multi-tenancy": "Multi-tenancy",
+  apps: "App sharing",
+}
+
+/** A licence feature's name for people; an id this build does not know is shown readably. */
+export function featureLabel(id: string): string {
+  const s = FEATURE_LABELS[id] ?? id.replace(/[-_]/g, " ")
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 /**
  * The edition of the API answering. An API older than the `edition` field could
  * only activate a licence on the Enterprise image, so for those, being able to
