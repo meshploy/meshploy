@@ -1,10 +1,8 @@
 import { NotLatestTag } from "@/components/services/not-latest-tag"
-import { StackImagesSetting } from "@/components/stacks/stack-images-setting"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Loader2, Server, Globe, HardDrive, FileCog } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   stacks as stacksApi,
   routes as routesApi,
@@ -123,10 +121,6 @@ function StackServicesTab() {
             </div>
           ))}
         </div>
-      )}
-
-      {orgId && serviceList.length > 0 && (
-        <StackImagesSetting orgId={orgId} projectId={projectId} stackId={stackId} token={token} />
       )}
 
       {stackRoutes.length > 0 && (

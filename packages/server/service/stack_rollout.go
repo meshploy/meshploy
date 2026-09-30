@@ -182,6 +182,40 @@ type rollItem struct {
 	// Commit is what a build of it takes: the commit the stack's last sync
 	// read, for a service built from the stack's own repository and branch.
 	Commit string
+	// Builds is whether rolling it out builds an image, which a cap on
+	// parallel builds counts; one that only runs an image never waits.
+	Builds bool
+}
+
+// buildsFromSource says a service's deploy builds: it has a repository or an
+// uploaded folder to build from.
+func (s *StackService) buildsFromSource(ctx context.Context, serviceID uuid.UUID) bool {
+	var bc meshdb.BuildConfig
+	if s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&bc).Error != nil {
+		return false
+	}
+	return bc.GitRepo != "" || bc.BuildsFromUpload()
+}
+
+// capBuilds splits a layer into what starts now - every service that builds
+// nothing, and the first max that do - and the builds that wait for a place.
+// max 0 is no cap.
+func capBuilds(layer []rollItem, max int) (now, later []rollItem) {
+	if max <= 0 {
+		return layer, nil
+	}
+	builds := 0
+	for _, it := range layer {
+		if it.Builds {
+			if builds >= max {
+				later = append(later, it)
+				continue
+			}
+			builds++
+		}
+		now = append(now, it)
+	}
+	return now, later
 }
 
 // stackCommit is the commit a stack's rollout builds a service at: the one
@@ -331,9 +365,13 @@ func (s *StackService) triggerLayer(ctx context.Context, layer []rollItem, trigg
 // stopped, and nothing else: a failed admin tool used to stop every service
 // after it, most of which had never heard of it. dependsOn is each service's
 // depends_on, by name.
-func (s *StackService) rolloutInOrder(ctx context.Context, stack string, run *runTracker, previous []uuid.UUID, layers [][]rollItem, triggerBy uuid.UUID, dependsOn map[string][]string) {
+func (s *StackService) rolloutInOrder(ctx context.Context, stack string, run *runTracker, previous []uuid.UUID, queued []rollItem, layers [][]rollItem, triggerBy uuid.UUID, dependsOn map[string][]string, maxBuilds int) {
 	blocked := map[string]string{} // a service held back -> the failure it waits on
 	for i := 0; ; i++ {
+		// Builds the cap held back start as the ones before them finish
+		// building - not deploying, which costs little - so the layer is not
+		// slower than it must be.
+		previous = s.startQueuedBuilds(ctx, previous, queued, maxBuilds, triggerBy, run)
 		outcome, err := s.waitDeployments(ctx, previous, stackRolloutWait)
 		for id, status := range outcome {
 			run.stepByDeployment(id, status)
@@ -353,7 +391,8 @@ func (s *StackService) rolloutInOrder(ctx context.Context, stack string, run *ru
 		for name := range run.failedNames() {
 			blocked[name] = name
 		}
-		toStart := holdBack(layers[i], dependsOn, blocked)
+		toStart, later := capBuilds(holdBack(layers[i], dependsOn, blocked), maxBuilds)
+		queued = later
 		for _, it := range layers[i] {
 			if cause, held := blocked[it.Name]; held {
 				run.step(it.ID, func(st *RolloutStep) {
@@ -386,6 +425,37 @@ func holdBack(layer []rollItem, dependsOn map[string][]string, blocked map[strin
 	}
 	return start
 }
+
+// startQueuedBuilds starts the queued builds as places under the cap free up,
+// and returns every deployment of the layer, started now or before.
+func (s *StackService) startQueuedBuilds(ctx context.Context, started []uuid.UUID, queued []rollItem, max int, triggerBy uuid.UUID, run *runTracker) []uuid.UUID {
+	deadline := time.Now().Add(stackRolloutWait)
+	for len(queued) > 0 {
+		var building int64
+		s.db.WithContext(ctx).Model(&meshdb.Deployment{}).
+			Where("id IN ? AND status IN ?", started, []meshdb.DeploymentStatus{meshdb.DeploymentPending, meshdb.DeploymentBuilding}).
+			Count(&building)
+		if free := max - int(building); free > 0 {
+			n := min(free, len(queued))
+			started = append(started, s.triggerLayer(ctx, queued[:n], triggerBy, nil, run)...)
+			queued = queued[n:]
+			continue
+		}
+		if time.Now().After(deadline) {
+			log.Printf("stack rollout: %d builds still queued after %s", len(queued), stackRolloutWait)
+			return started
+		}
+		select {
+		case <-ctx.Done():
+			return started
+		case <-time.After(buildQueuePoll):
+		}
+	}
+	return started
+}
+
+// buildQueuePoll is how often queued builds look for a free place.
+var buildQueuePoll = 5 * time.Second
 
 // dependsOnOf is each compose service's depends_on, by name.
 func dependsOnOf(services composetypes.Services) map[string][]string {

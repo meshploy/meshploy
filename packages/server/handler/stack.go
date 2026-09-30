@@ -63,6 +63,8 @@ type UpdateStackBody struct {
 	// Images the stack's built services keep for rollback
 	RollbackEnabled *bool `json:"rollback_enabled,omitempty" doc:"true: each built service keeps its last image_retention images; false: every image"`
 	ImageRetention  *int  `json:"image_retention,omitempty" minimum:"1" maximum:"50"`
+	// How many services a rollout builds at once
+	MaxParallelBuilds *int `json:"max_parallel_builds,omitempty" minimum:"0" maximum:"20" doc:"How many services a rollout builds at once; 0: no cap"`
 }
 
 type SyncStackInput struct {
@@ -382,14 +384,15 @@ func (h *Handler) UpdateStack(ctx context.Context, input *UpdateStackInput) (*Ge
 		return nil, err
 	}
 	in := service.UpdateStackInput{
-		Name:            input.Body.Name,
-		Spec:            input.Body.Spec,
-		Variables:       input.Body.Variables,
-		GitRepo:         input.Body.GitRepo,
-		GitBranch:       input.Body.GitBranch,
-		GitPath:         input.Body.GitPath,
-		RollbackEnabled: input.Body.RollbackEnabled,
-		ImageRetention:  input.Body.ImageRetention,
+		Name:              input.Body.Name,
+		Spec:              input.Body.Spec,
+		Variables:         input.Body.Variables,
+		GitRepo:           input.Body.GitRepo,
+		GitBranch:         input.Body.GitBranch,
+		GitPath:           input.Body.GitPath,
+		RollbackEnabled:   input.Body.RollbackEnabled,
+		ImageRetention:    input.Body.ImageRetention,
+		MaxParallelBuilds: input.Body.MaxParallelBuilds,
 	}
 	if input.Body.GitMode != nil {
 		mode := db.StackGitMode(*input.Body.GitMode)

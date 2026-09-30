@@ -78,6 +78,8 @@ type UpdateStackInput struct {
 	// every service that does not say otherwise in the file.
 	RollbackEnabled *bool
 	ImageRetention  *int
+	// MaxParallelBuilds caps the builds a rollout runs at once; 0 is none.
+	MaxParallelBuilds *int
 }
 
 // SyncResult is returned by Sync after fetching and applying the spec from git.
@@ -188,6 +190,13 @@ func (s *StackService) Update(ctx context.Context, stackID uuid.UUID, in UpdateS
 		}
 		updates["image_retention"] = *in.ImageRetention
 		stack.ImageRetention = *in.ImageRetention
+	}
+	if in.MaxParallelBuilds != nil {
+		if *in.MaxParallelBuilds < 0 {
+			return nil, fmt.Errorf("parallel builds is 0 for no cap, or how many at once")
+		}
+		updates["max_parallel_builds"] = *in.MaxParallelBuilds
+		stack.MaxParallelBuilds = *in.MaxParallelBuilds
 	}
 	if len(updates) > 0 {
 		if err := s.db.WithContext(ctx).Model(&stack).Updates(updates).Error; err != nil {
@@ -1040,10 +1049,10 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		if i < len(result.Created) {
 			name = result.Created[i]
 		}
-		roll = append(roll, rollItem{ID: id, Name: name, Created: true, Commit: s.stackCommit(ctx, &stack, id)})
+		roll = append(roll, rollItem{ID: id, Name: name, Created: true, Commit: s.stackCommit(ctx, &stack, id), Builds: s.buildsFromSource(ctx, id)})
 	}
 	for _, c := range deploy {
-		roll = append(roll, rollItem{ID: c.ID, Name: c.Name, Commit: s.stackCommit(ctx, &stack, c.ID)})
+		roll = append(roll, rollItem{ID: c.ID, Name: c.Name, Commit: s.stackCommit(ctx, &stack, c.ID), Builds: s.buildsFromSource(ctx, c.ID)})
 	}
 	var layers [][]rollItem
 	if s.deployment.K8sConfigured() {
@@ -1057,14 +1066,20 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		// The first layer now, so what cannot start at all - a build with
 		// nowhere to push - is in the result; the rest after it, in the order
 		// compose starts them, followed on the run's record.
-		started := s.triggerLayer(ctx, layers[0], triggerBy, result, run)
+		// A cap on parallel builds starts only that many builds now; the
+		// rest of the layer is queued behind them.
+		now, later := capBuilds(layers[0], stack.MaxParallelBuilds)
+		started := s.triggerLayer(ctx, now, triggerBy, result, run)
+		for _, it := range later {
+			result.Queued = append(result.Queued, it.Name)
+		}
 		for _, l := range layers[1:] {
 			for _, it := range l {
 				result.Queued = append(result.Queued, it.Name)
 			}
 		}
 		s.recordResult(ctx, run, result)
-		go s.rolloutInOrder(context.WithoutCancel(ctx), stack.Name, run, started, layers[1:], triggerBy, dependsOnOf(project.Services))
+		go s.rolloutInOrder(context.WithoutCancel(ctx), stack.Name, run, started, later, layers[1:], triggerBy, dependsOnOf(project.Services), stack.MaxParallelBuilds)
 	} else {
 		s.recordResult(ctx, run, result)
 		s.finishRun(ctx, run)

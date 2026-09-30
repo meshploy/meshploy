@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query"
 import { GitCommitHorizontal, Layers, Loader2, RefreshCw } from "lucide-react"
 import { MetricTile, ResourceIntro } from "@/components/layout/resource-workbench"
 import { RunStatus } from "@/components/stacks/rollout-status"
+import { StackBuildsSetting } from "@/components/stacks/stack-builds-setting"
+import { StackImagesSetting } from "@/components/stacks/stack-images-setting"
+import { ConfigSaveBar } from "@/components/layout/config-save-bar"
 import { stacks as stacksApi, type StackRun } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -28,7 +31,11 @@ function RolloutsTab() {
     refetchInterval: livePoll<StackRun[]>((d) => d.some((r) => r.status === "running")),
   })
 
+  // The save bar wraps the whole page, so it floats at the bottom of the
+  // window and its room is at the end of the page, not between the settings
+  // and the rollouts.
   return (
+    <ConfigSaveBar>
     <div className="console-page space-y-6">
       <ResourceIntro title="Rollouts"
         description="Every Sync and Apply, and how its rollout went: the services it rolled out, in the order compose starts them." />
@@ -39,6 +46,15 @@ function RolloutsTab() {
         <MetricTile icon={RefreshCw} label="Last" value={<span className="text-xl">{runs[0] ? formatRelativeTime(new Date(runs[0].created_at)) : "Never"}</span>}
           detail={runs[0] ? (runs[0].kind === "sync" ? "Sync" : "Apply") : "Sync or Apply from the top"} />
       </div>
+
+      {/* How a rollout builds, and what its builds keep: settings, above the
+          rollouts they shape, not in the middle of a list. */}
+      {orgId && (
+        <div className="space-y-3">
+          <StackBuildsSetting orgId={orgId} projectId={projectId} stackId={stackId} token={token} />
+          <StackImagesSetting orgId={orgId} projectId={projectId} stackId={stackId} token={token} />
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
@@ -77,5 +93,6 @@ function RolloutsTab() {
         </div>
       )}
     </div>
+    </ConfigSaveBar>
   )
 }

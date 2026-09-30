@@ -24,6 +24,8 @@ export interface ApiStack {
   /** Images its built services keep for rollback: true keeps each one's last image_retention, false every image. */
   rollback_enabled?: boolean
   image_retention?: number
+  /** How many services a rollout builds at once; 0 is no cap. */
+  max_parallel_builds?: number
 }
 
 export interface ApplyStackResult {
@@ -110,6 +112,8 @@ export interface UpdateStackBody {
   /** Images the stack's built services keep: set on them at once. */
   rollback_enabled?: boolean
   image_retention?: number
+  /** How many services a rollout builds at once; 0 is no cap. */
+  max_parallel_builds?: number
 }
 
 export const stacks = {

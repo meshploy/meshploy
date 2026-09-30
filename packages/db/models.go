@@ -960,6 +960,13 @@ type Stack struct {
 	RollbackEnabled bool `gorm:"not null;default:false" json:"rollback_enabled"`
 	ImageRetention  int  `gorm:"not null;default:3"     json:"image_retention"`
 
+	// MaxParallelBuilds is how many of the stack's services a rollout builds
+	// at once; 0 is no cap. A layer of many services built from source all
+	// building together can take a small server's CPU and memory at once;
+	// capped, the rest wait their turn, and a service that only runs an image
+	// never waits.
+	MaxParallelBuilds int `gorm:"not null;default:0" json:"max_parallel_builds"`
+
 	Project        Project         `gorm:"foreignKey:ProjectID"                            json:"-"`
 	Services       []Service       `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`
 	Volumes        []Volume        `gorm:"foreignKey:StackID;constraint:OnDelete:SET NULL" json:"-"`

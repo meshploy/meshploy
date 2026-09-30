@@ -102,3 +102,27 @@ func TestAFailureStopsOnlyWhatDependsOnIt(t *testing.T) {
 		t.Errorf("exporter is held back for %q, want the failure behind it, pgadmin", blocked["exporter"])
 	}
 }
+
+// A cap on parallel builds starts that many builds and everything that only
+// runs an image; the rest of the builds wait their turn, in order.
+func TestACapOnParallelBuildsQueuesTheRest(t *testing.T) {
+	item := func(name string, builds bool) rollItem { return rollItem{ID: uuid.New(), Name: name, Builds: builds} }
+	layer := []rollItem{item("api", true), item("redis", false), item("worker", true), item("ui", true), item("proxy", false)}
+
+	now, later := capBuilds(layer, 2)
+	names := func(items []rollItem) (out []string) {
+		for _, it := range items {
+			out = append(out, it.Name)
+		}
+		return
+	}
+	if got := names(now); len(got) != 4 || got[0] != "api" || got[1] != "redis" || got[2] != "worker" || got[3] != "proxy" {
+		t.Errorf("now %v", got)
+	}
+	if got := names(later); len(got) != 1 || got[0] != "ui" {
+		t.Errorf("later %v", got)
+	}
+	if now, later := capBuilds(layer, 0); len(now) != len(layer) || len(later) != 0 {
+		t.Errorf("no cap held back %v", names(later))
+	}
+}
