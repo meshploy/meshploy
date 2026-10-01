@@ -86,7 +86,7 @@ function JobLayout() {
     { label: "Overview", to: "/projects/$id/jobs/$jobId" as const },
     { label: "Runs",          to: "/projects/$id/jobs/$jobId/runs"        as const },
     { label: "Configuration", to: "/projects/$id/jobs/$jobId/config"      as const },
-    ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/jobs/$jobId/permissions" as const }] : []),
+    ...(isAdmin ? [{ label: "Access", to: "/projects/$id/jobs/$jobId/permissions" as const }] : []),
   ]
 
   return (

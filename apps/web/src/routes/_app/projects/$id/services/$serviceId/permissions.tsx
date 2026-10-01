@@ -3,6 +3,7 @@ import { createFileRoute, useParams } from "@tanstack/react-router"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { ResourcePermissionsSection } from "@/components/permissions/resource-permissions"
+import { EeServiceAccess } from "@/ee"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/permissions"
@@ -19,7 +20,13 @@ function ServicePermissionsTab() {
 
   return (
     <div className="console-page space-y-6">
-      <ResourceIntro title="Permissions" description="Override project-level access for specific members on this service" />
+      {EeServiceAccess && (
+        <>
+          <ResourceIntro title="Access" description="Who outside your team may open this service, and which members may manage it" />
+          <EeServiceAccess orgId={orgId} projectId={projectId} serviceId={serviceId} />
+        </>
+      )}
+      <ResourceIntro title={EeServiceAccess ? "Your team" : "Access"} description="Override project-level access for specific members on this service" />
       <ResourcePermissionsSection
         orgId={orgId}
         projectId={projectId}

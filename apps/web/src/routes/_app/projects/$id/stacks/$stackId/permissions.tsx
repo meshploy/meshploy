@@ -19,7 +19,7 @@ function StackPermissionsTab() {
 
   return (
     <div className="console-page space-y-6">
-      <ResourceIntro title="Permissions" description="Override project-level access for specific members on this stack" />
+      <ResourceIntro title="Access" description="Override project-level access for specific members on this stack" />
       <ResourcePermissionsSection
         orgId={orgId}
         projectId={projectId}

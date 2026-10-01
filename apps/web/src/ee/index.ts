@@ -52,3 +52,10 @@ export const eeRedirect = (_href: string): string | undefined => undefined
 
 /** Drawn beside a project's name wherever the console lists or heads it. */
 export const EeProjectBadge: React.ComponentType<{ projectId: string }> | null = null
+
+/**
+ * Drawn at the top of a service's Access page: who outside the team may reach
+ * the service. With it, the team's permissions sit below under their own
+ * heading.
+ */
+export const EeServiceAccess: React.ComponentType<{ orgId: string; projectId: string; serviceId: string }> | null = null

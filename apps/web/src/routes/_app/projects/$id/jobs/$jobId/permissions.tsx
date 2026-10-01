@@ -19,7 +19,7 @@ function JobPermissionsTab() {
 
   return (
     <div className="console-page space-y-6">
-      <ResourceIntro title="Permissions" description="Override project-level access for specific members on this job" />
+      <ResourceIntro title="Access" description="Override project-level access for specific members on this job" />
       <ResourcePermissionsSection
         orgId={orgId}
         projectId={projectId}

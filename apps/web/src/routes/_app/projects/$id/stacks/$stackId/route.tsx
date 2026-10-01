@@ -42,7 +42,7 @@ function StackLayout() {
     { label: "Rollouts",     to: "/projects/$id/stacks/$stackId/rollouts"     as const },
     { label: "Variables",    to: "/projects/$id/stacks/$stackId/variables"    as const },
     { label: "Editor",       to: "/projects/$id/stacks/$stackId/editor"       as const },
-    ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/stacks/$stackId/permissions" as const }] : []),
+    ...(isAdmin ? [{ label: "Access", to: "/projects/$id/stacks/$stackId/permissions" as const }] : []),
   ]
 
   return (

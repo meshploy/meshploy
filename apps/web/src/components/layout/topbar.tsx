@@ -57,7 +57,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   overview: "Overview",
   pods: "Pods",
   backups: "Backups",
-  permissions: "Permissions",
+  permissions: "Access",
   editor: "Editor",
   runs: "Runs",
   templates: "Templates",

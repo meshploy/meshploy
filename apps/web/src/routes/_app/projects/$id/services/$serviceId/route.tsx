@@ -214,7 +214,7 @@ function ServiceLayout() {
         }
       >
         {[...(service.type === "database" ? DB_TABS : APP_TABS),
-          ...(isAdmin ? [{ label: "Permissions", to: "/projects/$id/services/$serviceId/permissions" as const }] : [])
+          ...(isAdmin ? [{ label: "Access", to: "/projects/$id/services/$serviceId/permissions" as const }] : [])
         ].map(({ label, to }) => (
           <Link
             key={to}
