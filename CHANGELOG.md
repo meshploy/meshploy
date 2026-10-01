@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.0](https://github.com/meshploy/meshploy/compare/v0.19.1...v0.20.0) (2026-10-01)
+
+
+### Features
+
+* **console:** a service's Access page can show who outside the team reaches it, and Permissions is called Access ([c2d90c6](https://github.com/meshploy/meshploy/commit/c2d90c6aaf33a67ec6c4bfbf08cc7cba39171497))
+
+
+### Bug Fixes
+
+* **console:** the Access page shows one heading ([b24013e](https://github.com/meshploy/meshploy/commit/b24013e2c06ea11c2d1e16d6d424ac93d9bcface))
+* the edge follows a console name added by an upgrade, the host agent keeps the domain set it is asked to serve, and a service's domain can be copied ([a5797f3](https://github.com/meshploy/meshploy/commit/a5797f3edc38b7c0afff5ea2dd84e40897750cdd))
+
 ## [0.19.1](https://github.com/meshploy/meshploy/compare/v0.19.0...v0.19.1) (2026-09-30)
 
 
