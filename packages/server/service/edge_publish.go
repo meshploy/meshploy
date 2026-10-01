@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +49,26 @@ func (s *SystemService) PublishEdge(ctx context.Context, orgID, by uuid.UUID) er
 		return nil
 	}
 	return s.queueEdgeApply(by)
+}
+
+// SyncEdge publishes the edge when the installed one does not serve the console
+// names this binary does: an upgrade to a build that registers one, which
+// nothing else would publish until a domain changed. Run once, at start.
+func (s *SystemService) SyncEdge(ctx context.Context) {
+	if s.hostDir() == "" {
+		return
+	}
+	installed, err := hostagent.ReadEdgeSnapshot(s.hostDir())
+	if err != nil || installed == nil || slices.Equal(installed.ConsoleNames, consoleNames) {
+		return
+	}
+	var primary meshdb.Domain
+	if err := s.db.WithContext(ctx).Where("is_primary AND verified").First(&primary).Error; err != nil {
+		return
+	}
+	if err := s.PublishEdge(ctx, primary.OrganizationID, uuid.Nil); err != nil {
+		log.Printf("warning: could not ask the host agent to serve the console names: %v", err)
+	}
 }
 
 // consoleNames are the platform subdomains an extension serves as the

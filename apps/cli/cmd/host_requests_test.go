@@ -131,3 +131,19 @@ func TestAgentDiscardsWhatIsNotARequest(t *testing.T) {
 	}
 	_ = time.Now
 }
+
+// The domain set the API leaves in the inbox is not a request, and is not
+// something to clear away: the apply that puts it in service reads it.
+func TestAgentLeavesTheDesiredDomainSetInTheInbox(t *testing.T) {
+	newRequestFixture(t)
+	desired := filepath.Join(hostDir, hostagent.EdgeDesiredFile)
+	writeTestFile(t, desired, `{"domains":[]}`)
+
+	var got []hostagent.Task
+	rr := &requestRunner{running: map[string]bool{}}
+	rr.check(func(task hostagent.Task) { got = append(got, task) })
+	rr.wg.Wait()
+	if !fileExists(desired) || len(got) != 0 {
+		t.Errorf("left=%v tasks=%+v, want the file kept and nothing reported", fileExists(desired), got)
+	}
+}

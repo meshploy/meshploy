@@ -104,6 +104,9 @@ func (rr *requestRunner) check(report func(hostagent.Task)) {
 		if e.Name() == hostagent.CredentialFile {
 			continue // the migration's token, taken by the request that needs it
 		}
+		if e.Name() == filepath.Base(hostagent.EdgeDesiredFile) {
+			continue // the domain set the API wants served, read by the apply that puts it in service
+		}
 		req, err := hostagent.ReadRequestFile(path)
 		if err != nil {
 			// Not a request the agent will ever run: take it out of the way.

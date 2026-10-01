@@ -331,6 +331,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			svc.Stacks.ResumeRuns(ctx)
 		}()
 	}
+	go func() {
+		time.Sleep(resumeAfter)
+		svc.System.SyncEdge(context.Background())
+	}()
 	go notif.StartDeliveryReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())

@@ -76,6 +76,22 @@ function CopyRow({ label, value, secret, mask }: { label: string; value: string;
   )
 }
 
+// CopyLink copies an address, beside the link that opens it.
+function CopyLink({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${label}`}
+      title="Copy"
+      onClick={() => { navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {}) }}
+      className="ml-1.5 inline-flex rounded p-1 align-middle text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+    >
+      {copied ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
+    </button>
+  )
+}
+
 const ENGINE_LABELS: Record<string, string> = {
   postgres: "PostgreSQL", mysql: "MySQL", redis: "Redis", mongodb: "MongoDB", dragonfly: "Dragonfly", clickhouse: "ClickHouse",
 }
@@ -202,7 +218,7 @@ function ServiceOverviewTab() {
         </div>
         <div className="space-y-6 min-w-0">
           <ResourcePanel title="Connections">
-            {attachedRoutes.map(r => <ResourceFact key={r.id} label={r.zone === "internal" ? "Internal domain" : "Domain"}><Link to="/projects/$id/routes/$routeId" params={{ id: projectId, routeId: r.id }} className="text-primary break-all">{r.hostname}</Link><a className="ml-1.5 inline-flex rounded p-1 align-middle text-muted-foreground hover:bg-muted/40 hover:text-foreground" href={`https://${r.hostname}`} target="_blank" rel="noopener noreferrer" aria-label={`Open ${r.hostname}`}><ExternalLink className="size-4" /></a></ResourceFact>)}
+            {attachedRoutes.map(r => <ResourceFact key={r.id} label={r.zone === "internal" ? "Internal domain" : "Domain"}><Link to="/projects/$id/routes/$routeId" params={{ id: projectId, routeId: r.id }} className="text-primary break-all">{r.hostname}</Link><CopyLink value={`https://${r.hostname}`} label={r.hostname} /><a className="inline-flex rounded p-1 align-middle text-muted-foreground hover:bg-muted/40 hover:text-foreground" href={`https://${r.hostname}`} target="_blank" rel="noopener noreferrer" aria-label={`Open ${r.hostname}`}><ExternalLink className="size-4" /></a></ResourceFact>)}
             {!attachedRoutes.length && <ResourceFact label="Domains"><span className="text-muted-foreground">No routes attached</span>{!isDatabase && <Link className="ml-2 text-primary" to="/projects/$id/new" params={{ id: projectId }} search={{ type: "route", service: serviceId }}>Add route</Link>}</ResourceFact>}
             {(service.ports ?? []).map(port => <ResourceFact key={port.id} label={port.is_primary ? "Primary port" : "Port"}><code>{port.port} · {port.is_http ? "HTTP" : "TCP"}</code></ResourceFact>)}
             {groups.map(group => <ResourceFact key={group.id} label="Variable group"><Link className="text-primary" to="/projects/$id/variables/$groupId" params={{ id: projectId, groupId: group.id }}>{group.name}</Link></ResourceFact>)}
