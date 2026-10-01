@@ -114,13 +114,11 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-sm font-medium">Member access</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          <Lock className="inline h-3 w-3 mr-0.5 mb-0.5" />
-          Locked permissions are inherited from the project. Use the other controls to change access for this resource.
-        </p>
-      </div>
+      {/* The page above it gives the heading. */}
+      <p className="text-xs text-muted-foreground">
+        <Lock className="inline h-3 w-3 mr-0.5 mb-0.5" />
+        Locked permissions are inherited from the project. Use the other controls to change access for this resource.
+      </p>
 
       {userGrants.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/50 py-8 flex flex-col items-center gap-2 text-muted-foreground">
