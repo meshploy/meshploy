@@ -79,19 +79,17 @@ func New(database *gorm.DB, refreshInterval time.Duration) *Cache {
 	}
 }
 
+// Start loads the routes, then reloads them within a second of any change
+// (db.EdgeRoutes) and every refresh interval regardless.
 func (c *Cache) Start() {
 	if err := c.load(); err != nil {
 		log.Printf("cache: initial load failed: %v", err)
 	}
-	go func() {
-		t := time.NewTicker(c.refresh)
-		defer t.Stop()
-		for range t.C {
-			if err := c.load(); err != nil {
-				log.Printf("cache: refresh failed: %v", err)
-			}
+	db.FollowEdgeVersion(c.db, db.EdgeRoutes, c.refresh, func() {
+		if err := c.load(); err != nil {
+			log.Printf("cache: refresh failed: %v", err)
 		}
-	}()
+	})
 }
 
 // Get returns the best-matching TargetEntry for the given hostname and request path.

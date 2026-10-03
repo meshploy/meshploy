@@ -35,7 +35,7 @@ packages/proxy/
 ├── main.go             # Main: route cache, TCP routes, HTTP listeners
 ├── handler.go          # ServeHTTP: Host lookup + reverse proxy
 ├── cache/
-│   └── cache.go        # In-memory route table, refreshed from DB every 30s
+│   └── cache.go        # In-memory route table, reloaded within a second of a change
 └── tcp/
     └── forwarder.go    # Published TCP ports, one listener each
 ```
@@ -44,9 +44,7 @@ packages/proxy/
 
 ## Route cache
 
-The cache maps each hostname to a list of `TargetEntry` values (mesh IP, port and path prefix), sorted longest path first so a service mounted at a sub-path wins over one at `/`. Lookups try the exact hostname, then a wildcard (`*.parent`), then the database. It polls the `routes` table every 30 seconds via a background goroutine. All reads use a `sync.RWMutex` so hot-path lookups never block on refresh.
-
-The 30-second refresh means new routes are live within half a minute of being created via the API.
+The cache maps each hostname to a list of `TargetEntry` values (mesh IP, port and path prefix), sorted longest path first so a service mounted at a sub-path wins over one at `/`. Lookups try the exact hostname, then a wildcard (`*.parent`), then the database. It reloads within a second of any change to the routes (the `routes` count in `edge_versions`, which every write to a route table moves) and every 30 seconds regardless. All reads use a `sync.RWMutex` so hot-path lookups never block on refresh.
 
 ---
 

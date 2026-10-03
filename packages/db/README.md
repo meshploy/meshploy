@@ -79,6 +79,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `ignored_endpoints` | Discovered endpoints recorded as known and correct (org-scoped: node + address + port). Written by the API, not yet by the console |
 | `route_targets` | Target per route: a service, a node port, an address (with `target_tls` when it speaks HTTPS), or a redirect |
 | `tcp_routes` | A port the gateway publishes and forwards over the mesh |
+| `edge_versions` | One counter per thing the edge proxy keeps in memory (`routes` here; an edition adds its own), moved by every GORM write to the tables watched for it, in the write's transaction. The proxy reads it each second and reloads only when it moved |
 | `edge_fallbacks` | During a migration whose edge was taken first: the old platform's edge on its side port, and the hostnames the proxy hands it while it has no route of its own. One row for the gateway, removed at Finish |
 
 ### Deployment History

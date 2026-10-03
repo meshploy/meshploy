@@ -763,6 +763,17 @@ func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error
 		}
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(serviceDeleteHooks) > 0 {
+			var svc db.Service
+			if err := tx.First(&svc, "id = ?", serviceID).Error; err != nil {
+				return err
+			}
+			for _, h := range serviceDeleteHooks {
+				if err := h(ctx, tx, &svc); err != nil {
+					return err
+				}
+			}
+		}
 		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceService, serviceID).
 			Delete(&db.ResourcePermission{})
 		return tx.Delete(&db.Service{}, "id = ?", serviceID).Error

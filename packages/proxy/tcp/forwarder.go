@@ -42,15 +42,11 @@ func New(database *gorm.DB, bind string, refresh time.Duration) *Forwarder {
 	}
 }
 
+// Start opens the published ports, then follows changes within a second
+// (db.EdgeRoutes) and every refresh interval regardless.
 func (f *Forwarder) Start() {
 	f.sync()
-	go func() {
-		t := time.NewTicker(f.refresh)
-		defer t.Stop()
-		for range t.C {
-			f.sync()
-		}
-	}()
+	db.FollowEdgeVersion(f.db, db.EdgeRoutes, f.refresh, f.sync)
 }
 
 // sync brings the open listeners in line with the stored routes: it opens what

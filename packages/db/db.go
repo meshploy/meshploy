@@ -16,7 +16,11 @@ import (
 
 // Open connects to Postgres using the provided DSN.
 func Open(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	conn, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	return conn, countEdgeChanges(conn)
 }
 
 // FromEnv connects using DATABASE_URL.
@@ -57,6 +61,9 @@ func MigrationsRegistered() int { return len(eeHooks) }
 // Migrate runs AutoMigrate for all CE models, applies supplementary DB-level
 // constraints, and then calls any registered EE migration hooks.
 func Migrate(db *gorm.DB) error {
+	if err := countEdgeChanges(db); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(
 		// Identity & Access
 		&User{},
@@ -108,6 +115,7 @@ func Migrate(db *gorm.DB) error {
 		&RouteTarget{},
 		&TCPRoute{},
 		&EdgeFallback{},
+		&EdgeVersion{},
 
 		// Deployment History
 		&Deployment{},

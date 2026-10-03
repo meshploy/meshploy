@@ -34,7 +34,7 @@ meshploy/
 ## Architecture overview
 
 - **apps/api** — Thin CE entrypoint: `main.go` calls `server.Main()`. The API itself lives in `packages/server` — business logic in `service/`, HTTP concerns in `handler/`, config in `config/`.
-- **apps/proxy** — Minimal L7 reverse proxy, its code in `packages/proxy` (`apps/proxy/main.go` calls `proxy.Main()`, as the API calls `server.Main()`), so an edition can build its own proxy on it. Reads the `Host` header → in-memory route cache (backed by PostgreSQL, refreshed every 30s) → streams over WireGuard mesh to target node. Listens on port 8081.
+- **apps/proxy** — Minimal L7 reverse proxy, its code in `packages/proxy` (`apps/proxy/main.go` calls `proxy.Main()`, as the API calls `server.Main()`), so an edition can build its own proxy on it. Reads the `Host` header → in-memory route cache (backed by PostgreSQL, reloaded within a second of a change through `edge_versions`, and every 30s regardless) → streams over WireGuard mesh to target node. Listens on port 8081.
 - **apps/cli** — Static Go binary (`/usr/local/bin/meshploy`). Wraps API calls and shells out to `install.sh` / `uninstall.sh` for node operations. Built with Cobra.
 - **packages/db** — Shared GORM models backed by **PostgreSQL**. `AutoMigrate` + supplementary partial unique indexes run on API startup via `db.Migrate()`. Exports an Extensible Migration Registry (`RegisterMigration`) for the EE open-core pattern. Imported by both `apps/api` and `apps/proxy`.
 - **packages/client** — Typed Go REST client for the Meshploy API. Imported by `apps/cli` (every command) and by `packages/mcpserver`. Lives in `packages/` so no app depends on another app.
@@ -173,7 +173,7 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (51 CE tables)
+## packages/db — schema (52 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
@@ -185,7 +185,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 | Workloads | `stacks`, `stack_runs`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
 | Variable Groups | `variable_groups`, `variable_group_items`, `service_variable_groups`, `job_variable_groups` |
 | Config Files | `config_files`, `service_config_files` |
-| Traffic | `routes`, `route_targets`, `tcp_routes`, `edge_fallbacks` |
+| Traffic | `routes`, `route_targets`, `tcp_routes`, `edge_fallbacks`, `edge_versions` |
 | Discovery | `ignored_endpoints` |
 | History | `deployments`, `jobs`, `job_runs` |
 | Integrations | `storage_integrations`, `registry_integrations`, `git_integrations` |

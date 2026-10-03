@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/meshploy/packages/db"
+	"gorm.io/gorm"
 )
 
 // Extension point: per-org resource quotas.
@@ -52,4 +54,19 @@ func checkQuota(ctx context.Context, orgID uuid.UUID, kind QuotaKind) error {
 		}
 	}
 	return nil
+}
+
+// Extension point: a service's deletion.
+
+// ServiceDeleteHook runs inside a service's deletion, in its transaction and
+// before its row goes, for an extension to remove what it made for that
+// service. An error aborts the deletion and is returned to the caller.
+type ServiceDeleteHook func(ctx context.Context, tx *gorm.DB, svc *db.Service) error
+
+var serviceDeleteHooks []ServiceDeleteHook
+
+// RegisterServiceDeleteHook adds a hook every service deletion runs. Call from
+// an extension's init(). CE registers none.
+func RegisterServiceDeleteHook(h ServiceDeleteHook) {
+	serviceDeleteHooks = append(serviceDeleteHooks, h)
 }
