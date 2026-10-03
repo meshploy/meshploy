@@ -1707,8 +1707,14 @@ workspaceHandlers.push(
     return json(settings[key])
   }),
   http.post(`${O}/system-backup/restore`, ok),
+  // As the API answers: a grant below a project carries the resource's name
+  // and its project, so the member page lists it under that project.
   http.get(`${O}/members/:userId/permissions`, ({ params }) =>
-    json(db.permissions.filter((p) => p.user_id === params.userId))
+    json(db.permissions.filter((p) => p.user_id === params.userId).map((p) => {
+      if (p.resource_type === "project") return p
+      const r = find(`${p.resource_type}s`, p.resource_id)
+      return r ? { ...p, resource_name: r.name, parent_project_id: r.project_id } : p
+    }))
   ),
   http.post(`${O}/members/:userId/permissions`, async ({ params, request }) => {
     const p = record({ ...(await body(request)), user_id: params.userId })

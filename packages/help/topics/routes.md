@@ -19,7 +19,7 @@ A route can be **paused**, which stops it serving without deleting it.
 A domain route lives in one of three zones of a base domain:
 
 - **Public**: `app.example.com`, on the internet.
-- **Internal**: `grafana.internal.example.com`, answered only on your mesh. For tools and dashboards nobody outside should reach.
+- **Internal**: `grafana.internal.example.com`, answered only on your mesh. For tools and dashboards nobody outside should reach. Once the mesh policy is enforced, it answers only the machines whose owners may use what it leads to (see [Users & access](/concepts/users#mesh)).
 - **Preview**: `app.preview.example.com`, public, kept apart from your real names.
 
 A TCP route binds the gateway's **public** interfaces (subject to its allowlist and the host firewall), its **mesh** address only, or **local** loopback only, reached through an SSH tunnel to the gateway.

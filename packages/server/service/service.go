@@ -21,6 +21,7 @@ type Services struct {
 	Entitlements    *EntitlementService
 	Agents          *AgentService
 	CLILogins       *CLILoginService
+	MeshAccess      *MeshAccessService
 	Orgs            *OrgService
 	Permissions     *PermissionService
 	Projects        *ProjectService
@@ -263,6 +264,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Entitlements:    entitlements,
 		Agents:          agents,
 		CLILogins:       &CLILoginService{db: db},
+		MeshAccess:      &MeshAccessService{db: db, headscale: headscaleSvc},
 		Orgs:            &OrgService{db: db, notif: notif},
 		Permissions:     &PermissionService{db: db},
 		Projects:        projects,
@@ -340,6 +342,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go notif.StartDeliveryReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
+	go svc.MeshAccess.Follow(context.Background())
 
 	svc.ProjectMaps = &ProjectMapService{db: db, workloads: workloads, stacks: svc.Stacks, routes: routes, volumes: volumes}
 	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions, orphans: svc.Orphans, workloads: workloads, metrics: nodes.GetNodeMetrics}

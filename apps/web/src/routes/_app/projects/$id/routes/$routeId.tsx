@@ -1,4 +1,5 @@
 import { ResourcePanel, ResourceFact } from "@/components/layout/resource-workbench"
+import { RouteOpenersPanel } from "@/components/routes/route-openers"
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Box, CornerDownRight, ExternalLink, Globe, Loader2, Pencil, Plus, ServerCrash, Trash2, X } from "lucide-react"
@@ -75,6 +76,8 @@ const INITIAL_ADD: AddForm = { open: false, ...BLANK_FORM }
 function RouteDetailPage() {
   const { id: projectId, routeId } = useParams({ from: "/_app/projects/$id/routes/$routeId" })
   const token = useAuthStore((s) => s.token)!
+  const role = useOrgStore((s) => s.currentRole)
+  const isAdmin = role === "owner" || role === "admin"
   const orgId = useOrgStore((s) => s.currentOrg?.id)
 
   const navigate = useNavigate()
@@ -271,6 +274,7 @@ function RouteDetailPage() {
 
         </div><aside className="space-y-6">
           <ResourcePanel title="Route details"><ResourceFact label="Hostname"><code>{route.hostname}</code></ResourceFact><ResourceFact label="Zone">{route.zone}</ResourceFact>{!route.domain_id && <ResourceFact label="Ownership">{route.custom_domain_verified ? <span className="text-emerald-400">Verified</span> : <span className="text-amber-400">Not verified</span>}</ResourceFact>}{route.subdomain && <ResourceFact label="Subdomain">{route.subdomain}</ResourceFact>}<ResourceFact label="Created">{new Date(route.created_at).toLocaleDateString()}</ResourceFact></ResourcePanel>
+          {route.zone === "internal" && isAdmin && <RouteOpenersPanel orgId={orgId!} projectId={projectId} routeId={routeId} token={token} />}
           <ResourcePanel title="Path matching"><p className="text-sm text-muted-foreground leading-relaxed">Requests use the most specific matching path. Each target defines where that traffic goes, including its destination and forwarding settings.</p></ResourcePanel>
         </aside></div>
         {/* Danger zone */}

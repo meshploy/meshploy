@@ -28,13 +28,27 @@ func (EdgeVersion) TableName() string { return "edge_versions" }
 // their targets, published TCP ports and a migration's fallback edge.
 const EdgeRoutes = "routes"
 
+// EdgeMesh is the count of changes to what the mesh's access policy is made
+// from: machines and their owners, people and their grants, published ports,
+// and whether the policy is enforced. The API follows it and gives Headscale
+// the new policy.
+const EdgeMesh = "mesh"
+
 var (
 	edgeMu     sync.RWMutex
 	edgeTables = map[string][]string{
-		"routes":         {EdgeRoutes},
-		"route_targets":  {EdgeRoutes},
-		"tcp_routes":     {EdgeRoutes},
-		"edge_fallbacks": {EdgeRoutes},
+		"routes":               {EdgeRoutes},
+		"route_targets":        {EdgeRoutes},
+		"tcp_routes":           {EdgeRoutes, EdgeMesh},
+		"edge_fallbacks":       {EdgeRoutes},
+		"nodes":                {EdgeMesh},
+		"organization_members": {EdgeMesh},
+		"resource_permissions": {EdgeMesh},
+		"service_ports":        {EdgeMesh},
+		"services":             {EdgeMesh},
+		"mesh_reach":           {EdgeMesh},
+		"mesh_policy_state":    {EdgeMesh},
+		"mesh_rules":           {EdgeMesh},
 	}
 )
 

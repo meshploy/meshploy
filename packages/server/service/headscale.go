@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -371,4 +373,27 @@ func (h *HeadscaleService) listNodes(ctx context.Context) ([]HeadscaleNode, int,
 		return nil, resp.StatusCode, fmt.Errorf("headscale list nodes: decode: %w", err)
 	}
 	return body.Nodes, resp.StatusCode, nil
+}
+
+// SetPolicy gives Headscale the mesh's access policy (Headscale's own JSON
+// format), which it applies to every machine at once. Headscale has to keep
+// its policy in its database (`policy.mode: database`) for this to be allowed.
+func (h *HeadscaleService) SetPolicy(ctx context.Context, policy string) error {
+	payload, _ := json.Marshal(map[string]string{"policy": policy})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, h.url+"/api/v1/policy", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("headscale set policy: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.key)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("headscale set policy: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("headscale set policy: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }

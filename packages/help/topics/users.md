@@ -19,6 +19,17 @@ People join by **invitation**, which an admin sends from this page.
 
 A member's access is granted **per project** or **per resource** (a service, a stack, a job), each at a level: **view**, **deploy**, **create**, **update** or **delete**. A grant on a project covers its environment levels too. A member sees only the projects they were given; the overview and activity feed show nothing else.
 
+## From their machines {#mesh}
+
+A machine joined to the mesh belongs to the person who made its token, its **owner**, and acts as them. Once an admin **enforces** the mesh policy on the **Access** page, each machine reaches only what its owner may use:
+
+- An owner's or admin's machine reaches every machine of the workspace.
+- A member's machine reaches the ports of what they were granted, and the internal routes that lead to it. Any other internal route answers it with "Not shared with you".
+- A database is not reached from a member's machine until someone switches **From their machines** on for that database; switching on its project or stack does not. Anything else is reached unless switched off.
+- The cluster's own machines always reach each other, and a machine with no owner reaches only what a **network rule** opens to it.
+
+Until the policy is enforced, every machine reaches every other, and the Access page shows what each one would reach. Its rules say what each grant opens, the ports where it answers on the mesh and its internal routes, and an internal route's page lists who can open it.
+
 ## Agents {#agents}
 
 An **agent**, such as an AI assistant or a CI job, is a member that signs in with a token instead of a password, and is granted access the same way. See [Agents & MCP](/concepts/agents).
@@ -27,4 +38,6 @@ An **agent**, such as an AI assistant or a CI job, is a member that signs in wit
 
 - **Admin** {#admin -> roles}: Manages the workspace and every project in it.
 - **Member** {#member -> roles}: Sees and changes only what they were granted.
+- **Machine owner** {#owner -> mesh}: The person a machine on the mesh acts as, who decides what it reaches.
+- **Enforced** {#enforced -> mesh}: The mesh lets each machine reach only what its owner may use, internal routes included.
 - **Grant** {#grant -> grants}: Access to a project or a resource at a level: view, deploy, create, update or delete.

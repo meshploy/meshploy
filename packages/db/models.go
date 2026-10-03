@@ -457,6 +457,74 @@ type ResourcePermission struct {
 
 func (ResourcePermission) TableName() string { return "resource_permissions" }
 
+// MeshReach is whether a member's machines may reach a granted resource on
+// the mesh: its published ports, from the laptop or server they own. Being
+// able to view a database in the console is not the same as connecting to it,
+// so the two are separate. A row exists only once someone chose; without one
+// the default applies (service.ReachesByDefault: databases off, everything
+// else on). A choice on a service wins over its stack's, which wins over its
+// project's.
+type MeshReach struct {
+	Base
+	OrganizationID uuid.UUID    `gorm:"type:uuid;not null;index"                          json:"organization_id"`
+	UserID         uuid.UUID    `gorm:"type:uuid;not null;uniqueIndex:idx_mesh_reach"      json:"user_id"`
+	ResourceType   ResourceType `gorm:"type:varchar(20);not null;uniqueIndex:idx_mesh_reach" json:"resource_type"`
+	ResourceID     uuid.UUID    `gorm:"type:uuid;not null;uniqueIndex:idx_mesh_reach"      json:"resource_id"`
+	Reach          bool         `gorm:"not null"                                          json:"reach"`
+
+	User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (MeshReach) TableName() string { return "mesh_reach" }
+
+// MeshPolicyState is whether the mesh obeys its generated access policy, and
+// how the last attempt to give Headscale a policy went. One row for the
+// install (ID 1): Headscale serves every organisation's machines at once.
+// Off, Headscale is given a policy letting every machine reach every other,
+// as it was before there was a policy.
+type MeshPolicyState struct {
+	ID         int        `gorm:"primaryKey"                  json:"-"`
+	Enforced   bool       `gorm:"not null;default:false"      json:"enforced"`
+	EnforcedBy *uuid.UUID `gorm:"type:uuid"                   json:"enforced_by,omitempty"`
+	ChangedAt  *time.Time `                                   json:"changed_at,omitempty"`
+	// AppliedHash is the SHA-256 of the policy Headscale was last given, so an
+	// unchanged policy is not set again.
+	AppliedHash string     `gorm:"not null;default:''" json:"-"`
+	AppliedAt   *time.Time `                           json:"applied_at,omitempty"`
+	// LastError is why the last attempt failed; empty once one succeeds.
+	LastError string `gorm:"not null;default:''" json:"last_error,omitempty"`
+}
+
+func (MeshPolicyState) TableName() string { return "mesh_policy_state" }
+
+// Who a network rule lets through.
+const (
+	MeshRuleFromPerson  = "person"  // every machine the person owns
+	MeshRuleFromMachine = "machine" // one machine
+	MeshRuleFromAll     = "all"     // every machine of the organisation
+)
+
+// MeshRule is a network rule: for what is not a Meshploy resource, a machine
+// and ports on it that a person, a machine or every machine of the
+// organisation may reach. Grants on services, stacks and projects carry their
+// own reach; these add to the generated policy and give no permission in the
+// console.
+type MeshRule struct {
+	Base
+	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index" json:"organization_id"`
+	FromKind       string     `gorm:"type:varchar(10);not null" json:"from_kind"`
+	FromID         *uuid.UUID `gorm:"type:uuid"                 json:"from_id,omitempty"` // the person or machine; nil for all
+	ToNodeID       uuid.UUID  `gorm:"type:uuid;not null;index" json:"to_node_id"`
+	// Ports is the ports reached, comma-separated; empty is every port.
+	Ports     string     `gorm:"not null;default:''" json:"ports"`
+	Note      string     `gorm:"not null;default:''" json:"note"`
+	CreatedBy *uuid.UUID `gorm:"type:uuid"           json:"created_by,omitempty"`
+
+	ToNode Node `gorm:"foreignKey:ToNodeID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (MeshRule) TableName() string { return "mesh_rules" }
+
 // ---------------------------------------------------------------------------
 // Projects & Infrastructure
 // ---------------------------------------------------------------------------
@@ -644,7 +712,15 @@ type Node struct {
 	// provisioning-token registration. Empty for nodes registered via legacy mreg token.
 	NodeSecretHash string `gorm:"not null;default:''" json:"-"`
 
+	// OwnerID is the person this machine acts as on the mesh: whoever minted
+	// the provisioning token it joined with, or whom an admin gave it to. A
+	// member's machine reaches what that member may use; nil is a machine of
+	// the organisation's, which reaches only what every node needs. Cleared
+	// when the person is deleted.
+	OwnerID *uuid.UUID `gorm:"type:uuid;index" json:"owner_id,omitempty"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+	Owner        *User        `gorm:"foreignKey:OwnerID;constraint:OnDelete:SET NULL" json:"-"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1099,6 +1175,9 @@ type NodeProvisioningToken struct {
 	// happens afterwards from inside the mesh; this stops one token from
 	// minting mesh credentials over and over.
 	ProvisionedAt *time.Time `json:"provisioned_at,omitempty"`
+	// CreatedBy is who minted the token; the machine that joins with it is
+	// theirs (Node.OwnerID). Nil for a token minted before owners existed.
+	CreatedBy *uuid.UUID `gorm:"type:uuid" json:"created_by,omitempty"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 }

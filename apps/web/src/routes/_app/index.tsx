@@ -358,7 +358,8 @@ export function MeshGraph({ nodes, height = 220 }: { nodes: Node[]; height?: num
                 />
               </circle>
             )}
-            <circle cx={x} cy={y} r="14" fill="oklch(0.13 0.005 90)" stroke="oklch(0.22 0.005 90)" />
+            {/* A mesh-only machine is on the network but not in the cluster: dashed. */}
+            <circle cx={x} cy={y} r="14" fill="oklch(0.13 0.005 90)" stroke={a.meshRole === "mesh" ? "oklch(0.5 0.005 90)" : "oklch(0.22 0.005 90)"} strokeDasharray={a.meshRole === "mesh" ? "3 2" : undefined} />
             <circle cx={x} cy={y} r="4" fill={a.status === "online" ? "oklch(0.72 0.17 160)" : "oklch(0.40 0.005 90)"} />
             <text
               x={x} y={y + 27}

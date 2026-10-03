@@ -36,6 +36,8 @@ packages/proxy/
 ├── handler.go          # ServeHTTP: Host lookup + reverse proxy
 ├── cache/
 │   └── cache.go        # In-memory route table, reloaded within a second of a change
+├── meshgate/
+│   └── meshgate.go     # Who on the mesh may open an internal route
 └── tcp/
     └── forwarder.go    # Published TCP ports, one listener each
 ```
@@ -45,6 +47,19 @@ packages/proxy/
 ## Route cache
 
 The cache maps each hostname to a list of `TargetEntry` values (mesh IP, port and path prefix), sorted longest path first so a service mounted at a sub-path wins over one at `/`. Lookups try the exact hostname, then a wildcard (`*.parent`), then the database. It reloads within a second of any change to the routes (the `routes` count in `edge_versions`, which every write to a route table moves) and every 30 seconds regardless. All reads use a `sync.RWMutex` so hot-path lookups never block on refresh.
+
+---
+
+## Internal routes
+
+An internal route is reached over the mesh, and every internal route shares the gateway's 443, so the mesh policy cannot tell them apart; the proxy does (`meshgate/`). Caddy hands it the caller's mesh address, which is a machine, which has an owner, who has grants. While the mesh policy is enforced, an internal route answers:
+
+- the gateway itself and the cluster's machines;
+- a machine whose owner is an owner or admin of the route's organisation;
+- a member's machine when the member is granted what the route leads to (the route, its service, the service's stack, or its project or the project above its level) and has not switched off reaching it from their machines; a database is off until switched on;
+- a machine a network rule opens the gateway's port 443 to.
+
+Anyone else gets a 403 "Not shared with you". It follows the `mesh` count, so a grant or a new owner takes effect within a second. Until the policy is enforced, every caller passes.
 
 ---
 

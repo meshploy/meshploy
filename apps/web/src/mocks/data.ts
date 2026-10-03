@@ -37,6 +37,17 @@ export const demoOrgMember = {
   user_email: "demo@meshploy.com",
 }
 
+// A member with a laptop on the mesh, granted one database: what the mesh
+// access report has to show.
+export const DEMO_MEMBER_ID = "00000000-0000-0000-0000-000000000011"
+export const demoOrgMemberRavi = {
+  id: "00000000-0000-0000-0000-000000000012",
+  user_id: DEMO_MEMBER_ID,
+  role: "member" as const,
+  user_name: "ravi",
+  user_email: "ravi@example.com",
+}
+
 export const demoUser = {
   id: DEMO_USER_ID,
   username: "demo",
@@ -510,4 +521,27 @@ export const demoDiscovery = {
       ],
     },
   ],
+}
+
+// A member's laptop joined as mesh-only, so the mesh access report has a
+// person's machine to show.
+export const demoLaptop = {
+  ...demoNodeWorker,
+  id: "00000000-0000-0000-0000-000000000013",
+  name: "ravi-laptop",
+  tailscale_ip: "100.64.0.7",
+  k3s_role: "agent",
+  mesh_role: "mesh",
+  os: "darwin",
+  cpu_cores: 0,
+  memory_gb: 0,
+  disk_gb: 0,
+  headscale_id: "3",
+  headscale_tags: [],
+  headscale_fqdn: "ravi-laptop.meshploy.ts.net",
+  k8s_member: false,
+  k8s_ready: false,
+  k8s_node_name: "",
+  active_projects: [],
+  owner_id: DEMO_MEMBER_ID as string | undefined,
 }

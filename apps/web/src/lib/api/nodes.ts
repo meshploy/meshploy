@@ -1,6 +1,67 @@
 import type { Node, MeshRole } from "@/types"
 import { apiFetch } from "./core"
 
+/** One thing a machine may reach on the mesh; no ports means every port. */
+export interface MeshReach {
+  to: string
+  ports?: number[]
+  why: string
+}
+
+export interface MeshMachine {
+  id: string
+  name: string
+  ip: string
+  kind: "gateway" | "cluster" | "connected"
+  owner_id?: string
+  owner_name?: string
+  everything: boolean
+  reaches: MeshReach[]
+}
+
+/** The mesh's access policy as each machine sees it. Not enforced yet: today every machine reaches every other. */
+export interface MeshAccess {
+  enforced: boolean
+  /** When Headscale was last given a policy, and why the last attempt failed. */
+  applied_at?: string
+  last_error?: string
+  /** The server's owner may switch enforcing: it covers every organisation's machines. */
+  can_enforce: boolean
+  machines: MeshMachine[]
+  /** Machines on the mesh Meshploy has no record of; the policy gives them nothing. */
+  unknown: { name: string; ips: string[] }[]
+  /** The Headscale policy that would be set, for the server's owner only. */
+  policy?: string
+}
+
+/** A way to reach a service from a member's machine: NodePorts answer on every cluster machine, TCP routes on the gateway. */
+export interface ReachPort {
+  name: string
+  port: number
+  mesh_port: number
+  on: "cluster" | "gateway"
+}
+
+export interface ServiceReach {
+  service_id: string
+  name: string
+  database: boolean
+  reach: boolean
+  ports: ReachPort[]
+  /** Its internal routes, which open with its ports. */
+  routes?: string[]
+}
+
+/** A member granted a service or stack: whether their machines reach it on the mesh, and what that opens. */
+export interface MemberReach {
+  user_id: string
+  reach: boolean
+  /** False while the default decides: databases off, everything else on. */
+  chosen: boolean
+  services: ServiceReach[]
+  machines: string[]
+}
+
 export interface ApiNode {
   id: string
   name: string
@@ -17,6 +78,8 @@ export interface ApiNode {
   disk_gb: number
   last_seen_at: string | null
   organization_id: string
+  /** The person this machine acts as on the mesh; absent when it is the organisation's. */
+  owner_id?: string
   created_at: string
   updated_at: string
   // Headscale peer data (zeroed when Headscale is not configured)
@@ -153,6 +216,7 @@ export function toNode(n: ApiNode): Node {
     diskGB: n.disk_gb,
     lastSeenAt: parseTimestamp(n.last_seen_at),
     organizationId: n.organization_id,
+    ownerId: n.owner_id ?? null,
     headscaleId: n.headscale_id,
     headscaleOnline: n.headscale_online,
     headscaleLastSeen: parseTimestamp(n.headscale_last_seen),
@@ -189,6 +253,22 @@ export const nodes = {
       { method: "POST" },
       token
     ),
+
+  /** Gives a machine to a person ("" for the organisation), whose access it then has on the mesh. */
+  setOwner: (orgId: string, nodeId: string, ownerId: string, token: string) =>
+    apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}/owner`, { method: "PUT", body: JSON.stringify({ owner_id: ownerId }) }, token),
+
+  meshReach: (orgId: string, resourceType: "service" | "stack", resourceId: string, token: string) =>
+    apiFetch<MemberReach[]>(`/api/v1/orgs/${orgId}/mesh/reach?resource_type=${resourceType}&resource_id=${resourceId}`, {}, token),
+
+  setMeshReach: (orgId: string, body: { user_id: string; resource_type: "service" | "stack" | "project"; resource_id: string; reach: boolean }, token: string) =>
+    apiFetch<void>(`/api/v1/orgs/${orgId}/mesh/reach`, { method: "PUT", body: JSON.stringify(body) }, token),
+
+  setMeshEnforced: (orgId: string, enforced: boolean, token: string) =>
+    apiFetch<void>(`/api/v1/orgs/${orgId}/mesh/enforced`, { method: "PUT", body: JSON.stringify({ enforced }) }, token),
+
+  /** What each machine on the mesh may reach, and why. */
+  meshAccess: (orgId: string, token: string) => apiFetch<MeshAccess>(`/api/v1/orgs/${orgId}/mesh/access`, {}, token),
 
   update: (orgId: string, nodeId: string, body: { mesh_role?: MeshRole; name?: string }, token: string) =>
     apiFetch<ApiNode>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "PATCH", body: JSON.stringify(body) }, token),

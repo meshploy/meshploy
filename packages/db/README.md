@@ -31,6 +31,9 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `installed_licenses` | Enterprise licence tokens activated on this install |
 | `organizations` | Tenancy root |
 | `organization_members` | User ↔ Org join (roles: owner / admin / member) |
+| `mesh_reach` | Whether a member's machines may reach a granted service, stack or project on the mesh, once someone chose; without a row, databases are off and everything else on |
+| `mesh_rules` | Network rules: a machine, and ports on it, that a person's machines, one machine or every machine of the organisation may reach; for what is not a Meshploy resource. Added to the generated mesh policy, no console permission |
+| `mesh_policy_state` | One row: whether the mesh obeys its generated access policy, who switched it, and when Headscale was last given a policy (or why that failed) |
 | `resource_permissions` | Per-resource ACL grants (service, stack, job, project) |
 | `org_invitations` | Email invitations to join an org |
 

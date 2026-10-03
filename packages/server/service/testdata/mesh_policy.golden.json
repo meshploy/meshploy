@@ -1,0 +1,104 @@
+{
+  "hosts": {
+    "asha-s-macbook-00c3": "100.64.0.3/32",
+    "elsewhere-00c6": "100.64.0.6/32",
+    "gw-1-00c1": "100.64.0.1/32",
+    "old-box-00c5": "100.64.0.5/32",
+    "ravi-laptop-00c4": "100.64.0.4/32",
+    "worker-1-00c2": "100.64.0.2/32"
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": [
+        "gw-1-00c1",
+        "worker-1-00c2"
+      ],
+      "dst": [
+        "gw-1-00c1:*",
+        "worker-1-00c2:*"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "gw-1-00c1"
+      ],
+      "dst": [
+        "asha-s-macbook-00c3:*",
+        "elsewhere-00c6:*",
+        "gw-1-00c1:*",
+        "old-box-00c5:*",
+        "ravi-laptop-00c4:*",
+        "worker-1-00c2:*"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "*"
+      ],
+      "dst": [
+        "gw-1-00c1:53",
+        "gw-1-00c1:4000"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "gw-1-00c1",
+        "worker-1-00c2"
+      ],
+      "dst": [
+        "asha-s-macbook-00c3:*",
+        "elsewhere-00c6:*",
+        "old-box-00c5:*",
+        "ravi-laptop-00c4:*"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "asha-s-macbook-00c3"
+      ],
+      "dst": [
+        "asha-s-macbook-00c3:*",
+        "gw-1-00c1:*",
+        "old-box-00c5:*",
+        "ravi-laptop-00c4:*",
+        "worker-1-00c2:*"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "elsewhere-00c6"
+      ],
+      "dst": [
+        "gw-1-00c1:80",
+        "gw-1-00c1:443"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "ravi-laptop-00c4"
+      ],
+      "dst": [
+        "gw-1-00c1:80",
+        "gw-1-00c1:443"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "ravi-laptop-00c4"
+      ],
+      "dst": [
+        "gw-1-00c1:31432",
+        "worker-1-00c2:31432",
+        "gw-1-00c1:5433"
+      ]
+    }
+  ]
+}

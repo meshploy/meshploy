@@ -39,6 +39,8 @@ export interface Node {
   diskGB: number
   lastSeenAt: Date | null
   organizationId: string
+  /** The person this machine acts as on the mesh; null when it is the organisation's. */
+  ownerId?: string | null
   // Headscale peer data
   headscaleId: string
   headscaleOnline: boolean

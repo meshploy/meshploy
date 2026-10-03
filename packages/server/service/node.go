@@ -346,12 +346,47 @@ func joinRole(requested db.MeshRole, nodeOS db.NodeOS) (db.MeshRole, db.NodeOS, 
 	return requested, nodeOS, nil
 }
 
+// ErrOwnerNotMember is an owner given to a machine who is not a person in its
+// organisation.
+var ErrOwnerNotMember = errors.New("the owner must be a person in this organisation")
+
+// SetOwner gives a machine to a person in its organisation, or to the
+// organisation itself (nil): the machine then reaches on the mesh what that
+// person may use.
+func (s *NodeService) SetOwner(ctx context.Context, orgID, nodeID uuid.UUID, ownerID *uuid.UUID) (*db.Node, error) {
+	var node db.Node
+	if err := s.db.WithContext(ctx).First(&node, "id = ? AND organization_id = ?", nodeID, orgID).Error; err != nil {
+		return nil, err
+	}
+	if ownerID != nil {
+		var n int64
+		s.db.WithContext(ctx).Model(&db.OrganizationMember{}).
+			Joins("JOIN users ON users.id = organization_members.user_id").
+			Where("organization_members.organization_id = ? AND organization_members.user_id = ? AND users.kind = ?", orgID, *ownerID, db.UserHuman).
+			Count(&n)
+		if n == 0 {
+			return nil, ErrOwnerNotMember
+		}
+	}
+	if err := s.db.WithContext(ctx).Model(&node).Update("owner_id", ownerID).Error; err != nil {
+		return nil, err
+	}
+	node.OwnerID = ownerID
+	return &node, nil
+}
+
 // ─── Provisioning tokens ──────────────────────────────────────────────────────
 
 // CreateProvisioningToken generates a single-use provisioning token for the org.
 // Format: mprov-<32 random hex bytes>. The plaintext is returned once - only
 // its SHA-256 hash is persisted.
 func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UUID, label string, expiresAt *time.Time, meshRole ...db.MeshRole) (string, *db.NodeProvisioningToken, error) {
+	return s.CreateProvisioningTokenBy(ctx, orgID, nil, label, expiresAt, meshRole...)
+}
+
+// CreateProvisioningTokenBy is CreateProvisioningToken minted by a person, who
+// owns the machine that joins with it.
+func (s *NodeService) CreateProvisioningTokenBy(ctx context.Context, orgID uuid.UUID, createdBy *uuid.UUID, label string, expiresAt *time.Time, meshRole ...db.MeshRole) (string, *db.NodeProvisioningToken, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", nil, fmt.Errorf("generate provisioning token: %w", err)
@@ -370,6 +405,7 @@ func (s *NodeService) CreateProvisioningToken(ctx context.Context, orgID uuid.UU
 		TokenHash:      hashToken(plaintext),
 		Label:          label,
 		ExpiresAt:      expiresAt,
+		CreatedBy:      createdBy,
 	}
 	if len(meshRole) > 0 {
 		row.MeshRole = meshRole[0]
@@ -516,18 +552,23 @@ func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, 
 
 	// Persist role + secret hash on node, stamp token as used
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(node).Updates(map[string]any{
+	updates := map[string]any{
 		"mesh_role":        role,
 		"os":               nodeOS,
 		"node_secret_hash": hashToken(nodeSecret),
-	}).Error; err != nil {
+	}
+	// The machine is whoever minted the token's.
+	if row.CreatedBy != nil {
+		updates["owner_id"] = *row.CreatedBy
+	}
+	if err := s.db.WithContext(ctx).Model(node).Updates(updates).Error; err != nil {
 		return nil, "", err
 	}
 	if err := s.db.WithContext(ctx).Model(&row).Update("used_at", &now).Error; err != nil {
 		return nil, "", err
 	}
 
-	node.MeshRole, node.OS = role, nodeOS
+	node.MeshRole, node.OS, node.OwnerID = role, nodeOS, row.CreatedBy
 	return node, nodeSecret, nil
 }
 

@@ -1,3 +1,4 @@
+import { MeshAccessPanel } from "@/components/nodes/mesh-access"
 import { ResourcePanel, ResourceIntro, StatusPill } from "@/components/layout/resource-workbench"
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -501,7 +502,7 @@ function NodeDetailPage() {
       {node.k3sRole === "server"
         ? <ServerBuildToggle node={node} orgId={orgId!} token={token} />
         : node.meshRole === "mesh"
-          ? <MeshOnlyRole os={node.os} />
+          ? <><MeshOnlyRole os={node.os} /><MeshAccessPanel node={node} orgId={orgId!} token={token} isAdmin={isAdmin} /></>
           : isAdmin
             ? <NodeRolePicker node={node} orgId={orgId!} token={token} />
             : <NodeRoleSummary node={node} />

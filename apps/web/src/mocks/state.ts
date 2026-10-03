@@ -283,7 +283,7 @@ export const db: Record<string, DemoRecord[]> = {
       attached_services: [],
     }),
   ],
-  nodes: [seed.demoNodeGateway, seed.demoNodeWorker].map((n) => ({
+  nodes: [seed.demoNodeGateway, seed.demoNodeWorker, seed.demoLaptop].map((n) => ({
     ...n,
     // What runs where: the worker carries staging and the Experiments
     // project too, so the workspace map has each level on a machine.
@@ -295,6 +295,7 @@ export const db: Record<string, DemoRecord[]> = {
   })),
   members: [
     seed.demoOrgMember,
+    seed.demoOrgMemberRavi,
     record({
       user_id: "00000000-0000-0000-0000-000000000043",
       user_name: "Alex Morgan",
@@ -461,7 +462,9 @@ export const db: Record<string, DemoRecord[]> = {
       last_backup_status: svc.id === seed.demoServiceDb.id ? "success" : null,
     })
   ),
-  permissions: [],
+  permissions: [
+    record({ user_id: seed.DEMO_MEMBER_ID, resource_type: "service", resource_id: seed.DEMO_SVC_DB, action: "view" }),
+  ],
 }
 export const org = { ...seed.demoOrg }
 export const user = { ...seed.demoUser }

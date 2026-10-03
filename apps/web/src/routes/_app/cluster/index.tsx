@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
@@ -33,6 +33,7 @@ import { MeshGraph } from "@/routes/_app/index"
 import { useAuthStore } from "@/store/auth-store"
 import { HelpButton } from "@/help/help-button"
 import { useOrgStore, useOrgRole } from "@/store/org-store"
+import { ResourcePanel } from "@/components/layout/resource-workbench"
 
 export const Route = createFileRoute("/_app/cluster/")({
   component: ClusterPage,
@@ -115,8 +116,11 @@ function ClusterPage() {
     refetchInterval: 60_000,
   })
 
-  // Only show nodes that are in the k8s cluster
-  const clusterNodes = rawNodes.map(toNode).filter((n) => n.k8sMember)
+  // Every machine on the mesh; the cluster is the ones Kubernetes runs on.
+  const machines = rawNodes.map(toNode)
+  const machinesOnline = machines.filter((n) => n.status === "online")
+  const meshOnly = machines.filter((n) => n.meshRole === "mesh")
+  const clusterNodes = machines.filter((n) => n.k8sMember)
   const online = clusterNodes.filter((n) => n.status === "online")
   const servers = clusterNodes.filter((n) => n.k3sRole === "server")
   const agents = clusterNodes.filter((n) => n.k3sRole === "agent")
@@ -139,8 +143,8 @@ function ClusterPage() {
   return (
     <div className="console-page cluster-workspace p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Cluster</span><HelpButton topic="nodes" label="How nodes and the mesh work" /></h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Single K3s cluster spanning all mesh nodes</p>
+        <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Mesh</span><HelpButton topic="nodes" label="How nodes and the mesh work" /></h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Every machine on your private network, and the cluster that runs your apps across some of them</p>
       </div>
 
       <MeshHealthBanner health={meshHealth} />
@@ -243,14 +247,14 @@ function ClusterPage() {
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={<Network className="h-4 w-4" />}
-          label="Nodes"
-          value={clusterNodes.length === 0 ? "0" : `${online.length}/${clusterNodes.length}`}
-          sub="online"
-          accent={clusterNodes.length > 0 && online.length < clusterNodes.length ? "warn" : undefined}
+          label="Machines"
+          value={machines.length === 0 ? "0" : `${machinesOnline.length}/${machines.length}`}
+          sub={machines.length ? `online · ${clusterNodes.length} in the cluster${meshOnly.length ? `, ${meshOnly.length} mesh only` : ""}` : "none yet"}
+          accent={machines.length > 0 && machinesOnline.length < machines.length ? "warn" : undefined}
         />
-        <StatCard icon={<Cpu className="h-4 w-4" />} label="CPU cores" value={String(onlineCPU || "—")} sub={totalCPU ? `${totalCPU} total` : "no nodes"} />
-        <StatCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={onlineMemGB ? `${onlineMemGB.toFixed(1)} GB` : "—"} sub={totalMemGB ? `${totalMemGB.toFixed(1)} GB total` : "no nodes"} />
-        <StatCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={totalDiskGB ? `${totalDiskGB.toFixed(0)} GB` : "—"} sub={clusterNodes.length ? `${clusterNodes.length} nodes` : "no nodes"} />
+        <StatCard icon={<Cpu className="h-4 w-4" />} label="Cluster CPU" value={onlineCPU ? `${onlineCPU} cores` : "—"} sub={totalCPU ? `${totalCPU} total` : "no cluster nodes"} />
+        <StatCard icon={<MemoryStick className="h-4 w-4" />} label="Cluster memory" value={onlineMemGB ? `${onlineMemGB.toFixed(1)} GB` : "—"} sub={totalMemGB ? `${totalMemGB.toFixed(1)} GB total` : "no cluster nodes"} />
+        <StatCard icon={<HardDrive className="h-4 w-4" />} label="Cluster disk" value={totalDiskGB ? `${totalDiskGB.toFixed(0)} GB` : "—"} sub={clusterNodes.length ? `across ${clusterNodes.length} ${clusterNodes.length === 1 ? "node" : "nodes"}` : "no cluster nodes"} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -261,7 +265,13 @@ function ClusterPage() {
             <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-4.5">WireGuard</Badge>
           </div>
           <div className="p-4">
-            <MeshGraph nodes={clusterNodes} height={260} />
+            <MeshGraph nodes={machines} height={260} />
+            {meshOnly.length > 0 && (
+              <p className="mt-2 flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full border border-border" />In the cluster</span>
+                <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full border border-dashed border-muted-foreground" />Mesh only</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -269,7 +279,7 @@ function ClusterPage() {
           {/* Role breakdown */}
           <div className="cluster-surface rounded-xl border border-border/60 overflow-hidden">
             <div className="px-4 py-3 border-b border-border/40 bg-muted/20">
-              <p className="text-sm font-semibold text-foreground">Role breakdown</p>
+              <p className="text-sm font-semibold text-foreground">Cluster roles</p>
             </div>
             <div className="p-4 space-y-3">
               <RoleBar label="Control plane" count={servers.length} total={clusterNodes.length} color="bg-primary" />
@@ -300,6 +310,10 @@ function ClusterPage() {
           )}
         </div>
       </div>
+
+      <ResourcePanel title="Who reaches what" description="Rules, what each machine reaches, and the policy the mesh is given are on the Access page.">
+        <Link to="/access" className="text-sm text-primary hover:underline">Open Access</Link>
+      </ResourcePanel>
 
       {/* Tokens row. Adding a node is the path with a command worth reading, so
           it gets the width; the two beside it are the by-hand fallbacks. */}

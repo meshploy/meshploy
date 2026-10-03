@@ -240,11 +240,21 @@ function MemberRow({ member, canEdit, orgId, token }: {
 }) {
   const qc = useQueryClient()
   const initials = member.user_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
+  // Every member has a page: a member's grants are managed there, and an
+  // owner's or admin's page shows the machines that reach everything as them.
   const canManagePermissions = member.role === "member"
 
-  const { mutate: changeRole, isPending } = useMutation({
+  // A role change asks first: admin is every resource and every machine on
+  // the mesh, member only what was granted.
+  const [asking, setAsking] = useState<"admin" | "member" | null>(null)
+  const { mutate: changeRole, isPending, error } = useMutation({
     mutationFn: (role: "admin" | "member") => orgsApi.updateMember(orgId, member.user_id, role, token),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["org-members", orgId] }),
+    onSuccess: () => {
+      setAsking(null)
+      qc.invalidateQueries({ queryKey: ["org-members", orgId] })
+      qc.invalidateQueries({ queryKey: ["mesh-access", orgId] })
+      qc.invalidateQueries({ queryKey: ["access-rules", orgId] })
+    },
   })
 
   const avatarAndName = (
@@ -262,7 +272,7 @@ function MemberRow({ member, canEdit, orgId, token }: {
   const roleControl = canEdit ? (
     <Select
       value={member.role}
-      onValueChange={(v) => v && changeRole(v as "admin" | "member")}
+      onValueChange={(v) => { if (v && v !== member.role) setAsking(v as "admin" | "member") }}
       disabled={isPending}
     >
       <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1 shrink-0">
@@ -280,7 +290,26 @@ function MemberRow({ member, canEdit, orgId, token }: {
     <RoleBadge role={member.role as OrgRole} />
   )
 
-  return <tr className="border-b border-border last:border-0 hover:bg-muted/20"><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} className="flex items-center gap-3">{avatarAndName}</Link> : <div className="flex items-center gap-3">{avatarAndName}</div>}</td><td className="p-4 text-xs text-muted-foreground">Member</td><td className="p-4">{roleControl}</td><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Permissions for ${member.user_name}`} className="text-xs text-primary">Manage access</Link> : <span className="text-xs text-muted-foreground">Organization-wide</span>}</td></tr>
+  return <tr className="border-b border-border last:border-0 hover:bg-muted/20"><td className="p-4"><Link to="/users/$userId" params={{userId:member.user_id}} className="flex items-center gap-3">{avatarAndName}</Link></td><td className="p-4 text-xs text-muted-foreground">Member</td><td className="p-4">{roleControl}<Dialog open={asking !== null} onOpenChange={(o) => { if (!o) setAsking(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Make {member.user_name} {asking === "admin" ? "an admin" : "a member"}?</DialogTitle>
+            <DialogDescription>
+              {asking === "admin"
+                ? "An admin can manage every project and resource in this organisation, and their machines reach every machine on the mesh. Their own grants stop mattering while they are an admin."
+                : "A member can use only what they are granted, in the console and from their machines on the mesh. Grant them what they need on the Access page or their own page."}
+            </DialogDescription>
+          </DialogHeader>
+          {error && <p role="alert" className="text-xs text-destructive">{error.message}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAsking(null)}>Cancel</Button>
+            <Button disabled={isPending} onClick={() => asking && changeRole(asking)}>
+              {isPending && <Loader2 className="size-3.5 animate-spin" />}
+              {asking === "admin" ? "Make admin" : "Make member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog></td><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Permissions for ${member.user_name}`} className="text-xs text-primary">Manage access</Link> : <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Details for ${member.user_name}`} className="text-xs text-muted-foreground hover:text-foreground">Organization-wide</Link>}</td></tr>
 }
 
 function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {

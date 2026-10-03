@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
+	"html"
 	"log"
 	"net"
 	"net/http"
@@ -12,11 +13,18 @@ import (
 	"time"
 
 	"github.com/meshploy/packages/proxy/cache"
+	"github.com/meshploy/packages/proxy/meshgate"
 )
 
 type Handler struct {
 	cache *cache.Cache
+	// mesh decides who on the mesh opens an internal route; nil serves them
+	// to anyone who reaches them, as a proxy built without it does.
+	mesh *meshgate.Gate
 }
+
+// CheckInternal has internal routes answer only the callers mesh allows.
+func (h *Handler) CheckInternal(mesh *meshgate.Gate) { h.mesh = mesh }
 
 func NewHandler(c *cache.Cache) *Handler {
 	return &Handler{cache: c}
@@ -47,6 +55,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, notFoundPage, hostname)
 		return
+	}
+
+	if entry.Internal && h.mesh != nil {
+		v := h.mesh.Check(visitor(r), meshgate.Target{RouteID: entry.RouteID, ServiceID: entry.ServiceID,
+			ProjectID: entry.ProjectID, OrgID: entry.OrgID})
+		if !v.Allowed {
+			log.Printf("proxy: %s refused to %s (%s): %s", hostname, visitor(r), v.Machine, v.Reason)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprintf(w, notSharedPage, html.EscapeString(hostname))
+			return
+		}
 	}
 
 	if runGates(w, r, Target{Host: hostname, RouteID: entry.RouteID, ServiceID: entry.ServiceID,
@@ -189,6 +209,37 @@ const notFoundPage = `<!doctype html>
     <div class="code">404</div>
     <h1>No route configured</h1>
     <p>There is no Meshploy service mapped to this hostname.</p>
+    <div class="host">%s</div>
+  </div>
+</body>
+</html>`
+
+// notSharedPage answers an internal route a caller may not open.
+const notSharedPage = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Not shared with you - Meshploy</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0a0a0a;color:#a1a1aa;font-family:ui-monospace,monospace;
+         display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
+    .card{border:1px solid #27272a;border-radius:12px;padding:2.5rem 3rem;max-width:420px;width:100%%;text-align:center}
+    .code{font-size:3rem;font-weight:700;color:#3f3f46;margin-bottom:1rem}
+    h1{font-size:1rem;font-weight:600;color:#e4e4e7;margin-bottom:.5rem}
+    p{font-size:.8rem;line-height:1.6;margin-bottom:1.5rem}
+    .host{font-size:.75rem;background:#18181b;border:1px solid #27272a;border-radius:6px;
+          padding:.35rem .75rem;display:inline-block;color:#71717a}
+    a{color:#71717a;font-size:.75rem;text-decoration:none;border-bottom:1px solid #27272a}
+    a:hover{color:#a1a1aa}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="code">403</div>
+    <h1>Not shared with you</h1>
+    <p>This internal route is open to the people granted what it serves, from machines they own. Ask an admin of the organisation for access, or join this machine to the mesh under your own name.</p>
     <div class="host">%s</div>
   </div>
 </body>

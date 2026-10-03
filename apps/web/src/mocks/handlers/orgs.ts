@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { demoOrg, demoOrgMember, DEMO_ORG_ID } from "../data"
+import { demoOrg, demoOrgMember, demoOrgMemberRavi, DEMO_ORG_ID } from "../data"
 
 export const orgsHandlers = [
   http.get("/api/v1/orgs", () => HttpResponse.json([demoOrg])),
@@ -9,7 +9,7 @@ export const orgsHandlers = [
   http.patch(`/api/v1/orgs/:orgId`, () => HttpResponse.json(demoOrg)),
 
   http.get(`/api/v1/orgs/:orgId/members`, () =>
-    HttpResponse.json([demoOrgMember])
+    HttpResponse.json([demoOrgMember, demoOrgMemberRavi])
   ),
 
   http.post(`/api/v1/orgs/:orgId/members`, () =>

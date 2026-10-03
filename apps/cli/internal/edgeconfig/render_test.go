@@ -440,7 +440,11 @@ func TestRenderReproducesTheShippedHeadscaleConfig(t *testing.T) {
 		}
 		return strings.Join(out, "\n")
 	}
-	assert.Equal(t, strip(expanded), strip(files[HeadscaleConfig]))
+	// The one difference on purpose: Headscale keeps its access policy in its
+	// database, where the API sets it. With none set it lets every machine
+	// reach every other, as the retired file did.
+	rendered := strings.Replace(strip(files[HeadscaleConfig]), "policy:\n  mode: database\n", "", 1)
+	assert.Equal(t, strip(expanded), rendered)
 }
 
 // A gateway whose proxy and Headscale moved off their default ports - because

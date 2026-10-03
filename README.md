@@ -307,7 +307,7 @@ the owner account are mine to enter.
 Docs: https://docs.meshploy.com/self-hosting/
 ````
 
-Adding a **worker** later needs no prompt of this size: the console's **Cluster → Add a node** gives you a one-line command carrying a single-use token, and a matching prompt beside it.
+Adding a **worker** later needs no prompt of this size: the console's **Mesh → Add a node** gives you a one-line command carrying a single-use token, and a matching prompt beside it.
 
 ### DNS setup
 

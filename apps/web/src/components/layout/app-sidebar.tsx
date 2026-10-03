@@ -17,6 +17,7 @@ import {
   Server,
   Settings,
   Users,
+  ShieldCheck,
   Radar,
   Import,
 } from "lucide-react"
@@ -50,7 +51,7 @@ type NavGroup = {
 
 // Two different questions, so two groups: what am I running, and what is it
 // running on. The first needs no label - it is where everything starts - and
-// the second says what Nodes, Cluster and Discovery have in common, which is
+// the second says what Nodes, Mesh and Discovery have in common, which is
 // not obvious from their names alone.
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -64,7 +65,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Infrastructure",
     items: [
       { href: "/nodes", icon: Server, label: "Nodes", exact: false },
-      { href: "/cluster", icon: Network, label: "Cluster", exact: false, adminOnly: true },
+      { href: "/cluster", icon: Network, label: "Mesh", exact: false, adminOnly: true },
       { href: "/discovery", icon: Radar, label: "Discovery", exact: false },
       { href: "/domains", icon: Globe, label: "Domains", exact: false },
     ],
@@ -75,6 +76,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/integrations", icon: Plug, label: "Integrations", exact: false },
       { href: "/users", icon: Users, label: "Users", exact: false },
+      { href: "/access", icon: ShieldCheck, label: "Access", exact: false },
       { href: "/agents", icon: Bot, label: "Agents", exact: false },
       { href: "/settings", icon: Settings, label: "Settings", exact: false },
     ],

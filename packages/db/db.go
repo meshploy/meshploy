@@ -77,6 +77,9 @@ func Migrate(db *gorm.DB) error {
 		&Organization{},
 		&OrganizationMember{},
 		&ResourcePermission{},
+		&MeshReach{},
+		&MeshPolicyState{},
+		&MeshRule{},
 
 		// Projects & Infrastructure
 		&Project{},

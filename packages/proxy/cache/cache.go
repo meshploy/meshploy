@@ -22,6 +22,9 @@ type TargetEntry struct {
 	TargetTLS        bool
 	RedirectHostname string // non-empty when this target is a redirect
 	RedirectCode     int    // 301 or 302
+	// Internal: the route is reached over the mesh, so who may open it is
+	// decided per caller.
+	Internal bool
 
 	// Whose request this is, so a gate needs no lookup of its own. ServiceID
 	// is zero for a node or address target.
@@ -39,6 +42,7 @@ func entryFor(t db.RouteTarget, route *db.Route) TargetEntry {
 		TargetIP:   t.TargetIP,
 		TargetPort: t.TargetPort,
 		TargetTLS:  t.TargetTLS,
+		Internal:   route.Zone == db.RouteZoneInternal,
 		RouteID:    route.ID,
 		ProjectID:  route.ProjectID,
 		OrgID:      route.OrganizationID,

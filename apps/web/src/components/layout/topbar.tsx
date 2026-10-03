@@ -26,7 +26,8 @@ import { topicForPath } from "@/help/topics"
 const SEGMENT_LABELS: Record<string, string> = {
   projects:     "Projects",
   nodes:        "Nodes",
-  cluster:      "Cluster",
+  cluster:      "Mesh",
+  access:       "Access",
   migration:    "Migration",
   integrations: "Integrations",
   git: "Git sources",

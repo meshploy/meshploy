@@ -10,6 +10,7 @@ import (
 
 	dbpkg "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/proxy/cache"
+	"github.com/meshploy/packages/proxy/meshgate"
 	"github.com/meshploy/packages/proxy/tcp"
 )
 
@@ -52,6 +53,11 @@ func Main() {
 	// this host can route to and the internet cannot.
 	binds := bindAddrs(os.Getenv("PROXY_BIND"), os.Getenv("MESH_IP"))
 	handler := NewHandler(routeCache)
+	// Internal routes answer only the machines whose owners may use what they
+	// lead to, once the mesh policy is enforced.
+	mesh := meshgate.New(database)
+	mesh.Start(30 * time.Second)
+	handler.CheckInternal(mesh)
 
 	errs := make(chan error, len(binds))
 	for _, b := range binds {

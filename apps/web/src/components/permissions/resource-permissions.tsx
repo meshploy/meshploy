@@ -2,6 +2,8 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Lock, Loader2 } from "lucide-react"
 import {
+  nodes as nodesApi,
+  type MemberReach,
   permissions as permissionsApi,
   type PermissionsWithUserDTO,
   RESOURCE_ACTIONS,
@@ -9,6 +11,8 @@ import {
   type ResourceType,
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useIsAdmin } from "@/store/org-store"
+import { MeshReachLine } from "./mesh-reach-line"
 
 interface Props {
   orgId: string
@@ -84,6 +88,26 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
 
   const [pending, setPending] = useState<Set<string>>(new Set())
 
+  // Whether each member's own machines reach this on the mesh. Jobs have no
+  // ports to reach; only admins change it.
+  const isAdmin = useIsAdmin()
+  const meshKind = resourceType === "job" ? null : resourceType
+  const reachKey = ["mesh-reach", orgId, resourceType, resourceId]
+  const { data: reachRows = [] } = useQuery({
+    queryKey: reachKey,
+    queryFn: () => nodesApi.meshReach(orgId, meshKind!, resourceId, token),
+    enabled: !!orgId && !!resourceId && !!meshKind && isAdmin,
+  })
+  const reachByUser = new Map<string, MemberReach>(reachRows.map((r) => [r.user_id, r]))
+  const setReach = useMutation({
+    mutationFn: ({ userId, reach }: { userId: string; reach: boolean }) =>
+      nodesApi.setMeshReach(orgId, { user_id: userId, resource_type: meshKind!, resource_id: resourceId, reach }, token),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: reachKey })
+      qc.invalidateQueries({ queryKey: ["mesh-access", orgId] })
+    },
+  })
+
   const { mutate } = useMutation({
     mutationFn: ({ userId, action, granted }: { userId: string; action: ResourceAction; granted: boolean }) => {
       const body = { resource_type: resourceType as ResourceType, resource_id: resourceId, action }
@@ -97,6 +121,7 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
     onSettled: (_, __, { userId, action }) => {
       setPending((s) => { const n = new Set(s); n.delete(`${userId}-${action}`); return n })
       qc.invalidateQueries({ queryKey: resourceQueryKey })
+      qc.invalidateQueries({ queryKey: reachKey })
     },
   })
 
@@ -134,6 +159,9 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
               onToggle={(action) =>
                 mutate({ userId: user.userId, action, granted: user.resourceActions.has(action) })
               }
+              reach={reachByUser.get(user.userId)}
+              reachPending={setReach.isPending && setReach.variables?.userId === user.userId}
+              onReach={(reach) => setReach.mutate({ userId: user.userId, reach })}
             />
           ))}
         </div>
@@ -142,15 +170,19 @@ export function ResourcePermissionsSection({ orgId, projectId, resourceType, res
   )
 }
 
-function UserGrantRow({ user, pending, onToggle }: {
+function UserGrantRow({ user, pending, onToggle, reach, reachPending, onReach }: {
   user: CombinedUserGrant
   pending: Set<string>
   onToggle: (action: ResourceAction) => void
+  reach?: MemberReach
+  reachPending: boolean
+  onReach: (reach: boolean) => void
 }) {
   const initials = user.userName.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-4 py-4">
+    <div className="space-y-3 px-4 py-4">
+    <div className="flex flex-wrap items-center gap-3">
       <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 shrink-0">
         <span className="text-xs font-semibold text-primary">{initials || "?"}</span>
       </div>
@@ -197,6 +229,8 @@ function UserGrantRow({ user, pending, onToggle }: {
           )
         })}
       </div>
+    </div>
+    {reach && <MeshReachLine reach={reach} pending={reachPending} onChange={onReach} />}
     </div>
   )
 }

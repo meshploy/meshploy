@@ -34,7 +34,7 @@ meshploy/
 ## Architecture overview
 
 - **apps/api** — Thin CE entrypoint: `main.go` calls `server.Main()`. The API itself lives in `packages/server` — business logic in `service/`, HTTP concerns in `handler/`, config in `config/`.
-- **apps/proxy** — Minimal L7 reverse proxy, its code in `packages/proxy` (`apps/proxy/main.go` calls `proxy.Main()`, as the API calls `server.Main()`), so an edition can build its own proxy on it. Reads the `Host` header → in-memory route cache (backed by PostgreSQL, reloaded within a second of a change through `edge_versions`, and every 30s regardless) → streams over WireGuard mesh to target node. Listens on port 8081.
+- **apps/proxy** — Minimal L7 reverse proxy, its code in `packages/proxy` (`apps/proxy/main.go` calls `proxy.Main()`, as the API calls `server.Main()`), so an edition can build its own proxy on it. Reads the `Host` header → in-memory route cache (backed by PostgreSQL, reloaded within a second of a change through `edge_versions`, and every 30s regardless) → streams over WireGuard mesh to target node. Listens on port 8081. Once the mesh policy is enforced, an internal route answers only the machines whose owners may use what it leads to (`packages/proxy/meshgate`).
 - **apps/cli** — Static Go binary (`/usr/local/bin/meshploy`). Wraps API calls and shells out to `install.sh` / `uninstall.sh` for node operations. Built with Cobra.
 - **packages/db** — Shared GORM models backed by **PostgreSQL**. `AutoMigrate` + supplementary partial unique indexes run on API startup via `db.Migrate()`. Exports an Extensible Migration Registry (`RegisterMigration`) for the EE open-core pattern. Imported by both `apps/api` and `apps/proxy`.
 - **packages/client** — Typed Go REST client for the Meshploy API. Imported by `apps/cli` (every command) and by `packages/mcpserver`. Lives in `packages/` so no app depends on another app.
@@ -173,13 +173,13 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (52 CE tables)
+## packages/db — schema (55 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `mesh_reach`, `mesh_policy_state`, `mesh_rules`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Environments | `promotion_groups`, `promotion_group_members` |
 | Workloads | `stacks`, `stack_runs`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |

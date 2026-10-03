@@ -42,6 +42,13 @@ derp:
   auto_update_enabled: true
   update_frequency: 24h
 
+# The mesh's access policy lives in Headscale's database, where the API sets
+# it: generated from who owns each machine and what they may use, once an
+# owner enforces it on the Mesh page. Until then no policy is set, and every
+# machine reaches every other.
+policy:
+  mode: database
+
 # Database — SQLite, stored in the mounted data volume
 database:
   type: sqlite

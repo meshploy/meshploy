@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/proxy/cache"
+	"github.com/meshploy/packages/proxy/meshgate"
 )
 
 // withGates runs a test with only the given gates registered.
@@ -105,5 +106,42 @@ func TestGatesSkipUnknownHosts(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "http://other.example.com/", nil))
 	if rec.Code != http.StatusNotFound || asked {
 		t.Fatalf("code %d asked %v", rec.Code, asked)
+	}
+}
+
+// An internal route answers only the callers the mesh gate allows, and a
+// public route never asks it.
+func TestInternalRoutesAskTheMeshGate(t *testing.T) {
+	withGates(t)
+	org := uuid.New()
+	enforced := func() *meshgate.Gate {
+		g := meshgate.New(nil)
+		g.Set(&meshgate.Snapshot{Enforced: true})
+		return g
+	}
+	for _, c := range []struct {
+		name     string
+		internal bool
+		from     string
+		want     int
+	}{
+		{"internal, from a machine nobody knows", true, "100.64.0.9:5000", http.StatusForbidden},
+		{"internal, from the gateway itself", true, "127.0.0.1:5000", http.StatusOK},
+		{"public, from a machine nobody knows", false, "100.64.0.9:5000", http.StatusOK},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h, hits := routedHandler(t, cache.TargetEntry{Internal: c.internal, RouteID: uuid.New(), OrgID: org})
+			h.CheckInternal(enforced())
+			req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
+			req.RemoteAddr = c.from
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != c.want {
+				t.Fatalf("status %d, want %d", rec.Code, c.want)
+			}
+			if (c.want == http.StatusOK) != (*hits == 1) {
+				t.Errorf("app hits %d", *hits)
+			}
+		})
 	}
 }

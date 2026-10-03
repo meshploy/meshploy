@@ -28,6 +28,7 @@ import { Route as AppDiscoveryIndexRouteImport } from './routes/_app/discovery/i
 import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index'
 import { Route as AppAgentsIndexRouteImport } from './routes/_app/agents/index'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
+import { Route as AppAccessIndexRouteImport } from './routes/_app/access/index'
 import { Route as AppUsersUserIdRouteImport } from './routes/_app/users/$userId'
 import { Route as AppTemplatesIdRouteImport } from './routes/_app/templates/$id'
 import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
@@ -178,6 +179,11 @@ const AppAgentsIndexRoute = AppAgentsIndexRouteImport.update({
 const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
   id: '/account/',
   path: '/account/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAccessIndexRoute = AppAccessIndexRouteImport.update({
+  id: '/access/',
+  path: '/access/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppUsersUserIdRoute = AppUsersUserIdRouteImport.update({
@@ -526,6 +532,7 @@ export interface FileRoutesByFullPath {
   '/projects/new': typeof AppProjectsNewRoute
   '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
+  '/access/': typeof AppAccessIndexRoute
   '/account/': typeof AppAccountIndexRoute
   '/agents/': typeof AppAgentsIndexRoute
   '/cluster/': typeof AppClusterIndexRoute
@@ -602,6 +609,7 @@ export interface FileRoutesByTo {
   '/projects/new': typeof AppProjectsNewRoute
   '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
+  '/access': typeof AppAccessIndexRoute
   '/account': typeof AppAccountIndexRoute
   '/agents': typeof AppAgentsIndexRoute
   '/cluster': typeof AppClusterIndexRoute
@@ -677,6 +685,7 @@ export interface FileRoutesById {
   '/_app/projects/new': typeof AppProjectsNewRoute
   '/_app/templates/$id': typeof AppTemplatesIdRoute
   '/_app/users/$userId': typeof AppUsersUserIdRoute
+  '/_app/access/': typeof AppAccessIndexRoute
   '/_app/account/': typeof AppAccountIndexRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/cluster/': typeof AppClusterIndexRoute
@@ -756,6 +765,7 @@ export interface FileRouteTypes {
     | '/projects/new'
     | '/templates/$id'
     | '/users/$userId'
+    | '/access/'
     | '/account/'
     | '/agents/'
     | '/cluster/'
@@ -832,6 +842,7 @@ export interface FileRouteTypes {
     | '/projects/new'
     | '/templates/$id'
     | '/users/$userId'
+    | '/access'
     | '/account'
     | '/agents'
     | '/cluster'
@@ -906,6 +917,7 @@ export interface FileRouteTypes {
     | '/_app/projects/new'
     | '/_app/templates/$id'
     | '/_app/users/$userId'
+    | '/_app/access/'
     | '/_app/account/'
     | '/_app/agents/'
     | '/_app/cluster/'
@@ -1108,6 +1120,13 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/account/'
       preLoaderRoute: typeof AppAccountIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/access/': {
+      id: '/_app/access/'
+      path: '/access'
+      fullPath: '/access/'
+      preLoaderRoute: typeof AppAccessIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/users/$userId': {
@@ -1711,6 +1730,7 @@ interface AppRouteChildren {
   AppProjectsNewRoute: typeof AppProjectsNewRoute
   AppTemplatesIdRoute: typeof AppTemplatesIdRoute
   AppUsersUserIdRoute: typeof AppUsersUserIdRoute
+  AppAccessIndexRoute: typeof AppAccessIndexRoute
   AppAccountIndexRoute: typeof AppAccountIndexRoute
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppClusterIndexRoute: typeof AppClusterIndexRoute
@@ -1736,6 +1756,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppProjectsNewRoute: AppProjectsNewRoute,
   AppTemplatesIdRoute: AppTemplatesIdRoute,
   AppUsersUserIdRoute: AppUsersUserIdRoute,
+  AppAccessIndexRoute: AppAccessIndexRoute,
   AppAccountIndexRoute: AppAccountIndexRoute,
   AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppClusterIndexRoute: AppClusterIndexRoute,

@@ -267,6 +267,14 @@ type UpdateNodeOutput struct {
 	Body *NodeResponse
 }
 
+type SetNodeOwnerInput struct {
+	OrgID  string `path:"orgId"`
+	NodeID string `path:"nodeId"`
+	Body   struct {
+		OwnerID string `json:"owner_id" doc:"A person in the organisation; empty for the organisation itself"`
+	}
+}
+
 // ─── Route registration ──────────────────────────────────────────────────────
 
 func (h *Handler) registerNodeRoutes(api huma.API) {
@@ -305,6 +313,15 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.UpdateNode)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-node-owner",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/nodes/{nodeId}/owner",
+		Summary:     "Give a machine to a person, whose access it has on the mesh",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SetNodeOwner)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-node",
@@ -541,6 +558,30 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 		if err := appk8s.SetNodeMeshRole(ctx, h.svc.K8s, node.Name, node.MeshRole); err != nil {
 			log.Printf("warning: apply mesh role to k8s node %s: %v", node.Name, err)
 		}
+	}
+	r := h.enrichNode(ctx, node)
+	return &UpdateNodeOutput{Body: &r}, nil
+}
+
+func (h *Handler) SetNodeOwner(ctx context.Context, input *SetNodeOwnerInput) (*UpdateNodeOutput, error) {
+	_, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	var owner *uuid.UUID
+	if input.Body.OwnerID != "" {
+		id, err := uuid.Parse(input.Body.OwnerID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid owner id")
+		}
+		owner = &id
+	}
+	node, err := h.svc.Nodes.SetOwner(ctx, orgID, nodeID, owner)
+	if errors.Is(err, service.ErrOwnerNotMember) {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if err != nil {
+		return nil, notFound(err)
 	}
 	r := h.enrichNode(ctx, node)
 	return &UpdateNodeOutput{Body: &r}, nil
@@ -970,11 +1011,11 @@ type CreateProvisioningTokenOutput struct {
 }
 
 func (h *Handler) CreateProvisioningToken(ctx context.Context, input *CreateProvisioningTokenInput) (*CreateProvisioningTokenOutput, error) {
-	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	userID, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
-	plaintext, row, err := h.svc.Nodes.CreateProvisioningToken(ctx, orgID, input.Body.Label, input.Body.ExpiresAt, input.Body.MeshRole)
+	plaintext, row, err := h.svc.Nodes.CreateProvisioningTokenBy(ctx, orgID, &userID, input.Body.Label, input.Body.ExpiresAt, input.Body.MeshRole)
 	if err != nil {
 		return nil, err
 	}
