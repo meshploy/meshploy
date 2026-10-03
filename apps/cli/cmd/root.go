@@ -35,7 +35,7 @@ var rootCmd = &cobra.Command{
 	Long: `meshploy is the command-line interface for Meshploy.
 
 Authenticate once with:
-  meshploy auth login --api-url https://meshploy.example.com
+  meshploy auth login
 
 Then manage nodes, clusters, and more.`,
 	SilenceUsage:  true,
@@ -69,7 +69,7 @@ func initConfig() {
 // apiClient returns an authenticated client or exits with an error.
 func apiClient() *client.Client {
 	if loadedCfg.APIURL == "" {
-		fmt.Fprintln(os.Stderr, "error: not logged in. Run: meshploy auth login --api-url <url>")
+		fmt.Fprintln(os.Stderr, "error: not logged in. Run: meshploy auth login")
 		os.Exit(1)
 	}
 	return client.New(loadedCfg.APIURL, loadedCfg.Token)
@@ -78,7 +78,7 @@ func apiClient() *client.Client {
 // orgID returns the saved org ID or exits with a helpful error.
 func orgID() string {
 	if loadedCfg.OrgID == "" {
-		fmt.Fprintln(os.Stderr, "error: not logged in. Run: meshploy auth login --api-url <url>")
+		fmt.Fprintln(os.Stderr, "error: not logged in. Run: meshploy auth login")
 		os.Exit(1)
 	}
 	return loadedCfg.OrgID

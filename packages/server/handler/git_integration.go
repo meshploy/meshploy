@@ -591,17 +591,8 @@ func (h *Handler) consoleAfterCallback(r *http.Request, startedFrom string) stri
 	if startedFrom != "" && service.IsConsoleName(startedFrom) {
 		name = startedFrom
 	}
-	host := strings.ToLower(r.Host)
-	if i := strings.LastIndexByte(host, ':'); i >= 0 {
-		host = host[:i]
-	}
 	if h.svc != nil && h.svc.Domains != nil {
-		for _, prefix := range []string{"api.", "console."} {
-			if base, ok := strings.CutPrefix(host, prefix); ok && h.svc.Domains.ServesPlatform(r.Context(), base) {
-				return "https://" + name + "." + base
-			}
-		}
-		if u := h.svc.Domains.GatewayPlatformURL(r.Context(), name); u != "" {
+		if u := h.svc.Domains.PlatformURLFor(r.Context(), r.Host, name); u != "" {
 			return u
 		}
 	}

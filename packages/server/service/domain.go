@@ -86,6 +86,24 @@ func (s *DomainService) GatewayPlatformURL(ctx context.Context, sub string) stri
 	return ""
 }
 
+// PlatformURLFor is PlatformURL for a caller that has no organisation but did
+// arrive through an address: a platform name on the domain it came in by, so
+// someone who reached the platform through a former primary stays on it, and
+// a session they already hold there still counts. Host is the caller's to
+// write, so it is honoured only for a domain this gateway serves the platform
+// on; anything else gets the gateway's primary. Empty when there is neither,
+// as on a development machine with no domain.
+func (s *DomainService) PlatformURLFor(ctx context.Context, host, sub string) string {
+	host = strings.ToLower(host)
+	if i := strings.LastIndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	if label, base, ok := strings.Cut(host, "."); ok && (label == "api" || IsConsoleName(label)) && s.ServesPlatform(ctx, base) {
+		return "https://" + sub + "." + base
+	}
+	return s.GatewayPlatformURL(ctx, sub)
+}
+
 // hostnameRe is one label, dot, at least one more label. Deliberately stricter
 // than RFC 1123: a base domain has to have a dot in it, because a single label
 // cannot be delegated and cannot hold a public certificate.

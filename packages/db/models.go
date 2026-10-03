@@ -322,6 +322,52 @@ type AgentToken struct {
 
 func (AgentToken) TableName() string { return "agent_tokens" }
 
+// CLI login states. A login is pending until someone signed in to the console
+// approves or denies it; an approved one is collected once, by the CLI that
+// started it, which is when its token is made.
+const (
+	CLILoginPending   = "pending"
+	CLILoginApproved  = "approved"
+	CLILoginDenied    = "denied"
+	CLILoginCollected = "collected"
+)
+
+// CLILogin is a CLI waiting for a person to approve it in a browser: OAuth's
+// device flow. The CLI holds the device code and polls with it; the person
+// sees the user code on both the terminal and the approval page, which is what
+// stops them approving a terminal that is not theirs. Only the device code's
+// hash is kept.
+type CLILogin struct {
+	Base
+	DeviceCodeHash string     `gorm:"not null;uniqueIndex"                         json:"-"`
+	UserCode       string     `gorm:"not null;uniqueIndex"                         json:"user_code"`
+	Host           string     `gorm:"not null"                                     json:"host"` // the machine's name, as its CLI gave it
+	Door           string     `gorm:"not null;default:'console'"                   json:"door"` // the console name it is approved at
+	Status         string     `gorm:"type:varchar(10);not null;default:'pending'" json:"status"`
+	UserID         *uuid.UUID `gorm:"type:uuid"                                    json:"-"` // who approved or denied it
+	ExpiresAt      time.Time  `gorm:"not null;index"                               json:"expires_at"`
+}
+
+func (CLILogin) TableName() string { return "cli_logins" }
+
+// CLIToken is a CLI's credential (format: mcli-<hex>), made when an approved
+// login is collected. It acts as the person who approved it, with their
+// permissions. Only its SHA-256 hash is kept. It lapses after a while unused
+// (service.CLITokenIdle) and is revoked by its owner or by logging out.
+type CLIToken struct {
+	Base
+	UserID      uuid.UUID  `gorm:"type:uuid;not null;index" json:"-"`
+	Host        string     `gorm:"not null"                 json:"host"`
+	TokenHash   string     `gorm:"not null;uniqueIndex"     json:"-"`
+	TokenPrefix string     `gorm:"not null"                 json:"token_prefix"`
+	LastUsedAt  *time.Time `                                json:"last_used_at,omitempty"`
+	RevokedAt   *time.Time `                                json:"revoked_at,omitempty"`
+
+	User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (CLIToken) TableName() string { return "cli_tokens" }
+
 // InstalledLicense holds the Enterprise license token pasted by an admin.
 // At most one row exists per install - licenses are install-scoped for
 // self-hosted (Cloud uses org.plan instead, via a different Entitlements

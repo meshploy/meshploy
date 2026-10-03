@@ -21,7 +21,7 @@ Configure Claude Code by adding to .claude/settings.json:
     }
   }
 
-Requires an active login: meshploy auth login --api-url <url>`,
+Requires an active login: meshploy auth login`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := apiClient()
 		oid := orgID()

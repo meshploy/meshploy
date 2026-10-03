@@ -11,30 +11,51 @@ import (
 
 type contextKey string
 
-const userIDKey contextKey = "userID"
+const (
+	userIDKey     contextKey = "userID"
+	credentialKey contextKey = "credential"
+)
 
 // AgentTokenPrefix identifies a Meshploy agent token in the Authorization header.
 const AgentTokenPrefix = "magt-"
 
-// AgentResolver resolves a plaintext agent token to the agent's principal id.
-// The bool is false for any unknown/revoked/expired token. Supplied by the
-// service layer (AgentService.ResolveToken) so middleware stays db-agnostic.
+// CLITokenPrefix identifies the token a CLI holds after a person approved its
+// login in a browser.
+const CLITokenPrefix = "mcli-"
+
+// Credential is the kind of credential a request was authenticated with.
+type Credential string
+
+const (
+	// CredentialSession is a browser session: a JWT from signing in, two-factor
+	// included.
+	CredentialSession Credential = "session"
+	CredentialAgent   Credential = "agent"
+	CredentialCLI     Credential = "cli"
+)
+
+// AgentResolver resolves a plaintext token to the principal it acts as. The
+// bool is false for any unknown/revoked/expired token. Supplied by the service
+// layer (AgentService.ResolveToken, CLILoginService.ResolveToken) so
+// middleware stays db-agnostic.
 type AgentResolver func(ctx context.Context, rawToken string) (uuid.UUID, bool)
 
 // Auth is a soft middleware - it sets the user ID in context if a valid Bearer
 // credential is present, but does not block requests without one. Handlers that
 // require authentication must call RequireUser.
 //
-// Two credential kinds are accepted, both via `Authorization: Bearer <cred>`:
+// Three credential kinds are accepted, all via `Authorization: Bearer <cred>`:
 //   - a JWT (human users), verified with secret;
-//   - a magt- agent token, resolved to the same principal shape via resolveAgent.
+//   - a magt- agent token, resolved to the same principal shape via resolveAgent;
+//   - an mcli- CLI token, resolved via resolveCLI to the person who approved it.
 //
-// A resolved agent id is placed in ctx under the identical key a JWT uses, so
-// every downstream permission check runs unchanged. resolveAgent may be nil
-// (agent auth disabled). agentFailLimiter, when non-nil, throttles repeated
-// invalid agent-token attempts per client IP (defence-in-depth; the token space
-// is 256-bit so brute force is already infeasible).
-func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLimiter) func(http.Handler) http.Handler {
+// A resolved id is placed in ctx under the identical key a JWT uses, so every
+// downstream permission check runs unchanged; the credential's kind is kept
+// beside it (CredentialFromContext) for the few routes that need a browser
+// session. A nil resolver disables that kind. agentFailLimiter, when non-nil,
+// throttles repeated invalid token attempts per client IP (defence-in-depth;
+// the token space is 256-bit so brute force is already infeasible).
+func Auth(secret string, resolveAgent, resolveCLI AgentResolver, agentFailLimiter *IPRateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get("Authorization")
@@ -45,11 +66,18 @@ func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLim
 
 			tokenStr := strings.TrimPrefix(raw, "Bearer ")
 
-			// Agent token path - resolve to a principal id and set the same ctx key.
-			if strings.HasPrefix(tokenStr, AgentTokenPrefix) {
-				if resolveAgent != nil {
-					if agentID, ok := resolveAgent(r.Context(), tokenStr); ok {
-						ctx := ContextWithUser(r.Context(), agentID)
+			// Token paths - resolve to a principal id and set the same ctx key.
+			resolve, kind := AgentResolver(nil), Credential("")
+			switch {
+			case strings.HasPrefix(tokenStr, AgentTokenPrefix):
+				resolve, kind = resolveAgent, CredentialAgent
+			case strings.HasPrefix(tokenStr, CLITokenPrefix):
+				resolve, kind = resolveCLI, CredentialCLI
+			}
+			if kind != "" {
+				if resolve != nil {
+					if id, ok := resolve(r.Context(), tokenStr); ok {
+						ctx := context.WithValue(ContextWithUser(r.Context(), id), credentialKey, kind)
 						next.ServeHTTP(w, r.WithContext(ctx))
 						return
 					}
@@ -91,7 +119,7 @@ func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLim
 				return
 			}
 
-			ctx := ContextWithUser(r.Context(), userID)
+			ctx := context.WithValue(ContextWithUser(r.Context(), userID), credentialKey, CredentialSession)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -103,6 +131,20 @@ func Auth(secret string, resolveAgent AgentResolver, agentFailLimiter *IPRateLim
 // authenticated context without going through HTTP.
 func ContextWithUser(ctx context.Context, userID uuid.UUID) context.Context {
 	return context.WithValue(ctx, userIDKey, userID)
+}
+
+// CredentialFromContext is the kind of credential the request was
+// authenticated with; empty when it was not, or when the principal was put in
+// context some other way (tests, internal calls).
+func CredentialFromContext(ctx context.Context) Credential {
+	c, _ := ctx.Value(credentialKey).(Credential)
+	return c
+}
+
+// ContextWithCredential returns a copy of ctx saying which kind of credential
+// authenticated it, for tests of routes that need a particular kind.
+func ContextWithCredential(ctx context.Context, c Credential) context.Context {
+	return context.WithValue(ctx, credentialKey, c)
 }
 
 // UserFromContext returns the authenticated user ID from the request context.
@@ -160,6 +202,13 @@ var publicRules = []publicRule{
 	// MFA second-factor steps - no Bearer token exists yet at this point.
 	{Method: "POST", Path: "/api/v1/auth/totp", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/auth/recovery", Match: matchExact},
+
+	// CLI login through a browser. The CLI has no credential yet: it finds the
+	// server, starts a login, and polls with the device code it was given,
+	// which is the credential. Approving is an ordinary authenticated call.
+	{Method: "GET", Path: "/api/v1/system/login-info", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/cli/logins", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/cli/logins/token", Match: matchExact},
 
 	// Node self-registration presents an mreg-/mprov- token, not a JWT. The
 	// provisioning call comes earlier still, from a machine that is not on the

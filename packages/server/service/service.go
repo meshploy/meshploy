@@ -20,6 +20,7 @@ type Services struct {
 	Auth            *AuthService
 	Entitlements    *EntitlementService
 	Agents          *AgentService
+	CLILogins       *CLILoginService
 	Orgs            *OrgService
 	Permissions     *PermissionService
 	Projects        *ProjectService
@@ -261,6 +262,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Auth:            auth,
 		Entitlements:    entitlements,
 		Agents:          agents,
+		CLILogins:       &CLILoginService{db: db},
 		Orgs:            &OrgService{db: db, notif: notif},
 		Permissions:     &PermissionService{db: db},
 		Projects:        projects,

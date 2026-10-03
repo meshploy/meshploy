@@ -173,13 +173,13 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (49 CE tables)
+## packages/db — schema (51 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Environments | `promotion_groups`, `promotion_group_members` |
 | Workloads | `stacks`, `stack_runs`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |

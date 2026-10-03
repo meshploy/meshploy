@@ -26,6 +26,8 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `recovery_codes` | One-time 2FA recovery codes (hashed) |
 | `dismissed_notices` | Console advisories a user has dismissed — per-user, keyed by a stable slug |
 | `agent_tokens` | `magt-` tokens for agent principals (SHA-256 hashed, shown once) |
+| `cli_logins` | A CLI waiting for someone to approve it in a browser (device flow): the user code both sides show, the device code's hash, its state |
+| `cli_tokens` | `mcli-` tokens a CLI holds after an approved login, acting as the person who approved it (SHA-256 hashed, shown once) |
 | `installed_licenses` | Enterprise licence tokens activated on this install |
 | `organizations` | Tenancy root |
 | `organization_members` | User ↔ Org join (roles: owner / admin / member) |

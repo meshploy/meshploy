@@ -140,6 +140,21 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | DELETE | `/me/totp` | ✓ | Disable 2FA (requires current TOTP code) |
 | POST | `/me/totp/enable` | ✓ | Verify TOTP code and enable 2FA |
 | POST | `/me/totp/setup` | ✓ | Generate a new TOTP secret (not yet enabled) |
+| GET | `/me/cli-sessions` | ✓ | Your logged-in CLIs, the most recently used first; `current` marks the one asking |
+| DELETE | `/me/cli-sessions/{id}` | ✓ | Log one of your CLIs out |
+
+### CLI login
+
+A CLI logs in through a browser, as OAuth's device flow does: it starts a login and polls; a person signed in to the console sees the same code the terminal shows and approves; the CLI collects an `mcli-` token that acts as them, once. The token lapses after 90 days unused.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/cli/logins` | public | Start a login (`host`, optional `door`: the console to approve at). Returns the device code (the CLI's secret), the user code, the approval link, the API address to save, the polling interval and expiry |
+| POST | `/cli/logins/token` | public | Poll with the device code: `pending`, `denied`, `expired`, `approved` with the token once, then `collected` |
+| GET | `/cli/logins/{code}` | ✓ | A login waiting for approval, by its user code (any case, dash optional) |
+| POST | `/cli/logins/{code}/approve` | ✓ | Approve it. A browser session only: an agent or CLI token is refused |
+| POST | `/cli/logins/{code}/deny` | ✓ | Deny it. A browser session only |
+| DELETE | `/cli/session` | ✓ | Log out the CLI making the request (an `mcli-` token only) |
 
 ### Orgs, members & invitations
 
@@ -525,6 +540,7 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
+| GET | `/system/login-info` | public | The console and API addresses for a CLI finding this server, on the domain it was reached through when that domain serves the platform, else the primary's; and the version |
 | GET | `/system/exposure` | ✓ | Report whether this gateway runs without a host firewall |
 | POST | `/system/notices/{key}/dismiss` | ✓ | Dismiss a console advisory for the current user |
 | GET | `/system/channels` | ✓ | Describe the stable and edge channels, where this server is, and whether it may switch |

@@ -49,13 +49,18 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 
 	// 20 invalid agent-token attempts per minute per IP (defence-in-depth).
 	agentFailLimiter := middleware.NewIPRateLimiter(rate.Every(3*time.Second), 20)
-	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, agentFailLimiter))
+	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, agentFailLimiter))
 	r.Use(middleware.RequireAuth)
 	r.Use(middleware.PathRateLimiter(map[string]*middleware.IPRateLimiter{
 		// 5 attempts per minute per IP - brute-force protection
 		"POST /api/v1/auth/login": middleware.NewIPRateLimiter(rate.Every(12), 5),
 		// 3 registrations per hour per IP - spam protection
 		"POST /api/v1/auth/register": middleware.NewIPRateLimiter(rate.Limit(3.0/3600.0), 3),
+		// CLI logins: a few a minute per IP to start, and polls at about the
+		// interval the CLI is given (5s), with room for a few CLIs behind one
+		// address.
+		"POST /api/v1/cli/logins":       middleware.NewIPRateLimiter(rate.Every(10*time.Second), 6),
+		"POST /api/v1/cli/logins/token": middleware.NewIPRateLimiter(rate.Every(time.Second), 20),
 	}))
 	r.Use(middleware.OrgMember(func(ctx context.Context, orgID, userID uuid.UUID) error {
 		_, err := svc.Orgs.MemberRole(ctx, orgID, userID)

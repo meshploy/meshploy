@@ -7,8 +7,10 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { PasswordInput } from "@/components/forms/password-input"
+import { safeNext } from "@/lib/safe-next"
 
 export const Route = createFileRoute("/_auth/login")({
+  validateSearch: (search: Record<string, unknown>): { next?: string } => ({ next: safeNext(search.next) }),
   loader: async () => {
     const status = await auth.status()
     if (status.registration_open) throw redirect({ to: "/register" })
@@ -18,6 +20,7 @@ export const Route = createFileRoute("/_auth/login")({
 
 function LoginPage() {
   const navigate = useNavigate()
+  const { next } = Route.useSearch()
   const setAuth = useAuthStore((s) => s.setAuth)
   const setOrgs = useOrgStore((s) => s.setOrgs)
 
@@ -39,7 +42,8 @@ function LoginPage() {
     setAuth(token, userId)
     const orgList = await orgs.list(token)
     setOrgs(orgList.map((o) => ({ id: o.id, name: o.name, slug: o.slug })))
-    navigate({ to: "/" })
+    if (next) navigate({ href: next })
+    else navigate({ to: "/" })
   }
 
   const loginMutation = useMutation({

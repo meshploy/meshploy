@@ -45,18 +45,24 @@ Log in once, then link the directories you work in to a project.
 ### `meshploy auth`
 
 ```bash
-meshploy auth login --api-url https://api.your-domain.com
+meshploy auth login
 ```
 
-Prompts for email and password, saves credentials to `~/.meshploy/config.json`. The org ID is resolved automatically — no `--org` flag needed on subsequent commands.
+Prints a link and a code. Open the link in any browser (it need not be on this machine: over SSH, use your laptop's), sign in there with two-factor if you use it, check the code matches what the terminal shows, and approve. The CLI is then logged in as you, with your permissions, until you log it out or it goes 90 days unused. Your password is never typed into the terminal. Saved to `~/.meshploy/config.json`; the org ID is resolved automatically, so no `--org` flag is needed on later commands.
+
+The server is found, in this order, from `--url`, the gateway's `/opt/meshploy/.env` (readable by root), a worker's `/etc/meshploy/node.conf`, or the last login, and otherwise the CLI asks for your domain. When it did not come from `--url` or the prompt, the CLI says which server it chose, so someone with two servers does not approve on the wrong one. `--url` takes a domain (`example.com`) or a console, Apps or API address.
+
+Every CLI signed in as you is listed in the console under **Account → CLI sessions**, where each can be logged out.
 
 | Command | Description |
 |---|---|
-| `auth login --api-url <url>` | Log in and save credentials |
-| `auth logout` | Remove saved credentials |
+| `auth login [--url <domain>]` | Log in by approving in a browser |
+| `auth login --password` | Log in by typing email, password and two-factor code here, for a machine that cannot reach a browser. Saves the console's 24-hour session |
+| `auth login --no-browser` | Print the link without trying to open a browser |
+| `auth logout` | Log this CLI out on the server and remove saved credentials |
 | `auth whoami` | Print the saved API URL and token preview |
 
-If your account has 2FA enabled, `auth login` prompts for a 6-digit TOTP code after the password step. Use a recovery code instead if you've lost access to your authenticator app.
+With `--password`, an account with two-factor is asked for its 6-digit code after the password; a recovery code works instead if you have lost your authenticator app.
 
 ### `meshploy link`
 

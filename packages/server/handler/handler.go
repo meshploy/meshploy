@@ -52,6 +52,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerSystemRoutes(api)
 	h.registerPermissionRoutes(api)
 	h.registerAgentRoutes(api)
+	h.registerCLILoginRoutes(api)
 	h.registerEntitlementRoutes(api)
 	h.registerTerminalRoutes(api)
 

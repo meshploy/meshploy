@@ -64,6 +64,8 @@ func Migrate(db *gorm.DB) error {
 		&RecoveryCode{},
 		&DismissedNotice{},
 		&AgentToken{},
+		&CLILogin{},
+		&CLIToken{},
 		&InstalledLicense{},
 		&Organization{},
 		&OrganizationMember{},

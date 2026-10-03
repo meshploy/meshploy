@@ -11,7 +11,7 @@ const configFileName = "config.json"
 
 type Config struct {
 	APIURL string `json:"api_url"` // e.g. https://meshploy.example.com
-	Token  string `json:"token"`   // JWT from `meshploy auth login`
+	Token  string `json:"token"`   // an mcli- token from `meshploy auth login`, or a JWT from --password
 	OrgID  string `json:"org_id"`  // auto-resolved on login (single org per CE install)
 }
 

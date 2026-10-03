@@ -9,6 +9,7 @@ import { auth as authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
+import { CliSessionsSection } from "@/components/auth/cli-sessions"
 
 export const Route = createFileRoute("/_app/account/")({
   component: AccountPage,
@@ -22,10 +23,11 @@ function AccountPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Manage your personal profile and security settings</p>
       </div>
 
-      <SettingsWorkspace sections={[["account-profile", "Profile"], ["account-password", "Password"], ["account-security", "Two-factor authentication"]]}>
+      <SettingsWorkspace sections={[["account-profile", "Profile"], ["account-password", "Password"], ["account-security", "Two-factor authentication"], ["account-cli", "CLI sessions"]]}>
         <div id="account-profile"><ProfileSection /></div>
         <div id="account-password"><PasswordSection /></div>
         <div id="account-security"><TwoFactorSection /></div>
+        <div id="account-cli"><CliSessionsSection /></div>
       </SettingsWorkspace>
     </div>
   )
