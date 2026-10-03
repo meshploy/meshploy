@@ -181,6 +181,12 @@ def web_packages(app_dir):
         if not text and declared:
             text = f"{name} ships no licence file. Its package.json declares: {declared}."
         (found if text else missing).append((name, version, text, declared))
+
+    # Fonts kept in the repository rather than taken from a package: each family
+    # ships its licence beside it as <Family>-OFL.txt, which names it here.
+    for lic in sorted((app_dir / "public" / "fonts").glob("*-OFL.txt")):
+        family = lic.name[: -len("-OFL.txt")]
+        found.append((f"{family} (font)", "", lic.read_text(errors="replace").strip(), "OFL-1.1"))
     return found, missing
 
 

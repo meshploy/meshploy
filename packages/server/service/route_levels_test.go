@@ -156,3 +156,17 @@ func TestAServiceBornInALevelGetsProductionNamesWhenPromoted(t *testing.T) {
 	require.NoError(t, gdb.First(&staging, "id = ?", route.ID).Error)
 	assert.Equal(t, "shop-staging1.acme.dev", staging.Hostname, "staging keeps its own name")
 }
+
+// A route is found by its hostname, so one with neither a domain nor a
+// hostname is refused rather than saved to never serve.
+func TestARouteWithNoHostnameIsRefused(t *testing.T) {
+	svcs, gdb, prod, _, _, _, _ := newChain(t)
+	var project meshdb.Project
+	require.NoError(t, gdb.First(&project, "id = ?", prod).Error)
+	_, err := svcs.Routes.Create(context.Background(), service.CreateRouteInput{OrgID: project.OrganizationID, ProjectID: prod,
+		Zone: meshdb.RouteZoneInternal, Subdomain: "tools"})
+	assert.ErrorContains(t, err, "needs a domain_id")
+	var n int64
+	gdb.Model(&meshdb.Route{}).Count(&n)
+	assert.Zero(t, n)
+}

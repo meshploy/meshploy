@@ -54,8 +54,9 @@ export async function apiFetch<T>(
     throw new ApiError(res.status, detail, title)
   }
 
-  // 204 No Content
+  // 204 No Content, or a success that says nothing else (a 201 for a created
+  // thing whose caller reads it back) - both mean "done".
   if (res.status === 204) return undefined as T
-
-  return res.json() as Promise<T>
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }

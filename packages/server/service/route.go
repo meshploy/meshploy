@@ -175,6 +175,10 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		}
 		hostname = hostnameFor(in.Zone, levelSubdomain(in.Subdomain, level), &domain)
 	}
+	// A route is found by its hostname, so one without it would never serve.
+	if hostname == "" {
+		return nil, huma.Error422UnprocessableEntity("a route needs a domain_id and subdomain, or a hostname")
+	}
 
 	route := &db.Route{
 		OrganizationID: in.OrgID,

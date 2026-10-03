@@ -63,7 +63,7 @@ export function NodesTable({ nodes }: NodesTableProps) {
               </TableCell>
               <TableCell className="py-3.5">
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {node.cpuCores}c / {node.memoryGB}GB / {node.diskGB}GB
+                  {node.cpuCores}c / {node.memoryGB.toFixed(1)} GB / {node.diskGB.toFixed(0)} GB
                 </span>
               </TableCell>
               <TableCell className="py-3.5">
