@@ -65,16 +65,19 @@ function SessionList({ sessions, empty }: { sessions: Session[]; empty: React.Re
   return (
     <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
       {ordered(sessions).map((s) => (
-        <div key={`${s.kind}:${s.id}`} className={`flex items-center gap-3 px-4 py-3 ${s.ended ? "opacity-60" : ""}`}>
+        <div key={`${s.kind}:${s.id}`} className={`flex flex-wrap items-center gap-3 px-4 py-3 ${s.ended ? "opacity-60" : ""}`}>
+          {/* On a list of several people's, whose it is comes first. */}
+          {s.person && (
+            <Link to="/users/$userId" params={{ userId: s.person.id }} className="group flex w-full min-w-0 items-center gap-2.5 sm:w-44 sm:shrink-0">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                {s.person.name.slice(0, 2).toUpperCase()}
+              </span>
+              <span className="truncate text-sm font-medium group-hover:underline">{s.person.name}</span>
+            </Link>
+          )}
           {s.kind === "cli" ? <TerminalSquare className="h-4 w-4 shrink-0 text-muted-foreground" /> : <PlugZap className="h-4 w-4 shrink-0 text-muted-foreground" />}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">
-              {s.title}
-              {s.person && (
-                <> <span className="text-xs font-normal text-muted-foreground">for </span>
-                  <Link to="/users/$userId" params={{ userId: s.person.id }} className="text-xs font-normal hover:underline">{s.person.name}</Link></>
-              )}
-            </p>
+            <p className="truncate text-sm font-medium">{s.title}</p>
             <p className="text-xs text-muted-foreground">
               {s.detail} · signed in {formatRelativeTime(new Date(s.created))}
               {s.lastUsed && <> · last used {formatRelativeTime(new Date(s.lastUsed))}</>}
@@ -304,6 +307,8 @@ export function AgentSessions({ orgId, agentId, token }: { orgId: string; agentI
 
 type Kind = "all" | "assistant" | "cli"
 
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
 /** Every connected session in the organisation, on the Access page. */
 export function OrgSessions({ orgId, token }: { orgId: string; token: string }) {
   const assistants = useQuery({ queryKey: ["oauth-connections", orgId, "all"], queryFn: () => oauth.connections(orgId, token, { all: true }) })
@@ -332,12 +337,12 @@ export function OrgSessions({ orgId, token }: { orgId: string; token: string }) 
         <OptionSelect label="Kind" value={kind} onChange={(v) => setKind(v as Kind)}
           options={[{ value: "all", label: "Every kind" }, { value: "assistant", label: "AI assistants" }, { value: "cli", label: "CLIs" }]} />
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" checked={showEnded} onChange={(e) => setShowEnded(e.target.checked)} />
+          <input type="checkbox" className="h-3.5 w-3.5 accent-primary" checked={showEnded} onChange={(e) => setShowEnded(e.target.checked)} />
           Show disconnected
         </label>
       </div>
       <p className="text-xs text-muted-foreground">
-        {live.filter((s) => s.kind === "assistant").length} AI assistants and {live.filter((s) => s.kind === "cli").length} CLIs signed in as this organisation's people.
+        {count(live.filter((s) => s.kind === "assistant").length, "AI assistant", "AI assistants")} and {count(live.filter((s) => s.kind === "cli").length, "CLI", "CLIs")} signed in as this organisation's people.
         {" "}A CLI acts as its person in every organisation they belong to, so one whose person is also in another organisation is logged out only by them.
       </p>
       {assistants.isLoading || clis.isLoading ? (

@@ -28,7 +28,10 @@ import { useOrgStore } from "@/store/org-store"
 export const Route = createFileRoute("/_app/access/")({
   // person narrows the rules to one person's, so a member's page can link to
   // theirs; q fills the search box.
-  validateSearch: (search: Record<string, unknown>): { q?: string; person?: string } => ({
+  // tab is the open tab, in the address so coming back (or a link) opens it;
+  // Rules when absent.
+  validateSearch: (search: Record<string, unknown>): { tab?: Tab; q?: string; person?: string } => ({
+    tab: TABS.includes(search.tab as Tab) && search.tab !== "rules" ? (search.tab as Tab) : undefined,
     q: typeof search.q === "string" && search.q ? search.q : undefined,
     person: typeof search.person === "string" && search.person ? search.person : undefined,
   }),
@@ -36,12 +39,16 @@ export const Route = createFileRoute("/_app/access/")({
 })
 
 type Tab = "rules" | "machines" | "sessions" | "policy"
+const TABS: Tab[] = ["rules", "machines", "sessions", "policy"]
 
 function AccessPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const [tab, setTab] = useState<Tab>("rules")
-  const { q, person } = Route.useSearch()
+  const navigate = useNavigate()
+  const { tab = "rules", q, person } = Route.useSearch()
+  // Replacing, not pushing: switching tabs is not a page to go back through,
+  // but the page is left on the tab that was open.
+  const setTab = (t: Tab) => navigate({ to: "/access", search: (prev) => ({ ...prev, tab: t === "rules" ? undefined : t }), replace: true })
   if (!orgId) return null
   return (
     <div className="console-page space-y-6 p-6">
