@@ -25,6 +25,30 @@
     }
 }
 
+# Security headers for the platform's own names, never for a workload route:
+# those answer with whatever their app sends.
+# - HSTS without includeSubDomains, since an internal route may use Caddy's own
+#   certificate authority, which a browser must still be able to click through.
+# - No framing: the console's approval pages (an AI assistant connecting, a CLI
+#   signing in) are one click away from granting access, so no other site may
+#   frame them under a decoy.
+# - The console's session token lives in the browser's storage, so the
+#   console's CSP allows scripts from itself alone: an injected script would
+#   otherwise carry it off. Styles stay 'unsafe-inline', as some of its
+#   libraries insert <style> elements; a worker comes from a blob: URL.
+(platform_headers) {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+}
+(console_csp) {
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://{host}; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+}
+
 # Anything you add yourself. Imported before the site blocks, so a syntax error
 # in it fails the config outright rather than at the first request.
 import conf.d/*.caddy
@@ -45,6 +69,8 @@ headscale.{{ .BaseDomain }} {
 # /docs (Swagger UI), /api/v1/*, and the SSE log endpoints.
 api.{{ .BaseDomain }} {
 {{- template "named_tls" . }}
+    # No CSP here: /docs loads its viewer from a CDN.
+    import platform_headers
     reverse_proxy localhost:4000 {
         flush_interval -1
     }
@@ -53,6 +79,8 @@ api.{{ .BaseDomain }} {
 # ── Meshploy console ─────────────────────────────────────────────────────────
 console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {{ . }}.{{ $base }}{{ end }} {
 {{- template "named_tls" . }}
+    import platform_headers
+    import console_csp
     handle /api/* {
         reverse_proxy localhost:4000 {
             # flush_interval -1 disables response buffering so SSE log streams

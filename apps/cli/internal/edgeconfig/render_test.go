@@ -165,9 +165,10 @@ func siteAddresses(caddyfile string) []string {
 	out := []string{}
 	for _, m := range siteRe.FindAllStringSubmatch(caddyfile, -1) {
 		addr := strings.TrimSpace(m[1])
-		// Skip the ones that are not site addresses: `import` has no brace, but
-		// a nested directive at column 0 would be a syntax error anyway.
-		if addr == "" {
+		// Skip the ones that are not site addresses: `import` has no brace, a
+		// snippet's name is in parentheses, and a nested directive at column 0
+		// would be a syntax error anyway.
+		if addr == "" || strings.HasPrefix(addr, "(") {
 			continue
 		}
 		out = append(out, addr)
