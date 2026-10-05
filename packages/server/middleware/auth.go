@@ -132,12 +132,11 @@ func Auth(secret string, resolveAgent, resolveCLI, resolveOAuth AgentResolver, a
 				return
 			}
 
+			// Only the method sessions are signed with, and never a token
+			// without an expiry: one that cannot lapse would be good forever.
 			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
-				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, jwt.ErrSignatureInvalid
-				}
 				return []byte(secret), nil
-			})
+			}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
 			if err != nil || !token.Valid {
 				next.ServeHTTP(w, r)
 				return
@@ -145,6 +144,14 @@ func Auth(secret string, resolveAgent, resolveCLI, resolveOAuth AgentResolver, a
 
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// The token a correct password earns before the second factor is
+			// signed with the same secret and names the same person, but it is
+			// only for the code step: as a session it would skip two-factor
+			// sign-in entirely.
+			if pending, _ := claims["mfa_pending"].(bool); pending {
 				next.ServeHTTP(w, r)
 				return
 			}

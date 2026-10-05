@@ -153,6 +153,9 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 	}, func(ctx context.Context, in *CompleteTOTPLoginInput) (*CompleteTOTPLoginOutput, error) {
 		deviceName := truncate(in.UserAgent, 200)
 		result, err := h.svc.Auth.CompleteTOTPLogin(ctx, in.Body.MFAToken, in.Body.Code, h.cfg.JWTSecret, in.Body.TrustDevice, deviceName)
+		if errors.Is(err, svc.ErrTooManyAttempts) {
+			return nil, huma.Error429TooManyRequests(err.Error())
+		}
 		if err != nil {
 			return nil, huma.Error401Unauthorized(err.Error())
 		}
@@ -172,6 +175,9 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Tags:        []string{tag},
 	}, func(ctx context.Context, in *CompleteRecoveryLoginInput) (*CompleteTOTPLoginOutput, error) {
 		result, err := h.svc.Auth.CompleteRecoveryLogin(ctx, in.Body.MFAToken, in.Body.RecoveryCode, h.cfg.JWTSecret)
+		if errors.Is(err, svc.ErrTooManyAttempts) {
+			return nil, huma.Error429TooManyRequests(err.Error())
+		}
 		if err != nil {
 			return nil, huma.Error401Unauthorized(err.Error())
 		}
@@ -376,6 +382,9 @@ func (h *Handler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, e
 		Password:    input.Body.Password,
 		DeviceToken: extractCookie(input.Cookie, "meshploy_device_token"),
 	}, h.cfg.JWTSecret)
+	if errors.Is(err, svc.ErrTooManyAttempts) {
+		return nil, huma.Error429TooManyRequests(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid credentials")
 	}

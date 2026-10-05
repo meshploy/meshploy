@@ -144,6 +144,9 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*db.User,
 // Login validates credentials. If the user has 2FA enabled it returns an
 // MFA token (short-lived, mfa_pending claim) instead of a full JWT.
 func (s *AuthService) Login(ctx context.Context, in LoginInput, jwtSecret string) (LoginResult, error) {
+	if !passwordAttempts.Allow(in.Email) {
+		return LoginResult{}, ErrTooManyAttempts
+	}
 	var user db.User
 	err := s.db.WithContext(ctx).Where("email = ?", in.Email).First(&user).Error
 	if err != nil {
@@ -205,6 +208,9 @@ func (s *AuthService) CompleteTOTPLogin(ctx context.Context, mfaToken, code, jwt
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		return CompleteTOTPLoginResult{}, errors.New("invalid MFA token")
+	}
+	if !codeAttempts.Allow(userID.String()) {
+		return CompleteTOTPLoginResult{}, ErrTooManyAttempts
 	}
 
 	var user db.User
@@ -403,6 +409,9 @@ func (s *AuthService) CompleteRecoveryLogin(ctx context.Context, mfaToken, rawCo
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		return CompleteTOTPLoginResult{}, errors.New("invalid MFA token")
+	}
+	if !codeAttempts.Allow(userID.String()) {
+		return CompleteTOTPLoginResult{}, ErrTooManyAttempts
 	}
 
 	// Normalize: strip dash, lowercase - matches how they were hashed at generation.
