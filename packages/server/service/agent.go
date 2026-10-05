@@ -37,6 +37,9 @@ var (
 	// ErrAgentOwnerRole - agents may never hold the org owner role.
 	ErrAgentOwnerRole = errors.New("agents cannot be granted the owner role")
 	ErrAgentNotFound  = errors.New("agent not found")
+	// ErrAgentAmbiguous - an agent with more than one membership, which no
+	// code path makes; refused rather than resolved to either.
+	ErrAgentAmbiguous = errors.New("agent belongs to more than one organization")
 	ErrTokenNotFound  = errors.New("token not found")
 	ErrNameTaken      = errors.New("a user or agent with that name already exists")
 )
@@ -196,18 +199,23 @@ func (s *AgentService) requireAgentInOrg(ctx context.Context, orgID, agentID uui
 // created with exactly one membership. Errors with ErrAgentNotFound if the id is
 // not an agent (e.g. a human user id).
 func (s *AgentService) AgentOrg(ctx context.Context, agentID uuid.UUID) (uuid.UUID, error) {
-	var m db.OrganizationMember
+	var ms []db.OrganizationMember
 	err := s.db.WithContext(ctx).
 		Joins("JOIN users u ON u.id = organization_members.user_id").
 		Where("organization_members.user_id = ? AND u.kind = ?", agentID, db.UserAgent).
-		First(&m).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return uuid.Nil, ErrAgentNotFound
-	}
+		Limit(2).Find(&ms).Error
 	if err != nil {
 		return uuid.Nil, err
 	}
-	return m.OrganizationID, nil
+	switch len(ms) {
+	case 0:
+		return uuid.Nil, ErrAgentNotFound
+	case 1:
+		return ms[0].OrganizationID, nil
+	}
+	// An agent belongs to exactly one organisation. Picking one of several
+	// would scope a whole session to whichever row came first.
+	return uuid.Nil, ErrAgentAmbiguous
 }
 
 // AddToken mints an additional token for an existing agent (rotation). Returns

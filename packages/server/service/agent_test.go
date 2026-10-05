@@ -259,3 +259,22 @@ func TestRevokingTheMigrationAgent(t *testing.T) {
 	// Idempotent: an operator may well have deleted it themselves.
 	require.NoError(t, svcs.Agents.RevokeMigrationAgent(ctx, org.ID))
 }
+
+// An agent belongs to one organisation; one that somehow has two is refused
+// rather than resolved to whichever membership comes first, which would scope
+// a whole MCP session to the wrong organisation.
+func TestAnAgentInTwoOrganisationsIsRefused(t *testing.T) {
+	svcs, org, owner, gdb := setupAgentFixture(t)
+	ctx := context.Background()
+	agent, _, err := svcs.Agents.CreateAgent(ctx, org, "bot", meshdb.RoleMember, "ci", nil, owner)
+	require.NoError(t, err)
+	got, err := svcs.Agents.AgentOrg(ctx, agent.ID)
+	require.NoError(t, err)
+	require.Equal(t, org, got)
+
+	other := meshdb.Organization{Name: "Other", Slug: "other"}
+	require.NoError(t, gdb.Create(&other).Error)
+	require.NoError(t, gdb.Create(&meshdb.OrganizationMember{OrganizationID: other.ID, UserID: agent.ID, Role: meshdb.RoleMember}).Error)
+	_, err = svcs.Agents.AgentOrg(ctx, agent.ID)
+	require.ErrorIs(t, err, service.ErrAgentAmbiguous)
+}

@@ -247,6 +247,7 @@ function MemberRow({ member, canEdit, sessions, orgId, token }: {
   orgId: string
   token: string
 }) {
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const initials = member.user_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
   // Every member has a page: a member's grants are managed there, and an
@@ -299,7 +300,17 @@ function MemberRow({ member, canEdit, sessions, orgId, token }: {
     <RoleBadge role={member.role as OrgRole} />
   )
 
-  return <tr className="border-b border-border last:border-0 hover:bg-muted/20"><td className="p-4"><Link to="/users/$userId" params={{userId:member.user_id}} className="flex items-center gap-3">{avatarAndName}</Link></td><td className="p-4 text-xs text-muted-foreground">Member</td><td className="p-4">{roleControl}<Dialog open={asking !== null} onOpenChange={(o) => { if (!o) setAsking(null) }}>
+  // The whole row opens the member's page, apart from its own controls. The
+  // role picker's menu and the confirmation are rendered elsewhere in the
+  // page but still pass their clicks up through here, so a click that did not
+  // land inside the row's own cells is not the row's.
+  const open = () => navigate({ to: "/users/$userId", params: { userId: member.user_id } })
+  return <tr tabIndex={0} aria-label={`Open ${member.user_name}`} className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/20"
+    onKeyDown={(e) => { if (e.target === e.currentTarget && e.key === "Enter") open() }}
+    onClick={(e) => {
+      const target = e.target as HTMLElement
+      if (e.currentTarget.contains(target) && !target.closest("a,button,[role=combobox],[role=listbox],select,input")) open()
+    }}><td className="p-4"><Link to="/users/$userId" params={{userId:member.user_id}} className="flex items-center gap-3">{avatarAndName}</Link></td><td className="p-4 text-xs text-muted-foreground">Member</td><td className="p-4">{roleControl}<Dialog open={asking !== null} onOpenChange={(o) => { if (!o) setAsking(null) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Make {member.user_name} {asking === "admin" ? "an admin" : "a member"}?</DialogTitle>
