@@ -1,5 +1,5 @@
 import { SettingsWorkspace } from "@/components/layout/settings-workspace"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Copy, Loader2, RefreshCw, ShieldCheck, ShieldOff, X } from "lucide-react"
@@ -9,7 +9,6 @@ import { auth as authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
-import { ConnectedSessionsSection } from "@/components/auth/connected-sessions"
 
 export const Route = createFileRoute("/_app/account/")({
   component: AccountPage,
@@ -27,7 +26,11 @@ function AccountPage() {
         <div id="account-profile"><ProfileSection /></div>
         <div id="account-password"><PasswordSection /></div>
         <div id="account-security"><TwoFactorSection /></div>
-        <div id="account-sessions"><ConnectedSessionsSection /></div>
+        <div id="account-sessions">
+          <Section title="Connected sessions" subtitle="AI assistants and CLIs signed in as you">
+            <p className="text-sm text-muted-foreground">They are on the <Link to="/connectors" className="text-primary hover:underline">Connectors</Link> page, with how to connect Claude, Cursor, VS Code or a terminal.</p>
+          </Section>
+        </div>
       </SettingsWorkspace>
     </div>
   )

@@ -70,11 +70,11 @@ function AgentDetailPage() {
     <div className="console-page space-y-6">
       <div className="space-y-4">
         <Link
-          to="/agents"
+          to="/connectors"
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Agents
+          Connectors
         </Link>
 
         {agent && <AgentHeader agent={agent} />}
@@ -259,7 +259,7 @@ function TokensSection({ agent, orgId, token, onAddToken }: {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">API keys</h2>
+        <h2 className="text-sm font-medium">Keys</h2>
         <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={onAddToken}>
           <Plus className="h-3.5 w-3.5" />
           New key
@@ -436,7 +436,7 @@ function DangerZone({ agent, orgId, token }: { agent: AgentDTO; orgId: string; t
     mutationFn: () => agentsApi.remove(orgId, agent.id, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agents", orgId] })
-      navigate({ to: "/agents" })
+      navigate({ to: "/connectors" })
     },
   })
 

@@ -551,7 +551,7 @@ An app the agent just wrote is two calls. `deploy_folder` does what `meshploy de
 }
 ```
 
-The gateway also serves MCP remotely at `https://console.<your-domain>/mcp`: a client that signs in (Claude, Cursor, VS Code) connects there as you after you approve it in the console, with no CLI. For an agent that shouldn't act as you, use that endpoint with an agent's key instead; create the agent in the dashboard under **API keys**, which shows the configuration for each client. The remote endpoint has every tool but the operator ones and `deploy_folder`: a path there would be on the gateway, not the agent's machine.
+The gateway also serves MCP remotely at `https://console.<your-domain>/mcp`: a client that signs in (Claude, Cursor, VS Code) connects there as you after you approve it in the console, with no CLI. For an agent that shouldn't act as you, use that endpoint with an agent's key instead; create a key in the dashboard under **Connectors**, which shows the configuration for each client. The remote endpoint has every tool but the operator ones and `deploy_folder`: a path there would be on the gateway, not the agent's machine.
 
 ---
 

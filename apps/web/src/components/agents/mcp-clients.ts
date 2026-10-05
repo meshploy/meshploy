@@ -114,7 +114,7 @@ export const MCP_CLIENT_GUIDES: readonly McpClientGuide[] = [
     file: null,
     // Custom connectors sign in through the server (OAuth) and offer nowhere
     // to paste a token, so this guide says how to connect that way instead.
-    note: "Claude connects by signing in, not with a key: in Claude, open Settings, then Connectors, add a custom connector with this address, and sign in. On the approval page an owner or admin can choose this agent; anyone can connect as themselves, and finds it under Connected sessions in their settings.",
+    note: "Claude connects by signing in, not with a key: in Claude, open Settings, then Connectors, add a custom connector with this address, and sign in. On the approval page an owner or admin can choose this agent; anyone can connect as themselves from the Connectors page.",
   },
 ]
 

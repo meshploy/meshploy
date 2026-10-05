@@ -21,6 +21,7 @@ func New(c *client.Client, orgID string) *mcpsdk.MCPServer {
 	ms := mcpsdk.NewMCPServer(
 		"meshploy", "0.1.0",
 		mcpsdk.WithToolCapabilities(false),
+		mcpsdk.WithIcons(icons()...),
 		mcpsdk.WithInstructions(
 			"Meshploy IDP manager. Most operations are project-scoped — "+
 				"call list_resources(type=projects) to discover project IDs before working with services, jobs, stacks, volumes, or routes.",

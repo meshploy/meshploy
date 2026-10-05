@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Section } from "@/components/services/form-primitives"
 import { CopyValue } from "@/components/domains/dns-records"
 import { OptionSelect } from "@/components/layout/option-select"
+import { SegmentedControl } from "@/components/ui/segmented-control"
+import { system } from "@/lib/api/system"
 import { cliLogins, oauth, type CliSession, type OAuthConnection, type OrgCliSession } from "@/lib/api"
 import { formatRelativeTime } from "@/lib/utils"
 import { useAuthStore } from "@/store/auth-store"
@@ -136,27 +138,103 @@ export function mcpAddress() {
   return `${window.location.origin}/mcp`
 }
 
-/** How to connect an AI assistant: the address, and what happens next. */
-export function ConnectAssistantCard() {
+type Client = "claude-code" | "claude" | "cursor" | "vscode" | "cli"
+
+/** The install link or command for each client, carrying only the address: each one signs in here. */
+function clientSetup(client: Client, url: string, edge: boolean): { commands?: string[]; link?: { href: string; label: string }; steps: string[] } {
+  const server = { name: "meshploy", type: "http", url }
+  switch (client) {
+    case "cli":
+      return {
+        commands: [
+          `sudo bash -c "$(curl -fsSL https://meshploy.com/install.sh)" _ --cli-only${edge ? " --edge" : ""}`,
+          `meshploy auth login --url ${new URL(url).host}`,
+        ],
+        steps: [
+          `Install the CLI${edge ? ", on this server's edge channel" : ""}. It is released for Linux; on macOS or Windows, build it from source.`,
+          "Log in: your browser opens here to approve it, and the terminal acts as you. meshploy mcp then serves the same tools locally.",
+        ],
+      }
+    case "claude-code":
+      return {
+        commands: [`claude mcp add --transport http meshploy ${url}`],
+        steps: ["Run this in a terminal.", "In Claude Code, run /mcp, choose meshploy, then Authenticate: your browser opens here to sign in."],
+      }
+    case "claude":
+      return {
+        steps: [
+          "In Claude, open Settings, then Connectors, and add a custom connector with the address above.",
+          "Click Connect: Claude sends you here to sign in and choose what it may do.",
+        ],
+      }
+    case "cursor":
+      return {
+        link: { href: `cursor://anysphere.cursor-deeplink/mcp/install?name=meshploy&config=${btoa(JSON.stringify({ url }))}`, label: "Add to Cursor" },
+        steps: ["Cursor asks to install the server, then sends you here to sign in the first time it connects."],
+      }
+    case "vscode":
+      return {
+        commands: [`code --add-mcp '${JSON.stringify(server)}'`],
+        link: { href: `vscode:mcp/install?${encodeURIComponent(JSON.stringify(server))}`, label: "Add to VS Code" },
+        steps: ["Use the link, or run the command. VS Code sends you here to sign in the first time it connects."],
+      }
+  }
+}
+
+/** How to connect an AI assistant: the address, and each client's one step to add it. */
+export function ConnectionDetails() {
   const url = mcpAddress()
+  const [client, setClient] = useState<Client>("claude-code")
+  const token = useAuthStore((s) => s.token)
+  // The CLI to install is the one on this server's channel.
+  const { data: ver } = useQuery({ queryKey: ["system-version"], queryFn: () => system.versionInfo(token!), enabled: !!token, staleTime: 60 * 1000, retry: false })
+  const setup = clientSetup(client, url, ver?.channel === "edge")
   return (
-    <div className="space-y-2 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
-      <p className="flex items-center gap-2 text-sm font-medium"><PlugZap className="h-4 w-4 text-primary" />Connect an AI assistant</p>
+    <div className="flex flex-col gap-3">
       <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-xs">
         <CopyValue value={url} />
       </div>
-      <ol className="list-decimal space-y-0.5 pl-5 text-xs text-muted-foreground">
-        <li>In Claude, open Settings, then Connectors, and add a custom connector with this address. In Cursor or VS Code, add it as a remote MCP server.</li>
-        <li>The application sends you here to sign in and choose what it may do.</li>
-        <li>It then works with your access, apart from server administration, until it is disconnected.</li>
+      <div>
+        <SegmentedControl<Client> value={client} onValueChange={setClient}
+          options={[{ value: "claude-code", label: "Claude Code" }, { value: "claude", label: "Claude" }, { value: "cursor", label: "Cursor" }, { value: "vscode", label: "VS Code" }, { value: "cli", label: "CLI" }]} />
+      </div>
+      {(setup.link || setup.commands) && (
+        <div className="flex flex-col gap-2">
+          {setup.link && (
+            <div>
+              <a href={setup.link.href} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-3 text-xs font-medium text-primary hover:bg-primary/20">
+                <PlugZap className="h-3.5 w-3.5" />{setup.link.label}
+              </a>
+            </div>
+          )}
+          {setup.commands?.map((command) => (
+            <div key={command} className="rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-xs">
+              <CopyValue value={command} />
+            </div>
+          ))}
+        </div>
+      )}
+      <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
+        {setup.steps.map((step) => <li key={step}>{step}</li>)}
+        {client !== "cli" && <li>It then works with your access, apart from server administration, until it is disconnected.</li>}
       </ol>
-      <p className="text-[11px] text-muted-foreground/70">Claude on the web connects from the internet, so this console has to be reachable from it over HTTPS.</p>
+      {client === "claude" && <p className="text-[11px] text-muted-foreground/70">Claude on the web connects from the internet, so this console has to be reachable from it over HTTPS.</p>}
     </div>
   )
 }
 
-/** Your own connected sessions, on your account page: each one ended here. */
-export function ConnectedSessionsSection() {
+/** The connection details in a card of their own, for a page that is about something else. */
+export function ConnectAssistantCard() {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4">
+      <p className="flex items-center gap-2 text-sm font-medium"><PlugZap className="h-4 w-4 text-primary" />Connect an AI assistant</p>
+      <ConnectionDetails />
+    </div>
+  )
+}
+
+/** Everything signed in as you, each one ended here. */
+export function MySessions() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const qc = useQueryClient()
@@ -173,16 +251,25 @@ export function ConnectedSessionsSection() {
   ]
   const error = logOut.error ?? disconnect.error
   return (
+    <div className="space-y-2">
+      {clis.isLoading || assistants.isLoading ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+      ) : (
+        <SessionList sessions={sessions}
+          empty={<>Nothing is signed in as you. Connect an assistant above, or run <code className="font-mono text-xs">meshploy auth login</code> in a terminal.</>} />
+      )}
+      {error && <p role="alert" className="text-xs text-destructive">{error.message}</p>}
+    </div>
+  )
+}
+
+/** Connection details and your sessions together, for a face that has no Connectors page. */
+export function ConnectedSessionsSection() {
+  return (
     <Section title="Connected sessions" subtitle="Everything signed in as you: CLIs, and AI assistants in this organisation. One unused for 90 days ends by itself.">
       <div className="space-y-4">
         <ConnectAssistantCard />
-        {clis.isLoading || assistants.isLoading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-        ) : (
-          <SessionList sessions={sessions}
-            empty={<>Nothing is signed in as you. Connect an assistant above, or run <code className="font-mono text-xs">meshploy auth login</code> in a terminal.</>} />
-        )}
-        {error && <p role="alert" className="text-xs text-destructive">{error.message}</p>}
+        <MySessions />
       </div>
     </Section>
   )

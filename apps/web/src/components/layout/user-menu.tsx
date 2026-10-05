@@ -71,10 +71,10 @@ export function UserMenu() {
         </DropdownMenuItem>
         <DropdownMenuItem
           className={item}
-          onClick={() => navigate({ to: "/account", hash: "account-sessions" })}
+          onClick={() => navigate({ to: "/connectors" })}
         >
           <PlugZap className="h-3.5 w-3.5" />
-          Connected sessions
+          Connectors
         </DropdownMenuItem>
         <DropdownMenuItem className={item} render={<a href={DOCS_URL} target="_blank" rel="noopener noreferrer" />}>
           <BookOpen className="h-3.5 w-3.5" />

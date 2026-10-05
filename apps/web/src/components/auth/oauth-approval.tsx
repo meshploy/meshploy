@@ -98,7 +98,7 @@ export function OAuthApproval({ request, href, signIn }: { request: OAuthRequest
         {as
           ? `It will act as the agent ${agentName}, with exactly that agent's access.`
           : "It can do what you can do in this organisation, through Meshploy's tools, apart from server administration."}
-        {" "}It stays connected until it is disconnected under Connected sessions in your settings, or goes 90 days unused.
+        {" "}It stays connected until it is disconnected on the Connectors page, or goes 90 days unused.
       </p>
       {decide.error && (
         <p role="alert" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
