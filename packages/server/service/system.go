@@ -28,11 +28,11 @@ const (
 	channelEdge = "edge"
 )
 
-// githubBuildRunsURL asks for the newest successful run of the workflow that
+// githubBuildRunsURL asks for recent successful runs of the workflow that
 // builds the images. Its commit is the newest one an edge server can pull: a
 // commit on main that changed no image never runs that workflow, and one still
 // building has no images yet. A var so tests can point it at a local server.
-var githubBuildRunsURL = "https://api.github.com/repos/meshploy/meshploy/actions/workflows/build.yml/runs?branch=main&status=success&per_page=1"
+var githubBuildRunsURL = "https://api.github.com/repos/meshploy/meshploy/actions/workflows/build.yml/runs?branch=main&status=success&per_page=10"
 
 type VersionInfo struct {
 	Current string `json:"current"`
@@ -235,32 +235,12 @@ func (s *SystemService) edgeVersionInfo(ctx context.Context, info VersionInfo) V
 		return info
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubBuildRunsURL, nil)
-	if err != nil {
-		return info
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := http.DefaultClient.Do(req)
+	sha, err := newestMainBuild(ctx)
 	if err != nil {
 		log.Printf("edge version check: %v", err)
 		return info
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return info
-	}
-
-	var runs struct {
-		WorkflowRuns []struct {
-			HeadSHA string `json:"head_sha"`
-		} `json:"workflow_runs"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&runs); err != nil ||
-		len(runs.WorkflowRuns) == 0 || len(runs.WorkflowRuns[0].HeadSHA) < 7 {
-		return info
-	}
-
-	built := runs.WorkflowRuns[0].HeadSHA[:7]
+	built := short(sha)
 	info.Latest = built
 	info.ReleaseURL = fmt.Sprintf("%s/%s...%s", githubCompareURL, running, built)
 	info.UpdateAvailable = built != running

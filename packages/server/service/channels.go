@@ -282,19 +282,39 @@ func (s *SystemService) newestBuild(ctx context.Context) (string, error) {
 	if c.built != "" && time.Since(c.builtAt) < channelsCacheTTL {
 		return c.built, nil
 	}
+	sha, err := newestMainBuild(ctx)
+	if err != nil {
+		return "", err
+	}
+	c.built, c.builtAt = sha, time.Now()
+	return c.built, nil
+}
+
+// newestMainBuild is the commit of the newest successful build of main: of
+// the recent runs GitHub lists, the one created last. Not simply the first it
+// lists: the filtered list is served from an index that has answered with a
+// month-old run first, which made an up-to-date server show an old commit as
+// main's newest build.
+func newestMainBuild(ctx context.Context) (string, error) {
 	var runs struct {
 		WorkflowRuns []struct {
-			HeadSHA string `json:"head_sha"`
+			HeadSHA   string    `json:"head_sha"`
+			CreatedAt time.Time `json:"created_at"`
 		} `json:"workflow_runs"`
 	}
 	if err := githubGet(ctx, githubBuildRunsURL, &runs); err != nil {
 		return "", err
 	}
-	if len(runs.WorkflowRuns) == 0 || len(runs.WorkflowRuns[0].HeadSHA) < 7 {
+	newest, at := "", time.Time{}
+	for _, r := range runs.WorkflowRuns {
+		if len(r.HeadSHA) >= 7 && (newest == "" || r.CreatedAt.After(at)) {
+			newest, at = r.HeadSHA, r.CreatedAt
+		}
+	}
+	if newest == "" {
 		return "", errors.New("no successful build of main")
 	}
-	c.built, c.builtAt = runs.WorkflowRuns[0].HeadSHA, time.Now()
-	return c.built, nil
+	return newest, nil
 }
 
 // compare asks GitHub how head relates to base. The commits are the ones head

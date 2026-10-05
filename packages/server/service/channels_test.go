@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -206,5 +207,29 @@ func TestChannelsAreCached(t *testing.T) {
 	s.GetChannels(t.Context())
 	if again := gh.hits.Load(); again != first {
 		t.Errorf("the second view made %d more requests", again-first)
+	}
+}
+
+// GitHub's list of successful runs is not always newest first: it has
+// answered with a month-old run at the top. The newest build is the run
+// created last, wherever it is listed.
+func TestNewestBuildIsTheRunCreatedLast(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"workflow_runs":[
+			{"head_sha":"da0437bf5e5585938a6ca8e6f667dea27693cb37","created_at":"2026-09-04T12:58:46Z"},
+			{"head_sha":"62e9bda0000000000000000000000000000000000","created_at":"2026-10-05T18:29:39Z"},
+			{"head_sha":"681290b0000000000000000000000000000000000","created_at":"2026-10-03T21:58:22Z"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	orig := githubBuildRunsURL
+	githubBuildRunsURL = srv.URL
+	t.Cleanup(func() { githubBuildRunsURL = orig })
+
+	got, err := newestMainBuild(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if short(got) != "62e9bda" {
+		t.Fatalf("newest build: %s", got)
 	}
 }
