@@ -524,6 +524,12 @@ type ResourcePermission struct {
 	ResourceType   ResourceType   `gorm:"type:varchar(10);not null" json:"resource_type"`
 	ResourceID     uuid.UUID      `gorm:"type:uuid;not null"        json:"resource_id"`
 	Action         ResourceAction `gorm:"type:varchar(10);not null" json:"action"`
+	// Source is where the grant comes from: empty for one given to this
+	// person directly, else "<kind>:<id>" for one an edition derives from
+	// something it manages and writes out for each person it covers. Every
+	// check reads a grant the same way whatever its source; only its source
+	// changes or removes a derived one.
+	Source string `gorm:"type:varchar(80);not null;default:''" json:"source,omitempty"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	User         User         `gorm:"foreignKey:UserID"         json:"-"`

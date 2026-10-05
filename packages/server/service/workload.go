@@ -774,8 +774,9 @@ func (s *WorkloadService) Delete(ctx context.Context, serviceID uuid.UUID) error
 				}
 			}
 		}
-		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceService, serviceID).
-			Delete(&db.ResourcePermission{})
+		if err := forgetResourceGrants(ctx, tx, db.ResourceService, serviceID); err != nil {
+			return err
+		}
 		return tx.Delete(&db.Service{}, "id = ?", serviceID).Error
 	})
 }

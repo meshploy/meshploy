@@ -60,6 +60,9 @@ export const EeProjectBadge: React.ComponentType<{ projectId: string }> | null =
  */
 export const EeServiceAccess: React.ComponentType<{ orgId: string; projectId: string; serviceId: string }> | null = null
 
+/** Drawn in the side column of a member's page, for what an edition knows about them. */
+export const EeMemberPanel: React.ComponentType<{ orgId: string; userId: string }> | null = null
+
 /**
  * Drawn on the Access page in place of what a grant opens on the mesh, for a
  * grant held by someone outside the organisation: they own no machine on the

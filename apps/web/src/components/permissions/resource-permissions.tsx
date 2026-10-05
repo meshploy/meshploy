@@ -6,6 +6,7 @@ import {
   type MemberReach,
   permissions as permissionsApi,
   type PermissionsWithUserDTO,
+  viaText,
   RESOURCE_ACTIONS,
   type ResourceAction,
   type ResourceType,
@@ -28,6 +29,8 @@ interface CombinedUserGrant {
   userEmail: string
   projectActions: Set<ResourceAction>
   resourceActions: Set<ResourceAction>
+  /** Actions that come from somewhere other than this tab, by where: locked here. */
+  lockedVia: Map<ResourceAction, string>
 }
 
 function buildCombinedGrants(
@@ -36,36 +39,28 @@ function buildCombinedGrants(
 ): Map<string, CombinedUserGrant> {
   const map = new Map<string, CombinedUserGrant>()
 
+  const entry = (row: PermissionsWithUserDTO) => {
+    let e = map.get(row.user_id)
+    if (!e) {
+      e = { userId: row.user_id, userName: row.user_name, userEmail: row.user_email,
+        projectActions: new Set(), resourceActions: new Set(), lockedVia: new Map() }
+      map.set(row.user_id, e)
+    }
+    return e
+  }
   for (const row of projectRows) {
-    const existing = map.get(row.user_id)
-    if (existing) {
-      existing.projectActions.add(row.action)
-    } else {
-      map.set(row.user_id, {
-        userId: row.user_id,
-        userName: row.user_name,
-        userEmail: row.user_email,
-        projectActions: new Set([row.action]),
-        resourceActions: new Set(),
-      })
-    }
+    const e = entry(row)
+    e.projectActions.add(row.action)
+    if (!e.lockedVia.has(row.action)) e.lockedVia.set(row.action, row.via ? `${viaText(row.via)}, on the project` : "the project")
   }
-
   for (const row of resourceRows) {
-    const existing = map.get(row.user_id)
-    if (existing) {
-      existing.resourceActions.add(row.action)
+    const e = entry(row)
+    if (row.via) {
+      if (!e.lockedVia.has(row.action)) e.lockedVia.set(row.action, viaText(row.via))
     } else {
-      map.set(row.user_id, {
-        userId: row.user_id,
-        userName: row.user_name,
-        userEmail: row.user_email,
-        projectActions: new Set(),
-        resourceActions: new Set([row.action]),
-      })
+      e.resourceActions.add(row.action)
     }
   }
-
   return map
 }
 
@@ -192,16 +187,17 @@ function UserGrantRow({ user, pending, onToggle, reach, reachPending, onReach }:
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {RESOURCE_ACTIONS.map((action) => {
-          const fromProject = user.projectActions.has(action)
+          const lockedVia = user.lockedVia.get(action)
           const fromResource = user.resourceActions.has(action)
           const isLoading = pending.has(`${user.userId}-${action}`)
 
-          if (fromProject) {
-            // Locked - comes from project grant
+          if (lockedVia && !fromResource) {
+            // Locked: granted on the project, or from another source, and
+            // changed there.
             return (
               <span
                 key={action}
-                title="Granted via project"
+                title={`Granted via ${lockedVia}`}
                 className="h-6 px-2.5 text-[11px] font-medium rounded-md border border-border/30 bg-muted/30 text-muted-foreground/50 flex items-center gap-1 cursor-default select-none"
               >
                 <Lock className="h-2.5 w-2.5" />

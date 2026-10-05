@@ -337,8 +337,9 @@ func (s *RouteService) Delete(ctx context.Context, routeID uuid.UUID) error {
 			strings.Join(redirected, ", ")))
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceRoute, routeID).
-			Delete(&db.ResourcePermission{})
+		if err := forgetResourceGrants(ctx, tx, db.ResourceRoute, routeID); err != nil {
+			return err
+		}
 		return tx.Delete(&db.Route{}, "id = ?", routeID).Error
 	})
 }

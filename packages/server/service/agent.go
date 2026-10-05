@@ -282,7 +282,7 @@ func (s *AgentService) DeleteAgent(ctx context.Context, orgID, agentID uuid.UUID
 		return err
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", agentID).Delete(&db.ResourcePermission{}).Error; err != nil {
+		if err := forgetMemberGrants(ctx, tx, orgID, agentID); err != nil {
 			return err
 		}
 		if err := tx.Where("user_id = ?", agentID).Delete(&db.OrganizationMember{}).Error; err != nil {

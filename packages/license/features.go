@@ -19,6 +19,7 @@ const (
 	FeatureAuditLog    = "audit-log"
 	FeatureMultiTenant = "multi-tenancy"
 	FeatureApps        = "apps"
+	FeatureTeams       = "teams"
 )
 
 // knownFeatures is the set every recognised flag belongs to.
@@ -27,6 +28,7 @@ var knownFeatures = map[string]bool{
 	FeatureAuditLog:    true,
 	FeatureMultiTenant: true,
 	FeatureApps:        true,
+	FeatureTeams:       true,
 }
 
 // KnownFeatures returns every recognised flag, sorted, for help text and error

@@ -26,6 +26,11 @@ type AccessEnd struct {
 	Member    bool   `json:"member,omitempty"`     // a person in the organisation, with a page of their own
 	ProjectID string `json:"project_id,omitempty"` // where a resource lives, for a link
 	Database  bool   `json:"database,omitempty"`
+	// A derived grant's source: what it is called as a kind, where it is
+	// managed, and how many people it covers.
+	Label  string `json:"label,omitempty"`
+	Link   string `json:"link,omitempty"`
+	People int    `json:"people,omitempty"`
 }
 
 // AccessRule is one line of the Access page.
@@ -108,30 +113,59 @@ func (s *MeshAccessService) Rules(ctx context.Context, orgID uuid.UUID) ([]Acces
 		nodeName[n.ID] = n.Name
 	}
 
-	// Grants, one line per person and resource with its actions together.
+	// Grants, one line per person and resource with its actions together. A
+	// grant derived from another source is one line for the source, however
+	// many people it covers: it is given and removed there, not per person.
 	var perms []db.ResourcePermission
 	if err := q.Where("organization_id = ?", orgID).Order("created_at").Find(&perms).Error; err != nil {
 		return nil, err
 	}
 	type key struct {
-		user uuid.UUID
-		t    db.ResourceType
-		id   uuid.UUID
+		user   uuid.UUID // a direct grant's person
+		source string    // a derived grant's source
+		t      db.ResourceType
+		id     uuid.UUID
 	}
 	actions := map[key][]string{}
+	people := map[key]map[uuid.UUID]bool{}
 	var order []key
 	for _, p := range perms {
-		k := key{p.UserID, p.ResourceType, p.ResourceID}
+		k := key{t: p.ResourceType, id: p.ResourceID}
+		if p.Source == "" {
+			k.user = p.UserID
+		} else {
+			k.source = p.Source
+		}
 		if _, ok := actions[k]; !ok {
 			order = append(order, k)
+			people[k] = map[uuid.UUID]bool{}
 		}
-		actions[k] = append(actions[k], string(p.Action))
+		if !contains(actions[k], string(p.Action)) {
+			actions[k] = append(actions[k], string(p.Action))
+		}
+		people[k][p.UserID] = true
 	}
 	choicesOf := map[uuid.UUID]map[reachKey]bool{}
 	for _, k := range order {
 		to, ok := s.resourceEnd(ctx, k.t, k.id)
 		if !ok {
 			continue // a grant on something deleted
+		}
+		if k.source != "" {
+			via := grantVia(ctx, k.source)
+			r := AccessRule{ID: "source:" + k.source + ":" + string(k.t) + ":" + k.id.String(), Kind: "grant",
+				From: AccessEnd{Kind: via.Kind, ID: via.ID, Name: via.Name, Label: via.Label, Link: via.Link, People: len(people[k])},
+				To:   to, Ports: []int{}, Actions: actions[k]}
+			// What it opens from a covered person's machines, before anyone's
+			// own switches.
+			r.Opens, r.Off = s.opens(ctx, k.t, k.id, nil)
+			for _, o := range r.Opens {
+				if o.Kind == "port" {
+					r.Ports = append(r.Ports, o.Port)
+				}
+			}
+			out = append(out, r)
+			continue
 		}
 		r := AccessRule{ID: "grant:" + k.user.String() + ":" + string(k.t) + ":" + k.id.String(), Kind: "grant",
 			From: AccessEnd{Kind: "person", ID: k.user.String(), Name: userName[k.user], Email: userEmail[k.user], Member: member[k.user]}, To: to, Ports: []int{}, Actions: actions[k]}

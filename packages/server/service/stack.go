@@ -310,8 +310,9 @@ func (s *StackService) ApplyManifest(ctx context.Context, projectID uuid.UUID, i
 
 func (s *StackService) Delete(ctx context.Context, stackID uuid.UUID) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		tx.Where("resource_type = ? AND resource_id = ?", meshdb.ResourceStack, stackID).
-			Delete(&meshdb.ResourcePermission{})
+		if err := forgetResourceGrants(ctx, tx, meshdb.ResourceStack, stackID); err != nil {
+			return err
+		}
 		return tx.Delete(&meshdb.Stack{}, "id = ?", stackID).Error
 	})
 }

@@ -152,8 +152,7 @@ func (s *OrgService) RemoveMember(ctx context.Context, orgID, userID uuid.UUID) 
 			return err
 		}
 		// Clean up all resource grants so re-invitation starts with a clean slate.
-		return tx.Where("organization_id = ? AND user_id = ?", orgID, userID).
-			Delete(&db.ResourcePermission{}).Error
+		return forgetMemberGrants(ctx, tx, orgID, userID)
 	})
 }
 

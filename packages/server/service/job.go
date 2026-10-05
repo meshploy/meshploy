@@ -282,8 +282,9 @@ func (s *JobService) Delete(ctx context.Context, jobID uuid.UUID) error {
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceJob, jobID).
-			Delete(&db.ResourcePermission{})
+		if err := forgetResourceGrants(ctx, tx, db.ResourceJob, jobID); err != nil {
+			return err
+		}
 		res := tx.Delete(&db.Job{}, "id = ?", jobID)
 		if res.Error != nil {
 			return res.Error

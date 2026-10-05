@@ -1460,7 +1460,9 @@ func (s *PromotionService) DeleteLevel(ctx context.Context, levelID uuid.UUID) (
 			}
 			out.GroupsShortened = append(out.GroupsShortened, g.Name)
 		}
-		tx.Where("resource_type = ? AND resource_id = ?", db.ResourceProject, level.ID).Delete(&db.ResourcePermission{})
+		if err := forgetResourceGrants(ctx, tx, db.ResourceProject, level.ID); err != nil {
+			return err
+		}
 		if err := tx.Delete(&db.Project{}, "id = ?", level.ID).Error; err != nil {
 			return err
 		}

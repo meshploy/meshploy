@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
@@ -69,4 +70,113 @@ var serviceDeleteHooks []ServiceDeleteHook
 // an extension's init(). CE registers none.
 func RegisterServiceDeleteHook(h ServiceDeleteHook) {
 	serviceDeleteHooks = append(serviceDeleteHooks, h)
+}
+
+// Extension point: grants derived from something an edition manages.
+//
+// An edition writes such grants into resource_permissions itself, one row per
+// person, with Source "<kind>:<id>", so every check, the mesh policy and the
+// edge read them as they read any grant. The console's direct grant and revoke
+// touch only rows with no source; a derived row is changed by its source.
+
+// GrantSource names the sources of one kind, for the console to say where a
+// derived grant comes from and where it is managed.
+type GrantSource struct {
+	// Label is the kind as a person reads it.
+	Label string
+	// Name is one source's name, or "" when it is gone.
+	Name func(ctx context.Context, id uuid.UUID) string
+	// Link is the console path where the source is managed.
+	Link func(id uuid.UUID) string
+}
+
+var grantSources = map[string]GrantSource{}
+
+// RegisterGrantSource names the sources of a kind. Call from an extension's
+// init(). CE registers none, and writes no derived grants.
+func RegisterGrantSource(kind string, src GrantSource) {
+	grantSources[kind] = src
+}
+
+// GrantVia is where a derived grant comes from, as the console shows it.
+type GrantVia struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Name  string `json:"name"`
+	Link  string `json:"link,omitempty"`
+}
+
+// grantVia describes a grant's source, nil for a direct grant.
+func grantVia(ctx context.Context, source string) *GrantVia {
+	if source == "" {
+		return nil
+	}
+	kind, rawID, _ := strings.Cut(source, ":")
+	v := &GrantVia{Kind: kind, ID: rawID, Label: kind}
+	src, ok := grantSources[kind]
+	if !ok {
+		return v
+	}
+	v.Label = src.Label
+	if id, err := uuid.Parse(rawID); err == nil {
+		if src.Name != nil {
+			v.Name = src.Name(ctx, id)
+		}
+		if src.Link != nil {
+			v.Link = src.Link(id)
+		}
+	}
+	return v
+}
+
+// Extension point: something grants name going away.
+
+// ResourceForgetHook runs when a resource's grants are removed because the
+// resource is being deleted, in its transaction, for an extension to remove
+// what it keeps about that resource. An error aborts the deletion.
+type ResourceForgetHook func(ctx context.Context, tx *gorm.DB, resourceType db.ResourceType, resourceID uuid.UUID) error
+
+// MemberForgetHook runs when a person's grants in an organisation are removed
+// because they are leaving it (a member removed, an agent deleted), in its
+// transaction. An error aborts the removal.
+type MemberForgetHook func(ctx context.Context, tx *gorm.DB, orgID, userID uuid.UUID) error
+
+var (
+	resourceForgetHooks []ResourceForgetHook
+	memberForgetHooks   []MemberForgetHook
+)
+
+// RegisterResourceForgetHook adds a hook every resource deletion runs. Call
+// from an extension's init(). CE registers none.
+func RegisterResourceForgetHook(h ResourceForgetHook) {
+	resourceForgetHooks = append(resourceForgetHooks, h)
+}
+
+// RegisterMemberForgetHook adds a hook every removal from an organisation
+// runs. Call from an extension's init(). CE registers none.
+func RegisterMemberForgetHook(h MemberForgetHook) {
+	memberForgetHooks = append(memberForgetHooks, h)
+}
+
+// forgetResourceGrants removes every grant on a resource being deleted,
+// whatever its source, and lets extensions forget it too.
+func forgetResourceGrants(ctx context.Context, tx *gorm.DB, resourceType db.ResourceType, resourceID uuid.UUID) error {
+	for _, h := range resourceForgetHooks {
+		if err := h(ctx, tx, resourceType, resourceID); err != nil {
+			return err
+		}
+	}
+	return tx.Where("resource_type = ? AND resource_id = ?", resourceType, resourceID).Delete(&db.ResourcePermission{}).Error
+}
+
+// forgetMemberGrants removes every grant a person holds in an organisation
+// they are leaving, whatever its source, and lets extensions forget them too.
+func forgetMemberGrants(ctx context.Context, tx *gorm.DB, orgID, userID uuid.UUID) error {
+	for _, h := range memberForgetHooks {
+		if err := h(ctx, tx, orgID, userID); err != nil {
+			return err
+		}
+	}
+	return tx.Where("organization_id = ? AND user_id = ?", orgID, userID).Delete(&db.ResourcePermission{}).Error
 }

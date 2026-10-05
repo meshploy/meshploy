@@ -11,6 +11,10 @@ export interface AccessEnd {
   member?: boolean
   project_id?: string
   database?: boolean
+  /** A source an edition manages (a grant derived from it): its kind as read, where it is managed, how many people it covers. */
+  label?: string
+  link?: string
+  people?: number
 }
 
 /**

@@ -5,6 +5,22 @@ export type ResourceAction = "view" | "create" | "deploy" | "update" | "delete"
 
 export const RESOURCE_ACTIONS: ResourceAction[] = ["view", "create", "deploy", "update", "delete"]
 
+/** Where a grant comes from when it is not given directly: another source an edition manages. */
+export interface GrantVia {
+  kind: string
+  id: string
+  /** The kind of source, as a person reads it. */
+  label: string
+  name: string
+  /** The console path where the source is managed. */
+  link?: string
+}
+
+/** The source's kind and name ("<label> <name>"), for a tooltip or a note. */
+export function viaText(v: GrantVia) {
+  return `${v.label} ${v.name || "(removed)"}`.trim()
+}
+
 export interface ApiPermission {
   id: string
   resource_type: ResourceType
@@ -12,6 +28,8 @@ export interface ApiPermission {
   action: ResourceAction
   resource_name?: string
   parent_project_id?: string
+  /** Set when the grant comes from another source; it is changed there, not here. */
+  via?: GrantVia
 }
 
 export interface PermissionBody {
@@ -25,6 +43,7 @@ export interface PermissionsWithUserDTO {
   user_name: string
   user_email: string
   action: ResourceAction
+  via?: GrantVia
 }
 
 export const permissions = {

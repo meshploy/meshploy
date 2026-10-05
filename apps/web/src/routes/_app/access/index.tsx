@@ -93,7 +93,7 @@ const MAX_OPENS = 3
 function Opens({ r, orgId }: { r: AccessRule; orgId: string }) {
   const muted = "text-xs text-muted-foreground"
   if (r.kind === "network") return <p className={`${muted} ${r.ports.length ? "font-mono" : ""}`}>{portsText(r)}</p>
-  if (!r.from.member) {
+  if (!r.from.member && !r.from.label) {
     if (EeOutsiderGrant) return <EeOutsiderGrant orgId={orgId} email={r.from.email} resourceKind={r.to.kind} resourceId={r.to.id} projectId={r.to.project_id} />
     return <p className={muted}>Not a member: no machines on the mesh</p>
   }
@@ -129,6 +129,7 @@ function EndLink({ end, fallback }: { end: AccessRule["from"]; fallback: string 
   const name = end.name || fallback
   if (end.kind === "person" && end.id && end.member) return <Link to="/users/$userId" params={{ userId: end.id }} className="hover:underline">{name}</Link>
   if (end.kind === "machine" && end.id) return <Link to="/nodes/$id" params={{ id: end.id }} className="hover:underline">{name}</Link>
+  if (end.link) return <Link to={end.link as never} className="hover:underline">{name}</Link>
   return <>{name}</>
 }
 
@@ -203,7 +204,9 @@ function Rules({ orgId, token, initialSearch, person }: { orgId: string; token: 
               <div key={r.id} className={`grid gap-2 px-4 py-3 ${COLS} md:items-center md:gap-4`}>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium"><EndLink end={r.from} fallback="Someone removed" /></p>
-                  <p className="truncate text-xs text-muted-foreground">{r.from.email || KIND_LABEL[r.from.kind]}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {r.from.label ? `${r.from.label} · ${r.from.people ?? 0} ${r.from.people === 1 ? "person" : "people"}` : r.from.email || KIND_LABEL[r.from.kind]}
+                  </p>
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm"><EndLink end={r.to} fallback="Something removed" /></p>
@@ -224,6 +227,12 @@ function Rules({ orgId, token, initialSearch, person }: { orgId: string; token: 
                     <span>{r.note || "Network rule"}</span>
                   )}
                 </div>
+                {r.from.label ? (
+                <div className="flex items-center justify-end gap-1">
+                  {/* Given and removed where its source is managed. */}
+                  {r.from.link && <Link to={r.from.link as never} className="text-xs text-primary hover:underline">Manage</Link>}
+                </div>
+                ) : (
                 <div className="flex items-center justify-end gap-1">
                   {r.kind === "grant" && <span className="mr-2">{grantLink(r)}</span>}
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground" aria-label={`Edit ${r.from.name} to ${r.to.name}`}
@@ -235,6 +244,7 @@ function Rules({ orgId, token, initialSearch, person }: { orgId: string; token: 
                     {remove.isPending && remove.variables?.id === r.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
                   </Button>
                 </div>
+                )}
               </div>
             ))}
           </div>

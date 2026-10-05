@@ -14,6 +14,7 @@ import { useOrgStore, useOrgRole } from "@/store/org-store"
 import { Badge } from "@/components/ui/badge"
 import { PrincipalPermissions } from "@/components/permissions/principal-permissions"
 import { MemberSessions } from "@/components/auth/connected-sessions"
+import { EeMemberPanel } from "@/ee"
 
 export const Route = createFileRoute("/_app/users/$userId")({
   component: UserDetailPage,
@@ -60,7 +61,7 @@ function UserDetailPage() {
       </div>
 
       <ResourceIntro title="Workspace access" description={member && member.role !== "member" ? "What this member can do, and the machines that act as them." : "Review the resources this member can access and manage explicit permissions."} />
-      <div className="resource-overview-columns"><div className="min-w-0">{member && member.role !== "member" ? <OrganizationWide member={member} /> : <PrincipalPermissions orgId={orgId} principalId={userId} token={token} />}</div><aside className="space-y-6"><ResourcePanel title="Member details"><ResourceFact label="Name">{member?.user_name || "Loading…"}</ResourceFact><ResourceFact label="Email">{member?.user_email || "-"}</ResourceFact>{member?.role === "member" && <p className="mt-5 text-sm text-muted-foreground leading-relaxed">These grants are the same ones on the <Link to="/access" className="text-primary hover:underline">Access page</Link>, where each also shows what it opens on the mesh.</p>}</ResourcePanel>{member && <OnTheMesh orgId={orgId} member={member} token={token} />}{member && <ResourcePanel title="Connected sessions" description="CLIs signed in as this member, and AI assistants they connected here."><MemberSessions orgId={orgId} userId={userId} token={token} /></ResourcePanel>}</aside></div>
+      <div className="resource-overview-columns"><div className="min-w-0">{member && member.role !== "member" ? <OrganizationWide member={member} /> : <PrincipalPermissions orgId={orgId} principalId={userId} token={token} />}</div><aside className="space-y-6"><ResourcePanel title="Member details"><ResourceFact label="Name">{member?.user_name || "Loading…"}</ResourceFact><ResourceFact label="Email">{member?.user_email || "-"}</ResourceFact>{member?.role === "member" && <p className="mt-5 text-sm text-muted-foreground leading-relaxed">These grants are the same ones on the <Link to="/access" className="text-primary hover:underline">Access page</Link>, where each also shows what it opens on the mesh.</p>}</ResourcePanel>{member && <OnTheMesh orgId={orgId} member={member} token={token} />}{member && <ResourcePanel title="Connected sessions" description="CLIs signed in as this member, and AI assistants they connected here."><MemberSessions orgId={orgId} userId={userId} token={token} /></ResourcePanel>}{member && EeMemberPanel && <EeMemberPanel orgId={orgId} userId={userId} />}</aside></div>
     </div>
   )
 }

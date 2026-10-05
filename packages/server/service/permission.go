@@ -18,6 +18,9 @@ type PermissionWithUser struct {
 	UserName  string            `json:"user_name"`
 	UserEmail string            `json:"user_email"`
 	Action    db.ResourceAction `json:"action"`
+	// Via is where a derived grant comes from; nil for a direct grant, the
+	// only kind that is given or removed here.
+	Via *GrantVia `json:"via,omitempty"`
 }
 
 // PermissionWithContext enriches a grant with the resource's display name and
@@ -29,6 +32,8 @@ type PermissionWithContext struct {
 	Action          db.ResourceAction `json:"action"`
 	ResourceName    string            `json:"resource_name,omitempty"`
 	ParentProjectID *uuid.UUID        `json:"parent_project_id,omitempty"`
+	// Via is where a derived grant comes from; nil for a direct grant.
+	Via *GrantVia `json:"via,omitempty"`
 }
 
 // Grant creates a permission grant. No-ops if the grant already exists or if
@@ -48,13 +53,16 @@ func (s *PermissionService) Grant(ctx context.Context, orgID, userID, resourceID
 		ResourceID:     resourceID,
 		Action:         action,
 	}
-	return s.db.WithContext(ctx).Where(perm).FirstOrCreate(&perm).Error
+	// Where(perm) leaves out the empty Source, so it is named: a direct grant
+	// is found among direct grants only.
+	return s.db.WithContext(ctx).Where(perm).Where("source = ''").FirstOrCreate(&perm).Error
 }
 
-// Revoke removes a permission grant. Returns an error if no matching grant exists.
+// Revoke removes a direct permission grant. A grant derived from another
+// source stays: its source removes it.
 func (s *PermissionService) Revoke(ctx context.Context, orgID, userID, resourceID uuid.UUID, resourceType db.ResourceType, action db.ResourceAction) error {
 	tx := s.db.WithContext(ctx).
-		Where("organization_id = ? AND user_id = ? AND resource_type = ? AND resource_id = ? AND action = ?",
+		Where("organization_id = ? AND user_id = ? AND resource_type = ? AND resource_id = ? AND action = ? AND source = ''",
 			orgID, userID, resourceType, resourceID, action).
 		Delete(&db.ResourcePermission{})
 	if tx.Error != nil {
@@ -89,9 +97,10 @@ func (s *PermissionService) ListForUser(ctx context.Context, orgID, userID uuid.
 		Action          db.ResourceAction
 		ResourceName    *string
 		ParentProjectID *uuid.UUID
+		Source          string
 	}
 	err := s.db.WithContext(ctx).Raw(`
-		SELECT rp.id, rp.resource_type, rp.resource_id, rp.action,
+		SELECT rp.id, rp.resource_type, rp.resource_id, rp.action, rp.source,
 		       COALESCE(s.name, st.name, j.name)                         AS resource_name,
 		       COALESCE(s.project_id, st.project_id, j.project_id)       AS parent_project_id
 		FROM resource_permissions rp
@@ -112,6 +121,7 @@ func (s *PermissionService) ListForUser(ctx context.Context, orgID, userID uuid.
 			ResourceID:      r.ResourceID,
 			Action:          r.Action,
 			ParentProjectID: r.ParentProjectID,
+			Via:             grantVia(ctx, r.Source),
 		}
 		if r.ResourceName != nil {
 			out[i].ResourceName = *r.ResourceName
@@ -127,9 +137,10 @@ func (s *PermissionService) ListForResource(ctx context.Context, orgID uuid.UUID
 		Username string
 		Email    string
 		Action   db.ResourceAction
+		Source   string
 	}
 	err := s.db.WithContext(ctx).Raw(`
-		SELECT rp.user_id, u.username, u.email, rp.action
+		SELECT rp.user_id, u.username, u.email, rp.action, rp.source
 		FROM resource_permissions rp
 		JOIN users u ON u.id = rp.user_id
 		WHERE rp.organization_id = ? AND rp.resource_type = ? AND rp.resource_id = ?
@@ -145,6 +156,7 @@ func (s *PermissionService) ListForResource(ctx context.Context, orgID uuid.UUID
 			UserName:  r.Username,
 			UserEmail: r.Email,
 			Action:    r.Action,
+			Via:       grantVia(ctx, r.Source),
 		}
 	}
 	return result, nil

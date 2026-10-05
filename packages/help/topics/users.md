@@ -17,7 +17,7 @@ People join by **invitation**, which an admin sends from this page.
 
 ## Granting access {#grants}
 
-A member's access is granted **per project** or **per resource** (a service, a stack, a job), each at a level: **view**, **deploy**, **create**, **update** or **delete**. A grant on a project covers its environment levels too. A member sees only the projects they were given; the overview and activity feed show nothing else.
+A member's access is granted **per project** or **per resource** (a service, a stack, a job), each at a level: **view**, **deploy**, **create**, **update** or **delete**. A grant on a project covers its environment levels too. A member sees only the projects they were given; the overview and activity feed show nothing else. A grant can also come from somewhere other than this page, shown as **via** its source with a lock: it is given and removed there.
 
 ## From their machines {#mesh}
 
