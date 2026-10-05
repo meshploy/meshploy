@@ -56,6 +56,7 @@ func (h *Handler) Register(api huma.API) {
 	h.registerMeshAccessRoutes(api)
 	h.registerMeshReachRoutes(api)
 	h.registerAccessRuleRoutes(api)
+	h.registerOAuthRoutes(api)
 	h.registerEntitlementRoutes(api)
 	h.registerTerminalRoutes(api)
 
@@ -80,6 +81,7 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	r.Get("/api/v1/templates/{templateId}/icon", h.ServeTemplateIcon)
 
 	// Remote MCP (Streamable HTTP) - authed by an agent token, permission-scoped.
+	h.registerOAuthRaw(r)
 	r.Handle("/mcp", http.HandlerFunc(h.MCPHandler))
 	r.Handle("/mcp/*", http.HandlerFunc(h.MCPHandler))
 

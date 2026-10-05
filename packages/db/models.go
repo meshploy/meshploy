@@ -368,6 +368,80 @@ type CLIToken struct {
 
 func (CLIToken) TableName() string { return "cli_tokens" }
 
+// OAuthClient is an application that registered itself to connect over MCP
+// (OAuth dynamic client registration): Claude, an editor, any MCP client.
+// Registering grants nothing; a person signed in to the console still has to
+// approve each connection. A public client proves itself with PKCE alone; one
+// that asked for a secret also holds one, of which only the hash is kept.
+type OAuthClient struct {
+	Base
+	ClientID     string `gorm:"not null;uniqueIndex" json:"client_id"`
+	ClientName   string `gorm:"not null;default:''"  json:"client_name"`
+	SecretHash   string `gorm:"not null;default:''"  json:"-"`
+	RedirectURIs string `gorm:"type:text;not null"   json:"-"` // JSON array
+}
+
+func (OAuthClient) TableName() string { return "oauth_clients" }
+
+// OAuthGrant is one approved connection: a person signed in to the console let
+// a client act, in one organisation, as themselves or as one of its agents
+// (PrincipalID). ClientName is kept as it was approved, so a client renaming
+// itself cannot rewrite what was agreed to. Revoking sets RevokedAt; the row
+// stays as the record of who could do what, and until when.
+type OAuthGrant struct {
+	Base
+	OrganizationID uuid.UUID  `gorm:"type:uuid;not null;index" json:"organization_id"`
+	ApprovedBy     uuid.UUID  `gorm:"type:uuid;not null;index" json:"approved_by"`
+	PrincipalID    uuid.UUID  `gorm:"type:uuid;not null;index" json:"principal_id"`
+	ClientRef      uuid.UUID  `gorm:"type:uuid;not null;index" json:"-"`
+	ClientName     string     `gorm:"not null"                 json:"client_name"`
+	LastUsedAt     *time.Time `                                json:"last_used_at,omitempty"`
+	RevokedAt      *time.Time `                                json:"revoked_at,omitempty"`
+
+	Client    OAuthClient `gorm:"foreignKey:ClientRef;constraint:OnDelete:CASCADE"  json:"-"`
+	Principal User        `gorm:"foreignKey:PrincipalID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (OAuthGrant) TableName() string { return "oauth_grants" }
+
+// OAuthCode is an authorization code: single use, short-lived, bound to the
+// redirect URI it was issued for and to the client's PKCE challenge.
+type OAuthCode struct {
+	Base
+	GrantID       uuid.UUID  `gorm:"type:uuid;not null;index" json:"-"`
+	CodeHash      string     `gorm:"not null;uniqueIndex"     json:"-"`
+	RedirectURI   string     `gorm:"not null"                 json:"-"`
+	CodeChallenge string     `gorm:"not null"                 json:"-"`
+	ExpiresAt     time.Time  `gorm:"not null"                 json:"-"`
+	UsedAt        *time.Time `                                json:"-"`
+
+	Grant OAuthGrant `gorm:"foreignKey:GrantID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (OAuthCode) TableName() string { return "oauth_codes" }
+
+// OAuth token kinds: an access token (moat-) opens /mcp for a short while; a
+// refresh token (mort-) is traded for a new pair, once.
+const (
+	OAuthAccess  = "access"
+	OAuthRefresh = "refresh"
+)
+
+// OAuthToken is a token issued under a grant. Only its hash is kept.
+type OAuthToken struct {
+	Base
+	GrantID   uuid.UUID  `gorm:"type:uuid;not null;index"        json:"-"`
+	Kind      string     `gorm:"type:varchar(10);not null"       json:"-"`
+	TokenHash string     `gorm:"not null;uniqueIndex"            json:"-"`
+	ExpiresAt time.Time  `gorm:"not null"                        json:"-"`
+	UsedAt    *time.Time `                                       json:"-"` // a refresh token, when traded
+	RevokedAt *time.Time `                                       json:"-"`
+
+	Grant OAuthGrant `gorm:"foreignKey:GrantID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (OAuthToken) TableName() string { return "oauth_tokens" }
+
 // InstalledLicense holds the Enterprise license token pasted by an admin.
 // At most one row exists per install - licenses are install-scoped for
 // self-hosted (Cloud uses org.plan instead, via a different Entitlements

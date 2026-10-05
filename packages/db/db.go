@@ -73,6 +73,10 @@ func Migrate(db *gorm.DB) error {
 		&AgentToken{},
 		&CLILogin{},
 		&CLIToken{},
+		&OAuthClient{},
+		&OAuthGrant{},
+		&OAuthCode{},
+		&OAuthToken{},
 		&InstalledLicense{},
 		&Organization{},
 		&OrganizationMember{},
@@ -168,6 +172,10 @@ func Migrate(db *gorm.DB) error {
 // the correct ON DELETE behavior (idempotent - safe to run on every startup).
 func applyConstraints(db *gorm.DB) error {
 	stmts := []string{
+		// One live connection per principal and client: approving again
+		// replaces it rather than stacking a second.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_grant_live
+			ON oauth_grants(principal_id, client_ref, organization_id) WHERE revoked_at IS NULL`,
 		// Exactly one owner per organization
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_owner_per_org
 		 ON organization_members (organization_id)

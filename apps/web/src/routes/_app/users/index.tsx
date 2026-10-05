@@ -18,6 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import {
+  oauth as oauthApi,
   orgs as orgsApi,
   type ApiOrgInvitation,
   type ApiOrgMember,
@@ -61,6 +62,11 @@ function UsersPage() {
 
   const callerRole = members.find((m) => m.user_id === userId)?.role ?? "member"
   const canEditRoles = callerRole === "owner" || callerRole === "admin"
+  const { data: sessions = {} } = useQuery({
+    queryKey: ["session-counts", orgId],
+    queryFn: () => oauthApi.sessionCounts(orgId, token),
+    enabled: !!orgId && canEditRoles,
+  })
 
   const total = members.length + invitations.length
 
@@ -95,12 +101,13 @@ function UsersPage() {
           <span>Loading…</span>
         </div>
       ) : (
-        <div className="console-data-table quiet-surface rounded-xl border border-border overflow-x-auto"><table className="w-full min-w-[560px] text-left"><thead><tr className="border-b border-border text-xs text-muted-foreground"><th className="p-4 font-medium">Member</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium">Role</th><th className="p-4 font-medium">Access</th></tr></thead><tbody>
+        <div className="console-data-table quiet-surface rounded-xl border border-border overflow-x-auto"><table className="w-full min-w-[680px] text-left"><thead><tr className="border-b border-border text-xs text-muted-foreground"><th className="p-4 font-medium">Member</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium">Role</th><th className="p-4 font-medium">Sessions</th><th className="p-4 font-medium">Access</th></tr></thead><tbody>
           {members.filter(m => `${m.user_name} ${m.user_email}`.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || m.role === roleFilter)).map((member) => (
             <MemberRow
               key={member.id}
               member={member}
               canEdit={canEditRoles && member.role !== "owner"}
+              sessions={sessions[member.user_id] ?? 0}
               orgId={orgId}
               token={token}
             />
@@ -108,7 +115,7 @@ function UsersPage() {
           {invitations.filter(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)).map((inv) => (
             <PendingInviteRow key={inv.id} invitation={inv} />
           ))}
-        {!members.some(m => `${m.user_name} ${m.user_email}`.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || m.role === roleFilter)) && !invitations.some(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)) && <tr><td colSpan={4} className="p-8 text-center text-sm text-muted-foreground">No matching users or invitations.</td></tr>}</tbody></table></div>
+        {!members.some(m => `${m.user_name} ${m.user_email}`.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || m.role === roleFilter)) && !invitations.some(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)) && <tr><td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">No matching users or invitations.</td></tr>}</tbody></table></div>
       )}
 
       <InviteDialog open={showInvite} onOpenChange={setShowInvite} orgId={orgId} token={token} />
@@ -232,9 +239,11 @@ function InviteDialog({ open, onOpenChange, orgId, token }: {
 
 // ---------------------------------------------------------------------------
 
-function MemberRow({ member, canEdit, orgId, token }: {
+function MemberRow({ member, canEdit, sessions, orgId, token }: {
   member: ApiOrgMember
   canEdit: boolean
+  /** Connected sessions: CLIs signed in as them, and assistants they connected here. */
+  sessions: number
   orgId: string
   token: string
 }) {
@@ -309,7 +318,7 @@ function MemberRow({ member, canEdit, orgId, token }: {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog></td><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Permissions for ${member.user_name}`} className="text-xs text-primary">Manage access</Link> : <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Details for ${member.user_name}`} className="text-xs text-muted-foreground hover:text-foreground">Organization-wide</Link>}</td></tr>
+      </Dialog></td><td className="p-4 text-xs text-muted-foreground">{sessions > 0 ? <Link to="/users/$userId" params={{userId:member.user_id}} className="text-foreground hover:underline">{sessions} signed in</Link> : "None"}</td><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Permissions for ${member.user_name}`} className="text-xs text-primary">Manage access</Link> : <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Details for ${member.user_name}`} className="text-xs text-muted-foreground hover:text-foreground">Organization-wide</Link>}</td></tr>
 }
 
 function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
@@ -321,7 +330,7 @@ function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  return <tr className="border-b border-border last:border-0"><td className="p-4 text-sm">{invitation.email}</td><td className="p-4"><span className="text-xs text-muted-foreground inline-flex items-center gap-2"><Clock className="size-3"/>Invite pending</span></td><td className="p-4"><RoleBadge role={invitation.role as OrgRole}/></td><td className="p-4"><Button size="sm" variant="ghost" onClick={copyLink} title="Copy invite link">{copied ? <Check className="size-3"/> : <Copy className="size-3"/>}{copied ? "Copied" : "Copy link"}</Button></td></tr>
+  return <tr className="border-b border-border last:border-0"><td className="p-4 text-sm">{invitation.email}</td><td className="p-4"><span className="text-xs text-muted-foreground inline-flex items-center gap-2"><Clock className="size-3"/>Invite pending</span></td><td className="p-4"><RoleBadge role={invitation.role as OrgRole}/></td><td className="p-4" /><td className="p-4"><Button size="sm" variant="ghost" onClick={copyLink} title="Copy invite link">{copied ? <Check className="size-3"/> : <Copy className="size-3"/>}{copied ? "Copied" : "Copy link"}</Button></td></tr>
 }
 
 function RoleBadge({ role }: { role: OrgRole }) {

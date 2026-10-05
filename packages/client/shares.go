@@ -32,9 +32,7 @@ func (c *Client) ShareService(orgID, projectID, serviceID string, body ShareBody
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	c.authorize(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err

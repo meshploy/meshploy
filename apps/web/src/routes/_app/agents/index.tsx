@@ -28,6 +28,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin, useOrgRole } from "@/store/org-store"
 import { HelpButton } from "@/help/help-button"
 import { formatRelativeTime } from "@/lib/utils"
+import { ConnectAssistantCard } from "@/components/auth/connected-sessions"
 
 export const Route = createFileRoute("/_app/agents/")({
   component: AgentsPage,
@@ -68,9 +69,9 @@ function AgentsPage() {
     <div className="console-page space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Agents</span><HelpButton topic="agents" label="How agents work" /></h1>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">API keys</span><HelpButton topic="agents" label="How agents and their keys work" /></h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {agents.length} {agents.length === 1 ? "agent" : "agents"} · machine principals for automation & MCP
+            Keys for CI, scripts and MCP clients that take a token. Each belongs to an agent: an identity with its own grants.
           </p>
         </div>
         {isAdmin && (
@@ -81,12 +82,14 @@ function AgentsPage() {
             onClick={() => setShowCreate(true)}
           >
             <Plus className="h-3.5 w-3.5" />
-            New agent
+            New API key
           </Button>
         )}
       </div>
 
-      <Input aria-label="Search agents" placeholder="Search agents…" value={search} onChange={e => setSearch(e.target.value)} className="h-10 max-w-md" />
+      <ConnectAssistantCard />
+
+      <Input aria-label="Search agents and keys" placeholder="Search agents and keys…" value={search} onChange={e => setSearch(e.target.value)} className="h-10 max-w-md" />
       {isLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -98,16 +101,16 @@ function AgentsPage() {
             <Bot className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="space-y-1">
-            <p className="text-sm font-medium">No agents yet</p>
+            <p className="text-sm font-medium">No API keys yet</p>
             <p className="text-xs text-muted-foreground max-w-xs">
-              Agents are machine principals with their own tokens and permissions —
-              use them to connect automation or an MCP client to your org.
+              A key lets CI, a script or an MCP client that takes a token act in this
+              organisation, as an agent with the access you give it.
             </p>
           </div>
           {isAdmin && (
             <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs mt-1" onClick={() => setShowCreate(true)}>
               <Plus className="h-3.5 w-3.5" />
-              New agent
+              New API key
             </Button>
           )}
         </div>
@@ -119,10 +122,10 @@ function AgentsPage() {
         </div>
       )}
 
-      {!isLoading && agents.length > 0 && !agents.some(a => a.name.toLowerCase().includes(search.toLowerCase())) && <p className="text-sm text-muted-foreground">No matching agents.</p>}
+      {!isLoading && agents.length > 0 && !agents.some(a => a.name.toLowerCase().includes(search.toLowerCase())) && <p className="text-sm text-muted-foreground">No agent or key matches.</p>}
       {agents.length > 0 && (
         <p className="text-[11px] text-muted-foreground/60">
-          Remote MCP endpoint: <code className="font-mono text-muted-foreground">{mcpUrl}</code> — pair it with an agent token to connect.
+          Remote MCP endpoint: <code className="font-mono text-muted-foreground">{mcpUrl}</code>. Pair it with an agent's key, or connect a client that signs in (Claude) from the card above.
         </p>
       )}
 
@@ -153,7 +156,7 @@ function AgentRow({ agent }: { agent: AgentDTO }) {
     .map((t) => (t.last_used_at ? new Date(t.last_used_at).getTime() : 0))
     .reduce((a, b) => Math.max(a, b), 0)
 
-  return <Link to="/agents/$agentId" params={{agentId:agent.id}} className="listing-surface interactive-surface rounded-xl border border-border p-5 flex flex-col gap-5 min-w-0"><div className="flex items-center justify-between"><span className="accent-icon-tile"><Bot className="size-5" /></span><RoleBadge role={agent.role}/></div><div><h2 className="font-semibold break-words">{agent.name}</h2><p className="text-xs text-muted-foreground mt-2">{agent.role === "admin" ? "Organization-wide administration" : "Access through assigned resource permissions"}</p></div><div className="border-t border-border pt-4 flex flex-wrap gap-3 justify-between text-xs text-muted-foreground"><span className="inline-flex gap-2 items-center"><Key className="size-3"/>{activeTokens} active {activeTokens === 1 ? "token" : "tokens"}</span><span>{lastUsedMs ? `Used ${formatRelativeTime(new Date(lastUsedMs))}` : "Never used"}</span></div><span className="text-xs text-primary inline-flex justify-between items-center">Manage access & connection<ChevronRight className="size-4"/></span></Link>
+  return <Link to="/agents/$agentId" params={{agentId:agent.id}} className="listing-surface interactive-surface rounded-xl border border-border p-5 flex flex-col gap-5 min-w-0"><div className="flex items-center justify-between"><span className="accent-icon-tile"><Bot className="size-5" /></span><RoleBadge role={agent.role}/></div><div><h2 className="font-semibold break-words">{agent.name}</h2><p className="text-xs text-muted-foreground mt-2">{agent.role === "admin" ? "Organization-wide administration" : "Access through assigned resource permissions"}</p></div><div className="border-t border-border pt-4 flex flex-wrap gap-3 justify-between text-xs text-muted-foreground"><span className="inline-flex gap-2 items-center"><Key className="size-3"/>{activeTokens} active {activeTokens === 1 ? "key" : "keys"}</span><span>{lastUsedMs ? `Used ${formatRelativeTime(new Date(lastUsedMs))}` : "Never used"}</span></div><span className="text-xs text-primary inline-flex justify-between items-center">Manage access & connection<ChevronRight className="size-4"/></span></Link>
 }
 
 function RoleBadge({ role }: { role: AgentRole }) {
@@ -203,17 +206,17 @@ function CreateAgentDialog({ open, onOpenChange, orgId, token, onCreated }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New agent</DialogTitle>
+          <DialogTitle>New API key</DialogTitle>
           <DialogDescription>
-            Create a machine principal. Its first token is generated now and shown once.
+            A key acts as an agent: a name for what uses it, with its own access. The key is shown once.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
           <div className="flex flex-col gap-3">
-            <label className="text-xs font-medium text-muted-foreground">Name</label>
+            <label className="text-xs font-medium text-muted-foreground">Agent <span className="text-muted-foreground/50">(what uses the key)</span></label>
             <Input
-              placeholder="ci-deploy-bot"
+              placeholder="ci-deploy"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="h-9 text-sm"
@@ -236,7 +239,7 @@ function CreateAgentDialog({ open, onOpenChange, orgId, token, onCreated }: {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-3">
-              <label className="text-xs font-medium text-muted-foreground">Token name <span className="text-muted-foreground/50">(optional)</span></label>
+              <label className="text-xs font-medium text-muted-foreground">Key name <span className="text-muted-foreground/50">(optional)</span></label>
               <Input
                 placeholder="default"
                 value={tokenName}
@@ -264,7 +267,7 @@ function CreateAgentDialog({ open, onOpenChange, orgId, token, onCreated }: {
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={() => mutate()} disabled={isPending || !name.trim()} className="gap-1.5">
             {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            Create agent
+            Create key
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -12,6 +12,7 @@ import { OptionSelect } from "@/components/layout/option-select"
 import { Field, inputCls } from "@/components/services/form-primitives"
 import { MeshAccessReport } from "@/components/nodes/mesh-access"
 import { EeOutsiderGrant } from "@/ee"
+import { OrgSessions } from "@/components/auth/connected-sessions"
 import {
   access as accessApi, nodes as nodesApi, orgs as orgsApi, permissions as permissionsApi,
   projects as projectsApi, services as servicesApi, stacks as stacksApi,
@@ -34,7 +35,7 @@ export const Route = createFileRoute("/_app/access/")({
   component: AccessPage,
 })
 
-type Tab = "rules" | "machines" | "policy"
+type Tab = "rules" | "machines" | "sessions" | "policy"
 
 function AccessPage() {
   const token = useAuthStore((s) => s.token)!
@@ -46,7 +47,7 @@ function AccessPage() {
     <div className="console-page space-y-6 p-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Access</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">Who may reach what on your mesh, and on which ports</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">Who may reach what on your mesh, on which ports, and what is signed in as whom</p>
       </div>
       <SegmentedControl<Tab>
         value={tab}
@@ -54,11 +55,13 @@ function AccessPage() {
         options={[
           { value: "rules", label: "Rules" },
           { value: "machines", label: "By machine" },
+          { value: "sessions", label: "Sessions" },
           { value: "policy", label: "Policy" },
         ]}
       />
       {tab === "rules" && <Rules orgId={orgId} token={token} initialSearch={q ?? ""} person={person} />}
       {tab === "machines" && <MeshAccessReport orgId={orgId} token={token} />}
+      {tab === "sessions" && <OrgSessions orgId={orgId} token={token} />}
       {tab === "policy" && <Policy orgId={orgId} token={token} />}
     </div>
   )

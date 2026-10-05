@@ -2,6 +2,9 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"net/http"
 	"strings"
 
@@ -23,6 +26,26 @@ const AgentTokenPrefix = "magt-"
 // login in a browser.
 const CLITokenPrefix = "mcli-"
 
+// OAuthTokenPrefix identifies an access token issued to an MCP client that
+// connected through OAuth.
+const OAuthTokenPrefix = "moat-"
+
+// MCPHopHeader carries MCPHop on the requests the /mcp handler makes to the API
+// on a connection's behalf. An OAuth token is accepted only with it, so a
+// token in a client's hands opens /mcp, whose tools exclude the operator ones,
+// and not the rest of the API.
+const MCPHopHeader = "X-Meshploy-Mcp-Hop"
+
+// MCPHop is this process's hop secret: random at start, never sent anywhere
+// but this process's own loopback.
+var MCPHop = func() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}()
+
 // Credential is the kind of credential a request was authenticated with.
 type Credential string
 
@@ -32,6 +55,9 @@ const (
 	CredentialSession Credential = "session"
 	CredentialAgent   Credential = "agent"
 	CredentialCLI     Credential = "cli"
+	// CredentialOAuth is an MCP client's connection, acting as the person who
+	// approved it or the agent they chose.
+	CredentialOAuth Credential = "oauth"
 )
 
 // AgentResolver resolves a plaintext token to the principal it acts as. The
@@ -47,7 +73,9 @@ type AgentResolver func(ctx context.Context, rawToken string) (uuid.UUID, bool)
 // Three credential kinds are accepted, all via `Authorization: Bearer <cred>`:
 //   - a JWT (human users), verified with secret;
 //   - a magt- agent token, resolved to the same principal shape via resolveAgent;
-//   - an mcli- CLI token, resolved via resolveCLI to the person who approved it.
+//   - an mcli- CLI token, resolved via resolveCLI to the person who approved it;
+//   - an moat- OAuth token, resolved via resolveOAuth, only on the /mcp
+//     handler's own requests (MCPHopHeader).
 //
 // A resolved id is placed in ctx under the identical key a JWT uses, so every
 // downstream permission check runs unchanged; the credential's kind is kept
@@ -55,7 +83,7 @@ type AgentResolver func(ctx context.Context, rawToken string) (uuid.UUID, bool)
 // session. A nil resolver disables that kind. agentFailLimiter, when non-nil,
 // throttles repeated invalid token attempts per client IP (defence-in-depth;
 // the token space is 256-bit so brute force is already infeasible).
-func Auth(secret string, resolveAgent, resolveCLI AgentResolver, agentFailLimiter *IPRateLimiter) func(http.Handler) http.Handler {
+func Auth(secret string, resolveAgent, resolveCLI, resolveOAuth AgentResolver, agentFailLimiter *IPRateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get("Authorization")
@@ -73,6 +101,15 @@ func Auth(secret string, resolveAgent, resolveCLI AgentResolver, agentFailLimite
 				resolve, kind = resolveAgent, CredentialAgent
 			case strings.HasPrefix(tokenStr, CLITokenPrefix):
 				resolve, kind = resolveCLI, CredentialCLI
+			case strings.HasPrefix(tokenStr, OAuthTokenPrefix):
+				if subtle.ConstantTimeCompare([]byte(r.Header.Get(MCPHopHeader)), []byte(MCPHop)) != 1 {
+					// Not the /mcp handler's own hop: the request goes on with
+					// no principal, so the token opens nothing here. /mcp
+					// itself resolves it.
+					next.ServeHTTP(w, r)
+					return
+				}
+				resolve, kind = resolveOAuth, CredentialOAuth
 			}
 			if kind != "" {
 				if resolve != nil {
@@ -209,6 +246,27 @@ var publicRules = []publicRule{
 	{Method: "GET", Path: "/api/v1/system/login-info", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/cli/logins", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/cli/logins/token", Match: matchExact},
+
+	// Remote MCP checks its own credential, so that a request without one is
+	// answered with the OAuth challenge (WWW-Authenticate) a client follows to
+	// connect, not a bare 401.
+	{Method: "POST", Path: "/mcp", Match: matchExact},
+	{Method: "GET", Path: "/mcp", Match: matchExact},
+	{Method: "DELETE", Path: "/mcp", Match: matchExact},
+
+	// OAuth for MCP clients: discovery, registering a client and trading a
+	// code or refresh token, all made by a client with no session. A client's
+	// own credential, a code with its PKCE verifier or a refresh token, is
+	// checked by the handler. Approving is an ordinary authenticated call.
+	{Method: "GET", Path: "/.well-known/oauth-protected-resource", Match: matchExact},
+	{Method: "GET", Path: "/.well-known/oauth-protected-resource/mcp", Match: matchExact},
+	{Method: "GET", Path: "/.well-known/oauth-authorization-server", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/oauth/register", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/oauth/token", Match: matchExact},
+	{Method: "OPTIONS", Path: "/.well-known/oauth-protected-resource", Match: matchExact},
+	{Method: "OPTIONS", Path: "/.well-known/oauth-authorization-server", Match: matchExact},
+	{Method: "OPTIONS", Path: "/api/v1/oauth/register", Match: matchExact},
+	{Method: "OPTIONS", Path: "/api/v1/oauth/token", Match: matchExact},
 
 	// Node self-registration presents an mreg-/mprov- token, not a JWT. The
 	// provisioning call comes earlier still, from a machine that is not on the

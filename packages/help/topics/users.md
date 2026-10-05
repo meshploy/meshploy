@@ -28,7 +28,9 @@ A machine joined to the mesh belongs to the person who made its token, its **own
 - A database is not reached from a member's machine until someone switches **From their machines** on for that database; switching on its project or stack does not. Anything else is reached unless switched off.
 - The cluster's own machines always reach each other, and a machine with no owner reaches only what a **network rule** opens to it.
 
-Until the policy is enforced, every machine reaches every other, and the Access page shows what each one would reach. Its rules say what each grant opens, the ports where it answers on the mesh and its internal routes, and an internal route's page lists who can open it.
+Until the policy is enforced, every machine reaches every other, and the Access page shows what each one would reach.
+
+The Access page's **Sessions** tab lists everything signed in as the workspace's people: CLIs, and AI assistants connected to act as them or as an agent. An admin can disconnect an assistant, and log out a CLI, unless its person also belongs to another workspace, where the CLI acts as them too: then only they can. Its rules say what each grant opens, the ports where it answers on the mesh and its internal routes, and an internal route's page lists who can open it.
 
 ## Agents {#agents}
 

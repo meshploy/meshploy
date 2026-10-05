@@ -12,7 +12,17 @@ import (
 type Client struct {
 	baseURL    string
 	token      string
+	headers    map[string]string
 	httpClient *http.Client
+}
+
+// SetHeader sends a header with every request: the API's own /mcp handler
+// marks the calls it makes on a connection's behalf.
+func (c *Client) SetHeader(key, value string) {
+	if c.headers == nil {
+		c.headers = map[string]string{}
+	}
+	c.headers[key] = value
 }
 
 func New(baseURL, token string) *Client {
@@ -41,10 +51,18 @@ func (c *Client) do(method, path string, body any) (*http.Response, error) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	c.authorize(req)
+	return c.httpClient.Do(req)
+}
+
+// authorize puts the client's credential, and its extra headers, on req.
+func (c *Client) authorize(req *http.Request) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
-	return c.httpClient.Do(req)
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
 }
 
 func decode[T any](resp *http.Response) (T, error) {

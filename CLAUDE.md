@@ -173,13 +173,13 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (55 CE tables)
+## packages/db — schema (59 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `mesh_reach`, `mesh_policy_state`, `mesh_rules`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `oauth_clients`, `oauth_grants`, `oauth_codes`, `oauth_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `mesh_reach`, `mesh_policy_state`, `mesh_rules`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Environments | `promotion_groups`, `promotion_group_members` |
 | Workloads | `stacks`, `stack_runs`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
@@ -200,7 +200,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 
 `applyConstraints` also creates plain unique indexes (variable group item keys, job names per project, route target paths, permission grants) and runs idempotent data migrations. Domain names are unique across all orgs through the `uniqueIndex` tag on `domains.base_domain`, so one org cannot claim another's domain.
 
-**Agent principals**: an agent is a `users` row with `kind = 'agent'` (empty email, no password/TOTP) that reuses `organization_members` + `resource_permissions` unchanged — it differs from a human only in auth (a `magt-` token in `agent_tokens`, SHA-256 hashed, shown once). `requireUser`/`checkAccess` are untouched. Remote MCP is served at `/mcp` (Streamable HTTP) under an agent token and is permission-scoped by construction; operator tools (node registration token, system backups, member/permission enumeration, `db_query`/`db_schema`) are stripped from the remote surface. The MCP tool code lives in `packages/{client,mcpserver}` — shared modules imported by both `apps/cli` (stdio) and `packages/server` (remote `/mcp`), so no app depends on another app.
+**Agent principals**: an agent is a `users` row with `kind = 'agent'` (empty email, no password/TOTP) that reuses `organization_members` + `resource_permissions` unchanged — it differs from a human only in auth (a `magt-` token in `agent_tokens`, SHA-256 hashed, shown once). `requireUser`/`checkAccess` are untouched. Remote MCP is served at `/mcp` (Streamable HTTP) under an agent token, or a client connected through OAuth (`moat-`, `OAuthService`: Meshploy is its own authorization server; a connection acts as the person who approved it on the console's `/oauth/authorize` page or as an agent an owner or admin chose, and its token opens only `/mcp`, through `middleware.MCPHopHeader`), and is permission-scoped by construction; operator tools (node registration token, system backups, member/permission enumeration, `db_query`/`db_schema`) are stripped from the remote surface. The MCP tool code lives in `packages/{client,mcpserver}` — shared modules imported by both `apps/cli` (stdio) and `packages/server` (remote `/mcp`), so no app depends on another app.
 
 **Encryption**: `EncryptedString` GORM type uses AES-256-GCM. Call `db.SetEncryptionKey()` before any DB operation. Never stored as plaintext.
 
@@ -221,7 +221,8 @@ packages/server/
 │   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess()
 │   ├── auth.go             # /auth/*, /me, TOTP, 2FA
 │   ├── agent.go            # Agent principals: create, list, token mint/rotate/revoke, delete
-│   ├── mcp.go              # Remote MCP (Streamable HTTP) at /mcp — agent-token authed, permission-scoped
+│   ├── mcp.go              # Remote MCP (Streamable HTTP) at /mcp — agent token or OAuth connection, permission-scoped
+│   ├── oauth.go            # OAuth for MCP clients: discovery, registration, token, approval, connections
 │   ├── org.go              # Org CRUD, members, invitations
 │   ├── project.go          # Project CRUD
 │   ├── environment.go      # Environment levels: list, create above/below, rename
@@ -255,6 +256,7 @@ packages/server/
 │   ├── service.go          # Services aggregate struct + New()
 │   ├── auth.go             # Register (user + default org in tx), Login, TOTP
 │   ├── agent.go            # Agent principals + agent_tokens; ResolveToken() for the auth middleware
+│   ├── oauth.go            # OAuth authorization server for /mcp: clients, grants, codes, rotating tokens
 │   ├── org.go              # Org CRUD, members, invitations
 │   ├── project.go          # Project CRUD
 │   ├── environment.go      # Environment levels: order, create, rename (hostnames re-derived)

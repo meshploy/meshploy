@@ -39,9 +39,7 @@ func (c *Client) UploadSource(orgID, projectID, serviceID string, folder *Packed
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/gzip")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	c.authorize(req)
 	// Up to 100 MB on a home connection: the usual 30 seconds is not enough.
 	resp, err := (&http.Client{Timeout: 15 * time.Minute}).Do(req)
 	if err != nil {

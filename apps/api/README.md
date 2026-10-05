@@ -156,6 +156,24 @@ A CLI logs in through a browser, as OAuth's device flow does: it starts a login 
 | POST | `/cli/logins/{code}/deny` | ✓ | Deny it. A browser session only |
 | DELETE | `/cli/session` | ✓ | Log out the CLI making the request (an `mcli-` token only) |
 
+### OAuth for MCP clients
+
+Meshploy is the OAuth authorization server for its own `/mcp`, so a client that can only connect by signing in (Claude on the web and the desktop) can connect. `/mcp` answers a request without a working credential with `401` and `WWW-Authenticate: Bearer resource_metadata=...`; the client reads the metadata, registers itself, sends a person to the console's `/oauth/authorize` page to approve, and trades the code (PKCE S256) for an `moat-` access token (an hour) and an `mort-` refresh token (rotated on every use; a copied one presented again ends the connection). A connection acts as the person who approved it or, chosen by an owner or admin, as one of the organisation's agents. Its access token opens `/mcp` and nothing else: the API accepts it only on `/mcp`'s own calls back to it.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/.well-known/oauth-protected-resource` | public | RFC 9728 metadata for `/mcp` (also at `.../oauth-protected-resource/mcp`) |
+| GET | `/.well-known/oauth-authorization-server` | public | RFC 8414 metadata: endpoints, `S256`, grant types |
+| POST | `/oauth/register` | public | RFC 7591 dynamic client registration. Redirect URIs must be `https`, or `http` to loopback |
+| POST | `/oauth/token` | public | `authorization_code` with `code_verifier`, or `refresh_token` (form-encoded) |
+| GET | `/oauth/authorize` | ✓ | What a client asking to connect is, for the approval page. A browser session only |
+| POST | `/oauth/authorize` | ✓ | Approve (in `org_id`, as yourself or as `agent_id`) or deny; answers where to send the browser. A browser session only |
+| GET | `/orgs/{orgId}/oauth/connections` | ✓ | Your connections; `?user_id=`, `?agent_id=` or `?all=true` for an owner or admin. Disconnected ones stay listed |
+| GET | `/orgs/{orgId}/cli-sessions` | ✓ admin | CLIs signed in as the organisation's members (`?user_id=` for one); `elsewhere` marks one whose person also belongs to another organisation |
+| DELETE | `/orgs/{orgId}/cli-sessions/{id}` | ✓ admin | Log out a member's CLI. Refused (409) while they also belong to another organisation, where it acts as them too |
+| GET | `/orgs/{orgId}/session-counts` | ✓ admin | Connected sessions per member: assistants connected here, and signed-in CLIs |
+| DELETE | `/orgs/{orgId}/oauth/connections/{id}` | ✓ | Disconnect: your own, or any for an owner or admin |
+
 ### Orgs, members & invitations
 
 | Method | Path | Auth | Description |

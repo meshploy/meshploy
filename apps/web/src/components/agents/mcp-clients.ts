@@ -112,11 +112,9 @@ export const MCP_CLIENT_GUIDES: readonly McpClientGuide[] = [
     id: "claude-web",
     name: "Claude web and desktop",
     file: null,
-    // Listed even though it cannot connect yet, because its absence reads as an
-    // oversight and sends people hunting for a settings field that is not there.
-    // Custom connectors authenticate by OAuth discovery against the server and
-    // offer nowhere to paste a token, so a magt- token cannot be used here.
-    note: "Custom connectors sign in through the server rather than taking a pasted token, so an agent token cannot be used here yet. Use one of the clients above, which accept a token directly.",
+    // Custom connectors sign in through the server (OAuth) and offer nowhere
+    // to paste a token, so this guide says how to connect that way instead.
+    note: "Claude connects by signing in, not with a key: in Claude, open Settings, then Connectors, add a custom connector with this address, and sign in. On the approval page an owner or admin can choose this agent; anyone can connect as themselves, and finds it under Connected sessions in their settings.",
   },
 ]
 

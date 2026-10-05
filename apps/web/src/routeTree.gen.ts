@@ -29,6 +29,7 @@ import { Route as AppClusterIndexRouteImport } from './routes/_app/cluster/index
 import { Route as AppAgentsIndexRouteImport } from './routes/_app/agents/index'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppAccessIndexRouteImport } from './routes/_app/access/index'
+import { Route as AuthOauthAuthorizeRouteImport } from './routes/_auth/oauth/authorize'
 import { Route as AppUsersUserIdRouteImport } from './routes/_app/users/$userId'
 import { Route as AppTemplatesIdRouteImport } from './routes/_app/templates/$id'
 import { Route as AppProjectsNewRouteImport } from './routes/_app/projects/new'
@@ -185,6 +186,11 @@ const AppAccessIndexRoute = AppAccessIndexRouteImport.update({
   id: '/access/',
   path: '/access/',
   getParentRoute: () => AppRoute,
+} as any)
+const AuthOauthAuthorizeRoute = AuthOauthAuthorizeRouteImport.update({
+  id: '/oauth/authorize',
+  path: '/oauth/authorize',
+  getParentRoute: () => AuthRoute,
 } as any)
 const AppUsersUserIdRoute = AppUsersUserIdRouteImport.update({
   id: '/users/$userId',
@@ -532,6 +538,7 @@ export interface FileRoutesByFullPath {
   '/projects/new': typeof AppProjectsNewRoute
   '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
+  '/oauth/authorize': typeof AuthOauthAuthorizeRoute
   '/access/': typeof AppAccessIndexRoute
   '/account/': typeof AppAccountIndexRoute
   '/agents/': typeof AppAgentsIndexRoute
@@ -609,6 +616,7 @@ export interface FileRoutesByTo {
   '/projects/new': typeof AppProjectsNewRoute
   '/templates/$id': typeof AppTemplatesIdRoute
   '/users/$userId': typeof AppUsersUserIdRoute
+  '/oauth/authorize': typeof AuthOauthAuthorizeRoute
   '/access': typeof AppAccessIndexRoute
   '/account': typeof AppAccountIndexRoute
   '/agents': typeof AppAgentsIndexRoute
@@ -685,6 +693,7 @@ export interface FileRoutesById {
   '/_app/projects/new': typeof AppProjectsNewRoute
   '/_app/templates/$id': typeof AppTemplatesIdRoute
   '/_app/users/$userId': typeof AppUsersUserIdRoute
+  '/_auth/oauth/authorize': typeof AuthOauthAuthorizeRoute
   '/_app/access/': typeof AppAccessIndexRoute
   '/_app/account/': typeof AppAccountIndexRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
@@ -765,6 +774,7 @@ export interface FileRouteTypes {
     | '/projects/new'
     | '/templates/$id'
     | '/users/$userId'
+    | '/oauth/authorize'
     | '/access/'
     | '/account/'
     | '/agents/'
@@ -842,6 +852,7 @@ export interface FileRouteTypes {
     | '/projects/new'
     | '/templates/$id'
     | '/users/$userId'
+    | '/oauth/authorize'
     | '/access'
     | '/account'
     | '/agents'
@@ -917,6 +928,7 @@ export interface FileRouteTypes {
     | '/_app/projects/new'
     | '/_app/templates/$id'
     | '/_app/users/$userId'
+    | '/_auth/oauth/authorize'
     | '/_app/access/'
     | '/_app/account/'
     | '/_app/agents/'
@@ -1128,6 +1140,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/access/'
       preLoaderRoute: typeof AppAccessIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_auth/oauth/authorize': {
+      id: '/_auth/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof AuthOauthAuthorizeRouteImport
+      parentRoute: typeof AuthRoute
     }
     '/_app/users/$userId': {
       id: '/_app/users/$userId'
@@ -1777,12 +1796,14 @@ interface AuthRouteChildren {
   AuthCliLoginRoute: typeof AuthCliLoginRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
+  AuthOauthAuthorizeRoute: typeof AuthOauthAuthorizeRoute
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthCliLoginRoute: AuthCliLoginRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
+  AuthOauthAuthorizeRoute: AuthOauthAuthorizeRoute,
 }
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)

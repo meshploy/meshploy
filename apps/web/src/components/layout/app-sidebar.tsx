@@ -2,25 +2,7 @@ import { useTabStore } from "@/store/tab-store"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
-import {
-  Bot,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  FolderKanban,
-  Globe,
-  Home,
-  LayoutTemplate,
-  Loader2,
-  Network,
-  Plug,
-  Server,
-  Settings,
-  Users,
-  ShieldCheck,
-  Radar,
-  Import,
-} from "lucide-react"
+import { Bot, ChevronLeft, ChevronRight, Download, FolderKanban, Globe, Home, LayoutTemplate, Loader2, Network, Plug, Server, Settings, Users, ShieldCheck, Radar, Import, KeyRound } from "lucide-react"
 import { useUIStore } from "@/store/ui-store"
 import { useIsAdmin } from "@/store/org-store"
 import { Separator } from "@/components/ui/separator"
@@ -77,7 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/integrations", icon: Plug, label: "Integrations", exact: false },
       { href: "/users", icon: Users, label: "Users", exact: false },
       { href: "/access", icon: ShieldCheck, label: "Access", exact: false },
-      { href: "/agents", icon: Bot, label: "Agents", exact: false },
+      { href: "/agents", icon: KeyRound, label: "API keys", exact: false },
       { href: "/settings", icon: Settings, label: "Settings", exact: false },
     ],
   },

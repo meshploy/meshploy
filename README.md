@@ -55,8 +55,9 @@ Want to explore first? [Open the playground](https://meshploy.com/playground/) t
 
 Meshploy has an MCP server with about 100 tools, so an agent can do what the console does: deploy an app from a folder, a Compose file or a one-click template, give it an address, read its logs and deployments, set its variables and secrets, take backups and roll back. Secrets are write-only: no tool reads them back, so a password an agent sets never returns through a transcript.
 
-Connect it in one of two ways:
+Connect it in one of three ways:
 
+- **Signing in, from any machine.** In Claude, open Settings, then Connectors, and add a custom connector with your gateway's `https://console.<your-domain>/mcp`; Cursor and VS Code take the same address as a remote server. The client sends you to the console to approve it, and then works with your access (or, if you are an owner or admin, as an agent you choose). Connections are listed under **Connected sessions** in your settings.
 - **Locally, acting as you.** Install the CLI (released for Linux; on macOS or Windows, [build it from source](./apps/cli/README.md#building-from-source) or use the remote endpoint below), sign in with `meshploy auth login`, and add the server to your client. For Claude Code, in the project's `.mcp.json`:
 
   ```json
@@ -67,7 +68,7 @@ Connect it in one of two ways:
   }
   ```
 
-- **Remotely, as its own identity, from any machine.** Create an agent under **Agents** in the console, grant it the projects it may touch, and point your client at your gateway's `https://console.<your-domain>/mcp` with the agent's token. The console shows the configuration for each client.
+- **With a key, as its own identity.** For CI, scripts and clients that take a pasted token: create an agent under **API keys** in the console, grant it the projects it may touch, and point your client at your gateway's `https://console.<your-domain>/mcp` with the agent's key. The console shows the configuration for each client.
 
 Meshploy is self-hosted, so the agent talks to your own gateway: [install one](#self-hosting) first. See [Connect an agent](https://docs.meshploy.com/guides/scoped-agent-access/) for identities and permissions, and the [CLI reference](./apps/cli/README.md#meshploy-mcp) for the tools.
 

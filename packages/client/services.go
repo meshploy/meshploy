@@ -91,9 +91,7 @@ func (c *Client) StreamLogs(orgID, projectID, serviceID string, tail int, since 
 		return err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	c.authorize(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err

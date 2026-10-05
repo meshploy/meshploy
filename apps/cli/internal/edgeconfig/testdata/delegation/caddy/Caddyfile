@@ -69,11 +69,16 @@ console.example.com {
             flush_interval -1
         }
     }
-    # Remote MCP (Streamable HTTP). Agents connect here with a magt- token.
+    # Remote MCP (Streamable HTTP): an agent token, or a client connected
+    # through OAuth, which finds how to connect at /.well-known/oauth-*. The
+    # approval page, /oauth/authorize, is the console's own.
     handle /mcp* {
         reverse_proxy localhost:4000 {
             flush_interval -1
         }
+    }
+    handle /.well-known/oauth-* {
+        reverse_proxy localhost:4000
     }
     handle {
         reverse_proxy localhost:5173

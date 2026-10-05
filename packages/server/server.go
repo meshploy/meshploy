@@ -49,7 +49,7 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 
 	// 20 invalid agent-token attempts per minute per IP (defence-in-depth).
 	agentFailLimiter := middleware.NewIPRateLimiter(rate.Every(3*time.Second), 20)
-	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, agentFailLimiter))
+	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, svc.OAuth.ResolveToken, agentFailLimiter))
 	r.Use(middleware.RequireAuth)
 	r.Use(middleware.PathRateLimiter(map[string]*middleware.IPRateLimiter{
 		// 5 attempts per minute per IP - brute-force protection
@@ -61,6 +61,11 @@ func New(cfg *config.Config, db *gorm.DB) *http.Server {
 		// address.
 		"POST /api/v1/cli/logins":       middleware.NewIPRateLimiter(rate.Every(10*time.Second), 6),
 		"POST /api/v1/cli/logins/token": middleware.NewIPRateLimiter(rate.Every(time.Second), 20),
+		// MCP clients registering themselves: registration grants nothing, but
+		// each is a row, so a handful a minute per IP. Token requests come once
+		// an hour per connection, with room for retries.
+		"POST /api/v1/oauth/register": middleware.NewIPRateLimiter(rate.Every(10*time.Second), 5),
+		"POST /api/v1/oauth/token":    middleware.NewIPRateLimiter(rate.Every(2*time.Second), 20),
 	}))
 	r.Use(middleware.OrgMember(func(ctx context.Context, orgID, userID uuid.UUID) error {
 		_, err := svc.Orgs.MemberRole(ctx, orgID, userID)

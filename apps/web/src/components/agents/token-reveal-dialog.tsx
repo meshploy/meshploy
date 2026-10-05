@@ -41,7 +41,7 @@ export function TokenRevealDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Agent token</DialogTitle>
+          <DialogTitle>API key</DialogTitle>
           <DialogDescription>
             {agentName
               ? <>New token for <span className="text-foreground font-medium">{agentName}</span>.</>
@@ -53,7 +53,7 @@ export function TokenRevealDialog({
         <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
           <ShieldAlert className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-300/90">
-            Shown once — copy it now. You won't be able to see this token again after closing.
+            Shown once: copy it now. You won't be able to see this key again after closing.
           </p>
         </div>
 

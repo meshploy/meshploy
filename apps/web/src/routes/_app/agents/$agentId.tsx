@@ -33,6 +33,7 @@ import {
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useOrgRole } from "@/store/org-store"
 import { cn, formatRelativeTime } from "@/lib/utils"
+import { AgentSessions } from "@/components/auth/connected-sessions"
 
 export const Route = createFileRoute("/_app/agents/$agentId")({
   component: AgentDetailPage,
@@ -99,7 +100,8 @@ function AgentDetailPage() {
 
           </div><aside className="space-y-6 min-w-0">
           <McpConnectPanel mcpUrl={mcpUrl} />
-          <ResourcePanel title="Agent access"><p className="text-sm text-muted-foreground leading-relaxed">Connect tools using an agent token. Resource permissions determine which parts of the workspace this agent can access.</p></ResourcePanel>
+          <ResourcePanel title="Agent access"><p className="text-sm text-muted-foreground leading-relaxed">Connect tools using one of this agent's keys, or connect a client that signs in (Claude) as this agent from its approval page. Resource permissions determine which parts of the workspace this agent can access.</p></ResourcePanel>
+          <ResourcePanel title="Connected assistants" description="Clients an owner or admin connected to act as this agent."><AgentSessions orgId={orgId} agentId={agent.id} token={token} /></ResourcePanel>
           </aside></div>
           <DangerZone agent={agent} orgId={orgId} token={token} />
 
@@ -224,7 +226,7 @@ function McpConnectPanel({ mcpUrl }: { mcpUrl: string }) {
               <p className="text-[11px] text-muted-foreground/60">
                 Paste this into <span className="font-mono text-muted-foreground">{guide.file}</span>, swapping{" "}
                 <span className="font-mono text-muted-foreground">{MCP_TOKEN_PLACEHOLDER}</span> for one of the
-                agent&apos;s tokens below.
+                agent&apos;s keys below.
               </p>
               <div className="relative">
                 <pre className="text-xs font-mono bg-muted/50 border border-border/40 rounded px-3 py-2 pr-11 text-foreground overflow-x-auto">
@@ -257,16 +259,16 @@ function TokensSection({ agent, orgId, token, onAddToken }: {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Tokens</h2>
+        <h2 className="text-sm font-medium">API keys</h2>
         <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={onAddToken}>
           <Plus className="h-3.5 w-3.5" />
-          New token
+          New key
         </Button>
       </div>
 
       {agent.tokens.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/50 py-8 flex flex-col items-center gap-2 text-muted-foreground">
-          <p className="text-xs">No tokens — mint one to let this agent authenticate.</p>
+          <p className="text-xs">No keys. Make one to let this agent sign in.</p>
         </div>
       ) : (
         <div className="rounded-lg border border-border/60 overflow-hidden divide-y divide-border/40">
@@ -382,8 +384,8 @@ function AddTokenDialog({ open, onOpenChange, orgId, agentId, token, onCreated }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New token</DialogTitle>
-          <DialogDescription>Mint an additional token for this agent. Shown once.</DialogDescription>
+          <DialogTitle>New key</DialogTitle>
+          <DialogDescription>Another key for this agent, for rotating the old one or for a second place that uses it. Shown once.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -413,7 +415,7 @@ function AddTokenDialog({ open, onOpenChange, orgId, agentId, token, onCreated }
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={() => mutate()} disabled={isPending} className="gap-1.5">
             {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-            Generate token
+            Create key
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -449,7 +451,7 @@ function DangerZone({ agent, orgId, token }: { agent: AgentDTO; orgId: string; t
         <div>
           <p className="text-sm font-medium">Delete agent</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Permanently deletes this agent, revokes all its tokens, and removes its permission grants.
+            Permanently deletes this agent, revokes all its keys and connected assistants, and removes its permission grants.
           </p>
         </div>
         <div className="space-y-2">

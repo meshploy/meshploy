@@ -51,7 +51,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   config:       "Configuration",
   "config-files": "Config files",
   variables: "Variables",
-  agents: "Agents",
+  agents: "API keys",
   logs:         "Logs",
   account:      "Account",
   new:          "New",

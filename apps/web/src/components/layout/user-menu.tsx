@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { BookOpen, ExternalLink, LogOut, User } from "lucide-react"
+import { BookOpen, ExternalLink, LogOut, User, PlugZap } from "lucide-react"
 import { auth } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -68,6 +68,13 @@ export function UserMenu() {
         >
           <User className="h-3.5 w-3.5" />
           Account
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className={item}
+          onClick={() => navigate({ to: "/account", hash: "account-sessions" })}
+        >
+          <PlugZap className="h-3.5 w-3.5" />
+          Connected sessions
         </DropdownMenuItem>
         <DropdownMenuItem className={item} render={<a href={DOCS_URL} target="_blank" rel="noopener noreferrer" />}>
           <BookOpen className="h-3.5 w-3.5" />

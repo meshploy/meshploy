@@ -251,6 +251,60 @@ func (s *CLILoginService) Sessions(ctx context.Context, userID uuid.UUID, curren
 	return out, err
 }
 
+// OrgCLISession is a member's signed-in CLI, as an organisation's admin
+// sees it.
+type OrgCLISession struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	UserName   string     `json:"user_name"`
+	Host       string     `json:"host"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	// Elsewhere is true when its person also belongs to another
+	// organisation, where the CLI acts as them too: then only they log it out.
+	Elsewhere bool `json:"elsewhere"`
+}
+
+// OrgSessions are the CLIs signed in as an organisation's members (or as one
+// of them, userID), most recently used first. A CLI acts as its person in
+// every organisation they belong to, so it is listed in each.
+func (s *CLILoginService) OrgSessions(ctx context.Context, orgID uuid.UUID, userID *uuid.UUID) ([]OrgCLISession, error) {
+	q := s.db.WithContext(ctx).Model(&db.CLIToken{}).
+		Where("cli_tokens.revoked_at IS NULL AND COALESCE(cli_tokens.last_used_at, cli_tokens.created_at) > ?", time.Now().Add(-CLITokenIdle)).
+		Select("cli_tokens.id, cli_tokens.user_id, users.username AS user_name, cli_tokens.host, cli_tokens.created_at, cli_tokens.last_used_at, "+
+			"EXISTS (SELECT 1 FROM organization_members o WHERE o.user_id = cli_tokens.user_id AND o.organization_id <> ?) AS elsewhere", orgID).
+		Joins("JOIN users ON users.id = cli_tokens.user_id").
+		Joins("JOIN organization_members m ON m.user_id = cli_tokens.user_id AND m.organization_id = ?", orgID)
+	if userID != nil {
+		q = q.Where("cli_tokens.user_id = ?", *userID)
+	}
+	out := []OrgCLISession{}
+	err := q.Order("COALESCE(cli_tokens.last_used_at, cli_tokens.created_at) DESC").Scan(&out).Error
+	return out, err
+}
+
+// ErrCLIElsewhere is an admin logging out a CLI whose person also belongs to
+// another organisation, where it acts as them too.
+var ErrCLIElsewhere = errors.New("this person also belongs to another organisation, where the CLI acts as them too, so only they can log it out")
+
+// RevokeInOrg is an organisation's owner or admin logging out a member's CLI.
+// A CLI acts as its person everywhere, so it is theirs to end only while the
+// person belongs to this organisation alone.
+func (s *CLILoginService) RevokeInOrg(ctx context.Context, orgID, id uuid.UUID) error {
+	q := s.db.WithContext(ctx)
+	var tok db.CLIToken
+	if err := q.Joins("JOIN organization_members m ON m.user_id = cli_tokens.user_id AND m.organization_id = ?", orgID).
+		First(&tok, "cli_tokens.id = ? AND cli_tokens.revoked_at IS NULL", id).Error; err != nil {
+		return ErrTokenNotFound
+	}
+	var other int64
+	q.Model(&db.OrganizationMember{}).Where("user_id = ? AND organization_id <> ?", tok.UserID, orgID).Count(&other)
+	if other > 0 {
+		return ErrCLIElsewhere
+	}
+	return q.Model(&db.CLIToken{}).Where("id = ?", tok.ID).Update("revoked_at", time.Now()).Error
+}
+
 // Revoke ends one of a person's CLI sessions.
 func (s *CLILoginService) Revoke(ctx context.Context, userID, id uuid.UUID) error {
 	res := s.db.WithContext(ctx).Model(&db.CLIToken{}).

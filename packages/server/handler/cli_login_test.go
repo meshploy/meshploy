@@ -63,7 +63,7 @@ func newCLILoginRig(t *testing.T) *cliLoginRig {
 	}
 
 	r := chi.NewRouter()
-	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, nil))
+	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, svc.OAuth.ResolveToken, nil))
 	r.Use(middleware.RequireAuth)
 	h.registerCLILoginRoutes(humachi.New(r, huma.DefaultConfig("test", "1")))
 	return &cliLoginRig{t: t, r: r, svc: svc, session: session, agent: agent}

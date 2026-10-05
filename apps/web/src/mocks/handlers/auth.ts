@@ -1,6 +1,11 @@
 import { http, HttpResponse } from "msw"
 import { DEMO_TOKEN, demoUser } from "../data"
 
+const demoConnections: { id: string; client_name: string; approved_by: string; approved_by_name: string; created_at: string; last_used_at?: string; revoked_at?: string }[] = [
+  { id: "00000000-0000-0000-0000-0000000000c1", client_name: "Claude", approved_by: demoUser.id, approved_by_name: demoUser.username,
+    created_at: new Date(Date.now() - 3 * 86400_000).toISOString(), last_used_at: new Date(Date.now() - 2 * 3600_000).toISOString() },
+]
+
 export const authHandlers = [
   http.get("/api/v1/auth/status", () =>
     HttpResponse.json({ registration_open: false })
@@ -41,4 +46,28 @@ export const authHandlers = [
     ])
   ),
   http.delete("/api/v1/me/cli-sessions/:id", () => new HttpResponse(null, { status: 204 })),
+
+  // AI assistants connected through OAuth: one Claude connection as the demo
+  // user, which can be disconnected for the session.
+  http.get("/api/v1/orgs/:orgId/oauth/connections", ({ request }) => {
+    const q = new URL(request.url).searchParams
+    if (q.get("agent_id")) return HttpResponse.json([])
+    return HttpResponse.json(demoConnections)
+  }),
+  http.get("/api/v1/orgs/:orgId/session-counts", () =>
+    HttpResponse.json({ [demoUser.id]: demoConnections.filter((c) => !c.revoked_at).length + 1 })
+  ),
+  // The demo user's one CLI, as an admin sees members' CLIs.
+  http.get("/api/v1/orgs/:orgId/cli-sessions", () =>
+    HttpResponse.json([{ id: "00000000-0000-0000-0000-0000000000c2", user_id: demoUser.id, user_name: demoUser.username,
+      host: "demo-laptop", elsewhere: false, created_at: new Date(Date.now() - 5 * 86400_000).toISOString(), last_used_at: new Date(Date.now() - 3600_000).toISOString() }])
+  ),
+  http.delete("/api/v1/orgs/:orgId/oauth/connections/:id", ({ params }) => {
+    const c = demoConnections.find((x) => x.id === params.id)
+    if (c) c.revoked_at = new Date().toISOString()
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.delete("/api/v1/orgs/:orgId/cli-sessions/:id", () => new HttpResponse(null, { status: 204 })),
+  http.get("/api/v1/oauth/authorize", () => HttpResponse.json({ client_name: "Claude", redirect_host: "claude.ai" })),
+  http.post("/api/v1/oauth/authorize", () => HttpResponse.json({ redirect: "/" })),
 ]
