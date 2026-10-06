@@ -2,7 +2,7 @@ import { useTabStore } from "@/store/tab-store"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { useRouterState, Link } from "@tanstack/react-router"
-import { Bot, ChevronLeft, ChevronRight, Download, FolderKanban, Globe, Home, LayoutTemplate, Loader2, Network, Plug, Server, Settings, Users, ShieldCheck, Radar, Import, PlugZap } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, FolderKanban, Globe, Home, LayoutTemplate, Loader2, Network, Plug, Server, Settings, Users, ShieldCheck, Radar, Import, PlugZap } from "lucide-react"
 import { useUIStore } from "@/store/ui-store"
 import { useIsAdmin } from "@/store/org-store"
 import { Separator } from "@/components/ui/separator"
@@ -49,7 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/nodes", icon: Server, label: "Nodes", exact: false },
       { href: "/cluster", icon: Network, label: "Mesh", exact: false, adminOnly: true },
-      { href: "/discovery", icon: Radar, label: "Discovery", exact: false },
+      { href: "/discovery", icon: Radar, label: "Discovery", exact: false, adminOnly: true },
       { href: "/domains", icon: Globe, label: "Domains", exact: false },
     ],
   },

@@ -10,8 +10,8 @@ pages: [users]
 Everyone in a workspace is a **member** with a role:
 
 - **Owner**: one per workspace, with every right, including over admins.
-- **Admin**: manages the workspace: members, nodes, domains, integrations and every project.
-- **Member**: sees and changes only what they are granted.
+- **Admin**: manages the workspace: members, nodes, domains, integrations and every project, and sees everything running on the machines (Discovery).
+- **Member**: sees and changes only what they are granted. They also see the nodes and domains they deploy onto, without changing them.
 
 People join by **invitation**, which an admin sends from this page. Someone new creates their account from the invitation's link; someone who already has an account here, such as a person who was removed and is invited back, signs in from the link and joins with it.
 

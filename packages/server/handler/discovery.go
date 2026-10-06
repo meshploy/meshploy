@@ -10,6 +10,10 @@ import (
 
 // Discovery: what runs on this org's nodes that Meshploy does not route.
 //
+// An owner's or admin's: every port, process and container on the machines,
+// which a project member does not need to see, and whose ignore marks are
+// records for the whole organisation.
+//
 // Read-only. The actions it leads to - serve a hostname, publish a port, import
 // a container - are the route and request endpoints that already exist, called
 // with what a row prefills.
@@ -62,7 +66,7 @@ type IgnoreEndpointOutput struct {
 }
 
 func (h *Handler) IgnoreEndpoint(ctx context.Context, input *IgnoreEndpointInput) (*IgnoreEndpointOutput, error) {
-	userID, orgID, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.Body.NodeID)
+	userID, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.Body.NodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +83,7 @@ type UnignoreEndpointInput struct {
 }
 
 func (h *Handler) UnignoreEndpoint(ctx context.Context, input *UnignoreEndpointInput) (*struct{}, error) {
-	_, orgID, ignoreID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.IgnoreID)
+	_, orgID, ignoreID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.IgnoreID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +99,7 @@ type DiscoveryOutput struct {
 }
 
 func (h *Handler) GetDiscovery(ctx context.Context, input *DiscoveryInput) (*DiscoveryOutput, error) {
-	_, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}

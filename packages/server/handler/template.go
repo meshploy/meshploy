@@ -125,9 +125,14 @@ type RefreshTemplatesOutput struct {
 
 // RefreshTemplates re-reads the catalog and reports how many templates it now
 // holds, so the caller can see the refresh took effect rather than trusting it.
+// The catalog is the server's, so refreshing it is an owner's or admin's.
 func (h *Handler) RefreshTemplates(ctx context.Context, _ *RefreshTemplatesInput) (*RefreshTemplatesOutput, error) {
-	if _, err := requireUser(ctx); err != nil {
+	userID, err := requireUser(ctx)
+	if err != nil {
 		return nil, err
+	}
+	if !h.svc.Orgs.AdminOfAny(ctx, userID) {
+		return nil, huma.Error403Forbidden("only an owner or admin refreshes the template catalog")
 	}
 	if err := h.svc.Templates.Refresh(ctx); err != nil {
 		return nil, huma.Error502BadGateway("could not reach the template catalog: " + err.Error())

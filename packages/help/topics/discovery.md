@@ -9,7 +9,7 @@ pages: [discovery]
 
 **Discovery** shows everything running on your nodes that Meshploy does not manage: the **endpoints** listening on each machine (a port and the process behind it) and the **containers** running there, such as an app started by hand, another platform's containers, or a service installed from a package.
 
-It is read from each machine by the host agent, and **nothing is touched**. A node that is not reporting is listed separately, with how to start its agent.
+Discovery is for owners and admins: it lists every port, process and container on the machines, which a project member does not need to see. It is read from each machine by the host agent, and **nothing is touched**. A node that is not reporting is listed separately, with how to start its agent.
 
 ## Routing an existing service {#routing}
 

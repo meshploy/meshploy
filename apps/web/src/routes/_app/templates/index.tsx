@@ -5,6 +5,7 @@ import { Globe, LayoutTemplate, Loader2, RefreshCw, Search, ServerCrash } from "
 import { SiGithub } from "@icons-pack/react-simple-icons"
 import { templates as templatesApi, type TemplateManifest } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { useIsAdmin } from "@/store/org-store"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { TemplateLogo } from "@/components/templates/template-logo"
@@ -17,6 +18,8 @@ export const Route = createFileRoute("/_app/templates/")({
 
 function TemplatesPage() {
   const token = useAuthStore((s) => s.token)!
+  // The catalog is the server's: an owner or admin refreshes it.
+  const isAdmin = useIsAdmin()
   const [category, setCategory] = useState<string>("all")
   const [q, setQ] = useState("")
 
@@ -83,16 +86,18 @@ function TemplatesPage() {
         {/* The catalog is cached and re-read on a slow timer, so a template
             published minutes ago is not here yet. Asking is faster than waiting
             out the poll, and far faster than restarting the API. */}
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 shrink-0"
-          onClick={() => refreshCatalog.mutate()}
-          disabled={refreshCatalog.isPending}
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", refreshCatalog.isPending && "animate-spin")} />
-          Refresh
-        </Button>
+        {isAdmin && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 shrink-0"
+            onClick={() => refreshCatalog.mutate()}
+            disabled={refreshCatalog.isPending}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshCatalog.isPending && "animate-spin")} />
+            Refresh
+          </Button>
+        )}
       </div>
 
       {/* Filters */}

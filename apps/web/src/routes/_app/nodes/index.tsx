@@ -10,13 +10,16 @@ import { NodesTable } from "@/components/nodes/nodes-table"
 import { nodes as nodesApi, toNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { HelpButton } from "@/help/help-button"
-import { useOrgStore } from "@/store/org-store"
+import { useOrgStore, useIsAdmin } from "@/store/org-store"
 
 export const Route = createFileRoute("/_app/nodes/")({
   component: NodesPage,
 })
 
 function NodesPage() {
+  // Connecting a node is an owner's or admin's; a member sees the nodes they
+  // deploy onto.
+  const isAdmin = useIsAdmin()
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("all")
   const token = useAuthStore((s) => s.token)!
@@ -67,7 +70,7 @@ function NodesPage() {
         <MetricTile icon={CheckCircle2} label="Cluster ready" value={nodeList.filter(n=>n.k8sReady).length} detail="Nodes reporting Kubernetes readiness"/>
         <MetricTile icon={Cpu} label="Online CPU capacity" value={nodeList.filter(n=>n.status === "online" && n.k8sMember).reduce((sum,n)=>sum+(n.cpuCores || 0),0)} unit="cores" detail="Cluster nodes' hardware, not current utilization"/>
       </div>
-      <div className="flex flex-wrap items-center gap-3"><Input aria-label="Search nodes" placeholder="Search by name or mesh IP…" value={search} onChange={e=>setSearch(e.target.value)} className="h-10 max-w-md"/><OptionSelect label="Filter node status" value={status} onChange={setStatus} options={[{"value": "all", "label": "All statuses"}, {"value": "online", "label": "Online"}, {"value": "offline", "label": "Not online"}]} /><Button variant="outline" className="sm:ml-auto" render={<Link to="/cluster"/>}><Plus className="size-4"/>Connect a node</Button></div>
+      <div className="flex flex-wrap items-center gap-3"><Input aria-label="Search nodes" placeholder="Search by name or mesh IP…" value={search} onChange={e=>setSearch(e.target.value)} className="h-10 max-w-md"/><OptionSelect label="Filter node status" value={status} onChange={setStatus} options={[{"value": "all", "label": "All statuses"}, {"value": "online", "label": "Online"}, {"value": "offline", "label": "Not online"}]} />{isAdmin && <Button variant="outline" className="sm:ml-auto" render={<Link to="/cluster"/>}><Plus className="size-4"/>Connect a node</Button>}</div>
       <NodesTable nodes={nodeList.filter(n => `${n.name} ${n.tailscaleIP}`.toLowerCase().includes(search.toLowerCase()) && (status === "all" || (status === "online" ? n.status === "online" : n.status !== "online")))} />
     </div>
   )

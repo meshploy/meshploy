@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { NOTICE_GETTING_STARTED, domains as domainsApi, gitIntegrations as gitApi, system as systemApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore } from "@/store/org-store"
+import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import type { Node, Project } from "@/types"
 import { Button } from "@/components/ui/button"
 
@@ -58,6 +58,7 @@ export function StartHere({
 }) {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const isAdmin = useIsAdmin()
   const qc = useQueryClient()
 
   const services = projects.reduce((n, p) => n + p.servicesCount, 0)
@@ -205,10 +206,12 @@ export function StartHere({
           A template
           <span className="text-muted-foreground/60">- one click, proves the whole path works</span>
         </Link>
-        <Link to="/discovery" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-          <Radar className="h-3.5 w-3.5" />
-          What is already running on this machine
-        </Link>
+        {isAdmin && (
+          <Link to="/discovery" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
+            <Radar className="h-3.5 w-3.5" />
+            What is already running on this machine
+          </Link>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border/40 px-5 py-3 text-xs">

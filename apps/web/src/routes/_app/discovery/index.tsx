@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { AlertTriangle, Boxes, Server, Loader2, Network, Lock, Globe, ShieldCheck } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { discovery as discoveryApi, type ApiDiscovery, type ApiEndpoint, type ApiNodeDiscovery } from "@/lib/api"
@@ -18,7 +18,7 @@ import {
   TableCell,
 } from "@/components/ui/table"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore } from "@/store/org-store"
+import { useOrgStore, useOrgRole } from "@/store/org-store"
 import { HelpButton } from "@/help/help-button"
 import { formatRelativeTime } from "@/lib/utils"
 
@@ -41,11 +41,17 @@ function DiscoveryPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const [view, setView] = useState<View>("endpoints")
+  // Everything running on the machines is an owner's or admin's to see.
+  const role = useOrgRole()
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (role === "member") navigate({ to: "/" })
+  }, [role, navigate])
 
   const { data, isPending } = useQuery<ApiDiscovery>({
     queryKey: ["discovery", orgId],
     queryFn: () => discoveryApi.get(orgId!, token),
-    enabled: !!orgId,
+    enabled: !!orgId && !!role && role !== "member",
     refetchInterval: 30_000,
     retry: false,
     throwOnError: false,

@@ -514,8 +514,8 @@ function NodeDetailPage() {
       </aside></div>
       {/* What else this machine runs - a line, with the list itself on the
           Discovery page. Gateway-only: the host agent reports there, and it
-          hides itself anywhere else. */}
-      <HostContainers orgId={orgId!} nodeId={node.id} token={token} />
+          hides itself anywhere else. An owner's or admin's, like Discovery. */}
+      {isAdmin && <HostContainers orgId={orgId!} nodeId={node.id} token={token} />}
 
       {/* Active Projects */}
       {node.activeProjects.length > 0 && (

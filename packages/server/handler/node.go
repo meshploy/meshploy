@@ -1162,8 +1162,10 @@ type NodeContainersOutput struct {
 // Read-only, and gateway-only: the host agent runs on the gateway, so any
 // other node answers "not available here" rather than an empty list that would
 // read as "nothing else is running".
+// ListNodeContainers is what else a machine runs, as Discovery shows it, and an
+// owner's or admin's like Discovery.
 func (h *Handler) ListNodeContainers(ctx context.Context, input *NodePathInput) (*NodeContainersOutput, error) {
-	_, _, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
+	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}

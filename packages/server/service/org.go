@@ -177,6 +177,16 @@ func (s *OrgService) ClearHeadscalePreAuthKey(ctx context.Context, orgID uuid.UU
 		}).Error
 }
 
+// AdminOfAny says whether a person is an owner or admin of some organisation,
+// for what belongs to the whole server rather than to one: the template
+// catalog.
+func (s *OrgService) AdminOfAny(ctx context.Context, userID uuid.UUID) bool {
+	var n int64
+	s.db.WithContext(ctx).Model(&db.OrganizationMember{}).
+		Where("user_id = ? AND role IN ?", userID, []db.MemberRole{db.RoleOwner, db.RoleAdmin}).Count(&n)
+	return n > 0
+}
+
 // MemberRole returns the role of a user within an org, or an error if not a member.
 func (s *OrgService) MemberRole(ctx context.Context, orgID, userID uuid.UUID) (db.MemberRole, error) {
 	var m db.OrganizationMember
