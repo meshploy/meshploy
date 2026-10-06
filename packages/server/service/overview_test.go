@@ -187,3 +187,47 @@ func TestTheOverviewSaysWhenADiskFillsOrAWorkloadIsLeftOver(t *testing.T) {
 		assert.NotEqual(t, "orphans", a.Kind, "the cluster's leftovers are an admin's to see")
 	}
 }
+
+// The gateway building is said once another online node can build, and only
+// to an admin; a single server has to build, so it hears nothing.
+func TestTheOverviewSaysWhenTheGatewayNeedNotBuild(t *testing.T) {
+	ctx := context.Background()
+	svcs, gdb, prod, _, _, _, _ := newChain(t)
+	var project meshdb.Project
+	require.NoError(t, gdb.First(&project, "id = ?", prod).Error)
+	org := project.OrganizationID
+	row := func(admin bool) *service.AttentionItem {
+		got, err := svcs.Overview.Get(ctx, org, []uuid.UUID{prod}, admin)
+		require.NoError(t, err)
+		for i, a := range got.Attention {
+			if a.Kind == "gateway_builds" {
+				return &got.Attention[i]
+			}
+		}
+		return nil
+	}
+
+	gw := meshdb.Node{OrganizationID: org, Name: "gw", Status: meshdb.NodeOnline, K3sRole: meshdb.K3sRoleServer}
+	require.NoError(t, gdb.Create(&gw).Error)
+	assert.Nil(t, row(true), "a single server has to build")
+
+	laptop := meshdb.Node{OrganizationID: org, Name: "laptop", Status: meshdb.NodeOnline, K3sRole: meshdb.K3sRoleAgent, MeshRole: meshdb.MeshRoleMesh}
+	runner := meshdb.Node{OrganizationID: org, Name: "runner", Status: meshdb.NodeOnline, K3sRole: meshdb.K3sRoleAgent, MeshRole: meshdb.MeshRoleWorkload}
+	require.NoError(t, gdb.Create(&laptop).Error)
+	require.NoError(t, gdb.Create(&runner).Error)
+	assert.Nil(t, row(true), "neither can build")
+
+	builder := meshdb.Node{OrganizationID: org, Name: "builder", Status: meshdb.NodeOnline, K3sRole: meshdb.K3sRoleAgent, MeshRole: meshdb.MeshRoleBuilder}
+	require.NoError(t, gdb.Create(&builder).Error)
+	got := row(true)
+	require.NotNil(t, got)
+	assert.Equal(t, "gw still runs builds", got.Title)
+	assert.Equal(t, gw.ID, *got.NodeID)
+	assert.Nil(t, row(false), "the gateway's role is an admin's to change")
+
+	require.NoError(t, gdb.Model(&builder).Update("status", meshdb.NodeOffline).Error)
+	assert.Nil(t, row(true), "an offline builder cannot take them")
+	require.NoError(t, gdb.Model(&builder).Update("status", meshdb.NodeOnline).Error)
+	require.NoError(t, gdb.Model(&gw).Update("mesh_role", meshdb.MeshRoleWorkload).Error)
+	assert.Nil(t, row(true), "the gateway no longer builds")
+}

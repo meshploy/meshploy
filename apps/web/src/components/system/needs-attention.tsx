@@ -93,6 +93,8 @@ function AttentionRow({ item }: { item: ApiAttentionItem }) {
     return <Link to="/cluster" className={className}>{body}</Link>
   if ((item.kind === "node_offline" || item.kind === "node_disk") && item.node_id)
     return <Link to="/nodes/$id" params={{ id: item.node_id }} className={className}>{body}</Link>
+  if (item.kind === "gateway_builds" && item.node_id)
+    return <Link to="/nodes/$id" params={{ id: item.node_id }} search={{ build: "off" }} className={className}>{body}</Link>
   if ((item.kind === "domain_unverified" || item.kind === "former_primary") && item.domain_id)
     return <Link to="/domains/$domainId" params={{ domainId: item.domain_id }} className={className}>{body}</Link>
   if (item.kind === "job_failed" && p && item.job_id)

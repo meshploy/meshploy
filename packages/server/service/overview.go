@@ -339,6 +339,9 @@ func (s *OverviewService) Get(ctx context.Context, orgID uuid.UUID, projectIDs [
 		}
 	}
 	if isAdmin {
+		if item := s.gatewayBuilds(ctx, orgID); item != nil {
+			add(*item)
+		}
 		var domains []db.Domain
 		if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Order("base_domain").Find(&domains).Error; err != nil {
 			return nil, err
@@ -576,6 +579,40 @@ func median(xs []float64) *float64 {
 		m = (sorted[len(sorted)/2-1] + m) / 2
 	}
 	return &m
+}
+
+// gatewayBuilds reports a gateway that still takes builds once another online
+// node can. A build runs privileged, so whoever can deploy from Git can reach
+// the machine it runs on; on the gateway that is the control plane, the
+// database and the edge. With a single server the gateway has to build, so
+// nothing is said until there is somewhere else to build.
+func (s *OverviewService) gatewayBuilds(ctx context.Context, orgID uuid.UUID) *AttentionItem {
+	builds := func(r db.MeshRole) bool {
+		return r == "" || r == db.MeshRoleWorkloadBuilder || r == db.MeshRoleBuilder
+	}
+	var nodes []db.Node
+	if err := s.db.WithContext(ctx).Where("organization_id = ? AND status = ?", orgID, db.NodeOnline).Order("name").Find(&nodes).Error; err != nil {
+		return nil
+	}
+	var gateway *db.Node
+	var others []string
+	for i, n := range nodes {
+		switch {
+		case !builds(n.MeshRole):
+		case n.K3sRole == db.K3sRoleServer:
+			gateway = &nodes[i]
+		default:
+			others = append(others, n.Name)
+		}
+	}
+	if gateway == nil || len(others) == 0 {
+		return nil
+	}
+	id := gateway.ID
+	return &AttentionItem{Kind: "gateway_builds", Severity: SeverityInfo,
+		Title:  fmt.Sprintf("%s still runs builds", gateway.Name),
+		Detail: listNames(others, 2) + " can take them. Builds run privileged, so the gateway is safer without them",
+		NodeID: &id}
 }
 
 // diskItems reports online nodes whose disk is filling. Each node is read at

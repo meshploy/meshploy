@@ -24,6 +24,8 @@ A node's role decides what is scheduled on it:
 
 The gateway is a build node too unless you turn **Act as build node** off.
 
+A build runs privileged, so anyone who can deploy from Git can reach the machine it runs on. With one server the gateway has to build; once another node can, the overview suggests turning **Act as build node** off, so builds stay away from the machine holding the control plane and the database.
+
 ## Adding a node {#joining}
 
 **Add node** gives a one-line install command with a token in it. A **registration token** can be used again for many machines; a **provisioning token** works once. Mac and Windows machines have their own join scripts and join as mesh-only nodes.

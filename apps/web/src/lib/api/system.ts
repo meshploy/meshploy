@@ -114,6 +114,10 @@ export const NOTICE_HOST_EXPOSURE = "host-exposure"
  *  route, so dismissing it is only for someone who would rather not read it. */
 export const NOTICE_GETTING_STARTED = "getting-started"
 
+/** The overview's "the gateway still runs builds" row, for someone who keeps
+ *  builds there on purpose. */
+export const NOTICE_GATEWAY_BUILDS = "gateway-builds"
+
 /**
  * Upgrading the server from the console. The API only queues a request; a
  * systemd unit on the gateway runs the upgrade and reports progress back.

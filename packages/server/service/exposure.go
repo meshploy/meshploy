@@ -20,12 +20,17 @@ const NoticeHostExposure = "host-exposure"
 // operator who knows what they are doing and would rather not read it first.
 const NoticeGettingStarted = "getting-started"
 
+// NoticeGatewayBuilds keys the overview's "the gateway still runs builds" row,
+// for an operator who keeps builds there on purpose.
+const NoticeGatewayBuilds = "gateway-builds"
+
 // dismissibleNotices are the keys a user may dismiss. An allowlist rather than
 // free text, so the table stays something we can reason about instead of
 // whatever a client decided to POST.
 var dismissibleNotices = map[string]bool{
 	NoticeHostExposure:   true,
 	NoticeGettingStarted: true,
+	NoticeGatewayBuilds:  true,
 }
 
 // ExposedPort is one port Meshploy itself publishes on all interfaces.

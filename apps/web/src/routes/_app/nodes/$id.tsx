@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
-import { nodes as nodesApi, toNode, type ApiNodeMetrics } from "@/lib/api"
+import { NOTICE_GATEWAY_BUILDS, nodes as nodesApi, system as systemApi, toNode, type ApiNodeMetrics } from "@/lib/api"
 import type { MeshRole } from "@/types"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
@@ -131,6 +131,9 @@ function computeMetrics(history: RawSample[]): ComputedMetrics | null {
 const EMPTY_HISTORY: RawSample[] = []
 
 export const Route = createFileRoute("/_app/nodes/$id")({
+  // build=off comes from the overview's "still runs builds" row: the gateway's
+  // page opens on the change it suggests, still to be confirmed.
+  validateSearch: (search: Record<string, unknown>): { build?: "off" } => (search.build === "off" ? { build: "off" } : {}),
   component: NodeDetailPage,
 })
 
@@ -543,12 +546,38 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
   // the cluster with nowhere to build - which on a single-server install is the
   // common case. It gets the same confirmation.
   const [proposed, setProposed] = useState<MeshRole | null>(null)
+  const { build } = Route.useSearch()
+  const navigate = useNavigate()
 
-  const { data: rawNodes = [] } = useQuery({
+  const { data: rawNodes = [], isSuccess: nodesLoaded } = useQuery({
     queryKey: ["nodes", orgId],
     queryFn: () => nodesApi.list(orgId, token),
     enabled: !!orgId,
   })
+  // Another online cluster node that takes builds: the gateway need not.
+  const otherBuilders = rawNodes.map(toNode).filter((n) => n.id !== node.id && n.status === "online" &&
+    (n.meshRole === "workload_builder" || n.meshRole === "builder"))
+
+  const { data: notices } = useQuery({
+    queryKey: ["dismissed-notices"],
+    queryFn: () => systemApi.dismissedNotices(token),
+    enabled: isBuilder && otherBuilders.length > 0,
+    staleTime: Infinity,
+  })
+  const kept = notices?.dismissed.includes(NOTICE_GATEWAY_BUILDS) ?? false
+  const keep = useMutation({
+    mutationFn: () => systemApi.dismissNotice(NOTICE_GATEWAY_BUILDS, token),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dismissed-notices"] }),
+  })
+
+  // Arriving from the overview's row opens the change once, then forgets it.
+  const asked = useRef(false)
+  useEffect(() => {
+    if (build !== "off" || asked.current || !nodesLoaded) return
+    asked.current = true
+    if (isBuilder) setProposed("workload")
+    navigate({ to: ".", search: {}, replace: true })
+  }, [build, nodesLoaded, isBuilder, navigate])
 
   const { mutate: toggle, isPending } = useMutation({
     mutationFn: (enable: boolean) =>
@@ -590,6 +619,29 @@ function ServerBuildToggle({ node, orgId, token }: { node: ReturnType<typeof toN
             }
           </div>
       </div>
+      {isBuilder && (
+        <div className="mt-3 space-y-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+          {otherBuilders.length > 0 ? (
+            <>
+              <p>
+                {otherBuilders.map((n) => n.name).join(", ")} can take builds. A build runs privileged, so anyone who can deploy
+                from Git can reach the machine it runs on; off the gateway, that machine is not the one holding the control plane and the database.
+              </p>
+              {!kept && (
+                <button type="button" disabled={keep.isPending} onClick={() => keep.mutate()}
+                  className="text-foreground underline-offset-2 hover:underline disabled:opacity-50">
+                  Keep building here
+                </button>
+              )}
+            </>
+          ) : (
+            <p>
+              A build runs privileged, so anyone who can deploy from Git can reach this machine. With one server it has to build;
+              add a build node and turn this off to keep builds away from the gateway.
+            </p>
+          )}
+        </div>
+      )}
       <RoleChangeDialog
         node={node}
         to={proposed}

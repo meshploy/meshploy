@@ -10,7 +10,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react"
-import { nodes as nodesApi, projects as projectsApi, activity as activityApi, toNode, toProject, type ApiAttentionItem } from "@/lib/api"
+import { NOTICE_GATEWAY_BUILDS, nodes as nodesApi, projects as projectsApi, activity as activityApi, system as systemApi, toNode, toProject, type ApiAttentionItem } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import type { Node, Project } from "@/types"
@@ -86,7 +86,17 @@ function OverviewPage() {
     enabled: !!orgId,
     refetchInterval: 15_000,
   })
-  const attention = overview?.attention ?? []
+  // Someone who keeps builds on the gateway on purpose has said so once.
+  const gatewayBuilds = overview?.attention.some((a) => a.kind === "gateway_builds") ?? false
+  const { data: notices } = useQuery({
+    queryKey: ["dismissed-notices"],
+    queryFn: () => systemApi.dismissedNotices(token),
+    enabled: gatewayBuilds,
+    staleTime: Infinity,
+  })
+  // Held back until the answer is in, rather than shown and then taken away.
+  const kept = !notices || notices.dismissed.includes(NOTICE_GATEWAY_BUILDS)
+  const attention = (overview?.attention ?? []).filter((a) => !(a.kind === "gateway_builds" && kept))
   const stats = overview?.stats ?? {}
   const sum = (kind: string) => Object.values(stats[kind] ?? {}).reduce((a, b) => a + b, 0)
 
