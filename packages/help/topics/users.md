@@ -13,7 +13,7 @@ Everyone in a workspace is a **member** with a role:
 - **Admin**: manages the workspace: members, nodes, domains, integrations and every project.
 - **Member**: sees and changes only what they are granted.
 
-People join by **invitation**, which an admin sends from this page.
+People join by **invitation**, which an admin sends from this page. Someone new creates their account from the invitation's link; someone who already has an account here, such as a person who was removed and is invited back, signs in from the link and joins with it.
 
 ## Granting access {#grants}
 

@@ -29,6 +29,8 @@ export interface ApiInvitationInfo {
   email: string
   org_name: string
   role: string
+  /** The address already has an account, which signs in and joins rather than creating another. */
+  account_exists?: boolean
 }
 
 export const orgs = {
@@ -67,4 +69,8 @@ export const orgs = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+
+  /** Accept an invitation as the account you are signed in as; its address must be the invited one. */
+  joinInvitation: (inviteToken: string, token: string) =>
+    apiFetch<void>(`/api/v1/invitations/${inviteToken}/join`, { method: "POST" }, token),
 }

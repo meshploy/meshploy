@@ -184,8 +184,9 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/invitations/{token}` | invite token | Get invitation info by token (public) |
-| POST | `/invitations/{token}/accept` | invite token | Accept an invitation and create an account (public) |
+| GET | `/invitations/{token}` | invite token | Get invitation info by token (public); `account_exists` says the address already has an account |
+| POST | `/invitations/{token}/accept` | invite token | Accept an invitation and create an account (public). 409 when the address already has one |
+| POST | `/invitations/{token}/join` | ✓ | Accept an invitation with the account you are signed in as; refused (403) for another address |
 | GET | `/orgs` | ✓ | List organizations for the authenticated user |
 | POST | `/orgs` | ✓ | Create an organization, only on a server that has none: Community runs one per server (409 otherwise) |
 | GET | `/orgs/{orgId}` | ✓ | Get an organization |

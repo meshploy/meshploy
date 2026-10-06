@@ -119,6 +119,9 @@ type InvitationInfoOutput struct {
 		Email   string `json:"email"`
 		OrgName string `json:"org_name"`
 		Role    string `json:"role"`
+		// AccountExists says the address already has an account, which signs
+		// in and joins rather than creating another.
+		AccountExists bool `json:"account_exists"`
 	}
 }
 
@@ -253,6 +256,30 @@ func (h *Handler) registerOrgRoutes(api huma.API) {
 		Summary:     "Accept an invitation and create an account (public)",
 		Tags:        []string{"Organizations"},
 	}, h.AcceptInvitation)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "join-invitation",
+		Method:        "POST",
+		Path:          "/api/v1/invitations/{token}/join",
+		Summary:       "Accept an invitation with the account you are signed in as (its address must be the invited one)",
+		Tags:          []string{"Organizations"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.JoinInvitation)
+}
+
+func (h *Handler) JoinInvitation(ctx context.Context, input *InvitationTokenInput) (*struct{}, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch err := h.svc.Orgs.JoinInvitation(ctx, input.Token, userID); {
+	case errors.Is(err, svc.ErrInvitationNotYours):
+		return nil, huma.Error403Forbidden(err.Error())
+	case err != nil:
+		return nil, huma.Error404NotFound("invitation not found or expired")
+	}
+	return nil, nil
 }
 
 // --- Helpers ---
@@ -489,11 +516,15 @@ func (h *Handler) GetInvitation(ctx context.Context, input *InvitationTokenInput
 	out.Body.Email = inv.Email
 	out.Body.OrgName = inv.OrgName
 	out.Body.Role = string(inv.Role)
+	out.Body.AccountExists = h.svc.Orgs.InvitationAccountExists(ctx, inv.Email)
 	return out, nil
 }
 
 func (h *Handler) AcceptInvitation(ctx context.Context, input *AcceptInvitationInput) (*AcceptInvitationOutput, error) {
 	_, err := h.svc.Orgs.AcceptInvitation(ctx, input.Token, input.Body.Username, input.Body.Password)
+	if errors.Is(err, svc.ErrInvitationAccountExists) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest("could not accept invitation")
 	}

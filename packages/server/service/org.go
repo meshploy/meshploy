@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -230,11 +231,37 @@ func (s *OrgService) GetInvitationByToken(ctx context.Context, token string) (*I
 	return &InvitationWithOrg{OrgInvitation: &inv, OrgName: inv.Organization.Name}, nil
 }
 
+// ErrInvitationAccountExists is an invitation accepted by creating an account
+// for an address whose account can already sign in: that person signs in and
+// joins.
+var ErrInvitationAccountExists = errors.New("an account with this email already exists: sign in to join")
+
+// ErrInvitationNotYours is a signed-in person joining through an invitation
+// sent to another address.
+var ErrInvitationNotYours = errors.New("this invitation was sent to another email address")
+
+// InvitationAccountExists says whether the invited address has an account
+// that can sign in, so the invitation page offers signing in rather than a
+// new one. An account with no password cannot: accepting completes it.
+func (s *OrgService) InvitationAccountExists(ctx context.Context, email string) bool {
+	var n int64
+	s.db.WithContext(ctx).Model(&db.User{}).Where("LOWER(email) = LOWER(?) AND email <> '' AND password <> ''", email).Count(&n)
+	return n > 0
+}
+
 // AcceptInvitation creates the user account and adds them to the org in a single transaction.
+//
+// An address may already have an account with no password, made for someone
+// who never signed in to the console. Accepting completes that account: it
+// gets the username and password, becomes an ordinary person's, and joins.
+// It keeps its id, so whatever was already the account's stays with it.
 func (s *OrgService) AcceptInvitation(ctx context.Context, token, username, password string) (*db.User, error) {
 	inv, err := s.GetInvitationByToken(ctx, token)
 	if err != nil {
 		return nil, err
+	}
+	if s.InvitationAccountExists(ctx, inv.Email) {
+		return nil, ErrInvitationAccountExists
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -244,13 +271,30 @@ func (s *OrgService) AcceptInvitation(ctx context.Context, token, username, pass
 
 	var user db.User
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		user = db.User{
-			Username: username,
-			Email:    inv.Email,
-			Password: string(hashed),
-		}
-		if err := tx.Create(&user).Error; err != nil {
+		var existing db.User
+		if err := tx.Limit(1).Find(&existing, "LOWER(email) = LOWER(?) AND email <> ''", inv.Email).Error; err != nil {
 			return err
+		}
+		switch {
+		case existing.ID == uuid.Nil:
+			user = db.User{
+				Username: username,
+				Email:    inv.Email,
+				Password: string(hashed),
+			}
+			if err := tx.Create(&user).Error; err != nil {
+				return err
+			}
+		case existing.Password == "" && existing.Kind != db.UserAgent:
+			if err := tx.Model(&existing).Updates(map[string]any{
+				"username": username, "password": string(hashed), "kind": db.UserHuman,
+			}).Error; err != nil {
+				return err
+			}
+			user = existing
+			user.Username, user.Kind = username, db.UserHuman
+		default:
+			return ErrInvitationAccountExists
 		}
 		if err := tx.Create(&db.OrganizationMember{
 			OrganizationID: inv.OrgID,
@@ -274,6 +318,48 @@ func (s *OrgService) AcceptInvitation(ctx context.Context, token, username, pass
 		})
 	}
 	return &user, nil
+}
+
+// JoinInvitation is a person who already has an account accepting an
+// invitation sent to their address: they join with its role. One who is
+// already a member keeps the role they have.
+func (s *OrgService) JoinInvitation(ctx context.Context, token string, userID uuid.UUID) error {
+	inv, err := s.GetInvitationByToken(ctx, token)
+	if err != nil {
+		return err
+	}
+	var user db.User
+	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+		return err
+	}
+	if user.Email == "" || !strings.EqualFold(user.Email, inv.Email) {
+		return ErrInvitationNotYours
+	}
+	joined := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var n int64
+		if err := tx.Model(&db.OrganizationMember{}).Where("organization_id = ? AND user_id = ?", inv.OrgID, userID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 {
+			if err := tx.Create(&db.OrganizationMember{OrganizationID: inv.OrgID, UserID: userID, Role: inv.Role}).Error; err != nil {
+				return err
+			}
+			joined = true
+		}
+		now := time.Now()
+		return tx.Model(inv.OrgInvitation).Update("accepted_at", &now).Error
+	})
+	if err != nil {
+		return err
+	}
+	if joined && s.notif != nil {
+		s.notif.Dispatch(ctx, inv.OrgID, "member.joined", NotificationData{
+			Detail: fmt.Sprintf("%s joined as %s", user.Username, inv.Role),
+			Link:   "/users/" + user.ID.String(),
+		})
+	}
+	return nil
 }
 
 // ListInvitations returns pending (not yet accepted, not expired) invitations for an org.

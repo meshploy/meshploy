@@ -44,7 +44,7 @@ function RegisterPage() {
         </div>
       )
     }
-    return <InviteRegisterForm info={inviteInfo} inviteToken={inviteToken} />
+    return <Invitation info={inviteInfo} inviteToken={inviteToken} />
   }
 
   if (!registration_open) {
@@ -148,6 +148,92 @@ function FirstBootRegisterForm() {
   )
 }
 
+/**
+ * An invitation, answered the way that fits whoever opened it: signed in, they
+ * join with that account; with an account but signed out, they sign in and
+ * come back here; with none, they create one.
+ */
+function Invitation({ info, inviteToken }: { info: ApiInvitationInfo; inviteToken: string }) {
+  const signedIn = useAuthStore((s) => s.token)
+  if (signedIn) return <JoinAsYou info={info} inviteToken={inviteToken} token={signedIn} />
+  if (info.account_exists) {
+    const back = `/register?token=${encodeURIComponent(inviteToken)}`
+    return (
+      <InvitationCard info={info}>
+        <p className="text-sm text-muted-foreground">
+          <span className="text-foreground">{info.email}</span> already has an account here. Sign in with it to join.
+        </p>
+        <Link to="/login" search={{ next: back }}
+          className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90">
+          Sign in to join
+        </Link>
+      </InvitationCard>
+    )
+  }
+  return <InviteRegisterForm info={info} inviteToken={inviteToken} />
+}
+
+function InvitationCard({ info, children }: { info: ApiInvitationInfo; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-card p-6 space-y-5">
+      <div>
+        <h2 className="text-base font-semibold text-foreground">You've been invited</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Join <span className="text-foreground font-medium">{info.org_name}</span> as {info.role}
+        </p>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** Joining with the account this browser is signed in as. */
+function JoinAsYou({ info, inviteToken, token }: { info: ApiInvitationInfo; inviteToken: string; token: string }) {
+  const navigate = useNavigate()
+  const setOrgs = useOrgStore((s) => s.setOrgs)
+  const setCurrentOrg = useOrgStore((s) => s.setCurrentOrg)
+  const clearAuth = useAuthStore((s) => s.clearAuth)
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.getMe(token) })
+  const mine = !me || me.email.toLowerCase() === info.email.toLowerCase()
+  const join = useMutation({
+    mutationFn: async () => {
+      await orgsApi.joinInvitation(inviteToken, token)
+      const list = (await orgsApi.list(token)).map((o) => ({ id: o.id, name: o.name, slug: o.slug }))
+      setOrgs(list)
+      const joined = list.find((o) => o.name === info.org_name)
+      if (joined) setCurrentOrg(joined)
+    },
+    onSuccess: () => navigate({ to: "/" }),
+  })
+  const useOther = () => {
+    auth.logout(token).catch(() => {})
+    clearAuth()
+  }
+  return (
+    <InvitationCard info={info}>
+      {mine ? (
+        <>
+          <p className="text-sm text-muted-foreground">
+            You are signed in{me ? <> as <span className="text-foreground">{me.email}</span></> : ""}.
+          </p>
+          {join.error && <ErrorBanner>{join.error instanceof ApiError ? join.error.detail : "Something went wrong"}</ErrorBanner>}
+          <form onSubmit={(e) => { e.preventDefault(); join.mutate() }}>
+            <SubmitButton pending={join.isPending} disabled={!me}>Join {info.org_name}</SubmitButton>
+          </form>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">
+            This invitation is for <span className="text-foreground">{info.email}</span>, and you are signed in as{" "}
+            <span className="text-foreground">{me!.email}</span>.
+          </p>
+          <Button variant="outline" className="w-full" onClick={useOther}>Sign out to use {info.email}</Button>
+        </>
+      )}
+    </InvitationCard>
+  )
+}
+
 function InviteRegisterForm({ info, inviteToken }: { info: ApiInvitationInfo; inviteToken: string }) {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
@@ -201,7 +287,7 @@ function InviteRegisterForm({ info, inviteToken }: { info: ApiInvitationInfo; in
 
       <p className="text-center text-xs text-muted-foreground">
         Already have an account?{" "}
-        <Link to="/login" className="text-primary hover:underline underline-offset-4">Sign in</Link>
+        <Link to="/login" search={{ next: `/register?token=${encodeURIComponent(inviteToken)}` }} className="text-primary hover:underline underline-offset-4">Sign in</Link>
       </p>
     </div>
   )
