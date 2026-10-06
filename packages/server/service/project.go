@@ -40,6 +40,10 @@ type ProjectWithCounts struct {
 	// Levels are a project's environment levels below production, lowest
 	// last, on the list: the workspace overview draws its chain from them.
 	Levels []LevelSummary `json:"levels,omitempty"`
+	// Limited is a member with no grant on the project who was granted things
+	// inside it: the counts are of those alone, and the project's own views
+	// (its levels, map, board, settings) are not theirs.
+	Limited bool `json:"limited,omitempty"`
 }
 
 // LevelSummary names one environment level of a project.
@@ -227,6 +231,36 @@ func (s *ProjectService) GetWithCounts(ctx context.Context, projectID uuid.UUID)
 	}
 	result.Stats = stats
 	return result, nil
+}
+
+// LimitedView is a project as a member sees it who was granted only things
+// inside it: the project, and counts of what they may open.
+func (s *ProjectService) LimitedView(ctx context.Context, projectID uuid.UUID, inner InnerGrants) (*ProjectWithCounts, error) {
+	var p db.Project
+	if err := s.db.WithContext(ctx).First(&p, "id = ?", projectID).Error; err != nil {
+		return nil, err
+	}
+	out := &ProjectWithCounts{Project: p, Limited: true}
+	out.ProjectCounts.ProjectID = projectID
+	var types []db.ServiceType
+	if len(inner.Services) > 0 {
+		ids := make([]uuid.UUID, 0, len(inner.Services))
+		for id := range inner.Services {
+			ids = append(ids, id)
+		}
+		if err := s.db.WithContext(ctx).Model(&db.Service{}).Where("id IN ?", ids).Pluck("type", &types).Error; err != nil {
+			return nil, err
+		}
+	}
+	for _, t := range types {
+		if t == db.ServiceTypeDatabase {
+			out.DatabasesCount++
+		} else {
+			out.ServicesCount++
+		}
+	}
+	out.StacksCount, out.JobsCount = len(inner.Stacks), len(inner.Jobs)
+	return out, nil
 }
 
 // Stats breaks each count down the way an overview card does, summed over

@@ -133,13 +133,28 @@ func (h *Handler) RenameEnvironment(ctx context.Context, input *RenameEnvironmen
 }
 
 func (h *Handler) ListEnvironments(ctx context.Context, input *ProjectPathInput) (*ListEnvironmentsOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	levels, err := h.svc.Projects.Levels(ctx, projectID)
+	levels, err := h.svc.Projects.Levels(ctx, r.projectID)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if r.limited() {
+		// Only the levels they may open, each of which they were granted
+		// something in or the whole of.
+		visible, _, err := h.svc.Permissions.VisibleProjectIDs(ctx, r.orgID, r.userID)
+		if err != nil {
+			return nil, err
+		}
+		mine := levels[:0]
+		for _, l := range levels {
+			if visible[l.ProjectID] {
+				mine = append(mine, l)
+			}
+		}
+		levels = mine
 	}
 	return &ListEnvironmentsOutput{Body: levels}, nil
 }

@@ -147,11 +147,18 @@ func (h *Handler) CreateProject(ctx context.Context, input *CreateProjectInput) 
 }
 
 func (h *Handler) GetProject(ctx context.Context, input *ProjectPathInput) (*GetProjectOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	project, err := h.svc.Projects.GetWithCounts(ctx, projectID)
+	if r.limited() {
+		project, err := h.svc.Projects.LimitedView(ctx, r.projectID, *r.inner)
+		if err != nil {
+			return nil, notFound(err)
+		}
+		return &GetProjectOutput{Body: project}, nil
+	}
+	project, err := h.svc.Projects.GetWithCounts(ctx, r.projectID)
 	if err != nil {
 		return nil, notFound(err)
 	}

@@ -310,13 +310,23 @@ func (h *Handler) registerStackRoutes(api huma.API) {
 }
 
 func (h *Handler) ListStacks(ctx context.Context, input *StackProjectPathInput) (*ListStacksOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	stacks, err := h.svc.Stacks.List(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+	if r.limited() {
+		mine := stacks[:0]
+		for _, s := range stacks {
+			if r.inner.Stacks[s.ID] {
+				mine = append(mine, s)
+			}
+		}
+		stacks = mine
 	}
 	return &ListStacksOutput{Body: stacks}, nil
 }

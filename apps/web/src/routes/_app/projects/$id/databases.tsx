@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { services as servicesApi, type ApiService } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { useProjectLimited } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -116,6 +117,8 @@ function DatabasesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/databases" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const limited = useProjectLimited(orgId, projectId, token)
+
   const navigate = useNavigate()
 
   const ACTIVE_DB_STATUSES = new Set(["deploying"])
@@ -141,14 +144,16 @@ function DatabasesTab() {
             <span className="text-xs text-muted-foreground">{dbList.length}</span>
           )}
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "database" } })}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Database
-        </Button>
+        {!limited && (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "database" } })}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Database
+          </Button>
+        )}
       </div>
 
       {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
@@ -166,14 +171,16 @@ function DatabasesTab() {
               Provision PostgreSQL, MySQL, Redis, or MongoDB as a K8s workload
             </p>
           </div>
-          <Button
-            size="sm"
-            className="gap-1.5 mt-1"
-            onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "database" } })}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New Database
-          </Button>
+          {!limited && (
+            <Button
+              size="sm"
+              className="gap-1.5 mt-1"
+              onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "database" } })}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Database
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">

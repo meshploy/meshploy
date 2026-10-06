@@ -79,13 +79,18 @@ type ListVariableGroupsOutput struct {
 }
 
 func (h *Handler) ListVariableGroups(ctx context.Context, input *ListVariableGroupsInput) (*ListVariableGroupsOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	groups, err := h.svc.VariableGroups.List(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+	if r.limited() {
+		// The project's own lists are not a limited reader's.
+		groups = groups[:0]
 	}
 	out := make([]ApiVariableGroup, len(groups))
 	for i, g := range groups {

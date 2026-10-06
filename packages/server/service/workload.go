@@ -112,6 +112,17 @@ type CreateWorkloadInput struct {
 	HealthcheckStartPeriodSecs int32
 }
 
+// StackName is the name of the stack a service belongs to, or "": shown
+// beside the service to someone who may not open the stack itself.
+func (s *WorkloadService) StackName(ctx context.Context, service *db.Service) string {
+	if service.StackID == nil {
+		return ""
+	}
+	var name string
+	s.db.WithContext(ctx).Model(&db.Stack{}).Where("id = ?", *service.StackID).Pluck("name", &name)
+	return name
+}
+
 func (s *WorkloadService) List(ctx context.Context, projectID uuid.UUID) ([]db.Service, error) {
 	services := make([]db.Service, 0)
 	err := s.db.WithContext(ctx).Preload("Ports").Where("project_id = ?", projectID).Find(&services).Error

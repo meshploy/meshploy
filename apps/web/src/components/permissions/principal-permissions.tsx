@@ -126,6 +126,10 @@ function ProjectRow({
 
   const byResource = groupByResource(overrides)
   const hasOverrides = byResource.length > 0
+  // An action granted on some of what is inside the project, and not on the
+  // project: the names it is granted on, for the partial pill.
+  const partly = (action: ResourceAction) =>
+    granted.has(action) ? [] : byResource.filter((r) => r.actions.includes(action)).map((r) => r.resourceName)
 
   return (
     <div>
@@ -146,6 +150,7 @@ function ProjectRow({
               key={action}
               action={action}
               granted={granted.has(action)}
+              partly={partly(action)}
               loading={pending.has(`${project.id}-${action}`)}
               onToggle={() => onToggle(action)}
             />
@@ -213,21 +218,33 @@ function ResourceOverrideRow({ resourceName, resourceType, actions, via }: {
   )
 }
 
-function ActionPill({ action, granted, loading, onToggle }: {
+/**
+ * One action on a project, in three states: granted on the project (filled),
+ * granted only on some of what is inside it (outlined, `partly` names those),
+ * or neither (muted). Clicking grants or revokes it on the project alone, so a
+ * partial pill fills, and a filled one falls back to partial while the
+ * overrides stay; they are changed where they were given.
+ */
+function ActionPill({ action, granted, partly, loading, onToggle }: {
   action: ResourceAction
   granted: boolean
+  partly: string[]
   loading: boolean
   onToggle: () => void
 }) {
+  const partial = !granted && partly.length > 0
   return (
     <button
       onClick={onToggle}
       disabled={loading}
+      title={partial ? `${ACTION_LABELS[action]} on ${partly.join(", ")} only. Click to grant it on the whole project.` : undefined}
       className={cn(
         "h-6 px-2.5 text-[11px] font-medium rounded-md border transition-colors select-none",
         granted
           ? "bg-primary/15 text-primary border-primary/30 hover:bg-primary/25"
-          : "bg-transparent text-muted-foreground/35 border-border/30 hover:text-muted-foreground/70 hover:border-border/60",
+          : partial
+            ? "bg-transparent text-primary/80 border-dashed border-primary/45 hover:bg-primary/10"
+            : "bg-transparent text-muted-foreground/35 border-border/30 hover:text-muted-foreground/70 hover:border-border/60",
         loading && "opacity-40 cursor-wait pointer-events-none"
       )}
     >

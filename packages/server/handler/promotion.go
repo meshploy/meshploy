@@ -148,13 +148,18 @@ func (h *Handler) GetBoard(ctx context.Context, input *ProjectPathInput) (*Board
 }
 
 func (h *Handler) ListPromotionGroups(ctx context.Context, input *ProjectPathInput) (*ListGroupsOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	groups, err := h.svc.Promotions.ListGroups(ctx, projectID)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if r.limited() {
+		// The project's own lists are not a limited reader's.
+		groups = groups[:0]
 	}
 	return &ListGroupsOutput{Body: groups}, nil
 }

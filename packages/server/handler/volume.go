@@ -221,13 +221,18 @@ func (h *Handler) registerVolumeRoutes(api huma.API) {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListVolumes(ctx context.Context, input *VolumeProjectPathInput) (*ListVolumesOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	volumes, err := h.svc.Volumes.List(ctx, projectID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list volumes: " + err.Error())
+	}
+	if r.limited() {
+		// The project's own lists are not a limited reader's.
+		volumes = volumes[:0]
 	}
 	return &ListVolumesOutput{Body: volumes}, nil
 }

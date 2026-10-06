@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { stacks as stacksApi, type ApiStack } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { useProjectLimited } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { HelpButton } from "@/help/help-button"
@@ -87,8 +88,10 @@ function StackCard({ stack, projectId }: { stack: ApiStack; projectId: string })
 function StacksTab() {
   const { search, setSearch, matches } = useResourceSearch()
   const { id: projectId } = useParams({ from: "/_app/projects/$id/stacks/" })
+
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const limited = useProjectLimited(orgId, projectId, token)
   const navigate = useNavigate()
   const queryKey = ["stacks", orgId, projectId]
 
@@ -112,14 +115,16 @@ function StacksTab() {
             <span className="text-xs text-muted-foreground">{stackList.length}</span>
           )}
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={goToNew}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Stack
-        </Button>
+        {!limited && (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={goToNew}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Stack
+          </Button>
+        )}
       </div>
 
       {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
@@ -137,14 +142,16 @@ function StacksTab() {
               Deploy multiple services together with a single YAML spec
             </p>
           </div>
-          <Button
-            size="sm"
-            className="gap-1.5 mt-1"
-            onClick={goToNew}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New Stack
-          </Button>
+          {!limited && (
+            <Button
+              size="sm"
+              className="gap-1.5 mt-1"
+              onClick={goToNew}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Stack
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">

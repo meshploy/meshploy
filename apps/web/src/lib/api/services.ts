@@ -24,6 +24,12 @@ export interface ApiService {
   project_id: string
   node_id: string | null
   stack_id: string | null
+  /** On a single service's read: what you may do to it, as the server checks it. */
+  can?: ("view" | "deploy" | "create" | "update" | "delete")[]
+  /** On a single service's read: whether you may add a route to it (created in the project). */
+  can_route?: boolean
+  /** On a single service's read: its stack's name, for someone who may not open the stack. */
+  stack_name?: string
   type: "application" | "database"
   status: "running" | "stopped" | "deploying" | "failed" | "completed"
   /** Runs to completion as a Job on each deploy, rather than kept up. */

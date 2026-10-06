@@ -256,13 +256,23 @@ func (h *Handler) registerJobRoutes(api huma.API) {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListJobs(ctx context.Context, input *JobProjectInput) (*ListJobsOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	rows, err := h.svc.Jobs.List(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+	if r.limited() {
+		mine := rows[:0]
+		for _, j := range rows {
+			if r.inner.Jobs[j.ID] {
+				mine = append(mine, j)
+			}
+		}
+		rows = mine
 	}
 	dtos := make([]JobDTO, len(rows))
 	for i, r := range rows {

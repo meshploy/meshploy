@@ -11,6 +11,10 @@ import { EnvironmentSwitcher, LevelDot } from "@/components/projects/environment
 import { ProjectBadge } from "@/components/projects/project-badge"
 
 export const Route = createFileRoute("/_app/projects/$id")({ component: ProjectLayout })
+
+// What a member opens a project for when they were granted things inside it
+// and not the project itself: the sections those things are in.
+const LIMITED_SECTIONS = ["services", "databases", "stacks", "jobs"]
 function ProjectLayout() {
   const { id } = useParams({ from: "/_app/projects/$id" })
   const token = useAuthStore(s => s.token)!
@@ -35,7 +39,7 @@ function ProjectLayout() {
     { segment: "config-files", label: "Config files", icon: FileCog, count: project.configFilesCount },
     { segment: "jobs", label: "Jobs", icon: Clock, count: project.jobsCount },
     { segment: "settings", label: "Settings", icon: Settings, count: null },
-  ]
+  ].filter(t => !data.limited || t.segment === "" || (LIMITED_SECTIONS.includes(t.segment) && (t.count ?? 0) > 0))
   let active = pathname.split(`/projects/${id}`)[1]?.split("/").filter(Boolean)[0] ?? ""
   if (service?.type === "database" && active === "services") active = "databases"
   const destination = (segment: string) => `/projects/${id}${segment ? `/${segment}` : "/"}`
@@ -44,11 +48,11 @@ function ProjectLayout() {
       <Link to="/projects" className="flex items-center gap-2 px-2 text-xs text-muted-foreground"><ArrowLeft className="h-3.5 w-3.5" />Projects</Link>
       <div className="project-identity"><p className="flex items-center gap-1.5 font-semibold text-sm">{project.name}<ProjectBadge projectId={project.id} /></p><p className="text-xs text-muted-foreground mt-1 font-mono">{project.slug}</p>{orgId && <EnvironmentSwitcher orgId={orgId} projectId={id} section={active} token={token} />}</div>
       <nav>{tabs.map(t => <Link key={t.segment} to={destination(t.segment)} activeOptions={{ exact: true }} className={active === t.segment ? "active" : ""} aria-current={active === t.segment ? "page" : undefined}><t.icon className="h-4 w-4" />{t.label}{t.count != null && <span className="project-count">{t.count}</span>}</Link>)}</nav>
-      <Button className="w-full mt-6 gap-2" variant="outline" render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="h-4 w-4" />New resource</Button>
+      {!data.limited && <Button className="w-full mt-6 gap-2" variant="outline" render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="h-4 w-4" />New resource</Button>}
     </aside>
     <div className="project-content">
       {/* On a phone the sidebar is gone, so the level switcher sits beside the section picker. */}
-      <div className="project-mobile-navigation"><div className="flex flex-col gap-2 min-[480px]:flex-row min-[480px]:items-stretch">{orgId && <div className="min-[480px]:w-[38%] min-[480px]:min-w-[120px] min-[480px]:shrink-0"><EnvironmentSwitcher orgId={orgId} projectId={id} section={active} token={token} className="mt-0 h-full text-sm" /></div>}<OptionSelect label="Project section" value={active} onChange={value => navigate({ to: destination(value) })} className="w-full min-w-0 flex-1" options={[...tabs.map(t => ({value: t.segment,label: `${project.name} / ${t.label}${t.count != null ? ` (${t.count})` : ""}`})),{value:"new",label:"New resource"}]} /></div></div>
+      <div className="project-mobile-navigation"><div className="flex flex-col gap-2 min-[480px]:flex-row min-[480px]:items-stretch">{orgId && <div className="min-[480px]:w-[38%] min-[480px]:min-w-[120px] min-[480px]:shrink-0"><EnvironmentSwitcher orgId={orgId} projectId={id} section={active} token={token} className="mt-0 h-full text-sm" /></div>}<OptionSelect label="Project section" value={active} onChange={value => navigate({ to: destination(value) })} className="w-full min-w-0 flex-1" options={[...tabs.map(t => ({value: t.segment,label: `${project.name} / ${t.label}${t.count != null ? ` (${t.count})` : ""}`})),...(data.limited ? [] : [{value:"new",label:"New resource"}])]} /></div></div>
       {/* A level looks like its project on every tab, so say which one this is. */}
       {data.parent_project_id && <LevelBanner orgId={orgId!} projectId={id} name={data.env_name ?? ""} token={token} />}
       <Outlet />

@@ -26,6 +26,12 @@ function ProjectOverview() {
     { name: "Config files", path: "config-files", stats: "config_files", icon: FileCog, count: project?.config_files_count, description: "Files mounted into your services" },
     { name: "Jobs", path: "jobs", stats: "jobs", icon: Clock, count: project?.jobs_count, description: "Scheduled tasks and one-off runs" },
   ] as const
+  // Granted things inside the project, not the project: just those, and why
+  // there is nothing else.
+  if (project?.limited) return <div className="console-page space-y-7">
+    <div><h1>Project overview</h1><p className="mt-2 text-sm text-muted-foreground">What you were given in {project.name}. The rest of the project, and its settings, are for whoever has access to the whole of it.</p></div>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{resources.filter(r => (r.count ?? 0) > 0).map(({ name, path, icon: Icon, count, description }) => <Link key={path} to={`/projects/$id/${path}`} params={{ id }} className="overview-resource-card interactive-surface group rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-secondary/40"><div className="flex items-center justify-between"><span className="accent-icon-tile"><Icon className="size-5" /></span><ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary" /></div><div className="mt-7 flex items-center justify-between"><h2 className="text-sm font-semibold">{name}</h2><span className="text-3xl font-semibold tabular-nums">{count ?? 0}</span></div><p className="mt-2 text-xs text-muted-foreground">{description}</p></Link>)}</div>
+  </div>
   return <div className="console-page space-y-7">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Project overview</span><HelpButton topic="environments" label="How projects and environments work" /></h1><p className="mt-2 text-sm text-muted-foreground">Everything running in {project?.name ?? "this project"}, in one place.</p></div><Button render={<Link to="/projects/$id/new" params={{ id }} search={{ type: "service" }} />}><Plus className="size-4" />New resource</Button></div>
     {orgId && <EnvironmentBoard orgId={orgId} projectId={id} token={token} />}
@@ -34,3 +40,4 @@ function ProjectOverview() {
     <div className="quiet-surface rounded-xl border border-border bg-card p-5 flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-sm font-semibold">Project configuration</h2><p className="mt-1 text-sm text-muted-foreground">Manage the project name, build cache, and access.</p></div><Button variant="outline" render={<Link to="/projects/$id/settings" params={{ id }} />}>Project settings<ArrowUpRight className="size-4" /></Button></div>
   </div>
 }
+

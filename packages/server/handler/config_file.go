@@ -128,13 +128,18 @@ type ConfigFileListOutput struct {
 }
 
 func (h *Handler) ListConfigFiles(ctx context.Context, input *ConfigFileListInput) (*ConfigFileListOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	files, err := h.svc.ConfigFiles.List(ctx, projectID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	if r.limited() {
+		// The project's own lists are not a limited reader's.
+		files = files[:0]
 	}
 	out := &ConfigFileListOutput{}
 	out.Body.Files = make([]configFileDTO, 0, len(files))

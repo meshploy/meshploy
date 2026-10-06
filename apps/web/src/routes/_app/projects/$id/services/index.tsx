@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { services as servicesApi, type ApiService } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { useProjectLimited } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { StackPill, useStackNames } from "@/components/stacks/stack-pill"
@@ -89,6 +90,7 @@ function ServicesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/services/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
+  const limited = useProjectLimited(orgId, projectId, token)
   const stackNames = useStackNames(orgId, projectId)
   const navigate = useNavigate()
 
@@ -120,14 +122,16 @@ function ServicesTab() {
             <span className="text-xs text-muted-foreground">{serviceList.length}</span>
           )}
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "service" } })}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Service
-        </Button>
+        {!limited && (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "service" } })}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Service
+          </Button>
+        )}
       </div>
 
       {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
@@ -144,14 +148,16 @@ function ServicesTab() {
             <p className="text-sm text-muted-foreground">No services yet</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">Deploy your first service to get started</p>
           </div>
-          <Button
-            size="sm"
-            className="gap-1.5 mt-1"
-            onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "service" } })}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New Service
-          </Button>
+          {!limited && (
+            <Button
+              size="sm"
+              className="gap-1.5 mt-1"
+              onClick={() => navigate({ to: "/projects/$id/new", params: { id: projectId }, search: { type: "service" } })}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Service
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">

@@ -226,6 +226,57 @@ func (s *PermissionService) CheckAccess(ctx context.Context, orgID, userID, reso
 
 var errForbidden = errors.New("access denied")
 
+// Actions is what userID may do to one resource, each action checked as the
+// server checks it, so a page offers only what will be allowed.
+func (s *PermissionService) Actions(ctx context.Context, orgID, userID, resourceID uuid.UUID, resourceType db.ResourceType, parentProjectID *uuid.UUID) []db.ResourceAction {
+	out := []db.ResourceAction{}
+	for _, a := range []db.ResourceAction{db.ActionView, db.ActionDeploy, db.ActionCreate, db.ActionUpdate, db.ActionDelete} {
+		if s.CheckAccess(ctx, orgID, userID, resourceID, resourceType, a, parentProjectID) == nil {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// InnerGrants is what a member was granted inside one project without a grant
+// on the project itself: the services, stacks and jobs they may open, by id.
+type InnerGrants struct {
+	Services map[uuid.UUID]bool
+	Stacks   map[uuid.UUID]bool
+	Jobs     map[uuid.UUID]bool
+}
+
+// Empty is no grant inside the project at all.
+func (g InnerGrants) Empty() bool {
+	return len(g.Services) == 0 && len(g.Stacks) == 0 && len(g.Jobs) == 0
+}
+
+// GrantsInProject is what userID was granted on the services, stacks and jobs
+// of projectID, a project of orgID, whatever the action. Such a member sees
+// the project listed and opens it limited to these (VisibleProjectIDs).
+func (s *PermissionService) GrantsInProject(ctx context.Context, orgID, userID, projectID uuid.UUID) (InnerGrants, error) {
+	out := InnerGrants{Services: map[uuid.UUID]bool{}, Stacks: map[uuid.UUID]bool{}, Jobs: map[uuid.UUID]bool{}}
+	for _, k := range []struct {
+		rt    db.ResourceType
+		table string
+		into  map[uuid.UUID]bool
+	}{{db.ResourceService, "services", out.Services}, {db.ResourceStack, "stacks", out.Stacks}, {db.ResourceJob, "jobs", out.Jobs}} {
+		var ids []uuid.UUID
+		if err := s.db.WithContext(ctx).Model(&db.ResourcePermission{}).
+			Joins("JOIN "+k.table+" r ON r.id = resource_permissions.resource_id").
+			Joins("JOIN projects p ON p.id = r.project_id AND p.organization_id = resource_permissions.organization_id").
+			Where("resource_permissions.organization_id = ? AND resource_permissions.user_id = ? AND resource_permissions.resource_type = ? AND r.project_id = ?",
+				orgID, userID, k.rt, projectID).
+			Distinct().Pluck("resource_permissions.resource_id", &ids).Error; err != nil {
+			return out, err
+		}
+		for _, id := range ids {
+			k.into[id] = true
+		}
+	}
+	return out, nil
+}
+
 // IsAdminOrOwner returns true if the user is owner or admin of the org.
 func (s *PermissionService) IsAdminOrOwner(ctx context.Context, orgID, userID uuid.UUID) (bool, error) {
 	var m db.OrganizationMember

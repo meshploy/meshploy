@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Clock, Loader2, Play, Trash2, Zap } from "lucide-react"
 import { jobs as jobsApi, type ApiJob } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { useProjectLimited } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
@@ -29,6 +30,8 @@ function JobsPage() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/jobs/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const limited = useProjectLimited(orgId, projectId, token)
+
   const qc = useQueryClient()
 
   const { data: list = [], isLoading, isError, error, refetch } = useQuery({
@@ -64,11 +67,13 @@ function JobsPage() {
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{list.length}</span>}
         </div>
-        <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }}>
-          <Button size="sm" className="gap-1.5">
-            <Zap className="h-3.5 w-3.5" /> New job
-          </Button>
-        </Link>
+        {!limited && (
+          <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }}>
+            <Button size="sm" className="gap-1.5">
+              <Zap className="h-3.5 w-3.5" /> New job
+            </Button>
+          </Link>
+        )}
       </div>
 
       {isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => refetch()}>Try again</Button></div>}
@@ -86,11 +91,13 @@ function JobsPage() {
               Create one-shot jobs or scheduled cron jobs
             </p>
           </div>
-          <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }} className="mt-1">
-            <Button size="sm" className="gap-1.5">
-              <Zap className="h-3.5 w-3.5" /> New job
-            </Button>
-          </Link>
+          {!limited && (
+            <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }} className="mt-1">
+              <Button size="sm" className="gap-1.5">
+                <Zap className="h-3.5 w-3.5" /> New job
+              </Button>
+            </Link>
+          )}
         </div>
       ) : (
         <JobSection

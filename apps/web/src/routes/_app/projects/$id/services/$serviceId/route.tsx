@@ -76,10 +76,17 @@ function ServiceLayout() {
 
   // Named so the subtitle can link to it: "Managed by a stack" is a dead end
   // when the stack is one click away.
+  // What the caller may do here, as the server checks it; an older API that
+  // does not say leaves everything offered, as before.
+  const may = (a: "deploy" | "update" | "delete") => !service?.can || service.can.includes(a)
+
+  // Someone given only this service may not open its stack: then it is named,
+  // not linked.
   const { data: stack } = useQuery({
     queryKey: ["stack", orgId, projectId, service?.stack_id],
     queryFn: () => stacksApi.get(orgId!, projectId, service!.stack_id!, token),
     enabled: !!orgId && !!service?.stack_id,
+    retry: false,
   })
 
   // What runs here now, and where it came from: a branch built here, or an
@@ -155,13 +162,15 @@ function ServiceLayout() {
             : service.stack_id
               ? <>
                   Application ·{" "}
-                  <Link
-                    to="/projects/$id/stacks/$stackId"
-                    params={{ id: projectId, stackId: service.stack_id }}
-                    className="text-primary hover:text-primary/80 transition-colors"
-                  >
-                    Managed by {stack?.name ?? "a stack"}
-                  </Link>
+                  {stack ? (
+                    <Link
+                      to="/projects/$id/stacks/$stackId"
+                      params={{ id: projectId, stackId: service.stack_id }}
+                      className="text-primary hover:text-primary/80 transition-colors"
+                    >
+                      Managed by {stack.name}
+                    </Link>
+                  ) : `Managed by ${service.stack_name || "a stack"}`}
                 </>
               : "Application · Standalone service"
         }
@@ -178,14 +187,14 @@ function ServiceLayout() {
         }
         actions={
           <>
-            {(service.status === "stopped" || service.status === "failed") && !!service.image && !!service.deployed_at && (
+            {may("deploy") && (service.status === "stopped" || service.status === "failed") && !!service.image && !!service.deployed_at && (
               <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs"
                 onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
                 {startMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                 Start
               </Button>
             )}
-            {(service.status === "running" || service.status === "deploying") && (
+            {may("deploy") && (service.status === "running" || service.status === "deploying") && (
               <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs"
                 onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
                 {stopMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
@@ -194,7 +203,7 @@ function ServiceLayout() {
             )}
             {service.type !== "database" && projectRoutes && (
               addresses.length === 0 ? (
-                <Button variant="outline" size="sm" render={<Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "route", service: serviceId }} />}><Globe className="size-4" />Add route</Button>
+                service.can_route !== false && <Button variant="outline" size="sm" render={<Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "route", service: serviceId }} />}><Globe className="size-4" />Add route</Button>
               ) : addresses.length === 1 ? (
                 <Button variant="outline" size="sm" render={<a href={`https://${addresses[0].hostname}`} target="_blank" rel="noopener noreferrer" title={addresses[0].hostname} />}><ExternalLink className="size-4" />Open</Button>
               ) : (
@@ -209,11 +218,11 @@ function ServiceLayout() {
               )
             )}
             <Button variant="outline" size="sm" render={<Link to="/projects/$id/services/$serviceId/logs" params={{ id: projectId, serviceId }} />}><Terminal className="size-4" />Logs</Button>
-            <Button size="sm" onClick={deployGuard.request} disabled={deployMutation.isPending || service.status === "deploying"}><Rocket className="size-4" />Deploy</Button>
+            {may("deploy") && <Button size="sm" onClick={deployGuard.request} disabled={deployMutation.isPending || service.status === "deploying"}><Rocket className="size-4" />Deploy</Button>}
           </>
         }
       >
-        {[...(service.type === "database" ? DB_TABS : APP_TABS),
+        {[...(service.type === "database" ? DB_TABS : APP_TABS).filter((t) => !t.to.endsWith("/settings") || may("update") || may("delete")),
           ...(isAdmin ? [{ label: "Access", to: "/projects/$id/services/$serviceId/permissions" as const }] : [])
         ].map(({ label, to }) => (
           <Link

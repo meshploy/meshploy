@@ -2,11 +2,48 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 )
+
+// projectReader is how a caller reads a project: in full, with view on the
+// project, or limited to the services, stacks and jobs they were granted in
+// it (inner is set then).
+type projectReader struct {
+	userID, orgID, projectID uuid.UUID
+	inner                    *service.InnerGrants
+}
+
+func (r projectReader) limited() bool { return r.inner != nil }
+
+// readProject lets in whoever may see a project: view on it, or a grant on
+// something inside it, which is what puts a project on a member's list. Any
+// other caller is refused as checkAccess refuses them.
+func (h *Handler) readProject(ctx context.Context, orgIDStr, projectIDStr string) (projectReader, error) {
+	userID, orgID, projectID, _, err := h.checkAccess(ctx, orgIDStr, projectIDStr, db.ResourceProject, db.ActionView, "")
+	r := projectReader{userID: userID, orgID: orgID, projectID: projectID}
+	if err == nil {
+		return r, nil
+	}
+	var se huma.StatusError
+	if !errors.As(err, &se) || se.GetStatus() != http.StatusForbidden {
+		return r, err
+	}
+	inner, gerr := h.svc.Permissions.GrantsInProject(ctx, orgID, userID, projectID)
+	if gerr != nil {
+		return r, gerr
+	}
+	if inner.Empty() {
+		return r, err
+	}
+	r.inner = &inner
+	return r, nil
+}
 
 // checkAccess authenticates the caller, parses all path IDs, and enforces
 // resource-level permission for project-scoped resources (service, stack, job,

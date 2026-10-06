@@ -149,13 +149,18 @@ func (h *Handler) registerTCPRouteRoutes(api huma.API) {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListTCPRoutes(ctx context.Context, input *ListTCPRoutesInput) (*ListTCPRoutesOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	routes, err := h.svc.TCPRoutes.List(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+	if r.limited() {
+		// The project's own lists are not a limited reader's.
+		routes = routes[:0]
 	}
 	return &ListTCPRoutesOutput{Body: routes}, nil
 }

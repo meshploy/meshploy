@@ -31,6 +31,20 @@ type GetWorkloadOutput struct {
 	Body *db.Service
 }
 
+// ServiceView is a service as its page reads it: the service, what the caller
+// may do to it, whether they may add a route to it, and its stack's name for
+// someone who may not open the stack.
+type ServiceView struct {
+	*db.Service
+	Can       []db.ResourceAction `json:"can"`
+	CanRoute  bool                `json:"can_route"`
+	StackName string              `json:"stack_name,omitempty"`
+}
+
+type GetServiceViewOutput struct {
+	Body ServiceView
+}
+
 // PortBody is the wire format for a single port in the create-service request.
 type PortBody struct {
 	Name      string `json:"name" minLength:"1" maxLength:"64"` // e.g. "http", "grpc"
@@ -317,13 +331,23 @@ func (h *Handler) registerWorkloadRoutes(api huma.API) {
 }
 
 func (h *Handler) ListWorkloads(ctx context.Context, input *ListWorkloadsInput) (*ListWorkloadsOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	services, err := h.svc.Workloads.List(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+	if r.limited() {
+		mine := services[:0]
+		for _, s := range services {
+			if r.inner.Services[s.ID] {
+				mine = append(mine, s)
+			}
+		}
+		services = mine
 	}
 	return &ListWorkloadsOutput{Body: services}, nil
 }
@@ -424,8 +448,8 @@ func (h *Handler) CreateWorkload(ctx context.Context, input *CreateWorkloadInput
 	return &CreateWorkloadOutput{Body: service}, nil
 }
 
-func (h *Handler) GetWorkload(ctx context.Context, input *WorkloadPathInput) (*GetWorkloadOutput, error) {
-	_, _, serviceID, parentID, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
+func (h *Handler) GetWorkload(ctx context.Context, input *WorkloadPathInput) (*GetServiceViewOutput, error) {
+	userID, orgID, serviceID, parentID, err := h.checkAccess(ctx, input.OrgID, input.ServiceID, db.ResourceService, db.ActionView, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +457,14 @@ func (h *Handler) GetWorkload(ctx context.Context, input *WorkloadPathInput) (*G
 	if err != nil {
 		return nil, notFound(err)
 	}
-	return &GetWorkloadOutput{Body: service}, nil
+	// A route is created in the project, so adding one asks what creating
+	// anything in it asks.
+	return &GetServiceViewOutput{Body: ServiceView{
+		Service:   service,
+		Can:       h.svc.Permissions.Actions(ctx, orgID, userID, serviceID, db.ResourceService, parentID),
+		CanRoute:  h.svc.Permissions.CheckAccess(ctx, orgID, userID, *parentID, db.ResourceProject, db.ActionCreate, parentID) == nil,
+		StackName: h.svc.Workloads.StackName(ctx, service),
+	}}, nil
 }
 
 func (h *Handler) DeleteWorkload(ctx context.Context, input *WorkloadPathInput) (*struct{}, error) {
@@ -910,10 +941,11 @@ type GetProjectHealthOutput struct {
 }
 
 func (h *Handler) GetProjectHealth(ctx context.Context, input *ProjectPathInput) (*GetProjectHealthOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	troubles, err := h.svc.Workloads.Troubles(ctx, projectID)
 	if err != nil {
 		return nil, notFound(err)
@@ -921,7 +953,9 @@ func (h *Handler) GetProjectHealth(ctx context.Context, input *ProjectPathInput)
 	out := &GetProjectHealthOutput{}
 	out.Body.Services = map[string]*svc.Trouble{}
 	for id, t := range troubles {
-		out.Body.Services[id.String()] = t
+		if !r.limited() || r.inner.Services[id] {
+			out.Body.Services[id.String()] = t
+		}
 	}
 	hints, err := h.svc.Workloads.Hints(ctx, projectID)
 	if err != nil {
@@ -929,7 +963,9 @@ func (h *Handler) GetProjectHealth(ctx context.Context, input *ProjectPathInput)
 	}
 	out.Body.Hints = map[string][]svc.Hint{}
 	for id, hs := range hints {
-		out.Body.Hints[id.String()] = hs
+		if !r.limited() || r.inner.Services[id] {
+			out.Body.Hints[id.String()] = hs
+		}
 	}
 	return out, nil
 }

@@ -237,13 +237,27 @@ func (h *Handler) ListOrgRoutes(ctx context.Context, input *ListOrgRoutesInput) 
 }
 
 func (h *Handler) ListRoutes(ctx context.Context, input *ListRoutesInput) (*ListRoutesOutput, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	r, err := h.readProject(ctx, input.OrgID, input.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectID := r.projectID
 	routes, err := h.svc.Routes.ListByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
+	}
+	if r.limited() {
+		// The routes that lead to a service they were granted, and no others.
+		mine := routes[:0]
+		for _, rt := range routes {
+			for _, t := range rt.Targets {
+				if t.ServiceID != nil && r.inner.Services[*t.ServiceID] {
+					mine = append(mine, rt)
+					break
+				}
+			}
+		}
+		routes = mine
 	}
 	return &ListRoutesOutput{Body: routes}, nil
 }
