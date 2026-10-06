@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
-import { Boxes, Server, Loader2, Network, Lock, Globe } from "lucide-react"
+import { AlertTriangle, Boxes, Server, Loader2, Network, Lock, Globe, ShieldCheck } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { discovery as discoveryApi, type ApiDiscovery, type ApiEndpoint, type ApiNodeDiscovery } from "@/lib/api"
 import { ContainerTable } from "@/components/nodes/host-containers"
 import { RouteEndpointDialog } from "@/components/discovery/route-endpoint-dialog"
@@ -215,22 +216,31 @@ function EndpointTable({ endpoints, onRoute }: { endpoints: ApiEndpoint[]; onRou
                   : <span className="text-muted-foreground/40">Not routed</span>}
               </TableCell>
               <TableCell className={`${tdCls} text-right`}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  disabled={!e.routable}
-                  title={e.routable ? undefined : e.reason}
-                  onClick={() => onRoute(e)}
-                >
-                  {e.routed?.length ? "Route again" : "Route"}
-                </Button>
+                {e.route_kinds.length > 0
+                  ? (
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onRoute(e)}>
+                      {e.routed?.length ? "Add another route" : "Add route"}
+                    </Button>
+                  )
+                  : <NoRoute label={e.no_route_label} reason={e.no_route} />}
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+/** Why a row offers no route, said where the button would be. */
+function NoRoute({ label, reason }: { label?: string; reason?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="cursor-default text-[11px] text-muted-foreground/60 underline decoration-dotted underline-offset-2" />}>
+        {label ?? "No route"}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">{reason ? reason[0].toUpperCase() + reason.slice(1) + "." : "Nothing a route would add."}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -276,13 +286,72 @@ function Reach({ endpoint: e }: { endpoint: ApiEndpoint }) {
       </span>
     )
   }
-  if (e.scope === "all") {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Globe className="h-3 w-3" />
-        Every interface
-      </span>
-    )
-  }
-  return <span className="text-xs text-muted-foreground">One address</span>
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      {e.scope === "all"
+        ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Globe className="h-3 w-3" />
+            Every interface
+          </span>
+        )
+        : <span className="text-xs text-muted-foreground">One address</span>}
+      {e.internet && <InternetMarker port={e.port} protocol={e.protocol} verdict={e.internet} />}
+    </span>
+  )
+}
+
+const FIREWALL_NAMES: Record<string, string> = { ufw: "UFW", firewalld: "firewalld", iptables: "iptables" }
+
+/**
+ * What the gateway's firewall does with a port from the internet. The reverse
+ * of a TCP route's marker: there the port is meant to be public, here a port
+ * that is open is the one worth a look.
+ */
+function InternetMarker({ port, protocol, verdict }: { port: number; protocol: string; verdict: NonNullable<ApiEndpoint["internet"]> }) {
+  const fw = FIREWALL_NAMES[verdict.tool ?? ""]
+  const provider = " A firewall at the hosting provider may still stop it; the gateway cannot see that one."
+  const { label, cls, Icon, tip } = {
+    open: {
+      label: "open to the internet",
+      cls: "text-amber-400",
+      Icon: AlertTriangle,
+      tip: (fw ? `${fw} allows ${port}/${protocol} from anywhere.` : `No host firewall is active, so nothing on the gateway stops ${port}/${protocol}.`) +
+        " If it should not be public, bind it to 127.0.0.1 and route it, or block the port." + provider,
+    },
+    restricted: {
+      label: "restricted",
+      cls: "text-muted-foreground",
+      Icon: ShieldCheck,
+      tip: `${fw ?? "The host firewall"} allows ${port}/${protocol} only from ${(verdict.sources ?? []).join(", ")}.`,
+    },
+    blocked: {
+      label: "firewalled",
+      cls: "text-muted-foreground",
+      Icon: ShieldCheck,
+      tip: `${fw ?? "The host firewall"} drops ${port}/${protocol} from the internet. This machine and the mesh still reach it.`,
+    },
+    bypassed: {
+      label: `open, around ${fw ?? "the firewall"}`,
+      cls: "text-destructive",
+      Icon: AlertTriangle,
+      tip: `A container's published port: the runtime forwards it before ${fw ?? "the host firewall"} sees it, so its rules do not apply and the internet reaches ${port}/${protocol}.` +
+        " Publish it on 127.0.0.1 instead, and route it if it should be reachable." + provider,
+    },
+    unknown: {
+      label: "unchecked",
+      cls: "text-amber-400",
+      Icon: AlertTriangle,
+      tip: `The gateway's firewall could not be checked${verdict.reason ? `: ${verdict.reason}` : ""}.`,
+    },
+  }[verdict.state]
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className={`inline-flex cursor-default items-center gap-1 text-[11px] ${cls}`} />}>
+        <Icon className="h-3 w-3" />
+        {label}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">{tip}</TooltipContent>
+    </Tooltip>
+  )
 }

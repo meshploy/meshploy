@@ -107,7 +107,27 @@ type Endpoint struct {
 	// says why not where it could not.
 	Routable bool   `json:"routable"`
 	Reason   string `json:"reason,omitempty"`
+
+	// RouteKinds are the routes worth offering for it, "http" and "tcp", and
+	// NoRoute says why there are none. A route is offered where it gives the
+	// endpoint something it lacks: a way in for one bound to loopback or the
+	// mesh, a hostname with TLS for a web app already on every interface. A
+	// second public port to something already open on its own is not offered.
+	RouteKinds []string `json:"route_kinds"`
+	NoRoute    string   `json:"no_route,omitempty"`
+	// NoRouteLabel is NoRoute in a few words, for the row.
+	NoRouteLabel string `json:"no_route_label,omitempty"`
+
+	// Internet is what the gateway's host firewall does with this port from
+	// the internet, for a port bound where the internet could reach it; absent
+	// for one bound to loopback or the mesh. A container's published port is
+	// "bypassed": the runtime forwards it before the host firewall sees it.
+	Internet *meshdb.PortFirewall `json:"internet,omitempty"`
 }
+
+// PortBypassed is a container's published port, which the container runtime
+// forwards ahead of the host firewall, so ufw or firewalld rules do not apply.
+const PortBypassed = "bypassed"
 
 // EndpointContainer is the container behind a port.
 type EndpointContainer struct {
@@ -215,6 +235,11 @@ func (s *SystemService) discoverGateway(node meshdb.Node, routed map[routeKey][]
 	}
 
 	out.Endpoints, out.Hidden = mergeEndpoints(node, listeners, containers.Containers, routed)
+	agent, fw, fwErr := hostagent.ReadState(dir)
+	now := time.Now()
+	for i := range out.Endpoints {
+		out.Endpoints[i].Internet = internetVerdict(out.Endpoints[i], node, agent, fw, fwErr, now)
+	}
 	for i := range out.Endpoints {
 		e := &out.Endpoints[i]
 		if ig, ok := ignored[routeKey{NodeID: node.ID, Address: e.Address, Port: e.Port}]; ok {
@@ -328,6 +353,68 @@ func decorate(e *Endpoint, node meshdb.Node, routed map[routeKey][]EndpointRoute
 		}
 	}
 	e.Routable, e.Reason = routable(*e, node)
+	e.RouteKinds, e.NoRouteLabel, e.NoRoute = routeKinds(*e, node)
+}
+
+// routeKinds decides which routes a row offers, and where it offers none, why:
+// in a few words for the row and in a sentence for whoever asks.
+func routeKinds(e Endpoint, node meshdb.Node) (kinds []string, label, reason string) {
+	if !e.Routable {
+		return []string{}, "Loopback only", e.Reason
+	}
+	if what := localService(e); what != "" {
+		return []string{}, "System " + what, "the machine's own " + what + "; published, it would answer anyone who asks"
+	}
+	// An unlabelled endpoint may be a web app the guess missed, so it is
+	// offered as one.
+	web := e.HTTP || e.Label == ""
+	public := e.Scope == scopeAll || (node.PublicIP != "" && e.Address == node.PublicIP)
+	switch {
+	case public && web:
+		return []string{"http"}, "", ""
+	case public:
+		return []string{}, "Already open", "already reachable on every interface: a route would add a second way in, not close this one"
+	case web:
+		return []string{"http", "tcp"}, "", ""
+	}
+	return []string{"tcp"}, "", ""
+}
+
+// localService names a service the machine runs for itself, or "". Each
+// answers the machine alone by design, and routing one would make it a public
+// service of the kind that gets abused: an open resolver, an open relay.
+func localService(e Endpoint) string {
+	switch {
+	case e.Port == 53 && slices.Contains([]string{"systemd-resolve", "systemd-resolved", "dnsmasq"}, e.Process):
+		return "DNS resolver"
+	case e.Port == 25 && slices.Contains([]string{"master", "exim4", "exim", "sendmail"}, e.Process):
+		return "mail relay"
+	}
+	return ""
+}
+
+// internetVerdict says what stands between the internet and an endpoint on
+// the gateway. Only a port bound to every interface or to the public address
+// is asked about: loopback, the mesh and a bridge are not on the internet.
+func internetVerdict(e Endpoint, node meshdb.Node, agent *hostagent.Agent, fw *hostagent.Firewall, fwErr error, now time.Time) *meshdb.PortFirewall {
+	if e.Scope != scopeAll && (node.PublicIP == "" || e.Address != node.PublicIP) {
+		return nil
+	}
+	if (e.Container != nil && !e.Container.HostNetwork) || e.ViaRuntime {
+		v := &meshdb.PortFirewall{State: PortBypassed,
+			Reason: "the container runtime forwards a published port before the host firewall sees it"}
+		if fw != nil {
+			v.Tool = fw.Tool
+		}
+		return v
+	}
+	var v hostagent.PortVerdict
+	if fwErr != nil {
+		v = hostagent.PortVerdict{State: hostagent.PortUnknown, Reason: "the host agent's report could not be read"}
+	} else {
+		v = hostagent.Evaluate(agent, fw, e.Port, e.Protocol, now)
+	}
+	return &meshdb.PortFirewall{State: v.State, Tool: v.Tool, Sources: v.Sources, CheckedAt: v.CheckedAt, Reason: v.Reason}
 }
 
 // routable says whether the gateway could reach this endpoint as it is bound.

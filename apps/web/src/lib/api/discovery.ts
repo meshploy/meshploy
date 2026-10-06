@@ -1,5 +1,6 @@
 import { apiFetch } from "./core"
 import type { ApiHostContainer } from "./nodes"
+import type { ApiPortFirewall } from "./routes"
 
 // Discovery: what runs on this org's nodes that Meshploy does not route.
 //
@@ -43,6 +44,17 @@ export interface ApiEndpoint {
   routed?: ApiEndpointRoute[]
   routable: boolean
   reason?: string
+  /** The routes worth offering: a way in for loopback or the mesh, a hostname
+   *  for a web app already open. Empty for something already open on its own
+   *  port, or the machine's own resolver; no_route says why. */
+  route_kinds: ("http" | "tcp")[]
+  no_route?: string
+  /** no_route in a few words, for the row. */
+  no_route_label?: string
+  /** What the gateway's host firewall does with it from the internet, for a
+   *  port bound where the internet could reach it. bypassed: a container's
+   *  published port, forwarded before the host firewall sees it. */
+  internet?: Omit<ApiPortFirewall, "state"> & { state: ApiPortFirewall["state"] | "bypassed" }
   /** Somebody has decided this one is correct as it is. */
   ignored?: boolean
   ignore_id?: string

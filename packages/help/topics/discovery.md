@@ -13,7 +13,13 @@ It is read from each machine by the host agent, and **nothing is touched**. A no
 
 ## Routing an existing service {#routing}
 
-An endpoint can be given a route without moving it: **Create route** makes a hostname for it, served over HTTPS and forwarded over the mesh to that machine's port. The service keeps running where it is. It is the gentlest way to bring an existing machine under Meshploy.
+An endpoint can be given a route without moving it: **Add route** makes a hostname for it, served over HTTPS, or a port on the gateway, and forwards it over the mesh to that machine's port. The service keeps running where it is. It is the gentlest way to bring an existing machine under Meshploy.
+
+A row offers a route only where one adds something. Something bound to the machine alone or to the mesh gets a way in; a web app already open on every interface gets a hostname, and its port stays open as it is. Anything else already open on every interface, such as SSH or a published database, offers none: a route would add a second way in, not close the first. The machine's own DNS resolver and mail relay offer none either, since published they would answer anyone.
+
+## From the internet {#internet}
+
+On the gateway, each endpoint bound where the internet could reach it says what the host firewall does with it: open, firewalled, or allowed only from some addresses. A container's published port is marked as open around the firewall, because the container runtime forwards it before UFW or firewalld sees it; publish it on `127.0.0.1` instead and route it. A firewall at the hosting provider can still stop a port, and the gateway cannot see that one.
 
 ## Terms {#terms}
 

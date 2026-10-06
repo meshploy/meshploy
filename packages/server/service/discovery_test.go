@@ -1,7 +1,9 @@
 package service
 
 import (
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
@@ -175,5 +177,79 @@ func TestSuggestedPortSkipsTheGatewaysOwn(t *testing.T) {
 	}
 	if got[1].SuggestedPort != 8096 {
 		t.Errorf("8096: %+v, want its own port suggested", got[1])
+	}
+}
+
+// Each endpoint a person could reach from the internet says what the gateway's
+// firewall does with it: sshd allowed, a stray port dropped, a container's
+// published port forwarded around the rules, and loopback or the mesh not
+// asked about at all.
+func TestDiscoverySaysWhatTheFirewallDoesFromTheInternet(t *testing.T) {
+	node := gatewayNode()
+	now := time.Now()
+	agent := &hostagent.Agent{HeartbeatAt: now}
+	fw := &hostagent.Firewall{Tool: hostagent.ToolUFW, Active: true, DefaultIncoming: "deny", CheckedAt: now,
+		Rules: []hostagent.Rule{{Ports: "22", Proto: "tcp", Action: "allow", From: "any"}}}
+	state := func(e Endpoint) string {
+		v := internetVerdict(e, node, agent, fw, nil, now)
+		if v == nil {
+			return ""
+		}
+		return v.State
+	}
+
+	if got := state(Endpoint{Address: "0.0.0.0", Port: 22, Protocol: "tcp", Scope: scopeAll}); got != hostagent.PortOpen {
+		t.Errorf("sshd: %q", got)
+	}
+	if got := state(Endpoint{Address: "::", Port: 8080, Protocol: "tcp", Scope: scopeAll}); got != hostagent.PortBlocked {
+		t.Errorf("a stray port: %q", got)
+	}
+	if got := state(Endpoint{Address: node.PublicIP, Port: 8080, Protocol: "tcp", Scope: scopeAddress}); got != hostagent.PortBlocked {
+		t.Errorf("bound to the public address: %q", got)
+	}
+	published := Endpoint{Address: "0.0.0.0", Port: 5432, Protocol: "tcp", Scope: scopeAll, Container: &EndpointContainer{Name: "db"}}
+	if got := state(published); got != PortBypassed {
+		t.Errorf("a published container port: %q", got)
+	}
+	published.Container.HostNetwork = true
+	if got := state(published); got != hostagent.PortBlocked {
+		t.Errorf("a container on the host's network is an ordinary listener: %q", got)
+	}
+	for _, e := range []Endpoint{
+		{Address: "127.0.0.53", Port: 53, Protocol: "tcp", Scope: scopeHost},
+		{Address: node.TailscaleIP, Port: 8080, Protocol: "tcp", Scope: scopeAddress},
+		{Address: "172.17.0.1", Port: 8080, Protocol: "tcp", Scope: scopeAddress},
+	} {
+		if got := state(e); got != "" {
+			t.Errorf("%s is not on the internet, yet: %q", e.Address, got)
+		}
+	}
+	if v := internetVerdict(Endpoint{Address: "0.0.0.0", Port: 22, Protocol: "tcp", Scope: scopeAll}, node, nil, nil, nil, now); v.State != hostagent.PortUnknown {
+		t.Errorf("no report: %q", v.State)
+	}
+}
+
+// A row offers a route only where it gives the endpoint something: a way in
+// for loopback, a hostname for a web app already open. Something open on its
+// own port, and the machine's own resolver, are offered none, with a reason.
+func TestDiscoveryOffersARouteOnlyWhereItAddsSomething(t *testing.T) {
+	node := gatewayNode()
+	listeners := &hostagent.Listeners{Listeners: []hostagent.Listener{
+		{Address: "0.0.0.0", Port: 22, Protocol: "tcp", Process: "sshd"},
+		{Address: "127.0.0.53", Port: 53, Protocol: "tcp", Process: "systemd-resolve"},
+		{Address: "127.0.0.1", Port: 3000, Protocol: "tcp", Process: "grafana"},
+		{Address: "127.0.0.1", Port: 5432, Protocol: "tcp", Process: "postgres"},
+		{Address: "0.0.0.0", Port: 8096, Protocol: "tcp", Process: "jellyfin"},
+		{Address: node.PublicIP, Port: 6379, Protocol: "tcp", Process: "redis-server"},
+	}}
+	got, _ := mergeEndpoints(node, listeners, nil, map[routeKey][]EndpointRoute{})
+	want := map[int][]string{22: {}, 53: {}, 3000: {"http", "tcp"}, 5432: {"tcp"}, 8096: {"http"}, 6379: {}}
+	for _, e := range got {
+		if !slices.Equal(e.RouteKinds, want[e.Port]) {
+			t.Errorf("%s:%d offers %v, want %v", e.Address, e.Port, e.RouteKinds, want[e.Port])
+		}
+		if (len(e.RouteKinds) == 0) != (e.NoRoute != "" && e.NoRouteLabel != "") {
+			t.Errorf("%s:%d: no route should come with a reason: %q", e.Address, e.Port, e.NoRoute)
+		}
 	}
 }

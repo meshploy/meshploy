@@ -82,8 +82,10 @@ export function RouteEndpointDialog({
   // subdomain of the base domain is not a thing anybody wants. An endpoint we
   // could not label is still offered both ways - the label is a guess, and a
   // web app on an odd port is exactly what it fails to recognise.
-  const httpPossible = !endpoint || endpoint.http || !endpoint.label
-  const [kind, setKind] = useState<"http" | "tcp">(endpoint?.http ? "http" : "tcp")
+  const kinds = endpoint?.route_kinds ?? ["http", "tcp"]
+  const httpPossible = kinds.includes("http")
+  const tcpPossible = kinds.includes("tcp")
+  const [kind, setKind] = useState<"http" | "tcp">(httpPossible && (endpoint?.http || !tcpPossible) ? "http" : "tcp")
   const [projectId, setProjectId] = useState("")
   const [domainId, setDomainId] = useState("")
   const [subdomain, setSubdomain] = useState("")
@@ -160,7 +162,24 @@ export function RouteEndpointDialog({
     },
   })
 
+  // Across the whole org: a gateway port is the gateway's, whatever project
+  // holds it, and the ones it keeps for itself are never free.
+  const { data: usage } = useQuery({
+    queryKey: ["tcp-port-usage", orgId],
+    queryFn: () => tcpRoutesApi.usage(orgId!, token),
+    enabled: !!orgId && !!endpoint,
+  })
+  const inUse = useMemo(() => {
+    const taken = new Map<number, string>()
+    for (const p of usage?.reserved ?? []) taken.set(p, "the gateway uses it itself")
+    for (const r of usage?.routes ?? []) taken.set(r.gateway_port, "another route has it")
+    return taken
+  }, [usage])
+
   if (!endpoint) return null
+
+  const port = parseInt(gatewayPort, 10) || 0
+  const portError = port > 65535 ? "A port is between 1 and 65535." : inUse.has(port) ? `Port ${port} is not free: ${inUse.get(port)}.` : null
 
   const usingDomain = verified.length > 0 && !hostname
   const canCreate =
@@ -170,7 +189,7 @@ export function RouteEndpointDialog({
         ? chosenDomain !== "" && subdomain.trim() !== ""
         : hostname.trim() !== ""
       : zone === "public"
-        ? (parseInt(gatewayPort, 10) || 0) > 0
+        ? port > 0 && !portError
         : true)
 
   const httpKind = httpPossible && kind === "http"
@@ -180,14 +199,19 @@ export function RouteEndpointDialog({
     <Dialog open onOpenChange={(open) => { if (!open && !create.isPending) onClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Route {endpoint.container?.name ?? endpoint.process ?? `port ${endpoint.port}`}</DialogTitle>
+          <DialogTitle>Add a route to {endpoint.container?.name ?? endpoint.process ?? `port ${endpoint.port}`}</DialogTitle>
           <DialogDescription>
             Meshploy will forward to <code className="font-mono">{forward}</code> on {nodeName}. Nothing running there is touched.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          {httpPossible ? (
+          {httpPossible && !tcpPossible ? (
+            <p className="text-xs text-muted-foreground">
+              This already answers on every interface at port {endpoint.port}, so the route gives it a hostname with HTTPS.
+              The port itself stays open as it is.
+            </p>
+          ) : httpPossible ? (
             <SegmentedControl
               value={kind}
               onValueChange={(v) => setKind(v as "http" | "tcp")}
@@ -295,8 +319,10 @@ export function RouteEndpointDialog({
                     onChange={(e) => setGatewayPort(e.target.value.replace(/[^0-9]/g, ""))}
                     placeholder={endpoint.suggested_port ? String(endpoint.suggested_port) : "e.g. 15432"}
                     inputMode="numeric"
+                    aria-invalid={!!portError}
                     className="h-9 w-32 font-mono text-sm"
                   />
+                  {portError && <p role="alert" className="mt-1.5 text-xs text-destructive">{portError}</p>}
                 </Field>
               )}
             </div>
