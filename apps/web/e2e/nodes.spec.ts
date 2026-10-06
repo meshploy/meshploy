@@ -11,10 +11,11 @@ test.describe("Nodes page", () => {
     await expect(page.getByText("worker-1")).toBeVisible({ timeout: 10_000 })
   })
 
-  test("nodes table has two rows", async ({ page }) => {
+  test("nodes table lists the gateway, a worker and a mesh-only laptop", async ({ page }) => {
     await goto(page, "/nodes")
     const rows = page.locator("table tbody tr")
-    await expect(rows).toHaveCount(2, { timeout: 10_000 })
+    await expect(rows).toHaveCount(3, { timeout: 10_000 })
+    await expect(rows.filter({ hasText: "ravi-laptop" })).toHaveCount(1)
   })
 
   test("node detail page loads", async ({ page }) => {
