@@ -32,7 +32,11 @@ const (
 // builds the images. Its commit is the newest one an edge server can pull: a
 // commit on main that changed no image never runs that workflow, and one still
 // building has no images yet. A var so tests can point it at a local server.
-var githubBuildRunsURL = "https://api.github.com/repos/meshploy/meshploy/actions/workflows/build.yml/runs?branch=main&status=success&per_page=10"
+// Unfiltered: GitHub serves the branch and status filters from an index that
+// has stopped at a month-old run while the plain list was current, so the runs
+// are filtered here instead. Thirty covers the failed and branch runs between
+// two good builds of main.
+var githubBuildRunsURL = "https://api.github.com/repos/meshploy/meshploy/actions/workflows/build.yml/runs?per_page=30"
 
 type VersionInfo struct {
 	Current string `json:"current"`

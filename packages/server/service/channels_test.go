@@ -57,7 +57,7 @@ func serveGitHub(t *testing.T, gh *fakeGitHub) {
 		case r.URL.Path == "/releases":
 			w.Write([]byte(fakeReleases))
 		case r.URL.Path == "/runs":
-			w.Write([]byte(`{"workflow_runs":[{"head_sha":"` + fakeBuilt + `"}]}`))
+			w.Write([]byte(`{"workflow_runs":[{"head_branch":"main","event":"push","conclusion":"success","head_sha":"` + fakeBuilt + `"}]}`))
 		case strings.HasPrefix(r.URL.Path, "/compare/"):
 			body, ok := gh.compares[strings.TrimPrefix(r.URL.Path, "/compare/")]
 			if !ok {
@@ -210,15 +210,18 @@ func TestChannelsAreCached(t *testing.T) {
 	}
 }
 
-// GitHub's list of successful runs is not always newest first: it has
-// answered with a month-old run at the top. The newest build is the run
-// created last, wherever it is listed.
-func TestNewestBuildIsTheRunCreatedLast(t *testing.T) {
+// The newest build is the successful push to main created last, wherever it
+// is listed: a failed run, another branch's run and a pull request's are
+// passed over, and so is a month-old run listed first.
+func TestNewestBuildIsMainsLastGoodPush(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"workflow_runs":[
-			{"head_sha":"da0437bf5e5585938a6ca8e6f667dea27693cb37","created_at":"2026-09-04T12:58:46Z"},
-			{"head_sha":"62e9bda0000000000000000000000000000000000","created_at":"2026-10-05T18:29:39Z"},
-			{"head_sha":"681290b0000000000000000000000000000000000","created_at":"2026-10-03T21:58:22Z"}]}`))
+			{"head_branch":"main","event":"push","conclusion":"success","head_sha":"da0437bf5e5585938a6ca8e6f667dea27693cb37","created_at":"2026-09-04T12:58:46Z"},
+			{"head_branch":"main","event":"push","conclusion":"success","head_sha":"62e9bda0000000000000000000000000000000000","created_at":"2026-10-05T18:29:39Z"},
+			{"head_branch":"main","event":"push","conclusion":"success","head_sha":"681290b0000000000000000000000000000000000","created_at":"2026-10-03T21:58:22Z"},
+			{"head_branch":"main","event":"push","conclusion":"failure","head_sha":"f2264270000000000000000000000000000000000","created_at":"2026-10-05T20:57:37Z"},
+			{"head_branch":"spike","event":"push","conclusion":"success","head_sha":"aaaaaaa0000000000000000000000000000000000","created_at":"2026-10-05T21:00:00Z"},
+			{"head_branch":"main","event":"pull_request","conclusion":"success","head_sha":"bbbbbbb0000000000000000000000000000000000","created_at":"2026-10-05T21:10:00Z"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	orig := githubBuildRunsURL

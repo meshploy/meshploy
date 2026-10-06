@@ -291,15 +291,18 @@ func (s *SystemService) newestBuild(ctx context.Context) (string, error) {
 }
 
 // newestMainBuild is the commit of the newest successful build of main: of
-// the recent runs GitHub lists, the one created last. Not simply the first it
-// lists: the filtered list is served from an index that has answered with a
-// month-old run first, which made an up-to-date server show an old commit as
-// main's newest build.
+// the recent runs GitHub lists, the successful push to main created last. The
+// list is read unfiltered and in no assumed order (see githubBuildRunsURL):
+// GitHub's filtered list has answered with a month-old run as the newest,
+// which made an up-to-date server offer an old commit as an upgrade.
 func newestMainBuild(ctx context.Context) (string, error) {
 	var runs struct {
 		WorkflowRuns []struct {
-			HeadSHA   string    `json:"head_sha"`
-			CreatedAt time.Time `json:"created_at"`
+			HeadSHA    string    `json:"head_sha"`
+			HeadBranch string    `json:"head_branch"`
+			Event      string    `json:"event"`
+			Conclusion string    `json:"conclusion"`
+			CreatedAt  time.Time `json:"created_at"`
 		} `json:"workflow_runs"`
 	}
 	if err := githubGet(ctx, githubBuildRunsURL, &runs); err != nil {
@@ -307,7 +310,10 @@ func newestMainBuild(ctx context.Context) (string, error) {
 	}
 	newest, at := "", time.Time{}
 	for _, r := range runs.WorkflowRuns {
-		if len(r.HeadSHA) >= 7 && (newest == "" || r.CreatedAt.After(at)) {
+		if r.HeadBranch != "main" || r.Event != "push" || r.Conclusion != "success" || len(r.HeadSHA) < 7 {
+			continue
+		}
+		if newest == "" || r.CreatedAt.After(at) {
 			newest, at = r.HeadSHA, r.CreatedAt
 		}
 	}

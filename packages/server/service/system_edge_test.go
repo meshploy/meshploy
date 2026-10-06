@@ -58,7 +58,7 @@ func TestEdgeCheckComparesWithTheNewestBuild(t *testing.T) {
 	const running = "0.10.0+6c0a0d1"
 
 	t.Run("running the newest build", func(t *testing.T) {
-		serveBuildRuns(t, http.StatusOK, `{"workflow_runs":[{"head_sha":"6c0a0d1f00d"}]}`)
+		serveBuildRuns(t, http.StatusOK, `{"workflow_runs":[{"head_branch":"main","event":"push","conclusion":"success","head_sha":"6c0a0d1f00d"}]}`)
 		info := (&SystemService{}).edgeVersionInfo(t.Context(), VersionInfo{Current: running, Channel: channelEdge, Latest: running})
 		if info.UpdateAvailable {
 			t.Errorf("offered an update to the build already running: %+v", info)
@@ -66,7 +66,7 @@ func TestEdgeCheckComparesWithTheNewestBuild(t *testing.T) {
 	})
 
 	t.Run("a newer build exists", func(t *testing.T) {
-		serveBuildRuns(t, http.StatusOK, `{"workflow_runs":[{"head_sha":"dc82d3dbeef"}]}`)
+		serveBuildRuns(t, http.StatusOK, `{"workflow_runs":[{"head_branch":"main","event":"push","conclusion":"success","head_sha":"dc82d3dbeef"}]}`)
 		info := (&SystemService{}).edgeVersionInfo(t.Context(), VersionInfo{Current: running, Channel: channelEdge, Latest: running})
 		if !info.UpdateAvailable || info.Latest != "dc82d3d" {
 			t.Fatalf("got %+v, want an update to dc82d3d", info)
@@ -84,7 +84,7 @@ func TestEdgeCheckComparesWithTheNewestBuild(t *testing.T) {
 		"no successful build yet": {http.StatusOK, `{"workflow_runs":[]}`},
 		"rate limited":            {http.StatusForbidden, `{"message":"API rate limit exceeded"}`},
 		"unreadable":              {http.StatusOK, `not json`},
-		"short commit":            {http.StatusOK, `{"workflow_runs":[{"head_sha":"abc"}]}`},
+		"short commit":            {http.StatusOK, `{"workflow_runs":[{"head_branch":"main","event":"push","conclusion":"success","head_sha":"abc"}]}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			serveBuildRuns(t, tc.status, tc.body)
@@ -96,12 +96,16 @@ func TestEdgeCheckComparesWithTheNewestBuild(t *testing.T) {
 	}
 }
 
-// Without these filters the check would count builds that failed, that are
-// still running, or that ran for a release tag.
-func TestEdgeCheckAsksForSuccessfulBuildsOfMain(t *testing.T) {
-	for _, want := range []string{"/workflows/build.yml/runs", "branch=main", "status=success", "per_page=1"} {
-		if !strings.Contains(githubBuildRunsURL, want) {
-			t.Errorf("githubBuildRunsURL %q lacks %q", githubBuildRunsURL, want)
+// The check reads the build workflow's runs unfiltered: GitHub's branch and
+// status filters come from an index that has stood still at a month-old run.
+// Which runs count is decided in code (TestNewestBuildIsMainsLastGoodPush).
+func TestEdgeCheckReadsTheBuildRunsUnfiltered(t *testing.T) {
+	if !strings.Contains(githubBuildRunsURL, "/workflows/build.yml/runs") {
+		t.Errorf("githubBuildRunsURL %q is not the build workflow's runs", githubBuildRunsURL)
+	}
+	for _, filter := range []string{"branch=", "status=", "event="} {
+		if strings.Contains(githubBuildRunsURL, filter) {
+			t.Errorf("githubBuildRunsURL %q asks GitHub to filter by %q", githubBuildRunsURL, filter)
 		}
 	}
 }
@@ -118,7 +122,7 @@ func TestCheckForUpdatesSkipsTheCacheOnceInAWhile(t *testing.T) {
 	hits := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits++
-		fmt.Fprintf(w, `{"workflow_runs":[{"head_sha":%q}]}`, head)
+		fmt.Fprintf(w, `{"workflow_runs":[{"head_branch":"main","event":"push","conclusion":"success","head_sha":%q}]}`, head)
 	}))
 	t.Cleanup(srv.Close)
 	orig := githubBuildRunsURL
