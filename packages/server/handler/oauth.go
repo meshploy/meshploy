@@ -520,7 +520,7 @@ func (h *Handler) registerOAuthRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "org-cli-sessions", Method: http.MethodGet, Path: "/api/v1/orgs/{orgId}/cli-sessions",
 		Summary: "CLIs signed in as the organisation's members (owners and admins)", Tags: []string{"OAuth"}, Security: sec}, h.OrgCLISessions)
 	huma.Register(api, huma.Operation{OperationID: "revoke-org-cli-session", Method: http.MethodDelete, Path: "/api/v1/orgs/{orgId}/cli-sessions/{sessionId}",
-		Summary: "Log out a member's CLI (owners and admins), while they belong to this organisation alone", Tags: []string{"OAuth"},
+		Summary: "Sign out a member's CLI (owners and admins), while they belong to this organisation alone", Tags: []string{"OAuth"},
 		Security: sec, DefaultStatus: http.StatusNoContent}, h.RevokeOrgCLISession)
 	huma.Register(api, huma.Operation{OperationID: "session-counts", Method: http.MethodGet, Path: "/api/v1/orgs/{orgId}/session-counts",
 		Summary: "Connected sessions per member: assistants connected here, and signed-in CLIs", Tags: []string{"OAuth"}, Security: sec}, h.SessionCounts)

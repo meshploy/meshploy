@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/middleware"
 	svc "github.com/meshploy/packages/server/service"
 )
 
@@ -28,7 +29,26 @@ type RegisterOutput struct {
 	Body *db.User
 }
 
+// ClientHeaders are where a sign-in comes from, as the session list shows it.
+// The edge sets X-Forwarded-For to the address it accepted the connection
+// from, so a browser cannot choose what is recorded.
+type ClientHeaders struct {
+	UserAgent     string `header:"User-Agent"`
+	XRealIP       string `header:"X-Real-IP"`
+	XForwardedFor string `header:"X-Forwarded-For"`
+}
+
+func (c ClientHeaders) client() svc.Client {
+	ip := strings.TrimSpace(c.XRealIP)
+	if ip == "" {
+		ip, _, _ = strings.Cut(c.XForwardedFor, ",")
+		ip = strings.TrimSpace(ip)
+	}
+	return svc.Client{UserAgent: c.UserAgent, IP: ip}
+}
+
 type LoginInput struct {
+	ClientHeaders
 	Cookie string `header:"Cookie"`
 	Body   struct {
 		Email    string `json:"email" format:"email"`
@@ -45,8 +65,8 @@ type LoginOutput struct {
 }
 
 type CompleteTOTPLoginInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      struct {
+	ClientHeaders
+	Body struct {
 		MFAToken    string `json:"mfa_token" minLength:"1"`
 		Code        string `json:"code" minLength:"6" maxLength:"6"`
 		TrustDevice bool   `json:"trust_device,omitempty"`
@@ -97,6 +117,7 @@ type DisableTOTPInput struct {
 }
 
 type CompleteRecoveryLoginInput struct {
+	ClientHeaders
 	Body struct {
 		MFAToken     string `json:"mfa_token" minLength:"1"`
 		RecoveryCode string `json:"recovery_code" minLength:"1"`
@@ -151,8 +172,7 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Summary:     "Complete login with TOTP code",
 		Tags:        []string{tag},
 	}, func(ctx context.Context, in *CompleteTOTPLoginInput) (*CompleteTOTPLoginOutput, error) {
-		deviceName := truncate(in.UserAgent, 200)
-		result, err := h.svc.Auth.CompleteTOTPLogin(ctx, in.Body.MFAToken, in.Body.Code, h.cfg.JWTSecret, in.Body.TrustDevice, deviceName)
+		result, err := h.svc.Auth.CompleteTOTPLogin(ctx, in.Body.MFAToken, in.Body.Code, h.cfg.JWTSecret, in.Body.TrustDevice, in.client())
 		if errors.Is(err, svc.ErrTooManyAttempts) {
 			return nil, huma.Error429TooManyRequests(err.Error())
 		}
@@ -174,7 +194,7 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Summary:     "Complete login with a one-time recovery code",
 		Tags:        []string{tag},
 	}, func(ctx context.Context, in *CompleteRecoveryLoginInput) (*CompleteTOTPLoginOutput, error) {
-		result, err := h.svc.Auth.CompleteRecoveryLogin(ctx, in.Body.MFAToken, in.Body.RecoveryCode, h.cfg.JWTSecret)
+		result, err := h.svc.Auth.CompleteRecoveryLogin(ctx, in.Body.MFAToken, in.Body.RecoveryCode, h.cfg.JWTSecret, in.client())
 		if errors.Is(err, svc.ErrTooManyAttempts) {
 			return nil, huma.Error429TooManyRequests(err.Error())
 		}
@@ -217,7 +237,7 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		if err != nil {
 			return nil, err
 		}
-		if err := h.svc.Auth.ChangePassword(ctx, userID, in.Body.CurrentPassword, in.Body.NewPassword); err != nil {
+		if err := h.svc.Auth.ChangePassword(ctx, userID, in.Body.CurrentPassword, in.Body.NewPassword, middleware.SessionFromContext(ctx)); err != nil {
 			return nil, huma.Error422UnprocessableEntity(err.Error())
 		}
 		return nil, nil
@@ -301,7 +321,7 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		if err != nil {
 			return nil, err
 		}
-		if err := h.svc.Auth.DisableTOTP(ctx, userID, in.Body.Code); err != nil {
+		if err := h.svc.Auth.DisableTOTP(ctx, userID, in.Body.Code, middleware.SessionFromContext(ctx)); err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return &struct{}{}, nil
@@ -381,6 +401,7 @@ func (h *Handler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, e
 		Email:       input.Body.Email,
 		Password:    input.Body.Password,
 		DeviceToken: extractCookie(input.Cookie, "meshploy_device_token"),
+		Client:      input.client(),
 	}, h.cfg.JWTSecret)
 	if errors.Is(err, svc.ErrTooManyAttempts) {
 		return nil, huma.Error429TooManyRequests(err.Error())

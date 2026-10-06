@@ -28,6 +28,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `agent_tokens` | `magt-` tokens for agent principals (SHA-256 hashed, shown once) |
 | `cli_logins` | A CLI waiting for someone to approve it in a browser (device flow): the user code both sides show, the device code's hash, its state |
 | `cli_tokens` | `mcli-` tokens a CLI holds after an approved login, acting as the person who approved it (SHA-256 hashed, shown once) |
+| `console_sessions` | One row per sign-in to the console: browser, address, last seen, expiry. The console's token names its row (`sid`) and is good only while the row is live, so a sign-in can be ended; a password change or two-factor turned off ends all but the current one |
 | `oauth_clients` | MCP clients that registered themselves (OAuth dynamic registration): name, redirect URIs, and a client secret's hash for one that asked for a secret |
 | `oauth_grants` | Approved connections: who approved, the principal it acts as (them, or an agent), the organisation, the client's name as approved, last use, `revoked_at`. One live per principal, client and organisation (`idx_oauth_grant_live`) |
 | `oauth_codes` | Authorization codes: single use, five minutes, with the redirect URI and PKCE challenge they were issued for |

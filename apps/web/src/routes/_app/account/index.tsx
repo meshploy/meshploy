@@ -9,6 +9,7 @@ import { auth as authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { Section, Field, inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
+import { ConsoleSessions } from "@/components/auth/connected-sessions"
 
 export const Route = createFileRoute("/_app/account/")({
   component: AccountPage,
@@ -22,13 +23,16 @@ function AccountPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Manage your personal profile and security settings</p>
       </div>
 
-      <SettingsWorkspace sections={[["account-profile", "Profile"], ["account-password", "Password"], ["account-security", "Two-factor authentication"], ["account-sessions", "Connected sessions"]]}>
+      <SettingsWorkspace sections={[["account-profile", "Profile"], ["account-password", "Password"], ["account-security", "Two-factor authentication"], ["account-sessions", "Where you're signed in"]]}>
         <div id="account-profile"><ProfileSection /></div>
         <div id="account-password"><PasswordSection /></div>
         <div id="account-security"><TwoFactorSection /></div>
         <div id="account-sessions">
-          <Section title="Connected sessions" subtitle="AI assistants and CLIs signed in as you">
-            <p className="text-sm text-muted-foreground">They are on the <Link to="/connectors" className="text-primary hover:underline">Connectors</Link> page, with how to connect Claude, Cursor, VS Code or a terminal.</p>
+          <Section title="Where you're signed in" subtitle="Each browser signed in to the console as you. A sign-in lasts a day; changing your password or turning two-factor off signs out all but this one.">
+            <div className="space-y-4">
+              <ConsoleSessions />
+              <p className="text-xs text-muted-foreground">AI assistants and CLIs signed in as you are on the <Link to="/connectors" className="text-primary hover:underline">Connectors</Link> page.</p>
+            </div>
           </Section>
         </div>
       </SettingsWorkspace>
@@ -69,10 +73,13 @@ function PasswordSection() {
   const [next, setNext] = useState("")
   const [confirm, setConfirm] = useState("")
   const [success, setSuccess] = useState(false)
+  const qc = useQueryClient()
 
   const changeMut = useMutation({
     mutationFn: () => authApi.changePassword(current, next, token),
     onSuccess: () => {
+      // Every other sign-in has just ended.
+      qc.invalidateQueries({ queryKey: ["console-sessions"] })
       setCurrent("")
       setNext("")
       setConfirm("")
@@ -176,6 +183,7 @@ function TwoFactorSection() {
     mutationFn: () => authApi.disableTOTP(code, token),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["me"] })
+      qc.invalidateQueries({ queryKey: ["console-sessions"] })
       setStep("idle")
     },
     onError: () => setError("Invalid code — try again"),

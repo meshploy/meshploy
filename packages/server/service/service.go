@@ -21,6 +21,7 @@ type Services struct {
 	Entitlements    *EntitlementService
 	Agents          *AgentService
 	CLILogins       *CLILoginService
+	Sessions        *ConsoleSessionService
 	OAuth           *OAuthService
 	MeshAccess      *MeshAccessService
 	Orgs            *OrgService
@@ -120,7 +121,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		notif.consoleURL = c.FrontendURL
 	}
 	nodes := &NodeService{db: db, gatewayIP: gatewayIP, hostGatewayIP: hostGatewayIP}
-	auth := &AuthService{db: db}
+	sessions := &ConsoleSessionService{db: db}
+	auth := &AuthService{db: db, sessions: sessions}
 	if c != nil {
 		auth.setupToken = c.SetupToken
 	}
@@ -265,6 +267,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Entitlements:    entitlements,
 		Agents:          agents,
 		CLILogins:       &CLILoginService{db: db},
+		Sessions:        sessions,
 		OAuth:           &OAuthService{db: db},
 		MeshAccess:      &MeshAccessService{db: db, headscale: headscaleSvc},
 		Orgs:            &OrgService{db: db, notif: notif},

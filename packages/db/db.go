@@ -73,6 +73,7 @@ func Migrate(db *gorm.DB) error {
 		&AgentToken{},
 		&CLILogin{},
 		&CLIToken{},
+		&ConsoleSession{},
 		&OAuthClient{},
 		&OAuthGrant{},
 		&OAuthCode{},

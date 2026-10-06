@@ -38,7 +38,20 @@ export interface OrgCliSession {
   host: string
   created_at: string
   last_used_at?: string
-  /** Its person also belongs to another organisation, where it acts as them too: only they log it out. */
+  /** Its person also belongs to another organisation, where it acts as them too: only they sign it out. */
+  elsewhere: boolean
+}
+
+/** A member's sign-in to the console, as an owner or admin sees it. */
+export interface OrgConsoleSession {
+  id: string
+  user_id: string
+  user_name: string
+  user_agent: string
+  ip: string
+  created_at: string
+  last_seen_at: string
+  /** Its person also belongs to another organisation, where it signs them in too: only they end it. */
   elsewhere: boolean
 }
 
@@ -63,9 +76,15 @@ export const oauth = {
   /** CLIs signed in as the organisation's members, or one of them. Owners and admins; read-only. */
   orgCliSessions: (orgId: string, token: string, userId?: string) =>
     apiFetch<OrgCliSession[]>(`/api/v1/orgs/${orgId}/cli-sessions${userId ? `?user_id=${userId}` : ""}`, {}, token),
-  /** Log out a member's CLI (owners and admins), while they belong to this organisation alone. */
+  /** Sign out a member's CLI (owners and admins), while they belong to this organisation alone. */
   logOutOrgCli: (orgId: string, id: string, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/cli-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }, token),
   revoke: (orgId: string, id: string, token: string) =>
     apiFetch<void>(`${conns(orgId)}/${encodeURIComponent(id)}`, { method: "DELETE" }, token),
+  /** Console sign-ins of the organisation's members, or one of them. Owners and admins. */
+  orgConsoleSessions: (orgId: string, token: string, userId?: string) =>
+    apiFetch<OrgConsoleSession[]>(`/api/v1/orgs/${orgId}/console-sessions${userId ? `?user_id=${userId}` : ""}`, {}, token),
+  /** Sign a member out of the console (owners and admins), while they belong to this organisation alone. */
+  endOrgConsoleSession: (orgId: string, id: string, token: string) =>
+    apiFetch<void>(`/api/v1/orgs/${orgId}/console-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }, token),
 }

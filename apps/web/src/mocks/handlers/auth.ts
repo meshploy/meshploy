@@ -6,6 +6,13 @@ const demoConnections: { id: string; client_name: string; approved_by: string; a
     created_at: new Date(Date.now() - 3 * 86400_000).toISOString(), last_used_at: new Date(Date.now() - 2 * 3600_000).toISOString() },
 ]
 
+const demoBrowsers = [
+  { id: "00000000-0000-0000-0000-0000000000b1", user_agent: "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0", ip: "203.0.113.24",
+    created_at: new Date(Date.now() - 2 * 3600_000).toISOString(), last_seen_at: new Date().toISOString() },
+  { id: "00000000-0000-0000-0000-0000000000b2", user_agent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", ip: "198.51.100.9",
+    created_at: new Date(Date.now() - 20 * 3600_000).toISOString(), last_seen_at: new Date(Date.now() - 5 * 3600_000).toISOString() },
+]
+
 export const authHandlers = [
   http.get("/api/v1/auth/status", () =>
     HttpResponse.json({ registration_open: false })
@@ -16,6 +23,16 @@ export const authHandlers = [
   ),
 
   http.get("/api/v1/me", () => HttpResponse.json(demoUser)),
+
+  // This browser and a phone, signed in to the console as the demo user.
+  http.post("/api/v1/auth/logout", () => new HttpResponse(null, { status: 204 })),
+  http.get("/api/v1/me/sessions", () => HttpResponse.json(demoBrowsers.map((b, i) => ({ ...b, current: i === 0 })))),
+  http.delete("/api/v1/me/sessions/:id", () => new HttpResponse(null, { status: 204 })),
+  http.delete("/api/v1/me/sessions", () => HttpResponse.json({ ended: demoBrowsers.length - 1 })),
+  http.get("/api/v1/orgs/:orgId/console-sessions", () =>
+    HttpResponse.json(demoBrowsers.map((b) => ({ ...b, user_id: demoUser.id, user_name: demoUser.username, elsewhere: false })))
+  ),
+  http.delete("/api/v1/orgs/:orgId/console-sessions/:id", () => new HttpResponse(null, { status: 204 })),
 
   http.patch("/api/v1/me", () => HttpResponse.json(demoUser)),
 
@@ -55,7 +72,7 @@ export const authHandlers = [
     return HttpResponse.json(demoConnections)
   }),
   http.get("/api/v1/orgs/:orgId/session-counts", () =>
-    HttpResponse.json({ [demoUser.id]: demoConnections.filter((c) => !c.revoked_at).length + 1 })
+    HttpResponse.json({ [demoUser.id]: demoConnections.filter((c) => !c.revoked_at).length + 1 + demoBrowsers.length })
   ),
   // The demo user's one CLI, as an admin sees members' CLIs.
   http.get("/api/v1/orgs/:orgId/cli-sessions", () =>

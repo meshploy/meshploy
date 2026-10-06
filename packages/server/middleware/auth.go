@@ -17,6 +17,7 @@ type contextKey string
 const (
 	userIDKey     contextKey = "userID"
 	credentialKey contextKey = "credential"
+	sessionKey    contextKey = "session"
 )
 
 // AgentTokenPrefix identifies a Meshploy agent token in the Authorization header.
@@ -66,12 +67,17 @@ const (
 // middleware stays db-agnostic.
 type AgentResolver func(ctx context.Context, rawToken string) (uuid.UUID, bool)
 
+// SessionResolver says whether sid is a live console session of userID.
+// Supplied by the service layer (ConsoleSessionService.Resolve).
+type SessionResolver func(ctx context.Context, sid, userID uuid.UUID) bool
+
 // Auth is a soft middleware - it sets the user ID in context if a valid Bearer
 // credential is present, but does not block requests without one. Handlers that
 // require authentication must call RequireUser.
 //
-// Three credential kinds are accepted, all via `Authorization: Bearer <cred>`:
-//   - a JWT (human users), verified with secret;
+// These credential kinds are accepted, all via `Authorization: Bearer <cred>`:
+//   - a JWT (human users), verified with secret, naming a console session
+//     that resolveSession still finds live;
 //   - a magt- agent token, resolved to the same principal shape via resolveAgent;
 //   - an mcli- CLI token, resolved via resolveCLI to the person who approved it;
 //   - an moat- OAuth token, resolved via resolveOAuth, only on the /mcp
@@ -83,7 +89,7 @@ type AgentResolver func(ctx context.Context, rawToken string) (uuid.UUID, bool)
 // session. A nil resolver disables that kind. agentFailLimiter, when non-nil,
 // throttles repeated invalid token attempts per client IP (defence-in-depth;
 // the token space is 256-bit so brute force is already infeasible).
-func Auth(secret string, resolveAgent, resolveCLI, resolveOAuth AgentResolver, agentFailLimiter *IPRateLimiter) func(http.Handler) http.Handler {
+func Auth(secret string, resolveSession SessionResolver, resolveAgent, resolveCLI, resolveOAuth AgentResolver, agentFailLimiter *IPRateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get("Authorization")
@@ -162,8 +168,18 @@ func Auth(secret string, resolveAgent, resolveCLI, resolveOAuth AgentResolver, a
 				next.ServeHTTP(w, r)
 				return
 			}
+			// A sign-in is good only while its session is: ended from the
+			// console, by a password change, or by an admin, it stops here.
+			// A token naming no session predates them and is not accepted.
+			rawSID, _ := claims["sid"].(string)
+			sid, err := uuid.Parse(rawSID)
+			if err != nil || resolveSession == nil || !resolveSession(r.Context(), sid, userID) {
+				next.ServeHTTP(w, r)
+				return
+			}
 
 			ctx := context.WithValue(ContextWithUser(r.Context(), userID), credentialKey, CredentialSession)
+			ctx = context.WithValue(ctx, sessionKey, sid)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -189,6 +205,19 @@ func CredentialFromContext(ctx context.Context) Credential {
 // authenticated it, for tests of routes that need a particular kind.
 func ContextWithCredential(ctx context.Context, c Credential) context.Context {
 	return context.WithValue(ctx, credentialKey, c)
+}
+
+// SessionFromContext is the console session a request was signed in with, or
+// uuid.Nil for any other credential.
+func SessionFromContext(ctx context.Context) uuid.UUID {
+	sid, _ := ctx.Value(sessionKey).(uuid.UUID)
+	return sid
+}
+
+// ContextWithSession returns a copy of ctx carrying sid as its console
+// session, for tests.
+func ContextWithSession(ctx context.Context, sid uuid.UUID) context.Context {
+	return context.WithValue(ctx, sessionKey, sid)
 }
 
 // UserFromContext returns the authenticated user ID from the request context.

@@ -285,7 +285,7 @@ func (s *CLILoginService) OrgSessions(ctx context.Context, orgID uuid.UUID, user
 
 // ErrCLIElsewhere is an admin logging out a CLI whose person also belongs to
 // another organisation, where it acts as them too.
-var ErrCLIElsewhere = errors.New("this person also belongs to another organisation, where the CLI acts as them too, so only they can log it out")
+var ErrCLIElsewhere = errors.New("this person also belongs to another organisation, where the CLI acts as them too, so only they can sign it out")
 
 // RevokeInOrg is an organisation's owner or admin logging out a member's CLI.
 // A CLI acts as its person everywhere, so it is theirs to end only while the

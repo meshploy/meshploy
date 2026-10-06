@@ -123,7 +123,7 @@ function Approve({ code, path, signIn }: { code: string; path: string; signIn: s
         <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.2em] text-foreground">{login.data!.user_code}</p>
       </div>
       <p className="text-xs text-muted-foreground leading-relaxed">
-        It can do anything you can do here, until you log it out under CLI sessions in your settings, or it goes 90 days unused.
+        It can do anything you can do here, until you sign it out on the Connectors page, or it goes 90 days unused.
       </p>
       {decide.error && (
         <p role="alert" className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">

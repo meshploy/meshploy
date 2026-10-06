@@ -55,15 +55,19 @@ func newCLILoginRig(t *testing.T) *cliLoginRig {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sid, err := svc.Sessions.Start(ctx, owner.ID, service.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	session, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"uid": owner.ID.String(), "exp": time.Now().Add(time.Hour).Unix(),
+		"uid": owner.ID.String(), "sid": sid.String(), "exp": time.Now().Add(time.Hour).Unix(),
 	}).SignedString([]byte(cfg.JWTSecret))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	r := chi.NewRouter()
-	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, svc.OAuth.ResolveToken, nil))
+	r.Use(middleware.Auth(cfg.JWTSecret, svc.Sessions.Resolve, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, svc.OAuth.ResolveToken, nil))
 	r.Use(middleware.RequireAuth)
 	h.registerCLILoginRoutes(humachi.New(r, huma.DefaultConfig("test", "1")))
 	return &cliLoginRig{t: t, r: r, svc: svc, session: session, agent: agent}

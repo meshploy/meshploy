@@ -74,8 +74,12 @@ func newOAuthRig(t *testing.T) *oauthRig {
 		t.Fatal(err)
 	}
 	session := func(id uuid.UUID) string {
+		sid, err := svc.Sessions.Start(ctx, id, service.Client{})
+		if err != nil {
+			t.Fatal(err)
+		}
 		s, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"uid": id.String(), "exp": time.Now().Add(time.Hour).Unix(),
+			"uid": id.String(), "sid": sid.String(), "exp": time.Now().Add(time.Hour).Unix(),
 		}).SignedString([]byte(cfg.JWTSecret))
 		if err != nil {
 			t.Fatal(err)
@@ -84,7 +88,7 @@ func newOAuthRig(t *testing.T) *oauthRig {
 	}
 
 	r := chi.NewRouter()
-	r.Use(middleware.Auth(cfg.JWTSecret, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, svc.OAuth.ResolveToken, nil))
+	r.Use(middleware.Auth(cfg.JWTSecret, svc.Sessions.Resolve, svc.Agents.ResolveToken, svc.CLILogins.ResolveToken, svc.OAuth.ResolveToken, nil))
 	r.Use(middleware.RequireAuth)
 	r.Use(middleware.OrgMember(func(ctx context.Context, orgID, userID uuid.UUID) error {
 		_, err := svc.Orgs.MemberRole(ctx, orgID, userID)
@@ -365,7 +369,8 @@ func TestWhoAConnectionActsAs(t *testing.T) {
 	if s := g.json("GET", "/api/v1/orgs/"+g.org.String()+"/cli-sessions", g.member, nil, nil); s != http.StatusForbidden {
 		t.Errorf("a member listed the organisation's CLIs: %d", s)
 	}
-	// A member's signed-in CLI is listed, and counted with their assistants.
+	// A member's signed-in CLI is listed, and counted with their assistants
+	// and their console sign-in (the rig's own).
 	var mia db.User
 	g.db.First(&mia, "username = ?", "mia")
 	cli := db.CLIToken{UserID: mia.ID, Host: "mia-laptop", TokenHash: "h", TokenPrefix: "mcli-h"}
@@ -378,8 +383,8 @@ func TestWhoAConnectionActsAs(t *testing.T) {
 		t.Errorf("the organisation's CLIs: %d %+v", s, clis)
 	}
 	g.json("GET", "/api/v1/orgs/"+g.org.String()+"/session-counts", g.owner, nil, &counts)
-	if counts[mia.ID.String()] != 2 {
-		t.Errorf("mia's sessions, an assistant and a CLI: %+v", counts)
+	if counts[mia.ID.String()] != 3 {
+		t.Errorf("mia's sessions, an assistant, a CLI and the console: %+v", counts)
 	}
 
 	// An admin logs out a member's CLI while the member is here alone; not

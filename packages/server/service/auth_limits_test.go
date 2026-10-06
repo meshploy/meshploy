@@ -36,11 +36,11 @@ func TestSignInGuessesAreLimitedPerAccount(t *testing.T) {
 	}).SignedString([]byte("s"))
 	require.NoError(t, err)
 	for i := 0; i < 5; i++ {
-		_, err := svcs.Auth.CompleteTOTPLogin(ctx, pending, "000000", "s", false, "")
+		_, err := svcs.Auth.CompleteTOTPLogin(ctx, pending, "000000", "s", false, service.Client{})
 		require.False(t, errors.Is(err, service.ErrTooManyAttempts), "code try %d was refused as too many", i+1)
 	}
-	_, err = svcs.Auth.CompleteTOTPLogin(ctx, pending, "000000", "s", false, "")
+	_, err = svcs.Auth.CompleteTOTPLogin(ctx, pending, "000000", "s", false, service.Client{})
 	require.ErrorIs(t, err, service.ErrTooManyAttempts)
-	_, err = svcs.Auth.CompleteRecoveryLogin(ctx, pending, "abcd-efgh", "s")
+	_, err = svcs.Auth.CompleteRecoveryLogin(ctx, pending, "abcd-efgh", "s", service.Client{})
 	require.ErrorIs(t, err, service.ErrTooManyAttempts, "recovery codes share the person's allowance")
 }

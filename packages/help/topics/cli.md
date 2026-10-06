@@ -17,11 +17,11 @@ Approve only when the code on the page matches the one your terminal shows. A di
 
 ## What it can do {#access}
 
-A logged-in CLI can do anything you can, with your permissions, until you log it out or it goes **90 days unused**. An agent or an automation should not use your login: give it an agent and its own token instead, so it has only the access it needs.
+A logged-in CLI can do anything you can, with your permissions, until you sign it out or it goes **90 days unused**. An agent or an automation should not use your login: give it an agent and its own token instead, so it has only the access it needs.
 
 ## CLI sessions {#sessions}
 
-Every CLI signed in as you is listed on the **Connectors** page, under Connected sessions, with the machine's name and when it was last used. **Log out** ends one at once. `meshploy auth logout` does the same from the terminal.
+Every CLI signed in as you is listed on the **Connectors** page, under Connected sessions, with the machine's name and when it was last used. **Sign out** ends one at once. `meshploy auth logout` does the same from the terminal.
 
 On a machine that cannot open a link at all, `meshploy auth login --password` asks for your email, password and two-factor code in the terminal instead, for a session that lasts a day.
 
@@ -29,4 +29,4 @@ On a machine that cannot open a link at all, `meshploy auth login --password` as
 
 - **CLI login** {#login -> login}: Signing the meshploy command in by approving it in a browser, with the code its terminal shows.
 - **Login code** {#code -> code}: The short code shown in both the terminal and the browser. Approve only when they match.
-- **CLI session** {#session -> sessions}: A CLI signed in as you. Listed on the Connectors page, where it can be logged out; it lapses after 90 days unused.
+- **CLI session** {#session -> sessions}: A CLI signed in as you. Listed on the Connectors page, where it can be signed out; it lapses after 90 days unused.

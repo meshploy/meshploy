@@ -1,5 +1,15 @@
 import { apiFetch } from "./core"
 
+/** A sign-in to the console. `current` marks the one making the request. */
+export interface ConsoleSession {
+  id: string
+  user_agent: string
+  ip: string
+  created_at: string
+  last_seen_at: string
+  current: boolean
+}
+
 export const auth = {
   /**
    * Public, and called before login. `setup_required` reports a gateway that
@@ -42,6 +52,19 @@ export const auth = {
         }),
       }
     ),
+
+  /** Ends the console session making the request: signing out. */
+  logout: (token: string) => apiFetch<void>("/api/v1/auth/logout", { method: "POST" }, token),
+
+  /** Where you are signed in to the console. */
+  sessions: (token: string) => apiFetch<ConsoleSession[]>("/api/v1/me/sessions", {}, token),
+
+  revokeSession: (id: string, token: string) =>
+    apiFetch<void>(`/api/v1/me/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }, token),
+
+  /** Signs out every console session but this one. */
+  revokeOtherSessions: (token: string) =>
+    apiFetch<{ ended: number }>("/api/v1/me/sessions", { method: "DELETE" }, token),
 
   getMe: (token: string) =>
     apiFetch<{ id: string; username: string; email: string; totp_enabled: boolean }>(

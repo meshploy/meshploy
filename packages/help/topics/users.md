@@ -30,7 +30,9 @@ A machine joined to the mesh belongs to the person who made its token, its **own
 
 Until the policy is enforced, every machine reaches every other, and the Access page shows what each one would reach.
 
-The Access page's **Sessions** tab lists everything signed in as the workspace's people: CLIs, and AI assistants connected to act as them or as an agent. An admin can disconnect an assistant, and log out a CLI, unless its person also belongs to another workspace, where the CLI acts as them too: then only they can. Its rules say what each grant opens, the ports where it answers on the mesh and its internal routes, and an internal route's page lists who can open it.
+The Access page's **Sessions** tab lists everything signed in as the workspace's people: browsers signed in to the console, CLIs, and AI assistants connected to act as them or as an agent. An admin can disconnect an assistant, and sign out a browser or a CLI, unless its person also belongs to another workspace, where it works for them too: then only they can.
+
+Each person sees where they are signed in on their **Account** page, and can sign out any browser there, or every one but the current. Changing a password, or turning two-factor sign-in off, signs out every other browser. Its rules say what each grant opens, the ports where it answers on the mesh and its internal routes, and an internal route's page lists who can open it.
 
 ## Agents {#agents}
 

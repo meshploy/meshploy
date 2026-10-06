@@ -458,8 +458,12 @@ func (s *OAuthService) SessionCounts(ctx context.Context, orgID uuid.UUID) (map[
 		Group("cli_tokens.user_id").Scan(&clis).Error; err != nil {
 		return nil, err
 	}
+	browsers, err := orgSessionCounts(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
 	out := make(map[uuid.UUID]int, len(rows)+len(clis))
-	for _, r := range append(rows, clis...) {
+	for _, r := range append(append(rows, clis...), browsers...) {
 		out[r.UserID] += r.N
 	}
 	return out, nil

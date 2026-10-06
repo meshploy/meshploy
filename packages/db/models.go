@@ -368,6 +368,24 @@ type CLIToken struct {
 
 func (CLIToken) TableName() string { return "cli_tokens" }
 
+// ConsoleSession is one sign-in to the console. The token the browser holds
+// names its row (the sid claim), and only a row that is still live makes the
+// token good: a session can be ended from anywhere, which a signed token alone
+// cannot be. Nothing secret is stored; the token is signed.
+type ConsoleSession struct {
+	Base
+	UserID     uuid.UUID  `gorm:"type:uuid;not null;index" json:"-"`
+	UserAgent  string     `gorm:"not null;default:''"      json:"user_agent"`
+	IP         string     `gorm:"not null;default:''"      json:"ip"`
+	LastSeenAt time.Time  `gorm:"not null"                 json:"last_seen_at"`
+	ExpiresAt  time.Time  `gorm:"not null;index"           json:"expires_at"`
+	RevokedAt  *time.Time `                                json:"revoked_at,omitempty"`
+
+	User User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (ConsoleSession) TableName() string { return "console_sessions" }
+
 // OAuthClient is an application that registered itself to connect over MCP
 // (OAuth dynamic client registration): Claude, an editor, any MCP client.
 // Registering grants nothing; a person signed in to the console still has to

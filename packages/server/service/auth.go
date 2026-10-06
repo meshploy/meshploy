@@ -29,6 +29,7 @@ var (
 
 type AuthService struct {
 	db                  *gorm.DB
+	sessions            *ConsoleSessionService
 	onFirstRegistration func(ctx context.Context, orgID uuid.UUID)
 
 	// setupToken, when set, must be presented to claim a server that has no
@@ -48,6 +49,7 @@ type LoginInput struct {
 	Email       string
 	Password    string
 	DeviceToken string
+	Client      Client
 }
 
 type LoginResult struct {
@@ -162,7 +164,7 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput, jwtSecret string
 
 	if user.TOTPEnabled {
 		if in.DeviceToken != "" && s.validateDeviceToken(ctx, user.ID, in.DeviceToken) {
-			token, err := signFullJWT(user.ID.String(), jwtSecret)
+			token, err := s.signIn(ctx, user.ID, in.Client, jwtSecret)
 			if err != nil {
 				return LoginResult{}, err
 			}
@@ -181,7 +183,7 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput, jwtSecret string
 		return LoginResult{TOTPRequired: true, MFAToken: mfaStr}, nil
 	}
 
-	token, err := signFullJWT(user.ID.String(), jwtSecret)
+	token, err := s.signIn(ctx, user.ID, in.Client, jwtSecret)
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -190,7 +192,7 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput, jwtSecret string
 
 // CompleteTOTPLogin validates the MFA token + TOTP code and returns a full JWT.
 // If trustDevice is true it also issues a 30-day device token.
-func (s *AuthService) CompleteTOTPLogin(ctx context.Context, mfaToken, code, jwtSecret string, trustDevice bool, deviceName string) (CompleteTOTPLoginResult, error) {
+func (s *AuthService) CompleteTOTPLogin(ctx context.Context, mfaToken, code, jwtSecret string, trustDevice bool, client Client) (CompleteTOTPLoginResult, error) {
 	tok, err := jwt.Parse(mfaToken, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrSignatureInvalid
@@ -224,14 +226,14 @@ func (s *AuthService) CompleteTOTPLogin(ctx context.Context, mfaToken, code, jwt
 		return CompleteTOTPLoginResult{}, errors.New("invalid code")
 	}
 
-	fullToken, err := signFullJWT(userIDStr, jwtSecret)
+	fullToken, err := s.signIn(ctx, userID, client, jwtSecret)
 	if err != nil {
 		return CompleteTOTPLoginResult{}, err
 	}
 
 	result := CompleteTOTPLoginResult{Token: fullToken}
 	if trustDevice {
-		dt, err := s.TrustDevice(ctx, userID, deviceName)
+		dt, err := s.TrustDevice(ctx, userID, truncateString(client.UserAgent, 200))
 		if err == nil {
 			result.DeviceToken = dt
 		}
@@ -272,8 +274,10 @@ func hashToken(raw string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// ChangePassword verifies the current password and updates it to the new one.
-func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
+// ChangePassword verifies the current password and updates it to the new one,
+// and ends every other console session of the person: whoever else signed in
+// with the old password is signed out. keep is the session making the change.
+func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string, keep uuid.UUID) error {
 	var user db.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
 		return err
@@ -285,7 +289,11 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, curr
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Model(&user).Update("password", string(hashed)).Error
+	if err := s.db.WithContext(ctx).Model(&user).Update("password", string(hashed)).Error; err != nil {
+		return err
+	}
+	_, err = s.sessions.RevokeOthers(ctx, userID, keep)
+	return err
 }
 
 // GetMe returns the current user by ID.
@@ -367,7 +375,11 @@ func (s *AuthService) VerifyAndEnableTOTP(ctx context.Context, userID uuid.UUID,
 }
 
 // DisableTOTP verifies the current TOTP code and clears all 2FA data including recovery codes.
-func (s *AuthService) DisableTOTP(ctx context.Context, userID uuid.UUID, code string) error {
+//
+// Every other console session of the person ends with it: a second factor
+// taken away should not leave sessions it was meant to guard. keep is the
+// session making the change.
+func (s *AuthService) DisableTOTP(ctx context.Context, userID uuid.UUID, code string, keep uuid.UUID) error {
 	var user db.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
 		return err
@@ -378,7 +390,7 @@ func (s *AuthService) DisableTOTP(ctx context.Context, userID uuid.UUID, code st
 	if !totp.Validate(code, string(user.TOTPSecret)) {
 		return errors.New("invalid code")
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&user).Updates(map[string]any{
 			"totp_enabled": false,
 			"totp_secret":  "",
@@ -386,12 +398,16 @@ func (s *AuthService) DisableTOTP(ctx context.Context, userID uuid.UUID, code st
 			return err
 		}
 		return tx.Where("user_id = ?", userID).Delete(&db.RecoveryCode{}).Error
-	})
+	}); err != nil {
+		return err
+	}
+	_, err := s.sessions.RevokeOthers(ctx, userID, keep)
+	return err
 }
 
 // CompleteRecoveryLogin validates an MFA token + recovery code and returns a full JWT.
 // The recovery code is marked used and cannot be reused.
-func (s *AuthService) CompleteRecoveryLogin(ctx context.Context, mfaToken, rawCode, jwtSecret string) (CompleteTOTPLoginResult, error) {
+func (s *AuthService) CompleteRecoveryLogin(ctx context.Context, mfaToken, rawCode, jwtSecret string, client Client) (CompleteTOTPLoginResult, error) {
 	tok, err := jwt.Parse(mfaToken, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrSignatureInvalid
@@ -431,7 +447,7 @@ func (s *AuthService) CompleteRecoveryLogin(ctx context.Context, mfaToken, rawCo
 		return CompleteTOTPLoginResult{}, err
 	}
 
-	fullToken, err := signFullJWT(userIDStr, jwtSecret)
+	fullToken, err := s.signIn(ctx, userID, client, jwtSecret)
 	if err != nil {
 		return CompleteTOTPLoginResult{}, err
 	}
@@ -490,10 +506,18 @@ func generateRecoveryCodes(n int) (raw []string, hashes []string, err error) {
 	return
 }
 
-func signFullJWT(userIDStr, jwtSecret string) (string, error) {
+// signIn starts a console session and returns the token that carries it: the
+// person (uid) and the session (sid), which must still be live for the token
+// to be good.
+func (s *AuthService) signIn(ctx context.Context, userID uuid.UUID, client Client, jwtSecret string) (string, error) {
+	sid, err := startConsoleSession(ctx, s.db, userID, client)
+	if err != nil {
+		return "", err
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"uid": userIDStr,
-		"exp": time.Now().Add(24 * time.Hour).Unix(),
+		"uid": userID.String(),
+		"sid": sid.String(),
+		"exp": time.Now().Add(ConsoleSessionTTL).Unix(),
 	})
 	return token.SignedString([]byte(jwtSecret))
 }

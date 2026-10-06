@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Section } from "@/components/services/form-primitives"
 import { ConnectionDetails, MySessions } from "@/components/auth/connected-sessions"
 import { KeysSection } from "@/components/agents/keys-section"
@@ -24,8 +24,11 @@ function ConnectorsPage() {
       <Section title="Connection details" subtitle="Meshploy's MCP address, and how each client adds it. Each one signs in here, so nothing secret goes into a config file.">
         <ConnectionDetails />
       </Section>
-      <Section title="Connected sessions" subtitle="Everything signed in as you: AI assistants in this organisation, and CLIs. One unused for 90 days ends by itself.">
-        <MySessions />
+      <Section title="Connected sessions" subtitle="AI assistants in this organisation and CLIs signed in as you. One unused for 90 days ends by itself.">
+        <div className="space-y-3">
+          <MySessions />
+          <p className="text-xs text-muted-foreground">Browsers signed in to the console are on your <Link to="/account" hash="account-sessions" className="text-primary hover:underline">Account</Link> page.</p>
+        </div>
       </Section>
       {isAdmin && <KeysSection />}
     </div>

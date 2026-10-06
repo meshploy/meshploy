@@ -129,7 +129,8 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/auth/login` | public | Login and receive a JWT |
+| POST | `/auth/login` | public | Login and receive a JWT naming a console session (`sid`), good while that session is live |
+| POST | `/auth/logout` | ✓ | End the console session making the request |
 | POST | `/auth/recovery` | public | Complete login with a one-time recovery code |
 | POST | `/auth/register` | public | Register a new user |
 | GET | `/auth/status` | public | Check whether registration is open (no users exist yet) |
@@ -142,6 +143,9 @@ curl -H "Authorization: Bearer <token>" https://api.<your-domain>/openapi.json
 | POST | `/me/totp/setup` | ✓ | Generate a new TOTP secret (not yet enabled) |
 | GET | `/me/cli-sessions` | ✓ | Your logged-in CLIs, the most recently used first; `current` marks the one asking |
 | DELETE | `/me/cli-sessions/{id}` | ✓ | Log one of your CLIs out |
+| GET | `/me/sessions` | ✓ | Where you are signed in to the console: browser, address, last seen; `current` marks the one asking |
+| DELETE | `/me/sessions/{id}` | ✓ | Sign one of your console sessions out |
+| DELETE | `/me/sessions` | ✓ | Sign out everywhere else: every console session but the one asking |
 
 ### CLI login
 
@@ -170,7 +174,9 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | POST | `/oauth/authorize` | ✓ | Approve (in `org_id`, as yourself or as `agent_id`) or deny; answers where to send the browser. A browser session only |
 | GET | `/orgs/{orgId}/oauth/connections` | ✓ | Your connections; `?user_id=`, `?agent_id=` or `?all=true` for an owner or admin. Disconnected ones stay listed |
 | GET | `/orgs/{orgId}/cli-sessions` | ✓ admin | CLIs signed in as the organisation's members (`?user_id=` for one); `elsewhere` marks one whose person also belongs to another organisation |
-| DELETE | `/orgs/{orgId}/cli-sessions/{id}` | ✓ admin | Log out a member's CLI. Refused (409) while they also belong to another organisation, where it acts as them too |
+| DELETE | `/orgs/{orgId}/cli-sessions/{id}` | ✓ admin | Sign out a member's CLI. Refused (409) while they also belong to another organisation, where it acts as them too |
+| GET | `/orgs/{orgId}/console-sessions` | ✓ admin | Console sign-ins of the organisation's members (`?user_id=` for one), with `elsewhere` as for CLIs |
+| DELETE | `/orgs/{orgId}/console-sessions/{id}` | ✓ admin | Sign a member out of the console. Refused (409) while they also belong to another organisation |
 | GET | `/orgs/{orgId}/session-counts` | ✓ admin | Connected sessions per member: assistants connected here, and signed-in CLIs |
 | DELETE | `/orgs/{orgId}/oauth/connections/{id}` | ✓ | Disconnect: your own, or any for an owner or admin |
 

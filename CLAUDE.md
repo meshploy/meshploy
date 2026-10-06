@@ -173,13 +173,13 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (59 CE tables)
+## packages/db — schema (60 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `oauth_clients`, `oauth_grants`, `oauth_codes`, `oauth_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `mesh_reach`, `mesh_policy_state`, `mesh_rules`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `console_sessions`, `oauth_clients`, `oauth_grants`, `oauth_codes`, `oauth_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `mesh_reach`, `mesh_policy_state`, `mesh_rules`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Environments | `promotion_groups`, `promotion_group_members` |
 | Workloads | `stacks`, `stack_runs`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |
@@ -217,11 +217,12 @@ packages/server/
 ├── server.go     # Router assembly, middleware chain, Huma config
 ├── entrypoint.go # Main() — shared by the CE and EE binaries
 ├── config/       # Config struct + Load() from env
-├── middleware/   # Auth() — soft principal middleware: resolves a JWT (human) OR a magt- agent token to the same user-id in ctx; RequireAuth() is fail-closed and 401s anything off the publicRules allowlist
+├── middleware/   # Auth() — soft principal middleware: resolves a JWT (human, good while its console session is live) OR a magt- agent token to the same user-id in ctx; RequireAuth() is fail-closed and 401s anything off the publicRules allowlist
 ├── handler/      # HTTP layer only — thin, delegates to service layer
 │   ├── handler.go          # Handler struct + Register() + RegisterRaw()
 │   ├── access.go           # checkAccess(), checkOrgAdminAccess(), checkOrgMemberAccess()
 │   ├── auth.go             # /auth/*, /me, TOTP, 2FA
+│   ├── console_session.go  # Console sign-ins: your own, a member's (admins), logout
 │   ├── agent.go            # Agent principals: create, list, token mint/rotate/revoke, delete
 │   ├── mcp.go              # Remote MCP (Streamable HTTP) at /mcp — agent token or OAuth connection, permission-scoped
 │   ├── oauth.go            # OAuth for MCP clients: discovery, registration, token, approval, connections
@@ -257,6 +258,7 @@ packages/server/
 ├── service/      # Business logic
 │   ├── service.go          # Services aggregate struct + New()
 │   ├── auth.go             # Register (user + default org in tx), Login, TOTP
+│   ├── console_session.go  # One row per console sign-in; Resolve() for the auth middleware
 │   ├── agent.go            # Agent principals + agent_tokens; ResolveToken() for the auth middleware
 │   ├── oauth.go            # OAuth authorization server for /mcp: clients, grants, codes, rotating tokens
 │   ├── org.go              # Org CRUD, members, invitations
