@@ -241,9 +241,10 @@ func TestDiscoveryOffersARouteOnlyWhereItAddsSomething(t *testing.T) {
 		{Address: "127.0.0.1", Port: 5432, Protocol: "tcp", Process: "postgres"},
 		{Address: "0.0.0.0", Port: 8096, Protocol: "tcp", Process: "jellyfin"},
 		{Address: node.PublicIP, Port: 6379, Protocol: "tcp", Process: "redis-server"},
+		{Address: "127.0.0.1", Port: 65529, Protocol: "tcp", Process: "monarx-agent"},
 	}}
 	got, _ := mergeEndpoints(node, listeners, nil, map[routeKey][]EndpointRoute{})
-	want := map[int][]string{22: {}, 53: {}, 3000: {"http", "tcp"}, 5432: {"tcp"}, 8096: {"http"}, 6379: {}}
+	want := map[int][]string{22: {}, 53: {}, 3000: {"http", "tcp"}, 5432: {"tcp"}, 8096: {"http"}, 6379: {}, 65529: {}}
 	for _, e := range got {
 		if !slices.Equal(e.RouteKinds, want[e.Port]) {
 			t.Errorf("%s:%d offers %v, want %v", e.Address, e.Port, e.RouteKinds, want[e.Port])

@@ -382,15 +382,31 @@ func routeKinds(e Endpoint, node meshdb.Node) (kinds []string, label, reason str
 
 // localService names a service the machine runs for itself, or "". Each
 // answers the machine alone by design, and routing one would make it a public
-// service of the kind that gets abused: an open resolver, an open relay.
+// service of the kind that gets abused: an open resolver, an open relay, a
+// host agent's control port.
 func localService(e Endpoint) string {
-	switch {
-	case e.Port == 53 && slices.Contains([]string{"systemd-resolve", "systemd-resolved", "dnsmasq"}, e.Process):
-		return "DNS resolver"
-	case e.Port == 25 && slices.Contains([]string{"master", "exim4", "exim", "sendmail"}, e.Process):
-		return "mail relay"
+	for _, l := range localServices {
+		if (l.port == 0 || e.Port == l.port) && slices.Contains(l.processes, e.Process) {
+			return l.what
+		}
 	}
 	return ""
+}
+
+// localServices are the services localService knows. The list grows as more
+// turn up on real servers: add the process as Discovery shows it under "Held
+// by", the port too where the process name alone could be anything else, and
+// what it is, in the words the row will show ("System <what>").
+var localServices = []struct {
+	what      string
+	port      int // 0 for any port
+	processes []string
+}{
+	{"DNS resolver", 53, []string{"systemd-resolve", "systemd-resolved", "dnsmasq"}},
+	{"mail relay", 25, []string{"master", "exim4", "exim", "sendmail"}},
+	// Monarx, the malware scanner hosting providers such as Hostinger
+	// install, listening on loopback for its own use.
+	{"security agent", 0, []string{"monarx-agent"}},
 }
 
 // internetVerdict says what stands between the internet and an endpoint on
