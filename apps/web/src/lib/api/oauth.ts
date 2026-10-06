@@ -53,6 +53,8 @@ export interface OrgConsoleSession {
   last_seen_at: string
   /** Its person also belongs to another organisation, where it signs them in too: only they end it. */
   elsewhere: boolean
+  /** The sign-in this request was made with: this browser. */
+  current?: boolean
 }
 
 const conns = (orgId: string) => `/api/v1/orgs/${orgId}/oauth/connections`

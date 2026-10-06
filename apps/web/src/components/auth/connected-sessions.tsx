@@ -3,6 +3,7 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Monitor, PlugZap, Search, TerminalSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Section } from "@/components/services/form-primitives"
 import { CopyValue } from "@/components/domains/dns-records"
@@ -67,9 +68,8 @@ export function describeAgent(ua: string) {
 
 function fromBrowser(s: ConsoleSession | OrgConsoleSession, view: "self" | "org" | "member"): Session {
   const org = s as OrgConsoleSession
-  const self = s as ConsoleSession
   return {
-    kind: "browser", id: s.id, title: describeAgent(s.user_agent) + (self.current ? " (this browser)" : ""),
+    kind: "browser", id: s.id, title: describeAgent(s.user_agent) + (s.current ? " (this browser)" : ""),
     detail: `Console${s.ip ? ` · ${s.ip}` : ""}`,
     person: view === "org" ? { id: org.user_id, name: org.user_name } : undefined,
     created: s.created_at, lastUsed: s.last_seen_at,
@@ -82,9 +82,32 @@ function ordered(list: Session[]) {
   return [...list].sort((a, b) => Number(!!a.ended) - Number(!!b.ended) || at(b) - at(a))
 }
 
+/** What ending a session does, said before it is done. */
+const ENDS: Record<Session["kind"], string> = {
+  browser: "That browser is signed out at once and has to sign in again.",
+  cli: "That CLI stops working until someone runs meshploy auth login on it again.",
+  assistant: "It loses access at once, until it is connected again.",
+}
+
 function SessionList({ sessions, empty }: { sessions: Session[]; empty: React.ReactNode }) {
+  // Ending a session takes effect at once, so each one asks first.
+  const [asking, setAsking] = useState<Session | null>(null)
   if (sessions.length === 0) return <div className="text-sm text-muted-foreground">{empty}</div>
+  const whose = (s: Session) => s.person ? `${s.person.name}'s ${s.title}` : s.title
   return (
+    <>
+    <Dialog open={asking !== null} onOpenChange={(o) => { if (!o) setAsking(null) }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{asking?.end?.label} {asking ? whose(asking) : ""}?</DialogTitle>
+          <DialogDescription>{asking ? ENDS[asking.kind] : ""}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAsking(null)}>Cancel</Button>
+          <Button variant="destructive" onClick={() => { asking?.end?.run(); setAsking(null) }}>{asking?.end?.label}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <div className="console-record-list rounded-xl border border-border overflow-hidden divide-y divide-border/40">
       {ordered(sessions).map((s) => (
         <div key={`${s.kind}:${s.id}`} className={`flex flex-wrap items-center gap-3 px-4 py-3 ${s.ended ? "opacity-60" : ""}`}>
@@ -110,7 +133,7 @@ function SessionList({ sessions, empty }: { sessions: Session[]; empty: React.Re
           </div>
           {!s.ended && !s.end && s.note && <span className="max-w-[12rem] text-right text-[11px] text-muted-foreground/70">{s.note}</span>}
           {!s.ended && s.end && (
-            <Button variant="outline" size="sm" className="h-7 px-3 text-xs" disabled={s.end.pending} onClick={s.end.run}>
+            <Button variant="outline" size="sm" className="h-7 px-3 text-xs" disabled={s.end.pending} onClick={() => setAsking(s)}>
               {s.end.pending && <Loader2 className="h-3 w-3 animate-spin" />}
               {s.end.label}
             </Button>
@@ -118,6 +141,7 @@ function SessionList({ sessions, empty }: { sessions: Session[]; empty: React.Re
         </div>
       ))}
     </div>
+    </>
   )
 }
 
@@ -173,6 +197,8 @@ function useEndBrowser(orgId: string, token: string) {
   })
   const session = (c: OrgConsoleSession, view: "org" | "member"): Session => {
     const base = fromBrowser(c, view)
+    // This browser is signed out from the menu, not from a list.
+    if (c.current) return base
     if (c.user_id !== me && c.elsewhere) return { ...base, note: "In another organisation too: only they can sign it out" }
     return { ...base, end: { label: "Sign out", run: () => m.mutate(c), pending: m.isPending && m.variables?.id === c.id } }
   }
@@ -187,6 +213,7 @@ export function ConsoleSessions() {
   const done = () => qc.invalidateQueries({ queryKey: ["console-sessions"] })
   const end = useMutation({ mutationFn: (id: string) => auth.revokeSession(id, token), onSuccess: done })
   const others = useMutation({ mutationFn: () => auth.revokeOtherSessions(token), onSuccess: done })
+  const [askingAll, setAskingAll] = useState(false)
   if (list.isLoading) return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
   const rows = list.data ?? []
   const sessions = rows.map((s) => {
@@ -198,11 +225,23 @@ export function ConsoleSessions() {
     <div className="space-y-3">
       <SessionList sessions={sessions} empty="Only this browser." />
       {rows.some((s) => !s.current) && (
-        <Button variant="outline" size="sm" className="h-7 text-xs" disabled={others.isPending} onClick={() => others.mutate()}>
+        <Button variant="outline" size="sm" className="h-7 text-xs" disabled={others.isPending} onClick={() => setAskingAll(true)}>
           {others.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
           Sign out everywhere else
         </Button>
       )}
+      <Dialog open={askingAll} onOpenChange={setAskingAll}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sign out everywhere else?</DialogTitle>
+            <DialogDescription>Every other browser signed in as you is signed out at once. This one stays signed in.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAskingAll(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => { others.mutate(); setAskingAll(false) }}>Sign out everywhere else</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {error && <p role="alert" className="text-xs text-destructive">{error.message}</p>}
     </div>
   )

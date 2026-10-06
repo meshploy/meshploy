@@ -125,7 +125,7 @@ func (h *Handler) OrgConsoleSessions(ctx context.Context, in *OrgSessionsInput) 
 		}
 		user = &id
 	}
-	rows, err := h.svc.Sessions.OrgSessions(ctx, orgID, user)
+	rows, err := h.svc.Sessions.OrgSessions(ctx, orgID, user, middleware.SessionFromContext(ctx))
 	if err != nil {
 		return nil, err
 	}

@@ -70,10 +70,11 @@ func TestConsoleSignInsAreSessionsThatCanBeEnded(t *testing.T) {
 	var orgs []meshdb.Organization
 	require.NoError(t, gdb.Find(&orgs).Error)
 	require.Len(t, orgs, 1)
-	listed, err := svcs.Sessions.OrgSessions(ctx, orgs[0].ID, nil)
+	listed, err := svcs.Sessions.OrgSessions(ctx, orgs[0].ID, nil, laptop)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
 	assert.False(t, listed[0].Elsewhere)
+	assert.True(t, listed[0].Current, "the asking session is marked")
 
 	other := meshdb.Organization{Name: "Other", Slug: "other"}
 	require.NoError(t, gdb.Create(&other).Error)

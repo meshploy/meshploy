@@ -182,12 +182,15 @@ type OrgConsoleSession struct {
 	// Elsewhere is true when the person also belongs to another organisation,
 	// where the sign-in works too: then only they end it.
 	Elsewhere bool `json:"elsewhere"`
+	// Current is the sign-in the asking request was made with.
+	Current bool `json:"current" gorm:"-"`
 }
 
 // OrgSessions are the sign-ins of an organisation's members (or of one of
 // them), the most recently seen first. A sign-in is the person's in every
 // organisation they belong to, so it is listed in each.
-func (s *ConsoleSessionService) OrgSessions(ctx context.Context, orgID uuid.UUID, userID *uuid.UUID) ([]OrgConsoleSession, error) {
+// current is the asking request's own session, marked in the list.
+func (s *ConsoleSessionService) OrgSessions(ctx context.Context, orgID uuid.UUID, userID *uuid.UUID, current uuid.UUID) ([]OrgConsoleSession, error) {
 	q := liveConsoleSessions(s.db.WithContext(ctx).Model(&db.ConsoleSession{})).
 		Select("console_sessions.id, console_sessions.user_id, users.username AS user_name, console_sessions.user_agent, console_sessions.ip, "+
 			"console_sessions.created_at, console_sessions.last_seen_at, "+
@@ -199,6 +202,9 @@ func (s *ConsoleSessionService) OrgSessions(ctx context.Context, orgID uuid.UUID
 	}
 	out := []OrgConsoleSession{}
 	err := q.Order("console_sessions.last_seen_at DESC").Scan(&out).Error
+	for i := range out {
+		out[i].Current = out[i].ID == current
+	}
 	return out, err
 }
 
