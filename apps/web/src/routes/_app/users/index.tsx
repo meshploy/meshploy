@@ -2,8 +2,7 @@ import { OptionSelect } from "@/components/layout/option-select"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, Clock, Copy, Crown, Loader2, Plus, Shield, User } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { Check, Clock, Copy, Loader2, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -24,6 +23,7 @@ import {
   type ApiOrgMember,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
+import { RoleBadge } from "@/components/users/member-role"
 import { useOrgStore, useIsAdmin, useOrgRole } from "@/store/org-store"
 import { HelpButton } from "@/help/help-button"
 import type { OrgRole } from "@/types"
@@ -106,10 +106,7 @@ function UsersPage() {
             <MemberRow
               key={member.id}
               member={member}
-              canEdit={canEditRoles && member.role !== "owner"}
               sessions={sessions[member.user_id] ?? 0}
-              orgId={orgId}
-              token={token}
             />
           ))}
           {invitations.filter(i => i.email.toLowerCase().includes(search.toLowerCase()) && (roleFilter === "all" || i.role === roleFilter)).map((inv) => (
@@ -239,33 +236,17 @@ function InviteDialog({ open, onOpenChange, orgId, token }: {
 
 // ---------------------------------------------------------------------------
 
-function MemberRow({ member, canEdit, sessions, orgId, token }: {
+function MemberRow({ member, sessions }: {
   member: ApiOrgMember
-  canEdit: boolean
-  /** Connected sessions: CLIs signed in as them, and assistants they connected here. */
+  /** Connected sessions: browsers, CLIs signed in as them, and assistants they connected here. */
   sessions: number
-  orgId: string
-  token: string
 }) {
   const navigate = useNavigate()
-  const qc = useQueryClient()
   const initials = member.user_name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()
-  // Every member has a page: a member's grants are managed there, and an
-  // owner's or admin's page shows the machines that reach everything as them.
+  // Every member has a page: a member's grants and role are managed there,
+  // and an owner's or admin's page shows the machines that reach everything
+  // as them.
   const canManagePermissions = member.role === "member"
-
-  // A role change asks first: admin is every resource and every machine on
-  // the mesh, member only what was granted.
-  const [asking, setAsking] = useState<"admin" | "member" | null>(null)
-  const { mutate: changeRole, isPending, error } = useMutation({
-    mutationFn: (role: "admin" | "member") => orgsApi.updateMember(orgId, member.user_id, role, token),
-    onSuccess: () => {
-      setAsking(null)
-      qc.invalidateQueries({ queryKey: ["org-members", orgId] })
-      qc.invalidateQueries({ queryKey: ["mesh-access", orgId] })
-      qc.invalidateQueries({ queryKey: ["access-rules", orgId] })
-    },
-  })
 
   const avatarAndName = (
     <>
@@ -279,57 +260,11 @@ function MemberRow({ member, canEdit, sessions, orgId, token }: {
     </>
   )
 
-  const roleControl = canEdit ? (
-    <Select
-      value={member.role}
-      onValueChange={(v) => { if (v && v !== member.role) setAsking(v as "admin" | "member") }}
-      disabled={isPending}
-    >
-      <SelectTrigger className="w-24! h-6 text-[11px] bg-muted/20 border-border/50 px-2 gap-1 shrink-0">
-        {isPending
-          ? <Loader2 className="h-3 w-3 animate-spin" />
-          : <SelectValue>{member.role}</SelectValue>
-        }
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="admin">admin</SelectItem>
-        <SelectItem value="member">member</SelectItem>
-      </SelectContent>
-    </Select>
-  ) : (
-    <RoleBadge role={member.role as OrgRole} />
-  )
-
-  // The whole row opens the member's page, apart from its own controls. The
-  // role picker's menu and the confirmation are rendered elsewhere in the
-  // page but still pass their clicks up through here, so a click that did not
-  // land inside the row's own cells is not the row's.
+  // The whole row opens the member's page.
   const open = () => navigate({ to: "/users/$userId", params: { userId: member.user_id } })
   return <tr tabIndex={0} aria-label={`Open ${member.user_name}`} className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/20"
     onKeyDown={(e) => { if (e.target === e.currentTarget && e.key === "Enter") open() }}
-    onClick={(e) => {
-      const target = e.target as HTMLElement
-      if (e.currentTarget.contains(target) && !target.closest("a,button,[role=combobox],[role=listbox],select,input")) open()
-    }}><td className="p-4"><Link to="/users/$userId" params={{userId:member.user_id}} className="flex items-center gap-3">{avatarAndName}</Link></td><td className="p-4 text-xs text-muted-foreground">Member</td><td className="p-4">{roleControl}<Dialog open={asking !== null} onOpenChange={(o) => { if (!o) setAsking(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Make {member.user_name} {asking === "admin" ? "an admin" : "a member"}?</DialogTitle>
-            <DialogDescription>
-              {asking === "admin"
-                ? "An admin can manage every project and resource in this organisation, and their machines reach every machine on the mesh. Their own grants stop mattering while they are an admin."
-                : "A member can use only what they are granted, in the console and from their machines on the mesh. Grant them what they need on the Access page or their own page."}
-            </DialogDescription>
-          </DialogHeader>
-          {error && <p role="alert" className="text-xs text-destructive">{error.message}</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAsking(null)}>Cancel</Button>
-            <Button disabled={isPending} onClick={() => asking && changeRole(asking)}>
-              {isPending && <Loader2 className="size-3.5 animate-spin" />}
-              {asking === "admin" ? "Make admin" : "Make member"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog></td><td className="p-4 text-xs text-muted-foreground">{sessions > 0 ? <Link to="/users/$userId" params={{userId:member.user_id}} className="text-foreground hover:underline">{sessions} signed in</Link> : "None"}</td><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Permissions for ${member.user_name}`} className="text-xs text-primary">Manage access</Link> : <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Details for ${member.user_name}`} className="text-xs text-muted-foreground hover:text-foreground">Organization-wide</Link>}</td></tr>
+    onClick={(e) => { if (!(e.target as HTMLElement).closest("a")) open() }}><td className="p-4"><Link to="/users/$userId" params={{userId:member.user_id}} className="flex items-center gap-3">{avatarAndName}</Link></td><td className="p-4 text-xs text-muted-foreground">Member</td><td className="p-4"><RoleBadge role={member.role as OrgRole} /></td><td className="p-4 text-xs text-muted-foreground">{sessions > 0 ? <Link to="/users/$userId" params={{userId:member.user_id}} className="text-foreground hover:underline">{sessions} signed in</Link> : "None"}</td><td className="p-4">{canManagePermissions ? <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Permissions for ${member.user_name}`} className="text-xs text-primary">Manage access</Link> : <Link to="/users/$userId" params={{userId:member.user_id}} aria-label={`Details for ${member.user_name}`} className="text-xs text-muted-foreground hover:text-foreground">Organization-wide</Link>}</td></tr>
 }
 
 function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
@@ -342,22 +277,4 @@ function PendingInviteRow({ invitation }: { invitation: ApiOrgInvitation }) {
   }
 
   return <tr className="border-b border-border last:border-0"><td className="p-4 text-sm">{invitation.email}</td><td className="p-4"><span className="text-xs text-muted-foreground inline-flex items-center gap-2"><Clock className="size-3"/>Invite pending</span></td><td className="p-4"><RoleBadge role={invitation.role as OrgRole}/></td><td className="p-4" /><td className="p-4"><Button size="sm" variant="ghost" onClick={copyLink} title="Copy invite link">{copied ? <Check className="size-3"/> : <Copy className="size-3"/>}{copied ? "Copied" : "Copy link"}</Button></td></tr>
-}
-
-function RoleBadge({ role }: { role: OrgRole }) {
-  if (role === "owner") return (
-    <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/10">
-      <Crown className="h-2.5 w-2.5" />owner
-    </Badge>
-  )
-  if (role === "admin") return (
-    <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">
-      <Shield className="h-2.5 w-2.5" />admin
-    </Badge>
-  )
-  return (
-    <Badge variant="secondary" className="gap-1 text-[11px] px-1.5 py-0 h-5">
-      <User className="h-2.5 w-2.5" />member
-    </Badge>
-  )
 }

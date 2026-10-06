@@ -1,7 +1,7 @@
 import { ResourcePanel, ResourceFact, ResourceIntro } from "@/components/layout/resource-workbench"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, Crown, Shield, User } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { useEffect } from "react"
 import {
   access as accessApi,
@@ -11,7 +11,8 @@ import {
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useOrgRole } from "@/store/org-store"
-import { Badge } from "@/components/ui/badge"
+import { MemberRole, RoleBadge } from "@/components/users/member-role"
+import type { OrgRole } from "@/types"
 import { PrincipalPermissions } from "@/components/permissions/principal-permissions"
 import { MemberSessions } from "@/components/auth/connected-sessions"
 import { EeMemberPanel } from "@/ee"
@@ -61,7 +62,7 @@ function UserDetailPage() {
       </div>
 
       <ResourceIntro title="Workspace access" description={member && member.role !== "member" ? "What this member can do, and the machines that act as them." : "Review the resources this member can access and manage explicit permissions."} />
-      <div className="resource-overview-columns"><div className="min-w-0">{member && member.role !== "member" ? <OrganizationWide member={member} /> : <PrincipalPermissions orgId={orgId} principalId={userId} token={token} />}</div><aside className="space-y-6"><ResourcePanel title="Member details"><ResourceFact label="Name">{member?.user_name || "Loading…"}</ResourceFact><ResourceFact label="Email">{member?.user_email || "-"}</ResourceFact>{member?.role === "member" && <p className="mt-5 text-sm text-muted-foreground leading-relaxed">These grants are the same ones on the <Link to="/access" className="text-primary hover:underline">Access page</Link>, where each also shows what it opens on the mesh.</p>}</ResourcePanel>{member && <OnTheMesh orgId={orgId} member={member} token={token} />}{member && <ResourcePanel title="Connected sessions" description="CLIs signed in as this member, and AI assistants they connected here."><MemberSessions orgId={orgId} userId={userId} token={token} /></ResourcePanel>}{member && EeMemberPanel && <EeMemberPanel orgId={orgId} userId={userId} />}</aside></div>
+      <div className="resource-overview-columns"><div className="min-w-0">{member && member.role !== "member" ? <OrganizationWide member={member} /> : <PrincipalPermissions orgId={orgId} principalId={userId} token={token} />}</div><aside className="space-y-6"><ResourcePanel title="Member details"><ResourceFact label="Name">{member?.user_name || "Loading…"}</ResourceFact><ResourceFact label="Email">{member?.user_email || "-"}</ResourceFact>{member && <ResourceFact label="Role"><MemberRole member={member} orgId={orgId} token={token} canEdit={role === "owner" || role === "admin"} /></ResourceFact>}{member?.role === "member" && <p className="mt-5 text-sm text-muted-foreground leading-relaxed">These grants are the same ones on the <Link to="/access" className="text-primary hover:underline">Access page</Link>, where each also shows what it opens on the mesh.</p>}</ResourcePanel>{member && <OnTheMesh orgId={orgId} member={member} token={token} />}{member && <ResourcePanel title="Connected sessions" description="CLIs signed in as this member, and AI assistants they connected here."><MemberSessions orgId={orgId} userId={userId} token={token} /></ResourcePanel>}{member && EeMemberPanel && <EeMemberPanel orgId={orgId} userId={userId} />}</aside></div>
     </div>
   )
 }
@@ -82,19 +83,7 @@ function MemberHeader({ member }: { member: ApiOrgMember }) {
         <div className="flex items-center gap-2">
           <h1>{member.user_name}</h1>
           {/* The role they hold, as the Users list shows it. */}
-          {member.role === "owner" ? (
-            <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/10">
-              <Crown className="h-2.5 w-2.5" />owner
-            </Badge>
-          ) : member.role === "admin" ? (
-            <Badge className="gap-1 text-[11px] px-1.5 py-0 h-5 bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">
-              <Shield className="h-2.5 w-2.5" />admin
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="gap-1 text-[11px] px-1.5 py-0 h-5">
-              <User className="h-2.5 w-2.5" />member
-            </Badge>
-          )}
+          <RoleBadge role={member.role as OrgRole} />
         </div>
         <p className="text-sm text-muted-foreground">{member.user_email}</p>
       </div>
@@ -161,7 +150,6 @@ function OrganizationWide({ member }: { member: ApiOrgMember }) {
           Their machines reach every machine on the mesh.
         </p>
         <p>Per-project grants do not apply while they are {owner ? "the owner" : "an admin"}; any they had are kept, and count again if they are made a member.</p>
-        {!owner && <p>Change their role on the <Link to="/users" className="text-primary hover:underline">Users</Link> page.</p>}
       </div>
     </ResourcePanel>
   )
