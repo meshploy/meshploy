@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.20.0](https://github.com/meshploy/meshploy/compare/v0.19.1...v0.20.0) (2026-10-06)
+
+
+### Features
+
+* **access:** grants can come from a source an edition manages ([89ebb07](https://github.com/meshploy/meshploy/commit/89ebb07e2e54c700794ac284589c437c8a534b93))
+* **access:** the mesh obeys permissions: machine owners, a generated Headscale policy, internal routes checked at the proxy, and an Access page ([e0bc7ab](https://github.com/meshploy/meshploy/commit/e0bc7abb07d55b04da8bebe7be1bed435922e387))
+* **auth:** console sign-ins are sessions you can see and end ([820d22c](https://github.com/meshploy/meshploy/commit/820d22c789124ff8a9e4be6a63956d1fe88529e7))
+* **cli:** meshploy auth login approves in the browser, through the console, and logout revokes the token ([1632ac3](https://github.com/meshploy/meshploy/commit/1632ac31fbdecf6ebf2913056a89171aa9077540))
+* **console:** a Connectors page, with each client's setup, connected sessions and keys ([201cb5e](https://github.com/meshploy/meshploy/commit/201cb5eda0c035379d65095bbd665324aee68a28))
+* **console:** a service's Access page can show who outside the team reaches it, and Permissions is called Access ([c2d90c6](https://github.com/meshploy/meshploy/commit/c2d90c6aaf33a67ec6c4bfbf08cc7cba39171497))
+* **discovery:** firewall verdicts and route offers per endpoint ([95b09fd](https://github.com/meshploy/meshploy/commit/95b09fd119d21cd6c0a117e3ce1ca12e69246358))
+* **edge:** the proxy follows route changes within a second, and a deleted service's routes go with it ([214a735](https://github.com/meshploy/meshploy/commit/214a735d279dc4cd47147756b3250aa8a26f00eb))
+* **mcp:** AI assistants connect by signing in, and connected sessions in one list ([f16d767](https://github.com/meshploy/meshploy/commit/f16d767312426a8b7d4aece4520a0ef8de351ae6))
+* **nodes:** suggest moving builds off the gateway ([bf86519](https://github.com/meshploy/meshploy/commit/bf8651973411f3ba34785f976259d2302cfb9b30))
+
+
+### Bug Fixes
+
+* a route needs a hostname, an empty success response reads as nothing, node resources show whole numbers, and Manrope's licence is in the notices ([681290b](https://github.com/meshploy/meshploy/commit/681290b2e01110aee2043b71d220f091f183b320))
+* **access:** a grant inside a project opens it, showing just what was granted ([e8f7853](https://github.com/meshploy/meshploy/commit/e8f7853005a19b1763aa9a6026fcb77be50f1ae0))
+* **access:** infrastructure detail is an owner's or admin's ([0602591](https://github.com/meshploy/meshploy/commit/0602591ba904d457107cf2f10a79f1c7d3354798))
+* **auth:** the two-factor step is not a session, and sign-in guesses are limited per account ([eb55daa](https://github.com/meshploy/meshploy/commit/eb55daad2b08e814679e1bf05bf438d42ac81959))
+* **console:** Access tabs stay in the address, and the Sessions tab leads with each person ([f226427](https://github.com/meshploy/meshploy/commit/f226427e91911eb1a712689fe8792212f04e100f))
+* **console:** the Access page shows one heading ([b24013e](https://github.com/meshploy/meshploy/commit/b24013e2c06ea11c2d1e16d6d424ac93d9bcface))
+* **edge:** the console and API send security headers ([da9bb25](https://github.com/meshploy/meshploy/commit/da9bb253132b6873a6546fe82fa459f2e944d2e0))
+* **orgs:** an existing account can accept an invitation ([d0c4bd2](https://github.com/meshploy/meshploy/commit/d0c4bd202b022e103cc8f90a2289e03711a060b9))
+* refuse an agent in two organisations, and make Users rows clickable ([62e9bda](https://github.com/meshploy/meshploy/commit/62e9bdaeabd3f246b73fa8def5746dae25878f16))
+* **sessions:** ending a session asks first, and this browser is marked ([aaa5336](https://github.com/meshploy/meshploy/commit/aaa5336cf5bc4d596f3110b35588146a6e041f4b))
+* **system:** pick main's newest build from GitHub's unfiltered runs ([c98ce62](https://github.com/meshploy/meshploy/commit/c98ce621d93f731ffae5944e887aa2795e2e6c25))
+* the edge follows a console name added by an upgrade, the host agent keeps the domain set it is asked to serve, and a service's domain can be copied ([a5797f3](https://github.com/meshploy/meshploy/commit/a5797f3edc38b7c0afff5ea2dd84e40897750cdd))
+* the edge lane takes main's newest build by when it ran, not by GitHub's order ([4816733](https://github.com/meshploy/meshploy/commit/4816733f07ec58705c38a42d8adb719c330519a1))
+* **users:** a member's role is changed on their page ([7bd9bd9](https://github.com/meshploy/meshploy/commit/7bd9bd9e80935cc13a19300b0a395c1a6a5d2dc1))
+* **users:** the role picker lines up with its label ([b37a4da](https://github.com/meshploy/meshploy/commit/b37a4da338f3125b872c29aafc1280dacddd9c91))
+
 ## [0.19.1](https://github.com/meshploy/meshploy/compare/v0.19.0...v0.19.1) (2026-09-30)
 
 
