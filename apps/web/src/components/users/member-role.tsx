@@ -49,7 +49,7 @@ export function MemberRole({ member, orgId, token, canEdit }: { member: ApiOrgMe
   return (
     <>
       <Select value={member.role} onValueChange={(v) => { if (v && v !== member.role) setAsking(v as "admin" | "member") }} disabled={isPending}>
-        <SelectTrigger aria-label={`Role of ${member.user_name}`} className="w-28! h-7 text-xs bg-muted/20 border-border/50 px-2 gap-1">
+        <SelectTrigger size="sm" aria-label={`Role of ${member.user_name}`} className="w-28! text-xs bg-muted/20 border-border/50 px-2 gap-1">
           {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <SelectValue>{member.role}</SelectValue>}
         </SelectTrigger>
         <SelectContent>

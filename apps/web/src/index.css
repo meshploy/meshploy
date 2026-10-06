@@ -851,6 +851,11 @@ a {
   color: var(--muted-foreground);
   flex-shrink: 0;
 }
+/* A fact whose value is a control sits beside its label, centred; text that
+   wraps keeps its label at the top. */
+.resource-fact:has(> div > :is(button, [role="combobox"])) {
+  align-items: center;
+}
 .resource-fact > div {
   text-align: right;
   min-width: 0;
