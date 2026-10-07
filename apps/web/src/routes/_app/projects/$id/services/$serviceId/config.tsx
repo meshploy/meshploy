@@ -5,7 +5,7 @@ import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { FormLayout } from "@/components/layout/form-layout"
 import { createFileRoute, Link, useParams } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
-import { useState, useEffect, useMemo } from "react"
+import { createContext, useContext, useState, useEffect, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, HardDrive, Layers, Loader2, Plus, Server, Trash2, X, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -61,6 +61,11 @@ export const Route = createFileRoute(
 // Not to fit: a hundred-line block would push everything else off the page.
 // It grows to a ceiling and scrolls beyond that, which keeps a long block
 // readable without making the rest of the form unreachable.
+// Whoever may view a service but not update it reads its configuration: the
+// tab's controls sit in a disabled fieldset, and the editors, which a
+// fieldset does not reach, read this.
+const ReadOnly = createContext(false)
+
 function envEditorHeight(value: string, base: number, max: number): string {
   const lines = value ? value.split("\n").length : 1
   const needed = lines * 19 + 16 // CodeMirror's line height, plus its padding
@@ -68,6 +73,7 @@ function envEditorHeight(value: string, base: number, max: number): string {
 }
 
 function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const readOnly = useContext(ReadOnly)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
@@ -125,6 +131,8 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
             theme="dark"
             extensions={extensions}
             onChange={(val) => setEnvVars(val)}
+            editable={!readOnly}
+            readOnly={readOnly}
             placeholder={"DATABASE_URL=postgres://...\nSECRET_KEY=..."}
             style={{ fontSize: 12 }}
             basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
@@ -757,6 +765,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
 // ─── Build env vars section ───────────────────────────────────────────────────
 
 function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId: string }) {
+  const readOnly = useContext(ReadOnly)
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
   const queryClient = useQueryClient()
@@ -819,6 +828,8 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
             theme="dark"
             extensions={extensions}
             onChange={(val) => setEnvVars(val)}
+            editable={!readOnly}
+            readOnly={readOnly}
             placeholder={"NODE_ENV=production"}
             style={{ fontSize: 12 }}
             basicSetup={{ lineNumbers: true, foldGutter: false, autocompletion: false }}
@@ -1726,24 +1737,36 @@ function ConfigTab() {
     queryFn: () => servicesApi.get(orgId!, projectId, serviceId, token),
     enabled: !!orgId,
   })
+  // An older API that does not say what the caller may do leaves it editable.
+  const readOnly = !!service?.can && !service.can.includes("update")
+  const locked = (children: React.ReactNode) => (
+    <ReadOnly.Provider value={readOnly}>
+      {readOnly && (
+        <p role="note" className="rounded-lg border border-border/60 bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
+          You can see this configuration. Changing it needs update access to the service.
+        </p>
+      )}
+      <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">{children}</fieldset>
+    </ReadOnly.Provider>
+  )
 
   // A database has no build source and no environment of its own: the only
   // thing there is to configure is how it can be reached.
   if (service?.type === "database") {
     return (
-      <ConfigSaveBar key={serviceId}><div className="console-page space-y-6 pb-24"><ResourceIntro title="Database configuration" description="Control how this database can be reached." /><FormLayout><div className="space-y-6">
+      <ConfigSaveBar key={serviceId}><div className="console-page space-y-6 pb-24"><ResourceIntro title="Database configuration" description="Control how this database can be reached." />{locked(<FormLayout><div className="space-y-6">
         <DatabaseNetworkSection
           projectId={projectId}
           serviceId={serviceId}
           dbPort={service.ports?.find((p) => p.is_primary)?.port ?? service.ports?.[0]?.port ?? 5432}
           serviceName={service.name}
         />
-      </div></FormLayout></div></ConfigSaveBar>
+      </div></FormLayout>)}</div></ConfigSaveBar>
     )
   }
 
   return (
-    <ConfigSaveBar key={serviceId}><div className="console-page space-y-6"><ResourceIntro title="Service configuration" description="Configure the build source, environment, networking and mounted resources." /><FormLayout><div className="space-y-6">
+    <ConfigSaveBar key={serviceId}><div className="console-page space-y-6"><ResourceIntro title="Service configuration" description="Configure the build source, environment, networking and mounted resources." />{locked(<FormLayout><div className="space-y-6">
       <EnvVarsSection projectId={projectId} serviceId={serviceId} />
       <BuildEnvVarsSection projectId={projectId} serviceId={serviceId} />
       <GroupAttachments owner={{ kind: "service", id: serviceId }} projectId={projectId} />
@@ -1752,6 +1775,6 @@ function ConfigTab() {
       <VolumesSection projectId={projectId} serviceId={serviceId} />
       <SourceDeploySection projectId={projectId} serviceId={serviceId} />
       <RollbackSection projectId={projectId} serviceId={serviceId} />
-    </div></FormLayout></div></ConfigSaveBar>
+    </div></FormLayout>)}</div></ConfigSaveBar>
   )
 }
