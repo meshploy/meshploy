@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.1](https://github.com/meshploy/meshploy/compare/v0.20.0...v0.20.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **access:** a service's configuration is read-only without update access ([a22d117](https://github.com/meshploy/meshploy/commit/a22d117ec2201a2fcc3effcc96d2aec930f64f70))
+* **discovery:** a hosting provider's security agent offers no route ([7881369](https://github.com/meshploy/meshploy/commit/78813692179a0ecde771bfc4c84d55f294efeb29))
+
 ## [0.20.0](https://github.com/meshploy/meshploy/compare/v0.19.1...v0.20.0) (2026-10-06)
 
 
