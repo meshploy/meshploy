@@ -44,6 +44,9 @@ type ProjectWithCounts struct {
 	// inside it: the counts are of those alone, and the project's own views
 	// (its levels, map, board, settings) are not theirs.
 	Limited bool `json:"limited,omitempty"`
+	// Can is what the caller may do to the project itself, on a single
+	// project's read, so its pages offer only what will be allowed.
+	Can []db.ResourceAction `json:"can"`
 }
 
 // LevelSummary names one environment level of a project.

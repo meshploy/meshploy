@@ -165,17 +165,20 @@ func (h *Handler) GetProject(ctx context.Context, input *ProjectPathInput) (*Get
 	if err != nil {
 		return nil, err
 	}
+	can := h.svc.Permissions.Actions(ctx, r.orgID, r.userID, r.projectID, db.ResourceProject, &r.projectID)
 	if r.limited() {
 		project, err := h.svc.Projects.LimitedView(ctx, r.projectID, *r.inner)
 		if err != nil {
 			return nil, notFound(err)
 		}
+		project.Can = can
 		return &GetProjectOutput{Body: project}, nil
 	}
 	project, err := h.svc.Projects.GetWithCounts(ctx, r.projectID)
 	if err != nil {
 		return nil, notFound(err)
 	}
+	project.Can = can
 	return &GetProjectOutput{Body: project}, nil
 }
 

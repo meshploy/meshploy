@@ -49,6 +49,9 @@ func TestAGrantInsideAProjectOpensItLimited(t *testing.T) {
 	if !got.Body.Limited || got.Body.ServicesCount != 1 || got.Body.RoutesCount != 0 {
 		t.Errorf("the limited project: %+v", got.Body.ProjectCounts)
 	}
+	if len(got.Body.Can) != 0 {
+		t.Errorf("a limited reader may do nothing to the project itself: %v", got.Body.Can)
+	}
 	list, err := h.ListWorkloads(memberCtx, &ListWorkloadsInput{OrgID: orgIDStr, ProjectID: pid})
 	if err != nil || len(list.Body) != 1 || list.Body[0].ID != mine.ID {
 		t.Errorf("the services listed: %v %+v", err, list)

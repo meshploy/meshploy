@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Clock, Loader2, Play, Trash2, Zap } from "lucide-react"
 import { jobs as jobsApi, type ApiJob } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useProjectLimited } from "@/components/projects/use-project-limited"
+import { useProjectCan } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
@@ -30,7 +30,8 @@ function JobsPage() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/jobs/" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)!
-  const limited = useProjectLimited(orgId, projectId, token)
+  // Creating here needs create on the project.
+  const may = useProjectCan(orgId, projectId, token)
 
   const qc = useQueryClient()
 
@@ -67,7 +68,7 @@ function JobsPage() {
           {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           {!isLoading && <span className="text-xs text-muted-foreground">{list.length}</span>}
         </div>
-        {!limited && (
+        {may("create") && (
           <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }}>
             <Button size="sm" className="gap-1.5">
               <Zap className="h-3.5 w-3.5" /> New job
@@ -91,7 +92,7 @@ function JobsPage() {
               Create one-shot jobs or scheduled cron jobs
             </p>
           </div>
-          {!limited && (
+          {may("create") && (
             <Link to="/projects/$id/new" params={{ id: projectId }} search={{ type: "job" }} className="mt-1">
               <Button size="sm" className="gap-1.5">
                 <Zap className="h-3.5 w-3.5" /> New job

@@ -14,3 +14,17 @@ export function useProjectLimited(orgId: string | undefined, projectId: string, 
   })
   return !!data?.limited
 }
+
+/**
+ * What you may do to the project itself, as the server checks it: creating
+ * in it, changing its levels and settings. An older API that does not say
+ * leaves everything offered, as before.
+ */
+export function useProjectCan(orgId: string | undefined, projectId: string, token: string) {
+  const { data } = useQuery({
+    queryKey: ["project", orgId, projectId],
+    queryFn: () => projectsApi.get(orgId!, projectId, token),
+    enabled: !!orgId,
+  })
+  return (action: "create" | "update" | "delete") => !Array.isArray(data?.can) || data.can.includes(action)
+}

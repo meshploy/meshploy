@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { services as servicesApi, type ApiService } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useProjectLimited } from "@/components/projects/use-project-limited"
+import { useProjectCan } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -117,7 +117,8 @@ function DatabasesTab() {
   const { id: projectId } = useParams({ from: "/_app/projects/$id/databases" })
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const limited = useProjectLimited(orgId, projectId, token)
+  // Creating here needs create on the project.
+  const may = useProjectCan(orgId, projectId, token)
 
   const navigate = useNavigate()
 
@@ -144,7 +145,7 @@ function DatabasesTab() {
             <span className="text-xs text-muted-foreground">{dbList.length}</span>
           )}
         </div>
-        {!limited && (
+        {may("create") && (
           <Button
             size="sm"
             className="gap-1.5"
@@ -171,7 +172,7 @@ function DatabasesTab() {
               Provision PostgreSQL, MySQL, Redis, or MongoDB as a K8s workload
             </p>
           </div>
-          {!limited && (
+          {may("create") && (
             <Button
               size="sm"
               className="gap-1.5 mt-1"

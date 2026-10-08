@@ -21,6 +21,7 @@ import { OptionSelect } from "@/components/layout/option-select"
 import { projects as projectsApi, ApiError } from "@/lib/api"
 import type { EnvironmentLevel } from "@/lib/api/projects"
 import { cn } from "@/lib/utils"
+import { useProjectCan } from "@/components/projects/use-project-limited"
 
 /**
  * The project's environment levels, and moving between them.
@@ -45,6 +46,8 @@ export function EnvironmentSwitcher({
   className?: string
 }) {
   const navigate = useNavigate()
+  // Levels are part of the project: adding or renaming one changes it.
+  const may = useProjectCan(orgId, projectId, token)
   const [adding, setAdding] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -85,18 +88,20 @@ export function EnvironmentSwitcher({
               <Check className={cn("h-3.5 w-3.5 shrink-0 text-primary", l.project_id !== projectId && "invisible")} />
             </DropdownMenuItem>
           ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setAdding(true)} className="gap-2 text-sm text-primary">
-            <Plus className="h-3.5 w-3.5" />
-            New level
-          </DropdownMenuItem>
-          {current && !current.production && (
+          {may("update") && <DropdownMenuSeparator />}
+          {may("update") && (
+            <DropdownMenuItem onClick={() => setAdding(true)} className="gap-2 text-sm text-primary">
+              <Plus className="h-3.5 w-3.5" />
+              New level
+            </DropdownMenuItem>
+          )}
+          {may("update") && current && !current.production && (
             <DropdownMenuItem onClick={() => setRenaming(true)} className="gap-2 text-sm">
               <Pencil className="h-3.5 w-3.5" />
               Rename {current.name}
             </DropdownMenuItem>
           )}
-          {current && !current.production && (
+          {may("delete") && current && !current.production && (
             <DropdownMenuItem onClick={() => setDeleting(true)} className="gap-2 text-sm text-destructive">
               <Trash2 className="h-3.5 w-3.5" />
               Delete {current.name}

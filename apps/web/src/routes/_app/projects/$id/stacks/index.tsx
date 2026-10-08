@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { stacks as stacksApi, type ApiStack } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useProjectLimited } from "@/components/projects/use-project-limited"
+import { useProjectCan } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
 import { HelpButton } from "@/help/help-button"
@@ -91,7 +91,8 @@ function StacksTab() {
 
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
-  const limited = useProjectLimited(orgId, projectId, token)
+  // Creating here needs create on the project.
+  const may = useProjectCan(orgId, projectId, token)
   const navigate = useNavigate()
   const queryKey = ["stacks", orgId, projectId]
 
@@ -115,7 +116,7 @@ function StacksTab() {
             <span className="text-xs text-muted-foreground">{stackList.length}</span>
           )}
         </div>
-        {!limited && (
+        {may("create") && (
           <Button
             size="sm"
             className="gap-1.5"
@@ -142,7 +143,7 @@ function StacksTab() {
               Deploy multiple services together with a single YAML spec
             </p>
           </div>
-          {!limited && (
+          {may("create") && (
             <Button
               size="sm"
               className="gap-1.5 mt-1"

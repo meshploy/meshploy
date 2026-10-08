@@ -20,6 +20,8 @@ export interface ApiProject {
   config_files_count: number
   /** You were granted things inside this project, not the project: the counts are of those alone. */
   limited?: boolean
+  /** On a single project's read: what you may do to the project itself, as the server checks it. */
+  can?: ("view" | "deploy" | "create" | "update" | "delete")[] | null
   /** Each count broken down, on a single project's read: services by status, routes by kind, and so on. */
   stats?: Record<string, Record<string, number>>
   /** On the list: the project's levels below production, highest first. */
