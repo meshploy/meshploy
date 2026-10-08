@@ -95,6 +95,10 @@ export function AppSidebar() {
     refetchInterval: (q) => (upgradeInProgress(q.state.data) ? 5000 : 2 * 60 * 1000),
   })
   const upgrading = upgradeInProgress(upgradeStatus)
+  // An update is offered only to the server's owner, the one who can take it;
+  // an upgrade under way is shown to everyone, since everyone sees the pause.
+  // An older API that does not say who owns the server offers it as before.
+  const offerUpdate = !!ver?.update_available && upgradeStatus?.owner !== false
 
   // Entitlements are only needed to decide which EE nav items to show, so this
   // costs a stock Community build nothing: eeNavItems is empty there and the
@@ -304,7 +308,7 @@ export function AppSidebar() {
         )}
         <Separator className="mb-2 bg-sidebar-border" />
 
-        {(upgrading || ver?.update_available) && (
+        {(upgrading || offerUpdate) && (
           sidebarCollapsed ? (
             <Tooltip>
               <TooltipTrigger

@@ -127,6 +127,8 @@ export interface UpgradeStatus {
   enabled: boolean
   /** The updater is on, but the host agent that runs upgrades is not reporting. */
   agent_stopped?: boolean
+  /** The current user owns this server, the only one who upgrades it. */
+  owner?: boolean
   /** The current user may start an upgrade: the server's owner, while enabled. */
   can_upgrade: boolean
   /** A request is queued and the server has not picked it up yet. */

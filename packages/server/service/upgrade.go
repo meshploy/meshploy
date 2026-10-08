@@ -76,6 +76,9 @@ type UpgradeStatus struct {
 	// AgentStopped is true when the updater is on but the host agent is not
 	// reporting: a request would wait with nobody to pick it up.
 	AgentStopped bool `json:"agent_stopped"`
+	// Owner is whether the current user owns this server, the only one who
+	// upgrades it: the console offers an update to them alone.
+	Owner bool `json:"owner"`
 	// CanUpgrade reports whether the current user may start one now: the
 	// instance owner, on a server with the updater on, running a release or
 	// edge build.
@@ -176,6 +179,7 @@ func (s *SystemService) upgradeStatus(ctx context.Context, userID uuid.UUID, now
 	on := err == nil
 	out.Enabled = on && s.hostAgentReporting()
 	out.AgentStopped = on && !out.Enabled
+	out.Owner = owner
 	out.CanUpgrade = owner && out.Enabled && upgradeChannel() != ""
 
 	if req, err := readUpgradeJSON[upgradeRequest](s.upgradePath("inbox", upgradeRequestFile)); err == nil && req != nil {

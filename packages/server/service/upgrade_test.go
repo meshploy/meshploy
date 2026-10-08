@@ -104,6 +104,7 @@ func TestUpgradeStatusWithoutTheUpdater(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, st.Enabled)
 	require.False(t, st.CanUpgrade, "the button must not show before the updater is on")
+	require.True(t, st.Owner, "the owner is told so even before the updater is on, to be offered the update")
 	require.NotNil(t, st.LogTail)
 }
 
@@ -166,6 +167,7 @@ func TestUpgradeStatusForAnotherMember(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "running", st.State)
 	require.False(t, st.CanUpgrade)
+	require.False(t, st.Owner, "an admin who does not own the server is not offered the update")
 	require.Empty(t, st.LogTail)
 }
 
