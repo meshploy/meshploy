@@ -125,9 +125,23 @@ func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*
 	if !isAdmin {
 		filtered := projects[:0]
 		for _, p := range projects {
-			if visibleIDs[p.ID] {
-				filtered = append(filtered, p)
+			if !visibleIDs[p.ID] {
+				continue
 			}
+			// Seen for what was granted inside it, not the project: its card
+			// says so, and counts what this member may open.
+			if h.svc.Permissions.CheckAccess(ctx, orgID, callerID, p.ID, db.ResourceProject, db.ActionView, &p.ID) != nil {
+				inner, err := h.svc.Permissions.GrantsInProject(ctx, orgID, callerID, p.ID)
+				if err != nil {
+					return nil, err
+				}
+				mine, err := h.svc.Projects.LimitedView(ctx, p.ID, inner)
+				if err != nil {
+					return nil, err
+				}
+				p.ProjectCounts, p.Stats, p.Limited = mine.ProjectCounts, nil, true
+			}
+			filtered = append(filtered, p)
 		}
 		projects = filtered
 	}

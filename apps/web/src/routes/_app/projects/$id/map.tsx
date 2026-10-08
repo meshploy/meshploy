@@ -6,6 +6,7 @@ import { buildProjectGraph, type ProjectGraph } from "@/lib/map/graph"
 import { MapCanvas, MapLegend, MapPanel } from "@/components/map/map-canvas"
 import { ServiceActions } from "@/components/map/service-actions"
 import { useAuthStore } from "@/store/auth-store"
+import { useProjectLimited } from "@/components/projects/use-project-limited"
 import { useOrgStore } from "@/store/org-store"
 import { livePoll } from "@/lib/live-poll"
 import { cn } from "@/lib/utils"
@@ -35,12 +36,13 @@ function MapPage() {
   const token = useAuthStore((s) => s.token)!
   const orgId = useOrgStore((s) => s.currentOrg?.id)
   const on = !!orgId
+  const limited = useProjectLimited(orgId, projectId, token)
 
   // Everything the map is drawn from, in one read; faster while something deploys.
   const map = useQuery({
     queryKey: ["project-map", orgId, projectId],
     queryFn: () => projectsApi.map(orgId!, projectId, token),
-    enabled: on,
+    enabled: on && !limited,
     refetchInterval: livePoll((d: ApiProjectMap) => d.services.some((s) => s.status === "deploying")),
   })
   const levels = useQuery({ queryKey: ["environments", orgId, projectId], queryFn: () => projectsApi.environments(orgId!, projectId, token), enabled: on })
@@ -61,6 +63,18 @@ function MapPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = graph?.items.find((i) => i.id === selectedId) ?? null
   const sortedLevels = [...(levels.data ?? [])].sort((a, b) => b.level - a.level)
+
+  // The map is the whole project's; someone given only some of it opens the
+  // project at its overview, which shows what they have.
+  if (limited) return (
+    <div className="console-page p-6 space-y-3">
+      <h1 className="text-base font-semibold">Map</h1>
+      <p className="text-sm text-muted-foreground">
+        The map shows the whole project, and you were given only some of it.{" "}
+        <Link to="/projects/$id" params={{ id: projectId }} className="text-primary hover:underline">See what you have</Link>
+      </p>
+    </div>
+  )
 
   return (
     <div className="console-page p-6 space-y-4">
@@ -97,6 +111,9 @@ function MapPage() {
           <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={() => setTakenOut([])}><X className="h-3 w-3" />Clear</Button>
         </div>
       )}
+
+      {/* A map that cannot be read says so, rather than loading forever. */}
+      {map.isError && <p role="alert" className="text-sm text-destructive">The map could not be loaded: {map.error.message}</p>}
 
       <MapCanvas graph={graph} selectedId={selectedId} onSelect={setSelectedId}
         panel={selected && graph && orgId && (

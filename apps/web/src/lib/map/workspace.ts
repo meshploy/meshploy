@@ -120,7 +120,10 @@ export function buildWorkspaceGraph(input: {
       const it: WorkspaceItem = {
         id: l.project_id, kind: "level", label: l.name, parent: `project-${p.id}`, levelOf: l,
         sub: count === 0 ? "Empty" : `${count} service${count === 1 ? "" : "s"}`,
-        health: worst(problems, count === 0 ? "idle" : "ok"), problems, to: `/projects/${l.project_id}/map`,
+        health: worst(problems, count === 0 ? "idle" : "ok"), problems,
+        // A project seen only for what was granted inside it is opened at its
+        // overview: its map is the whole project's.
+        to: p.limited ? `/projects/${l.project_id}` : `/projects/${l.project_id}/map`,
       }
       items.push(it)
       for (const name of onNodes) {

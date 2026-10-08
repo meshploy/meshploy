@@ -36,6 +36,10 @@ export function WorkspaceMap() {
     })),
   })
   const overview = useQuery({ queryKey: ["overview", orgId], queryFn: () => activityApi.overview(orgId!, token), enabled: on, refetchInterval: 30_000 })
+  // The levels of a project seen only for what was granted inside it: their
+  // map is the whole project's, so they are opened at their overview instead.
+  const limitedLevels = new Set((projectList.data ?? []).flatMap((p, i) =>
+    p.limited ? [p.id, ...(levelQs[i]?.data ?? []).map((l) => l.project_id)] : []))
   // Spans every project, so org admins only; a member sees the machines and
   // levels without what runs where.
   const placement = useQuery({ queryKey: ["placement", orgId], queryFn: () => placementApi.get(orgId!, token), enabled: on && isAdmin, refetchInterval: 30_000 })
@@ -88,7 +92,7 @@ export function WorkspaceMap() {
               <NodeSide item={selected} canWhatIf={isAdmin} forecast={forecast?.node === (selected.node.k8s_node_name || selected.node.name) ? forecast : null}
                 loading={whatIf.isFetching} onWhatIf={() => setWhatIfNode(selected.node!.k8s_node_name || selected.node!.name)} onClear={() => setWhatIfNode(null)} />
             )}
-            {selected.levelOf && (
+            {selected.levelOf && !limitedLevels.has(selected.levelOf.project_id) && (
               <Link to="/projects/$id/map" params={{ id: selected.levelOf.project_id }}
                 className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2.5 py-1.5 text-primary hover:bg-muted/40">
                 Open {selected.levelOf.name}&apos;s map<ArrowRight className="h-3 w-3" />

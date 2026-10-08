@@ -88,6 +88,16 @@ func TestAGrantInsideAProjectOpensItLimited(t *testing.T) {
 		t.Error("the project's map opened for a limited reader")
 	}
 
+	// Its card on the projects list says so, and counts what they may open,
+	// not the project's two services and two routes.
+	listed, err := h.ListProjects(memberCtx, &ListProjectsInput{OrgID: orgIDStr})
+	if err != nil || len(listed.Body) != 1 {
+		t.Fatalf("the member's projects: %v %+v", err, listed)
+	}
+	if card := listed.Body[0]; !card.Limited || card.ServicesCount != 1 || card.RoutesCount != 0 {
+		t.Errorf("the limited project's card: limited %v, %+v", card.Limited, card.ProjectCounts)
+	}
+
 	// A grant on the project itself opens it whole.
 	if err := h.svc.Permissions.Grant(ctx, orgID, memberID, project.ID, db.ResourceProject, db.ActionView); err != nil {
 		t.Fatal(err)
@@ -99,5 +109,8 @@ func TestAGrantInsideAProjectOpensItLimited(t *testing.T) {
 	all, _ := h.ListWorkloads(memberCtx, &ListWorkloadsInput{OrgID: orgIDStr, ProjectID: pid})
 	if len(all.Body) != 2 {
 		t.Errorf("with view on the project, every service: %d", len(all.Body))
+	}
+	if listed, _ := h.ListProjects(memberCtx, &ListProjectsInput{OrgID: orgIDStr}); listed.Body[0].Limited || listed.Body[0].ServicesCount != 2 {
+		t.Errorf("with view on the project, its card is whole: %+v", listed.Body[0].ProjectCounts)
 	}
 }
