@@ -64,7 +64,9 @@ export function StartHere({
   const services = projects.reduce((n, p) => n + p.servicesCount, 0)
   const routes = projects.reduce((n, p) => n + p.routesCount, 0)
   const done = services > 0 && routes > 0
-  const wanted = !done || !!forced
+  // Setting up the workspace (nodes, domain, Git, a first route) is an owner's
+  // or admin's; a member would be walked through steps that are not theirs.
+  const wanted = isAdmin && (!done || !!forced)
 
   const { data: notices } = useQuery({
     queryKey: ["dismissed-notices"],
