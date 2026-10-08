@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.20.2](https://github.com/meshploy/meshploy/compare/v0.20.1...v0.20.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **access:** a limited project is opened at its overview, and counted as the member sees it ([9cefd9c](https://github.com/meshploy/meshploy/commit/9cefd9c0065d8408dff76ad10109e75c7614c472))
+* **access:** a project offers only what the caller may do to it ([d49ecb7](https://github.com/meshploy/meshploy/commit/d49ecb75331a6fd6185a8158233b8d21f9beb83f))
+* **console:** only the server's owner is offered an update ([ef115be](https://github.com/meshploy/meshploy/commit/ef115bee0a2de667540f57f600875a0b59270815))
+* **console:** the Start here panel is hidden with limited access ([3e28a7a](https://github.com/meshploy/meshploy/commit/3e28a7a30d156c35b1b984d49481ef6b1ace37fe))
+
 ## [0.20.1](https://github.com/meshploy/meshploy/compare/v0.20.0...v0.20.1) (2026-10-07)
 
 
