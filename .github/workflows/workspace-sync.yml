@@ -8,7 +8,7 @@ on:
 jobs:
   dockerfiles-match-go-work:
     name: go.work matches the Dockerfiles
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       # Invoked through `sh` so the check does not depend on the executable
@@ -18,7 +18,7 @@ jobs:
 
   installer-rerun:
     name: Re-running install.sh keeps a server's secrets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       # bash, not sh: the helpers use [[ ]] and local, as install.sh does.

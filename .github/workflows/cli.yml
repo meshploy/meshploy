@@ -12,13 +12,20 @@ on:
       - "VERSION"
   workflow_dispatch:
 
+# One run per commit and ref. A merge GitHub records twice starts every
+# workflow twice for the same commit; the later run replaces the earlier one,
+# so two jobs never upload the same release assets at once.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
 jobs:
   build:
     name: Build CLI binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
@@ -66,7 +73,7 @@ jobs:
   # machine already has. Published with the CLI, which installs them.
   mesh:
     name: Build mesh binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         goarch: [amd64, arm64]
@@ -93,7 +100,7 @@ jobs:
   release:
     name: Publish release
     needs: [build, mesh]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 

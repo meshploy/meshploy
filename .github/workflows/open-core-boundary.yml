@@ -7,7 +7,7 @@ on:
 
 jobs:
   no-ee-imports:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Assert the public repo never imports EE

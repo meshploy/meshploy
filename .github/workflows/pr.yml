@@ -9,7 +9,7 @@ jobs:
   # ── Go vet (all modules) ──────────────────────────────────────────────────────
   vet:
     name: Go vet
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +43,7 @@ jobs:
   # right to submit someone else's work, which a fork's pull request is.
   dco:
     name: DCO sign-off
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - uses: actions/checkout@v4
@@ -72,7 +72,7 @@ jobs:
 
   notices:
     name: Third-party notices
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +99,7 @@ jobs:
 
   build-cli:
     name: CLI build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -114,7 +114,7 @@ jobs:
   # ── CLI tests ────────────────────────────────────────────────────────────────
   test-cli:
     name: CLI tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -129,7 +129,7 @@ jobs:
   # ── Proxy tests ───────────────────────────────────────────────────────────────
   test-proxy:
     name: Proxy tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -147,7 +147,7 @@ jobs:
   # this keeps every topic parseable and every term pointing at a section.
   test-help:
     name: Help topics test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -161,7 +161,7 @@ jobs:
   # ── DB migration test ─────────────────────────────────────────────────────────
   test-db:
     name: DB migration test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -176,7 +176,7 @@ jobs:
   # ── API service tests ─────────────────────────────────────────────────────────
   test-api:
     name: API service tests (packages/server)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -194,7 +194,7 @@ jobs:
   # images and takes a few minutes.
   smoke-builder:
     name: Builder smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -226,7 +226,7 @@ jobs:
   # ── Web typecheck ─────────────────────────────────────────────────────────────
   typecheck-web:
     name: Web typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -245,7 +245,7 @@ jobs:
   # ── Web E2E (demo mode) ───────────────────────────────────────────────────────
   e2e-web:
     name: Web E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 

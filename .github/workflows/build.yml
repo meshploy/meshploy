@@ -27,6 +27,15 @@ on:
       - "VERSION"
   workflow_dispatch:
 
+# One run per commit and ref. A merge GitHub records twice starts every
+# workflow twice for the same commit; the later run replaces the earlier one,
+# so two jobs never push the same images or upload the same assets at once.
+# The ref keeps a release's tag build apart from the main build of the same
+# commit, which publish different tags.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   ORG: meshploy
@@ -34,7 +43,7 @@ env:
 jobs:
   # ── Detect changed paths ──────────────────────────────────────────────────────
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       api:     ${{ steps.filter.outputs.api }}
       web:     ${{ steps.filter.outputs.web }}
@@ -107,7 +116,7 @@ jobs:
   api:
     needs: changes
     name: API
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -203,7 +212,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -251,7 +260,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.caddy == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Caddy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -296,7 +305,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.proxy == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Proxy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -341,7 +350,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.builder == 'true' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.release == 'true'
     name: Builder
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -409,7 +418,7 @@ jobs:
     needs: [changes, api]
     if: github.repository == 'meshploy/meshploy' && github.ref == 'refs/heads/main'
     name: Dispatch the Enterprise build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Dispatch to meshploy-ee
