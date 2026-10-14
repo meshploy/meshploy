@@ -252,6 +252,7 @@ packages/server/
 │   ├── config_file.go      # Config file CRUD + attach/detach
 │   ├── template.go         # One-click template catalog + deploy
 │   ├── entitlement.go      # Licence status + activation
+│   ├── brand.go            # An org's brand: by host (public, the sign-in page) or by org
 │   ├── ondemand_tls.go     # Caddy ask endpoint for on-demand TLS
 │   ├── extension.go        # Extension point: extra routes (EE)
 │   └── health.go           # GET /health
@@ -290,6 +291,7 @@ packages/server/
 │   ├── config_file.go      # Config files projected into workloads via Secrets
 │   ├── template.go         # One-click template deploy: resolve, stack, routes
 │   ├── entitlement.go      # Licence verification + entitlements
+│   ├── brand.go            # An org's brand; Meshploy's until an edition registers a source
 │   ├── extension.go        # Extension point: per-org quotas (EE)
 │   ├── orphans.go          # Cluster workloads that no service owns
 │   ├── workload_status.go  # Reconciles stored service status with the cluster

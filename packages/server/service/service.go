@@ -37,6 +37,7 @@ type Services struct {
 	Stacks          *StackService
 	Volumes         *VolumeService
 	Domains         *DomainService
+	Brands          *BrandService
 	Routes          *RouteService
 	TCPRoutes       *TCPRouteService
 	EdgeFallback    *EdgeFallbackService
@@ -282,6 +283,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Workloads:       workloads,
 		Volumes:         volumes,
 		Domains:         domains,
+		Brands:          &BrandService{db: db},
 		Routes:          routes,
 		TCPRoutes:       tcpRoutes,
 		EdgeFallback:    &EdgeFallbackService{db: db},

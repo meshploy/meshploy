@@ -314,32 +314,8 @@ func (s *DomainService) Delete(ctx context.Context, domainID uuid.UUID) error {
 }
 
 // BaseDomainFor returns the verified base domain a hostname sits under, or nil.
-//
-// Matching is done in Go over the org's domains rather than in SQL: there are a
-// handful of them, and the alternative is a suffix comparison the database
-// cannot index anyway.
 func (s *DomainService) BaseDomainFor(ctx context.Context, hostname string) (*db.Domain, error) {
-	host := strings.ToLower(strings.TrimSpace(hostname))
-	host = strings.TrimSuffix(host, ".")
-	if host == "" {
-		return nil, nil
-	}
-	domains := make([]db.Domain, 0)
-	if err := s.db.WithContext(ctx).Where("verified = ?", true).Find(&domains).Error; err != nil {
-		return nil, err
-	}
-	var best *db.Domain
-	for i := range domains {
-		if !strings.HasSuffix(host, "."+domains[i].BaseDomain) {
-			continue
-		}
-		// Longest wins, so a domain delegated under another one is not shadowed
-		// by its parent.
-		if best == nil || len(domains[i].BaseDomain) > len(best.BaseDomain) {
-			best = &domains[i]
-		}
-	}
-	return best, nil
+	return db.BaseDomainFor(ctx, s.db, hostname)
 }
 
 // CreateSeeded creates the base domain as already verified and primary. Used

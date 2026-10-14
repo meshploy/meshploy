@@ -276,6 +276,9 @@ var publicRules = []publicRule{
 	{Method: "POST", Path: "/api/v1/auth/totp", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/auth/recovery", Match: matchExact},
 
+	// The brand the sign-in page shows, found from the host it is served on.
+	{Method: "GET", Path: "/api/v1/brand", Match: matchExact},
+
 	// CLI login through a browser. The CLI has no credential yet: it finds the
 	// server, starts a login, and polls with the device code it was given,
 	// which is the credential. Approving is an ordinary authenticated call.

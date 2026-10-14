@@ -66,6 +66,7 @@ packages/server/
 │   ├── template.go         # One-click template catalog
 │   ├── config_file.go      # Config file CRUD + attach/detach
 │   ├── entitlement.go      # Licence status + activation
+│   ├── brand.go            # An org's brand: by host (public, the sign-in page) or by org
 │   ├── ondemand_tls.go     # Caddy ask endpoint for on-demand TLS
 │   ├── extension.go        # Extension point: extra routes (EE)
 │   ├── system.go           # Version, exposure notice, install/uninstall scripts
@@ -100,6 +101,7 @@ packages/server/
 │   ├── config_file.go      # Config files projected into workloads via Secrets
 │   ├── exposure.go         # Host-firewall exposure notice + dismissed notices
 │   ├── entitlement.go      # Licence verification + entitlements
+│   ├── brand.go            # An org's brand; Meshploy's until an edition registers a source
 │   ├── extension.go        # Extension point: per-org quotas (EE)
 │   ├── orphans.go          # Cluster workloads that no service owns
 │   ├── workload_status.go  # Reconciles stored service status with the cluster
@@ -227,6 +229,13 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 |---|---|---|---|
 | GET | `/entitlements` | ✓ | Current license entitlements for this install |
 | POST | `/entitlements/license` | ✓ | Install a license token |
+
+### Brand
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/brand` | public | The brand of the organisation the request's host belongs to, for the sign-in page; Meshploy's on any other host |
+| GET | `/orgs/{orgId}/brand` | ✓ | An organisation's brand (members) |
 
 ### Projects
 

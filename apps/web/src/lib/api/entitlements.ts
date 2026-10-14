@@ -31,6 +31,8 @@ const FEATURE_LABELS: Record<string, string> = {
   "audit-log": "Audit logging",
   "multi-tenancy": "Multi-tenancy",
   apps: "App sharing",
+  teams: "Teams",
+  "white-label": "White label",
 }
 
 /** A licence feature's name for people; an id this build does not know is shown readably. */

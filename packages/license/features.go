@@ -20,6 +20,9 @@ const (
 	FeatureMultiTenant = "multi-tenancy"
 	FeatureApps        = "apps"
 	FeatureTeams       = "teams"
+	// FeatureWhiteLabel shows an organisation's own name, logos and colour in
+	// place of Meshploy's.
+	FeatureWhiteLabel = "white-label"
 )
 
 // knownFeatures is the set every recognised flag belongs to.
@@ -29,6 +32,7 @@ var knownFeatures = map[string]bool{
 	FeatureMultiTenant: true,
 	FeatureApps:        true,
 	FeatureTeams:       true,
+	FeatureWhiteLabel:  true,
 }
 
 // KnownFeatures returns every recognised flag, sorted, for help text and error
