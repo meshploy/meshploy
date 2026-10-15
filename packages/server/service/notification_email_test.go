@@ -15,7 +15,7 @@ import (
 
 func sampleNotice() notice {
 	s := &NotificationService{consoleURL: "https://console.example.com/"}
-	n := s.notice("Ops", "deploy.failed", NotificationData{
+	n := s.notice(meshdb.DefaultBrand, "Ops", "deploy.failed", NotificationData{
 		ServiceName: "api<script>",
 		ProjectName: "Storefront",
 		StackName:   "shop",
@@ -86,9 +86,38 @@ func TestEmailCarriesTheFactsTheLinkAndTheError(t *testing.T) {
 	}
 }
 
+// An organisation with its own brand signs its messages with it: the
+// subject, both parts of the email and the chat footers never say Meshploy.
+func TestABrandSignsItsMessages(t *testing.T) {
+	s := &NotificationService{consoleURL: "https://console.acme.test/"}
+	n := s.notice(meshdb.Brand{Name: "Acme Cloud"}, "Ops", "deploy.failed", NotificationData{ServiceName: "api", Link: "/projects/p"})
+	if got := footer(n); got != "Acme Cloud · console.acme.test" {
+		t.Errorf("footer = %q", got)
+	}
+	raw, err := buildEmail(n, meshdb.OrgEmailConfig{FromAddress: "alerts@acme.test"}, "ops@acme.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := mail.ReadMessage(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject, _ := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
+	if subject != "[Acme Cloud] Deployment failed: api" {
+		t.Errorf("subject = %q", subject)
+	}
+	body, _ := io.ReadAll(msg.Body)
+	if strings.Contains(string(body), "Meshploy") {
+		t.Error("a branded email still says Meshploy")
+	}
+	if !strings.Contains(string(body), "Acme Cloud") {
+		t.Error("a branded email does not say whose it is")
+	}
+}
+
 // Without a console URL there is nothing to link to, and no half-built link.
 func TestNoticeWithoutConsoleURLHasNoLink(t *testing.T) {
-	n := (&NotificationService{}).notice("Ops", "node.offline", NotificationData{NodeName: "w1", Link: "/nodes/x"})
+	n := (&NotificationService{}).notice(meshdb.DefaultBrand, "Ops", "node.offline", NotificationData{NodeName: "w1", Link: "/nodes/x"})
 	if n.Link != "" || n.Console != "" {
 		t.Errorf("link %q console %q, want both empty", n.Link, n.Console)
 	}

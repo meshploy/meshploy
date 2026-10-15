@@ -307,8 +307,9 @@ func (s *AuthService) GetMe(ctx context.Context, userID uuid.UUID) (*db.User, er
 
 // SetupTOTP generates a new TOTP secret, persists it (not yet enabled), and
 // returns the otpauth:// URL (for QR code) and the raw base32 secret.
+// issuer is the name the authenticator app lists it under, which it keeps.
 // Returns an error if 2FA is already enabled - user must disable first.
-func (s *AuthService) SetupTOTP(ctx context.Context, userID uuid.UUID) (otpURL, secret string, err error) {
+func (s *AuthService) SetupTOTP(ctx context.Context, userID uuid.UUID, issuer string) (otpURL, secret string, err error) {
 	var user db.User
 	if err = s.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
 		return
@@ -319,7 +320,7 @@ func (s *AuthService) SetupTOTP(ctx context.Context, userID uuid.UUID) (otpURL, 
 	}
 
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "Meshploy",
+		Issuer:      issuer,
 		AccountName: user.Email,
 	})
 	if err != nil {

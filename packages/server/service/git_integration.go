@@ -125,7 +125,8 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 
 	base := s.consoleBase(orgID)
 	m := map[string]any{
-		"name":          "Meshploy",
+		// What a repository's owner is asked to let in: the organisation's brand.
+		"name":          db.BrandOf(ctx, s.db, orgID).Name,
 		"url":           base,
 		"redirect_url":  apiBase + "/api/v1/github/app-callback",
 		"callback_urls": []string{apiBase + "/api/v1/github/callback"},

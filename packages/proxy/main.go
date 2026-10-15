@@ -58,6 +58,7 @@ func Main() {
 	mesh := meshgate.New(database)
 	mesh.Start(30 * time.Second)
 	handler.CheckInternal(mesh)
+	handler.Brand(database)
 
 	errs := make(chan error, len(binds))
 	for _, b := range binds {

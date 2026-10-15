@@ -270,7 +270,7 @@ func (s *NotificationService) emailConfig(ctx context.Context, orgID uuid.UUID) 
 // is written even when the caller's request has ended, since a dispatch often
 // outlives the request that caused it.
 func (s *NotificationService) attempt(ctx context.Context, ch meshdb.NotificationChannel, event string, data NotificationData, emailCfg *meshdb.OrgEmailConfig, test bool, retryOf *uuid.UUID) *meshdb.NotificationDelivery {
-	err := sendNotification(ch, s.notice(ch.Name, event, data), emailCfg)
+	err := sendNotification(ch, s.notice(meshdb.BrandOf(ctx, s.db, ch.OrganizationID), ch.Name, event, data), emailCfg)
 	row := meshdb.NotificationDelivery{
 		OrganizationID: ch.OrganizationID,
 		ChannelID:      ch.ID,
@@ -381,7 +381,7 @@ func (s *NotificationService) channel(ctx context.Context, orgID, id uuid.UUID) 
 }
 
 var testData = NotificationData{
-	Detail: "Sent from the Meshploy console to check this channel works.",
+	Detail: "Sent from the console to check this channel works.",
 	Link:   "/integrations/notifications",
 }
 
@@ -411,7 +411,7 @@ func (s *NotificationService) TestEmailProvider(ctx context.Context, orgID uuid.
 	ch := meshdb.NotificationChannel{Type: meshdb.NotificationEmail, Config: meshdb.JSONObject{"address": to}}
 	data := testData
 	data.Link = "/integrations/email"
-	if err := sendEmail(ch, s.notice("", TestEvent, data), *cfg); err != nil {
+	if err := sendEmail(ch, s.notice(meshdb.BrandOf(ctx, s.db, orgID), "", TestEvent, data), *cfg); err != nil {
 		return errors.New(deliveryError(err))
 	}
 	return nil
@@ -577,6 +577,7 @@ func (d NotificationData) origin() string {
 // notice is one event rendered for sending: the same title, colour, link and
 // facts whichever channel it goes to.
 type notice struct {
+	Brand       string // the organisation's name for itself, as the message is signed
 	Event       string
 	Title       string
 	Tone        EventTone
@@ -601,8 +602,8 @@ func (s *NotificationService) consoleBase() string {
 	return strings.TrimRight(s.consoleURL, "/")
 }
 
-func (s *NotificationService) notice(channel, event string, data NotificationData) notice {
-	n := notice{Event: event, Title: eventTitle(event), Data: data, Channel: channel, At: time.Now()}
+func (s *NotificationService) notice(brand meshdb.Brand, channel, event string, data NotificationData) notice {
+	n := notice{Brand: brand.Name, Event: event, Title: eventTitle(event), Data: data, Channel: channel, At: time.Now()}
 	if d, ok := eventDef(event); ok {
 		n.Tone = d.Tone
 	}
@@ -744,9 +745,9 @@ type slackField struct {
 
 func footer(n notice) string {
 	if n.Console != "" {
-		return "Meshploy · " + n.Console
+		return n.Brand + " · " + n.Console
 	}
-	return "Meshploy"
+	return n.Brand
 }
 
 func sendSlack(ch meshdb.NotificationChannel, n notice) error {

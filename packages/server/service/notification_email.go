@@ -36,7 +36,7 @@ func buildEmail(n notice, cfg meshdb.OrgEmailConfig, to string) ([]byte, error) 
 	if cfg.FromName != "" {
 		from = mime.QEncoding.Encode("utf-8", cfg.FromName) + " <" + cfg.FromAddress + ">"
 	}
-	subject := "[Meshploy] " + n.Title
+	subject := "[" + n.Brand + "] " + n.Title
 	if n.Data.ServiceName != "" {
 		subject += ": " + n.Data.ServiceName
 	} else if n.Data.NodeName != "" {
@@ -50,6 +50,7 @@ func buildEmail(n notice, cfg meshdb.OrgEmailConfig, to string) ([]byte, error) 
 
 	var html bytes.Buffer
 	if err := notificationTemplate.Execute(&html, map[string]any{
+		"Brand":      n.Brand,
 		"Title":      n.Title,
 		"Summary":    n.summary(),
 		"Colour":     n.colourHex(),
@@ -79,7 +80,7 @@ func buildEmail(n notice, cfg meshdb.OrgEmailConfig, to string) ([]byte, error) 
 	if n.Link != "" {
 		fmt.Fprintf(&text, "\nView in console: %s\n", n.Link)
 	}
-	text.WriteString("\n--\nSent by Meshploy")
+	text.WriteString("\n--\nSent by " + n.Brand)
 	if n.Console != "" {
 		text.WriteString(" at " + n.Console)
 	}

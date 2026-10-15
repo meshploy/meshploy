@@ -91,7 +91,7 @@ func (h *Handler) oauthProtectedResource(w http.ResponseWriter, r *http.Request)
 		"resource":                 self + "/mcp",
 		"authorization_servers":    []string{self},
 		"bearer_methods_supported": []string{"header"},
-		"resource_name":            "Meshploy",
+		"resource_name":            h.svc.Brands.ForHost(r.Context(), r.Host).Name,
 	})
 }
 

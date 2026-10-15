@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"html"
@@ -12,8 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/proxy/cache"
 	"github.com/meshploy/packages/proxy/meshgate"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
@@ -21,10 +25,30 @@ type Handler struct {
 	// mesh decides who on the mesh opens an internal route; nil serves them
 	// to anyone who reaches them, as a proxy built without it does.
 	mesh *meshgate.Gate
+	// db is where the edge's own pages find whose brand to show; nil shows
+	// Meshploy's.
+	db *gorm.DB
 }
 
 // CheckInternal has internal routes answer only the callers mesh allows.
 func (h *Handler) CheckInternal(mesh *meshgate.Gate) { h.mesh = mesh }
+
+// Brand has the edge's own pages show the brand of the organisation a host
+// belongs to.
+func (h *Handler) Brand(gdb *gorm.DB) { h.db = gdb }
+
+// brandName is the name the edge's own pages are signed with, escaped for them.
+func (h *Handler) brandName(ctx context.Context, host string, orgID uuid.UUID) string {
+	b := db.DefaultBrand
+	if h.db != nil {
+		if orgID != uuid.Nil {
+			b = db.BrandOf(ctx, h.db, orgID)
+		} else {
+			b = db.BrandForHost(ctx, h.db, host)
+		}
+	}
+	return html.EscapeString(b.Name)
+}
 
 func NewHandler(c *cache.Cache) *Handler {
 	return &Handler{cache: c}
@@ -53,7 +77,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, notFoundPage, hostname)
+		fmt.Fprintf(w, notFoundPage, h.brandName(r.Context(), hostname, uuid.Nil), html.EscapeString(hostname))
 		return
 	}
 
@@ -64,7 +88,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("proxy: %s refused to %s (%s): %s", hostname, visitor(r), v.Machine, v.Reason)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusForbidden)
-			fmt.Fprintf(w, notSharedPage, html.EscapeString(hostname))
+			fmt.Fprintf(w, notSharedPage, h.brandName(r.Context(), hostname, entry.OrgID), html.EscapeString(hostname))
 			return
 		}
 	}
@@ -189,7 +213,7 @@ const notFoundPage = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>No route — Meshploy</title>
+  <title>No route - %[1]s</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0a0a0a;color:#a1a1aa;font-family:ui-monospace,monospace;
@@ -208,8 +232,8 @@ const notFoundPage = `<!doctype html>
   <div class="card">
     <div class="code">404</div>
     <h1>No route configured</h1>
-    <p>There is no Meshploy service mapped to this hostname.</p>
-    <div class="host">%s</div>
+    <p>There is no %[1]s service mapped to this hostname.</p>
+    <div class="host">%[2]s</div>
   </div>
 </body>
 </html>`
@@ -220,7 +244,7 @@ const notSharedPage = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Not shared with you - Meshploy</title>
+  <title>Not shared with you - %[1]s</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0a0a0a;color:#a1a1aa;font-family:ui-monospace,monospace;
@@ -240,7 +264,7 @@ const notSharedPage = `<!doctype html>
     <div class="code">403</div>
     <h1>Not shared with you</h1>
     <p>This internal route is open to the people granted what it serves, from machines they own. Ask an admin of the organisation for access, or join this machine to the mesh under your own name.</p>
-    <div class="host">%s</div>
+    <div class="host">%[2]s</div>
   </div>
 </body>
 </html>`

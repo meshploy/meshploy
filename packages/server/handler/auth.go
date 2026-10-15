@@ -91,6 +91,10 @@ type ChangePasswordInput struct {
 	}
 }
 
+type SetupTOTPInput struct {
+	hostInput
+}
+
 type SetupTOTPOutput struct {
 	Body struct {
 		OTPURL string `json:"otp_url"`
@@ -251,12 +255,13 @@ func (h *Handler) registerAuthRoutes(api huma.API) {
 		Tags:          []string{tag},
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
-	}, func(ctx context.Context, _ *struct{}) (*SetupTOTPOutput, error) {
+	}, func(ctx context.Context, in *SetupTOTPInput) (*SetupTOTPOutput, error) {
 		userID, err := requireUser(ctx)
 		if err != nil {
 			return nil, err
 		}
-		otpURL, secret, err := h.svc.Auth.SetupTOTP(ctx, userID)
+		// Listed under the brand of the console it was set up in.
+		otpURL, secret, err := h.svc.Auth.SetupTOTP(ctx, userID, h.svc.Brands.ForHost(ctx, in.host).Name)
 		if err != nil {
 			return nil, err
 		}
