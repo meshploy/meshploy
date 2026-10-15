@@ -67,10 +67,18 @@ export function getAccent(id: string): AccentColor {
   return ACCENTS.find((a) => a.id === id) ?? ACCENTS[0]
 }
 
-export function applyAccent(value: string) {
+/**
+ * Sets the primary colour, and the text drawn on it when one is given;
+ * without one the theme's own stays, which suits every colour above.
+ */
+export function applyAccent(value: string, foreground?: string) {
   const root = document.documentElement
   root.style.setProperty("--primary", value)
   root.style.setProperty("--ring", value)
   root.style.setProperty("--sidebar-primary", value)
   root.style.setProperty("--sidebar-ring", value)
+  for (const name of ["--primary-foreground", "--sidebar-primary-foreground"]) {
+    if (foreground) root.style.setProperty(name, foreground)
+    else root.style.removeProperty(name)
+  }
 }

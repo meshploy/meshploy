@@ -555,7 +555,7 @@ export const workspaceHandlers = [
   http.post(`${O}/notification-channels/:channelId/test`, ({ params }) => {
     const channel = find("notification-channels", params.channelId)
     if (!channel) return missing()
-    return json(sendDemo(channel, "notification.test", { detail: "Sent from the Meshploy console to check this channel works." }, { test: true }))
+    return json(sendDemo(channel, "notification.test", { detail: "Sent from the console to check this channel works." }, { test: true }))
   }),
   http.get(`${O}/notification-channels/:channelId/deliveries`, ({ params, request }) => {
     const query = new URL(request.url).searchParams
@@ -1502,6 +1502,8 @@ export const workspaceHandlers = [
     })
   ),
   http.get(`${O}/cluster/orphans`, () => json({ orphans: [] })),
+  http.get("/api/v1/brand", () => json({ name: "Meshploy", custom: false, powered_by: false })),
+  http.get(`${O}/brand`, () => json({ name: "Meshploy", custom: false, powered_by: false })),
   http.get("/api/v1/entitlements", () =>
     json({
       licensed: false,

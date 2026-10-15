@@ -13,7 +13,8 @@ import { entitlements as entitlementsApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { eeNavItems } from "@/ee"
 import { UpgradeDialog, upgradeInProgress } from "@/components/system/upgrade-dialog"
-import { MeshMark } from "@/components/layout/mesh-mark"
+import { BrandMark, BrandWordmark } from "@/components/layout/brand"
+import { useBrand } from "@/lib/brand"
 
 type NavItem = {
   href: string
@@ -74,6 +75,7 @@ export function AppSidebar() {
   useEffect(() => { setMobileNavOpen(false) }, [pathname, setMobileNavOpen])
   const token = useAuthStore((s) => s.token)
   const isAdmin = useIsAdmin()
+  const brand = useBrand()
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const { data: ver } = useQuery({
     queryKey: ["system-version"],
@@ -193,10 +195,11 @@ export function AppSidebar() {
       {/* Logo */}
       <div className={cn("sidebar-brand flex items-center h-(--console-topbar-height) px-4 border-b border-sidebar-border shrink-0", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
         <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary/15 shrink-0">
-          <MeshMark className="w-4 h-4 text-primary" />
+          <BrandMark brand={brand} className="w-4 h-4" />
         </div>
         {!sidebarCollapsed && (
-          <span className="font-semibold tracking-tight text-sidebar-foreground text-sm">meshploy</span>
+          <BrandWordmark brand={brand} className="font-semibold tracking-tight text-sidebar-foreground text-sm truncate"
+            imageClassName="h-5 max-w-36" />
         )}
       </div>
 

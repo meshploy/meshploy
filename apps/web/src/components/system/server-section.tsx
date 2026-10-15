@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertCircle, ExternalLink, Loader2, RefreshCw } from "lucide-react"
 import { system as systemApi, type ChannelCommit, type Channels } from "@/lib/api/system"
 import { useAuthStore } from "@/store/auth-store"
+import { editionOf, entitlements as entitlementsApi } from "@/lib/api"
+import { useBrand } from "@/lib/brand"
 import { Button } from "@/components/ui/button"
 import { Section } from "@/components/services/form-primitives"
 import { UpgradeDialog, type ChannelSwitchTarget } from "@/components/system/upgrade-dialog"
@@ -58,6 +60,10 @@ export function ServerSection() {
   const token = useAuthStore((s) => s.token)!
   const qc = useQueryClient()
   const [switching, setSwitching] = useState(false)
+  const brand = useBrand()
+  const ent = useQuery({ queryKey: ["entitlements"], queryFn: () => entitlementsApi.get(token) })
+  const enterprise = ent.data ? editionOf(ent.data) === "enterprise" : false
+  const builtOn = brand.custom ? brand.name : enterprise ? "Meshploy Enterprise" : null
 
   const channels = useQuery({
     queryKey: ["system-channels"],
@@ -155,10 +161,11 @@ export function ServerSection() {
         />
       )}
 
-      {/* Meshploy is Apache-2.0 and bundles other people's code, whose licences
-          ship with the console. This is where someone asking for them looks. */}
+      {/* The core is Apache-2.0 and bundles other people's code, whose licences
+          ship with the console; Enterprise adds features under its own licence.
+          This is where someone asking for them looks, whatever the brand. */}
       <p className="text-[11px] text-muted-foreground/70">
-        Meshploy is open source under{" "}
+        {builtOn ? `${builtOn} is built on Meshploy, open source under ` : "Meshploy is open source under "}
         <a
           href="https://github.com/meshploy/meshploy/blob/main/LICENSE"
           target="_blank"
@@ -167,6 +174,7 @@ export function ServerSection() {
         >
           Apache-2.0
         </a>
+        {enterprise && "; its Enterprise features are licensed separately"}
         . It bundles other software, listed in its{" "}
         <a href="/third-party-notices.md" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
           open source notices

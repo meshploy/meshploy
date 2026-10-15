@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { useAccentStore } from "@/store/accent-store"
 import { getAccent, applyAccent } from "@/lib/accents"
 import { eeRedirect } from "@/ee"
+import { useBrand, useBrandDocument } from "@/lib/brand"
 
 export const Route = createRootRoute({
   // An edition serving another face on another host keeps its visitors on
@@ -17,10 +18,15 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const accentId = useAccentStore((s) => s.accentId)
+  const brand = useBrand()
+  useBrandDocument(brand)
 
+  // An organisation's own colour is everyone's in it; a person's pick
+  // applies under Meshploy's brand.
   useEffect(() => {
-    applyAccent(getAccent(accentId).value)
-  }, [accentId])
+    if (brand.accent) applyAccent(brand.accent, brand.accent_foreground)
+    else applyAccent(getAccent(accentId).value)
+  }, [accentId, brand.accent, brand.accent_foreground])
 
   return (
     <TooltipProvider>

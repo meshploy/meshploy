@@ -35,6 +35,8 @@ import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
 import { ACCENT_GROUPS } from "@/lib/accents"
 import { useAccentStore } from "@/store/accent-store"
+import { useBrand } from "@/lib/brand"
+import { EeSettingsSection } from "@/ee"
 
 export const Route = createFileRoute("/_app/settings/")({
   component: SettingsPage,
@@ -67,11 +69,16 @@ function SettingsPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Manage your organization settings</p>
       </div>
 
-      <SettingsWorkspace sections={[["general", "General"], ["appearance", "Appearance"], ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"]]}>
+      <SettingsWorkspace sections={[
+        ["general", "General"], ["appearance", "Appearance"],
+        ...(EeSettingsSection ? [[EeSettingsSection.id, EeSettingsSection.label] as [string, string]] : []),
+        ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"],
+      ]}>
       <div id="general"><GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} /></div>
 
       <div id="appearance"><AppearanceSection /></div>
 
+      {EeSettingsSection && <div id={EeSettingsSection.id}><EeSettingsSection.component orgId={orgId} /></div>}
 
       <div id="backups"><SystemBackupSection /></div>
 
@@ -346,6 +353,17 @@ function expiryText(iso: string): string {
 
 function AppearanceSection() {
   const { accentId, setAccent } = useAccentStore()
+  const brand = useBrand()
+
+  // An organisation's own colour is everyone's in it, so there is nothing to pick.
+  if (brand.accent) return (
+    <Section title="Appearance" subtitle="The accent color used across the interface">
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="h-3 w-3 rounded-full shrink-0 ring-1 ring-black/20" style={{ background: brand.accent }} />
+        {brand.name} sets the accent color for everyone in this organisation.
+      </p>
+    </Section>
+  )
 
   return (
     <Section title="Appearance" subtitle="Customize the accent color used across the interface">

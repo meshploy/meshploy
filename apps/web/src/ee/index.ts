@@ -69,3 +69,9 @@ export const EeMemberPanel: React.ComponentType<{ orgId: string; userId: string 
  * mesh, so an edition that grants outsiders says what their grant is for.
  */
 export const EeOutsiderGrant: React.ComponentType<{ orgId: string; email?: string; resourceKind: string; resourceId?: string; projectId?: string }> | null = null
+
+/**
+ * Drawn in Settings after Appearance, with an entry of its own in the page's
+ * contents: what an edition lets an organisation set for itself.
+ */
+export const EeSettingsSection: { id: string; label: string; component: React.ComponentType<{ orgId: string }> } | null = null
