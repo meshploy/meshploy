@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { deployments as deploymentsApi, projects as projectsApi, ApiError } from "@/lib/api"
+import { deployments as deploymentsApi, projects as projectsApi, services as servicesApi, ApiError } from "@/lib/api"
 import type { Board, BoardCell, BoardGroup, EnvironmentLevel } from "@/lib/api/projects"
 import { cn, formatRelativeTime } from "@/lib/utils"
 import { livePoll } from "@/lib/live-poll"
@@ -56,6 +56,7 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
   const [owning, setOwning] = useState<{ level: EnvironmentLevel; from: EnvironmentLevel; source: BoardCell } | null>(null)
   const [removing, setRemoving] = useState<{ cell: BoardCell; group: BoardGroup | null } | null>(null)
   const qc = useQueryClient()
+  const navigate = useNavigate()
   // One runner for every card action, so each says the same way when it fails.
   const act = useMutation({
     mutationFn: (run: () => Promise<unknown>) => run(),
@@ -84,6 +85,18 @@ export function EnvironmentBoard({ orgId, projectId, token }: { orgId: string; p
     if (cell.type === "database") return remove
     const below = board.levels.filter((l) => l.level > here.level).sort((a, b) => a.level - b.level)
     const out: CardAction[] = []
+    // Deploy where the service builds: the level its group enters at, or
+    // anywhere for one in no group. Above that a group's services arrive by
+    // promotion, so only the image already there is offered again; a build
+    // there would be a hotfix, which the service page asks about first.
+    const builds = !group || group.path[0] === cell.level_id
+    if (builds) {
+      out.push({ section: "Deploy", label: cell.image ? "Deploy again" : "Deploy", run: () => deploymentsApi.trigger(orgId, cell.level_id, cell.service_id, token) })
+      if (cell.branch)
+        out.push({ section: "Deploy", label: `Change branch (${cell.branch})`, go: () => navigate({ to: "/projects/$id/services/$serviceId/config", params: { id: cell.level_id, serviceId: cell.service_id }, hash: "source" }) })
+    } else if (cell.image) {
+      out.push({ section: "Deploy", label: "Redeploy", run: () => servicesApi.redeploy(orgId, cell.level_id, cell.service_id, token) })
+    }
     if (!group) {
       for (const l of below)
         out.push({ section: "Copy to", label: l.name, run: () => projectsApi.copyToLevel(orgId, cell.level_id, cell.service_id, l.project_id, token) })
@@ -380,6 +393,8 @@ interface CardAction {
   run?: () => Promise<unknown>
   /** Opens a confirmation instead, for what cannot be undone. */
   open?: () => void
+  /** Goes to where it is done. */
+  go?: () => void
 }
 
 function ServiceCard({
@@ -450,7 +465,7 @@ function ServiceCard({
                   .map((a) => (
                     <DropdownMenuItem
                       key={a.label}
-                      onClick={() => (a.open ? a.open() : a.run && onAction?.(a.run))}
+                      onClick={() => (a.go ? a.go() : a.open ? a.open() : a.run && onAction?.(a.run))}
                       className={cn("text-sm", a.open && "text-destructive")}
                     >
                       {a.label}

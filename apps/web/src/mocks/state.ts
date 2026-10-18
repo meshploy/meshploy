@@ -488,6 +488,16 @@ export const buildConfigs: Record<string, any> = {
     branch: "main",
     builder: "dockerfile",
   },
+  // Its copy in staging builds develop, where the group enters.
+  [stagingWebId]: {
+    ...seed.demoBuildConfig,
+    id: "00000000-0000-0000-0000-000000000022",
+    service_id: stagingWebId,
+    git_integration_id: seed.DEMO_GIT_BITBUCKET_ID,
+    git_repo: "demo-workspace/web",
+    branch: "develop",
+    builder: "dockerfile",
+  },
 }
 export const attachments: Record<string, string[]> = {
   [seed.DEMO_SVC_API]: [groupId, "00000000-0000-0000-0000-0000000000b5"],

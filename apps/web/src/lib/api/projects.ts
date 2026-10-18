@@ -78,6 +78,8 @@ export interface BoardCell {
   source_commit?: string
   source_commit_message?: string
   from_level?: string
+  /** The branch a service built from a repository builds; absent for an image or an uploaded folder. */
+  branch?: string
 }
 
 export interface BoardGroup {

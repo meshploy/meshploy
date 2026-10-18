@@ -213,9 +213,9 @@ function ServiceLayout() {
               ) : (
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}><ExternalLink className="size-4" />Open<ChevronDown className="size-3.5" /></DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-[240px]">
+                  <DropdownMenuContent align="end" className="w-auto min-w-[240px] max-w-[min(28rem,calc(100vw-2rem))]">
                     {addresses.map((r) => (
-                      <DropdownMenuItem key={r.id} render={<a href={`https://${r.hostname}`} target="_blank" rel="noopener noreferrer" />}>{r.hostname}</DropdownMenuItem>
+                      <DropdownMenuItem key={r.id} title={r.hostname} className="px-2.5" render={<a href={`https://${r.hostname}`} target="_blank" rel="noopener noreferrer" />}><span className="truncate">{r.hostname}</span></DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>

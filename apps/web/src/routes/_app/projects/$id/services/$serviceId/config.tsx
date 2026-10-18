@@ -3,7 +3,7 @@ import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layou
 import { GroupAttachments } from "@/components/variables/group-attachments"
 import { ResourceIntro } from "@/components/layout/resource-workbench"
 import { FormLayout } from "@/components/layout/form-layout"
-import { createFileRoute, Link, useParams } from "@tanstack/react-router"
+import { createFileRoute, Link, useParams, useRouterState } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { createContext, useContext, useState, useEffect, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -602,6 +602,13 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
 
   useConfigSave("Source and deployment", draft, () => mutation.mutateAsync(), !svcLoading && !bcLoading)
 
+  // A link to #source (the board's "Change branch") lands here once the
+  // section has loaded; the browser's own jump ran before it existed.
+  const hash = useRouterState({ select: (s) => s.location.hash })
+  useEffect(() => {
+    if (hash === "source" && !svcLoading && !bcLoading) document.getElementById("source")?.scrollIntoView({ block: "start" })
+  }, [hash, svcLoading, bcLoading])
+
   if (svcLoading || bcLoading) return (
     <div className="flex items-center gap-2 text-muted-foreground py-8">
       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -611,6 +618,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
   return (
     <div className="space-y-8">
       {/* ── Source ────────────────────────────────────────────── */}
+      <div id="source" className="scroll-mt-20">
       <Section title="Source" subtitle="Where should Meshploy pull the code or image from?">
         {service?.stack_id ? (
           <div className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2.5">
@@ -640,6 +648,7 @@ function SourceDeploySection({ projectId, serviceId }: { projectId: string; serv
           />
         )}
       </Section>
+      </div>
 
       {/* ── Build ─────────────────────────────────────────────── */}
       {form.source !== "image" && (

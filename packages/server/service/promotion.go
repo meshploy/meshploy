@@ -641,6 +641,9 @@ type BoardCell struct {
 	SourceCommit        string `json:"source_commit,omitempty"`
 	SourceCommitMessage string `json:"source_commit_message,omitempty"`
 	FromLevel           string `json:"from_level,omitempty"`
+	// Branch is the branch a service built from a repository builds, empty
+	// for one deployed from an image or an uploaded folder.
+	Branch string `json:"branch,omitempty"`
 	// Arrival and ImageBuiltAt are where the running image came from, looked
 	// through redeploys and rollbacks, and when it was built: what Promote
 	// compares, and what says a level runs something built there instead of
@@ -712,6 +715,21 @@ func (s *PromotionService) Board(ctx context.Context, projectID uuid.UUID) (*Boa
 		hasBackup[id] = true
 	}
 
+	var gitRows []struct {
+		ServiceID uuid.UUID
+		Branch    string
+	}
+	if len(serviceIDs) > 0 {
+		if err := s.db.WithContext(ctx).Model(&db.BuildConfig{}).Select("service_id, branch").
+			Where("service_id IN ? AND git_repo <> ''", serviceIDs).Scan(&gitRows).Error; err != nil {
+			return nil, err
+		}
+	}
+	branchOf := make(map[uuid.UUID]string, len(gitRows))
+	for _, r := range gitRows {
+		branchOf[r.ServiceID] = r.Branch
+	}
+
 	// Each service's addresses, internal ones left out: nobody opens those
 	// from a browser.
 	var routeRows []struct {
@@ -763,6 +781,7 @@ func (s *PromotionService) Board(ctx context.Context, projectID uuid.UUID) (*Boa
 			Type:        string(sv.Type),
 			Status:      string(sv.Status),
 			HasBackup:   hasBackup[sv.ID],
+			Branch:      branchOf[sv.ID],
 			Routes:      routesOf[sv.ID],
 			Trouble:     troubles[sv.ID],
 		}

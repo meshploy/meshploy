@@ -1893,6 +1893,7 @@ function environmentHandlers() {
         deployed_at: s.deployed_at ?? s.updated_at ?? null,
         has_backup: !!s.has_backup,
         ...originOf(s.id),
+        branch: buildConfigs[s.id]?.git_repo ? buildConfigs[s.id].branch : undefined,
         trouble: troubles[s.id],
         routes: db.routes
           .filter((r) => r.zone !== "internal" && (r.targets ?? []).some((t: DemoRecord) => t.service_id === s.id))
