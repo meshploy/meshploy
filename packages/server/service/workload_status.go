@@ -76,16 +76,45 @@ func (s *WorkloadService) reconcileStatuses(ctx context.Context) {
 		inFlight[id] = true
 	}
 
+	// Pods are read only for a service with nothing ready, once per namespace.
+	pods := map[string][]appk8s.PodInfo{}
+	podsOf := func(namespace, app string) []appk8s.PodInfo {
+		list, ok := pods[namespace]
+		if !ok {
+			list, _ = appk8s.ListManagedPods(ctx, s.k8s, namespace)
+			pods[namespace] = list
+		}
+		var out []appk8s.PodInfo
+		for _, p := range list {
+			if p.App == app {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+
 	for i := range services {
 		svc := &services[i]
 		if svc.Project.Slug == "" || inFlight[svc.ID] {
 			continue
 		}
-		state, err := appk8s.GetDeploymentState(ctx, s.k8s, s.k8sName(ctx, svc), svc.Project.Slug)
+		name := s.k8sName(ctx, svc)
+		state, err := appk8s.GetDeploymentState(ctx, s.k8s, name, svc.Project.Slug)
 		if err != nil {
 			continue // transient API error — leave the row as it is
 		}
-		want := deriveServiceStatus(state)
+		stuck := false
+		if state.Exists && state.Replicas > 0 && state.Available == 0 && !state.Stalled {
+			stuck = podsStuck(podsOf(svc.Project.Slug, name))
+		}
+		want := deriveServiceStatus(state, stuck)
+		// A crashing container runs for a moment between back-offs, and a tick
+		// that lands then sees nothing to call stuck. A failed service with no
+		// deploy in flight stays failed until a pod is ready, rather than
+		// reading as deploying and announcing the failure again a tick later.
+		if want == db.ServiceDeploying && svc.Status == db.ServiceFailed {
+			continue
+		}
 		if want == "" || want == svc.Status {
 			continue
 		}
@@ -183,7 +212,13 @@ func deriveStackStatus(svcs []db.Service) db.StackStatus {
 // deriveServiceStatus maps what the cluster reports onto a service status.
 // Returns "" when the cluster says nothing conclusive and the stored value
 // should be left alone.
-func deriveServiceStatus(state appk8s.DeploymentState) db.ServiceStatus {
+//
+// stuck is pods that Kubernetes is backing off from (podsStuck). With no deploy
+// in flight and nothing ready, they will not come up by themselves, and
+// Kubernetes never marks a finished rollout as stalled, so without this a
+// service that started crashing after it rolled out would read as deploying
+// for as long as it crashes.
+func deriveServiceStatus(state appk8s.DeploymentState, stuck bool) db.ServiceStatus {
 	switch {
 	case !state.Exists:
 		// Marked running with no Deployment behind it: something removed the
@@ -193,8 +228,9 @@ func deriveServiceStatus(state appk8s.DeploymentState) db.ServiceStatus {
 		return db.ServiceStopped
 	case state.Available > 0:
 		return db.ServiceRunning
-	case state.Stalled:
-		// K8s gave up: unschedulable pod, unpullable image, missing claim.
+	case state.Stalled, stuck:
+		// K8s gave up, or keeps backing off: unschedulable pod, unpullable
+		// image, missing claim, a process that keeps exiting.
 		return db.ServiceFailed
 	default:
 		// Replicas wanted, none ready yet, still progressing.

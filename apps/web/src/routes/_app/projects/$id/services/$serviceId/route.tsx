@@ -97,6 +97,10 @@ function ServiceLayout() {
     enabled: !!orgId,
   })
   const current = history?.find((d) => d.status === "success")
+  // A deploy is under way only while one is queued, building or rolling out.
+  // The service's own status is not the test: it also reads deploying while
+  // no pod is ready, which is when a redeploy is most needed.
+  const deployInFlight = history?.some((d) => ["pending", "building", "deploying"].includes(d.status)) ?? false
 
   // Whether its pods are staying up, and if not, why. Polled: a crash loop
   // shows up after the deploy that started it.
@@ -218,7 +222,7 @@ function ServiceLayout() {
               )
             )}
             <Button variant="outline" size="sm" render={<Link to="/projects/$id/services/$serviceId/logs" params={{ id: projectId, serviceId }} />}><Terminal className="size-4" />Logs</Button>
-            {may("deploy") && <Button size="sm" onClick={deployGuard.request} disabled={deployMutation.isPending || service.status === "deploying"}><Rocket className="size-4" />Deploy</Button>}
+            {may("deploy") && <Button size="sm" onClick={deployGuard.request} disabled={deployMutation.isPending || deployInFlight}><Rocket className="size-4" />Deploy</Button>}
           </>
         }
       >

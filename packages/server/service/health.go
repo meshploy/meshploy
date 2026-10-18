@@ -82,6 +82,22 @@ func troubleOf(pods []appk8s.PodInfo, now time.Time) *Trouble {
 	return &t
 }
 
+// podsStuck is pods waiting on something Kubernetes keeps retrying with a
+// back-off: a process that keeps exiting, an image that cannot be pulled, a
+// container that cannot be created. A pod still pulling or starting is not
+// stuck, nor is one whose first pull failed (ErrImagePull, which a network
+// blip also gives).
+func podsStuck(pods []appk8s.PodInfo) bool {
+	for _, p := range pods {
+		switch p.WaitingReason {
+		case "CrashLoopBackOff", "ImagePullBackOff", "InvalidImageName",
+			"CreateContainerConfigError", "CreateContainerError", "RunContainerError":
+			return true
+		}
+	}
+	return false
+}
+
 // Troubles is every service in a project (or level) that is not staying up,
 // by service id: one call to the cluster for the whole project.
 func (s *WorkloadService) Troubles(ctx context.Context, projectID uuid.UUID) (map[uuid.UUID]*Trouble, error) {
