@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Minus } from "lucide-react"
+import { Check, ExternalLink } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -7,7 +7,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 
 /**
  * Where "Get a licence" goes.
@@ -34,7 +33,8 @@ type Feature = {
 }
 
 /**
- * One array drives both columns, so the comparison cannot drift between them.
+ * Each column lists only its own features: Enterprise is everything in
+ * Community plus its column, so nothing is said twice.
  *
  * A feature list is marketing, not implementation - publishing it here costs
  * nothing, unlike the code behind an Enterprise feature, which stays in the
@@ -51,6 +51,24 @@ const FEATURES: Feature[] = [
   { label: "Backups and scheduled jobs", tier: "both", available: true },
   { label: "Community support", tier: "both", available: true },
 
+  {
+    label: "Teams",
+    tier: "enterprise",
+    available: true,
+    detail: "Grant projects to a team and manage its members in one place",
+  },
+  {
+    label: "App sharing",
+    tier: "enterprise",
+    available: true,
+    detail: "Share an app with people outside your organisation, behind a sign-in page",
+  },
+  {
+    label: "White label",
+    tier: "enterprise",
+    available: true,
+    detail: "Your name, logos and colour in the console, its emails and sign-in pages",
+  },
   {
     label: "Single sign-on",
     tier: "enterprise",
@@ -77,16 +95,15 @@ const FEATURES: Feature[] = [
   },
 ]
 
-function Row({ label, detail, state }: { label: string; detail?: string; state: "yes" | "no" | "planned" }) {
+function Row({ label, detail, state }: { label: string; detail?: string; state: "yes" | "planned" }) {
   return (
     <div className="flex items-start gap-2 py-1.5">
       {state === "yes" && <Check className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />}
-      {state === "no" && <Minus className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 mt-0.5" />}
       {state === "planned" && (
         <span className="h-3.5 w-3.5 shrink-0 mt-0.5 rounded-full border border-dashed border-muted-foreground/40" />
       )}
       <div className="min-w-0">
-        <p className={cn("text-xs", state === "no" ? "text-muted-foreground/40" : "text-foreground")}>
+        <p className="text-xs text-foreground">
           {label}
           {state === "planned" && (
             <span className="ml-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
@@ -94,7 +111,7 @@ function Row({ label, detail, state }: { label: string; detail?: string; state: 
             </span>
           )}
         </p>
-        {detail && state !== "no" && (
+        {detail && (
           <p className="text-[11px] text-muted-foreground mt-0.5">{detail}</p>
         )}
       </div>
@@ -128,12 +145,8 @@ export function UpgradeDialog({
               Free and open source. What you are running now.
             </p>
             <div className="border-t border-border/40 pt-1">
-              {FEATURES.map((f) => (
-                <Row
-                  key={f.label}
-                  label={f.label}
-                  state={f.tier === "both" ? "yes" : "no"}
-                />
+              {FEATURES.filter((f) => f.tier === "both").map((f) => (
+                <Row key={f.label} label={f.label} state="yes" />
               ))}
             </div>
           </div>
@@ -142,16 +155,11 @@ export function UpgradeDialog({
           <div className="rounded-md border border-primary/40 bg-primary/[0.03] p-3 flex flex-col">
             <p className="text-sm font-medium">Enterprise</p>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-              Everything in Community, plus the below.
+              Everything in Community, plus:
             </p>
             <div className="border-t border-border/40 pt-1 flex-1">
-              {FEATURES.map((f) => (
-                <Row
-                  key={f.label}
-                  label={f.label}
-                  detail={f.tier === "enterprise" ? f.detail : undefined}
-                  state={f.tier === "both" ? "yes" : f.available ? "yes" : "planned"}
-                />
+              {FEATURES.filter((f) => f.tier === "enterprise").map((f) => (
+                <Row key={f.label} label={f.label} detail={f.detail} state={f.available ? "yes" : "planned"} />
               ))}
             </div>
             <Button
