@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.21.0](https://github.com/meshploy/meshploy/compare/v0.20.2...v0.21.0) (2026-10-19)
+
+
+### Features
+
+* **brand:** emails, OAuth consent, git apps and the edge's pages use the brand ([70cb432](https://github.com/meshploy/meshploy/commit/70cb432745650a382caef8bb0ee14ae488fefee6))
+* **brand:** the white-label feature, and an organisation's brand by organisation or by host ([9b5889d](https://github.com/meshploy/meshploy/commit/9b5889d401b0f7c4b3b875c65b13307831b6e29f))
+* **console:** the console shows the organisation's brand ([024e4cf](https://github.com/meshploy/meshploy/commit/024e4cf02096aa52298897744817d83ac534a864))
+* **environments:** a board card deploys its service and changes a git service's branch, and the Open menu fits its hostnames ([ca6daf9](https://github.com/meshploy/meshploy/commit/ca6daf9250db589e75e585cddd48987ca1bc2747))
+
+
+### Bug Fixes
+
+* **licence:** the editions dialog lists only what Enterprise adds, with teams, app sharing and white label shipping ([904e536](https://github.com/meshploy/meshploy/commit/904e53685d9d6a167fcc1559725dc89207c15591))
+* **services:** a crash-looping service reads as failed, and can be deployed from its header ([16df9d4](https://github.com/meshploy/meshploy/commit/16df9d49a1bb0037b9b5ca0f0daf4574a8316588))
+
 ## [0.20.2](https://github.com/meshploy/meshploy/compare/v0.20.1...v0.20.2) (2026-10-08)
 
 
