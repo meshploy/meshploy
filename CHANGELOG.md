@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.21.1](https://github.com/meshploy/meshploy/compare/v0.21.0...v0.21.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **builds:** a build cache left on a node that has left the cluster is replaced, so builds can be placed again ([835f968](https://github.com/meshploy/meshploy/commit/835f968a6f97e8372b96e8131d07aca22f977f7f))
+* **builds:** the build log says what a starting build waits on, an image pull or a node, instead of counting attempts ([84dab16](https://github.com/meshploy/meshploy/commit/84dab168e2a342885b98b63a7bf72f834bd81122))
+* **domains:** DNS record names are given relative to their zone, @ at its root, the way providers ask for them ([f40ecd7](https://github.com/meshploy/meshploy/commit/f40ecd7521882b61796435f92c6c1f031c01eb9f))
+* **mcp:** create_route can redirect a hostname to another route, as www to the apex ([a2e9ff8](https://github.com/meshploy/meshploy/commit/a2e9ff87afa0b9c6ba8f7ead72eb9826e4ba5f44))
+
 ## [0.21.0](https://github.com/meshploy/meshploy/compare/v0.20.2...v0.21.0) (2026-10-19)
 
 
