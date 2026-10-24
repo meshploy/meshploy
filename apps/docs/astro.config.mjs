@@ -8,6 +8,11 @@ export default defineConfig({
 	build: {
 		assets: 'assets',
 	},
+	// A page starts loading when its link is hovered or focused, so the click
+	// that follows lands on it almost at once. On hover, not in view: the
+	// sidebar shows dozens of links, and fetching each would load most of the
+	// site with every page.
+	prefetch: { prefetchAll: true, defaultStrategy: 'hover' },
 	integrations: [
 		starlight({
 			// Long prompts are shown as a few lines with the rest behind a
