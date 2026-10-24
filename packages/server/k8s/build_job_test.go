@@ -11,6 +11,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/meshploy/packages/server/internal/gittest"
@@ -367,4 +368,40 @@ func TestEnsureBuildCachePVCReplacesACacheOnARemovedNode(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestPodStartingReasonSaysWhatThePodWaitsOn(t *testing.T) {
+	pod := func(node string, waiting *corev1.ContainerStateWaiting) *corev1.Pod {
+		p := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "build-x", Namespace: "shop"},
+			Spec:       corev1.PodSpec{NodeName: node, Containers: []corev1.Container{{Name: "builder", Image: "ghcr.io/meshploy/builder:main"}}},
+		}
+		if waiting != nil {
+			p.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "builder", State: corev1.ContainerState{Waiting: waiting}}}
+		}
+		return p
+	}
+	event := func(name, reason string, at time.Time) *corev1.Event {
+		return &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: name, Namespace: "shop"},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "build-x"},
+			Reason:         reason, LastTimestamp: metav1.NewTime(at),
+		}
+	}
+	now := time.Now()
+	for name, tc := range map[string]struct {
+		objs []runtime.Object
+		want string
+	}{
+		"unplaced":  {[]runtime.Object{pod("", nil)}, "Waiting for a node"},
+		"pulling":   {[]runtime.Object{pod("gw", nil), event("e1", "Scheduled", now.Add(-time.Minute)), event("e2", "Pulling", now)}, "Pulling image ghcr.io/meshploy/builder:main on gw"},
+		"pulled":    {[]runtime.Object{pod("gw", nil), event("e1", "Pulling", now.Add(-time.Minute)), event("e2", "Pulled", now)}, "Starting the build container on gw"},
+		"pull fail": {[]runtime.Object{pod("gw", &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "not found"})}, "Cannot pull image ghcr.io/meshploy/builder:main: not found"},
+		"missing":   {nil, ""},
+	} {
+		got := PodStartingReason(t.Context(), fake.NewSimpleClientset(tc.objs...), "shop", "build-x")
+		if !strings.HasPrefix(got, tc.want) || (tc.want == "" && got != "") {
+			t.Errorf("%s: got %q, want it to start with %q", name, got, tc.want)
+		}
+	}
 }

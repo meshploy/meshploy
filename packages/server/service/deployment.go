@@ -1505,7 +1505,8 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	flush()
 	var stream io.ReadCloser
 	streamDeadline := time.Now().Add(3 * time.Minute)
-	attempt := 0
+	waitStart := time.Now()
+	lastReason, lastSaid := "", time.Time{}
 	for {
 		req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 			Follow: true,
@@ -1530,9 +1531,17 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 			sendDone()
 			return nil
 		}
-		attempt++
-		if attempt%5 == 0 {
-			sendLine(fmt.Sprintf("Waiting for container to start (attempt %d)…", attempt))
+		// Say what the container is waiting on when that changes, and again
+		// every half minute so a long image pull does not look stuck.
+		if reason := appk8s.PodStartingReason(ctx, s.k8s, namespace, podName); reason != "" {
+			switch {
+			case reason != lastReason:
+				sendLine(reason + "…")
+				lastReason, lastSaid = reason, time.Now()
+			case time.Since(lastSaid) >= 30*time.Second:
+				sendLine(fmt.Sprintf("%s… (%ds)", reason, int(time.Since(waitStart).Seconds())))
+				lastSaid = time.Now()
+			}
 		}
 		select {
 		case <-ctx.Done():

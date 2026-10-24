@@ -481,6 +481,51 @@ func jobPod(ctx context.Context, client kubernetes.Interface, namespace, jobName
 	return &pods.Items[0]
 }
 
+// PodStartingReason says, in a line for the build log, what a pod whose
+// container has not started yet is waiting on: a node, its image, or the
+// container itself. "" when the pod cannot be read.
+func PodStartingReason(ctx context.Context, client kubernetes.Interface, namespace, name string) string {
+	pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return ""
+	}
+	image := ""
+	if len(pod.Spec.Containers) > 0 {
+		image = pod.Spec.Containers[0].Image
+	}
+	if pod.Spec.NodeName == "" {
+		if reason := noNodeMatches(pod); reason != "" {
+			return "Waiting for a node to take the build: " + reason
+		}
+		return "Waiting for a node to take the build"
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if w := cs.State.Waiting; w != nil && (w.Reason == "ErrImagePull" || w.Reason == "ImagePullBackOff") {
+			return fmt.Sprintf("Cannot pull image %s: %s", image, strings.TrimSpace(w.Message))
+		}
+	}
+
+	// The container's own status says only "ContainerCreating" while its
+	// image downloads; the pod's latest event says which.
+	events, err := client.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	var latest *corev1.Event
+	if err == nil {
+		for i := range events.Items {
+			e := &events.Items[i]
+			if e.InvolvedObject.Kind != "Pod" || e.InvolvedObject.Name != name {
+				continue
+			}
+			if latest == nil || !eventTime(*e).Before(eventTime(*latest)) {
+				latest = e
+			}
+		}
+	}
+	if latest != nil && latest.Reason == "Pulling" {
+		return fmt.Sprintf("Pulling image %s on %s (a node's first build downloads it; later builds reuse it)", image, pod.Spec.NodeName)
+	}
+	return "Starting the build container on " + pod.Spec.NodeName
+}
+
 // noNodeMatches returns the scheduler's reason when the pod cannot be placed
 // because no node fits its selector or taints, and "" otherwise, including when
 // it is only waiting for CPU or memory to free up.

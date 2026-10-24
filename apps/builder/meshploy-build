@@ -394,7 +394,7 @@ EOF
     # which the plan made in the subdirectory does not describe ("/package.json":
     # not found).
     BUILD_DIR="${PWD}"
-    log "Preparing railpack build plan…"
+    log "Preparing railpack build plan (detecting the app and resolving tool versions; this step prints nothing)…"
     railpack prepare . \
         --plan-out "${BUILD_DIR}/railpack-plan.json" \
         "${RAILPACK_ENV_FLAGS[@]+"${RAILPACK_ENV_FLAGS[@]}"}" \
