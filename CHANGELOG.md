@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/meshploy/meshploy/compare/v0.21.0...v0.21.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **builds:** a build cache left on a node that has left the cluster is replaced, so builds can be placed again ([835f968](https://github.com/meshploy/meshploy/commit/835f968a6f97e8372b96e8131d07aca22f977f7f))
+
 ## [0.21.0](https://github.com/meshploy/meshploy/compare/v0.20.2...v0.21.0) (2026-10-19)
 
 
