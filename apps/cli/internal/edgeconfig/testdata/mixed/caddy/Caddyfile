@@ -46,7 +46,9 @@
     }
 }
 (console_csp) {
-    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://{host}; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    # form-action names github.com: a GitHub App is created by posting its
+    # manifest there as a form, which 'self' alone stops in the browser.
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://{host}; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com; object-src 'none'"
 }
 
 # Anything you add yourself. Imported before the site blocks, so a syntax error
