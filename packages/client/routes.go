@@ -54,6 +54,12 @@ type CreateRouteBody struct {
 	TargetIP   *string `json:"target_ip,omitempty"`
 	TargetPort *int    `json:"target_port,omitempty"`
 
+	// RedirectRouteID makes the target a redirect to another route's hostname,
+	// in place of a service, node or address. RedirectCode is 301 or 302; nil
+	// leaves the API's 301.
+	RedirectRouteID *string `json:"-"`
+	RedirectCode    *int    `json:"-"`
+
 	// TargetTLS makes the hop to an address target HTTPS.
 	TargetTLS bool `json:"-"`
 	// Path and StripPath route one prefix of the hostname; empty means "/".
@@ -82,13 +88,15 @@ type routeWire struct {
 }
 
 type routeWireTarget struct {
-	Path      string  `json:"path"`
-	StripPath bool    `json:"strip_path"`
-	ServiceID *string `json:"service_id,omitempty"`
-	NodeID    *string `json:"node_id,omitempty"`
-	TargetIP  *string `json:"target_ip,omitempty"`
-	TargetTLS *bool   `json:"target_tls,omitempty"`
-	Port      *int    `json:"port,omitempty"`
+	Path            string  `json:"path"`
+	StripPath       bool    `json:"strip_path"`
+	ServiceID       *string `json:"service_id,omitempty"`
+	NodeID          *string `json:"node_id,omitempty"`
+	TargetIP        *string `json:"target_ip,omitempty"`
+	TargetTLS       *bool   `json:"target_tls,omitempty"`
+	Port            *int    `json:"port,omitempty"`
+	RedirectRouteID *string `json:"redirect_route_id,omitempty"`
+	RedirectCode    *int    `json:"redirect_code,omitempty"`
 }
 
 func (c *Client) ListRoutes(orgID, projectID string) ([]Route, error) {
@@ -111,6 +119,7 @@ func (c *Client) CreateRoute(orgID, projectID string, body CreateRouteBody) (*Ro
 	target := routeWireTarget{
 		Path: path, StripPath: body.StripPath,
 		ServiceID: body.ServiceID, NodeID: body.NodeID, TargetIP: body.TargetIP,
+		RedirectRouteID: body.RedirectRouteID, RedirectCode: body.RedirectCode,
 	}
 	// A service target resolves its own port; a node or address target is the
 	// one that needs the number.
@@ -187,7 +196,7 @@ func (c *Client) DeleteRoute(orgID, projectID, routeID string) error {
 // already serves, as a compose app's /api beside its /.
 func (c *Client) AddRouteTarget(orgID, projectID, routeID string, body CreateRouteBody) error {
 	t := routeWireTarget{Path: body.Path, StripPath: body.StripPath, ServiceID: body.ServiceID, NodeID: body.NodeID,
-		TargetIP: body.TargetIP}
+		TargetIP: body.TargetIP, RedirectRouteID: body.RedirectRouteID, RedirectCode: body.RedirectCode}
 	if t.Path == "" {
 		t.Path = "/"
 	}

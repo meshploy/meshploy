@@ -378,10 +378,12 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 
 	ms.AddTool(
 		mcp.NewTool("create_route",
-			mcp.WithDescription("Map a hostname to a service for incoming traffic. The hostname is a custom one, so it gets no certificate until ownership is proved: the result's prove_ownership lists the DNS records for the user to add, then call verify_route_hostname."),
+			mcp.WithDescription("Map a hostname to a service for incoming traffic, or redirect it to another route's hostname (www.example.com to example.com, an old domain to a new one). Give exactly one of service_id or redirect_to. The hostname is a custom one, so it gets no certificate until ownership is proved: the result's prove_ownership lists the DNS records for the user to add, then call verify_route_hostname."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
 			mcp.WithString("hostname", mcp.Required(), mcp.Description("Full hostname, e.g. app.example.com")),
-			mcp.WithString("service_id", mcp.Required(), mcp.Description("Service ID to route traffic to")),
+			mcp.WithString("service_id", mcp.Description("Service ID to route traffic to")),
+			mcp.WithString("redirect_to", mcp.Description("Route to redirect to, by ID or by hostname of a route in this project. The path is kept. That route must not redirect itself")),
+			mcp.WithNumber("redirect_code", mcp.Description("301 (permanent, the default) or 302 (temporary). Only with redirect_to")),
 		),
 		s.handleCreateRoute,
 	)
@@ -885,18 +887,52 @@ func (s *srv) handleCreateRoute(_ context.Context, req mcp.CallToolRequest) (*mc
 	projectID := mcp.ParseString(req, "project_id", "")
 	hostname := mcp.ParseString(req, "hostname", "")
 	serviceID := mcp.ParseString(req, "service_id", "")
+	redirectTo := mcp.ParseString(req, "redirect_to", "")
+	redirectCode := mcp.ParseInt(req, "redirect_code", 0)
 
 	if hostname == "" {
 		return mcp.NewToolResultError("hostname is required"), nil
 	}
-	route, err := s.c.CreateRoute(s.orgID, projectID, client.CreateRouteBody{
-		Hostname:  &hostname,
-		ServiceID: &serviceID,
-	})
+	if (serviceID == "") == (redirectTo == "") {
+		return mcp.NewToolResultError("give exactly one of service_id or redirect_to"), nil
+	}
+	body := client.CreateRouteBody{Hostname: &hostname}
+	if serviceID != "" {
+		if redirectCode != 0 {
+			return mcp.NewToolResultError("redirect_code goes with redirect_to"), nil
+		}
+		body.ServiceID = &serviceID
+	} else {
+		if redirectCode != 0 && redirectCode != 301 && redirectCode != 302 {
+			return mcp.NewToolResultError("redirect_code is 301 or 302"), nil
+		}
+		target, err := s.redirectRouteID(projectID, redirectTo)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		body.RedirectRouteID = &target
+		if redirectCode != 0 {
+			body.RedirectCode = &redirectCode
+		}
+	}
+	route, err := s.c.CreateRoute(s.orgID, projectID, body)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return jsonResult(s.toMCPRoute(*route, ""))
+}
+
+// redirectRouteID resolves redirect_to: a hostname names a route in this
+// project, and anything else is taken as a route ID, which the API checks
+// belongs to the organisation.
+func (s *srv) redirectRouteID(projectID, ref string) (string, error) {
+	if r, err := s.c.FindRoute(s.orgID, projectID, ref); err == nil {
+		return r.ID, nil
+	}
+	if strings.Contains(ref, ".") {
+		return "", fmt.Errorf("no route for %s in this project; pass the route's ID to redirect to one in another project", ref)
+	}
+	return ref, nil
 }
 
 func (s *srv) handleSetRoutePublished(published bool) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
