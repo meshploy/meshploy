@@ -79,3 +79,27 @@ func TestAnExplicitChoiceBeatsTheDefault(t *testing.T) {
 	require.NoError(t, db.Where("service_id = ?", serviceID).First(&stored).Error)
 	require.False(t, stored.AutoDeploy, "stored as on despite being asked for off")
 }
+
+// The console's New service form creates the build configuration with the
+// service, not through UpsertBuildConfig, and the default has to hold there
+// too: that is how almost every service is made.
+func TestAServiceCreatedFromAConnectedRepositoryDeploysOnPush(t *testing.T) {
+	svcs, db, _, integrationID := newServiceForBuildConfig(t, "first")
+	var first meshdb.Service
+	require.NoError(t, db.First(&first, "name = ?", "first").Error)
+
+	connected, err := svcs.Workloads.Create(context.Background(), first.ProjectID, service.CreateWorkloadInput{
+		Name: "connected", GitRepo: "owner/app", GitIntegrationID: &integrationID,
+	})
+	require.NoError(t, err)
+	public, err := svcs.Workloads.Create(context.Background(), first.ProjectID, service.CreateWorkloadInput{
+		Name: "public", GitRepo: "https://github.com/public/app",
+	})
+	require.NoError(t, err)
+
+	var withHook, without meshdb.BuildConfig
+	require.NoError(t, db.Where("service_id = ?", connected.ID).First(&withHook).Error)
+	require.True(t, withHook.AutoDeploy, "a service created from a connected repository should deploy on push")
+	require.NoError(t, db.Where("service_id = ?", public.ID).First(&without).Error)
+	require.False(t, without.AutoDeploy, "nothing can report a push on an unconnected repository")
+}

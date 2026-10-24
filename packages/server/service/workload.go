@@ -333,10 +333,18 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 			// not every image it ever builds.
 			RollbackEnabled: true,
 			ImageRetention:  db.DefaultImageRetention,
+			// Deploys on push when a connected repository can report one, as a
+			// build configuration saved later does (UpsertBuildConfig).
+			AutoDeploy: in.GitIntegrationID != nil && in.GitRepo != "",
 		}
 		return tx.Create(bc).Error
 	}); err != nil {
 		return nil, err
+	}
+	if in.GitIntegrationID != nil && in.GitRepo != "" && s.git != nil {
+		// GitHub's App already delivers every push; the other providers need a
+		// hook on the repository, asked for by its first service.
+		s.git.ensurePushHookQuietly(*in.GitIntegrationID, in.GitRepo)
 	}
 	// Create system-managed variable group (best-effort; don't fail the service creation)
 	if s.varGroups != nil {
