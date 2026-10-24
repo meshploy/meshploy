@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Loader2, RefreshCw, ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { RecordTable, Step } from "@/components/domains/dns-records"
+import { zoneOf } from "@/lib/dns-name"
 import { useGatewayPublicIp } from "@/components/domains/use-gateway-ip"
 import { routes as routesApi, ApiError } from "@/lib/api"
 import type { ApiDbRoute } from "@/lib/api/routes"
@@ -97,7 +98,7 @@ export function CustomDomainOwnership({
         <Step n={1} title="Prove you own it" done={false} detail="Add this at the DNS provider for the hostname.">
           {route.custom_domain_verify_token ? (
             <RecordTable
-              records={[{ name: `_meshploy-verify.${host}`, type: "TXT", value: route.custom_domain_verify_token }]}
+              records={[{ name: `_meshploy-verify.${host}`, zone: zoneOf(host), type: "TXT", value: route.custom_domain_verify_token }]}
             />
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -111,7 +112,7 @@ export function CustomDomainOwnership({
           done={false}
           detail="In any order with the record above. A CNAME to a name that resolves here works too, except at the root of a domain."
         >
-          <RecordTable records={[{ name: host, type: "A", value: publicIp || "<gateway public IP>" }]} />
+          <RecordTable records={[{ name: host, zone: zoneOf(host), type: "A", value: publicIp || "<gateway public IP>" }]} />
         </Step>
       </ol>
     </section>

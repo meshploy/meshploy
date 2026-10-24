@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Check, Copy } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { DnsMode } from "@/lib/api/domains"
+import { relativeName, zoneOf } from "@/lib/dns-name"
 
 /**
  * The DNS records a base domain needs, in the order they have to be added.
@@ -30,15 +31,16 @@ export function DnsRecords({
   publicIp?: string
 }) {
   const ip = publicIp || "<gateway public IP>"
+  const zone = zoneOf(domain)
   const pointing: DnsRecord[] =
     mode === "delegation"
       ? [
           { name: domain, type: "NS", value: `ns1.${domain}`, note: "At the parent zone or registrar" },
-          { name: `ns1.${domain}`, type: "A", value: ip, note: "Glue record, beside the NS" },
+          { name: `ns1.${domain}`, zone, type: "A", value: ip, note: "Glue record, beside the NS" },
         ]
       : // The wildcard only. Every route has a subdomain, so nothing here serves
         // the bare name, and asking for it would move a website that lives there.
-        [{ name: `*.${domain}`, type: "A", value: ip }]
+        [{ name: `*.${domain}`, zone, type: "A", value: ip }]
 
   return (
     <ol className="space-y-5">
@@ -53,7 +55,7 @@ export function DnsRecords({
               : "Add this at your DNS provider."
           }
         >
-          <RecordTable records={[{ name: `_meshploy-verify.${domain}`, type: "TXT", value: verifyToken || "" }]} />
+          <RecordTable records={[{ name: `_meshploy-verify.${domain}`, zone, type: "TXT", value: verifyToken || "" }]} />
         </Step>
       )}
       <Step
@@ -75,6 +77,9 @@ export function DnsRecords({
 
 export interface DnsRecord {
   name: string
+  /** The zone the record is added in. Given, the name is offered relative to
+   *  it, the way DNS providers ask for it; see lib/dns-name. */
+  zone?: string
   type: string
   value: string
   note?: string
@@ -132,7 +137,7 @@ export function RecordTable({ records }: { records: DnsRecord[] }) {
               <span className="text-[11px] text-muted-foreground">Name</span>
               <span className="font-mono text-[11px] text-muted-foreground">{r.type}</span>
             </div>
-            <CopyValue value={r.name} />
+            <RecordName record={r} />
             {r.note && <p className="text-[11px] text-muted-foreground/70">{r.note}</p>}
             <p className="pt-1 text-[11px] text-muted-foreground">Value</p>
             <CopyValue value={r.value} />
@@ -152,7 +157,7 @@ export function RecordTable({ records }: { records: DnsRecord[] }) {
           {records.map((r) => (
             <tr key={r.name + r.type} className="border-b border-border/40 last:border-0 align-top">
               <td className="px-3 py-2">
-                <CopyValue value={r.name} />
+                <RecordName record={r} />
                 {r.note && <p className="mt-0.5 text-[11px] text-muted-foreground/70">{r.note}</p>}
               </td>
               <td className="px-3 py-2 font-mono text-muted-foreground">{r.type}</td>
@@ -165,6 +170,25 @@ export function RecordTable({ records }: { records: DnsRecord[] }) {
       </table>
       </div>
     </>
+  )
+}
+
+/**
+ * A record's name as the provider's form wants it, relative to its zone, with
+ * the full name under it for a provider that takes that instead.
+ */
+function RecordName({ record }: { record: DnsRecord }) {
+  if (!record.zone) return <CopyValue value={record.name} />
+  const rel = relativeName(record.name, record.zone)
+  if (rel === record.name) return <CopyValue value={record.name} />
+  return (
+    <div className="space-y-0.5">
+      <CopyValue value={rel} />
+      <p className="text-[11px] text-muted-foreground/70 break-all">
+        {rel === "@" ? "@ or blank, in the " + record.zone + " zone" : "in the " + record.zone + " zone"} · full name{" "}
+        <span className="font-mono">{record.name}</span>
+      </p>
+    </div>
   )
 }
 
