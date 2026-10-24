@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.21.2](https://github.com/meshploy/meshploy/compare/v0.21.1...v0.21.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **edge:** the console can post the GitHub App manifest to GitHub, so a GitHub source can be connected again ([6f1f2bc](https://github.com/meshploy/meshploy/commit/6f1f2bc48e7a545c534154c3d2b6e9d58610e5ee))
+* **git:** GitHub Apps get unique names, and setups GitHub never completed are shown as such and cleared ([9fe5bee](https://github.com/meshploy/meshploy/commit/9fe5bee312302a36a0b23c37c4886f91dd307a4d))
+* **services:** a service created from a connected repository deploys on push ([2eb695b](https://github.com/meshploy/meshploy/commit/2eb695b4a0b47443688b5fb2581117324daad0c1))
+
 ## [0.21.1](https://github.com/meshploy/meshploy/compare/v0.21.0...v0.21.1) (2026-10-24)
 
 
