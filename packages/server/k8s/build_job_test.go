@@ -318,3 +318,53 @@ func TestCreateBuildJobPassesTheCacheLimit(t *testing.T) {
 		t.Errorf("CACHE_LIMIT_MB = %q", env["CACHE_LIMIT_MB"])
 	}
 }
+
+func TestEnsureBuildCachePVCReplacesACacheOnARemovedNode(t *testing.T) {
+	pinned := func(name, host string) *corev1.PersistentVolume {
+		return &corev1.PersistentVolume{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: corev1.PersistentVolumeSpec{NodeAffinity: &corev1.VolumeNodeAffinity{Required: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchExpressions: []corev1.NodeSelectorRequirement{{
+					Key: corev1.LabelHostname, Operator: corev1.NodeSelectorOpIn, Values: []string{host},
+				}}}},
+			}}},
+		}
+	}
+	claim := func(volume string) *corev1.PersistentVolumeClaim {
+		return &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: buildCachePVC, Namespace: "shop"},
+			Spec:       corev1.PersistentVolumeClaimSpec{VolumeName: volume},
+		}
+	}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "gw", Labels: map[string]string{corev1.LabelHostname: "gw"}}}
+
+	t.Run("node still here: kept", func(t *testing.T) {
+		client := fake.NewSimpleClientset(node, pinned("pv-1", "gw"), claim("pv-1"))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop"); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := client.CoreV1().PersistentVolumeClaims("shop").Get(t.Context(), buildCachePVC, metav1.GetOptions{})
+		if got.Spec.VolumeName != "pv-1" {
+			t.Fatalf("cache was replaced although its node is in the cluster")
+		}
+	})
+	t.Run("node gone: replaced", func(t *testing.T) {
+		client := fake.NewSimpleClientset(node, pinned("pv-1", "old-worker"), claim("pv-1"))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop"); err != nil {
+			t.Fatal(err)
+		}
+		got, err := client.CoreV1().PersistentVolumeClaims("shop").Get(t.Context(), buildCachePVC, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Spec.VolumeName != "" {
+			t.Fatalf("cache still bound to %s on a removed node", got.Spec.VolumeName)
+		}
+	})
+	t.Run("unbound: kept", func(t *testing.T) {
+		client := fake.NewSimpleClientset(claim(""))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop"); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

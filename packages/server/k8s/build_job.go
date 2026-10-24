@@ -124,12 +124,26 @@ func sourceEnv(src *UploadedSource) []corev1.EnvVar {
 // EnsureBuildCachePVC creates the buildah layer-cache PVC in the namespace if
 // it does not already exist. The PVC is ReadWriteOnce / local-path so layers
 // survive across build jobs on the same node.
+//
+// A local-path volume lives on one node, and every build that mounts it must
+// run there. When that node has left the cluster no build could ever be
+// placed, so the cache is dropped and a fresh one made: it is only a cache.
 func EnsureBuildCachePVC(ctx context.Context, client kubernetes.Interface, namespace string) error {
-	_, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, buildCachePVC, metav1.GetOptions{})
-	if err == nil {
-		return nil // already exists
-	}
-	if !k8serrors.IsNotFound(err) {
+	claims := client.CoreV1().PersistentVolumeClaims(namespace)
+	existing, err := claims.Get(ctx, buildCachePVC, metav1.GetOptions{})
+	switch {
+	case err == nil && existing.DeletionTimestamp == nil && !cacheNodeGone(ctx, client, existing.Spec.VolumeName):
+		return nil
+	case err == nil:
+		if existing.DeletionTimestamp == nil {
+			if err := claims.Delete(ctx, buildCachePVC, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+				return fmt.Errorf("drop build-cache PVC left on a removed node: %w", err)
+			}
+		}
+		if err := waitClaimGone(ctx, client, namespace, buildCachePVC); err != nil {
+			return err
+		}
+	case !k8serrors.IsNotFound(err):
 		return fmt.Errorf("check build-cache PVC: %w", err)
 	}
 
@@ -152,6 +166,57 @@ func EnsureBuildCachePVC(ctx context.Context, client kubernetes.Interface, names
 	}
 	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	return err
+}
+
+// cacheNodeGone reports whether the volume is pinned to nodes none of which
+// is in the cluster any more. Anything it cannot read counts as present, so a
+// cache is never dropped on a guess.
+func cacheNodeGone(ctx context.Context, client kubernetes.Interface, volume string) bool {
+	if volume == "" {
+		return false
+	}
+	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, volume, metav1.GetOptions{})
+	if err != nil || pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
+		return false
+	}
+	var hosts []string
+	for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
+		for _, e := range term.MatchExpressions {
+			if e.Key == corev1.LabelHostname && e.Operator == corev1.NodeSelectorOpIn {
+				hosts = append(hosts, e.Values...)
+			}
+		}
+	}
+	if len(hosts) == 0 {
+		return false
+	}
+	for _, h := range hosts {
+		nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: corev1.LabelHostname + "=" + h})
+		if err != nil || len(nodes.Items) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// waitClaimGone waits for a deleted claim to finish going, so a new one of
+// the same name can be made.
+func waitClaimGone(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	deadline := time.Now().Add(time.Minute)
+	for {
+		_, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("build-cache PVC %s/%s is still being deleted; a pod may still hold it", namespace, name)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // DeleteBuildCachePVC removes the buildah layer-cache PVC for a namespace.
