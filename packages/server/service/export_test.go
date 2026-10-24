@@ -94,3 +94,12 @@ func UseNodeK8sForTest(s *Services, client kubernetes.Interface) {
 func UsePlacementK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Placement.k8s = client
 }
+
+// PruneAbandonedAppsForTest runs one pass of the abandoned GitHub App reaper
+// against cutoff, without waiting for its hour.
+func PruneAbandonedAppsForTest(s *Services, cutoff time.Time) {
+	s.GitIntegrations.pruneAbandonedApps(context.Background(), cutoff)
+}
+
+// AppName exposes the GitHub App name builder to tests.
+var AppName = appName

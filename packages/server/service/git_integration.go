@@ -14,6 +14,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -125,8 +126,9 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 
 	base := s.consoleBase(orgID)
 	m := map[string]any{
-		// What a repository's owner is asked to let in: the organisation's brand.
-		"name":          db.BrandOf(ctx, s.db, orgID).Name,
+		// What a repository's owner is asked to let in: the organisation's
+		// brand, made unique, since GitHub refuses a name any App already has.
+		"name":          appName(db.BrandOf(ctx, s.db, orgID).Name, time.Now()),
 		"url":           base,
 		"redirect_url":  apiBase + "/api/v1/github/app-callback",
 		"callback_urls": []string{apiBase + "/api/v1/github/callback"},
@@ -348,6 +350,37 @@ func (s *GitIntegrationService) Delete(ctx context.Context, id uuid.UUID) error 
 		return huma.Error500InternalServerError("failed to delete git integration")
 	}
 	return nil
+}
+
+// abandonedAppAfter is how long a GitHub App setup waits for GitHub before its
+// row is removed. The row is made before the visit, because the App's webhook
+// URL names it; a visit abandoned or blocked leaves one behind each time.
+const abandonedAppAfter = time.Hour
+
+// StartAbandonedAppReaper removes, hourly, the rows of GitHub App setups that
+// GitHub never completed.
+func (s *GitIntegrationService) StartAbandonedAppReaper(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		s.pruneAbandonedApps(ctx, time.Now().Add(-abandonedAppAfter))
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// pruneAbandonedApps deletes GitHub App rows made before cutoff that never got
+// an App from GitHub. Nothing can build from one: it has no repositories.
+func (s *GitIntegrationService) pruneAbandonedApps(ctx context.Context, cutoff time.Time) {
+	res := s.db.WithContext(ctx).
+		Where("provider = ? AND auth_method = ? AND gh_app_id = '' AND created_at < ?", "github", "app", cutoff).
+		Delete(&db.GitIntegration{})
+	if res.Error != nil {
+		log.Printf("git: prune abandoned GitHub App setups: %v", res.Error)
+	}
 }
 
 // OAuthReconnect resets the OAuth access token on a pending GitLab/Gitea OAuth
@@ -1043,6 +1076,39 @@ func fetchAllRepos(token string) ([]GitRepo, error) {
 
 // newWebhookSecret returns the secret a provider signs its push deliveries
 // with. 32 bytes: it is a key, not an identifier, and it is stored encrypted.
+// appName is a GitHub App name: the brand, the day it was made and a random
+// suffix, as Brand-2026-10-25-k3x9qa. App names are unique across GitHub and
+// at most 34 characters, so a long brand is cut to fit.
+func appName(brand string, now time.Time) string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		// Without a suffix the name may be taken, and GitHub asks for another.
+		b = nil
+	}
+	suffix := make([]byte, len(b))
+	for i, v := range b {
+		suffix[i] = alphabet[int(v)%len(alphabet)]
+	}
+	tail := "-" + now.UTC().Format("2006-01-02")
+	if len(suffix) > 0 {
+		tail += "-" + string(suffix)
+	}
+	brand = strings.TrimSpace(brand)
+	if brand == "" {
+		brand = "Meshploy"
+	}
+	if max := 34 - len(tail); len(brand) > max {
+		// At the last whole word that fits, if there is one.
+		cut := brand[:max]
+		if i := strings.LastIndexAny(cut, " -"); i > 0 && max < len(brand) && brand[max] != ' ' && brand[max] != '-' {
+			cut = cut[:i]
+		}
+		brand = strings.TrimRight(cut, " -")
+	}
+	return brand + tail
+}
+
 func newWebhookSecret() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

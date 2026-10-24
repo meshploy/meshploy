@@ -356,11 +356,14 @@ function GitIntegrationCard({ integration, orgId, token, onDelete, isDeleting }:
   const isPending = !integration.connected
   const isGHApp = integration.auth_method === "app"
   const isOAuth = integration.auth_method === "oauth"
+  // A GitHub App setup GitHub never completed has no App to install; the
+  // server removes these after an hour.
+  const notCreated = isPending && isGHApp && !integration.gh_app_slug
 
-  return <IntegrationRow name={integration.name} provider={integration.provider} status={isPending || needsReconnect ? "Action required" : "Connected"}
-    details={<>{needsReconnect ? "Token expired" : isPending ? "Authorization incomplete" : repos !== undefined ? `${repos.length} repositories accessible` : reposError ? "Repository access unavailable" : "Checking repository access…"}</>}
+  return <IntegrationRow name={integration.name} provider={integration.provider} status={notCreated ? "Not created" : isPending || needsReconnect ? "Action required" : "Connected"}
+    details={<>{notCreated ? "GitHub never created this App. Removed automatically after an hour" : needsReconnect ? "Token expired" : isPending ? "Authorization incomplete" : repos !== undefined ? `${repos.length} repositories accessible` : reposError ? "Repository access unavailable" : "Checking repository access…"}</>}
     actions={<>
-      {isPending && isGHApp && <Button variant="outline" size="sm" onClick={handleInstall} disabled={installing || !integration.gh_app_slug}>{installing ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}Install app</Button>}
+      {isPending && isGHApp && !notCreated && <Button variant="outline" size="sm" onClick={handleInstall} disabled={installing || !integration.gh_app_slug}>{installing ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}Install app</Button>}
       {(isPending && isOAuth || needsReconnect) && <Button variant="outline" size="sm" onClick={handleReconnect} disabled={reconnecting}><RefreshCw className="size-3" />Re-authorize</Button>}
       <DisconnectButton name={integration.name} onDelete={onDelete} pending={isDeleting} />
     </>} />

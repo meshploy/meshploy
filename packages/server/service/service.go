@@ -347,6 +347,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		svc.System.SyncEdge(context.Background())
 	}()
 	go notif.StartDeliveryReaper(context.Background())
+	go gitSvc.StartAbandonedAppReaper(context.Background())
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
 	go svc.MeshAccess.Follow(context.Background())
