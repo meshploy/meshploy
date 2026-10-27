@@ -3,8 +3,10 @@ package handler
 import (
 	"context"
 	"errors"
+	"log"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	svc "github.com/meshploy/packages/server/service"
 )
@@ -149,7 +151,7 @@ func (h *Handler) ListProjects(ctx context.Context, input *ListProjectsInput) (*
 }
 
 func (h *Handler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
-	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	userID, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +159,7 @@ func (h *Handler) CreateProject(ctx context.Context, input *CreateProjectInput) 
 	if err != nil {
 		return nil, huma.Error409Conflict("slug already taken")
 	}
+	h.publishProjectNames(ctx, orgID, userID)
 	return &CreateProjectOutput{Body: project}, nil
 }
 
@@ -195,7 +198,7 @@ func (h *Handler) UpdateProject(ctx context.Context, input *UpdateProjectInput) 
 }
 
 func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {
-	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionDelete, "")
+	userID, orgID, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionDelete, "")
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +210,17 @@ func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*
 		}
 		return nil, notFound(err)
 	}
+	h.publishProjectNames(ctx, orgID, userID)
 	return nil, nil
+}
+
+// publishProjectNames asks the edge to serve the projects' console names as
+// they now are. A failure is logged, not returned: the project change itself
+// succeeded, and the next one, or the API's next start, publishes again.
+func (h *Handler) publishProjectNames(ctx context.Context, orgID, by uuid.UUID) {
+	if err := h.svc.System.PublishProjectNames(ctx, orgID, by); err != nil {
+		log.Printf("warning: could not ask the host agent to serve the projects' console names: %v", err)
+	}
 }
 
 func (h *Handler) ClearBuildCache(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {

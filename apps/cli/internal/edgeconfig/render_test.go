@@ -482,3 +482,22 @@ func TestConsoleNamesAreServedAsTheConsole(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, files["caddy/Caddyfile"], "console.example.com, apps.example.com {\n    tls force_automate")
 }
+
+// A project's door is served as the console is, on the domains that serve the
+// platform, with a certificate of its own in either DNS mode and no zone
+// record: one would make the project's slug a name the wildcard stops
+// answering.
+func TestProjectConsoleNamesAreServedAsTheConsole(t *testing.T) {
+	snap := snapshot(
+		domain("example.com", hostagent.EdgeDNSDelegation, true),
+		domain("second.test", hostagent.EdgeDNSOnDemand, false),
+	)
+	snap.ProjectConsoleNames = []string{"apps.shop", "apps.team-tracker"}
+	files, err := Render(snap)
+	require.NoError(t, err)
+
+	caddy := files["caddy/Caddyfile"]
+	assert.Contains(t, caddy, "apps.shop.example.com, apps.team-tracker.example.com {\n    tls force_automate\n    import console_site\n}")
+	assert.NotContains(t, caddy, "apps.shop.second.test", "a domain that does not serve the platform serves no project's door")
+	assert.NotContains(t, files["coredns/zones/example.com"], "shop")
+}

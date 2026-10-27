@@ -78,6 +78,10 @@ type EdgeSnapshot struct {
 	// is, beside console.<domain>: an edition's own door onto the same web
 	// app and API. Empty in Community.
 	ConsoleNames []string `json:"console_names,omitempty"`
+	// ProjectConsoleNames are served as the console is too, one per project
+	// under a prefix an edition registered: "<prefix>.<project slug>",
+	// beside <domain>. Empty in Community.
+	ProjectConsoleNames []string `json:"project_console_names,omitempty"`
 }
 
 // ProxyPortOrDefault is ProxyPort, or 8081.
@@ -195,6 +199,26 @@ func (s EdgeSnapshot) Validate() error {
 		case "console", "api", "headscale", "ns1", s.Primary().InternalSubdomain:
 			return fmt.Errorf("console name %q is already one of the platform's", n)
 		}
+	}
+	internal := map[string]bool{}
+	for _, d := range s.Domains {
+		internal[d.InternalSubdomain] = true
+	}
+	projectNames := map[string]bool{}
+	for _, n := range s.ProjectConsoleNames {
+		// Two plain labels, prefix and slug. A slug that is a domain's internal
+		// label would put the name inside the mesh-only zone.
+		_, slug, ok := strings.Cut(n, ".")
+		if err := validEdgeName(n); err != nil || !ok || strings.Contains(slug, ".") {
+			return fmt.Errorf("project console name %q must be two labels", n)
+		}
+		if internal[slug] {
+			return fmt.Errorf("project console name %q is inside a zone the platform serves", n)
+		}
+		if projectNames[n] {
+			return fmt.Errorf("project console name %q appears twice", n)
+		}
+		projectNames[n] = true
 	}
 	if s.MeshDomain != "" {
 		if err := validEdgeName(s.MeshDomain); err != nil {

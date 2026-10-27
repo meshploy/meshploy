@@ -147,3 +147,56 @@ func TestPublishEdgeRefusesASetThatCannotBeServed(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &snap))
 	require.NoError(t, snap.Validate())
 }
+
+// Where an edition registers a project prefix, every project's console name is
+// published, levels aside, and a project created or deleted publishes again.
+// Nothing changes for one whose names are already installed.
+func TestProjectConsoleNamesFollowTheProjects(t *testing.T) {
+	service.UseProjectConsolePrefixForTest(t, "apps")
+	svc, gdb, org, host := edgeServer(t)
+	ctx := context.Background()
+	require.NoError(t, svc.Domains.CreateSeeded(ctx, org, "example.com", db.DNSModeDelegation))
+	shop, err := svc.Projects.Create(ctx, org, "Shop", "shop-"+uuid.NewString()[:6])
+	require.NoError(t, err)
+	tools, err := svc.Projects.Create(ctx, org, "Tools", "tools-"+uuid.NewString()[:6])
+	require.NoError(t, err)
+	require.NoError(t, gdb.Create(&db.Project{OrganizationID: org, Name: "Shop", Slug: shop.Slug + "-staging",
+		ParentProjectID: &shop.ID, EnvLevel: 1}).Error)
+	require.NoError(t, gdb.Create(&db.Project{OrganizationID: org, Name: "Mesh", Slug: "internal"}).Error)
+
+	install := func() {
+		t.Helper()
+		snap := desired(t, host)
+		require.NoError(t, hostagent.WriteEdgeSnapshot(host, *snap))
+		require.NoError(t, os.Remove(filepath.Join(host, hostagent.EdgeDesiredFile)))
+	}
+	require.NoError(t, svc.System.PublishEdge(ctx, org, uuid.New()))
+	assert.ElementsMatch(t, []string{"apps." + shop.Slug, "apps." + tools.Slug}, desired(t, host).ProjectConsoleNames,
+		"a level is reached through its project, and a slug that is the internal label is left out")
+	install()
+
+	require.NoError(t, svc.System.PublishProjectNames(ctx, org, uuid.New()))
+	_, statErr := os.Stat(filepath.Join(host, hostagent.EdgeDesiredFile))
+	assert.True(t, os.IsNotExist(statErr), "names already installed publish nothing")
+
+	require.NoError(t, gdb.Delete(&db.Project{}, "id = ?", tools.ID).Error)
+	require.NoError(t, svc.System.PublishProjectNames(ctx, org, uuid.New()))
+	assert.Equal(t, []string{"apps." + shop.Slug}, desired(t, host).ProjectConsoleNames)
+}
+
+// A route cannot take a name of the shape a project's console is served at,
+// whether or not that project exists yet.
+func TestARouteCannotTakeAProjectConsoleName(t *testing.T) {
+	service.UseProjectConsolePrefixForTest(t, "apps")
+	svc, gdb, org, _ := edgeServer(t)
+	ctx := context.Background()
+	require.NoError(t, svc.Domains.CreateSeeded(ctx, org, "example.com", db.DNSModeDelegation))
+	var domain db.Domain
+	require.NoError(t, gdb.Where("organization_id = ?", org).First(&domain).Error)
+	project, err := svc.Projects.Create(ctx, org, "Shop", "shop-"+uuid.NewString()[:6])
+	require.NoError(t, err)
+
+	_, err = svc.Routes.Create(ctx, service.CreateRouteInput{ProjectID: project.ID, DomainID: &domain.ID,
+		Subdomain: "apps.later", Zone: db.RouteZonePublic})
+	require.ErrorContains(t, err, "reserved")
+}

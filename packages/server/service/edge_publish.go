@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,17 +59,42 @@ func (s *SystemService) SyncEdge(ctx context.Context) {
 	if s.hostDir() == "" {
 		return
 	}
-	installed, err := hostagent.ReadEdgeSnapshot(s.hostDir())
-	if err != nil || installed == nil || slices.Equal(installed.ConsoleNames, consoleNames) {
-		return
-	}
 	var primary meshdb.Domain
 	if err := s.db.WithContext(ctx).Where("is_primary AND verified").First(&primary).Error; err != nil {
 		return
 	}
-	if err := s.PublishEdge(ctx, primary.OrganizationID, uuid.Nil); err != nil {
+	if err := s.publishNamesIfChanged(ctx, primary.OrganizationID, uuid.Nil); err != nil {
 		log.Printf("warning: could not ask the host agent to serve the console names: %v", err)
 	}
+}
+
+// PublishProjectNames publishes the edge when the projects' console names
+// changed: a project created or deleted, where an extension registered a
+// prefix. Nothing to do otherwise, so Community never reloads its edge for a
+// project.
+func (s *SystemService) PublishProjectNames(ctx context.Context, orgID, by uuid.UUID) error {
+	if s.hostDir() == "" || len(projectConsolePrefixes) == 0 {
+		return nil
+	}
+	return s.publishNamesIfChanged(ctx, orgID, by)
+}
+
+// publishNamesIfChanged publishes the edge when the names it serves as the
+// console differ from the installed edge's.
+func (s *SystemService) publishNamesIfChanged(ctx context.Context, orgID, by uuid.UUID) error {
+	installed, err := hostagent.ReadEdgeSnapshot(s.hostDir())
+	if err != nil || installed == nil {
+		return err
+	}
+	want, err := s.edgeSnapshot(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	if slices.Equal(installed.ConsoleNames, want.ConsoleNames) &&
+		slices.Equal(installed.ProjectConsoleNames, want.ProjectConsoleNames) {
+		return nil
+	}
+	return s.PublishEdge(ctx, orgID, by)
 }
 
 // consoleNames are the platform subdomains an extension serves as the
@@ -87,6 +113,60 @@ func RegisterConsoleName(name string) {
 	}
 	consoleNames = append(consoleNames, name)
 	platformReservedSubdomains[name] = true
+}
+
+// projectConsolePrefixes are the prefixes an extension serves each project
+// under as the console: <prefix>.<project slug>.<domain>.
+var projectConsolePrefixes []string
+
+// RegisterProjectConsolePrefix serves <prefix>.<project slug>.<domain> as the
+// console is, for every project, on every domain that serves the platform's
+// names, and keeps routes off those names. Call it from init(), before the
+// server starts; the prefix must be one plain label. The CE binary registers
+// none.
+func RegisterProjectConsolePrefix(prefix string) {
+	if !slices.Contains(projectConsolePrefixes, prefix) {
+		projectConsolePrefixes = append(projectConsolePrefixes, prefix)
+	}
+}
+
+// isProjectConsoleName reports whether a route subdomain has the shape of a
+// project's console name, <prefix>.<label>, whether or not that project exists:
+// one created later would take the name over.
+func isProjectConsoleName(subdomain string) bool {
+	prefix, rest, ok := strings.Cut(subdomain, ".")
+	return ok && !strings.Contains(rest, ".") && slices.Contains(projectConsolePrefixes, prefix)
+}
+
+// projectConsoleNames are <prefix>.<slug> for every registered prefix and every
+// project of the organisation, environment levels aside: a level is reached
+// through its project. A slug that is a domain's internal label is left out,
+// as its name would sit inside the mesh-only zone.
+func (s *SystemService) projectConsoleNames(ctx context.Context, orgID uuid.UUID, domains []meshdb.Domain) ([]string, error) {
+	if len(projectConsolePrefixes) == 0 {
+		return nil, nil
+	}
+	var slugs []string
+	if err := s.db.WithContext(ctx).Model(&meshdb.Project{}).
+		Where("organization_id = ? AND parent_project_id IS NULL", orgID).
+		Order("slug").Pluck("slug", &slugs).Error; err != nil {
+		return nil, err
+	}
+	internal := map[string]bool{"internal": true}
+	for _, d := range domains {
+		if d.InternalSubdomain != "" {
+			internal[d.InternalSubdomain] = true
+		}
+	}
+	var names []string
+	for _, prefix := range projectConsolePrefixes {
+		for _, slug := range slugs {
+			if !internal[slug] {
+				names = append(names, prefix+"."+slug)
+			}
+		}
+	}
+	return names, nil
 }
 
 // IsConsoleName reports whether name is served as the console: "console"
@@ -144,6 +224,11 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 			ServesPlatform:    d.FormerPrimary,
 		})
 	}
+	names, err := s.projectConsoleNames(ctx, orgID, domains)
+	if err != nil {
+		return nil, err
+	}
+	snap.ProjectConsoleNames = names
 	// Node names hang off the install's domain and stay there, whichever
 	// domain is primary: moving them would rename every node in the mesh.
 	if s.cfg.Domain != "" {

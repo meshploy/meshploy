@@ -105,3 +105,27 @@ func TestEdgeSnapshotChecksConsoleNames(t *testing.T) {
 		}
 	}
 }
+
+// Project console names are written into the Caddyfile as they are: two plain
+// labels, never inside the mesh-only zone, never twice.
+func TestEdgeSnapshotChecksProjectConsoleNames(t *testing.T) {
+	for _, c := range []struct {
+		names []string
+		ok    bool
+	}{
+		{[]string{"apps.shop"}, true},
+		{[]string{"apps.shop", "apps.team-tracker"}, true},
+		{[]string{"apps"}, false},
+		{[]string{"apps.shop.more"}, false},
+		{[]string{"apps.internal"}, false},
+		{[]string{"apps.sh op"}, false},
+		{[]string{"apps.{"}, false},
+		{[]string{"apps.shop", "apps.shop"}, false},
+	} {
+		s := okSnapshot()
+		s.ProjectConsoleNames = c.names
+		if err := s.Validate(); (err == nil) != c.ok {
+			t.Errorf("%q: Validate() = %v, want ok=%v", c.names, err, c.ok)
+		}
+	}
+}

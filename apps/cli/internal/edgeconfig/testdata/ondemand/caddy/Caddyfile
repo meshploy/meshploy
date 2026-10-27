@@ -51,6 +51,35 @@
     header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://{host}; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com; object-src 'none'"
 }
 
+# What the console's names serve: the web app, with the API, remote MCP and
+# OAuth discovery beside it on the same origin.
+(console_site) {
+    import platform_headers
+    import console_csp
+    handle /api/* {
+        reverse_proxy localhost:4000 {
+            # flush_interval -1 disables response buffering so SSE log streams
+            # reach the client immediately instead of being held until the
+            # connection closes.
+            flush_interval -1
+        }
+    }
+    # Remote MCP (Streamable HTTP): an agent token, or a client connected
+    # through OAuth, which finds how to connect at /.well-known/oauth-*. The
+    # approval page, /oauth/authorize, is the console's own.
+    handle /mcp* {
+        reverse_proxy localhost:4000 {
+            flush_interval -1
+        }
+    }
+    handle /.well-known/oauth-* {
+        reverse_proxy localhost:4000
+    }
+    handle {
+        reverse_proxy localhost:5173
+    }
+}
+
 # Anything you add yourself. Imported before the site blocks, so a syntax error
 # in it fails the config outright rather than at the first request.
 import conf.d/*.caddy
@@ -77,30 +106,7 @@ api.example.com {
 # ── Meshploy console ─────────────────────────────────────────────────────────
 console.example.com {
     tls force_automate
-    import platform_headers
-    import console_csp
-    handle /api/* {
-        reverse_proxy localhost:4000 {
-            # flush_interval -1 disables response buffering so SSE log streams
-            # reach the client immediately instead of being held until the
-            # connection closes.
-            flush_interval -1
-        }
-    }
-    # Remote MCP (Streamable HTTP): an agent token, or a client connected
-    # through OAuth, which finds how to connect at /.well-known/oauth-*. The
-    # approval page, /oauth/authorize, is the console's own.
-    handle /mcp* {
-        reverse_proxy localhost:4000 {
-            flush_interval -1
-        }
-    }
-    handle /.well-known/oauth-* {
-        reverse_proxy localhost:4000
-    }
-    handle {
-        reverse_proxy localhost:5173
-    }
+    import console_site
 }
 
 # ── Public workload routes ───────────────────────────────────────────────────

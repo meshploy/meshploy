@@ -68,6 +68,8 @@ type caddyData struct {
 	HeadscalePort int
 	// Served beside console.<domain>, as it is.
 	ConsoleNames []string
+	// Served as the console is, each with its own certificate.
+	ProjectConsoleNames []string
 }
 
 // HeadscaleConfig is the one generated file that is not reloaded in place:
@@ -110,7 +112,7 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 		SnapshotPath: SnapshotPath, PublicIP: snap.PublicIP, MeshIP: snap.MeshIP,
 		Domains: domains, Primary: *snap.Primary(), MeshDomain: snap.MeshDomainOrDefault(),
 		ProxyPort: snap.ProxyPortOrDefault(), HeadscalePort: snap.HeadscalePortOrDefault(),
-		ConsoleNames: snap.ConsoleNames,
+		ConsoleNames: snap.ConsoleNames, ProjectConsoleNames: snap.ProjectConsoleNames,
 	}
 	caddyfile, err := execute(tmpl, "Caddyfile.tmpl", data)
 	if err != nil {

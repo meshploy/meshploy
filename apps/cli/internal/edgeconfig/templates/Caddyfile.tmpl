@@ -51,6 +51,35 @@
     header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://{host}; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com; object-src 'none'"
 }
 
+# What the console's names serve: the web app, with the API, remote MCP and
+# OAuth discovery beside it on the same origin.
+(console_site) {
+    import platform_headers
+    import console_csp
+    handle /api/* {
+        reverse_proxy localhost:4000 {
+            # flush_interval -1 disables response buffering so SSE log streams
+            # reach the client immediately instead of being held until the
+            # connection closes.
+            flush_interval -1
+        }
+    }
+    # Remote MCP (Streamable HTTP): an agent token, or a client connected
+    # through OAuth, which finds how to connect at /.well-known/oauth-*. The
+    # approval page, /oauth/authorize, is the console's own.
+    handle /mcp* {
+        reverse_proxy localhost:4000 {
+            flush_interval -1
+        }
+    }
+    handle /.well-known/oauth-* {
+        reverse_proxy localhost:4000
+    }
+    handle {
+        reverse_proxy localhost:5173
+    }
+}
+
 # Anything you add yourself. Imported before the site blocks, so a syntax error
 # in it fails the config outright rather than at the first request.
 import conf.d/*.caddy
@@ -81,31 +110,23 @@ api.{{ .BaseDomain }} {
 # ── Meshploy console ─────────────────────────────────────────────────────────
 console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {{ . }}.{{ $base }}{{ end }} {
 {{- template "named_tls" . }}
-    import platform_headers
-    import console_csp
-    handle /api/* {
-        reverse_proxy localhost:4000 {
-            # flush_interval -1 disables response buffering so SSE log streams
-            # reach the client immediately instead of being held until the
-            # connection closes.
-            flush_interval -1
-        }
-    }
-    # Remote MCP (Streamable HTTP): an agent token, or a client connected
-    # through OAuth, which finds how to connect at /.well-known/oauth-*. The
-    # approval page, /oauth/authorize, is the console's own.
-    handle /mcp* {
-        reverse_proxy localhost:4000 {
-            flush_interval -1
-        }
-    }
-    handle /.well-known/oauth-* {
-        reverse_proxy localhost:4000
-    }
-    handle {
-        reverse_proxy localhost:5173
-    }
+    import console_site
 }
+{{- if $.ProjectConsoleNames }}
+
+# ── One per project ──────────────────────────────────────────────────────────
+# Two labels deep, so outside this domain's wildcard certificate and its
+# challenge zone: each name gets its own certificate by an HTTP or TLS-ALPN
+# challenge, in either DNS mode, and force_automate obtains it up front rather
+# than leaving it to the on-demand policy, whose ask endpoint does not know
+# these names. They need no record of their own - the wildcard already
+# resolves them, and a record for one would make its project's slug a name in
+# the zone, which the wildcard then stops answering.
+{{ range $i, $n := $.ProjectConsoleNames }}{{ if $i }}, {{ end }}{{ $n }}.{{ $base }}{{ end }} {
+    tls force_automate
+    import console_site
+}
+{{- end }}
 {{ else }}
 # The platform's own subdomains are reserved on this domain but serve nothing.
 # They follow the primary; making this domain primary is what moves them.

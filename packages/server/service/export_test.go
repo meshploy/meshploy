@@ -103,3 +103,11 @@ func PruneAbandonedAppsForTest(s *Services, cutoff time.Time) {
 
 // AppName exposes the GitHub App name builder to tests.
 var AppName = appName
+
+// UseProjectConsolePrefixForTest registers a project console prefix for one
+// test, and takes it away again when the test ends.
+func UseProjectConsolePrefixForTest(t interface{ Cleanup(func()) }, prefix string) {
+	before := projectConsolePrefixes
+	RegisterProjectConsolePrefix(prefix)
+	t.Cleanup(func() { projectConsolePrefixes = before })
+}

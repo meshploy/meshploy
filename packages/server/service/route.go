@@ -155,7 +155,7 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 			return nil, huma.Error422UnprocessableEntity(
 				fmt.Sprintf("%s is being retired, so no new routes can use it", domain.BaseDomain))
 		}
-		if platformReservedSubdomains[in.Subdomain] {
+		if platformReservedSubdomains[in.Subdomain] || isProjectConsoleName(in.Subdomain) {
 			return nil, huma.Error422UnprocessableEntity(
 				fmt.Sprintf("subdomain %q is reserved and cannot be used", in.Subdomain))
 		}
