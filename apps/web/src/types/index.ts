@@ -53,6 +53,8 @@ export interface Node {
   k8sMember: boolean
   k8sReady: boolean
   k8sNodeName: string
+  /** Live labels of its k3s node. */
+  k3sLabels: Record<string, string>
   // Active project namespaces on this node
   activeProjects: string[]
 }

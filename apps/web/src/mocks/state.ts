@@ -92,6 +92,7 @@ export const db: Record<string, DemoRecord[]> = {
       parent_project_id: seed.demoProject.id,
       env_name: "staging",
       env_level: 1,
+      sandboxed: true,
     },
   ],
   services: [
@@ -288,7 +289,9 @@ export const db: Record<string, DemoRecord[]> = {
     // What runs where: the worker carries staging and the Experiments
     // project too, so the workspace map has each level on a machine.
     active_projects: n.id === seed.demoNodeWorker.id ? [...n.active_projects, stagingLevelId, secondProjectId] : n.active_projects,
-    k3s_labels: {},
+    // Both cluster nodes are prepared for sandboxed projects, so the
+    // sandboxed staging level can run where its services are pinned.
+    k3s_labels: n.id === seed.demoLaptop.id ? {} : { "meshploy.com/sandbox": "true" },
     public_ip: "203.0.113.10",
     created_at: seed.DEMO_NOW,
     updated_at: seed.DEMO_NOW,

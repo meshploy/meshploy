@@ -662,6 +662,11 @@ type Project struct {
 	// organization's network isolation: any pod in the cluster may reach it.
 	NetworkOpen bool `gorm:"not null;default:false" json:"network_open"`
 
+	// Sandboxed runs this project's, or this level's, pods on gVisor instead
+	// of the host's kernel (see service.SandboxService). Builds are never
+	// sandboxed.
+	Sandboxed bool `gorm:"not null;default:false" json:"sandboxed"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID"                         json:"-"`
 	Services     []Service    `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`
 	Routes       []Route      `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`

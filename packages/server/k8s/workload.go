@@ -72,6 +72,10 @@ type WorkloadParams struct {
 	// the image's own. They reach the container as written (see literalArgs).
 	Command []string
 	Args    []string
+
+	// RuntimeClass runs the pod on another container runtime, such as
+	// SandboxRuntimeClass; empty is the cluster's default.
+	RuntimeClass string
 }
 
 // literalArgs doubles every $, so Kubernetes passes the arguments through as
@@ -248,6 +252,7 @@ func workloadPod(p WorkloadParams) (map[string]string, corev1.PodSpec) {
 	if p.ImagePullSecretName != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: p.ImagePullSecretName}}
 	}
+	withRuntime(&podSpec, p.RuntimeClass)
 
 	return labels, podSpec
 }
@@ -499,6 +504,9 @@ type DatabaseWorkloadParams struct {
 
 	LivenessProbe  *corev1.Probe
 	ReadinessProbe *corev1.Probe
+
+	// RuntimeClass: see WorkloadParams.
+	RuntimeClass string
 }
 
 // ApplyDatabaseDeployment creates-or-updates a PVC and Deployment for a managed database.
@@ -564,6 +572,7 @@ func ApplyDatabaseDeployment(ctx context.Context, client kubernetes.Interface, p
 	if p.NodeName != "" {
 		podSpec.NodeName = p.NodeName
 	}
+	withRuntime(&podSpec, p.RuntimeClass)
 
 	desired := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: p.Namespace, Labels: labels},
@@ -810,6 +819,9 @@ type PodInfo struct {
 	WaitingMessage string `json:"waiting_message,omitempty"`
 	// MemoryLimit is the container's memory limit as set (e.g. "512Mi").
 	MemoryLimit string `json:"memory_limit,omitempty"`
+	// RuntimeClass is the runtime the pod runs on: SandboxRuntimeClass for a
+	// sandboxed pod, empty for the host's kernel.
+	RuntimeClass string `json:"runtime_class,omitempty"`
 }
 
 // ListServicePods returns all pods for a given app label in the namespace,
@@ -842,6 +854,9 @@ func podInfos(items []corev1.Pod) []PodInfo {
 			Phase:    string(p.Status.Phase),
 			NodeName: p.Spec.NodeName,
 			App:      p.Labels["app"],
+		}
+		if p.Spec.RuntimeClassName != nil {
+			info.RuntimeClass = *p.Spec.RuntimeClassName
 		}
 		for _, cs := range p.Status.ContainerStatuses {
 			info.Restarts += cs.RestartCount

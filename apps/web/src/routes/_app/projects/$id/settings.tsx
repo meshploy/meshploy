@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/auth-store"
 import { useIsAdmin, useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { inputCls } from "@/components/services/form-primitives"
 import { cn } from "@/lib/utils"
@@ -131,7 +132,7 @@ function ProjectSettingsPage() {
         </div>
       </section>
 
-      <NetworkSection orgId={orgId} project={project} />
+      <IsolationSection orgId={orgId} project={project} />
 
       {/* The project's build cache: one for all its services, trimmed after
           every build to the server's limit, and cleared here at any time. */}
@@ -205,7 +206,7 @@ function ProjectSettingsPage() {
 // cluster: one row per kind of isolation. Network follows the organization's
 // switch unless opened here as an exception. Only an owner or admin may open
 // one: it undoes, here, a choice the organization made.
-function NetworkSection({ orgId, project }: { orgId: string; project: ApiProject }) {
+function IsolationSection({ orgId, project }: { orgId: string; project: ApiProject }) {
   const token = useAuthStore((s) => s.token)!
   const isAdmin = useIsAdmin()
   const qc = useQueryClient()
@@ -266,6 +267,97 @@ function NetworkSection({ orgId, project }: { orgId: string; project: ApiProject
               />}
         </div>
       </div>
+      <SandboxRow orgId={orgId} project={project} what={what} />
     </section>
+  )
+}
+
+// Whether this project's, or level's, apps run on gVisor. Switching moves the
+// running ones at once, so it asks first.
+function SandboxRow({ orgId, project, what }: { orgId: string; project: ApiProject; what: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const isAdmin = useIsAdmin()
+  const qc = useQueryClient()
+  const [asking, setAsking] = useState<boolean | null>(null)
+  const { data: state } = useQuery({
+    queryKey: ["project-sandbox", orgId, project.id],
+    queryFn: () => projectsApi.sandbox(orgId, project.id, token),
+  })
+  const { data: overview } = useQuery({
+    queryKey: ["org-sandbox", orgId],
+    queryFn: () => orgsApi.sandbox(orgId, token),
+  })
+  const set = useMutation({
+    mutationFn: (on: boolean) => projectsApi.setSandbox(orgId, project.id, on, token),
+    onSuccess: (updated) => {
+      qc.setQueryData(["project-sandbox", orgId, project.id], updated)
+      qc.invalidateQueries({ queryKey: ["org-sandbox", orgId] })
+      qc.invalidateQueries({ queryKey: ["project", orgId, project.id] })
+      setAsking(null)
+    },
+  })
+
+  const on = !!state?.on
+  const noNode = overview !== undefined && overview.nodes.length === 0
+  const locked = !!state?.required
+
+  return (
+    <div className="flex items-start justify-between gap-4 border-t border-border/60 pt-4">
+      <div className="space-y-1">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          Sandbox
+          <TermInfo id="environments.sandbox" />
+          <span className={cn(
+            "rounded-full border px-1.5 py-0.5 text-[11px] font-normal",
+            on ? "border-emerald-500/20 bg-emerald-500/15 text-emerald-400" : "border-border/60 text-muted-foreground",
+          )}>
+            {on ? "Sandboxed" : "Host kernel"}
+          </span>
+        </p>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {locked
+            ? <>Required: {state?.why}</>
+            : <>Runs {what}&apos;s apps and jobs on gVisor, a kernel of their own, so code that escapes its container lands there and not on the machine. Each sandboxed pod takes some 35 MiB more memory. Databases stay on the host&apos;s kernel, where they run at full speed, and builds are never sandboxed.</>}
+        </p>
+        {!on && noNode && (
+          <p className="text-xs text-muted-foreground">
+            No node can run sandboxed projects yet. Run <code className="font-mono text-foreground">sudo meshploy install sandbox</code> on one first.
+          </p>
+        )}
+        {!isAdmin && !locked && <p className="text-xs text-muted-foreground">Only an owner or admin can change this.</p>}
+        {set.isError && asking === null && <p className="text-xs text-destructive">{(set.error as Error).message}</p>}
+      </div>
+      <div className="shrink-0 pt-0.5">
+        {set.isPending
+          ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          : <Switch
+              checked={on}
+              disabled={!state || locked || !isAdmin || (!on && noNode)}
+              onCheckedChange={(v) => { set.reset(); setAsking(v) }}
+              aria-label={`Run ${what}'s apps sandboxed`}
+            />}
+      </div>
+
+      <Dialog open={asking !== null} onOpenChange={(open) => { if (!open && !set.isPending) setAsking(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{asking ? `Sandbox ${what}?` : `Stop sandboxing ${what}?`}</DialogTitle>
+            <DialogDescription>
+              {asking
+                ? "Its running apps roll onto gVisor now, without stopping, and each takes a little more memory from then on. Its databases stay as they are."
+                : "Its running apps roll back onto the host's kernel now, without stopping. Its databases stay as they are."}
+            </DialogDescription>
+          </DialogHeader>
+          {set.isError && <p className="text-xs text-destructive">{(set.error as Error).message}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAsking(null)} disabled={set.isPending}>Cancel</Button>
+            <Button onClick={() => set.mutate(!!asking)} disabled={set.isPending}>
+              {set.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {asking ? "Sandbox" : "Stop sandboxing"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }

@@ -54,6 +54,8 @@ type DeploymentService struct {
 	// tcpRoutes follows a deploy with the TCP routes a service's ports ask
 	// for by being published on one address. Assigned in service.New.
 	tcpRoutes *TCPRouteService
+	// sandbox picks the runtime a service's pods take.
+	sandbox *SandboxService
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -753,7 +755,13 @@ func (s *DeploymentService) ReapplyService(ctx context.Context, serviceID uuid.U
 	if err := appk8s.EnsureNamespace(ctx, s.k8s, svc.Project.Slug); err != nil {
 		return err
 	}
-	if err := appk8s.ApplyDeployment(ctx, s.k8s, s.workloadParams(ctx, &svc, svc.Image, uuid.Nil)); err != nil {
+	wp := s.workloadParams(ctx, &svc, svc.Image, uuid.Nil)
+	runtime, err := s.sandbox.RuntimeFor(ctx, svc.ProjectID, wp.NodeName)
+	if err != nil {
+		return err
+	}
+	wp.RuntimeClass = runtime
+	if err := appk8s.ApplyDeployment(ctx, s.k8s, wp); err != nil {
 		return err
 	}
 	s.markDeployed(ctx, &svc, svc.Image)
@@ -2068,6 +2076,11 @@ const runOnceTimeout = 60 * time.Minute
 // startWorkload puts a service's workload in the cluster: a Deployment kept up,
 // or a Job for a service that runs once.
 func (s *DeploymentService) startWorkload(ctx context.Context, svc *db.Service, wp appk8s.WorkloadParams) error {
+	runtime, err := s.sandbox.RuntimeFor(ctx, svc.ProjectID, wp.NodeName)
+	if err != nil {
+		return err
+	}
+	wp.RuntimeClass = runtime
 	if svc.RunOnce {
 		return appk8s.RunOnce(ctx, s.k8s, wp, svc.RunRetries)
 	}
@@ -2155,6 +2168,14 @@ func appK8sName(svc *db.Service) string {
 }
 
 // slugify converts a name to a K8s-safe lowercase slug.
+// databaseWorkloadName is a managed database's name in the cluster.
+func databaseWorkloadName(svc *db.Service, dc *db.DatabaseConfig) string {
+	if dc.Slug != "" {
+		return dc.Slug
+	}
+	return slugify(svc.Name)
+}
+
 func slugify(s string) string {
 	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, " ", "-")
@@ -2276,10 +2297,7 @@ func (s *DeploymentService) applyDatabaseWorkload(ctx context.Context, svc *db.S
 		}
 	}
 
-	slug := dc.Slug
-	if slug == "" {
-		slug = slugify(svc.Name)
-	}
+	slug := databaseWorkloadName(svc, dc)
 
 	// Load the service's single "db" port.
 	var dbPorts []db.ServicePort
@@ -2300,6 +2318,8 @@ func (s *DeploymentService) applyDatabaseWorkload(ctx context.Context, svc *db.S
 		NodeName:       nodeName,
 		LivenessProbe:  dbProbe,
 		ReadinessProbe: dbProbe,
+		// A database stays on the host's kernel in a sandboxed project too:
+		// see SandboxService.
 	}
 	if err := appk8s.ApplyDatabaseDeployment(ctx, s.k8s, wp); err != nil {
 		return fmt.Errorf("failed to apply K8s workload: %w", err)

@@ -86,6 +86,8 @@ export interface ApiPodInfo {
   /** Why it is not running now (CrashLoopBackOff, ImagePullBackOff, ...). */
   waiting_reason?: string
   memory_limit?: string
+  /** "gvisor" for a sandboxed pod; absent on the host's kernel. */
+  runtime_class?: string
 }
 
 /** Why a service is not staying up, read from its pods; absent when it is fine. */

@@ -21,6 +21,23 @@ func (s *srv) registerWriteToolsExtended(ms *mcpsdk.MCPServer) {
 		s.handleUpdateProject,
 	)
 
+	ms.AddTool(
+		mcp.NewTool("get_sandbox",
+			mcp.WithDescription("Whether a project's pods run sandboxed in gVisor and whether that is required; without project_id, the organization's sandboxed projects and levels and the nodes prepared to run them."),
+			mcp.WithString("project_id", mcp.Description("Project or level ID, or a project's slug. Omit for the organization's overview")),
+		),
+		s.handleGetSandbox,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("set_sandbox",
+			mcp.WithDescription("Run a project's, or a level's, apps and jobs sandboxed in gVisor, or not (owner or admin); its managed databases stay on the host's kernel. Its running apps roll at once and each sandboxed pod takes more memory: confirm with the user before calling. Refused while no node is prepared (sudo meshploy install sandbox) or while the sandbox is required."),
+			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project or level ID, or a project's slug")),
+			mcp.WithBoolean("on", mcp.Required(), mcp.Description("true to sandbox, false to run on the host's kernel")),
+		),
+		s.handleSetSandbox,
+	)
+
 	// ── Org members & invitations ─────────────────────────────────────────────
 
 	ms.AddTool(
@@ -344,6 +361,43 @@ func (s *srv) handleUpdateProject(_ context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return jsonResult(MCPProject{ID: updated.ID, Name: updated.Name, Slug: updated.Slug})
+}
+
+// sandboxProjectID resolves a project's slug, or takes an ID as it is: a
+// level is reached by its ID, since the project list holds projects only.
+func (s *srv) sandboxProjectID(ref string) string {
+	if p, err := s.c.GetProjectBySlugOrID(s.orgID, ref); err == nil {
+		return p.ID
+	}
+	return ref
+}
+
+func (s *srv) handleGetSandbox(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ref := mcp.ParseString(req, "project_id", "")
+	if ref == "" {
+		overview, err := s.c.GetSandboxOverview(s.orgID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return jsonResult(overview)
+	}
+	state, err := s.c.GetProjectSandbox(s.orgID, s.sandboxProjectID(ref))
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(state)
+}
+
+func (s *srv) handleSetSandbox(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ref := mcp.ParseString(req, "project_id", "")
+	if ref == "" {
+		return mcp.NewToolResultError("project_id is required"), nil
+	}
+	state, err := s.c.SetProjectSandbox(s.orgID, s.sandboxProjectID(ref), mcp.ParseBoolean(req, "on", false))
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(state)
 }
 
 func (s *srv) handleInviteMember(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

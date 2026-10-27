@@ -26,6 +26,8 @@ type RunJobParams struct {
 	MemRequest string
 	MemLimit   string
 	NodeName   string // optional: pin to specific node
+	// RuntimeClass: see WorkloadParams.
+	RuntimeClass string
 }
 
 // CreateRunJob submits a K8s Job that runs the user's image and command.
@@ -62,6 +64,7 @@ func CreateRunJob(ctx context.Context, client kubernetes.Interface, p RunJobPara
 	if p.NodeName != "" {
 		podSpec.NodeName = p.NodeName
 	}
+	withRuntime(&podSpec, p.RuntimeClass)
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

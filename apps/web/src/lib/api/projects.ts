@@ -1,6 +1,13 @@
 import type { Project } from "@/types"
 import { apiFetch } from "./core"
 
+/** A project's sandboxing: on, and whether a rule requires it, with why. */
+export interface ApiSandboxState {
+  on: boolean
+  required: boolean
+  why?: string
+}
+
 export interface ApiProject {
   id: string
   name: string
@@ -8,6 +15,8 @@ export interface ApiProject {
   organization_id: string
   /** Exempt from the organization's network isolation: any pod in the cluster may reach it. */
   network_open?: boolean
+  /** Its pods run on gVisor instead of the host's kernel. */
+  sandboxed?: boolean
   created_at: string
   updated_at: string
   // Resource counts - embedded by the list endpoint (single SQL aggregation).
@@ -169,6 +178,16 @@ export const projects = {
     apiFetch<ApiProject>(
       `/api/v1/orgs/${orgId}/projects/${projectId}`,
       { method: "PATCH", body: JSON.stringify({ name }) },
+      token
+    ),
+
+  sandbox: (orgId: string, projectId: string, token: string) =>
+    apiFetch<ApiSandboxState>(`/api/v1/orgs/${orgId}/projects/${projectId}/sandbox`, {}, token),
+
+  setSandbox: (orgId: string, projectId: string, on: boolean, token: string) =>
+    apiFetch<ApiSandboxState>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/sandbox`,
+      { method: "PUT", body: JSON.stringify({ on }) },
       token
     ),
 

@@ -42,6 +42,8 @@ for arg in "$@"; do
     # and 443, and Meshploy's edge starts at cutover.
     --beside-edge) EDGE_DEFERRED=true ;;
     --role=*)    NODE_ROLE_FLAG="${arg#*=}" ;;
+    # Prepare this node for sandboxed projects (gVisor) once it is in the cluster.
+    --sandbox)   MESHPLOY_SANDBOX=true ;;
     --dns-mode=*)
       DNS_MODE_FLAG="${arg#*=}"
       case "$DNS_MODE_FLAG" in
@@ -501,6 +503,20 @@ ensure_cli() {
     bash "$get" --cli-only || die "The meshploy CLI could not be installed."
   fi
   rm -f "$get"
+}
+
+# prepare_sandbox installs gVisor and labels this node for sandboxed projects,
+# when asked for with --sandbox. A failure leaves the node as it was, so the
+# install goes on and says how to retry.
+prepare_sandbox() {
+  [[ "${MESHPLOY_SANDBOX:-}" == "true" ]] || return 0
+  header "Preparing for sandboxed projects"
+  ensure_cli
+  if sudo "$MESHPLOY_CLI" install sandbox; then
+    success "This node can run sandboxed projects"
+  else
+    warn "gVisor could not be set up. Retry with: sudo meshploy install sandbox"
+  fi
 }
 
 # mesh_install puts the mesh daemon in place and starts it, and has k3s start
@@ -1520,6 +1536,8 @@ NEUNIT
     fi
   fi
 
+  prepare_sandbox
+
   # ── Final summary ────────────────────────────────────────────────────────────
   echo
   hr
@@ -2069,6 +2087,10 @@ NEUNIT
       sudo systemctl enable --now node_exporter
       success "node_exporter running on ${MESH_IP_ASSIGNED}:9100"
     fi
+  fi
+
+  if [[ "$NODE_MESH_ROLE" != "mesh" ]] && systemctl is-active --quiet k3s-agent 2>/dev/null; then
+    prepare_sandbox
   fi
 
   echo

@@ -34,7 +34,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `oauth_codes` | Authorization codes: single use, five minutes, with the redirect URI and PKCE challenge they were issued for |
 | `oauth_tokens` | `moat-` access and `mort-` refresh tokens under a grant, SHA-256 hashed; a refresh token is marked when traded |
 | `installed_licenses` | Enterprise licence tokens activated on this install |
-| `organizations` | Tenancy root |
+| `organizations` | Tenancy root. `network_isolation` closes each of its projects to the rest of the cluster |
 | `organization_members` | User ↔ Org join (roles: owner / admin / member) |
 | `mesh_reach` | Whether a member's machines may reach a granted service, stack or project on the mesh, once someone chose; without a row, databases are off and everything else on |
 | `mesh_rules` | Network rules: a machine, and ports on it, that a person's machines, one machine or every machine of the organisation may reach; for what is not a Meshploy resource. Added to the generated mesh policy, no console permission |
@@ -46,7 +46,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 
 | Table | Purpose |
 |---|---|
-| `projects` | K8s namespace: slug becomes the namespace name. A row with `parent_project_id` is an environment level of that project (`env_name`, `env_level`: 0 is production, each level below counts up), with a namespace of its own, `<project slug>-<level>` |
+| `projects` | K8s namespace: slug becomes the namespace name. A row with `parent_project_id` is an environment level of that project (`env_name`, `env_level`: 0 is production, each level below counts up), with a namespace of its own, `<project slug>-<level>`. `network_open` exempts it from its organization's network isolation; `sandboxed` runs its pods on gVisor |
 | `promotion_groups` | Services that move up a project's levels together, along their own `path` of level IDs, from the one that builds to production. `single` marks one made by copying one service down |
 | `promotion_group_members` | A service lineage in a group; at most one group per lineage per project |
 | `nodes` | Mesh worker nodes + K3s + Headscale metadata. `os` is `linux`, `darwin` or `windows`; anything but Linux is always mesh only |

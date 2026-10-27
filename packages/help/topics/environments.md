@@ -98,6 +98,16 @@ By default every project can reach every other project's services inside the clu
 
 Anything else in the cluster is refused. An owner or admin can still open a single project, or a single level, from its settings, under Isolation: it then takes traffic from anywhere, while the rest stay isolated. What a project reaches out to, the internet included, is unchanged. Attaching a service's variables to another project opens the way within a minute, and detaching closes it again. Switching isolation off removes all of it at once.
 
+## Sandboxed projects {#sandbox}
+
+Containers normally share the machine's kernel, so code that breaks out of one reaches the machine. A **sandboxed** project runs its apps and jobs on gVisor instead, a kernel of their own in user space: a container that breaks out lands in gVisor, not on the machine. Use it for code you do not fully trust, such as a staging level that runs every branch.
+
+Its managed databases stay on the host's kernel. They run the engines' official images rather than your code, and under gVisor a database handles about 40% fewer transactions. Apps reach them as before, over the cluster's network.
+
+It costs: each sandboxed pod takes some 35 MiB more memory, and an app that works the disk or the kernel hard runs slower; one that mostly waits on the network notices least. That is why it is switched on per project, or per level, by an owner or admin in its settings, under Isolation. Switching it on or off moves the running apps at once, without stopping them; databases are not touched. Builds are never sandboxed, because building an image needs privileges gVisor cannot give.
+
+Only a node prepared for it can run sandboxed pods. Run `sudo meshploy install sandbox` on a node to prepare it (it restarts k3s there; pods keep running), or pass `--sandbox` to `install.sh` when installing one. Each node's page says whether it is prepared, and Settings lists the prepared nodes and the sandboxed projects. A service's page says which kernel its pods run on, and its Pods tab marks each sandboxed pod. A project cannot be sandboxed until a node is prepared, nor while one of its apps or jobs is pinned to a node that is not.
+
 ## Common tasks {#how-to}
 
 - **Test a change in staging before production.** Add a staging level below production. Put the services into a group whose path is staging → production. Deploy in staging, then press Promote.
@@ -116,4 +126,5 @@ Anything else in the cluster is refused. An owner or admin can still open a sing
 - **Built here** {#built-here -> hotfixes}: Built in this level instead of promoted to it: a hotfix. A normal promotion will not replace it until the level below builds something newer.
 - **After first deploy** {#after-first-deploy -> routes}: A route copied into this level with the service, paused until the service's first successful deploy here.
 - **Promote** {#promote -> promote}: Deploys the images this level runs, as they are, to the next level on the group's path. Only newer images move; the rest stay, with the reason.
+- **Sandbox** {#sandbox -> sandbox}: The project's or level's pods run on gVisor, a kernel of their own, instead of the machine's, so code that escapes its container does not reach the machine. Slower for databases; switched on in the project's settings.
 - **Network isolation** {#network-isolation -> isolation}: Each project takes traffic only from its own services, its levels, the projects that use its services' published variables, and the machines. Switched on in Settings; a project or level can be opened as an exception in its own settings.

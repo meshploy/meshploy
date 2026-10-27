@@ -10,6 +10,22 @@ export interface ApiOrg {
   updated_at: string
 }
 
+export interface ApiSandboxedProject {
+  id: string
+  /** The project it belongs to: itself for a project, its project for a level. */
+  project_id: string
+  name: string
+  /** The level's name; absent for production. */
+  level?: string
+  required: boolean
+}
+
+export interface ApiOrgSandbox {
+  /** Nodes prepared to run sandboxed pods. */
+  nodes: string[]
+  projects: ApiSandboxedProject[]
+}
+
 export interface ApiOrgMember {
   id: string
   user_id: string
@@ -47,6 +63,10 @@ export const orgs = {
 
   setNetworkIsolation: (orgId: string, enabled: boolean, token: string) =>
     apiFetch<ApiOrg>(`/api/v1/orgs/${orgId}/network-isolation`, { method: "PUT", body: JSON.stringify({ enabled }) }, token),
+
+  /** Sandboxed projects and levels this member can see, and the nodes that can run them. */
+  sandbox: (orgId: string, token: string) =>
+    apiFetch<ApiOrgSandbox>(`/api/v1/orgs/${orgId}/sandbox`, {}, token),
 
   listMembers: (orgId: string, token: string) =>
     apiFetch<ApiOrgMember[]>(`/api/v1/orgs/${orgId}/members`, {}, token),

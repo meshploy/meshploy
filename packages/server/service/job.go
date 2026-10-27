@@ -26,6 +26,8 @@ type JobService struct {
 	// varGroups resolves the groups a job has attached. Assigned after
 	// construction in service.New.
 	varGroups *VariableGroupService
+	// sandbox picks the runtime a job's pods take.
+	sandbox *SandboxService
 }
 
 // jobEnv is a job's environment, composed the way a service's is: its own
@@ -317,8 +319,15 @@ func (s *JobService) applyCronJob(ctx context.Context, job *db.Job) {
 		s.db.WithContext(ctx).Model(job).Update("status", db.JobStatusFailed)
 		return
 	}
+	runtime, err := s.sandbox.RuntimeFor(ctx, project.ID, nodeName)
+	if err != nil {
+		log.Printf("job %s: schedule not updated: %v", job.Name, err)
+		s.db.WithContext(ctx).Model(job).Update("status", db.JobStatusFailed)
+		return
+	}
 	_ = appk8s.EnsureNamespace(ctx, s.k8s, project.Slug)
 	_ = appk8s.ApplyCronJob(ctx, s.k8s, appk8s.CronJobParams{
+		RuntimeClass:      runtime,
 		Name:              job.K8sName,
 		Namespace:         project.Slug,
 		Schedule:          job.Schedule,
@@ -473,7 +482,11 @@ func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, 
 		}
 	}
 
+	var runtime string
 	envVars, err := s.jobEnv(ctx, job)
+	if err == nil {
+		runtime, err = s.sandbox.RuntimeFor(ctx, job.ProjectID, nodeName)
+	}
 	if err != nil {
 		// Recorded as a failed run, so the history says why it never started.
 		now := time.Now()
@@ -495,6 +508,8 @@ func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, 
 		MemRequest: job.MemoryRequest,
 		MemLimit:   job.MemoryLimit,
 		NodeName:   nodeName,
+
+		RuntimeClass: runtime,
 	}
 
 	go s.executeRun(job, &run, namespace, params, project.OrganizationID, project.Name)

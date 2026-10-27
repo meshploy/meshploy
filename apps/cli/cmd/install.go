@@ -17,7 +17,8 @@ var installCmd = &cobra.Command{
 	Long: `Install optional components that extend Meshploy's capabilities on this node.
 
 Available components:
-  node-exporter    Prometheus node_exporter for live CPU/memory/disk/network metrics`,
+  node-exporter    Prometheus node_exporter for live CPU/memory/disk/network metrics
+  sandbox          gVisor, so sandboxed projects can run on this node`,
 }
 
 var installNodeExporterCmd = &cobra.Command{

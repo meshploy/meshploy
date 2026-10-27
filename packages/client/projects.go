@@ -84,3 +84,49 @@ func (c *Client) GetProjectBySlugOrID(orgID, ref string) (*Project, error) {
 	}
 	return nil, ErrNotFound("project", ref)
 }
+
+// SandboxState is whether a project's, or a level's, pods run on gVisor, and
+// whether a rule requires it.
+type SandboxState struct {
+	On       bool   `json:"on"`
+	Required bool   `json:"required"`
+	Why      string `json:"why,omitempty"`
+}
+
+// SandboxOverview is the organization's prepared nodes and sandboxed projects.
+type SandboxOverview struct {
+	Nodes    []string `json:"nodes"`
+	Projects []struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"project_id"`
+		Name      string `json:"name"`
+		Level     string `json:"level,omitempty"`
+		Required  bool   `json:"required"`
+	} `json:"projects"`
+}
+
+func (c *Client) GetSandboxOverview(orgID string) (*SandboxOverview, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/sandbox", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[SandboxOverview](resp)
+}
+
+func (c *Client) GetProjectSandbox(orgID, projectID string) (*SandboxState, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/sandbox", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[SandboxState](resp)
+}
+
+// SetProjectSandbox switches a project, or a level, in or out of the sandbox.
+// Its running workloads move at once: services roll, databases restart.
+func (c *Client) SetProjectSandbox(orgID, projectID string, on bool) (*SandboxState, error) {
+	resp, err := c.do("PUT", "/api/v1/orgs/"+orgID+"/projects/"+projectID+"/sandbox", map[string]bool{"on": on})
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[SandboxState](resp)
+}

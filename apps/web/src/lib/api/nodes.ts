@@ -227,6 +227,7 @@ export function toNode(n: ApiNode): Node {
     k8sMember: n.k8s_member,
     k8sReady: n.k8s_ready,
     k8sNodeName: n.k8s_node_name,
+    k3sLabels: n.k3s_labels ?? {},
     activeProjects: n.active_projects ?? [],
   }
 }

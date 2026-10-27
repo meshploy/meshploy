@@ -1083,6 +1083,8 @@ export const workspaceHandlers = [
             // replicas spread over both, the rest on the worker.
             node_name: podNode(s, i),
             started_at: now(),
+            // A sandboxed project's or level's apps run on gVisor; its databases do not.
+            ...(s.type !== "database" && find("projects", s.project_id)?.sandboxed ? { runtime_class: "gvisor" } : {}),
           }))
         : []
     )

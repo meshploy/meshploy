@@ -18,6 +18,8 @@ import {
   Trash2,
   SquareTerminal,
   Network,
+  ShieldCheck,
+  Shield,
 } from "lucide-react"
 import { HostContainers } from "@/components/nodes/host-containers"
 import { Badge } from "@/components/ui/badge"
@@ -494,6 +496,7 @@ function NodeDetailPage() {
               {node.k3sVersion && (
                 <InfoRow icon={<Server className="h-3.5 w-3.5" />} label="K3s version" value={node.k3sVersion} mono />
               )}
+              <SandboxRow node={node} />
             </dl>
           ) : (
             <p className="text-sm text-muted-foreground">{node.meshRole === "mesh" ? "Mesh only: not part of the cluster. Routes can reach its ports: in a project, Routes → New route → Node + port." : "Not joined to the k3s cluster."}</p>
@@ -876,6 +879,29 @@ function SpecCard({
         <span className="text-xs font-medium">{label}</span>
       </div>
       <p className={`text-sm font-medium text-foreground ${mono ? "font-mono" : ""}`}>{value}</p>
+    </div>
+  )
+}
+
+// Whether sandboxed projects can be scheduled here: the label
+// `meshploy install sandbox` puts on the node once gVisor runs.
+function SandboxRow({ node }: { node: ReturnType<typeof toNode> }) {
+  if (node.k3sLabels["meshploy.com/sandbox"] === "true") {
+    return (
+      <InfoRow
+        icon={<ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />}
+        label="Sandbox"
+        value="Can run sandboxed projects"
+        valueClass="text-emerald-400"
+      />
+    )
+  }
+  return (
+    <div className="space-y-1">
+      <InfoRow icon={<Shield className="h-3.5 w-3.5" />} label="Sandbox" value="Not prepared" valueClass="text-muted-foreground" />
+      <p className="pl-[7.875rem] text-xs text-muted-foreground">
+        To run sandboxed projects here, run <code className="font-mono text-foreground">sudo meshploy install sandbox</code> on it.
+      </p>
     </div>
   )
 }

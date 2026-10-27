@@ -118,3 +118,15 @@ func UseProjectConsolePrefixForTest(t interface{ Cleanup(func()) }, prefix strin
 func NewIsolationForTest(gdb *gorm.DB, client kubernetes.Interface) *IsolationService {
 	return &IsolationService{db: gdb, k8s: client}
 }
+
+// NewSandboxForTest is the sandbox service over a given database and cluster.
+func NewSandboxForTest(gdb *gorm.DB, client kubernetes.Interface) *SandboxService {
+	return &SandboxService{db: gdb, k8s: client}
+}
+
+// UseSandboxRuleForTest registers a sandbox rule for one test.
+func UseSandboxRuleForTest(t interface{ Cleanup(func()) }, rule SandboxRule) {
+	before := sandboxRules
+	RegisterSandboxRule(rule)
+	t.Cleanup(func() { sandboxRules = before })
+}

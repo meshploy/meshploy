@@ -13,11 +13,13 @@ import {
   toNode,
   type ApiNode,
   type ApiDatabaseConfig,
+  type ApiPodInfo,
 } from "@/lib/api"
+import { TermInfo } from "@/help/term"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
-import { formatRelativeTime } from "@/lib/utils"
+import { cn, formatRelativeTime } from "@/lib/utils"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 
@@ -227,6 +229,7 @@ function ServiceOverviewTab() {
           <ResourcePanel title="Placement" action={<StatusPill status={service.status} />}>
             {observedNodeNames.length ? observedNodeNames.map(name => <div key={name} className="placement-node"><Server className="size-5 text-muted-foreground" /><div><p className="text-sm font-medium">{name}</p><p className="mt-1 text-xs text-muted-foreground">{(pods || []).filter(p => p.node_name === name).length} pods assigned</p></div></div>) : <p className="text-sm text-muted-foreground">No pod placement has been reported.</p>}
             <ResourceFact label="Scheduling">{service.node_id ? "Pinned to a node" : "Automatic"}</ResourceFact>
+            {!!pods?.length && <ResourceFact label="Runtime"><PodRuntime pods={pods} /></ResourceFact>}
             {node && <ResourceFact label="Node"><Link className="text-primary" to="/nodes/$id" params={{ id: node.id }}>{node.name} · {node.tailscaleIP}</Link></ResourceFact>}
             <Link className="mt-4 inline-flex items-center gap-2 text-xs text-primary" to="/projects/$id/services/$serviceId/pods" params={{ id: projectId, serviceId }}>Inspect pods<ArrowRight className="size-3" /></Link>
           </ResourcePanel>
@@ -265,5 +268,22 @@ function ServiceOverviewTab() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Which kernel the service's pods run on, read from the pods themselves, so a
+// project moving in or out of the sandbox shows its pods part-way.
+function PodRuntime({ pods }: { pods: ApiPodInfo[] }) {
+  const sandboxed = pods.filter((p) => p.runtime_class === "gvisor").length
+  const label = sandboxed === 0
+    ? "Host kernel"
+    : sandboxed === pods.length
+      ? "Sandboxed in gVisor"
+      : `${sandboxed} of ${pods.length} pods sandboxed`
+  return (
+    <span className={cn("inline-flex items-center gap-1.5", sandboxed > 0 && "text-emerald-400")}>
+      {label}
+      <TermInfo id="environments.sandbox" />
+    </span>
   )
 }

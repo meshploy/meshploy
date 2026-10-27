@@ -501,7 +501,60 @@ function IsolationSection({ org }: { org: ApiOrg }) {
             : <Switch checked={on} onCheckedChange={(v) => setIsolation(v)} disabled={!isAdmin} aria-label="Isolate projects from each other on the network" />}
         </div>
       </div>
+      <SandboxRow orgId={org.id} />
     </Section>
+  )
+}
+
+// Sandboxing is switched per project or level, in its own settings; here is
+// where it stands across the organization.
+function SandboxRow({ orgId }: { orgId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const { data } = useQuery({
+    queryKey: ["org-sandbox", orgId],
+    queryFn: () => orgsApi.sandbox(orgId, token),
+  })
+
+  return (
+    <div className="mt-4 space-y-2 border-t border-border/60 pt-4">
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-medium">Sandbox</span>
+        <TermInfo id="environments.sandbox" />
+      </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        A sandboxed project runs its apps and jobs on gVisor, a kernel of their own, so code that escapes its container
+        lands there and not on the machine. Its databases stay on the host&apos;s kernel. An owner or admin switches it on in a
+        project&apos;s or level&apos;s own settings.
+      </p>
+      {data && (
+        <>
+          <p className="text-xs text-muted-foreground">
+            {data.nodes.length > 0
+              ? <>Can run sandboxed projects: <span className="font-mono text-foreground">{data.nodes.join(", ")}</span></>
+              : <>No node can run sandboxed projects yet. Run <code className="font-mono text-foreground">sudo meshploy install sandbox</code> on one.</>}
+          </p>
+          {data.projects.length > 0 ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {data.projects.map((p) => (
+                <li key={p.id}>
+                  <Link
+                    to="/projects/$id/settings"
+                    params={{ id: p.id }}
+                    hash="project-isolation"
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-400 hover:bg-emerald-500/20"
+                  >
+                    {p.name}{p.level && <span className="text-emerald-400/70">· {p.level}</span>}
+                    {p.required && <span className="text-emerald-400/70">· required</span>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">No project is sandboxed.</p>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 

@@ -58,6 +58,7 @@ type Services struct {
 	Tickets         *TicketService    // single-use tickets for WebSocket auth
 	Headscale       *HeadscaleService // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
 	Isolation       *IsolationService
+	Sandbox         *SandboxService
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
 	K8sRestConfig   *rest.Config         // nil if KUBECONFIG unavailable
 	// DB is the database, for an extension's own tables. Core code goes
@@ -230,7 +231,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups,
 		nodePortMeshOnly: c != nil && c.NodePortAddresses != ""}
 	projects := &ProjectService{db: db}
-	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups, notif: notif}
+	sandbox := &SandboxService{db: db, k8s: k8sClient}
+	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups, notif: notif, sandbox: sandbox}
 
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
@@ -266,6 +268,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	isolation := newIsolationService(db, k8sClient)
 	svc := &Services{
 		Isolation:       isolation,
+		Sandbox:         sandbox,
 		DB:              db,
 		Auth:            auth,
 		Entitlements:    entitlements,
@@ -301,7 +304,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,
 		Jobs: func() *JobService {
-			j := &JobService{db: db, k8s: k8sClient, notif: notif, varGroups: varGroups}
+			j := &JobService{db: db, k8s: k8sClient, notif: notif, varGroups: varGroups, sandbox: sandbox}
 			if k8sClient != nil {
 				go j.StartReconciler(context.Background())
 			}
@@ -355,6 +358,13 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go nodes.StartRemovalWorker(context.Background())
 	go svc.MeshAccess.Follow(context.Background())
 	go svc.Isolation.Start(context.Background())
+	if k8sClient != nil {
+		go func() {
+			if err := appk8s.EnsureSandboxRuntimeClass(context.Background(), k8sClient); err != nil {
+				log.Printf("warning: sandbox runtime class: %v", err)
+			}
+		}()
+	}
 
 	svc.ProjectMaps = &ProjectMapService{db: db, workloads: workloads, stacks: svc.Stacks, routes: routes, volumes: volumes}
 	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions, orphans: svc.Orphans, workloads: workloads, metrics: nodes.GetNodeMetrics}

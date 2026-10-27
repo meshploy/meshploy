@@ -8,6 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	svc "github.com/meshploy/packages/server/service"
 )
 
@@ -56,6 +57,18 @@ type SetProjectNetworkOpenInput struct {
 	Body      struct {
 		Open bool `json:"open"`
 	}
+}
+
+type SetProjectSandboxInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	Body      struct {
+		On bool `json:"on"`
+	}
+}
+
+type ProjectSandboxOutput struct {
+	Body svc.SandboxState
 }
 
 type UpdateProjectOutput struct {
@@ -107,6 +120,24 @@ func (h *Handler) registerProjectRoutes(api huma.API) {
 		Tags:        []string{"Projects"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.SetProjectNetworkOpen)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-sandbox",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/sandbox",
+		Summary:     "Whether a project's pods run sandboxed, and whether that is required",
+		Tags:        []string{"Projects"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetProjectSandbox)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-project-sandbox",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/sandbox",
+		Summary:     "Run a project's pods sandboxed, or not (owner or admin)",
+		Tags:        []string{"Projects"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SetProjectSandbox)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-project",
@@ -234,6 +265,51 @@ func (h *Handler) SetProjectNetworkOpen(ctx context.Context, input *SetProjectNe
 	}
 	project.NetworkOpen = input.Body.Open
 	return &UpdateProjectOutput{Body: project}, nil
+}
+
+func (h *Handler) GetProjectSandbox(ctx context.Context, input *ProjectPathInput) (*ProjectSandboxOutput, error) {
+	_, _, projectID, _, err := h.checkAccess(ctx, input.OrgID, input.ProjectID, db.ResourceProject, db.ActionView, "")
+	if err != nil {
+		return nil, err
+	}
+	project, err := h.svc.Projects.Get(ctx, projectID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	state, err := h.svc.Sandbox.State(ctx, project)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("sandbox: " + err.Error())
+	}
+	return &ProjectSandboxOutput{Body: state}, nil
+}
+
+// SetProjectSandbox is for an owner or admin, as network isolation is: it
+// restarts the project's databases and changes what its pods cost.
+func (h *Handler) SetProjectSandbox(ctx context.Context, input *SetProjectSandboxInput) (*ProjectSandboxOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := h.svc.Projects.Get(ctx, projectID)
+	if err != nil || project.OrganizationID != orgID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	if err := h.svc.Sandbox.Set(ctx, projectID, input.Body.On); err != nil {
+		if errors.Is(err, svc.ErrSandboxRequired) || errors.Is(err, appk8s.ErrNoSandboxNode) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("sandbox: " + err.Error())
+	}
+	project.Sandboxed = input.Body.On
+	state, err := h.svc.Sandbox.State(ctx, project)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("sandbox: " + err.Error())
+	}
+	return &ProjectSandboxOutput{Body: state}, nil
 }
 
 func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {

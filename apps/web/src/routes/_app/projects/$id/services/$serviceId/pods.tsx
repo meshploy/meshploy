@@ -173,6 +173,14 @@ function PodsTab() {
                   <TableRow key={pod.name} className="border-b border-border/30">
                     <TableCell className={tdCls}>
                       <code className="font-mono text-[11px] text-foreground">{pod.name}</code>
+                      {pod.runtime_class === "gvisor" && (
+                        <span
+                          title="Sandboxed: runs on gVisor's kernel, not the host's"
+                          className="ml-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-px text-[10px] text-emerald-400"
+                        >
+                          gVisor
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className={tdCls}>
                       <Badge className={`text-[11px] px-1.5 py-0 h-4 border ${PHASE_STYLES[pod.phase] ?? PHASE_STYLES.Unknown}`}>

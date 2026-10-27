@@ -194,6 +194,7 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | GET | `/orgs/{orgId}` | ✓ | Get an organization |
 | PATCH | `/orgs/{orgId}` | ✓ | Update an organization |
 | PUT | `/orgs/{orgId}/network-isolation` | ✓ admin | `{"enabled": true}` closes each of the organization's projects to the rest of the cluster: its pods take traffic only from the project's own pods and levels, from projects that use one of its services' published variables, and from the nodes (the proxy, published ports). Outgoing traffic is unchanged. Off (the default) removes every policy it made. Enforced by k3s's own NetworkPolicy controller |
+| GET | `/orgs/{orgId}/sandbox` | ✓ | The nodes prepared to run sandboxed pods (labelled `meshploy.com/sandbox=true` by `meshploy install sandbox`), and the sandboxed projects and levels the caller can see, with `required` where a rule makes it so |
 | DELETE | `/orgs/{orgId}` | ✓ | Delete an organization (owner only) |
 | GET | `/orgs/{orgId}/invitations` | ✓ | List pending invitations |
 | POST | `/orgs/{orgId}/invitations` | ✓ | Create an invite link for a new member |
@@ -247,6 +248,8 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | GET | `/orgs/{orgId}/projects/{projectId}` | ✓ | Get a project |
 | PATCH | `/orgs/{orgId}/projects/{projectId}` | ✓ | Update a project |
 | PUT | `/orgs/{orgId}/projects/{projectId}/network-open` | ✓ admin | `{"open": true}` exempts the project, or the level, from the organization's network isolation: any pod in the cluster may reach it again |
+| GET | `/orgs/{orgId}/projects/{projectId}/sandbox` | ✓ | Whether the project's, or the level's, apps and jobs run on gVisor: `on`, and `required` with `why` when a rule makes it so |
+| PUT | `/orgs/{orgId}/projects/{projectId}/sandbox` | ✓ admin | `{"on": true}` runs its apps and jobs on gVisor instead of the host's kernel and moves the running ones at once (services roll); its managed databases stay on the host's kernel. Refused (409) while no node can run sandboxed pods, while an app or job is pinned to one that cannot, or, switching off, while it is required. Builds are never sandboxed |
 | DELETE | `/orgs/{orgId}/projects/{projectId}` | ✓ | Delete a project |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/build-cache` | ✓ | Clear the buildah layer cache PVC for a project |
 
@@ -322,7 +325,7 @@ A project is its own production level; each level below it is a project of its o
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/query` | ✓ | Execute a database query |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/db/schema` | ✓ | Introspect database schema |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/env-vars` | ✓ | Get decrypted env vars for a service |
-| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods` | ✓ | List running pods for a service |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods` | ✓ | List running pods for a service; `runtime_class` is `gvisor` for a sandboxed pod |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/metrics` | ✓ | Live CPU and memory usage per pod (requires metrics-server) |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/reset` | ✓ | Wipe and re-provision a database (destructive) |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/start` | ✓ | Start a service |

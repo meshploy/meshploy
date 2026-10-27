@@ -27,6 +27,7 @@ type CronJobParams struct {
 	MemLimit          string
 	NodeName          string
 	JobID             string // meshploy Job UUID — stored as label on spawned K8s Jobs
+	RuntimeClass      string // see WorkloadParams
 }
 
 // ApplyCronJob creates or updates a K8s CronJob for a meshploy cron job.
@@ -103,6 +104,7 @@ func buildCronJobSpec(p CronJobParams) batchv1.CronJobSpec {
 	if p.NodeName != "" {
 		podSpec.NodeName = p.NodeName
 	}
+	withRuntime(&podSpec, p.RuntimeClass)
 
 	return batchv1.CronJobSpec{
 		Schedule:                   p.Schedule,

@@ -195,6 +195,15 @@ func (h *Handler) registerOrgRoutes(api huma.API) {
 	}, h.SetNetworkIsolation)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-org-sandbox",
+		Method:      "GET",
+		Path:        "/api/v1/orgs/{orgId}/sandbox",
+		Summary:     "The organization's sandboxed projects and levels, and the nodes that can run them",
+		Tags:        []string{"Organizations"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetOrgSandbox)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "delete-org",
 		Method:      "DELETE",
 		Path:        "/api/v1/orgs/{orgId}",
@@ -592,4 +601,35 @@ func (h *Handler) RemoveMember(ctx context.Context, input *RemoveMemberInput) (*
 		return nil, huma.Error403Forbidden("insufficient permissions")
 	}
 	return nil, h.svc.Orgs.RemoveMember(ctx, orgID, targetID)
+}
+
+type OrgSandboxOutput struct {
+	Body svc.SandboxOverview
+}
+
+// GetOrgSandbox lists the sandboxed projects and levels a member can see, and
+// the nodes prepared for them.
+func (h *Handler) GetOrgSandbox(ctx context.Context, input *OrgPathInput) (*OrgSandboxOutput, error) {
+	callerID, orgID, _, err := h.checkOrgMemberAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	overview, err := h.svc.Sandbox.Overview(ctx, orgID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("sandbox: " + err.Error())
+	}
+	visible, isAdmin, err := h.svc.Permissions.VisibleProjectIDs(ctx, orgID, callerID)
+	if err != nil {
+		return nil, err
+	}
+	if !isAdmin {
+		seen := overview.Projects[:0]
+		for _, p := range overview.Projects {
+			if visible[p.ProjectID] {
+				seen = append(seen, p)
+			}
+		}
+		overview.Projects = seen
+	}
+	return &OrgSandboxOutput{Body: overview}, nil
 }

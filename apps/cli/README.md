@@ -7,7 +7,7 @@ Commands are grouped by what they act on:
 | Group | Commands |
 |---|---|
 | [First-time setup](#first-time-setup) | `auth`, `link` |
-| [Server management](#server-management) | `node install`, `node uninstall`, `node status`, `server-upgrade`, `updater`, `domain apply`, `setup serve`, `setup-token`, `install node-exporter`, `license` |
+| [Server management](#server-management) | `node install`, `node uninstall`, `node status`, `server-upgrade`, `updater`, `domain apply`, `setup serve`, `setup-token`, `install node-exporter`, `install sandbox`, `license` |
 | [Cluster and nodes](#cluster-and-nodes) | `node list`, `node add`, `node init`, `node remove`, `node delete`, `node token` |
 | [Projects and workloads](#projects-and-workloads) | `project`, `service`, `stack`, `apply`, `job`, `secret`, `volume`, `route` |
 | [Integrations](#integrations) | `integration git`, `integration registry`, `integration storage` |
@@ -80,7 +80,7 @@ After that, all commands in that directory pick up the project automatically.
 
 ## Server management
 
-These install, upgrade and recover Meshploy on the machine you run them on, so run them there, as root. Most only make sense on the **gateway server**; `node install`, `node uninstall`, `node status` and `install node-exporter` apply to a worker too. `license` is the exception: it goes through the API, so it works from any machine you are logged in on.
+These install, upgrade and recover Meshploy on the machine you run them on, so run them there, as root. Most only make sense on the **gateway server**; `node install`, `node uninstall`, `node status`, `install node-exporter` and `install sandbox` apply to a worker too. `license` is the exception: it goes through the API, so it works from any machine you are logged in on.
 
 ### `meshploy node` on this machine
 
@@ -259,6 +259,7 @@ The first account registered on a Meshploy server owns it, so until that account
 | Command | Description |
 |---|---|
 | `install node-exporter` | Install Prometheus node_exporter as a systemd service |
+| `install sandbox` | Install gVisor and label the node `meshploy.com/sandbox=true`, so sandboxed projects can run on it. Restarts k3s (pods keep running). `install.sh --sandbox` does the same during an install |
 
 ---
 
