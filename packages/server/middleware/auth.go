@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -379,14 +380,38 @@ func RequireAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if _, ok := UserFromContext(r.Context()); !ok {
+		userID, ok := UserFromContext(r.Context())
+		if !ok {
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"title":"Unauthorized","status":401,"detail":"valid Bearer token required"}`))
 			return
 		}
+		for _, gate := range requestGates {
+			if err := gate(r, userID); err != nil {
+				body, _ := json.Marshal(map[string]any{"title": "Forbidden", "status": http.StatusForbidden, "detail": err.Error()})
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write(body)
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RequestGate refuses an authenticated principal a request outright, before
+// any handler sees it, by returning an error, whose text is the answer's
+// detail. It runs on every request RequireAuth lets through, so it must be
+// cheap.
+type RequestGate func(r *http.Request, userID uuid.UUID) error
+
+var requestGates []RequestGate
+
+// RegisterRequestGate adds a gate every authenticated request passes. Call it
+// before the server starts serving. The CE binary registers none.
+func RegisterRequestGate(g RequestGate) {
+	requestGates = append(requestGates, g)
 }
 
 // isPublic reports whether a request is exempt from authentication.
