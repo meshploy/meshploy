@@ -518,6 +518,12 @@ type Organization struct {
 	HeadscalePreAuthKey       EncryptedString `gorm:"type:text" json:"-"`
 	HeadscalePreAuthKeyExpiry *time.Time      `                 json:"-"`
 
+	// NetworkIsolation closes each of the organization's project namespaces
+	// to the rest of the cluster (see service.IsolationService). It governs
+	// only traffic into its own projects, so one organization's choice never
+	// opens or closes another's.
+	NetworkIsolation bool `gorm:"not null;default:false" json:"network_isolation"`
+
 	Members  []OrganizationMember `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
 	Projects []Project            `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
 	Nodes    []Node               `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
@@ -651,6 +657,10 @@ type Project struct {
 	ParentProjectID *uuid.UUID `gorm:"type:uuid;index"                 json:"parent_project_id,omitempty"`
 	EnvName         string     `gorm:"not null;default:'production'"   json:"env_name"`
 	EnvLevel        int        `gorm:"not null;default:0"              json:"env_level"`
+
+	// NetworkOpen exempts this project, or this level, from its
+	// organization's network isolation: any pod in the cluster may reach it.
+	NetworkOpen bool `gorm:"not null;default:false" json:"network_open"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID"                         json:"-"`
 	Services     []Service    `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"   json:"-"`

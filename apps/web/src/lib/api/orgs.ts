@@ -4,6 +4,8 @@ export interface ApiOrg {
   id: string
   name: string
   slug: string
+  /** Each project takes traffic only from its own services, its levels, the projects that use its published variables, and the machines. */
+  network_isolation?: boolean
   created_at: string
   updated_at: string
 }
@@ -42,6 +44,9 @@ export const orgs = {
 
   update: (orgId: string, name: string, token: string) =>
     apiFetch<ApiOrg>(`/api/v1/orgs/${orgId}`, { method: "PATCH", body: JSON.stringify({ name }) }, token),
+
+  setNetworkIsolation: (orgId: string, enabled: boolean, token: string) =>
+    apiFetch<ApiOrg>(`/api/v1/orgs/${orgId}/network-isolation`, { method: "PUT", body: JSON.stringify({ enabled }) }, token),
 
   listMembers: (orgId: string, token: string) =>
     apiFetch<ApiOrgMember[]>(`/api/v1/orgs/${orgId}/members`, {}, token),

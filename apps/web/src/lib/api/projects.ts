@@ -6,6 +6,8 @@ export interface ApiProject {
   name: string
   slug: string
   organization_id: string
+  /** Exempt from the organization's network isolation: any pod in the cluster may reach it. */
+  network_open?: boolean
   created_at: string
   updated_at: string
   // Resource counts - embedded by the list endpoint (single SQL aggregation).
@@ -167,6 +169,13 @@ export const projects = {
     apiFetch<ApiProject>(
       `/api/v1/orgs/${orgId}/projects/${projectId}`,
       { method: "PATCH", body: JSON.stringify({ name }) },
+      token
+    ),
+
+  setNetworkOpen: (orgId: string, projectId: string, open: boolean, token: string) =>
+    apiFetch<ApiProject>(
+      `/api/v1/orgs/${orgId}/projects/${projectId}/network-open`,
+      { method: "PUT", body: JSON.stringify({ open }) },
       token
     ),
 

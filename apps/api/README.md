@@ -193,6 +193,7 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | POST | `/orgs` | ✓ | Create an organization, only on a server that has none: Community runs one per server (409 otherwise) |
 | GET | `/orgs/{orgId}` | ✓ | Get an organization |
 | PATCH | `/orgs/{orgId}` | ✓ | Update an organization |
+| PUT | `/orgs/{orgId}/network-isolation` | ✓ admin | `{"enabled": true}` closes each of the organization's projects to the rest of the cluster: its pods take traffic only from the project's own pods and levels, from projects that use one of its services' published variables, and from the nodes (the proxy, published ports). Outgoing traffic is unchanged. Off (the default) removes every policy it made. Enforced by k3s's own NetworkPolicy controller |
 | DELETE | `/orgs/{orgId}` | ✓ | Delete an organization (owner only) |
 | GET | `/orgs/{orgId}/invitations` | ✓ | List pending invitations |
 | POST | `/orgs/{orgId}/invitations` | ✓ | Create an invite link for a new member |
@@ -245,6 +246,7 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | POST | `/orgs/{orgId}/projects` | ✓ | Create a project |
 | GET | `/orgs/{orgId}/projects/{projectId}` | ✓ | Get a project |
 | PATCH | `/orgs/{orgId}/projects/{projectId}` | ✓ | Update a project |
+| PUT | `/orgs/{orgId}/projects/{projectId}/network-open` | ✓ admin | `{"open": true}` exempts the project, or the level, from the organization's network isolation: any pod in the cluster may reach it again |
 | DELETE | `/orgs/{orgId}/projects/{projectId}` | ✓ | Delete a project |
 | DELETE | `/orgs/{orgId}/projects/{projectId}/build-cache` | ✓ | Clear the buildah layer cache PVC for a project |
 

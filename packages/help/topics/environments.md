@@ -87,6 +87,17 @@ Every deployment records where its image came from: **built** from a branch and 
 
 Deleting a level removes everything in it, from the cluster too: its services, routes, volumes, jobs, data and namespace. Groups that passed through it skip it from then on. A group that built there builds at the next level on its path instead, and a group left with nothing between its entry and production is dissolved. You confirm by typing the level's name.
 
+## Isolation between projects {#isolation}
+
+By default every project can reach every other project's services inside the cluster. An owner or admin can switch on **network isolation** in Settings, under Isolation. Each project then takes traffic only from:
+
+- its own services and jobs;
+- its other levels, which use what the levels above them have;
+- projects whose services or jobs use one of its services' published variables;
+- the machines themselves, which is how routes and published ports reach it.
+
+Anything else in the cluster is refused. An owner or admin can still open a single project, or a single level, from its settings, under Isolation: it then takes traffic from anywhere, while the rest stay isolated. What a project reaches out to, the internet included, is unchanged. Attaching a service's variables to another project opens the way within a minute, and detaching closes it again. Switching isolation off removes all of it at once.
+
 ## Common tasks {#how-to}
 
 - **Test a change in staging before production.** Add a staging level below production. Put the services into a group whose path is staging → production. Deploy in staging, then press Promote.
@@ -105,3 +116,4 @@ Deleting a level removes everything in it, from the cluster too: its services, r
 - **Built here** {#built-here -> hotfixes}: Built in this level instead of promoted to it: a hotfix. A normal promotion will not replace it until the level below builds something newer.
 - **After first deploy** {#after-first-deploy -> routes}: A route copied into this level with the service, paused until the service's first successful deploy here.
 - **Promote** {#promote -> promote}: Deploys the images this level runs, as they are, to the next level on the group's path. Only newer images move; the rest stay, with the reason.
+- **Network isolation** {#network-isolation -> isolation}: Each project takes traffic only from its own services, its levels, the projects that use its services' published variables, and the machines. Switched on in Settings; a project or level can be opened as an exception in its own settings.

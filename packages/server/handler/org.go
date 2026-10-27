@@ -44,6 +44,13 @@ type UpdateOrgInput struct {
 	}
 }
 
+type SetNetworkIsolationInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		Enabled bool `json:"enabled"`
+	}
+}
+
 type UpdateOrgOutput struct {
 	Body *db.Organization
 }
@@ -177,6 +184,15 @@ func (h *Handler) registerOrgRoutes(api huma.API) {
 		Tags:        []string{"Organizations"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.UpdateOrg)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-network-isolation",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/network-isolation",
+		Summary:     "Switch network isolation between the organization's projects (owner or admin)",
+		Tags:        []string{"Organizations"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SetNetworkIsolation)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-org",
@@ -357,6 +373,21 @@ func (h *Handler) UpdateOrg(ctx context.Context, input *UpdateOrgInput) (*Update
 		return nil, err
 	}
 	org, err := h.svc.Orgs.Update(ctx, orgID, svc.UpdateOrgInput{Name: input.Body.Name})
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &UpdateOrgOutput{Body: org}, nil
+}
+
+func (h *Handler) SetNetworkIsolation(ctx context.Context, input *SetNetworkIsolationInput) (*UpdateOrgOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Isolation.Set(ctx, orgID, input.Body.Enabled); err != nil {
+		return nil, huma.Error500InternalServerError("network isolation: " + err.Error())
+	}
+	org, err := h.svc.Orgs.Get(ctx, orgID)
 	if err != nil {
 		return nil, notFound(err)
 	}

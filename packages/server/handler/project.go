@@ -50,6 +50,14 @@ type UpdateProjectInput struct {
 	}
 }
 
+type SetProjectNetworkOpenInput struct {
+	OrgID     string `path:"orgId"`
+	ProjectID string `path:"projectId"`
+	Body      struct {
+		Open bool `json:"open"`
+	}
+}
+
 type UpdateProjectOutput struct {
 	Body *db.Project
 }
@@ -90,6 +98,15 @@ func (h *Handler) registerProjectRoutes(api huma.API) {
 		Tags:        []string{"Projects"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.UpdateProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-project-network-open",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/projects/{projectId}/network-open",
+		Summary:     "Exempt a project from network isolation, or put it back (owner or admin)",
+		Tags:        []string{"Projects"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SetProjectNetworkOpen)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-project",
@@ -194,6 +211,28 @@ func (h *Handler) UpdateProject(ctx context.Context, input *UpdateProjectInput) 
 	if err != nil {
 		return nil, notFound(err)
 	}
+	return &UpdateProjectOutput{Body: project}, nil
+}
+
+// SetProjectNetworkOpen is for an owner or admin, not the project's editors:
+// opening a project undoes, for it, a choice the organization made.
+func (h *Handler) SetProjectNetworkOpen(ctx context.Context, input *SetProjectNetworkOpenInput) (*UpdateProjectOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := parseUUID(input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := h.svc.Projects.Get(ctx, projectID)
+	if err != nil || project.OrganizationID != orgID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	if err := h.svc.Isolation.SetProjectOpen(ctx, projectID, input.Body.Open); err != nil {
+		return nil, huma.Error500InternalServerError("network isolation: " + err.Error())
+	}
+	project.NetworkOpen = input.Body.Open
 	return &UpdateProjectOutput{Body: project}, nil
 }
 

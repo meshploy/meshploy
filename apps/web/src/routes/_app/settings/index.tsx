@@ -5,6 +5,7 @@ import { AlertCircle, Check, HardDrive, Loader2, Pencil, Plus, X } from "lucide-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
@@ -18,9 +19,10 @@ import {
   ApiError,
   type ApiStorageIntegration,
   type ApiSystemBackupConfig,
+  type ApiOrg,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore } from "@/store/org-store"
+import { useIsAdmin, useOrgStore } from "@/store/org-store"
 import { Section, inputCls } from "@/components/services/form-primitives"
 import { UpgradeDialog } from "@/components/licence/upgrade-dialog"
 import { ServerSection } from "@/components/system/server-section"
@@ -37,6 +39,7 @@ import { ACCENT_GROUPS } from "@/lib/accents"
 import { useAccentStore } from "@/store/accent-store"
 import { useBrand } from "@/lib/brand"
 import { EeSettingsSection } from "@/ee"
+import { TermInfo } from "@/help/term"
 
 export const Route = createFileRoute("/_app/settings/")({
   component: SettingsPage,
@@ -70,11 +73,13 @@ function SettingsPage() {
       </div>
 
       <SettingsWorkspace sections={[
-        ["general", "General"], ["appearance", "Appearance"],
+        ["general", "General"], ["isolation", "Isolation"], ["appearance", "Appearance"],
         ...(EeSettingsSection ? [[EeSettingsSection.id, EeSettingsSection.label] as [string, string]] : []),
         ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"],
       ]}>
       <div id="general"><GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} /></div>
+
+      <div id="isolation"><IsolationSection org={org} /></div>
 
       <div id="appearance"><AppearanceSection /></div>
 
@@ -451,6 +456,50 @@ function GeneralSection({ org, onNameUpdated }: { org: { id: string; name: strin
             </Button>
           </div>
         )}
+      </div>
+    </Section>
+  )
+}
+
+// How the organization's projects are kept apart from each other: one row
+// per kind of isolation.
+function IsolationSection({ org }: { org: ApiOrg }) {
+  const token = useAuthStore((s) => s.token)!
+  const isAdmin = useIsAdmin()
+  const qc = useQueryClient()
+  const on = !!org.network_isolation
+
+  const { mutate: setIsolation, isPending, error } = useMutation({
+    mutationFn: (enabled: boolean) => orgsApi.setNetworkIsolation(org.id, enabled, token),
+    onSuccess: (updated) => qc.setQueryData(["org", org.id], updated),
+  })
+
+  return (
+    <Section title="Isolation" subtitle="How projects are kept apart from each other">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-medium">Network</span>
+            <TermInfo id="environments.network-isolation" />
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Each project takes traffic only from its own services, its levels, projects that use its services' published
+            variables, and the machines, so routes and published ports keep working. Outgoing traffic is unchanged.
+            A project can be opened as an exception in its own settings.
+          </p>
+          {!isAdmin && <p className="text-xs text-muted-foreground">Only an owner or admin can change this.</p>}
+          {error && (
+            <p className="flex items-center gap-1.5 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {error instanceof ApiError ? error.message : "Could not change network isolation"}
+            </p>
+          )}
+        </div>
+        <div className="shrink-0 pt-0.5">
+          {isPending
+            ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            : <Switch checked={on} onCheckedChange={(v) => setIsolation(v)} disabled={!isAdmin} aria-label="Isolate projects from each other on the network" />}
+        </div>
       </div>
     </Section>
   )

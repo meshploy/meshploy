@@ -55,8 +55,9 @@ type Services struct {
 	Jobs            *JobService
 	Templates       *TemplateService
 	DBExplorer      *DBExplorerService
-	Tickets         *TicketService       // single-use tickets for WebSocket auth
-	Headscale       *HeadscaleService    // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
+	Tickets         *TicketService    // single-use tickets for WebSocket auth
+	Headscale       *HeadscaleService // nil if HEADSCALE_URL / HEADSCALE_API_KEY not set
+	Isolation       *IsolationService
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
 	K8sRestConfig   *rest.Config         // nil if KUBECONFIG unavailable
 	// DB is the database, for an extension's own tables. Core code goes
@@ -262,7 +263,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	entitlements := &EntitlementService{db: db, domain: entitlementDomain(c)}
 	agents := &AgentService{db: db, notif: notif}
 
+	isolation := newIsolationService(db, k8sClient)
 	svc := &Services{
+		Isolation:       isolation,
 		DB:              db,
 		Auth:            auth,
 		Entitlements:    entitlements,
@@ -351,6 +354,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go nodes.StartNodeMonitor(context.Background())
 	go nodes.StartRemovalWorker(context.Background())
 	go svc.MeshAccess.Follow(context.Background())
+	go svc.Isolation.Start(context.Background())
 
 	svc.ProjectMaps = &ProjectMapService{db: db, workloads: workloads, stacks: svc.Stacks, routes: routes, volumes: volumes}
 	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions, orphans: svc.Orphans, workloads: workloads, metrics: nodes.GetNodeMetrics}

@@ -9,6 +9,18 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// namespaceCreated are called once a namespace has been made, before
+// anything is deployed into it.
+var namespaceCreated []func(ctx context.Context, name string) error
+
+// OnNamespaceCreated adds a step every new namespace takes before anything
+// runs in it: its isolation, so a new project is never open in between.
+// Call it before the server starts. An error fails the deploy that made the
+// namespace.
+func OnNamespaceCreated(fn func(ctx context.Context, name string) error) {
+	namespaceCreated = append(namespaceCreated, fn)
+}
+
 // EnsureNamespace creates the namespace if it does not already exist.
 func EnsureNamespace(ctx context.Context, client kubernetes.Interface, name string) error {
 	_, err := client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
@@ -24,8 +36,15 @@ func EnsureNamespace(ctx context.Context, client kubernetes.Interface, name stri
 			Labels: map[string]string{"managed-by": "meshploy"},
 		},
 	}
-	_, err = client.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
-	return err
+	if _, err = client.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
+		return err
+	}
+	for _, fn := range namespaceCreated {
+		if err := fn(ctx, name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeleteNamespace removes the namespace and everything in it. A namespace

@@ -1,15 +1,17 @@
 import { SettingsWorkspace } from "@/components/layout/settings-workspace"
-import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Check, Eraser, Loader2, Pencil, Trash2, X } from "lucide-react"
 import { TermInfo } from "@/help/term"
-import { projects as projectsApi } from "@/lib/api"
+import { orgs as orgsApi, projects as projectsApi, type ApiProject } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
-import { useOrgStore } from "@/store/org-store"
+import { useIsAdmin, useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { inputCls } from "@/components/services/form-primitives"
+import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/projects/$id/settings")({
   component: ProjectSettingsPage,
@@ -58,7 +60,7 @@ function ProjectSettingsPage() {
   return (
     <div className="console-page settings-page space-y-6">
       <div><h1>Project settings</h1><p className="mt-2 text-sm text-muted-foreground">Manage project identity and lifecycle.</p></div>
-      <SettingsWorkspace sections={[["project-general", "General"], ["project-build-cache", "Build cache"], ["project-danger", "Danger zone"]]}>
+      <SettingsWorkspace sections={[["project-general", "General"], ["project-isolation", "Isolation"], ["project-build-cache", "Build cache"], ["project-danger", "Danger zone"]]}>
       {/* General */}
       <section id="project-general" className="console-section space-y-4">
         <div>
@@ -129,6 +131,8 @@ function ProjectSettingsPage() {
         </div>
       </section>
 
+      <NetworkSection orgId={orgId} project={project} />
+
       {/* The project's build cache: one for all its services, trimmed after
           every build to the server's limit, and cleared here at any time. */}
       <section id="project-build-cache" className="console-section space-y-4">
@@ -194,5 +198,74 @@ function ProjectSettingsPage() {
       </section>
       </SettingsWorkspace>
     </div>
+  )
+}
+
+// How this project, or this level, is kept apart from the rest of the
+// cluster: one row per kind of isolation. Network follows the organization's
+// switch unless opened here as an exception. Only an owner or admin may open
+// one: it undoes, here, a choice the organization made.
+function NetworkSection({ orgId, project }: { orgId: string; project: ApiProject }) {
+  const token = useAuthStore((s) => s.token)!
+  const isAdmin = useIsAdmin()
+  const qc = useQueryClient()
+  const { data: org } = useQuery({
+    queryKey: ["org", orgId],
+    queryFn: () => orgsApi.get(orgId, token),
+  })
+  const setOpen = useMutation({
+    mutationFn: (open: boolean) => projectsApi.setNetworkOpen(orgId, project.id, open, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["project", orgId, project.id] }),
+  })
+
+  const orgIsolated = !!org?.network_isolation
+  const isolated = orgIsolated && !project.network_open
+  const what = project.parent_project_id ? "this level" : "this project"
+
+  return (
+    <section id="project-isolation" className="console-section space-y-4">
+      <div>
+        <h2 className="text-sm font-medium">Isolation</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">How {what} is kept apart from the rest of the cluster.</p>
+      </div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            Network
+            <TermInfo id="environments.network-isolation" />
+            <span className={cn(
+              "rounded-full border px-1.5 py-0.5 text-[11px] font-normal",
+              isolated ? "border-emerald-500/20 bg-emerald-500/15 text-emerald-400" : "border-border/60 text-muted-foreground",
+            )}>
+              {isolated ? "Isolated" : "Open to every project"}
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {!orgIsolated ? (
+              <>
+                Network isolation is off for the organization, so every project is open.{" "}
+                <Link to="/settings" hash="isolation" className="text-primary hover:underline">Turn it on in Settings</Link>.
+              </>
+            ) : isolated ? (
+              <>Who inside the cluster may reach {what}&apos;s services: only its own services, its levels, projects that use its services&apos; published variables, and the machines. Switch off to open {what} as an exception.</>
+            ) : (
+              <>Opened as an exception: any pod in the cluster may reach it, while the organization&apos;s other projects stay isolated.</>
+            )}
+          </p>
+          {orgIsolated && !isAdmin && <p className="text-xs text-muted-foreground">Only an owner or admin can change this.</p>}
+          {setOpen.isError && <p className="text-xs text-destructive">{(setOpen.error as Error).message}</p>}
+        </div>
+        <div className="shrink-0 pt-0.5">
+          {setOpen.isPending
+            ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            : <Switch
+                checked={isolated}
+                disabled={!orgIsolated || !isAdmin}
+                onCheckedChange={(v) => setOpen.mutate(!v)}
+                aria-label={`Isolate ${what} on the network`}
+              />}
+        </div>
+      </div>
+    </section>
   )
 }

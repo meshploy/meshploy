@@ -8,6 +8,7 @@ import (
 	"github.com/meshploy/packages/server/config"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -110,4 +111,10 @@ func UseProjectConsolePrefixForTest(t interface{ Cleanup(func()) }, prefix strin
 	before := projectConsolePrefixes
 	RegisterProjectConsolePrefix(prefix)
 	t.Cleanup(func() { projectConsolePrefixes = before })
+}
+
+// NewIsolationForTest is the isolation service over a given database and
+// cluster.
+func NewIsolationForTest(gdb *gorm.DB, client kubernetes.Interface) *IsolationService {
+	return &IsolationService{db: gdb, k8s: client}
 }
