@@ -52,7 +52,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `nodes` | Mesh worker nodes + K3s + Headscale metadata. `os` is `linux`, `darwin` or `windows`; anything but Linux is always mesh only |
 | `node_registration_tokens` | `mreg-<hex>` tokens for legacy worker self-registration |
 | `node_provisioning_tokens` | `mprov-<hex>` single-use provisioning tokens (hashed, with expiry) |
-| `domains` | Base domains an org routes on. Each carries its own `dns_mode` (`delegation` or `ondemand`); `is_primary` marks the one whose platform subdomains serve and that new routes default to; `retiring_at` stops new routes attaching while everything already on it keeps serving |
+| `domains` | Base domains an org routes on. Each carries its own `dns_mode` (`delegation` or `ondemand`); `is_primary` marks the one whose platform subdomains serve and that new routes default to; `retiring_at` stops new routes attaching while everything already on it keeps serving; `dns_provider_id`, on an on-demand domain only, names the DNS provider that writes its records |
 
 ### Workloads
 
@@ -109,6 +109,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 |---|---|
 | `storage_integrations` | S3-compatible storage credentials (org-scoped) |
 | `registry_integrations` | Container registry credentials (org-scoped) |
+| `dns_providers` | Connected DNS hosts (Cloudflare): the API token encrypted, and the zones it may write records in as of its last check (org-scoped). A domain still using one keeps it from being removed |
 | `git_integrations` | Git provider connections (GitHub App; GitLab, Gitea/Forgejo and Bitbucket by token or OAuth) |
 
 ### Operations

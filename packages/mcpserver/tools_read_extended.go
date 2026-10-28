@@ -190,6 +190,13 @@ func (s *srv) registerReadToolsExtended(ms *mcpsdk.MCPServer) {
 		s.handleListStorageIntegrations,
 	)
 
+	ms.AddTool(
+		mcp.NewTool("list_dns_providers",
+			mcp.WithDescription("List connected DNS providers, with the zones each token may write records in as of its last check."),
+		),
+		s.handleListDNSProviders,
+	)
+
 	// ── Stacks ────────────────────────────────────────────────────────────────
 
 	ms.AddTool(
@@ -507,6 +514,14 @@ func (s *srv) handleListStorageIntegrations(_ context.Context, _ mcp.CallToolReq
 		out = append(out, MCPStorageIntegration{ID: st.ID, Name: st.Name, Provider: st.Provider, Endpoint: st.Endpoint, Region: st.Region, Bucket: st.Bucket})
 	}
 	return jsonResult(out)
+}
+
+func (s *srv) handleListDNSProviders(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	items, err := s.c.ListDNSProviders(s.orgID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(items)
 }
 
 func (s *srv) handleListStackServices(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

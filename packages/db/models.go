@@ -1366,11 +1366,35 @@ type Domain struct {
 	// Null means no, as elsewhere in this schema, and clearing it undoes the
 	// decision.
 	RetiringAt *time.Time `json:"retiring_at,omitempty"`
+	// DNSProviderID is the connected provider that writes this domain's
+	// records and proves control of it for its certificates. Only an on-demand
+	// domain has one; null means its records are written by hand.
+	DNSProviderID *uuid.UUID `gorm:"type:uuid;index" json:"dns_provider_id,omitempty"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID"                        json:"-"`
 	// RESTRICT: domain cannot be deleted while routes reference it.
 	Routes []Route `gorm:"foreignKey:DomainID;constraint:OnDelete:RESTRICT" json:"-"`
 }
+
+// DNSProvider is a connected account at a DNS host, through which Meshploy
+// writes an on-demand domain's records and proves control of it for wildcard
+// certificates. The zone stays the operator's: only records carrying this
+// installation's comment are ever changed.
+type DNSProvider struct {
+	Base
+	OrganizationID uuid.UUID       `gorm:"type:uuid;not null;index"  json:"organization_id"`
+	Name           string          `gorm:"not null"                  json:"name"`
+	Kind           string          `gorm:"type:varchar(20);not null" json:"kind"`
+	Token          EncryptedString `gorm:"type:text;not null" json:"-"`
+	// Zones are the zones the token may write in, as of CheckedAt: what the
+	// console shows and offers, refreshed by checking again.
+	Zones     []string   `gorm:"serializer:json;type:text" json:"zones"`
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+
+	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
+}
+
+func (DNSProvider) TableName() string { return "dns_providers" }
 
 // IgnoredEndpoint is a discovered endpoint somebody has decided about: known,
 // correct as it is, leave it alone.

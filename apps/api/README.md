@@ -559,6 +559,10 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 | GET | `/orgs/{orgId}/storage-integrations` | ✓ | List object storage integrations |
 | POST | `/orgs/{orgId}/storage-integrations` | ✓ | Add an object storage integration |
 | DELETE | `/orgs/{orgId}/storage-integrations/{id}` | ✓ | Remove an object storage integration |
+| GET | `/orgs/{orgId}/dns-providers` | ✓ | List connected DNS providers |
+| POST | `/orgs/{orgId}/dns-providers` | ✓ | Connect a DNS provider; the token must be able to write records in at least one zone |
+| POST | `/orgs/{orgId}/dns-providers/{id}/check` | ✓ | Check its token again and keep the zones it may write in |
+| DELETE | `/orgs/{orgId}/dns-providers/{id}` | ✓ | Disconnect a DNS provider; refused while a domain uses it |
 
 ### Terminals
 

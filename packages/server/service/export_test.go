@@ -6,6 +6,7 @@ import (
 
 	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
+	"github.com/meshploy/packages/server/dnsprovider"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -117,6 +118,12 @@ func UseProjectConsolePrefixForTest(t interface{ Cleanup(func()) }, prefix strin
 // cluster.
 func NewIsolationForTest(gdb *gorm.DB, client kubernetes.Interface) *IsolationService {
 	return &IsolationService{db: gdb, k8s: client}
+}
+
+// NewDNSProvidersForTest is the DNS provider service with its clients built by
+// open, so a test can stand in for the provider.
+func NewDNSProvidersForTest(gdb *gorm.DB, open func(kind dnsprovider.Kind, token string) (dnsprovider.Provider, error)) *DNSProviderService {
+	return &DNSProviderService{db: gdb, open: open}
 }
 
 // NewSandboxForTest is the sandbox service over a given database and cluster.

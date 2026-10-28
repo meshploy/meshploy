@@ -94,7 +94,8 @@ func Migrate(db *gorm.DB) error {
 		&NodeRegistrationToken{},
 		&NodeProvisioningToken{},
 
-		// Domains
+		// Domains (a domain may name the DNS provider that writes its records)
+		&DNSProvider{},
 		&Domain{},
 
 		// Workloads
@@ -336,6 +337,11 @@ func applyConstraints(db *gorm.DB) error {
 		{"notification_deliveries", "organization_id", "organizations", "CASCADE"},
 		{"notification_deliveries", "channel_id", "notification_channels", "CASCADE"},
 		{"domains", "organization_id", "organizations", "CASCADE"},
+		{"dns_providers", "organization_id", "organizations", "CASCADE"},
+		// Removing a provider a domain still uses is refused by the service,
+		// naming the domains. SET NULL rather than RESTRICT so deleting the
+		// organisation, which cascades to both, is never blocked by the order.
+		{"domains", "dns_provider_id", "dns_providers", "SET NULL"},
 		{"resource_permissions", "organization_id", "organizations", "CASCADE"},
 		// The rest of what hangs off an organisation. Left at the default these
 		// tables block the delete outright, and an operator removing an

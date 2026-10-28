@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useSearch, useNavigate, Link } from "@tanstack/react-router"
 import { createContext, useContext, useEffect, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Bell, Box, GitBranch, HardDrive, Loader2, Mail, Pencil, Plus, Trash2, Download, RefreshCw } from "lucide-react"
+import { Bell, Box, Globe, GitBranch, HardDrive, Loader2, Mail, Pencil, Plus, Trash2, Download, RefreshCw } from "lucide-react"
 import { EventPicker } from "@/components/notifications/event-picker"
 import { DeliveryLogDialog, DeliveryStatus, TestChannelButton, TestEmailProviderButton } from "@/components/notifications/delivery-log"
 import { Input } from "@/components/ui/input"
@@ -13,8 +13,10 @@ import {
   gitIntegrations as gitApi,
   registries as registriesApi,
   storage as storageApi,
+  dnsProviders as dnsApi,
   notifications as notificationsApi,
   emailConfig as emailConfigApi,
+  type ApiDNSProvider,
   type ApiGitIntegration,
   type ApiRegistryIntegration,
   type ApiStorageIntegration,
@@ -23,6 +25,7 @@ import {
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { formatRelativeTime } from "@/lib/utils"
 
 /**
  * The integration categories, one route each under /integrations. Each export
@@ -46,6 +49,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   gitlab: "GitLab",
   gitea: "Gitea",
   bitbucket: "Bitbucket",
+  cloudflare: "Cloudflare",
 }
 
 
@@ -59,6 +63,10 @@ export function RegistriesTab() {
 
 export function StorageTab() {
   return <StorageSection {...useOrgToken()} />
+}
+
+export function DNSProvidersTab() {
+  return <DNSProvidersSection {...useOrgToken()} />
 }
 
 export function NotificationsTab() {
@@ -271,6 +279,102 @@ function StorageSection({ orgId, token }: { orgId: string; token: string }) {
       )}
     </section>
   )
+}
+
+// ─── DNS providers section ────────────────────────────────────────────────────
+
+function DNSProvidersSection({ orgId, token }: { orgId: string; token: string }) {
+  const qc = useQueryClient()
+
+  const { data: list = [], isLoading } = useQuery({
+    queryKey: ["dns-providers", orgId],
+    queryFn: () => dnsApi.list(orgId, token).then((r) => r ?? []),
+    enabled: !!orgId,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => dnsApi.delete(orgId, id, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dns-providers", orgId] }),
+  })
+
+  const addLink = (
+    <Link
+      to="/integrations/new"
+      search={{ category: "dns" }}
+      className={buttonVariants({ variant: "default", className: "h-9 px-3" })}
+    >
+      <Plus className="size-4" />Add provider
+    </Link>
+  )
+
+  return (
+    <section id="integration-dns" className="integration-category space-y-4">
+      <div className="flex items-center justify-between">
+        <SectionHeader
+          icon={<Globe className="h-4 w-4" />}
+          title="DNS Providers"
+          description="Let Meshploy write an on-demand domain's records and issue its wildcard certificates"
+        />
+        {addLink}
+      </div>
+
+      {isLoading ? (
+        <LoadingRow />
+      ) : list.length === 0 ? (
+        <EmptyState
+          icon={<Globe className="h-7 w-7" />}
+          title="No DNS providers connected"
+          description="Connect Cloudflare so a domain kept there gets its records and certificates without you adding them by hand"
+        >
+          {addLink}
+        </EmptyState>
+      ) : (
+        <IntegrationTable>
+          {list.map((p) => (
+            <DNSProviderCard
+              key={p.id}
+              provider={p}
+              orgId={orgId}
+              token={token}
+              onDelete={() => deleteMutation.mutateAsync(p.id)}
+              isDeleting={deleteMutation.isPending && deleteMutation.variables === p.id}
+            />
+          ))}
+        </IntegrationTable>
+      )}
+    </section>
+  )
+}
+
+function DNSProviderCard({ provider, orgId, token, onDelete, isDeleting }: {
+  provider: ApiDNSProvider
+  orgId: string
+  token: string
+  onDelete: () => Promise<unknown>
+  isDeleting: boolean
+}) {
+  const qc = useQueryClient()
+  const check = useMutation({
+    mutationFn: () => dnsApi.check(orgId, provider.id, token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dns-providers", orgId] }),
+  })
+  const zones = provider.zones ?? []
+  const checked = provider.checked_at ? `checked ${formatRelativeTime(new Date(provider.checked_at))}` : ""
+  const details = check.isError
+    ? <span className="text-destructive">{check.error.message}</span>
+    : [zones.join(", ") || "No zone it may edit", checked].filter(Boolean).join(" · ")
+  return <IntegrationRow
+    name={provider.name}
+    provider={provider.kind}
+    status={check.isError || zones.length === 0 ? "Action required" : "Connected"}
+    details={details}
+    actions={<>
+      <Button variant="ghost" size="sm" onClick={() => check.mutate()} disabled={check.isPending} aria-label={`Check ${provider.name} again`}>
+        {check.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Check again
+      </Button>
+      <DisconnectButton name={provider.name} onDelete={onDelete} pending={isDeleting} />
+    </>}
+  />
 }
 
 // ─── Storage card ─────────────────────────────────────────────────────────────
@@ -593,7 +697,7 @@ function EmailProviderCard({ cfg, onEdit, onDelete, isDeleting }: {
 function ProviderIcon({ provider }: { provider: string }) {
   return (
     <div className="flex items-center justify-center accent-icon-tile shrink-0 text-xs font-bold uppercase">
-      {({ github: "GH", gitlab: "GL", gitea: "GT", bitbucket: "BB" } as Record<string, string>)[provider] || provider.slice(0, 2)}
+      {({ github: "GH", gitlab: "GL", gitea: "GT", bitbucket: "BB", cloudflare: "CF" } as Record<string, string>)[provider] || provider.slice(0, 2)}
     </div>
   )
 }

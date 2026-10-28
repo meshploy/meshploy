@@ -166,6 +166,64 @@ func (c *Client) DeleteStorageIntegration(orgID, id string) error {
 	return c.doNoContent("DELETE", "/api/v1/orgs/"+orgID+"/storage-integrations/"+id)
 }
 
+// ── DNS providers ─────────────────────────────────────────────────────────────
+
+type DNSProvider struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Kind      string   `json:"kind"`
+	Zones     []string `json:"zones"`
+	CheckedAt string   `json:"checked_at,omitempty"`
+}
+
+type CreateDNSProviderBody struct {
+	Name  string `json:"name"`
+	Kind  string `json:"kind"`
+	Token string `json:"token"`
+}
+
+// DNSProviderZone is a zone a provider's token sees, and whether it may write
+// records there.
+type DNSProviderZone struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	CanEdit bool   `json:"can_edit"`
+}
+
+// DNSProviderCheck is a provider with what checking its token found.
+type DNSProviderCheck struct {
+	Provider DNSProvider       `json:"provider"`
+	Zones    []DNSProviderZone `json:"zones"`
+}
+
+func (c *Client) ListDNSProviders(orgID string) ([]DNSProvider, error) {
+	resp, err := c.do("GET", "/api/v1/orgs/"+orgID+"/dns-providers", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decode[[]DNSProvider](resp)
+}
+
+func (c *Client) CreateDNSProvider(orgID string, body CreateDNSProviderBody) (*DNSProviderCheck, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/dns-providers", body)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[DNSProviderCheck](resp)
+}
+
+func (c *Client) CheckDNSProvider(orgID, id string) (*DNSProviderCheck, error) {
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/dns-providers/"+id+"/check", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decodePtr[DNSProviderCheck](resp)
+}
+
+func (c *Client) DeleteDNSProvider(orgID, id string) error {
+	return c.doNoContent("DELETE", "/api/v1/orgs/"+orgID+"/dns-providers/"+id)
+}
+
 // ── Repo/branch helpers ───────────────────────────────────────────────────────
 
 type RepoItem struct {

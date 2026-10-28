@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router"
 import React, { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Bell, Box, ChevronLeft, GitBranch, HardDrive, Mail,
+  Bell, Box, ChevronLeft, GitBranch, Globe, HardDrive, Mail,
   Loader2, Settings2, AlertCircle,
 } from "lucide-react"
 import { SiGithub, SiGitlab, SiGitea, SiBitbucket } from "@icons-pack/react-simple-icons"
@@ -16,6 +16,7 @@ import {
   gitIntegrations as gitApi,
   registries as registriesApi,
   storage as storageApi,
+  dnsProviders as dnsApi,
   notifications as notificationsApi,
   emailConfig as emailConfigApi,
   type RegistryProvider,
@@ -23,6 +24,7 @@ import {
   type NotificationChannelType,
   type CreateRegistryBody,
   type CreateStorageBody,
+  type CreateDNSProviderBody,
   type ApiRegistryIntegration,
   type SaveEmailConfigBody,
   type TokenGitProvider,
@@ -36,7 +38,7 @@ import { cn } from "@/lib/utils"
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 const searchSchema = z.object({
-  category: z.enum(["git", "registry", "storage", "notifications", "email"]).optional().default("git"),
+  category: z.enum(["git", "registry", "storage", "dns", "notifications", "email"]).optional().default("git"),
 })
 
 export const Route = createFileRoute("/_app/integrations/new")({
@@ -46,12 +48,13 @@ export const Route = createFileRoute("/_app/integrations/new")({
 
 // ─── Category definitions ─────────────────────────────────────────────────────
 
-type Category = "git" | "registry" | "storage" | "notifications" | "email"
+type Category = "git" | "registry" | "storage" | "dns" | "notifications" | "email"
 
 const CATEGORIES: { id: Category; icon: typeof GitBranch; label: string; description: string; soon?: boolean }[] = [
   { id: "git",           icon: GitBranch, label: "Git Source",         description: "GitHub, GitLab, or Gitea" },
   { id: "registry",      icon: Box,       label: "Container Registry", description: "Docker Hub, GHCR, ECR, GCR" },
   { id: "storage",       icon: HardDrive, label: "Object Storage",     description: "S3, R2, or MinIO" },
+  { id: "dns",           icon: Globe,     label: "DNS Provider",       description: "Cloudflare" },
   { id: "notifications", icon: Bell,      label: "Notifications",      description: "Email or webhook alerts" },
   { id: "email",         icon: Mail,      label: "Email Provider",     description: "SMTP for outbound email" },
 ]
@@ -127,6 +130,9 @@ function NewIntegrationPage() {
           )}
           {category === "storage" && (
             <StorageForm onSuccess={back} />
+          )}
+          {category === "dns" && (
+            <DNSProviderForm onSuccess={back} />
           )}
           {category === "notifications" && (
             <NotificationsForm onSuccess={back} />
@@ -699,6 +705,83 @@ function StorageForm({ onSuccess }: { onSuccess: () => void }) {
         >
           {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Add storage
+        </Button>
+      </Section>
+    </div>
+  )
+}
+
+// ─── DNS provider form ────────────────────────────────────────────────────────
+
+function DNSProviderForm({ onSuccess }: { onSuccess: () => void }) {
+  const token = useAuthStore((s) => s.token)!
+  const orgId = useOrgStore((s) => s.currentOrg?.id)!
+  const qc    = useQueryClient()
+
+  const [name,     setName]     = useState("Cloudflare")
+  const [apiToken, setApiToken] = useState("")
+  const [error,    setError]    = useState<string | null>(null)
+
+  const mutation = useMutation({
+    mutationFn: (body: CreateDNSProviderBody) => dnsApi.create(orgId, body, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dns-providers", orgId] })
+      onSuccess()
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  function submit() {
+    setError(null)
+    mutation.mutate({ name: name.trim(), kind: "cloudflare", token: apiToken.trim() })
+  }
+
+  return (
+    <div className="space-y-8">
+      <Section title="DNS Provider" subtitle="Let Meshploy write an on-demand domain's records and prove it controls the domain, so wildcard certificates are issued up front">
+        <Field label="Provider">
+          <Select value="cloudflare">
+            <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
+              <SelectValue>Cloudflare</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cloudflare">Cloudflare</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label="Label" required>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+        </Field>
+
+        <Field label="API token" required>
+          <PasswordInput
+            value={apiToken} onChange={(e) => setApiToken(e.target.value)}
+            autoComplete="new-password"
+            className={inputCls + " font-mono"}
+          />
+          <p className="text-[11px] text-muted-foreground/60 mt-1">Stored encrypted with AES-256-GCM, and never shown again</p>
+        </Field>
+
+        <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground space-y-1.5">
+          <p>
+            Create the token in Cloudflare under <span className="text-foreground">My Profile → API Tokens</span>, with
+            two permissions: <span className="font-mono text-foreground">Zone · DNS · Edit</span> and{" "}
+            <span className="font-mono text-foreground">Zone · Zone · Read</span>, for the zones Meshploy should write in.
+            If you limit it by IP address, include this gateway's public address.
+          </p>
+          <p>
+            Saving checks the token: in each zone it sees, Meshploy writes a TXT record
+            under <span className="font-mono text-foreground">_meshploy-check</span> and removes it again. Records Meshploy
+            writes later carry a comment naming this installation, and it never changes any other.
+          </p>
+        </div>
+
+        {error && <ErrorBanner message={error} />}
+
+        <Button onClick={submit} disabled={mutation.isPending || !name.trim() || !apiToken.trim()} className="gap-1.5">
+          {mutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {mutation.isPending ? "Checking the token…" : "Add provider"}
         </Button>
       </Section>
     </div>

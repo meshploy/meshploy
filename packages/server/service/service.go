@@ -47,6 +47,7 @@ type Services struct {
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
 	Storage         *StorageService
+	DNSProviders    *DNSProviderService
 	Backups         *BackupService
 	System          *SystemService
 	Notifications   *NotificationService
@@ -298,6 +299,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		GitIntegrations: gitSvc,
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
+		DNSProviders:    &DNSProviderService{db: db},
 		Backups:         backups,
 		System:          &SystemService{db: db, cfg: c, ent: entitlements, agents: agents},
 		Notifications:   notif,

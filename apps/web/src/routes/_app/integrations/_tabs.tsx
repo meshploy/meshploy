@@ -5,6 +5,7 @@ import {
   gitIntegrations as gitApi,
   registries as registriesApi,
   storage as storageApi,
+  dnsProviders as dnsApi,
   notifications as notificationsApi,
 } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
@@ -19,6 +20,7 @@ const TABS = [
   { id: "git", label: "Git sources", to: "/integrations/git" },
   { id: "registries", label: "Registries", to: "/integrations/registries" },
   { id: "storage", label: "Object storage", to: "/integrations/storage" },
+  { id: "dns", label: "DNS providers", to: "/integrations/dns" },
   { id: "notifications", label: "Notifications", to: "/integrations/notifications" },
   { id: "email", label: "Email provider", to: "/integrations/email" },
 ] as const
@@ -33,6 +35,7 @@ function IntegrationsLayout() {
     { queryKey: ["git-integrations", orgId], queryFn: () => gitApi.list(orgId, token).then((r) => r ?? []), enabled: !!orgId },
     { queryKey: ["registry-integrations", orgId], queryFn: () => registriesApi.list(orgId, token), enabled: !!orgId },
     { queryKey: ["storage-integrations", orgId], queryFn: () => storageApi.list(orgId, token), enabled: !!orgId },
+    { queryKey: ["dns-providers", orgId], queryFn: () => dnsApi.list(orgId, token), enabled: !!orgId },
     { queryKey: ["notification-channels", orgId], queryFn: () => notificationsApi.list(orgId, token), enabled: !!orgId },
   ] }).map((q) => q.isPending ? "…" : q.isError ? "-" : (q.data?.length ?? 0))
 
@@ -41,7 +44,7 @@ function IntegrationsLayout() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2" aria-labelledby="page-title"><span id="page-title">Integrations</span><HelpButton topic="integrations" label="How integrations work" /></h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Connect external services for source code, images, backups, and alerts
+          Connect external services for source code, images, backups, DNS, and alerts
         </p>
       </div>
 

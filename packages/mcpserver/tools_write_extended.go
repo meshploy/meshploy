@@ -342,6 +342,33 @@ func (s *srv) registerWriteToolsExtended(ms *mcpsdk.MCPServer) {
 		),
 		s.handleDeleteStorageIntegration,
 	)
+
+	ms.AddTool(
+		mcp.NewTool("create_dns_provider",
+			mcp.WithDescription("Connect a DNS provider, so on-demand domains can have their records written and wildcard certificates issued through it. "+
+				"The token is checked first by writing and removing a TXT record under _meshploy-check in each zone it sees; it must be able to edit records in at least one."),
+			mcp.WithString("name", mcp.Required(), mcp.Description("Display name")),
+			mcp.WithString("kind", mcp.Required(), mcp.Description("Provider"), mcp.Enum("cloudflare")),
+			mcp.WithString("token", mcp.Required(), mcp.Description("API token with DNS edit and zone read permission")),
+		),
+		s.handleCreateDNSProvider,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("check_dns_provider",
+			mcp.WithDescription("Check a DNS provider's token again: which zones it sees, and which it may write records in."),
+			mcp.WithString("provider_id", mcp.Required(), mcp.Description("DNS provider ID (from list_dns_providers)")),
+		),
+		s.handleCheckDNSProvider,
+	)
+
+	ms.AddTool(
+		mcp.NewTool("delete_dns_provider",
+			mcp.WithDescription("DESTRUCTIVE: disconnect a DNS provider. Refused while a domain still uses it. Confirm with user before calling."),
+			mcp.WithString("provider_id", mcp.Required(), mcp.Description("DNS provider ID")),
+		),
+		s.handleDeleteDNSProvider,
+	)
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -787,6 +814,33 @@ func (s *srv) handleDeleteStorageIntegration(_ context.Context, req mcp.CallTool
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return mcp.NewToolResultText("storage integration deleted"), nil
+}
+
+func (s *srv) handleCreateDNSProvider(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	out, err := s.c.CreateDNSProvider(s.orgID, client.CreateDNSProviderBody{
+		Name:  mcp.ParseString(req, "name", ""),
+		Kind:  mcp.ParseString(req, "kind", ""),
+		Token: mcp.ParseString(req, "token", ""),
+	})
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(out)
+}
+
+func (s *srv) handleCheckDNSProvider(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	out, err := s.c.CheckDNSProvider(s.orgID, mcp.ParseString(req, "provider_id", ""))
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return jsonResult(out)
+}
+
+func (s *srv) handleDeleteDNSProvider(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := s.c.DeleteDNSProvider(s.orgID, mcp.ParseString(req, "provider_id", "")); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText("DNS provider disconnected"), nil
 }
 
 // splitComma splits a comma-separated string, trimming whitespace.

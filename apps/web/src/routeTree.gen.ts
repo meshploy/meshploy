@@ -52,6 +52,7 @@ import { Route as AppIntegrationsTabsRegistriesRouteImport } from './routes/_app
 import { Route as AppIntegrationsTabsNotificationsRouteImport } from './routes/_app/integrations/_tabs/notifications'
 import { Route as AppIntegrationsTabsGitRouteImport } from './routes/_app/integrations/_tabs/git'
 import { Route as AppIntegrationsTabsEmailRouteImport } from './routes/_app/integrations/_tabs/email'
+import { Route as AppIntegrationsTabsDnsRouteImport } from './routes/_app/integrations/_tabs/dns'
 import { Route as AppProjectsIdVolumesIndexRouteImport } from './routes/_app/projects/$id/volumes/index'
 import { Route as AppProjectsIdVariablesIndexRouteImport } from './routes/_app/projects/$id/variables/index'
 import { Route as AppProjectsIdStacksIndexRouteImport } from './routes/_app/projects/$id/stacks/index'
@@ -307,6 +308,11 @@ const AppIntegrationsTabsEmailRoute =
     path: '/email',
     getParentRoute: () => AppIntegrationsTabsRoute,
   } as any)
+const AppIntegrationsTabsDnsRoute = AppIntegrationsTabsDnsRouteImport.update({
+  id: '/dns',
+  path: '/dns',
+  getParentRoute: () => AppIntegrationsTabsRoute,
+} as any)
 const AppProjectsIdVolumesIndexRoute =
   AppProjectsIdVolumesIndexRouteImport.update({
     id: '/volumes/',
@@ -559,6 +565,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AppSettingsIndexRoute
   '/templates/': typeof AppTemplatesIndexRoute
   '/users/': typeof AppUsersIndexRoute
+  '/integrations/dns': typeof AppIntegrationsTabsDnsRoute
   '/integrations/email': typeof AppIntegrationsTabsEmailRoute
   '/integrations/git': typeof AppIntegrationsTabsGitRoute
   '/integrations/notifications': typeof AppIntegrationsTabsNotificationsRoute
@@ -637,6 +644,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsIndexRoute
   '/templates': typeof AppTemplatesIndexRoute
   '/users': typeof AppUsersIndexRoute
+  '/integrations/dns': typeof AppIntegrationsTabsDnsRoute
   '/integrations/email': typeof AppIntegrationsTabsEmailRoute
   '/integrations/git': typeof AppIntegrationsTabsGitRoute
   '/integrations/notifications': typeof AppIntegrationsTabsNotificationsRoute
@@ -716,6 +724,7 @@ export interface FileRoutesById {
   '/_app/settings/': typeof AppSettingsIndexRoute
   '/_app/templates/': typeof AppTemplatesIndexRoute
   '/_app/users/': typeof AppUsersIndexRoute
+  '/_app/integrations/_tabs/dns': typeof AppIntegrationsTabsDnsRoute
   '/_app/integrations/_tabs/email': typeof AppIntegrationsTabsEmailRoute
   '/_app/integrations/_tabs/git': typeof AppIntegrationsTabsGitRoute
   '/_app/integrations/_tabs/notifications': typeof AppIntegrationsTabsNotificationsRoute
@@ -798,6 +807,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/templates/'
     | '/users/'
+    | '/integrations/dns'
     | '/integrations/email'
     | '/integrations/git'
     | '/integrations/notifications'
@@ -876,6 +886,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/templates'
     | '/users'
+    | '/integrations/dns'
     | '/integrations/email'
     | '/integrations/git'
     | '/integrations/notifications'
@@ -954,6 +965,7 @@ export interface FileRouteTypes {
     | '/_app/settings/'
     | '/_app/templates/'
     | '/_app/users/'
+    | '/_app/integrations/_tabs/dns'
     | '/_app/integrations/_tabs/email'
     | '/_app/integrations/_tabs/git'
     | '/_app/integrations/_tabs/notifications'
@@ -1312,6 +1324,13 @@ declare module '@tanstack/react-router' {
       path: '/email'
       fullPath: '/integrations/email'
       preLoaderRoute: typeof AppIntegrationsTabsEmailRouteImport
+      parentRoute: typeof AppIntegrationsTabsRoute
+    }
+    '/_app/integrations/_tabs/dns': {
+      id: '/_app/integrations/_tabs/dns'
+      path: '/dns'
+      fullPath: '/integrations/dns'
+      preLoaderRoute: typeof AppIntegrationsTabsDnsRouteImport
       parentRoute: typeof AppIntegrationsTabsRoute
     }
     '/_app/projects/$id/volumes/': {
@@ -1739,6 +1758,7 @@ const AppProjectsIdRouteRouteWithChildren =
   AppProjectsIdRouteRoute._addFileChildren(AppProjectsIdRouteRouteChildren)
 
 interface AppIntegrationsTabsRouteChildren {
+  AppIntegrationsTabsDnsRoute: typeof AppIntegrationsTabsDnsRoute
   AppIntegrationsTabsEmailRoute: typeof AppIntegrationsTabsEmailRoute
   AppIntegrationsTabsGitRoute: typeof AppIntegrationsTabsGitRoute
   AppIntegrationsTabsNotificationsRoute: typeof AppIntegrationsTabsNotificationsRoute
@@ -1747,6 +1767,7 @@ interface AppIntegrationsTabsRouteChildren {
 }
 
 const AppIntegrationsTabsRouteChildren: AppIntegrationsTabsRouteChildren = {
+  AppIntegrationsTabsDnsRoute: AppIntegrationsTabsDnsRoute,
   AppIntegrationsTabsEmailRoute: AppIntegrationsTabsEmailRoute,
   AppIntegrationsTabsGitRoute: AppIntegrationsTabsGitRoute,
   AppIntegrationsTabsNotificationsRoute: AppIntegrationsTabsNotificationsRoute,

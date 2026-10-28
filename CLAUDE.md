@@ -173,7 +173,7 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (60 CE tables)
+## packages/db — schema (61 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
@@ -188,7 +188,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 | Traffic | `routes`, `route_targets`, `tcp_routes`, `edge_fallbacks`, `edge_versions` |
 | Discovery | `ignored_endpoints` |
 | History | `deployments`, `jobs`, `job_runs` |
-| Integrations | `storage_integrations`, `registry_integrations`, `git_integrations` |
+| Integrations | `storage_integrations`, `registry_integrations`, `git_integrations`, `dns_providers` |
 | Operations | `backup_configs`, `system_backup_configs`, `notification_channels`, `notification_deliveries`, `org_email_configs` |
 | Templates | `templates` |
 
@@ -245,6 +245,7 @@ packages/server/
 │   ├── git_integration.go  # Git provider integrations + OAuth callbacks
 │   ├── registry.go         # Registry integration CRUD
 │   ├── storage.go          # Storage integration CRUD
+│   ├── dns_provider.go     # DNS providers: connect (token checked first), check again, disconnect
 │   ├── terminal.go         # WebSocket: node terminal + pod terminal
 │   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
 │   ├── domain.go           # Domain CRUD + DNS verification
@@ -284,6 +285,7 @@ packages/server/
 │   ├── git_integration.go  # Git provider connections + OAuth flows
 │   ├── registry.go         # Registry integration CRUD
 │   ├── storage.go          # Storage integration CRUD
+│   ├── dns_provider.go     # DNS providers: the token checked and stored, the zones it may write in
 │   ├── db_explorer.go      # Live DB query + schema via K8s exec
 │   ├── system.go           # Version info, install/uninstall script serving
 │   ├── exposure.go         # Host-firewall exposure notice + dismissed notices
@@ -298,6 +300,7 @@ packages/server/
 │   ├── volume_status.go    # Reconciles stored volume status with its claim
 │   ├── wsticket.go         # Single-use tickets for WebSocket auth
 │   └── headscale.go        # Headscale API client: list, get, delete, rename nodes
+├── dnsprovider/  # Writing DNS records through a provider's API (Cloudflare), and checking a token
 ├── k8s/          # Kubernetes client, exec, terminal helpers
 ├── templates/    # One-click template catalog (embedded + remote)
 └── version/      # Current — overridden at build time via -ldflags
