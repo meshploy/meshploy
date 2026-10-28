@@ -23,6 +23,16 @@
 # reads it, under secrets/, which only root can read.
 
 {
+{{- if .ACMEEmail }}
+    # Two issuers, tried in order for every certificate: Let's Encrypt, then
+    # ZeroSSL when Let's Encrypt fails or rate-limits. Global, so each site's
+    # own challenge (DNS through a provider or a zone file, HTTP, on-demand)
+    # applies to both. ZeroSSL makes its account for this address; without
+    # one (ACME_EMAIL in .env) Let's Encrypt is the only issuer.
+    email {{ .ACMEEmail }}
+    cert_issuer acme
+    cert_issuer acme https://acme.zerossl.com/v2/DV90
+{{- end }}
     on_demand_tls {
         # One ask endpoint for the whole server, because on_demand_tls is a
         # global option and cannot vary per site. It approves an active workload

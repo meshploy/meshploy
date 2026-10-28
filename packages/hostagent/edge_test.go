@@ -187,3 +187,20 @@ func TestDNSCredentialsAreTakenOnce(t *testing.T) {
 		t.Error("a key that is not a provider ID must be refused")
 	}
 }
+
+// The address goes into the Caddyfile's global options as it is, so anything
+// Caddy would read as syntax is refused.
+func TestEdgeSnapshotACMEEmail(t *testing.T) {
+	ok := okSnapshot()
+	ok.ACMEEmail = "ops+edge@example.co.uk"
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("a plain address must be accepted: %v", err)
+	}
+	for _, bad := range []string{"ops", "ops@example", "ops@example.com\n}", "o ps@example.com", "{env.X}@example.com"} {
+		s := okSnapshot()
+		s.ACMEEmail = bad
+		if err := s.Validate(); err == nil {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+}

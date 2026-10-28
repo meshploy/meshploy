@@ -107,6 +107,9 @@ func applyEdgeSnapshotChanges(out io.Writer, snap hostagent.EdgeSnapshot, creds 
 	if snap.HeadscalePort == 0 {
 		snap.HeadscalePort = envPort("HEADSCALE_HOST_PORT")
 	}
+	if snap.ACMEEmail == "" {
+		snap.ACMEEmail = strings.TrimSpace(readEnvVar("ACME_EMAIL"))
+	}
 	files, err := edgeconfig.Render(snap)
 	if err != nil {
 		return nil, err

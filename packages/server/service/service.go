@@ -98,9 +98,11 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	// Built first: git integrations and notifications both need the primary
 	// domain's platform addresses.
-	domains := &DomainService{db: db}
+	dnsProviders := &DNSProviderService{db: db}
+	domains := &DomainService{db: db, dns: dnsProviders}
 	if c != nil {
 		domains.installDomain = c.Domain
+		domains.publicIP = c.PublicIP
 		// Before anything reads a mode: a domain row from before the column
 		// would otherwise be served as a delegation it never was.
 		if err := domains.BackfillDNSModes(context.Background(), c.DNSMode); err != nil {
@@ -299,7 +301,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		GitIntegrations: gitSvc,
 		Registries:      registries,
 		Storage:         &StorageService{db: db},
-		DNSProviders:    &DNSProviderService{db: db},
+		DNSProviders:    dnsProviders,
 		Backups:         backups,
 		System:          &SystemService{db: db, cfg: c, ent: entitlements, agents: agents},
 		Notifications:   notif,

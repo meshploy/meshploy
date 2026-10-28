@@ -24,6 +24,8 @@ Each base domain has its own DNS mode:
 - **Delegation**: the domain's name servers point at the gateway, which answers for it and holds one wildcard certificate for every name. Nothing to add per route.
 - **On-demand**: DNS stays with your provider. Each hostname needs a record pointing at the gateway, and gets its own certificate the first time it is asked for.
 
+An on-demand domain's records can also be kept by a connected [DNS provider](/concepts/integrations#dns-providers) such as Cloudflare. Meshploy then writes them, the domain needs no TXT record to verify, and its wildcard certificates, internal ones included, are issued up front as on a delegated domain.
+
 ## Retiring a domain {#retiring}
 
 A domain that has served routes is removed in two steps: **retire** it, which stops new routes choosing it while existing ones keep serving, then move those routes and remove it.

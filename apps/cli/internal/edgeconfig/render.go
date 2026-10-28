@@ -66,6 +66,8 @@ type caddyData struct {
 	// The gateway's loopback ports Caddy forwards to.
 	ProxyPort     int
 	HeadscalePort int
+	// Set, ZeroSSL is a second issuer after Let's Encrypt.
+	ACMEEmail string
 	// Served beside console.<domain>, as it is.
 	ConsoleNames []string
 	// Served as the console is, each with its own certificate.
@@ -114,6 +116,7 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 		SnapshotPath: SnapshotPath, PublicIP: snap.PublicIP, MeshIP: snap.MeshIP,
 		Domains: domains, Primary: *snap.Primary(), MeshDomain: snap.MeshDomainOrDefault(),
 		ProxyPort: snap.ProxyPortOrDefault(), HeadscalePort: snap.HeadscalePortOrDefault(),
+		ACMEEmail:    snap.ACMEEmail,
 		ConsoleNames: snap.ConsoleNames, ProjectConsoleNames: snap.ProjectConsoleNames,
 	}
 	caddyfile, err := execute(tmpl, "Caddyfile.tmpl", data)

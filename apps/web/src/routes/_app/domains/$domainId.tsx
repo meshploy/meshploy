@@ -10,13 +10,15 @@ import {
 import { ResourcePanel } from "@/components/layout/resource-workbench"
 import { DnsModePicker, dnsModeLabel } from "@/components/domains/dns-mode-picker"
 import { DnsRecords } from "@/components/domains/dns-records"
+import { ProviderRecords, RecordsPicker } from "@/components/domains/records-picker"
 import { MoveRouteDialog } from "@/components/domains/move-route-dialog"
 import { MakePrimarySection } from "@/components/domains/make-primary"
 import { ControlNodes } from "@/components/domains/control-nodes"
 import { ProviderRegistrations } from "@/components/domains/provider-registrations"
 import { CIDeployHooks } from "@/components/domains/ci-deploy-hooks"
 import { useGatewayPublicIp } from "@/components/domains/use-gateway-ip"
-import { domains as domainsApi, routes as routesApi, ApiError } from "@/lib/api"
+import { domains as domainsApi, dnsProviders as dnsProvidersApi, routes as routesApi, ApiError } from "@/lib/api"
+import type { ApiDNSProvider } from "@/lib/api/dns-providers"
 import type { ApiDomain, ApiDomainRoute, DnsMode } from "@/lib/api/domains"
 import { useAuthStore } from "@/store/auth-store"
 import { TermInfo } from "@/help/term"
@@ -57,6 +59,13 @@ function DomainPage() {
     enabled: !!orgId,
   })
   const primary = allDomains.find((d) => d.is_primary)
+  // Admins only: the providers are integrations, and only an admin changes
+  // who keeps a domain's records.
+  const { data: providers = [] } = useQuery({
+    queryKey: ["dns-providers", orgId],
+    queryFn: () => dnsProvidersApi.list(orgId, token),
+    enabled: !!orgId && isAdmin && domain?.dns_mode === "ondemand",
+  })
   // Only a domain that is or was primary ever had machines join through it.
   const { data: controlNodes = [] } = useQuery({
     queryKey: ["domain-nodes", orgId, domainId],
@@ -149,14 +158,28 @@ function DomainPage() {
         title="DNS records"
         action={!domain.verified && isAdmin ? <VerifyButton domain={domain} orgId={orgId} token={token} /> : undefined}
       >
-        <DnsRecords
-          domain={domain.base_domain}
-          mode={domain.dns_mode}
-          verified={domain.verified}
-          verifyToken={domain.verify_token}
-          publicIp={publicIp}
-        />
+        {domain.dns_provider_id ? (
+          <ProviderRecords
+            domain={domain.base_domain}
+            provider={providers.find((p) => p.id === domain.dns_provider_id)}
+            publicIp={publicIp}
+          />
+        ) : (
+          <DnsRecords
+            domain={domain.base_domain}
+            mode={domain.dns_mode}
+            verified={domain.verified}
+            verifyToken={domain.verify_token}
+            publicIp={publicIp}
+          />
+        )}
       </ResourcePanel>
+
+      {domain.dns_mode === "ondemand" && isAdmin && (
+        <ResourcePanel title="Records" action={<TermInfo id="integrations.dns-provider" />}>
+          <RecordsSection domain={domain} providers={providers} orgId={orgId} token={token} />
+        </ResourcePanel>
+      )}
 
       <ResourcePanel title="DNS mode" action={<TermInfo id={domain.dns_mode === "ondemand" ? "domains.on-demand" : "domains.delegation"} />}>
         <DnsModeSection domain={domain} orgId={orgId} token={token} readOnly={!isAdmin} />
@@ -338,6 +361,89 @@ function DnsModeSection({
         />
       )}
     </>
+  )
+}
+
+/**
+ * Who keeps the records. Choosing a provider writes them at once; choosing
+ * manual removes what Meshploy wrote, which takes the domain off the internet
+ * until the operator adds their own, so that direction asks first.
+ */
+function RecordsSection({
+  domain,
+  providers,
+  orgId,
+  token,
+}: {
+  domain: ApiDomain
+  providers: ApiDNSProvider[]
+  orgId: string
+  token: string
+}) {
+  const qc = useQueryClient()
+  const [confirmManual, setConfirmManual] = useState(false)
+  const change = useMutation({
+    mutationFn: (providerId: string | null) => domainsApi.setDnsProvider(orgId, domain.id, providerId, token),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["domain", orgId, domain.id] })
+      qc.invalidateQueries({ queryKey: ["domains", orgId] })
+      setConfirmManual(false)
+    },
+  })
+  const current = domain.dns_provider_id ?? null
+  const currentName = providers.find((p) => p.id === current)?.name ?? "the provider"
+  return (
+    <div className="space-y-2">
+      <RecordsPicker
+        value={current}
+        onChange={(id) => {
+          if (id === current) return
+          if (id === null) setConfirmManual(true)
+          else change.mutate(id)
+        }}
+        // Another provider is reached through manual, so the first one's
+        // records are removed before the second writes any.
+        providers={current ? providers.filter((p) => p.id === current) : providers}
+        domain={domain.base_domain}
+        disabled={change.isPending}
+      />
+      {change.isPending && !confirmManual && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Writing the records…
+        </p>
+      )}
+      {change.error && !confirmManual && (
+        <p className="text-xs text-destructive">
+          {change.error instanceof ApiError ? change.error.message : "Could not change the records."}
+        </p>
+      )}
+      <Dialog open={confirmManual} onOpenChange={(o) => !o && !change.isPending && setConfirmManual(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Keep the records by hand?</DialogTitle>
+            <DialogDescription>
+              Meshploy removes the records it wrote through {currentName}, and {domain.base_domain} stops
+              resolving here until you add your own: a wildcard A record for *.{domain.base_domain}. Records
+              of yours are left alone.
+            </DialogDescription>
+          </DialogHeader>
+          {change.error && (
+            <p className="text-xs text-destructive">
+              {change.error instanceof ApiError ? change.error.message : "Could not remove the records."}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmManual(false)} disabled={change.isPending}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => change.mutate(null)} disabled={change.isPending}>
+              {change.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              Remove the records
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 

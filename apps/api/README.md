@@ -479,7 +479,7 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/internal/domain-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS |
 | GET | `/internal/ondemand-tls-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS (self-managed DNS mode) |
 | GET | `/orgs/{orgId}/domains` | ✓ | List domains for an organization (primary first) |
-| POST | `/orgs/{orgId}/domains` | ✓ | Add a base domain |
+| POST | `/orgs/{orgId}/domains` | ✓ | Add a base domain; with `dns_provider_id`, an on-demand one whose records the provider writes, verified at once |
 | GET | `/orgs/{orgId}/domains/{domainId}` | ✓ | Get a domain |
 | POST | `/orgs/{orgId}/domains/{domainId}/verify` | ✓ | Check the ownership TXT record for a domain |
 | GET | `/orgs/{orgId}/domains/{domainId}/routes` | ✓ | Hostnames served under a base domain, across every project |
@@ -495,6 +495,7 @@ A project is its own production level; each level below it is a project of its o
 | DELETE | `/orgs/{orgId}/services/{serviceId}/deploy-hook-call` | ✓ | Forget a deploy webhook's last caller, for a CI job that no longer exists. A later call records it again |
 | GET | `/orgs/{orgId}/custom-domains` | ✓ | Hostnames that belong to a route rather than a base domain |
 | PATCH | `/orgs/{orgId}/domains/{domainId}/dns-mode` | ✓ | Change how a domain's DNS is arranged |
+| PUT | `/orgs/{orgId}/domains/{domainId}/dns-provider` | ✓ | Choose who keeps an on-demand domain's records: a connected DNS provider (written and read back, verifying the domain) or by hand (Meshploy's records removed) |
 | DELETE | `/orgs/{orgId}/domains/{domainId}` | ✓ | Remove a base domain. A verified one must be retiring and hold no routes; no node may still reach the mesh through it, no git provider may still call it, and no CI job may still deploy through it. An unverified one can go at once |
 
 Verifying a domain, changing its DNS mode or removing one records the new domain set in the host agent's inbox and asks it to regenerate Caddy and CoreDNS. The API writes no configuration itself and reloads nothing: it has no root on the host and no Docker socket.

@@ -38,6 +38,12 @@ func withProvider(d hostagent.EdgeDomain) hostagent.EdgeDomain {
 	return d
 }
 
+// withACMEEmail adds ZeroSSL as the second issuer.
+func withACMEEmail(s hostagent.EdgeSnapshot) hostagent.EdgeSnapshot {
+	s.ACMEEmail = "ops@example.com"
+	return s
+}
+
 // The golden files are the review surface for this package. A change to a
 // template shows up as a diff in what a real gateway would be served, which is
 // the only way to read a change to an edge configuration and know what it does.
@@ -55,10 +61,10 @@ func TestRenderMatchesGolden(t *testing.T) {
 		)},
 		// An on-demand primary whose records Cloudflare writes, beside one
 		// whose records are kept by hand.
-		{"provider", snapshot(
+		{"provider", withACMEEmail(snapshot(
 			withProvider(domain("example.com", hostagent.EdgeDNSOnDemand, true)),
 			domain("second.test", hostagent.EdgeDNSOnDemand, false),
-		)},
+		))},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -94,6 +94,11 @@ type EdgeSnapshot struct {
 	// the host fills them from its .env before rendering. Zero is the default.
 	ProxyPort     int `json:"proxy_port,omitempty"`
 	HeadscalePort int `json:"headscale_port,omitempty"`
+	// ACMEEmail is the address certificate authorities know this gateway by,
+	// a host fact like the ports (ACME_EMAIL in .env). Set, ZeroSSL becomes a
+	// second issuer after Let's Encrypt, which it cannot be without one: its
+	// ACME account is made for an address. Empty, Let's Encrypt alone.
+	ACMEEmail string `json:"acme_email,omitempty"`
 	// ConsoleNames are further platform subdomains served as the console
 	// is, beside console.<domain>: an edition's own door onto the same web
 	// app and API. Empty in Community.
@@ -265,6 +270,10 @@ func (s EdgeSnapshot) Validate() error {
 		}
 		projectNames[n] = true
 	}
+	if s.ACMEEmail != "" && !acmeEmailPattern.MatchString(s.ACMEEmail) {
+		// Written into the Caddyfile's global options as it is.
+		return fmt.Errorf("ACME email %q is not an email address", s.ACMEEmail)
+	}
 	if s.MeshDomain != "" {
 		if err := validEdgeName(s.MeshDomain); err != nil {
 			return fmt.Errorf("mesh domain %q: %w", s.MeshDomain, err)
@@ -272,6 +281,8 @@ func (s EdgeSnapshot) Validate() error {
 	}
 	return nil
 }
+
+var acmeEmailPattern = regexp.MustCompile(`^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`)
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 

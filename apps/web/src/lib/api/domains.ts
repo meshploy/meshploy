@@ -24,6 +24,10 @@ export interface ApiDomain {
   /** Set while the domain is being retired: nothing new can attach to it, and
    *  everything already on it keeps serving. Null means no. */
   retiring_at?: string | null
+  /** The connected DNS provider that writes this on-demand domain's records,
+   *  which also proves control of it: such a domain needs no TXT record.
+   *  Absent when the records are kept by hand. */
+  dns_provider_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -104,7 +108,11 @@ export const domains = {
   get: (orgId: string, domainId: string, token: string) =>
     apiFetch<ApiDomain>(`/api/v1/orgs/${orgId}/domains/${domainId}`, {}, token),
 
-  create: (orgId: string, body: { base_domain: string; dns_mode?: DnsMode }, token: string) =>
+  create: (
+    orgId: string,
+    body: { base_domain: string; dns_mode?: DnsMode; dns_provider_id?: string },
+    token: string
+  ) =>
     apiFetch<ApiDomain>(
       `/api/v1/orgs/${orgId}/domains`,
       { method: "POST", body: JSON.stringify(body) },
@@ -115,6 +123,15 @@ export const domains = {
     apiFetch<ApiDomain>(
       `/api/v1/orgs/${orgId}/domains/${domainId}/verify`,
       { method: "POST" },
+      token
+    ),
+
+  /** Who keeps the records: a provider's ID, or null for by hand, which
+   *  removes the records Meshploy wrote. */
+  setDnsProvider: (orgId: string, domainId: string, providerId: string | null, token: string) =>
+    apiFetch<ApiDomain>(
+      `/api/v1/orgs/${orgId}/domains/${domainId}/dns-provider`,
+      { method: "PUT", body: JSON.stringify({ dns_provider_id: providerId ?? "" }) },
       token
     ),
 

@@ -32,6 +32,17 @@ type CreateDomainInput struct {
 	Body  struct {
 		BaseDomain string     `json:"base_domain" required:"true" doc:"The domain to add, e.g. example.com"`
 		DNSMode    db.DNSMode `json:"dns_mode,omitempty" enum:"delegation,ondemand" doc:"How this domain's DNS is arranged. Defaults to delegation."`
+		// Set, the domain is on-demand and the provider writes its records:
+		// it is verified at once, with no TXT record to add.
+		DNSProviderID string `json:"dns_provider_id,omitempty" format:"uuid" doc:"A connected DNS provider to write this domain's records. Implies dns_mode ondemand."`
+	}
+}
+
+type SetDomainDNSProviderInput struct {
+	OrgID    string `path:"orgId"`
+	DomainID string `path:"domainId"`
+	Body     struct {
+		DNSProviderID string `json:"dns_provider_id,omitempty" format:"uuid" doc:"The provider to write this domain's records. Empty: the operator keeps them by hand, and the records Meshploy wrote are removed."`
 	}
 }
 
@@ -93,6 +104,15 @@ func (h *Handler) registerDomainRoutes(api huma.API) {
 		Tags:        []string{"Domains"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.SetDomainDNSMode)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-domain-dns-provider",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/domains/{domainId}/dns-provider",
+		Summary:     "Choose who keeps a domain's records: a connected DNS provider, or the operator by hand",
+		Tags:        []string{"Domains"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SetDomainDNSProvider)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "start-retiring-domain",
@@ -253,10 +273,49 @@ func (h *Handler) CreateDomain(ctx context.Context, input *CreateDomainInput) (*
 	if err != nil {
 		return nil, err
 	}
+	if input.Body.DNSProviderID != "" {
+		if input.Body.DNSMode == db.DNSModeDelegation {
+			return nil, huma.Error422UnprocessableEntity("a DNS provider writes the records of an on-demand domain, not a delegated one")
+		}
+		providerID, err := uuid.Parse(input.Body.DNSProviderID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("dns_provider_id is not an ID")
+		}
+		domain, err := h.svc.Domains.CreateThroughProvider(ctx, orgID, input.Body.BaseDomain, providerID)
+		if err != nil {
+			return nil, err
+		}
+		// Verified already, so it is served from now.
+		h.publishEdge(ctx, orgID)
+		return &GetDomainOutput{Body: domain}, nil
+	}
 	domain, err := h.svc.Domains.Create(ctx, orgID, input.Body.BaseDomain, input.Body.DNSMode)
 	if err != nil {
 		return nil, err
 	}
+	return &GetDomainOutput{Body: domain}, nil
+}
+
+func (h *Handler) SetDomainDNSProvider(ctx context.Context, input *SetDomainDNSProviderInput) (*GetDomainOutput, error) {
+	domainID, err := h.domainOfOrg(ctx, input.OrgID, input.DomainID)
+	if err != nil {
+		return nil, err
+	}
+	var providerID *uuid.UUID
+	if input.Body.DNSProviderID != "" {
+		id, err := uuid.Parse(input.Body.DNSProviderID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("dns_provider_id is not an ID")
+		}
+		providerID = &id
+	}
+	domain, err := h.svc.Domains.SetDNSProvider(ctx, domainID, providerID)
+	if err != nil {
+		return nil, err
+	}
+	// The edge issues the domain's certificates through the provider, or
+	// stops to.
+	h.publishEdge(ctx, domain.OrganizationID)
 	return &GetDomainOutput{Body: domain}, nil
 }
 

@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/dialog"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { DnsModePicker, dnsModeLabel } from "@/components/domains/dns-mode-picker"
-import { domains as domainsApi, ApiError } from "@/lib/api"
+import { RecordsPicker, zoneFor } from "@/components/domains/records-picker"
+import { domains as domainsApi, dnsProviders as dnsProvidersApi, ApiError } from "@/lib/api"
 import type { ApiDomain, ApiDomainRoute, DnsMode } from "@/lib/api/domains"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
@@ -235,13 +236,32 @@ function AddDomainDialog({
   const navigate = useNavigate()
   const [name, setName] = useState("")
   const [mode, setMode] = useState<DnsMode>("delegation")
+  const [providerId, setProviderId] = useState<string | null>(null)
+  const { data: providers = [] } = useQuery({
+    queryKey: ["dns-providers", orgId],
+    queryFn: () => dnsProvidersApi.list(orgId, token),
+    enabled: open && mode === "ondemand",
+  })
+  const domain = name.trim().toLowerCase().replace(/\.$/, "")
+  // A provider that cannot write in a zone holding the name typed since is
+  // not used: the choice falls back to manual rather than failing on submit.
+  const provider = mode === "ondemand" ? providers.find((p) => p.id === providerId) : undefined
+  const viaProvider = !!provider && (!domain || !!zoneFor(provider.zones, domain))
 
   const create = useMutation({
-    mutationFn: () => domainsApi.create(orgId, { base_domain: name.trim(), dns_mode: mode }, token),
+    mutationFn: () =>
+      domainsApi.create(
+        orgId,
+        viaProvider
+          ? { base_domain: name.trim(), dns_mode: "ondemand", dns_provider_id: provider!.id }
+          : { base_domain: name.trim(), dns_mode: mode },
+        token
+      ),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["domains", orgId] })
       onOpenChange(false)
       setName("")
+      setProviderId(null)
       // Straight to the records: a new domain does nothing until they exist.
       navigate({ to: "/domains/$domainId", params: { domainId: d.id } })
     },
@@ -274,6 +294,18 @@ function AddDomainDialog({
             autoFocus
           />
           <DnsModePicker value={mode} onChange={setMode} disabled={create.isPending} />
+          {mode === "ondemand" && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-foreground">Records</p>
+              <RecordsPicker
+                value={viaProvider ? providerId : null}
+                onChange={setProviderId}
+                providers={providers}
+                domain={domain}
+                disabled={create.isPending}
+              />
+            </div>
+          )}
           {create.error && (
             <p className="text-xs text-destructive">
               {create.error instanceof ApiError ? create.error.message : "Could not add the domain."}
@@ -285,7 +317,11 @@ function AddDomainDialog({
             </Button>
             <Button type="submit" disabled={!name.trim() || create.isPending}>
               {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-              Add base domain
+              {viaProvider
+                ? create.isPending
+                  ? `Writing records through ${provider!.name}…`
+                  : "Add and write records"
+                : "Add base domain"}
             </Button>
           </DialogFooter>
         </form>

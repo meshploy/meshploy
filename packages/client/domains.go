@@ -10,6 +10,9 @@ type Domain struct {
 	IsPrimary  bool    `json:"is_primary"`
 	DNSMode    string  `json:"dns_mode"`
 	RetiringAt *string `json:"retiring_at,omitempty"`
+	// DNSProviderID is the connected provider that writes this domain's
+	// records; empty when they are kept by hand.
+	DNSProviderID string `json:"dns_provider_id,omitempty"`
 }
 
 func (c *Client) ListDomains(orgID string) ([]Domain, error) {

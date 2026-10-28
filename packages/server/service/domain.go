@@ -22,6 +22,10 @@ type DomainService struct {
 	// has no primary domain row - a gateway seeded before domains were rows,
 	// or a developer's machine.
 	installDomain string
+	// dns writes the records of a domain a connected provider keeps, pointing
+	// them at publicIP, the gateway's public address.
+	dns      *DNSProviderService
+	publicIP string
 }
 
 // BackfillDNSModes gives a DNS mode to domains that predate the column.
@@ -204,6 +208,10 @@ func (s *DomainService) SetDNSMode(ctx context.Context, domainID uuid.UUID, mode
 	if err != nil {
 		return nil, err
 	}
+	if domain.DNSProviderID != nil && mode != db.DNSModeOnDemand {
+		return nil, huma.Error422UnprocessableEntity(
+			"a DNS provider writes this domain's records, which only an on-demand domain has. Switch its records to manual first")
+	}
 	domain.DNSMode = mode
 	return domain, s.db.WithContext(ctx).Model(domain).Update("dns_mode", mode).Error
 }
@@ -309,6 +317,11 @@ func (s *DomainService) Delete(ctx context.Context, domainID uuid.UUID) error {
 		// many and what to do beats a constraint violation.
 		return huma.Error422UnprocessableEntity(fmt.Sprintf(
 			"%d route(s) still use this domain - move or remove them first", routes))
+	}
+	// Last of all, once nothing else can refuse: the records go with the
+	// domain, and a domain that stayed would be left pointing nowhere.
+	if err := s.unpoint(ctx, domain); err != nil {
+		return err
 	}
 	return s.db.WithContext(ctx).Delete(&db.Domain{}, "id = ?", domainID).Error
 }

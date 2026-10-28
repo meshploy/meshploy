@@ -195,6 +195,11 @@ whenever a base domain is added, removed, verified, or has its DNS mode changed,
 so an edit to `caddy/Caddyfile` or `coredns/Corefile` is lost. Put your own
 configuration in `caddy/conf.d/*.caddy`, which is imported and never written.
 
+Certificates come from Let's Encrypt. Set `ACME_EMAIL` in `.env` and run this
+again to add **ZeroSSL** as a second issuer, tried when Let's Encrypt fails or
+rate-limits: ZeroSSL makes its account for an address, so it cannot be used
+without one. The address is sent to both authorities.
+
 An apply that finds nothing to do does nothing - the edge is not reloaded - so
 it is safe to run on every start and after every upgrade. When there is
 something to do, Caddy is asked to accept the new configuration **before**

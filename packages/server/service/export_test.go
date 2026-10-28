@@ -137,3 +137,10 @@ func UseSandboxRuleForTest(t interface{ Cleanup(func()) }, rule SandboxRule) {
 	RegisterSandboxRule(rule)
 	t.Cleanup(func() { sandboxRules = before })
 }
+
+// UseDNSProvidersForTest makes the services' DNS provider clients come from
+// open, and the gateway's public address publicIP.
+func UseDNSProvidersForTest(svc *Services, open func(kind dnsprovider.Kind, token string) (dnsprovider.Provider, error), publicIP string) {
+	svc.DNSProviders.open = open
+	svc.Domains.publicIP = publicIP
+}
