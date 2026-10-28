@@ -35,6 +35,15 @@ type CreateDomainInput struct {
 		// Set, the domain is on-demand and the provider writes its records:
 		// it is verified at once, with no TXT record to add.
 		DNSProviderID string `json:"dns_provider_id,omitempty" format:"uuid" doc:"A connected DNS provider to write this domain's records. Implies dns_mode ondemand."`
+		ProjectID     string `json:"project_id,omitempty" format:"uuid" doc:"Reserve the domain for this project and its environment levels: no other project's routes may use it."`
+	}
+}
+
+type ReserveDomainInput struct {
+	OrgID    string `path:"orgId"`
+	DomainID string `path:"domainId"`
+	Body     struct {
+		ProjectID string `json:"project_id,omitempty" format:"uuid" doc:"The project to reserve the domain for. Empty: every project of the organization may use it."`
 	}
 }
 
@@ -113,6 +122,15 @@ func (h *Handler) registerDomainRoutes(api huma.API) {
 		Tags:        []string{"Domains"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.SetDomainDNSProvider)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "reserve-domain-for-project",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/domains/{domainId}/project",
+		Summary:     "Reserve a domain for one project, or give it back to every project",
+		Tags:        []string{"Domains"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.ReserveDomainForProject)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "start-retiring-domain",
@@ -273,6 +291,38 @@ func (h *Handler) CreateDomain(ctx context.Context, input *CreateDomainInput) (*
 	if err != nil {
 		return nil, err
 	}
+	// Checked before anything is created, so a bad project never leaves a
+	// domain, or its records, behind.
+	var projectID *uuid.UUID
+	if input.Body.ProjectID != "" {
+		id, err := uuid.Parse(input.Body.ProjectID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("project_id is not an ID")
+		}
+		if err := h.svc.Domains.CheckReservable(ctx, orgID, id); err != nil {
+			return nil, err
+		}
+		projectID = &id
+	}
+	domain, err := h.createDomain(ctx, orgID, input)
+	if err != nil {
+		return nil, err
+	}
+	if projectID != nil {
+		// Before the edge publishes, so no route of another project can
+		// attach in between: none can yet, as the domain is new.
+		if domain, err = h.svc.Domains.ReserveForProject(ctx, domain.ID, projectID); err != nil {
+			return nil, err
+		}
+	}
+	if domain.Verified {
+		// Through a provider: verified already, so it is served from now.
+		h.publishEdge(ctx, orgID)
+	}
+	return &GetDomainOutput{Body: domain}, nil
+}
+
+func (h *Handler) createDomain(ctx context.Context, orgID uuid.UUID, input *CreateDomainInput) (*db.Domain, error) {
 	if input.Body.DNSProviderID != "" {
 		if input.Body.DNSMode == db.DNSModeDelegation {
 			return nil, huma.Error422UnprocessableEntity("a DNS provider writes the records of an on-demand domain, not a delegated one")
@@ -281,15 +331,25 @@ func (h *Handler) CreateDomain(ctx context.Context, input *CreateDomainInput) (*
 		if err != nil {
 			return nil, huma.Error422UnprocessableEntity("dns_provider_id is not an ID")
 		}
-		domain, err := h.svc.Domains.CreateThroughProvider(ctx, orgID, input.Body.BaseDomain, providerID)
-		if err != nil {
-			return nil, err
-		}
-		// Verified already, so it is served from now.
-		h.publishEdge(ctx, orgID)
-		return &GetDomainOutput{Body: domain}, nil
+		return h.svc.Domains.CreateThroughProvider(ctx, orgID, input.Body.BaseDomain, providerID)
 	}
-	domain, err := h.svc.Domains.Create(ctx, orgID, input.Body.BaseDomain, input.Body.DNSMode)
+	return h.svc.Domains.Create(ctx, orgID, input.Body.BaseDomain, input.Body.DNSMode)
+}
+
+func (h *Handler) ReserveDomainForProject(ctx context.Context, input *ReserveDomainInput) (*GetDomainOutput, error) {
+	domainID, err := h.domainOfOrg(ctx, input.OrgID, input.DomainID)
+	if err != nil {
+		return nil, err
+	}
+	var projectID *uuid.UUID
+	if input.Body.ProjectID != "" {
+		id, err := uuid.Parse(input.Body.ProjectID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("project_id is not an ID")
+		}
+		projectID = &id
+	}
+	domain, err := h.svc.Domains.ReserveForProject(ctx, domainID, projectID)
 	if err != nil {
 		return nil, err
 	}

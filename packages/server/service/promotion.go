@@ -1621,6 +1621,9 @@ func (s *PromotionService) DeleteProject(ctx context.Context, projectID uuid.UUI
 	if levels > 0 {
 		return ErrProjectHasLevels
 	}
+	if err := refuseIfDomainReserved(ctx, s.db, projectID); err != nil {
+		return err
+	}
 	if _, err := s.teardown(ctx, project); err != nil {
 		return err
 	}

@@ -64,7 +64,7 @@ import {
   type ApiVolume,
   type ApiDbRoute,
 } from "@/lib/api"
-import { usableForNewRoutes } from "@/lib/api/domains"
+import { projectRootOf, usableForNewRoutes } from "@/lib/api/domains"
 import { nodeCapacity, nodeCardSub, schedulableNodes } from "@/lib/api/nodes"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
@@ -1192,7 +1192,7 @@ function RouteForm({ projectId, serviceId }: { projectId: string; serviceId?: st
     enabled: !!orgId,
   })
 
-  const verifiedDomains = domainList.filter(usableForNewRoutes)
+  const verifiedDomains = domainList.filter((d) => usableForNewRoutes(d, projectRootOf(project)))
   const allNodes = rawNodes.filter((n) => n.status === "online")
   const gatewayNode = rawNodes.find((n) => n.k3s_role === "server")
 

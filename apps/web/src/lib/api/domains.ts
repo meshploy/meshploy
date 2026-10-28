@@ -28,20 +28,30 @@ export interface ApiDomain {
    *  which also proves control of it: such a domain needs no TXT record.
    *  Absent when the records are kept by hand. */
   dns_provider_id?: string | null
+  /** Set, the domain is reserved for this project and its levels: no other
+   *  project's routes may use it, and no other is offered it. */
+  project_id?: string | null
   created_at: string
   updated_at: string
 }
 
 /**
- * Whether a new route may use this domain: verified, and not being retired.
+ * Whether a new route may use this domain: verified, not being retired, and
+ * not reserved for a project other than projectRoot.
  *
  * One rule for every picker. A retiring domain keeps serving what it has, but
  * it leaves the pickers so nothing new attaches - that is what lets the list of
  * what still holds it only ever shrink. The API refuses the same thing, so a
  * picker that forgot would fail on submit rather than silently succeed.
  */
-export function usableForNewRoutes(d: ApiDomain): boolean {
-  return d.verified && !d.retiring_at
+export function usableForNewRoutes(d: ApiDomain, projectRoot?: string): boolean {
+  return d.verified && !d.retiring_at && (!d.project_id || d.project_id === projectRoot)
+}
+
+/** The project a route's domain is decided by: a level's project, or the
+ *  project itself. */
+export function projectRootOf(p: { id: string; parent_project_id?: string | null } | undefined): string | undefined {
+  return p ? p.parent_project_id || p.id : undefined
 }
 
 /** One hostname a domain carries, as the Domains page lists it. */

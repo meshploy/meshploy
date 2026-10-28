@@ -173,10 +173,16 @@ func (s *TemplateService) orgBaseDomain(ctx context.Context, projectID uuid.UUID
 	if err != nil {
 		return nil, s.cfgDomain()
 	}
+	// A domain reserved for this project comes first: it is the project's
+	// own address. One reserved for another project is never a candidate.
+	root, err := rootProject(ctx, s.db, projectID)
+	if err != nil {
+		return nil, s.cfgDomain()
+	}
 	var d meshdb.Domain
 	err = s.db.WithContext(ctx).
-		Where("organization_id = ? AND verified = ? AND retiring_at IS NULL", orgID, true).
-		Order("is_primary DESC, created_at ASC").First(&d).Error
+		Where("organization_id = ? AND verified = ? AND retiring_at IS NULL AND (project_id IS NULL OR project_id = ?)", orgID, true, root).
+		Order("project_id IS NULL, is_primary DESC, created_at ASC").First(&d).Error
 	if err != nil {
 		return nil, s.cfgDomain()
 	}

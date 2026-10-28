@@ -420,6 +420,9 @@ func (s *ProjectService) Delete(ctx context.Context, projectID uuid.UUID) error 
 		if levels > 0 {
 			return ErrProjectHasLevels
 		}
+		if err := refuseIfDomainReserved(ctx, s.db, projectID); err != nil {
+			return err
+		}
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := forgetResourceGrants(ctx, tx, db.ResourceProject, projectID); err != nil {

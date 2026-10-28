@@ -155,6 +155,9 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 			return nil, huma.Error422UnprocessableEntity(
 				fmt.Sprintf("%s is being retired, so no new routes can use it", domain.BaseDomain))
 		}
+		if err := checkDomainForProject(ctx, s.db, &domain, in.ProjectID); err != nil {
+			return nil, err
+		}
 		if platformReservedSubdomains[in.Subdomain] || isProjectConsoleName(in.Subdomain) {
 			return nil, huma.Error422UnprocessableEntity(
 				fmt.Sprintf("subdomain %q is reserved and cannot be used", in.Subdomain))
@@ -178,6 +181,20 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 	// A route is found by its hostname, so one without it would never serve.
 	if hostname == "" {
 		return nil, huma.Error422UnprocessableEntity("a route needs a domain_id and subdomain, or a hostname")
+	}
+
+	// A whole hostname under a domain reserved for another project would hold
+	// that name against its owner, verified or not.
+	if in.DomainID == nil {
+		under, err := db.BaseDomainFor(ctx, s.db, hostname)
+		if err != nil {
+			return nil, err
+		}
+		if under != nil {
+			if err := checkDomainForProject(ctx, s.db, under, in.ProjectID); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	route := &db.Route{
@@ -386,6 +403,9 @@ func (s *RouteService) MoveRoute(ctx context.Context, in MoveRouteInput) (moved 
 	if target.RetiringAt != nil {
 		return nil, nil, huma.Error422UnprocessableEntity(
 			fmt.Sprintf("%s is being retired itself, so no routes can move onto it", target.BaseDomain))
+	}
+	if err := checkDomainForProject(ctx, s.db, &target, in.ProjectID); err != nil {
+		return nil, nil, err
 	}
 	if route.Subdomain == target.InternalSubdomain || route.Subdomain == target.PreviewSubdomain {
 		return nil, nil, huma.Error422UnprocessableEntity(

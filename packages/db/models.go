@@ -1370,6 +1370,11 @@ type Domain struct {
 	// records and proves control of it for its certificates. Only an on-demand
 	// domain has one; null means its records are written by hand.
 	DNSProviderID *uuid.UUID `gorm:"type:uuid;index" json:"dns_provider_id,omitempty"`
+	// ProjectID reserves the domain for one project and its environment
+	// levels: only their routes may use it, and it is offered to no other.
+	// Null, every project of the organization may. Where several tenants'
+	// projects share an organization, each one's own address is theirs alone.
+	ProjectID *uuid.UUID `gorm:"type:uuid;index" json:"project_id,omitempty"`
 
 	Organization Organization `gorm:"foreignKey:OrganizationID"                        json:"-"`
 	// RESTRICT: domain cannot be deleted while routes reference it.

@@ -105,8 +105,6 @@ export function RouteEndpointDialog({
     queryFn: () => domainsApi.list(orgId!, token),
     enabled: !!orgId && !!endpoint,
   })
-  const verified = useMemo(() => domainList.filter(usableForNewRoutes), [domainList])
-
   // Defaults, once the lists arrive: the only project, or the last one used.
   const chosenProject =
     projectId ||
@@ -115,6 +113,11 @@ export function RouteEndpointDialog({
       : projects.length > 0
         ? projects[0].id
         : "")
+  // The list holds projects, never levels, so the chosen one is its own root.
+  const verified = useMemo(
+    () => domainList.filter((d) => usableForNewRoutes(d, chosenProject)),
+    [domainList, chosenProject]
+  )
   const chosenDomain = domainId || (verified.length > 0 ? verified[0].id : "")
 
   const create = useMutation({

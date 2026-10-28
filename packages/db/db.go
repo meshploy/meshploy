@@ -342,6 +342,11 @@ func applyConstraints(db *gorm.DB) error {
 		// naming the domains. SET NULL rather than RESTRICT so deleting the
 		// organisation, which cascades to both, is never blocked by the order.
 		{"domains", "dns_provider_id", "dns_providers", "SET NULL"},
+		// A project with a domain reserved for it cannot be deleted until the
+		// domain is (the service says so, naming it), because the domain's
+		// records go with it. CASCADE for the organisation's delete, which
+		// removes both.
+		{"domains", "project_id", "projects", "CASCADE"},
 		{"resource_permissions", "organization_id", "organizations", "CASCADE"},
 		// The rest of what hangs off an organisation. Left at the default these
 		// tables block the delete outright, and an operator removing an

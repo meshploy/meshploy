@@ -479,7 +479,8 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/internal/domain-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS |
 | GET | `/internal/ondemand-tls-check` | public (Caddy) | Caddy ask endpoint for On-Demand TLS (self-managed DNS mode) |
 | GET | `/orgs/{orgId}/domains` | ✓ | List domains for an organization (primary first) |
-| POST | `/orgs/{orgId}/domains` | ✓ | Add a base domain; with `dns_provider_id`, an on-demand one whose records the provider writes, verified at once |
+| POST | `/orgs/{orgId}/domains` | ✓ | Add a base domain; with `dns_provider_id`, an on-demand one whose records the provider writes, verified at once; with `project_id`, reserved for that project |
+| PUT | `/orgs/{orgId}/domains/{domainId}/project` | ✓ | Reserve a domain for one project and its levels, or give it back to every project (`project_id` empty) |
 | GET | `/orgs/{orgId}/domains/{domainId}` | ✓ | Get a domain |
 | POST | `/orgs/{orgId}/domains/{domainId}/verify` | ✓ | Check the ownership TXT record for a domain |
 | GET | `/orgs/{orgId}/domains/{domainId}/routes` | ✓ | Hostnames served under a base domain, across every project |

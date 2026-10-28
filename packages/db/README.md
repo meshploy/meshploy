@@ -52,7 +52,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `nodes` | Mesh worker nodes + K3s + Headscale metadata. `os` is `linux`, `darwin` or `windows`; anything but Linux is always mesh only |
 | `node_registration_tokens` | `mreg-<hex>` tokens for legacy worker self-registration |
 | `node_provisioning_tokens` | `mprov-<hex>` single-use provisioning tokens (hashed, with expiry) |
-| `domains` | Base domains an org routes on. Each carries its own `dns_mode` (`delegation` or `ondemand`); `is_primary` marks the one whose platform subdomains serve and that new routes default to; `retiring_at` stops new routes attaching while everything already on it keeps serving; `dns_provider_id`, on an on-demand domain only, names the DNS provider that writes its records |
+| `domains` | Base domains an org routes on. Each carries its own `dns_mode` (`delegation` or `ondemand`); `is_primary` marks the one whose platform subdomains serve and that new routes default to; `retiring_at` stops new routes attaching while everything already on it keeps serving; `dns_provider_id`, on an on-demand domain only, names the DNS provider that writes its records; `project_id` reserves it for one project and its levels, whose routes alone may use it (a project with one cannot be deleted until it goes) |
 
 ### Workloads
 

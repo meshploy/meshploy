@@ -26,6 +26,8 @@ Each base domain has its own DNS mode:
 
 An on-demand domain's records can also be kept by a connected [DNS provider](/concepts/integrations#dns-providers) such as Cloudflare. Meshploy then writes them, the domain needs no TXT record to verify, and its wildcard certificates, internal ones included, are issued up front as on a delegated domain.
 
+A base domain can also be **reserved for one project**. Then only that project and its environment levels can put routes on it, and other projects are not offered it.
+
 ## Retiring a domain {#retiring}
 
 A domain that has served routes is removed in two steps: **retire** it, which stops new routes choosing it while existing ones keep serving, then move those routes and remove it.

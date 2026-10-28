@@ -330,7 +330,7 @@ func (h *Handler) DeleteProject(ctx context.Context, input *ProjectPathInput) (*
 	// Out of the cluster first, then the rows; a level also leaves every
 	// group's path.
 	if err := h.svc.Promotions.DeleteProject(ctx, projectID); err != nil {
-		if errors.Is(err, svc.ErrProjectHasLevels) {
+		if errors.Is(err, svc.ErrProjectHasLevels) || errors.Is(err, svc.ErrProjectHasDomain) {
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, notFound(err)

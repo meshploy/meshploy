@@ -44,7 +44,9 @@ export function MoveRouteDialog({
   onMoved: () => void
   onCancel: () => void
 }) {
-  const targets = domains.filter((d) => d.id !== from.id && usableForNewRoutes(d))
+  // A route in a level carries the level's ID, not its project's, so a domain
+  // reserved for the project is not offered there; the API would accept it.
+  const targets = domains.filter((d) => d.id !== from.id && usableForNewRoutes(d, route.project_id))
   const [to, setTo] = useState(targets[0]?.id ?? "")
   // Redirects are an HTTP answer from the public edge.
   const canRedirect = route.zone === "public"
