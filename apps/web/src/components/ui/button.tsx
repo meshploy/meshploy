@@ -8,9 +8,13 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // Lit from above: lighter at the top, a highlight on the top edge, a
+        // darker bottom edge and a short shadow, so the main action reads as
+        // raised, like the save bar it often sits in.
+        default:
+          "bg-primary bg-[linear-gradient(180deg,color-mix(in_oklch,white_16%,var(--primary)),var(--primary)_70%)] text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/28%),inset_0_-1px_0_oklch(0_0_0/16%),0_1px_2px_oklch(0_0_0/35%)] hover:brightness-[1.06] [a]:hover:bg-primary/80",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-background shadow-[inset_0_1px_0_oklch(1_0_0/5%)] hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:

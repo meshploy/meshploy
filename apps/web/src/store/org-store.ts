@@ -18,14 +18,20 @@ export const useOrgStore = create<OrgStore>()(
       currentOrg: null,
       orgs: [],
       currentRole: null,
+      // The role belongs to an organisation, so it is cleared only when the
+      // current one changes. A rename or a refreshed list keeps the same id,
+      // and the role query (keyed by that id) would not run again to fill it.
       setOrgs: (orgs) =>
-        set((s) => ({
-          orgs,
-          currentOrg:
-            orgs.find((o) => o.id === s.currentOrg?.id) ?? orgs[0] ?? null,
-          currentRole: null,
-        })),
-      setCurrentOrg: (org) => set({ currentOrg: org, currentRole: null }),
+        set((s) => {
+          const currentOrg = orgs.find((o) => o.id === s.currentOrg?.id) ?? orgs[0] ?? null
+          return {
+            orgs,
+            currentOrg,
+            currentRole: currentOrg?.id === s.currentOrg?.id ? s.currentRole : null,
+          }
+        }),
+      setCurrentOrg: (org) =>
+        set((s) => ({ currentOrg: org, currentRole: org.id === s.currentOrg?.id ? s.currentRole : null })),
       setCurrentRole: (role) => set({ currentRole: role }),
       reset: () => set({ currentOrg: null, orgs: [], currentRole: null }),
     }),
