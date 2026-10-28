@@ -671,9 +671,11 @@ a {
     font-size: 13px;
   }
 }
-@media (min-width: 1000px) {
+/* Six kinds of integration: two even rows of three, rather than five and
+   one left over. */
+@media (min-width: 640px) {
   .integration-create .resource-type-picker nav {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 .console-form-layout {

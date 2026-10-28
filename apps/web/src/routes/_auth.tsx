@@ -24,7 +24,7 @@ function AuthLayout() {
           <div className="text-center">
             <h1 className="flex items-center justify-center gap-3 text-2xl">
               <BrandMark brand={brand} className="size-8 shrink-0" />
-              <BrandWordmark brand={brand} imageClassName="h-8 max-w-60" />
+              <BrandWordmark brand={brand} product="workspace" imageClassName="h-8 max-w-60" />
             </h1>
             {!brand.custom && <p className="text-sm text-muted-foreground mt-0.5">Your infrastructure, in your control.</p>}
           </div>

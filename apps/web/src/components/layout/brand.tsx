@@ -14,8 +14,9 @@ export function BrandMark({ brand, className }: { brand: ApiBrand; className?: s
  *
  * Meshploy's own is one lockup on every surface: "meshploy" in the heavy
  * weight, and the product after it in the light one ("meshploy apps",
- * "meshploy cloud"), part of the name rather than a badge. The console is the
- * product itself, so it has no suffix.
+ * "meshploy cloud"), part of the name rather than a badge. The console is a
+ * workspace, the name Cloud and Fleet give every control plane, self-hosted
+ * or not.
  */
 export function BrandWordmark({
   brand,

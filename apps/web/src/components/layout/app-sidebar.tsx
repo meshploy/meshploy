@@ -194,17 +194,12 @@ export function AppSidebar() {
     >
       {/* Logo */}
       <div className={cn("sidebar-brand flex items-center h-(--console-topbar-height) px-4 border-b border-sidebar-border shrink-0", sidebarCollapsed ? "justify-center" : "gap-2.5")}>
-        {/* The bare mark beside the name, as on every Meshploy surface; on its
-            own, collapsed, it sits on a tile so it still reads as a control. */}
-        {sidebarCollapsed ? (
-          <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary/15 shrink-0">
-            <BrandMark brand={brand} className="w-4 h-4" />
-          </div>
-        ) : (
-          <>
-            <BrandMark brand={brand} className="w-6 h-6 shrink-0" />
-            <BrandWordmark brand={brand} className="text-sidebar-foreground text-sm truncate" imageClassName="h-5 max-w-36" />
-          </>
+        {/* The bare mark, as on every Meshploy surface, and the name beside it
+            unless the sidebar is collapsed. */}
+        <BrandMark brand={brand} className="w-6 h-6 shrink-0" />
+        {!sidebarCollapsed && (
+          <BrandWordmark brand={brand} product="workspace" className="text-sidebar-foreground text-sm truncate"
+            imageClassName="h-5 max-w-36" />
         )}
       </div>
 
