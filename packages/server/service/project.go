@@ -334,7 +334,15 @@ var reservedNamespaces = map[string]bool{
 	"kubernetes-dashboard": true, "local-path-storage": true,
 }
 
+// Create makes a project on the host's kernel.
 func (s *ProjectService) Create(ctx context.Context, orgID uuid.UUID, name, slug string) (*db.Project, error) {
+	return s.CreateSandboxed(ctx, orgID, name, slug, false)
+}
+
+// CreateSandboxed makes a project, sandboxed or not as the caller decided
+// through SandboxService.NewProject, so the organization's setting and its
+// rules apply to every way a project is created.
+func (s *ProjectService) CreateSandboxed(ctx context.Context, orgID uuid.UUID, name, slug string, sandboxed bool) (*db.Project, error) {
 	if err := checkQuota(ctx, orgID, QuotaProject); err != nil {
 		return nil, err
 	}
@@ -342,7 +350,7 @@ func (s *ProjectService) Create(ctx context.Context, orgID uuid.UUID, name, slug
 		return nil, huma.Error422UnprocessableEntity(
 			fmt.Sprintf("%q is a Kubernetes namespace and cannot be a project slug", slug))
 	}
-	project := &db.Project{OrganizationID: orgID, Name: name, Slug: slug}
+	project := &db.Project{OrganizationID: orgID, Name: name, Slug: slug, Sandboxed: sandboxed}
 	return project, s.db.WithContext(ctx).Create(project).Error
 }
 

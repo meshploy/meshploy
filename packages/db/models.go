@@ -524,6 +524,11 @@ type Organization struct {
 	// opens or closes another's.
 	NetworkIsolation bool `gorm:"not null;default:false" json:"network_isolation"`
 
+	// SandboxNewProjects starts every project created in the organization
+	// sandboxed, unless its creator says otherwise (see
+	// service.SandboxService.NewProject). Existing projects keep their own.
+	SandboxNewProjects bool `gorm:"not null;default:false" json:"sandbox_new_projects"`
+
 	Members  []OrganizationMember `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
 	Projects []Project            `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
 	Nodes    []Node               `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`

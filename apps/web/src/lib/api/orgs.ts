@@ -23,6 +23,11 @@ export interface ApiSandboxedProject {
 export interface ApiOrgSandbox {
   /** Nodes prepared to run sandboxed pods. */
   nodes: string[]
+  /** Whether a project created now starts sandboxed. */
+  new_projects: boolean
+  /** A rule requires every new project sandboxed; new_projects_why says which. */
+  new_projects_required: boolean
+  new_projects_why?: string
   projects: ApiSandboxedProject[]
 }
 
@@ -67,6 +72,14 @@ export const orgs = {
   /** Sandboxed projects and levels this member can see, and the nodes that can run them. */
   sandbox: (orgId: string, token: string) =>
     apiFetch<ApiOrgSandbox>(`/api/v1/orgs/${orgId}/sandbox`, {}, token),
+
+  /** Whether new projects start sandboxed; existing ones keep their own. */
+  setSandboxNewProjects: (orgId: string, newProjects: boolean, token: string) =>
+    apiFetch<ApiOrgSandbox>(
+      `/api/v1/orgs/${orgId}/sandbox`,
+      { method: "PUT", body: JSON.stringify({ new_projects: newProjects }) },
+      token
+    ),
 
   listMembers: (orgId: string, token: string) =>
     apiFetch<ApiOrgMember[]>(`/api/v1/orgs/${orgId}/members`, {}, token),

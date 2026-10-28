@@ -18,6 +18,7 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 		mcp.NewTool("create_project",
 			mcp.WithDescription("Create a new project (K8s namespace)."),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Project name")),
+			mcp.WithBoolean("sandboxed", mcp.Description("Run the project's apps and jobs on gVisor. Leave out to follow the organization's setting for new projects")),
 		),
 		s.handleCreateProject,
 	)
@@ -984,7 +985,12 @@ func (s *srv) handleCreateProject(_ context.Context, req mcp.CallToolRequest) (*
 	if name == "" {
 		return mcp.NewToolResultError("name is required"), nil
 	}
-	p, err := s.c.CreateProject(s.orgID, name)
+	var sandboxed *bool
+	if _, sent := req.GetArguments()["sandboxed"]; sent {
+		on := mcp.ParseBoolean(req, "sandboxed", false)
+		sandboxed = &on
+	}
+	p, err := s.c.CreateProjectSandboxed(s.orgID, name, client.ProjectSlug(name), sandboxed)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

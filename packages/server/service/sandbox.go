@@ -21,8 +21,10 @@ import (
 // sandboxed: BuildKit runs privileged, which gVisor cannot give.
 
 // SandboxRule decides whether a project must be sandboxed, whatever its own
-// switch says. why is shown beside the switch it locks.
-type SandboxRule func(ctx context.Context, projectID uuid.UUID) (required bool, why string, err error)
+// switch says. why is shown beside the switch it locks. It is also asked about
+// a project about to be created: one with no ID yet, only its organization, so
+// the creation form can show the switch locked before there is a project.
+type SandboxRule func(ctx context.Context, project *db.Project) (required bool, why string, err error)
 
 var sandboxRules []SandboxRule
 
@@ -49,16 +51,70 @@ type SandboxState struct {
 
 // State is whether a project is sandboxed, and whether a rule requires it.
 func (s *SandboxService) State(ctx context.Context, project *db.Project) (SandboxState, error) {
-	for _, rule := range sandboxRules {
-		required, why, err := rule(ctx, project.ID)
-		if err != nil {
-			return SandboxState{}, err
-		}
-		if required {
-			return SandboxState{On: true, Required: true, Why: why}, nil
-		}
+	required, why, err := requiredBy(ctx, project)
+	if err != nil {
+		return SandboxState{}, err
+	}
+	if required {
+		return SandboxState{On: true, Required: true, Why: why}, nil
 	}
 	return SandboxState{On: project.Sandboxed}, nil
+}
+
+// requiredBy asks the registered rules whether the project must be sandboxed,
+// and why: the first that requires it answers.
+func requiredBy(ctx context.Context, project *db.Project) (bool, string, error) {
+	for _, rule := range sandboxRules {
+		required, why, err := rule(ctx, project)
+		if err != nil || required {
+			return required, why, err
+		}
+	}
+	return false, "", nil
+}
+
+// NewProject decides whether a project about to be created in orgID starts
+// sandboxed: as a rule requires, else as its creator asked, else as the
+// organization's SandboxNewProjects says. A creator asking for no sandbox
+// where a rule requires one is refused, and so is a sandbox no node can run,
+// so the project is never created into a state its first deploy would fail.
+func (s *SandboxService) NewProject(ctx context.Context, orgID uuid.UUID, requested *bool) (bool, error) {
+	var org db.Organization
+	if err := s.db.WithContext(ctx).First(&org, "id = ?", orgID).Error; err != nil {
+		return false, err
+	}
+	required, why, err := requiredBy(ctx, &db.Project{OrganizationID: orgID})
+	if err != nil {
+		return false, err
+	}
+	on := org.SandboxNewProjects
+	switch {
+	case required && requested != nil && !*requested:
+		return false, fmt.Errorf("%w: %s", ErrSandboxRequired, why)
+	case required:
+		on = true
+	case requested != nil:
+		on = *requested
+	}
+	if on && s.k8s != nil {
+		if err := appk8s.SandboxReady(ctx, s.k8s, ""); err != nil {
+			return false, err
+		}
+	}
+	return on, nil
+}
+
+// SetNewProjects sets whether the organization's new projects start
+// sandboxed. Switching it on needs a node that can run them; projects that
+// already exist keep their own switch.
+func (s *SandboxService) SetNewProjects(ctx context.Context, orgID uuid.UUID, on bool) error {
+	if on && s.k8s != nil {
+		if err := appk8s.SandboxReady(ctx, s.k8s, ""); err != nil {
+			return err
+		}
+	}
+	return s.db.WithContext(ctx).Model(&db.Organization{}).Where("id = ?", orgID).
+		Update("sandbox_new_projects", on).Error
 }
 
 // RuntimeFor is the runtime class a project's apps and jobs take, with
@@ -97,14 +153,12 @@ func (s *SandboxService) Set(ctx context.Context, projectID uuid.UUID, on bool) 
 		return err
 	}
 	if !on {
-		for _, rule := range sandboxRules {
-			required, why, err := rule(ctx, project.ID)
-			if err != nil {
-				return err
-			}
-			if required {
-				return fmt.Errorf("%w: %s", ErrSandboxRequired, why)
-			}
+		required, why, err := requiredBy(ctx, &project)
+		if err != nil {
+			return err
+		}
+		if required {
+			return fmt.Errorf("%w: %s", ErrSandboxRequired, why)
 		}
 	}
 	if on && s.k8s != nil {
@@ -174,6 +228,12 @@ func (s *SandboxService) pinnedNodes(ctx context.Context, projectID uuid.UUID) (
 type SandboxOverview struct {
 	// Nodes are the cluster's nodes prepared to run sandboxed pods.
 	Nodes []string `json:"nodes"`
+	// NewProjects is whether a project created now starts sandboxed:
+	// required by a rule (NewProjectsWhy says why), or the organization's
+	// setting.
+	NewProjects         bool   `json:"new_projects"`
+	NewProjectsRequired bool   `json:"new_projects_required"`
+	NewProjectsWhy      string `json:"new_projects_why,omitempty"`
 	// Projects are the sandboxed projects and levels, by a switch or a rule.
 	Projects []SandboxedProject `json:"projects"`
 }
@@ -193,6 +253,15 @@ type SandboxedProject struct {
 // nodes that can run them.
 func (s *SandboxService) Overview(ctx context.Context, orgID uuid.UUID) (SandboxOverview, error) {
 	out := SandboxOverview{Nodes: []string{}, Projects: []SandboxedProject{}}
+	var org db.Organization
+	if err := s.db.WithContext(ctx).First(&org, "id = ?", orgID).Error; err != nil {
+		return out, err
+	}
+	required, why, err := requiredBy(ctx, &db.Project{OrganizationID: orgID})
+	if err != nil {
+		return out, err
+	}
+	out.NewProjects, out.NewProjectsRequired, out.NewProjectsWhy = org.SandboxNewProjects || required, required, why
 	var projects []db.Project
 	if err := s.db.WithContext(ctx).Where("organization_id = ?", orgID).Order("env_level").Find(&projects).Error; err != nil {
 		return out, err

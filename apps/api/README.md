@@ -194,7 +194,8 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | GET | `/orgs/{orgId}` | ✓ | Get an organization |
 | PATCH | `/orgs/{orgId}` | ✓ | Update an organization |
 | PUT | `/orgs/{orgId}/network-isolation` | ✓ admin | `{"enabled": true}` closes each of the organization's projects to the rest of the cluster: its pods take traffic only from the project's own pods and levels, from projects that use one of its services' published variables, and from the nodes (the proxy, published ports). Outgoing traffic is unchanged. Off (the default) removes every policy it made. Enforced by k3s's own NetworkPolicy controller |
-| GET | `/orgs/{orgId}/sandbox` | ✓ | The nodes prepared to run sandboxed pods (labelled `meshploy.com/sandbox=true` by `meshploy install sandbox`), and the sandboxed projects and levels the caller can see, with `required` where a rule makes it so |
+| GET | `/orgs/{orgId}/sandbox` | ✓ | The nodes prepared to run sandboxed pods (labelled `meshploy.com/sandbox=true` by `meshploy install sandbox`), the sandboxed projects and levels the caller can see, with `required` where a rule makes it so, and `new_projects`: whether a project created now starts sandboxed (`new_projects_required` and `new_projects_why` when a rule makes it so) |
+| PUT | `/orgs/{orgId}/sandbox` | ✓ admin | `{"new_projects": true}` starts the organization's new projects sandboxed when their creator does not say; existing projects keep their own. Refused (409) while no node can run sandboxed pods |
 | DELETE | `/orgs/{orgId}` | ✓ | Delete an organization (owner only) |
 | GET | `/orgs/{orgId}/invitations` | ✓ | List pending invitations |
 | POST | `/orgs/{orgId}/invitations` | ✓ | Create an invite link for a new member |
@@ -244,7 +245,7 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/orgs/{orgId}/projects` | ✓ | List projects in an organization |
-| POST | `/orgs/{orgId}/projects` | ✓ | Create a project |
+| POST | `/orgs/{orgId}/projects` | ✓ | Create a project; `sandboxed` (optional) runs its apps and jobs on gVisor, and left out follows the organization's `new_projects`. Refused (409) asking for no sandbox where a rule requires one, or for one no node can run |
 | GET | `/orgs/{orgId}/projects/{projectId}` | ✓ | Get a project |
 | PATCH | `/orgs/{orgId}/projects/{projectId}` | ✓ | Update a project |
 | PUT | `/orgs/{orgId}/projects/{projectId}/network-open` | ✓ admin | `{"open": true}` exempts the project, or the level, from the organization's network isolation: any pod in the cluster may reach it again |

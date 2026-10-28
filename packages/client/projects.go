@@ -25,8 +25,17 @@ func (c *Client) CreateProject(orgID, name string) (*Project, error) {
 
 // CreateProjectWithSlug makes a project with a slug the caller chooses.
 func (c *Client) CreateProjectWithSlug(orgID, name, slug string) (*Project, error) {
-	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects",
-		map[string]string{"name": name, "slug": slug})
+	return c.CreateProjectSandboxed(orgID, name, slug, nil)
+}
+
+// CreateProjectSandboxed makes a project, saying whether it starts sandboxed;
+// nil leaves it to the organization's setting.
+func (c *Client) CreateProjectSandboxed(orgID, name, slug string, sandboxed *bool) (*Project, error) {
+	body := map[string]any{"name": name, "slug": slug}
+	if sandboxed != nil {
+		body["sandboxed"] = *sandboxed
+	}
+	resp, err := c.do("POST", "/api/v1/orgs/"+orgID+"/projects", body)
 	if err != nil {
 		return nil, err
 	}

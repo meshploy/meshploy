@@ -7,6 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/meshploy/packages/server/middleware"
 	svc "github.com/meshploy/packages/server/service"
 	"gorm.io/gorm"
@@ -202,6 +203,15 @@ func (h *Handler) registerOrgRoutes(api huma.API) {
 		Tags:        []string{"Organizations"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.GetOrgSandbox)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-org-sandbox",
+		Method:      "PUT",
+		Path:        "/api/v1/orgs/{orgId}/sandbox",
+		Summary:     "Set whether the organization's new projects start sandboxed (owner or admin)",
+		Tags:        []string{"Organizations"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.SetOrgSandbox)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-org",
@@ -605,6 +615,33 @@ func (h *Handler) RemoveMember(ctx context.Context, input *RemoveMemberInput) (*
 
 type OrgSandboxOutput struct {
 	Body svc.SandboxOverview
+}
+
+type SetOrgSandboxInput struct {
+	OrgID string `path:"orgId"`
+	Body  struct {
+		NewProjects bool `json:"new_projects" doc:"Start new projects sandboxed; existing projects keep their own"`
+	}
+}
+
+// SetOrgSandbox sets whether new projects start sandboxed, and answers with
+// the organization's sandboxing as the console shows it.
+func (h *Handler) SetOrgSandbox(ctx context.Context, input *SetOrgSandboxInput) (*OrgSandboxOutput, error) {
+	_, orgID, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := h.svc.Sandbox.SetNewProjects(ctx, orgID, input.Body.NewProjects); err != nil {
+		if errors.Is(err, appk8s.ErrNoSandboxNode) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("sandbox: " + err.Error())
+	}
+	overview, err := h.svc.Sandbox.Overview(ctx, orgID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("sandbox: " + err.Error())
+	}
+	return &OrgSandboxOutput{Body: overview}, nil
 }
 
 // GetOrgSandbox lists the sandboxed projects and levels a member can see, and

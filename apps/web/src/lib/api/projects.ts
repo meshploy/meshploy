@@ -167,10 +167,11 @@ export const projects = {
   get: (orgId: string, projectId: string, token: string) =>
     apiFetch<ApiProject>(`/api/v1/orgs/${orgId}/projects/${projectId}`, {}, token),
 
-  create: (orgId: string, name: string, slug: string, token: string) =>
+  /** sandboxed left out follows the organization's setting for new projects. */
+  create: (orgId: string, name: string, slug: string, token: string, sandboxed?: boolean) =>
     apiFetch<ApiProject>(
       `/api/v1/orgs/${orgId}/projects`,
-      { method: "POST", body: JSON.stringify({ name, slug }) },
+      { method: "POST", body: JSON.stringify({ name, slug, sandboxed }) },
       token
     ),
 

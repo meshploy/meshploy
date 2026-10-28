@@ -83,8 +83,8 @@ func TestARequiredSandboxCannotBeSwitchedOff(t *testing.T) {
 	require.NoError(t, gdb.Create(&org).Error)
 	shop := db.Project{OrganizationID: org.ID, Name: "Shop", Slug: "shop"}
 	require.NoError(t, gdb.Create(&shop).Error)
-	service.UseSandboxRuleForTest(t, func(_ context.Context, id uuid.UUID) (bool, string, error) {
-		return id == shop.ID, "every project here runs sandboxed", nil
+	service.UseSandboxRuleForTest(t, func(_ context.Context, p *db.Project) (bool, string, error) {
+		return p.ID == shop.ID, "every project here runs sandboxed", nil
 	})
 	sandbox := service.NewSandboxForTest(gdb, nil)
 
@@ -110,8 +110,8 @@ func TestTheSandboxOverview(t *testing.T) {
 	staging := db.Project{OrganizationID: org.ID, Name: "Shop", Slug: shop.Slug + "-staging",
 		ParentProjectID: &shop.ID, EnvName: "staging", EnvLevel: 1, Sandboxed: true}
 	require.NoError(t, gdb.Create(&staging).Error)
-	service.UseSandboxRuleForTest(t, func(_ context.Context, id uuid.UUID) (bool, string, error) {
-		return id == blog.ID, "required", nil
+	service.UseSandboxRuleForTest(t, func(_ context.Context, p *db.Project) (bool, string, error) {
+		return p.ID == blog.ID, "required", nil
 	})
 
 	client := fake.NewSimpleClientset(
@@ -124,4 +124,53 @@ func TestTheSandboxOverview(t *testing.T) {
 		{ID: blog.ID, ProjectID: blog.ID, Name: "Blog", Required: true},
 		{ID: staging.ID, ProjectID: shop.ID, Name: "Shop", Level: "staging"},
 	}, got.Projects)
+}
+
+// A new project starts sandboxed as a rule requires, else as its creator
+// asks, else as the organization's setting says; asking for no sandbox where
+// one is required, or for one no node can run, is refused.
+func TestANewProjectsSandbox(t *testing.T) {
+	gdb := newTestDB(t)
+	ctx := context.Background()
+	org := db.Organization{Name: "acme", Slug: "acme-" + uuid.NewString()[:8]}
+	require.NoError(t, gdb.Create(&org).Error)
+	gvisor := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: appk8s.SandboxRuntimeClass}, Handler: "runsc"}
+	ready := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "gw", Labels: map[string]string{appk8s.SandboxNodeLabel: "true"}}}
+	sandbox := service.NewSandboxForTest(gdb, fake.NewSimpleClientset(gvisor, ready))
+	yes, no := true, false
+
+	on, err := sandbox.NewProject(ctx, org.ID, nil)
+	require.NoError(t, err)
+	assert.False(t, on, "off by default")
+
+	require.NoError(t, sandbox.SetNewProjects(ctx, org.ID, true))
+	on, err = sandbox.NewProject(ctx, org.ID, nil)
+	require.NoError(t, err)
+	assert.True(t, on, "the organization's setting applies when the creator says nothing")
+	on, err = sandbox.NewProject(ctx, org.ID, &no)
+	require.NoError(t, err)
+	assert.False(t, on, "the creator's choice wins over the setting")
+
+	overview, err := sandbox.Overview(ctx, org.ID)
+	require.NoError(t, err)
+	assert.True(t, overview.NewProjects)
+	assert.False(t, overview.NewProjectsRequired)
+
+	service.UseSandboxRuleForTest(t, func(_ context.Context, p *db.Project) (bool, string, error) {
+		return p.OrganizationID == org.ID, "every project in the pool runs sandboxed", nil
+	})
+	_, err = sandbox.NewProject(ctx, org.ID, &no)
+	assert.ErrorIs(t, err, service.ErrSandboxRequired, "a rule outranks the creator")
+	on, err = sandbox.NewProject(ctx, org.ID, &yes)
+	require.NoError(t, err)
+	assert.True(t, on)
+	overview, err = sandbox.Overview(ctx, org.ID)
+	require.NoError(t, err)
+	assert.True(t, overview.NewProjectsRequired)
+	assert.Equal(t, "every project in the pool runs sandboxed", overview.NewProjectsWhy)
+
+	bare := service.NewSandboxForTest(gdb, fake.NewSimpleClientset(gvisor))
+	_, err = bare.NewProject(ctx, org.ID, &yes)
+	assert.ErrorIs(t, err, appk8s.ErrNoSandboxNode, "no node can run it")
+	assert.ErrorIs(t, bare.SetNewProjects(ctx, org.ID, true), appk8s.ErrNoSandboxNode)
 }

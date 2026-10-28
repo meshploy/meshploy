@@ -507,13 +507,20 @@ function IsolationSection({ org }: { org: ApiOrg }) {
 }
 
 // Sandboxing is switched per project or level, in its own settings; here is
-// where it stands across the organization.
+// where it stands across the organization, and how new projects start.
 function SandboxRow({ orgId }: { orgId: string }) {
   const token = useAuthStore((s) => s.token)!
+  const isAdmin = useIsAdmin()
+  const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ["org-sandbox", orgId],
     queryFn: () => orgsApi.sandbox(orgId, token),
   })
+  const { mutate: setNewProjects, isPending, error } = useMutation({
+    mutationFn: (on: boolean) => orgsApi.setSandboxNewProjects(orgId, on, token),
+    onSuccess: (updated) => qc.setQueryData(["org-sandbox", orgId], updated),
+  })
+  const noNode = !!data && data.nodes.length === 0
 
   return (
     <div className="mt-4 space-y-2 border-t border-border/60 pt-4">
@@ -524,8 +531,36 @@ function SandboxRow({ orgId }: { orgId: string }) {
       <p className="text-xs text-muted-foreground leading-relaxed">
         A sandboxed project runs its apps and jobs on gVisor, a kernel of their own, so code that escapes its container
         lands there and not on the machine. Its databases stay on the host&apos;s kernel. An owner or admin switches it on in a
-        project&apos;s or level&apos;s own settings.
+        project&apos;s or level&apos;s own settings, or when creating it.
       </p>
+      {data && (
+        <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 px-3 py-2.5">
+          <div className="space-y-0.5">
+            <p className="text-xs font-medium">Start new projects sandboxed</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {data.new_projects_required
+                ? <>Required: {data.new_projects_why}</>
+                : "Sets the switch on the New project form, and what a project created through the API or an assistant gets when it does not say. Projects that already exist keep their own."}
+            </p>
+            {error && (
+              <p className="flex items-center gap-1.5 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                {error instanceof ApiError ? error.message : "Could not change it"}
+              </p>
+            )}
+          </div>
+          <div className="shrink-0 pt-0.5">
+            {isPending
+              ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              : <Switch
+                  checked={data.new_projects}
+                  onCheckedChange={(v) => setNewProjects(v)}
+                  disabled={!isAdmin || data.new_projects_required || (noNode && !data.new_projects)}
+                  aria-label="Start new projects sandboxed"
+                />}
+          </div>
+        </div>
+      )}
       {data && (
         <>
           <p className="text-xs text-muted-foreground">

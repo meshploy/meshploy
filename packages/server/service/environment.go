@@ -165,6 +165,9 @@ func (s *ProjectService) CreateLevel(ctx context.Context, projectID uuid.UUID, n
 		ParentProjectID: &root.ID,
 		EnvName:         name,
 		EnvLevel:        position,
+		// A level starts as its project is, so staging runs the same untrusted
+		// code under the same kernel as production.
+		Sandboxed: root.Sandboxed,
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var taken int64

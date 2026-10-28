@@ -36,6 +36,9 @@ type CreateProjectInput struct {
 	Body  struct {
 		Name string `json:"name" minLength:"1" maxLength:"100"`
 		Slug string `json:"slug" minLength:"1" maxLength:"50" pattern:"^[a-z0-9-]+$"`
+		// Sandboxed starts the project's apps and jobs on gVisor. Absent
+		// follows the organization's sandbox_new_projects.
+		Sandboxed *bool `json:"sandboxed,omitempty" doc:"Run the project's apps and jobs on gVisor; absent follows the organization's setting"`
 	}
 }
 
@@ -203,7 +206,14 @@ func (h *Handler) CreateProject(ctx context.Context, input *CreateProjectInput) 
 	if err != nil {
 		return nil, err
 	}
-	project, err := h.svc.Projects.Create(ctx, orgID, input.Body.Name, input.Body.Slug)
+	sandboxed, err := h.svc.Sandbox.NewProject(ctx, orgID, input.Body.Sandboxed)
+	if err != nil {
+		if errors.Is(err, svc.ErrSandboxRequired) || errors.Is(err, appk8s.ErrNoSandboxNode) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, huma.Error500InternalServerError("sandbox: " + err.Error())
+	}
+	project, err := h.svc.Projects.CreateSandboxed(ctx, orgID, input.Body.Name, input.Body.Slug, sandboxed)
 	if err != nil {
 		return nil, huma.Error409Conflict("slug already taken")
 	}

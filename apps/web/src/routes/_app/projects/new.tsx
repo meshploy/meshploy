@@ -1,11 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Loader2 } from "lucide-react"
-import { projects as projectsApi, ApiError } from "@/lib/api"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ChevronLeft, Loader2, ShieldCheck } from "lucide-react"
+import { orgs as orgsApi, projects as projectsApi, ApiError } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { TermInfo } from "@/help/term"
 
 export const Route = createFileRoute("/_app/projects/new")({
   component: NewProjectPage,
@@ -31,6 +33,16 @@ function NewProjectPage() {
   const [slug,         setSlug]         = useState("")
   const [slugTouched,  setSlugTouched]  = useState(false)
   const [error,        setError]        = useState<string | null>(null)
+  // null until touched: then the switch follows the organization's setting.
+  const [sandboxPick,  setSandboxPick]  = useState<boolean | null>(null)
+
+  const { data: sandbox } = useQuery({
+    queryKey: ["org-sandbox", orgId],
+    queryFn: () => orgsApi.sandbox(orgId, token),
+  })
+  const sandboxRequired = !!sandbox?.new_projects_required
+  const noSandboxNode = !!sandbox && sandbox.nodes.length === 0
+  const sandboxed = sandboxRequired || (sandboxPick ?? !!sandbox?.new_projects)
 
   const derivedSlug = slugTouched ? slug : toSlug(name)
 
@@ -40,7 +52,7 @@ function NewProjectPage() {
       : null
 
   const mutation = useMutation({
-    mutationFn: () => projectsApi.create(orgId, name.trim(), derivedSlug, token),
+    mutationFn: () => projectsApi.create(orgId, name.trim(), derivedSlug, token, sandbox ? sandboxed : undefined),
     onSuccess: (project) => {
       qc.invalidateQueries({ queryKey: ["projects", orgId] })
       navigate({ to: "/projects/$id", params: { id: project.id } })
@@ -115,6 +127,33 @@ function NewProjectPage() {
                 </p>
               ) : null}
             </div>
+
+            {/* Sandbox */}
+            {sandbox && (
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 px-3 py-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="size-4 text-muted-foreground" />
+                    <label htmlFor="project-sandbox" className="text-sm font-medium">Run in a sandbox</label>
+                    <TermInfo id="environments.sandbox" />
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {sandboxRequired
+                      ? <>Required here: {sandbox.new_projects_why}</>
+                      : noSandboxNode
+                        ? <>No node can run sandboxed projects yet. Run <code className="font-mono text-foreground">sudo meshploy install sandbox</code> on one.</>
+                        : "For code you do not fully trust. Its apps run on gVisor, a kernel of their own; disk and network are slower, and each app takes about 35 MiB more memory. You can change it later in the project's settings."}
+                  </p>
+                </div>
+                <Switch
+                  id="project-sandbox"
+                  className="mt-0.5 shrink-0"
+                  checked={sandboxed}
+                  onCheckedChange={(v) => setSandboxPick(v)}
+                  disabled={sandboxRequired || (noSandboxNode && !sandboxed)}
+                />
+              </div>
+            )}
 
             {/* API error */}
             {error && (
