@@ -16,6 +16,11 @@
 # leaving the named site in a gap where nothing issues its certificate and the
 # console is unreachable over HTTPS on a fresh install. A delegated domain does
 # not need it: its wildcard is a real certificate that genuinely covers them.
+#
+# An on-demand domain with a DNS provider is arranged as a delegated one is:
+# its wildcards are obtained up front by DNS-01, answered through the
+# provider's API. The token is not in this file. {file.*} names where Caddy
+# reads it, under secrets/, which only root can read.
 
 {
     on_demand_tls {

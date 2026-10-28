@@ -40,6 +40,17 @@ func (s *SystemService) PublishEdge(ctx context.Context, orgID, by uuid.UUID) er
 	if err != nil {
 		return err
 	}
+	// The tokens before the snapshot that names them, so an apply that finds
+	// the snapshot finds them too.
+	creds, err := s.edgeCredentials(ctx, *snap)
+	if err != nil {
+		return err
+	}
+	if len(creds) > 0 {
+		if err := hostagent.WriteDNSCredentials(s.hostDir(), creds); err != nil {
+			return fmt.Errorf("hand over the DNS providers' tokens: %w", err)
+		}
+	}
 	if err := hostagent.WriteDesiredEdgeSnapshot(s.hostDir(), *snap); err != nil {
 		return fmt.Errorf("record the domain set: %w", err)
 	}
@@ -216,13 +227,24 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 		if internal == "" {
 			internal = "internal"
 		}
-		snap.Domains = append(snap.Domains, hostagent.EdgeDomain{
+		ed := hostagent.EdgeDomain{
 			BaseDomain:        d.BaseDomain,
 			InternalSubdomain: internal,
 			DNSMode:           mode,
 			Primary:           d.IsPrimary,
 			ServesPlatform:    d.FormerPrimary,
-		})
+		}
+		// A provider means something only on an on-demand domain: a delegated
+		// one answers its challenges from the zones the gateway serves.
+		if d.DNSProviderID != nil && mode == hostagent.EdgeDNSOnDemand {
+			var p meshdb.DNSProvider
+			if err := s.db.WithContext(ctx).Select("id", "kind").
+				Where("id = ? AND organization_id = ?", *d.DNSProviderID, orgID).First(&p).Error; err != nil {
+				return nil, fmt.Errorf("domain %s: its DNS provider: %w", d.BaseDomain, err)
+			}
+			ed.DNSProvider = &hostagent.EdgeDNSProvider{ID: p.ID.String(), Kind: p.Kind}
+		}
+		snap.Domains = append(snap.Domains, ed)
 	}
 	names, err := s.projectConsoleNames(ctx, orgID, domains)
 	if err != nil {
@@ -238,6 +260,30 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 		return nil, fmt.Errorf("this organisation's domains cannot be served: %w", err)
 	}
 	return &snap, nil
+}
+
+// edgeCredentials are the tokens of the DNS providers a snapshot names, for
+// the host agent to put where Caddy reads them. Never part of the snapshot,
+// which the API and the console read back from state/.
+func (s *SystemService) edgeCredentials(ctx context.Context, snap hostagent.EdgeSnapshot) (hostagent.DNSCredentials, error) {
+	var ids []string
+	for _, d := range snap.Domains {
+		if d.DNSProvider != nil {
+			ids = append(ids, d.DNSProvider.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []meshdb.DNSProvider
+	if err := s.db.WithContext(ctx).Where("id IN ?", ids).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	creds := hostagent.DNSCredentials{}
+	for _, p := range rows {
+		creds[p.ID.String()] = string(p.Token)
+	}
+	return creds, nil
 }
 
 // queueEdgeApply leaves a domain.apply request in the inbox.

@@ -365,3 +365,76 @@ func TestDomainApplyRequestRefusesADomainSetItCannotTrust(t *testing.T) {
 	_, err := runDomainApplyRequest(false)
 	require.Error(t, err)
 }
+
+const providerID = "0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90"
+
+func providerEdge() hostagent.EdgeSnapshot {
+	return hostagent.EdgeSnapshot{
+		PublicIP: "203.0.113.10", MeshIP: "100.64.0.1",
+		Domains: []hostagent.EdgeDomain{{
+			BaseDomain: "example.com", InternalSubdomain: "internal", DNSMode: hostagent.EdgeDNSOnDemand, Primary: true,
+			DNSProvider: &hostagent.EdgeDNSProvider{ID: providerID, Kind: hostagent.EdgeDNSCloudflare},
+		}},
+	}
+}
+
+// The API leaves the token beside the snapshot; the apply puts it where Caddy
+// reads it, takes it out of the inbox, and keeps it out of everything the API
+// reads back. A new token alone reloads Caddy; a provider no longer named
+// loses its token.
+func TestDomainApplyRequestInstallsTheDNSProviderToken(t *testing.T) {
+	inst, validated, reloads := domainTestServer(t, gatewayEnv)
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, providerEdge()))
+	require.NoError(t, hostagent.WriteDNSCredentials(hostDir, hostagent.DNSCredentials{providerID: "secret-token-1"}))
+
+	body, err := runDomainApplyRequest(false)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "secret-token-1")
+	secret := filepath.Join(inst, edgeconfig.SecretsDir, providerID)
+	got, err := os.ReadFile(secret)
+	require.NoError(t, err)
+	assert.Equal(t, "secret-token-1", string(got))
+	assert.NoFileExists(t, filepath.Join(hostDir, hostagent.DNSCredentialsFile), "the token must not wait in the inbox")
+	installed, err := os.ReadFile(filepath.Join(hostDir, hostagent.EdgeSnapshotFile))
+	require.NoError(t, err)
+	assert.NotContains(t, string(installed), "secret-token-1")
+	require.Len(t, *validated, 1)
+	assert.Contains(t, (*validated)[0], "dns cloudflare {file./etc/caddy/secrets/"+providerID+"}")
+	assert.NotContains(t, (*validated)[0], "secret-token-1")
+	assert.Equal(t, 1, *reloads)
+
+	// The same snapshot, a new token: nothing rendered differs, and Caddy must
+	// still load the token.
+	require.NoError(t, hostagent.WriteDNSCredentials(hostDir, hostagent.DNSCredentials{providerID: "secret-token-2"}))
+	_, err = runDomainApplyRequest(false)
+	require.NoError(t, err)
+	assert.Equal(t, 2, *reloads)
+
+	// The provider dropped: its token goes once the new edge is serving.
+	plain := providerEdge()
+	plain.Domains[0].DNSProvider = nil
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, plain))
+	_, err = runDomainApplyRequest(false)
+	require.NoError(t, err)
+	assert.NoFileExists(t, secret)
+}
+
+// A provider with no token on the host and none handed over stops the apply
+// before Caddy is asked: it would read an empty token and fail every
+// certificate. And a token Caddy quotes back is not passed on.
+func TestDomainApplyRequestWithoutAToken(t *testing.T) {
+	_, validated, reloads := domainTestServer(t, gatewayEnv)
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, providerEdge()))
+	_, err := runDomainApplyRequest(false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no token for DNS provider")
+	assert.Empty(t, *validated)
+	assert.Zero(t, *reloads)
+
+	require.NoError(t, hostagent.WriteDNSCredentials(hostDir, hostagent.DNSCredentials{providerID: "bad-token"}))
+	validateCaddyfile = func(string) error { return errors.New("API token 'bad-token' appears invalid") }
+	_, err = runDomainApplyRequest(false)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "bad-token")
+	assert.Contains(t, err.Error(), "[token]")
+}

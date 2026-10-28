@@ -100,7 +100,9 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 	if err := snap.Validate(); err != nil {
 		return nil, err
 	}
-	tmpl, err := template.ParseFS(templateFS, "templates/*.tmpl")
+	tmpl, err := template.New("edge").Funcs(template.FuncMap{
+		"credential": credentialPlaceholder,
+	}).ParseFS(templateFS, "templates/*.tmpl")
 	if err != nil {
 		return nil, err
 	}

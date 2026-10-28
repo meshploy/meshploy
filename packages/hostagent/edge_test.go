@@ -129,3 +129,61 @@ func TestEdgeSnapshotChecksProjectConsoleNames(t *testing.T) {
 		}
 	}
 }
+
+const testProviderID = "0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90"
+
+// A provider is accepted only where it can do something, and only with an ID
+// that is safe as a file name and a Caddyfile path.
+func TestEdgeSnapshotDNSProvider(t *testing.T) {
+	withProvider := func(mode string, p EdgeDNSProvider) EdgeSnapshot {
+		s := okSnapshot()
+		s.Domains[0].DNSMode = mode
+		s.Domains[0].DNSProvider = &p
+		return s
+	}
+	if err := withProvider(EdgeDNSOnDemand, EdgeDNSProvider{ID: testProviderID, Kind: EdgeDNSCloudflare}).Validate(); err != nil {
+		t.Fatalf("an on-demand domain with a Cloudflare provider must be accepted: %v", err)
+	}
+	for name, s := range map[string]EdgeSnapshot{
+		"delegated domain": withProvider(EdgeDNSDelegation, EdgeDNSProvider{ID: testProviderID, Kind: EdgeDNSCloudflare}),
+		"unknown kind":     withProvider(EdgeDNSOnDemand, EdgeDNSProvider{ID: testProviderID, Kind: "route53"}),
+		"path in the ID":   withProvider(EdgeDNSOnDemand, EdgeDNSProvider{ID: "../../etc/passwd", Kind: EdgeDNSCloudflare}),
+		"brace in the ID":  withProvider(EdgeDNSOnDemand, EdgeDNSProvider{ID: testProviderID + "}", Kind: EdgeDNSCloudflare}),
+	} {
+		if err := s.Validate(); err == nil {
+			t.Errorf("%s: must be refused", name)
+		}
+	}
+}
+
+// The tokens are read once and gone: a second apply finds nothing, and the
+// file was readable by root only while it existed.
+func TestDNSCredentialsAreTakenOnce(t *testing.T) {
+	dir := t.TempDir()
+	if creds, err := TakeDNSCredentials(dir); err != nil || creds != nil {
+		t.Fatalf("no file must be no credentials, got %v, %v", creds, err)
+	}
+	if err := WriteDNSCredentials(dir, DNSCredentials{testProviderID: "tok"}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, DNSCredentialsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("credentials file mode %v, want 0600", info.Mode().Perm())
+	}
+	creds, err := TakeDNSCredentials(dir)
+	if err != nil || creds[testProviderID] != "tok" {
+		t.Fatalf("got %v, %v", creds, err)
+	}
+	if again, _ := TakeDNSCredentials(dir); again != nil {
+		t.Error("the credentials must be removed once taken")
+	}
+	if err := WriteDNSCredentials(dir, DNSCredentials{"../x": "tok"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TakeDNSCredentials(dir); err == nil {
+		t.Error("a key that is not a provider ID must be refused")
+	}
+}

@@ -16,6 +16,11 @@
 # leaving the named site in a gap where nothing issues its certificate and the
 # console is unreachable over HTTPS on a fresh install. A delegated domain does
 # not need it: its wildcard is a real certificate that genuinely covers them.
+#
+# An on-demand domain with a DNS provider is arranged as a delegated one is:
+# its wildcards are obtained up front by DNS-01, answered through the
+# provider's API. The token is not in this file. {file.*} names where Caddy
+# reads it, under secrets/, which only root can read.
 
 {
     on_demand_tls {
@@ -86,7 +91,7 @@
 # in it fails the config outright rather than at the first request.
 import conf.d/*.caddy
 {{ range .Domains }}
-# ═══ {{ .BaseDomain }} - {{ if eq .DNSMode "delegation" }}NS delegation{{ else }}on-demand TLS{{ end }}{{ if .Primary }}, primary{{ else if .ServesPlatform }}, former primary{{ end }} ═══
+# ═══ {{ .BaseDomain }} - {{ if eq .DNSMode "delegation" }}NS delegation{{ else if .DNSProvider }}on-demand, records through {{ .DNSProvider.Kind }}{{ else }}on-demand TLS{{ end }}{{ if .Primary }}, primary{{ else if .ServesPlatform }}, former primary{{ end }} ═══
 {{ if and (not .Primary) .ServesPlatform }}
 # No longer primary, and still serving the platform's names: this console may
 # be the one in use, and workers joined the mesh through this headscale name.
@@ -145,6 +150,9 @@ console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {
             zone_file_path /etc/coredns/zones/_acme-challenge.{{ .BaseDomain }}
         }
     }
+{{- else if .DNSProvider }}
+    # One wildcard certificate by DNS-01, written through the provider.
+{{- template "provider_tls" . }}
 {{- else }}
     # A certificate per hostname, issued on first request once the ask endpoint
     # confirms a route exists for it.
@@ -169,6 +177,10 @@ console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {
         }
         resolvers {{ $.PublicIP }}
     }
+{{- else if .DNSProvider }}
+    # The challenge record goes in the provider's zone, which the world can
+    # query, so an internal name gets a public certificate like any other.
+{{- template "provider_tls" . }}
 {{- else }}
     # Without NS delegation there is no zone here to prove control of, and an
     # internal name does not answer from the internet to prove it another way.
@@ -195,7 +207,14 @@ console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {
             zone_file_path /etc/coredns/zones/_acme-challenge.{{ .BaseDomain }}
         }
     }
+{{- else if .DNSProvider }}
+{{- template "provider_tls" . }}
 {{- else }}
     tls force_automate
 {{- end }}
+{{- end }}
+{{- define "provider_tls" }}
+    tls {
+        dns {{ .DNSProvider.Kind }} {{ credential .DNSProvider }}
+    }
 {{- end }}

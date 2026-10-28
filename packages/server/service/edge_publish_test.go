@@ -200,3 +200,34 @@ func TestARouteCannotTakeAProjectConsoleName(t *testing.T) {
 		Subdomain: "apps.later", Zone: db.RouteZonePublic})
 	require.ErrorContains(t, err, "reserved")
 }
+
+// A domain whose records a provider writes carries the provider's kind and ID
+// in the snapshot, and its token goes beside it for the host agent alone. The
+// snapshot, which the console reads back from state/, never holds it.
+func TestPublishEdgeHandsOverTheDNSProvidersToken(t *testing.T) {
+	svc, gdb, org, host := edgeServer(t)
+	ctx := context.Background()
+	require.NoError(t, svc.Domains.CreateSeeded(ctx, org, "example.com", db.DNSModeOnDemand))
+	second, err := svc.Domains.Create(ctx, org, "second.test", db.DNSModeDelegation)
+	require.NoError(t, err)
+	p := &db.DNSProvider{OrganizationID: org, Name: "Cloudflare", Kind: "cloudflare", Token: "cf-token-value"}
+	require.NoError(t, gdb.Create(p).Error)
+	require.NoError(t, gdb.Model(&db.Domain{}).Where("organization_id = ?", org).Update("dns_provider_id", p.ID).Error)
+	require.NoError(t, gdb.Model(&db.Domain{}).Where("id = ?", second.ID).Update("verified", true).Error)
+
+	require.NoError(t, svc.System.PublishEdge(ctx, org, uuid.New()))
+
+	snap := desired(t, host)
+	require.Len(t, snap.Domains, 2)
+	require.NotNil(t, snap.Domains[0].DNSProvider)
+	assert.Equal(t, p.ID.String(), snap.Domains[0].DNSProvider.ID)
+	assert.Equal(t, "cloudflare", snap.Domains[0].DNSProvider.Kind)
+	assert.Nil(t, snap.Domains[1].DNSProvider, "a delegated domain answers its own challenges")
+
+	raw, err := os.ReadFile(filepath.Join(host, hostagent.EdgeDesiredFile))
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "cf-token-value")
+	creds, err := hostagent.TakeDNSCredentials(host)
+	require.NoError(t, err)
+	assert.Equal(t, hostagent.DNSCredentials{p.ID.String(): "cf-token-value"}, creds)
+}

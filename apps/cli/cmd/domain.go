@@ -83,20 +83,23 @@ func runDomainApply(out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return applyEdgeSnapshot(out, *snap, domainApplyDryRun, !domainApplyNoReload)
+	return applyEdgeSnapshot(out, *snap, nil, domainApplyDryRun, !domainApplyNoReload)
 }
 
 // applyEdgeSnapshot renders a snapshot, installs what differs and puts it in
 // service. The one path: the command, `server-upgrade` and the host agent all
 // come through here, so a gateway's edge is only ever changed one way.
-func applyEdgeSnapshot(out io.Writer, snap hostagent.EdgeSnapshot, dryRun, reload bool) error {
-	_, err := applyEdgeSnapshotChanges(out, snap, dryRun, reload)
+//
+// creds are DNS provider tokens the API handed over with the snapshot; nil
+// keeps the ones already on the host.
+func applyEdgeSnapshot(out io.Writer, snap hostagent.EdgeSnapshot, creds hostagent.DNSCredentials, dryRun, reload bool) error {
+	_, err := applyEdgeSnapshotChanges(out, snap, creds, dryRun, reload)
 	return err
 }
 
 // applyEdgeSnapshotChanges is applyEdgeSnapshot, also returning what it wrote,
 // for a caller that restarts the services itself and needs to know which.
-func applyEdgeSnapshotChanges(out io.Writer, snap hostagent.EdgeSnapshot, dryRun, reload bool) ([]edgeconfig.Change, error) {
+func applyEdgeSnapshotChanges(out io.Writer, snap hostagent.EdgeSnapshot, creds hostagent.DNSCredentials, dryRun, reload bool) ([]edgeconfig.Change, error) {
 	// The loopback ports are this host's, recorded by install.sh in .env.
 	if snap.ProxyPort == 0 {
 		snap.ProxyPort = envPort("PROXY_PORT")
@@ -112,23 +115,35 @@ func applyEdgeSnapshotChanges(out io.Writer, snap hostagent.EdgeSnapshot, dryRun
 	if err != nil {
 		return nil, err
 	}
-	if len(changes) == 0 && !domainApplyForce {
+	if dryRun {
+		for _, c := range changes {
+			fmt.Fprintf(out, "  %s\n", c)
+		}
+		fmt.Fprintf(out, "\n%d change(s). Nothing written: --dry-run.\n", len(changes))
+		return changes, nil
+	}
+	// The tokens first: validation provisions the DNS modules, which read them.
+	secretsChanged, err := edgeconfig.InstallSecrets(snap, creds, meshployInstDir)
+	if err != nil {
+		return nil, err
+	}
+	if secretsChanged {
+		fmt.Fprintln(out, "✔  DNS provider token(s) written")
+	}
+	if len(changes) == 0 && !secretsChanged && !domainApplyForce {
 		fmt.Fprintln(out, "Edge configuration is already what it should be. Nothing to do.")
-		return nil, nil
+		return nil, edgeconfig.RemoveStaleSecrets(snap, meshployInstDir)
 	}
 	for _, c := range changes {
 		fmt.Fprintf(out, "  %s\n", c)
-	}
-	if dryRun {
-		fmt.Fprintf(out, "\n%d change(s). Nothing written: --dry-run.\n", len(changes))
-		return changes, nil
 	}
 
 	// Asked before anything is written, because a Caddyfile Caddy will not
 	// accept takes the gateway off the internet, and the person who ran this is
 	// most likely reaching it over that same gateway.
 	if err := validateCaddyfile(files["caddy/Caddyfile"]); err != nil {
-		return nil, fmt.Errorf("the generated Caddyfile was rejected, nothing was changed: %w", err)
+		return nil, fmt.Errorf("the generated Caddyfile was rejected, nothing was changed: %s",
+			edgeconfig.Redact(err.Error(), creds, meshployInstDir))
 	}
 	fmt.Fprintln(out, "✔  Caddy accepts the generated configuration")
 
@@ -139,32 +154,49 @@ func applyEdgeSnapshotChanges(out io.Writer, snap hostagent.EdgeSnapshot, dryRun
 
 	if !reload {
 		fmt.Fprintln(out, "   Not reloading: the caller starts the edge itself.")
-		return changes, nil
+		return changes, edgeconfig.RemoveStaleSecrets(snap, meshployInstDir)
 	}
 	// A forced apply with nothing to write is how an edit under caddy/conf.d,
 	// which no render produces, reaches Caddy: it reloads Caddy as if the
-	// Caddyfile had changed. Caddy keeps its running configuration when the
-	// new one fails, so there is nothing to put back.
+	// Caddyfile had changed. So is a changed token, which Caddy reads only
+	// when it loads its configuration. Caddy keeps its running configuration
+	// when the new one fails, so there is nothing to put back.
 	if len(changes) == 0 {
 		if err := reloadEdge([]edgeconfig.Change{{Path: "caddy/Caddyfile", Action: edgeconfig.ActionUpdate}}); err != nil {
-			return nil, fmt.Errorf("caddy did not reload, and keeps serving its previous configuration: %w", err)
+			return nil, fmt.Errorf("caddy did not reload, and keeps serving its previous configuration: %s",
+				edgeconfig.Redact(err.Error(), creds, meshployInstDir))
 		}
 		fmt.Fprintln(out, "✔  Caddy reloaded")
-		return nil, nil
+		return nil, edgeconfig.RemoveStaleSecrets(snap, meshployInstDir)
 	}
-	if err := reloadEdge(changes); err != nil {
+	reloadChanges := changes
+	if secretsChanged && !touchesCaddy(changes) {
+		reloadChanges = append(reloadChanges, edgeconfig.Change{Path: "caddy/Caddyfile", Action: edgeconfig.ActionUpdate})
+	}
+	if err := reloadEdge(reloadChanges); err != nil {
+		err = errors.New(edgeconfig.Redact(err.Error(), creds, meshployInstDir))
 		fmt.Fprintf(out, "!  the edge did not come up: %v\n", err)
 		if rerr := edgeconfig.Restore(meshployInstDir); rerr != nil {
 			return nil, fmt.Errorf("the edge did not come up (%w) and the previous configuration could not be put back: %v", err, rerr)
 		}
 		// The same services the failed change reached, back on the old files.
-		if rerr := reloadEdge(changes); rerr != nil {
+		if rerr := reloadEdge(reloadChanges); rerr != nil {
 			return nil, fmt.Errorf("the edge did not come up (%w); the previous configuration is back on disk but did not start either: %v", err, rerr)
 		}
 		return nil, fmt.Errorf("the edge did not come up, so the previous configuration was put back: %w", err)
 	}
 	fmt.Fprintln(out, "✔  Edge reloaded")
-	return changes, nil
+	return changes, edgeconfig.RemoveStaleSecrets(snap, meshployInstDir)
+}
+
+// touchesCaddy reports whether any change is one Caddy is reloaded for.
+func touchesCaddy(changes []edgeconfig.Change) bool {
+	for _, c := range changes {
+		if strings.HasPrefix(c.Path, "caddy/") {
+			return true
+		}
+	}
+	return false
 }
 
 // applyEdgeConfigFromEnv renders and installs without touching the edge, for a
@@ -188,7 +220,7 @@ func applyEdgeConfigFromEnv(out io.Writer) ([]edgeconfig.Change, error) {
 	if err != nil {
 		return nil, err
 	}
-	return applyEdgeSnapshotChanges(out, *snap, false, false)
+	return applyEdgeSnapshotChanges(out, *snap, nil, false, false)
 }
 
 // loadEdgeSnapshot decides what to render from.
@@ -308,6 +340,11 @@ func mergeEnvIntoSnapshot(existing *hostagent.EdgeSnapshot) (*hostagent.EdgeSnap
 // validateCaddyfileWithCaddy asks Caddy itself whether it would accept the
 // configuration, in a throwaway container from the image this gateway runs.
 //
+// The directory is mounted where the running Caddy has it, /etc/caddy, because
+// validating provisions the DNS modules, and they read their tokens by the
+// path Caddy sees: anywhere else the token is missing and a good
+// configuration is refused.
+//
 // Staged beside the real Caddyfile rather than somewhere temporary, because
 // `import conf.d/*.caddy` resolves relative to the config file: validating
 // anywhere else would not read what the operator added, and would pass a
@@ -328,9 +365,9 @@ func validateCaddyfileWithCaddy(rendered string) error {
 		channel = "latest"
 	}
 	c := exec.Command(runtime, "run", "--rm",
-		"-v", filepath.Join(meshployInstDir, "caddy")+":/w:ro,z",
+		"-v", filepath.Join(meshployInstDir, "caddy")+":/etc/caddy:ro,z",
 		"ghcr.io/meshploy/caddy:"+channel,
-		"caddy", "validate", "--config", "/w/"+filepath.Base(staged), "--adapter", "caddyfile")
+		"caddy", "validate", "--config", "/etc/caddy/"+filepath.Base(staged), "--adapter", "caddyfile")
 	out, err := c.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w\n%s", err, lastLines(string(out), 12))

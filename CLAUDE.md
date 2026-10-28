@@ -58,6 +58,8 @@ The primary is a pointer. Moving it (`make-primary`) starts the platform's names
 
 Each base domain carries its own DNS mode, so one gateway can serve a delegated domain and an on-demand one at once. A delegated domain gets its public zone plus two ACME challenge zones; an on-demand domain gets only its mesh zone, because nothing delegates here for it. **The `_acme-challenge.*` zones are seeded once and then never rewritten** - Caddy's DNS module writes challenge records straight into them.
 
+An on-demand domain can name a connected DNS provider (`domains.dns_provider_id`, Cloudflare first). Its wildcards are then obtained up front by DNS-01 through the provider's API, as a delegated domain's are. The snapshot carries the provider's kind and ID, never its token: the API leaves the tokens in `inbox/dns-credentials.json`, and the `domain.apply` that takes them writes each to `caddy/secrets/<provider id>` (root only), which the Caddyfile names through `{file.*}`. A changed token reloads Caddy on its own, and a token no domain names is removed once the new edge serves.
+
 ### Mesh routing
 
 ```

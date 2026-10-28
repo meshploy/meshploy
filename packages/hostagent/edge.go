@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -41,7 +43,25 @@ type EdgeDomain struct {
 	// now, and every worker joined the mesh through that headscale name. They
 	// stop only when the domain is retired and removed.
 	ServesPlatform bool `json:"serves_platform,omitempty"`
+	// DNSProvider, on an on-demand domain, is the provider account whose API
+	// writes its records and answers its certificates' DNS challenges. Nil
+	// when the operator keeps the records by hand.
+	DNSProvider *EdgeDNSProvider `json:"dns_provider,omitempty"`
 }
+
+// EdgeDNSProvider names a connected DNS provider: its kind, and the ID its
+// credential is kept under on the host. Never the credential itself - the
+// snapshot is readable by the API and copied into state/.
+type EdgeDNSProvider struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+}
+
+// DNS provider kinds the edge can issue certificates through. Each is a Caddy
+// DNS module of the same name in the gateway's Caddy image.
+const EdgeDNSCloudflare = "cloudflare"
+
+var edgeDNSProviderKinds = []string{EdgeDNSCloudflare}
 
 // Platform reports whether the platform's own hostnames are served on this
 // domain: always on the primary, and on a former primary until it goes.
@@ -130,6 +150,16 @@ const (
 	EdgeSnapshotFile = "state/edge.json"
 )
 
+// DNSCredentialsFile is where the API leaves the tokens of the DNS providers
+// the desired snapshot names, by provider ID. The domain.apply that puts the
+// snapshot in service takes it, writes each token where Caddy reads it, and
+// deletes it: the tokens never reach state/, and nothing reads this file
+// twice.
+const DNSCredentialsFile = "inbox/dns-credentials.json"
+
+// DNSCredentials maps a DNS provider's ID to its API token.
+type DNSCredentials map[string]string
+
 // MaxEdgeSnapshotBytes bounds the file. A gateway has a handful of base
 // domains; anything approaching this is not a snapshot.
 const MaxEdgeSnapshotBytes = 256 << 10
@@ -177,6 +207,21 @@ func (s EdgeSnapshot) Validate() error {
 		}
 		if d.DNSMode != EdgeDNSDelegation && d.DNSMode != EdgeDNSOnDemand {
 			return fmt.Errorf("domain %s: unknown DNS mode %q", d.BaseDomain, d.DNSMode)
+		}
+		if p := d.DNSProvider; p != nil {
+			// Only an on-demand domain: a delegated one answers its own
+			// challenges from the zones served here.
+			if d.DNSMode != EdgeDNSOnDemand {
+				return fmt.Errorf("domain %s: a DNS provider is for an on-demand domain only", d.BaseDomain)
+			}
+			if !slices.Contains(edgeDNSProviderKinds, p.Kind) {
+				return fmt.Errorf("domain %s: unknown DNS provider kind %q", d.BaseDomain, p.Kind)
+			}
+			// The ID becomes a file name on the host and a path in the
+			// Caddyfile, so it must be exactly a UUID.
+			if !uuidPattern.MatchString(p.ID) {
+				return fmt.Errorf("domain %s: DNS provider ID %q is not a UUID", d.BaseDomain, p.ID)
+			}
 		}
 		if seen[d.BaseDomain] {
 			return fmt.Errorf("domain %s appears twice", d.BaseDomain)
@@ -227,6 +272,8 @@ func (s EdgeSnapshot) Validate() error {
 	}
 	return nil
 }
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // validEdgeName allows only what a hostname may hold, label by label.
 //
@@ -356,4 +403,69 @@ func writeEdgeSnapshotAt(path string, snap EdgeSnapshot) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// WriteDNSCredentials leaves the providers' tokens for the next domain.apply.
+// Used by the API, readable by root only.
+func WriteDNSCredentials(hostDir string, creds DNSCredentials) error {
+	data, err := json.Marshal(creds)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(hostDir, DNSCredentialsFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".dns-credentials-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// TakeDNSCredentials reads the tokens the API left and removes the file. No
+// file is no credentials, not an error: an apply that names no new provider
+// needs none, and the tokens already on the host stay where they are.
+func TakeDNSCredentials(hostDir string) (DNSCredentials, error) {
+	path := filepath.Join(hostDir, DNSCredentialsFile)
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > MaxEdgeSnapshotBytes {
+		_ = os.Remove(path)
+		return nil, fmt.Errorf("DNS credentials file is %d bytes, over the %d limit", info.Size(), MaxEdgeSnapshotBytes)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Remove(path); err != nil {
+		return nil, err
+	}
+	var creds DNSCredentials
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return nil, fmt.Errorf("DNS credentials file is not readable: %w", err)
+	}
+	for id := range creds {
+		if !uuidPattern.MatchString(id) {
+			return nil, fmt.Errorf("DNS credentials name %q, which is not a provider ID", id)
+		}
+	}
+	return creds, nil
 }

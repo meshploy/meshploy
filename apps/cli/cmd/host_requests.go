@@ -107,6 +107,9 @@ func (rr *requestRunner) check(report func(hostagent.Task)) {
 		if e.Name() == filepath.Base(hostagent.EdgeDesiredFile) {
 			continue // the domain set the API wants served, read by the apply that puts it in service
 		}
+		if e.Name() == filepath.Base(hostagent.DNSCredentialsFile) {
+			continue // the DNS providers' tokens, taken by the same apply
+		}
 		req, err := hostagent.ReadRequestFile(path)
 		if err != nil {
 			// Not a request the agent will ever run: take it out of the way.
@@ -333,8 +336,18 @@ func runDomainApplyRequest(dryRun bool) ([]byte, error) {
 		return nil, err
 	}
 
+	// Taken whatever happens next: a token left in the inbox would wait there
+	// for whichever apply comes after, in a file nothing else cleans up. A
+	// dry run writes nothing, so it leaves them for the apply that does.
+	var creds hostagent.DNSCredentials
+	if !dryRun {
+		if creds, err = hostagent.TakeDNSCredentials(hostDir); err != nil {
+			return nil, err
+		}
+	}
+
 	var log strings.Builder
-	if err := applyEdgeSnapshot(&log, *desired, dryRun, true); err != nil {
+	if err := applyEdgeSnapshot(&log, *desired, creds, dryRun, true); err != nil {
 		return nil, fmt.Errorf("%w\n%s", err, log.String())
 	}
 	if !dryRun {
