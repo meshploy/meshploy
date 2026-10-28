@@ -9,9 +9,32 @@ export function BrandMark({ brand, className }: { brand: ApiBrand; className?: s
   return <MeshMark className={cn("text-primary", className)} />
 }
 
-/** The brand's wordmark, or its name set as Meshploy's is. */
-export function BrandWordmark({ brand, className, imageClassName }: { brand: ApiBrand; className?: string; imageClassName?: string }) {
+/**
+ * The brand's wordmark, or its name set as Meshploy's is.
+ *
+ * Meshploy's own is one lockup on every surface: "meshploy" in the heavy
+ * weight, and the product after it in the light one ("meshploy apps",
+ * "meshploy cloud"), part of the name rather than a badge. The console is the
+ * product itself, so it has no suffix.
+ */
+export function BrandWordmark({
+  brand,
+  product,
+  className,
+  imageClassName,
+}: {
+  brand: ApiBrand
+  product?: string
+  className?: string
+  imageClassName?: string
+}) {
   const src = brandAssetURL(brand.logo_url)
   if (src) return <img src={src} alt={brand.name} className={cn("object-contain", imageClassName)} />
-  return <span className={className}>{brand.custom ? brand.name : "meshploy"}</span>
+  if (brand.custom) return <span className={cn("font-semibold", className)}>{brand.name}</span>
+  return (
+    <span className={cn("tracking-tight", className)}>
+      <span className="font-semibold">meshploy</span>
+      {product && <span className="ml-[0.1em] text-muted-foreground">{product}</span>}
+    </span>
+  )
 }

@@ -21,12 +21,10 @@ function AuthLayout() {
       />
       <div className="relative w-full max-w-md space-y-8">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/15">
-            <BrandMark brand={brand} className="w-5 h-5" />
-          </div>
           <div className="text-center">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              <BrandWordmark brand={brand} imageClassName="h-8 max-w-60 mx-auto" />
+            <h1 className="flex items-center justify-center gap-3 text-2xl">
+              <BrandMark brand={brand} className="size-8 shrink-0" />
+              <BrandWordmark brand={brand} imageClassName="h-8 max-w-60" />
             </h1>
             {!brand.custom && <p className="text-sm text-muted-foreground mt-0.5">Your infrastructure, in your control.</p>}
           </div>
