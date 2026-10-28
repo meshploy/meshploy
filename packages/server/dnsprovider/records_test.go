@@ -91,3 +91,22 @@ func TestPointingReplacesItsOwnStaleRecord(t *testing.T) {
 	}
 	assert.Equal(t, []string{"198.51.100.9"}, wild)
 }
+
+// On Cloudflare a regional wildcard carries every domain under it: nothing is
+// written for one, and it is still pointed. A wildcard above that points
+// elsewhere is no help, so the domain gets its own records as before.
+func TestARegionalWildcardIsEnoughOnCloudflare(t *testing.T) {
+	cf, p, zone := pointingFixture(t)
+	ctx := context.Background()
+	cf.records["z1"] = []dnsprovider.Record{{ID: "op", Type: "A", Name: "*.eu.example.com", Content: "203.0.113.7"}}
+
+	require.NoError(t, dnsprovider.PointDomain(ctx, p, zone, "acme.eu.example.com", "203.0.113.7", "meshploy:d1"))
+	assert.Len(t, cf.records["z1"], 1, "nothing written under the regional wildcard")
+	ok, err := dnsprovider.Pointed(ctx, p, zone, "acme.eu.example.com", "203.0.113.7")
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	cf.records["z1"] = []dnsprovider.Record{{ID: "op", Type: "A", Name: "*.eu.example.com", Content: "198.51.100.1"}}
+	require.NoError(t, dnsprovider.PointDomain(ctx, p, zone, "acme.eu.example.com", "203.0.113.7", "meshploy:d1"))
+	assert.Len(t, cf.records["z1"], 3, "a wildcard pointing elsewhere: the domain's own two")
+}

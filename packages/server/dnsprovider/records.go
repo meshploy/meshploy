@@ -45,19 +45,55 @@ func pointing(r Record) bool {
 	return false
 }
 
+// wildcardKeeper is a provider whose wildcards go on answering for names
+// below a record that exists under them. By RFC 4592 a wildcard stops there,
+// so on a provider that follows it, the challenge records Caddy writes under
+// a domain would cut that domain's names off from a wildcard above it.
+type wildcardKeeper interface {
+	WildcardsAnswerBelowRecords() bool
+}
+
+// parentAnswers reports whether a wildcard above domain in the same zone
+// already points it at ip, on a provider where that is enough by itself.
+func parentAnswers(ctx context.Context, p Provider, zone Zone, domain, ip string) (bool, error) {
+	if k, ok := p.(wildcardKeeper); !ok || !k.WildcardsAnswerBelowRecords() {
+		return false, nil
+	}
+	typ := pointingType(ip)
+	for name := domain; strings.Contains(name, "."); {
+		_, name, _ = strings.Cut(name, ".")
+		if name != zone.Name && !strings.HasSuffix(name, "."+zone.Name) {
+			break
+		}
+		recs, err := p.Records(ctx, zone, "*."+name)
+		if err != nil {
+			return false, err
+		}
+		for _, r := range recs {
+			if pointing(r) {
+				// The closest wildcard decides, whatever it points at.
+				return r.Type == typ && r.Content == ip, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // PointDomain writes the records that send a base domain to the gateway, each
 // marked with comment, and leaves the operator's own alone:
 //
-//   - *.<domain>, always. A wildcard on a parent domain is not enough, even
-//     when it already answers with ip: the challenge records Caddy writes
-//     under the domain make it a name of its own, and the parent wildcard then
-//     stops answering for the names beneath it.
-//   - <domain> itself, only when it has no records at all: one that has some
-//     is something the operator already serves.
+//   - nothing, where a wildcard above the domain already points it at ip and
+//     the provider keeps it answering through challenges (wildcardKeeper):
+//     *.eu.meshploy.cloud carries every space under it, with no record each.
+//   - otherwise *.<domain>, and <domain> itself only when it has no records
+//     at all: one that has some is something the operator already serves.
 //
 // A record of the operator's already pointing the wildcard at ip is used as
 // it is. One pointing it anywhere else is ErrConflict.
 func PointDomain(ctx context.Context, p Provider, zone Zone, domain, ip, comment string) error {
+	if ok, err := parentAnswers(ctx, p, zone, domain, ip); err != nil || ok {
+		return err
+	}
 	typ := pointingType(ip)
 	wildcard := "*." + domain
 	recs, err := p.Records(ctx, zone, wildcard)
@@ -104,9 +140,13 @@ func PointDomain(ctx context.Context, p Provider, zone Zone, domain, ip, comment
 	return nil
 }
 
-// Pointed reports whether the domain's wildcard answers with ip, read through
-// the provider rather than from DNS, so a cache cannot stand in for the zone.
+// Pointed reports whether the domain's names answer with ip, through its own
+// wildcard or one above it that PointDomain relies on, read through the
+// provider rather than from DNS, so a cache cannot stand in for the zone.
 func Pointed(ctx context.Context, p Provider, zone Zone, domain, ip string) (bool, error) {
+	if ok, err := parentAnswers(ctx, p, zone, domain, ip); err != nil || ok {
+		return ok, err
+	}
 	recs, err := p.Records(ctx, zone, "*."+domain)
 	if err != nil {
 		return false, err

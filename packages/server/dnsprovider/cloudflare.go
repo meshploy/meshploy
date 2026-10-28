@@ -146,6 +146,11 @@ func (c *cloudflare) CreateRecord(ctx context.Context, zone Zone, r Record) (Rec
 	return out, err
 }
 
+// WildcardsAnswerBelowRecords: Cloudflare goes on answering a name through a
+// wildcard above it when a record exists further down, such as a challenge's
+// TXT record (checked against meshploy.cloud's own nameservers, 2026-10-29).
+func (c *cloudflare) WildcardsAnswerBelowRecords() bool { return true }
+
 func (c *cloudflare) DeleteRecord(ctx context.Context, zone Zone, id string) error {
 	_, err := c.call(ctx, http.MethodDelete, "/zones/"+url.PathEscape(zone.ID)+"/dns_records/"+url.PathEscape(id), nil, nil)
 	return err
