@@ -113,10 +113,13 @@ func TestRenderCoversTheShippedCaddyfiles(t *testing.T) {
 		t.Run(c.file, func(t *testing.T) {
 			shipped, err := os.ReadFile(filepath.Join("testdata", "retired", c.file))
 			require.NoError(t, err)
+			// The shipped files named the loopback "localhost"; the template
+			// writes 127.0.0.1, the same upstream on every image.
 			expanded := strings.NewReplacer(
 				"{$DOMAIN}", "example.com",
 				"{$MESH_IP}", "100.64.0.1",
 				"{$PUBLIC_IP}", "203.0.113.10",
+				"localhost:", "127.0.0.1:",
 			).Replace(string(shipped))
 
 			files, err := Render(snapshot(domain("example.com", c.mode, true)))
@@ -457,10 +460,10 @@ func TestRenderForwardsToTheChosenLoopbackPorts(t *testing.T) {
 	files, err := Render(snap)
 	require.NoError(t, err)
 	caddy := string(files["caddy/Caddyfile"])
-	assert.Contains(t, caddy, "reverse_proxy localhost:18081")
-	assert.Contains(t, caddy, "reverse_proxy localhost:18085")
-	assert.NotContains(t, caddy, "localhost:8081")
-	assert.NotContains(t, caddy, "localhost:8085")
+	assert.Contains(t, caddy, "reverse_proxy 127.0.0.1:18081")
+	assert.Contains(t, caddy, "reverse_proxy 127.0.0.1:18085")
+	assert.NotContains(t, caddy, "127.0.0.1:8081")
+	assert.NotContains(t, caddy, "127.0.0.1:8085")
 }
 
 // An edition's own door is served as the console is, with its own name in

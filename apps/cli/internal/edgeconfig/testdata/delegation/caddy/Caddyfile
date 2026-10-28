@@ -6,7 +6,9 @@
 # verified, or has its DNS mode changed. Put your own configuration in
 # conf.d/*.caddy, which is imported below and never written.
 #
-# Caddy runs with network_mode: host, so every reverse_proxy target is localhost.
+# Caddy runs with network_mode: host, so every reverse_proxy target is on the
+# loopback address. Written 127.0.0.1, never "localhost": some images map
+# localhost to ::1 alone, and the services behind are published on IPv4.
 #
 # `tls force_automate` on a platform subdomain of an on-demand domain is not
 # decoration. That domain's wildcard is on-demand, so it is never obtained up
@@ -21,7 +23,7 @@
         # global option and cannot vary per site. It approves an active workload
         # route under any verified base domain, and a verified custom domain -
         # the two things that may be issued without being named here.
-        ask http://localhost:4000/api/v1/internal/ondemand-tls-check
+        ask http://127.0.0.1:4000/api/v1/internal/ondemand-tls-check
     }
 }
 
@@ -57,7 +59,7 @@
     import platform_headers
     import console_csp
     handle /api/* {
-        reverse_proxy localhost:4000 {
+        reverse_proxy 127.0.0.1:4000 {
             # flush_interval -1 disables response buffering so SSE log streams
             # reach the client immediately instead of being held until the
             # connection closes.
@@ -68,15 +70,15 @@
     # through OAuth, which finds how to connect at /.well-known/oauth-*. The
     # approval page, /oauth/authorize, is the console's own.
     handle /mcp* {
-        reverse_proxy localhost:4000 {
+        reverse_proxy 127.0.0.1:4000 {
             flush_interval -1
         }
     }
     handle /.well-known/oauth-* {
-        reverse_proxy localhost:4000
+        reverse_proxy 127.0.0.1:4000
     }
     handle {
-        reverse_proxy localhost:5173
+        reverse_proxy 127.0.0.1:5173
     }
 }
 
@@ -93,7 +95,7 @@ headscale.example.com {
             zone_file_path /etc/coredns/zones/_acme-challenge.example.com
         }
     }
-    reverse_proxy localhost:8085
+    reverse_proxy 127.0.0.1:8085
 }
 
 # ── Meshploy API ─────────────────────────────────────────────────────────────
@@ -106,7 +108,7 @@ api.example.com {
     }
     # No CSP here: /docs loads its viewer from a CDN.
     import platform_headers
-    reverse_proxy localhost:4000 {
+    reverse_proxy 127.0.0.1:4000 {
         flush_interval -1
     }
 }
@@ -132,7 +134,7 @@ console.example.com {
             zone_file_path /etc/coredns/zones/_acme-challenge.example.com
         }
     }
-    reverse_proxy localhost:8081
+    reverse_proxy 127.0.0.1:8081
 }
 
 # ── Internal mesh traffic ────────────────────────────────────────────────────
@@ -148,7 +150,7 @@ console.example.com {
         }
         resolvers 203.0.113.10
     }
-    reverse_proxy localhost:8081
+    reverse_proxy 127.0.0.1:8081
 }
 
 # ── Custom domains ───────────────────────────────────────────────────────────
@@ -159,5 +161,5 @@ console.example.com {
     tls {
         on_demand
     }
-    reverse_proxy localhost:8081
+    reverse_proxy 127.0.0.1:8081
 }

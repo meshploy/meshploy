@@ -76,7 +76,10 @@ services:
   # ── Built-in container registry ───────────────────────────────────────────
   # Self-hosted Docker Registry v2, accessible from all mesh nodes via the
   # gateway WireGuard IP (MESH_IP:5000). Build jobs push here; K3s nodes pull.
-  # Insecure HTTP — traffic stays within the WireGuard mesh (trusted network).
+  # Insecure HTTP with no sign-in, so it is published on the mesh address and
+  # loopback only, never the public one: anyone who reached it could pull every
+  # image and push one in a project's name. ip_nonlocal_bind (install.sh) lets
+  # it bind the mesh address before the mesh is up after a reboot.
   registry:
     image: docker.io/library/registry:2
     restart: unless-stopped
@@ -84,7 +87,8 @@ services:
       - 1.1.1.1
       - 1.0.0.1
     ports:
-      - "5000:5000" # bind all interfaces so mesh nodes can reach it
+      - "127.0.0.1:5000:5000"
+      - "${MESH_IP:-100.64.0.1}:5000:5000"
     environment:
       REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
       REGISTRY_STORAGE_DELETE_ENABLED: "true"
@@ -92,9 +96,9 @@ services:
       - registry_data:/var/lib/registry
 
   # ── Meshploy API ───────────────────────────────────────────────────────────
-  # Port 4000 binds on all interfaces so worker nodes can reach the API over the
-  # WireGuard mesh (100.64.0.1:4000). External traffic goes through Caddy on 443;
-  # the API is JWT-authenticated so direct access on 4000 is safe.
+  # Port 4000 is published on the mesh address, for worker nodes and services
+  # beside the gateway (100.64.0.1:4000), and on loopback for Caddy; the
+  # internet reaches the API only through Caddy on 443, over TLS.
   api:
     # The repository is overridable so an Enterprise install can point at the EE
     # image without editing this file — get.sh re-extracts deploy/ on every
@@ -106,7 +110,8 @@ services:
       - 1.1.1.1
       - 1.0.0.1
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
+      - "${MESH_IP:-100.64.0.1}:4000:4000"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-meshploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meshploy}?sslmode=disable
       # The gateway's loopback ports, which a TCP route must never take.

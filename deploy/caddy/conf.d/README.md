@@ -15,6 +15,7 @@ status.example.com {
 }
 ```
 
-Run `meshploy domain apply` afterwards: it asks Caddy to accept the whole
-configuration before installing it, so a mistake here is reported rather than
-served.
+Run `sudo meshploy domain apply --force` afterwards to reload Caddy: without
+`--force` it finds the generated files unchanged and does nothing. Caddy checks
+the whole configuration before switching to it, so a mistake here is reported
+and the previous configuration keeps serving.

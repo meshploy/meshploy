@@ -77,6 +77,28 @@ func TestDomainApplyDoesNothingWhenNothingChanged(t *testing.T) {
 	assert.Contains(t, out.String(), "Nothing to do")
 }
 
+func TestDomainApplyForceReloadsCaddyWhenNothingChanged(t *testing.T) {
+	_, _, _ = domainTestServer(t, gatewayEnv)
+	domainApplyFromEnv = true
+	var out bytes.Buffer
+	require.NoError(t, runDomainApply(&out))
+
+	// What an edit under caddy/conf.d needs: the generated files are the same,
+	// and Caddy must still re-read them.
+	var reloaded []string
+	reloadEdge = func(changes []edgeconfig.Change) error {
+		for _, c := range changes {
+			reloaded = append(reloaded, c.Path)
+		}
+		return nil
+	}
+	domainApplyForce = true
+	out.Reset()
+	require.NoError(t, runDomainApply(&out))
+	assert.Equal(t, []string{"caddy/Caddyfile"}, reloaded, "a forced apply reloads Caddy alone")
+	assert.Contains(t, out.String(), "Caddy reloaded")
+}
+
 func TestDomainApplyDryRunWritesNothing(t *testing.T) {
 	inst, validated, reloads := domainTestServer(t, gatewayEnv)
 	domainApplyFromEnv, domainApplyDryRun = true, true

@@ -5,8 +5,8 @@
 <h1 align="center">Meshploy</h1>
 
 <p align="center">
-  <strong>Your machines. One connected application platform.</strong><br>
-  Managed by you and your AI agents.
+  <strong>Self-hosted PaaS. Like Heroku or Vercel, on your own servers.</strong><br>
+  Push your code, get a live app. One cloud that stays yours.
 </p>
 
 <p align="center">
@@ -23,9 +23,9 @@
   <a href="./TODO.md">Roadmap</a>
 </p>
 
-Meshploy is a self-hosted application platform that connects your servers over a private WireGuard mesh. Deploy applications and databases, bring existing services to your domains, and manage the platform through the console, CLI, API, or an AI agent with scoped permissions.
+Meshploy turns the servers you already have into your own cloud platform. Connect your code, and every push becomes a live app at your own address, with HTTPS, logs and one-click rollback. Add databases, scheduled jobs and backups the same way.
 
-Build on a machine you choose. Run workloads on connected workers. Keep control of where your applications and data live.
+Start with one server. Add more whenever you like, from any provider or your own hardware, even a spare laptop: Meshploy links them privately so they work as one. Your apps and your data stay on machines you control, and you pay only for those machines.
 
 [![Meshploy console showing what needs attention, resources across environment levels, and delivery over two weeks](docs/assets/console-overview.png)](https://meshploy.com/playground/)
 
@@ -35,13 +35,14 @@ Build on a machine you choose. Run workloads on connected workers. Keep control 
 
 | | |
 |---|---|
-| **Build here. Run there.** | Deploy from Git or a container image. Choose build placement separately from where workloads run. |
-| **Connect existing services.** | Route to services already running on your machines through the gateway and private mesh. |
-| **Work your way.** | Use the console, automate through the CLI and API, or connect an agent through MCP with project and resource permissions. |
-| **Operate your applications.** | Manage databases, Compose stacks, scheduled jobs, logs, metrics, configuration, and persistent volumes. |
-| **Use your own integrations.** | Connect Git providers, container registries, S3-compatible backup storage, and notification destinations. |
+| **Push to deploy.** | Connect GitHub, GitLab or Gitea, or start from a ready-made template. Every push builds and goes live on its own. |
+| **Databases included.** | Postgres, MySQL, Redis and MongoDB in a click, with scheduled backups to your own storage. |
+| **Many machines, one cloud.** | Add servers from any provider, or your own hardware. They connect privately, and you choose what runs where. |
+| **Staging, then production.** | Try changes in a test environment first, then promote them when they are ready. |
+| **Bring what already runs.** | Put apps you already run on your servers behind your domains, with HTTPS, without moving them. |
+| **Your way, or your AI's.** | Use the web console, the command line or the API, or let an AI assistant such as Claude do it for you, with only the access you give it. |
 
-Meshploy uses K3s for workloads and WireGuard for communication between connected machines. You remain responsible for the hosts, their firewalls, availability, and data recovery. See [how it works](https://docs.meshploy.com/architecture/how-it-works/) for the architecture and [the backup guide](https://docs.meshploy.com/guides/database-backup-and-restore/) for engine-specific recovery support.
+Under the hood, Meshploy runs your apps on K3s (a lightweight Kubernetes) and links your machines with WireGuard. You remain responsible for the machines themselves, their firewalls, availability, and data recovery. See [how it works](https://docs.meshploy.com/architecture/how-it-works/) for the architecture and [the backup guide](https://docs.meshploy.com/guides/database-backup-and-restore/) for engine-specific recovery support.
 
 ## Get started
 

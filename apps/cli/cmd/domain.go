@@ -48,7 +48,8 @@ base domain from the edge snapshot, and installs them when they differ from
 what is already there.
 
 An apply that finds nothing to do does nothing: the edge is not reloaded, so
-this is safe to run on every start and after every upgrade.
+this is safe to run on every start and after every upgrade. With --force it
+reloads Caddy anyway, which is how a change under caddy/conf.d takes effect.
 
 With --from-env the snapshot is built from DOMAIN, DNS_MODE, PUBLIC_IP and
 MESH_IP in .env and written before rendering. That is the install-time path,
@@ -139,6 +140,17 @@ func applyEdgeSnapshotChanges(out io.Writer, snap hostagent.EdgeSnapshot, dryRun
 	if !reload {
 		fmt.Fprintln(out, "   Not reloading: the caller starts the edge itself.")
 		return changes, nil
+	}
+	// A forced apply with nothing to write is how an edit under caddy/conf.d,
+	// which no render produces, reaches Caddy: it reloads Caddy as if the
+	// Caddyfile had changed. Caddy keeps its running configuration when the
+	// new one fails, so there is nothing to put back.
+	if len(changes) == 0 {
+		if err := reloadEdge([]edgeconfig.Change{{Path: "caddy/Caddyfile", Action: edgeconfig.ActionUpdate}}); err != nil {
+			return nil, fmt.Errorf("caddy did not reload, and keeps serving its previous configuration: %w", err)
+		}
+		fmt.Fprintln(out, "✔  Caddy reloaded")
+		return nil, nil
 	}
 	if err := reloadEdge(changes); err != nil {
 		fmt.Fprintf(out, "!  the edge did not come up: %v\n", err)
