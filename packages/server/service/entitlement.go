@@ -195,6 +195,11 @@ func (s *EntitlementService) Describe(ctx context.Context, _ uuid.UUID) (Status,
 		CanActivate: len(trustedKeys()) > 0,
 		Edition:     version.Edition,
 	}
+	// Every feature this build has, named one by one: the console checks for
+	// a name, not for "*".
+	if claims.AllFeatures() {
+		st.Features = license.KnownFeatures()
+	}
 	if st.Features == nil {
 		st.Features = []string{}
 	}

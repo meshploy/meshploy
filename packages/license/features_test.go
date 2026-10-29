@@ -69,3 +69,24 @@ func TestFeatureValuesAreStable(t *testing.T) {
 		}
 	}
 }
+
+// "*" grants every feature, one this build has never heard of included, and
+// the issuer accepts it.
+func TestFeatureAllGrantsEverything(t *testing.T) {
+	all := License{Features: []string{FeatureAll}}
+	for _, f := range append(KnownFeatures(), "added-next-year") {
+		if !all.HasFeature(f) {
+			t.Errorf("%q not granted by %q", f, FeatureAll)
+		}
+	}
+	if !all.AllFeatures() {
+		t.Error("AllFeatures must report it")
+	}
+	some := License{Features: []string{FeatureApps}}
+	if some.HasFeature(FeatureSSO) || some.AllFeatures() {
+		t.Error("a licence naming features grants those alone")
+	}
+	if bad := UnknownFeatures([]string{FeatureAll}); len(bad) != 0 {
+		t.Errorf("the issuer must accept %q, got unknown %v", FeatureAll, bad)
+	}
+}

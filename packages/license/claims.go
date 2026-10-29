@@ -38,10 +38,22 @@ type License struct {
 	ExpiresAt     time.Time `json:"exp"`
 }
 
-// HasFeature reports whether the license grants the named feature.
+// HasFeature reports whether the license grants the named feature: named in
+// it, or granted with every other through FeatureAll.
 func (l License) HasFeature(name string) bool {
 	for _, f := range l.Features {
-		if f == name {
+		if f == name || f == FeatureAll {
+			return true
+		}
+	}
+	return false
+}
+
+// AllFeatures reports whether the license grants every feature, present and
+// future.
+func (l License) AllFeatures() bool {
+	for _, f := range l.Features {
+		if f == FeatureAll {
 			return true
 		}
 	}

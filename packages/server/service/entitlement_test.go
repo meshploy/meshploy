@@ -88,6 +88,29 @@ func TestEntitlementActivatesAndGrants(t *testing.T) {
 	}
 }
 
+// A licence for every feature grants one added after it was issued, and the
+// console is told each of this build's features by name, since it checks for
+// a name rather than for "*".
+func TestEntitlementAllFeatures(t *testing.T) {
+	database := newExtTestDB(t)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	withTrustedKey(t, pub)
+
+	l := entLicense()
+	l.Features = []string{license.FeatureAll}
+	svc := &EntitlementService{db: database}
+	st, err := svc.Activate(context.Background(), mintToken(t, priv, l), uuid.New())
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	if !svc.Entitled(context.Background(), uuid.Nil, license.FeatureApps) || !svc.Entitled(context.Background(), uuid.Nil, "added-next-year") {
+		t.Fatal("every feature, a future one included, must be entitled")
+	}
+	if len(st.Features) != len(license.KnownFeatures()) {
+		t.Fatalf("the console must be told every feature by name, got %v", st.Features)
+	}
+}
+
 // A licence issued before the registry scope was checked may name something
 // that is not an Enterprise image. It still grants its features, but says why
 // the switch to Enterprise would fail, rather than letting the host find out by

@@ -23,6 +23,11 @@ const (
 	// FeatureWhiteLabel shows an organisation's own name, logos and colour in
 	// place of Meshploy's.
 	FeatureWhiteLabel = "white-label"
+	// FeatureAll grants every feature, including those added after the
+	// licence was issued: Meshploy's own installations, such as Cloud's pools,
+	// which run whatever the product has. A build older than this flag reads
+	// it as a name it does not know, and grants nothing from it.
+	FeatureAll = "*"
 )
 
 // knownFeatures is the set every recognised flag belongs to.
@@ -46,8 +51,9 @@ func KnownFeatures() []string {
 	return out
 }
 
-// IsKnownFeature reports whether name is a flag this build recognises.
-func IsKnownFeature(name string) bool { return knownFeatures[name] }
+// IsKnownFeature reports whether name is a flag this build recognises, "*"
+// included.
+func IsKnownFeature(name string) bool { return name == FeatureAll || knownFeatures[name] }
 
 // UnknownFeatures returns the entries of names this build does not recognise,
 // in the order given.
