@@ -510,6 +510,13 @@ func generateRecoveryCodes(n int) (raw []string, hashes []string, err error) {
 // signIn starts a console session and returns the token that carries it: the
 // person (uid) and the session (sid), which must still be live for the token
 // to be good.
+// SignInAs starts a console session for a person an edition has identified
+// some other way, such as a one-time link it issued, and returns its token.
+// It checks nothing itself: the caller's proof is the check.
+func (s *AuthService) SignInAs(ctx context.Context, userID uuid.UUID, client Client, jwtSecret string) (string, error) {
+	return s.signIn(ctx, userID, client, jwtSecret)
+}
+
 func (s *AuthService) signIn(ctx context.Context, userID uuid.UUID, client Client, jwtSecret string) (string, error) {
 	sid, err := startConsoleSession(ctx, s.db, userID, client)
 	if err != nil {

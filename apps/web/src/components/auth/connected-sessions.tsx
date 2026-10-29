@@ -401,19 +401,32 @@ export function MemberSessions({ orgId, userId, token }: { orgId: string; userId
   const disconnect = useDisconnect(orgId, token)
   const logOut = useLogOutCli(orgId, token)
   const signOut = useEndBrowser(orgId, token)
+  const [all, setAll] = useState(false)
   if (assistants.isLoading || clis.isLoading || browsers.isLoading) return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
   const sessions = [
     ...(browsers.data ?? []).map((s) => signOut.session(s, "member")),
     ...(clis.data ?? []).map((s) => logOut.session(s, "member")),
     ...(assistants.data ?? []).map((c) => withDisconnect(fromAssistant(c, "member"), disconnect)),
   ]
+  // The most recently used few, of any kind; the rest on asking. A member
+  // signed in from many places should not push the page's other panels away.
+  const recent = (x: Session) => Date.parse(x.lastUsed ?? x.created) || 0
+  sessions.sort((x, y) => recent(y) - recent(x))
+  const shown = all ? sessions : sessions.slice(0, MEMBER_SESSIONS_SHOWN)
   return (
     <div className="space-y-2">
-      <SessionList sessions={sessions} empty="None." />
+      <SessionList sessions={shown} empty="None." />
+      {sessions.length > MEMBER_SESSIONS_SHOWN && (
+        <button type="button" onClick={() => setAll(!all)} className="text-xs text-muted-foreground hover:text-foreground">
+          {all ? "Show fewer" : `Show all ${sessions.length}`}
+        </button>
+      )}
       {(disconnect.error ?? logOut.error ?? signOut.error) && <p role="alert" className="text-xs text-destructive">{(disconnect.error ?? logOut.error ?? signOut.error)!.message}</p>}
     </div>
   )
 }
+
+const MEMBER_SESSIONS_SHOWN = 5
 
 /** The assistants acting as an agent, on its page. */
 export function AgentSessions({ orgId, agentId, token }: { orgId: string; agentId: string; token: string }) {

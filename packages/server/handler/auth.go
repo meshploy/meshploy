@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/middleware"
 	svc "github.com/meshploy/packages/server/service"
@@ -45,6 +46,13 @@ func (c ClientHeaders) client() svc.Client {
 		ip = strings.TrimSpace(ip)
 	}
 	return svc.Client{UserAgent: c.UserAgent, IP: ip}
+}
+
+// SignInAs starts a console session for a person an edition has identified
+// another way, such as a one-time link it issued, and returns the session's
+// token. Call it only once that proof is checked: it checks nothing itself.
+func (h *Handler) SignInAs(ctx context.Context, userID uuid.UUID, c ClientHeaders) (string, error) {
+	return h.svc.Auth.SignInAs(ctx, userID, c.client(), h.cfg.JWTSecret)
 }
 
 type LoginInput struct {
