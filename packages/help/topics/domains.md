@@ -26,7 +26,7 @@ Each base domain has its own DNS mode:
 
 An on-demand domain's records can also be kept by a connected [DNS provider](/concepts/integrations#dns-providers) such as Cloudflare. Meshploy then writes them, the domain needs no TXT record to verify, and its wildcard certificates, internal ones included, are issued up front as on a delegated domain.
 
-A base domain can also be **reserved for one project**. Then only that project and its environment levels can put routes on it, and other projects are not offered it.
+A base domain can also be **reserved for one project**, on its page under **Projects**. Then only that project and its environment levels can put routes on it, and other projects are not offered it. The primary domain, and a former primary, serve every project's console names, so they cannot be reserved; and a domain other projects already have routes on can be reserved only once those routes have moved. A project cannot be deleted while a domain is reserved for it: give the domain back to every project, or remove it, first.
 
 ## Retiring a domain {#retiring}
 
@@ -37,4 +37,5 @@ A domain that has served routes is removed in two steps: **retire** it, which st
 - **Primary** {#primary -> primary}: The domain the platform itself answers on: the console, the API, and where nodes join.
 - **Former primary** {#former-primary -> primary}: The domain the primary moved away from. It keeps serving the platform until nothing uses it, then can be removed.
 - **Delegation** {#delegation -> dns-modes}: The domain's name servers point at the gateway, which answers for it and covers every name with one wildcard certificate.
+- **Reserved for a project** {#reserved -> domains}: Only that project and its environment levels may put routes on the domain; no other project is offered it.
 - **On-demand** {#on-demand -> dns-modes}: DNS stays with your provider; each hostname needs its own record and gets its own certificate.

@@ -147,6 +147,16 @@ console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {
 {{ else }}
 # The platform's own subdomains are reserved on this domain but serve nothing.
 # They follow the primary; making this domain primary is what moves them.
+{{- if and .Project $.ConsoleNames }}
+
+# ── The project's own doors ──────────────────────────────────────────────────
+# Reserved for one project, so the doors an edition serves as the console is
+# open here for that project alone.
+{{ $base := .BaseDomain }}{{ range $i, $n := $.ConsoleNames }}{{ if $i }}, {{ end }}{{ $n }}.{{ $base }}{{ end }} {
+{{- template "named_tls" . }}
+    import console_site
+}
+{{- end }}
 {{ end }}
 # ── Public workload routes ───────────────────────────────────────────────────
 # The proxy reads the Host header, looks the route up, and forwards to the

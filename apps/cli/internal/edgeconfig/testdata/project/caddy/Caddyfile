@@ -1,0 +1,189 @@
+# Meshploy Caddyfile - generated, do not edit.
+#
+# Rendered by `meshploy domain apply` from the edge snapshot at
+# /var/lib/meshploy/host/state/edge.json.
+# Every edit here is lost the next time a base domain is added, removed,
+# verified, or has its DNS mode changed. Put your own configuration in
+# conf.d/*.caddy, which is imported below and never written.
+#
+# Caddy runs with network_mode: host, so every reverse_proxy target is on the
+# loopback address. Written 127.0.0.1, never "localhost": some images map
+# localhost to ::1 alone, and the services behind are published on IPv4.
+#
+# `tls force_automate` on a platform subdomain of an on-demand domain is not
+# decoration. That domain's wildcard is on-demand, so it is never obtained up
+# front, and Caddy prefers a covering wildcard to an individual certificate -
+# leaving the named site in a gap where nothing issues its certificate and the
+# console is unreachable over HTTPS on a fresh install. A delegated domain does
+# not need it: its wildcard is a real certificate that genuinely covers them.
+#
+# An on-demand domain with a DNS provider is arranged as a delegated one is:
+# its wildcards are obtained up front by DNS-01, answered through the
+# provider's API. The token is not in this file. {file.*} names where Caddy
+# reads it, under secrets/, which only root can read.
+
+{
+    on_demand_tls {
+        # One ask endpoint for the whole server, because on_demand_tls is a
+        # global option and cannot vary per site. It approves an active workload
+        # route under any verified base domain, and a verified custom domain -
+        # the two things that may be issued without being named here.
+        ask http://127.0.0.1:4000/api/v1/internal/ondemand-tls-check
+    }
+}
+
+# Security headers for the platform's own names, never for a workload route:
+# those answer with whatever their app sends.
+# - HSTS without includeSubDomains, since an internal route may use Caddy's own
+#   certificate authority, which a browser must still be able to click through.
+# - No framing: the console's approval pages (an AI assistant connecting, a CLI
+#   signing in) are one click away from granting access, so no other site may
+#   frame them under a decoy.
+# - The console's session token lives in the browser's storage, so the
+#   console's CSP allows scripts from itself alone: an injected script would
+#   otherwise carry it off. Styles stay 'unsafe-inline', as some of its
+#   libraries insert <style> elements; a worker comes from a blob: URL.
+(platform_headers) {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+}
+(console_csp) {
+    # form-action names github.com: a GitHub App is created by posting its
+    # manifest there as a form, which 'self' alone stops in the browser.
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://{host}; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com; object-src 'none'"
+}
+
+# What the console's names serve: the web app, with the API, remote MCP and
+# OAuth discovery beside it on the same origin.
+(console_site) {
+    import platform_headers
+    import console_csp
+    handle /api/* {
+        reverse_proxy 127.0.0.1:4000 {
+            # flush_interval -1 disables response buffering so SSE log streams
+            # reach the client immediately instead of being held until the
+            # connection closes.
+            flush_interval -1
+        }
+    }
+    # Remote MCP (Streamable HTTP): an agent token, or a client connected
+    # through OAuth, which finds how to connect at /.well-known/oauth-*. The
+    # approval page, /oauth/authorize, is the console's own.
+    handle /mcp* {
+        reverse_proxy 127.0.0.1:4000 {
+            flush_interval -1
+        }
+    }
+    handle /.well-known/oauth-* {
+        reverse_proxy 127.0.0.1:4000
+    }
+    handle {
+        reverse_proxy 127.0.0.1:5173
+    }
+}
+
+# Anything you add yourself. Imported before the site blocks, so a syntax error
+# in it fails the config outright rather than at the first request.
+import conf.d/*.caddy
+
+# ═══ pool.example.com - on-demand TLS, primary ═══
+
+# ── Headscale control plane ──────────────────────────────────────────────────
+headscale.pool.example.com {
+    tls force_automate
+    reverse_proxy 127.0.0.1:8085
+}
+
+# ── Meshploy API ─────────────────────────────────────────────────────────────
+# /docs (Swagger UI), /api/v1/*, and the SSE log endpoints.
+api.pool.example.com {
+    tls force_automate
+    # No CSP here: /docs loads its viewer from a CDN.
+    import platform_headers
+    reverse_proxy 127.0.0.1:4000 {
+        flush_interval -1
+    }
+}
+
+# ── Meshploy console ─────────────────────────────────────────────────────────
+console.pool.example.com, apps.pool.example.com {
+    tls force_automate
+    import console_site
+}
+
+# ── Public workload routes ───────────────────────────────────────────────────
+# The proxy reads the Host header, looks the route up, and forwards to the
+# target node over the mesh.
+*.pool.example.com {
+    # A certificate per hostname, issued on first request once the ask endpoint
+    # confirms a route exists for it.
+    tls {
+        on_demand
+    }
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ── Internal mesh traffic ────────────────────────────────────────────────────
+# Bound to the mesh address, so it is reachable only from inside the mesh.
+*.internal.pool.example.com {
+    bind 100.64.0.1
+    # Without NS delegation there is no zone here to prove control of, and an
+    # internal name does not answer from the internet to prove it another way.
+    # Caddy signs these with its own authority; clients warn until it is trusted.
+    tls internal
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ═══ acme.eu.example.com - on-demand, records through cloudflare ═══
+
+# The platform's own subdomains are reserved on this domain but serve nothing.
+# They follow the primary; making this domain primary is what moves them.
+
+# ── The project's own doors ──────────────────────────────────────────────────
+# Reserved for one project, so the doors an edition serves as the console is
+# open here for that project alone.
+apps.acme.eu.example.com {
+    tls {
+        dns cloudflare {file./etc/caddy/secrets/0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90}
+    }
+    import console_site
+}
+
+# ── Public workload routes ───────────────────────────────────────────────────
+# The proxy reads the Host header, looks the route up, and forwards to the
+# target node over the mesh.
+*.acme.eu.example.com {
+    # One wildcard certificate by DNS-01, written through the provider.
+    tls {
+        dns cloudflare {file./etc/caddy/secrets/0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90}
+    }
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ── Internal mesh traffic ────────────────────────────────────────────────────
+# Bound to the mesh address, so it is reachable only from inside the mesh.
+*.internal.acme.eu.example.com {
+    bind 100.64.0.1
+    # The challenge record goes in the provider's zone, which the world can
+    # query, so an internal name gets a public certificate like any other.
+    tls {
+        dns cloudflare {file./etc/caddy/secrets/0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90}
+    }
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ── Custom domains ───────────────────────────────────────────────────────────
+# Any hostname none of the blocks above matched, such as a customer's own domain
+# on a route. The ask endpoint gates issuance, so only a hostname whose
+# ownership was proved gets a certificate.
+:443 {
+    tls {
+        on_demand
+    }
+    reverse_proxy 127.0.0.1:8081
+}

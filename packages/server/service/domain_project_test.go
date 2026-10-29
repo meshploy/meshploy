@@ -61,3 +61,24 @@ func TestADomainReservedForOneProject(t *testing.T) {
 	_, err = svc.Domains.ReserveForProject(ctx, d.ID, &acme.ID)
 	assert.ErrorContains(t, err, "route(s) of other projects", "reserving it would strand another project's route")
 }
+
+// The edge is told which domains are one project's, so an edition's doors
+// open on them for that project; a domain every project shares is not.
+func TestPublishEdgeMarksAReservedDomain(t *testing.T) {
+	svc, gdb, org, host := edgeServer(t)
+	ctx := context.Background()
+	require.NoError(t, svc.Domains.CreateSeeded(ctx, org, "pool.example.net", db.DNSModeOnDemand))
+	acme, err := svc.Projects.Create(ctx, org, "Acme", "acme-"+uuid.NewString()[:6])
+	require.NoError(t, err)
+	d, err := svc.Domains.Create(ctx, org, "acme.example.com", db.DNSModeOnDemand)
+	require.NoError(t, err)
+	require.NoError(t, gdb.Model(&db.Domain{}).Where("id = ?", d.ID).Update("verified", true).Error)
+	_, err = svc.Domains.ReserveForProject(ctx, d.ID, &acme.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.System.PublishEdge(ctx, org, uuid.New()))
+	snap := desired(t, host)
+	require.Len(t, snap.Domains, 2)
+	assert.False(t, snap.Domains[0].Project, "the primary is everyone's")
+	assert.True(t, snap.Domains[1].Project)
+}

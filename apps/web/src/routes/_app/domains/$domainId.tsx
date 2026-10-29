@@ -13,6 +13,7 @@ import { DnsRecords } from "@/components/domains/dns-records"
 import { ProviderRecords, RecordsPicker } from "@/components/domains/records-picker"
 import { MoveRouteDialog } from "@/components/domains/move-route-dialog"
 import { MakePrimarySection } from "@/components/domains/make-primary"
+import { ReserveForProject } from "@/components/domains/reserve-for-project"
 import { ControlNodes } from "@/components/domains/control-nodes"
 import { ProviderRegistrations } from "@/components/domains/provider-registrations"
 import { CIDeployHooks } from "@/components/domains/ci-deploy-hooks"
@@ -117,6 +118,7 @@ function DomainPage() {
             </Badge>
           )}
           {domain.former_primary && <Badge variant="secondary">Former primary</Badge>}
+          {domain.project_id && <Badge variant="secondary">Reserved for a project</Badge>}
           {domain.retiring_at && (
             <Badge variant="outline" className="border-amber-500/40 text-amber-400">
               Retiring
@@ -183,6 +185,10 @@ function DomainPage() {
 
       <ResourcePanel title="DNS mode" action={<TermInfo id={domain.dns_mode === "ondemand" ? "domains.on-demand" : "domains.delegation"} />}>
         <DnsModeSection domain={domain} orgId={orgId} token={token} readOnly={!isAdmin} />
+      </ResourcePanel>
+
+      <ResourcePanel title="Projects" action={<TermInfo id="domains.reserved" />}>
+        <ReserveForProject domain={domain} orgId={orgId} token={token} readOnly={!isAdmin} />
       </ResourcePanel>
 
       <ResourcePanel title="Platform subdomains">

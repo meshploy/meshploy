@@ -204,3 +204,12 @@ func TestEdgeSnapshotACMEEmail(t *testing.T) {
 		}
 	}
 }
+
+// A domain the platform's names are served on cannot be one project's.
+func TestEdgeSnapshotProjectDomainIsNotThePlatforms(t *testing.T) {
+	s := okSnapshot()
+	s.Domains[0].Project = true
+	if err := s.Validate(); err == nil {
+		t.Fatal("the primary must not be one project's")
+	}
+}

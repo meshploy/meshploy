@@ -47,6 +47,10 @@ type EdgeDomain struct {
 	// writes its records and answers its certificates' DNS challenges. Nil
 	// when the operator keeps the records by hand.
 	DNSProvider *EdgeDNSProvider `json:"dns_provider,omitempty"`
+	// Project marks a domain reserved for one project. The console names an
+	// edition registered (its doors, such as apps.) are served on it as the
+	// console is, for that project alone; the platform's own names are not.
+	Project bool `json:"project,omitempty"`
 }
 
 // EdgeDNSProvider names a connected DNS provider: its kind, and the ID its
@@ -227,6 +231,9 @@ func (s EdgeSnapshot) Validate() error {
 			if !uuidPattern.MatchString(p.ID) {
 				return fmt.Errorf("domain %s: DNS provider ID %q is not a UUID", d.BaseDomain, p.ID)
 			}
+		}
+		if d.Project && d.Platform() {
+			return fmt.Errorf("domain %s: the platform's names are served on it, so it cannot be one project's", d.BaseDomain)
 		}
 		if seen[d.BaseDomain] {
 			return fmt.Errorf("domain %s appears twice", d.BaseDomain)

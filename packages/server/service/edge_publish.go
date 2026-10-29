@@ -233,6 +233,7 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 			DNSMode:           mode,
 			Primary:           d.IsPrimary,
 			ServesPlatform:    d.FormerPrimary,
+			Project:           d.ProjectID != nil,
 		}
 		// A provider means something only on an on-demand domain: a delegated
 		// one answers its challenges from the zones the gateway serves.

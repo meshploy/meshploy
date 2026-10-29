@@ -38,6 +38,18 @@ func withProvider(d hostagent.EdgeDomain) hostagent.EdgeDomain {
 	return d
 }
 
+// withConsoleNames serves an edition's doors as the console is.
+func withConsoleNames(s hostagent.EdgeSnapshot, names ...string) hostagent.EdgeSnapshot {
+	s.ConsoleNames = names
+	return s
+}
+
+// reserved makes d one project's.
+func reserved(d hostagent.EdgeDomain) hostagent.EdgeDomain {
+	d.Project = true
+	return d
+}
+
 // withACMEEmail adds ZeroSSL as the second issuer.
 func withACMEEmail(s hostagent.EdgeSnapshot) hostagent.EdgeSnapshot {
 	s.ACMEEmail = "ops@example.com"
@@ -61,6 +73,12 @@ func TestRenderMatchesGolden(t *testing.T) {
 		)},
 		// An on-demand primary whose records Cloudflare writes, beside one
 		// whose records are kept by hand.
+		// A pool: an edition's door on the primary, and a space's domain
+		// reserved for its project, where that door opens too.
+		{"project", withConsoleNames(snapshot(
+			domain("pool.example.com", hostagent.EdgeDNSOnDemand, true),
+			reserved(withProvider(domain("acme.eu.example.com", hostagent.EdgeDNSOnDemand, false))),
+		), "apps")},
 		{"provider", withACMEEmail(snapshot(
 			withProvider(domain("example.com", hostagent.EdgeDNSOnDemand, true)),
 			domain("second.test", hostagent.EdgeDNSOnDemand, false),

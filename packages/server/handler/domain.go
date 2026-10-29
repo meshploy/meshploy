@@ -353,6 +353,10 @@ func (h *Handler) ReserveDomainForProject(ctx context.Context, input *ReserveDom
 	if err != nil {
 		return nil, err
 	}
+	// The project's doors open or close on it at the edge.
+	if domain.Verified {
+		h.publishEdge(ctx, domain.OrganizationID)
+	}
 	return &GetDomainOutput{Body: domain}, nil
 }
 

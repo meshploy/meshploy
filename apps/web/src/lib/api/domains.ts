@@ -145,6 +145,15 @@ export const domains = {
       token
     ),
 
+  /** Reserves the domain for one project and its levels, or, with null,
+   *  gives it back to every project. */
+  setProject: (orgId: string, domainId: string, projectId: string | null, token: string) =>
+    apiFetch<ApiDomain>(
+      `/api/v1/orgs/${orgId}/domains/${domainId}/project`,
+      { method: "PUT", body: JSON.stringify(projectId ? { project_id: projectId } : {}) },
+      token
+    ),
+
   setDnsMode: (orgId: string, domainId: string, dnsMode: DnsMode, token: string) =>
     apiFetch<ApiDomain>(
       `/api/v1/orgs/${orgId}/domains/${domainId}/dns-mode`,

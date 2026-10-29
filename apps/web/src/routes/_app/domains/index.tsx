@@ -143,6 +143,7 @@ function BaseDomainTable({ rows }: { rows: ApiDomain[] }) {
                   </Link>
                   {d.is_primary && <Badge variant="secondary" className="text-[10px]">Primary</Badge>}
                   {d.former_primary && <Badge variant="secondary" className="text-[10px]">Former primary</Badge>}
+                  {d.project_id && <Badge variant="secondary" className="text-[10px]">Reserved</Badge>}
                   {!d.verified && (
                     <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-400">
                       Not verified
