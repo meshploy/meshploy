@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"context"
 	"net/http"
 
@@ -250,7 +251,12 @@ func (h *Handler) registerBackupRoutes(api huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid ID")
 		}
-		return nil, h.svc.Backups.Restore(ctx, id, serviceID, in.Body.Key)
+		if err := h.svc.Backups.Restore(ctx, id, serviceID, in.Body.Key); errors.Is(err, service.ErrBackupKey) {
+			return nil, huma.Error404NotFound(err.Error())
+		} else if err != nil {
+			return nil, err
+		}
+		return nil, nil
 	})
 
 	// ── System backup (admin-only) ─────────────────────────────────────────

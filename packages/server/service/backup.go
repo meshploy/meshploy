@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
+	"github.com/minio/minio-go/v7"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	cronparser "github.com/robfig/cron/v3"
 	"gorm.io/gorm"
@@ -411,12 +415,83 @@ func (s *BackupService) ListObjects(ctx context.Context, id, serviceID uuid.UUID
 		backupListPrefix(cfg.PathPrefix, dc.Slug))
 }
 
+// ErrBackupKey is a key that is not one of a backup config's own objects.
+var ErrBackupKey = errors.New("not one of this database's backups")
+
+// ownBackup refuses a key outside cfg's own objects: a bucket can hold other
+// databases' backups, which a restore or a download through this config must
+// never reach.
+func (s *BackupService) ownBackup(ctx context.Context, cfg db.BackupConfig, key string) error {
+	var dc db.DatabaseConfig
+	if err := s.db.WithContext(ctx).Where("service_id = ?", cfg.ServiceID).First(&dc).Error; err != nil {
+		return err
+	}
+	if !strings.HasPrefix(key, backupListPrefix(cfg.PathPrefix, dc.Slug)) || strings.Contains(key, "..") {
+		return ErrBackupKey
+	}
+	return nil
+}
+
+// DownloadURL is a link that fetches one of a backup config's objects straight
+// from storage for a quarter of an hour, named as a file to save. Only the
+// config's own objects are linked.
+func (s *BackupService) DownloadURL(ctx context.Context, id, serviceID uuid.UUID, key string) (string, error) {
+	var cfg db.BackupConfig
+	if err := s.db.WithContext(ctx).
+		Preload("StorageIntegration").
+		Where("id = ? AND service_id = ?", id, serviceID).First(&cfg).Error; err != nil {
+		return "", err
+	}
+	if err := s.ownBackup(ctx, cfg, key); err != nil {
+		return "", err
+	}
+	s3c, err := newS3Client(cfg.StorageIntegration)
+	if err != nil {
+		return "", err
+	}
+	params := url.Values{"response-content-disposition": {fmt.Sprintf("attachment; filename=%q", path.Base(key))}}
+	u, err := s3c.PresignedGetObject(ctx, cfg.StorageIntegration.Bucket, key, 15*time.Minute, params)
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
+}
+
+// DeleteObjects removes every backup a config has kept, for a database whose
+// data is to go with it. Deleting a database leaves its backups otherwise, as
+// what is left to recover it from.
+func (s *BackupService) DeleteObjects(ctx context.Context, id, serviceID uuid.UUID) error {
+	var cfg db.BackupConfig
+	if err := s.db.WithContext(ctx).
+		Preload("StorageIntegration").
+		Where("id = ? AND service_id = ?", id, serviceID).First(&cfg).Error; err != nil {
+		return err
+	}
+	objs, err := s.ListObjects(ctx, id, serviceID)
+	if err != nil {
+		return err
+	}
+	s3c, err := newS3Client(cfg.StorageIntegration)
+	if err != nil {
+		return err
+	}
+	for _, o := range objs {
+		if err := s3c.RemoveObject(ctx, cfg.StorageIntegration.Bucket, o.Key, minio.RemoveObjectOptions{}); err != nil {
+			return fmt.Errorf("remove %s: %w", o.Key, err)
+		}
+	}
+	return nil
+}
+
 // Restore asynchronously restores the database from the given S3 key.
 // Returns immediately with 202; the restore runs in the background.
 func (s *BackupService) Restore(ctx context.Context, id, serviceID uuid.UUID, key string) error {
 	// Validate the config exists before accepting.
 	var cfg db.BackupConfig
 	if err := s.db.WithContext(ctx).Where("id = ? AND service_id = ?", id, serviceID).First(&cfg).Error; err != nil {
+		return err
+	}
+	if err := s.ownBackup(ctx, cfg, key); err != nil {
 		return err
 	}
 	go func() {

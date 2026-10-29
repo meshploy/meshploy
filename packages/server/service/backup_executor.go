@@ -393,6 +393,9 @@ func (s *BackupService) RestoreInto(ctx context.Context, sourceCfgID uuid.UUID, 
 	if err := s.db.WithContext(ctx).Preload("StorageIntegration").First(&cfg, "id = ?", sourceCfgID).Error; err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if err := s.ownBackup(ctx, cfg, key); err != nil {
+		return err
+	}
 	var target db.Service
 	if err := s.db.WithContext(ctx).Preload("Project").First(&target, "id = ?", targetServiceID).Error; err != nil {
 		return fmt.Errorf("load target: %w", err)
