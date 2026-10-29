@@ -12,7 +12,8 @@ import type { ApiDbRoute } from "@/lib/api/routes"
  *
  * A custom hostname is a whole name, not a subdomain of a base domain this
  * organisation has already proved, so it is proved on its own: a TXT record at
- * `_meshploy-verify.<hostname>` carrying the route's token. Until it is found,
+ * `_meshploy-verify.<hostname>` carrying the route's token, or a CNAME to another
+ * of the project's own addresses. Until one is found,
  * the certificate check Caddy makes before issuing refuses the name - so a
  * route whose DNS already points here still fails its TLS handshake, and this
  * panel is the only place that says why.
@@ -95,7 +96,7 @@ export function CustomDomainOwnership({
       </div>
 
       <ol className="space-y-5">
-        <Step n={1} title="Prove you own it" done={false} detail="Add this at the DNS provider for the hostname.">
+        <Step n={1} title="Prove you own it" done={false} detail="Add this at the DNS provider for the hostname, or skip it: a CNAME to another address of this project proves the name on its own.">
           {route.custom_domain_verify_token ? (
             <RecordTable
               records={[{ name: `_meshploy-verify.${host}`, zone: zoneOf(host), type: "TXT", value: route.custom_domain_verify_token }]}

@@ -144,3 +144,17 @@ func UseDNSProvidersForTest(svc *Services, open func(kind dnsprovider.Kind, toke
 	svc.DNSProviders.open = open
 	svc.Domains.publicIP = publicIP
 }
+
+// UseDNSForTest answers custom hostname verification's lookups from maps, so
+// a test needs no records in real DNS. Returns a func that puts DNS back.
+func UseDNSForTest(cnames map[string]string, txts map[string][]string) func() {
+	oldCNAME, oldTXT := lookupCNAME, lookupTXT
+	lookupCNAME = func(host string) (string, error) {
+		if c, ok := cnames[host]; ok {
+			return c, nil
+		}
+		return host + ".", nil
+	}
+	lookupTXT = func(name string) ([]string, error) { return txts[name], nil }
+	return func() { lookupCNAME, lookupTXT = oldCNAME, oldTXT }
+}

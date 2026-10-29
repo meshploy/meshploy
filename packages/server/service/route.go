@@ -596,13 +596,41 @@ func (s *RouteService) VerifyCustomHostname(ctx context.Context, routeID uuid.UU
 		return nil, huma.Error422UnprocessableEntity(
 			"this route had no verification record yet; one has been issued - add it and check again")
 	}
-	records, err := net.LookupTXT("_meshploy-verify." + route.Hostname)
-	if err != nil || !containsToken(records, route.CustomDomainVerifyToken) {
-		return nil, huma.Error422UnprocessableEntity("TXT record not found or not yet propagated")
+	if !s.pointsAtOwnRoute(ctx, route) {
+		records, err := lookupTXT("_meshploy-verify." + route.Hostname)
+		if err != nil || !containsToken(records, route.CustomDomainVerifyToken) {
+			return nil, huma.Error422UnprocessableEntity("neither a CNAME to one of this project's addresses nor the TXT record was found, or they have not propagated yet")
+		}
 	}
 	route.CustomDomainVerified = true
 	err = s.db.WithContext(ctx).Model(route).Update("custom_domain_verified", true).Error
 	return route, err
+}
+
+// DNS lookups for custom hostname verification; tests replace them.
+var (
+	lookupCNAME = net.LookupCNAME
+	lookupTXT   = net.LookupTXT
+)
+
+// pointsAtOwnRoute is whether route's hostname is a CNAME to another
+// published hostname of the same project. Only whoever holds the name's DNS
+// can point it there, which proves it as the TXT record does, and routes it in
+// the same record: the one most people make.
+func (s *RouteService) pointsAtOwnRoute(ctx context.Context, route *db.Route) bool {
+	target, err := lookupCNAME(route.Hostname)
+	if err != nil {
+		return false
+	}
+	target = strings.TrimSuffix(strings.ToLower(target), ".")
+	if target == "" || target == strings.ToLower(route.Hostname) {
+		return false
+	}
+	var n int64
+	s.db.WithContext(ctx).Model(&db.Route{}).
+		Where("project_id = ? AND hostname = ? AND published AND id <> ?", route.ProjectID, target, route.ID).
+		Count(&n)
+	return n > 0
 }
 
 func (s *RouteService) IsCustomDomainVerified(ctx context.Context, hostname string) bool {

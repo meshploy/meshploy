@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	meshdb "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestCustomHostnameStartsUnverifiedWithAToken(t *testing.T) {
 	// The lookup is real DNS, and this name has no record: refused.
 	_, err := e.svcs.Routes.VerifyCustomHostname(ctx, route.ID)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "TXT record not found")
+	assert.Contains(t, err.Error(), "TXT record")
 }
 
 // The column defaults to empty. An empty token must never be accepted: it
@@ -54,6 +55,31 @@ func TestVerifyingAVerifiedHostnameIsANoOp(t *testing.T) {
 	require.NoError(t, e.gdb.Model(route).Update("custom_domain_verified", true).Error)
 
 	got, err := e.svcs.Routes.VerifyCustomHostname(ctx, route.ID)
+	require.NoError(t, err)
+	assert.True(t, got.CustomDomainVerified)
+}
+
+// A CNAME to one of the same project's published addresses proves the name as
+// the TXT record does; one to an address elsewhere, or to a paused route,
+// proves nothing.
+func TestACNAMEToTheProjectsOwnAddressVerifies(t *testing.T) {
+	ctx := context.Background()
+	e := newTCPEnv(t)
+	own := e.httpRoute(t, "blog.acme.example.net", false)
+	paused := e.httpRoute(t, "paused.acme.example.net", true)
+	custom := e.httpRoute(t, "blog.customer.example", false)
+	_, _ = own, paused
+
+	defer service.UseDNSForTest(map[string]string{"blog.customer.example": "elsewhere.example.org."}, nil)()
+	_, err := e.svcs.Routes.VerifyCustomHostname(ctx, custom.ID)
+	require.Error(t, err, "a CNAME to an address outside the project")
+
+	service.UseDNSForTest(map[string]string{"blog.customer.example": "paused.acme.example.net."}, nil)
+	_, err = e.svcs.Routes.VerifyCustomHostname(ctx, custom.ID)
+	require.Error(t, err, "a CNAME to a paused route")
+
+	service.UseDNSForTest(map[string]string{"blog.customer.example": "Blog.Acme.Example.NET."}, nil)
+	got, err := e.svcs.Routes.VerifyCustomHostname(ctx, custom.ID)
 	require.NoError(t, err)
 	assert.True(t, got.CustomDomainVerified)
 }
