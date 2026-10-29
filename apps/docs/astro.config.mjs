@@ -88,6 +88,11 @@ export default defineConfig({
 				},
 			],
 			customCss: ['./src/styles/custom.css'],
+			// Fetched at once rather than after the CSS that names it, so the
+			// fallback shows for as short a time as possible.
+			head: [
+				{ tag: 'link', attrs: { rel: 'preload', href: '/fonts/Manrope-variable.woff2', as: 'font', type: 'font/woff2', crossorigin: '' } },
+			],
 		}),
 	],
 });

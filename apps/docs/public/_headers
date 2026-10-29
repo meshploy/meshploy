@@ -1,0 +1,8 @@
+# How long a browser keeps a file before asking again. Astro names its built
+# assets by a hash of their contents, and the fonts are renamed when they
+# change, so both are kept for a year. Pages keep the host's short default, so
+# a release shows within seconds.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable

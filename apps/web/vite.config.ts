@@ -67,6 +67,9 @@ export default defineConfig({
     TanStackRouterVite({
       routesDirectory: "./src/routes",
       generatedRouteTree: "./src/routeTree.gen.ts",
+      // Each page in a file of its own, fetched when it is opened: the first
+      // load is the shell and the page asked for, not the whole console.
+      autoCodeSplitting: true,
     }),
     react(),
     ...(editionDir ? [editionSource(editionDir)] : []),

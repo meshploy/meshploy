@@ -1,35 +1,24 @@
 /* Meshploy product typography. These files are copied from apps/web at sync time. */
 @font-face {
   font-family: "Manrope";
-  src: url("/fonts/Manrope-400.ttf") format("truetype");
-  font-weight: 400;
+  src: url("/fonts/Manrope-variable.woff2") format("woff2");
+  font-weight: 200 800;
   font-style: normal;
   font-display: swap;
+}
+/* Shown until Manrope arrives: Arial or Helvetica, scaled to Manrope's width
+   and line height, so the text does not move when Manrope replaces it. */
+@font-face {
+  font-family: "Manrope Fallback";
+  src: local("Arial"), local("Helvetica Neue"), local("Helvetica"), local("Liberation Sans");
+  size-adjust: 101.5%;
+  ascent-override: 105.03%;
+  descent-override: 29.56%;
+  line-gap-override: 0%;
 }
 
-@font-face {
-  font-family: "Manrope";
-  src: url("/fonts/Manrope-500.ttf") format("truetype");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
 
-@font-face {
-  font-family: "Manrope";
-  src: url("/fonts/Manrope-600.ttf") format("truetype");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
 
-@font-face {
-  font-family: "Manrope";
-  src: url("/fonts/Manrope-700.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
 
 @font-face {
   font-family: "Geist Mono";
@@ -48,7 +37,7 @@
 }
 
 :root {
-  --sl-font: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --sl-font: "Manrope", "Manrope Fallback", ui-sans-serif, system-ui, sans-serif;
   --sl-font-mono: "Geist Mono", ui-monospace, monospace;
   --sl-nav-height: 4.25rem;
   --sl-sidebar-width: 18rem;

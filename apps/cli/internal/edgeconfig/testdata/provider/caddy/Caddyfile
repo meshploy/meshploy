@@ -91,6 +91,11 @@
         reverse_proxy 127.0.0.1:4000
     }
     handle {
+        # The web app compressed at the edge: its script and styles shrink to
+        # a fraction, and nothing behind compresses them. Only here: the API's
+        # log streams are events that must arrive as they happen, not when a
+        # compressor's buffer fills.
+        encode zstd gzip
         reverse_proxy 127.0.0.1:5173
     }
 }

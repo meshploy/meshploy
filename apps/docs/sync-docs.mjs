@@ -107,10 +107,7 @@ const staticAssets = [
   { src: `${webPublic}/apple-touch-icon.png`,     dest: resolve(__dirname, 'public/apple-touch-icon.png') },
   { src: `${webPublic}/fonts/GeistMono-Regular.woff2`, dest: resolve(__dirname, 'public/fonts/GeistMono-Regular.woff2') },
   { src: `${webPublic}/fonts/GeistMono-Medium.woff2`,  dest: resolve(__dirname, 'public/fonts/GeistMono-Medium.woff2') },
-  { src: `${webPublic}/fonts/Manrope-400.ttf`,         dest: resolve(__dirname, 'public/fonts/Manrope-400.ttf') },
-  { src: `${webPublic}/fonts/Manrope-500.ttf`,         dest: resolve(__dirname, 'public/fonts/Manrope-500.ttf') },
-  { src: `${webPublic}/fonts/Manrope-600.ttf`,         dest: resolve(__dirname, 'public/fonts/Manrope-600.ttf') },
-  { src: `${webPublic}/fonts/Manrope-700.ttf`,         dest: resolve(__dirname, 'public/fonts/Manrope-700.ttf') },
+  { src: `${webPublic}/fonts/Manrope-variable.woff2`, dest: resolve(__dirname, 'public/fonts/Manrope-variable.woff2') },
   // src/assets/logo.svg is deliberately NOT synced from favicon.svg. It used to
   // be, back when the two were the same file — but the favicon now draws its
   // diagonals at weight 4 so the mark survives 16px, while the header logo

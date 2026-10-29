@@ -31,6 +31,9 @@ RUN printf 'server {\n\
     location /config.js {\n\
         add_header Cache-Control "no-store";\n\
     }\n\
+    location = /index.html {\n\
+        add_header Cache-Control "no-cache";\n\
+    }\n\
     location / {\n\
         try_files $uri $uri/ /index.html;\n\
     }\n\
