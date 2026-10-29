@@ -50,6 +50,10 @@ func (h *Handler) brandName(ctx context.Context, host string, orgID uuid.UUID) s
 	return html.EscapeString(b.Name)
 }
 
+// UnroutedHeader marks the proxy's answer for a hostname no route serves. The
+// edge's Caddyfile names it too.
+const UnroutedHeader = "X-Meshploy-Unrouted"
+
 func NewHandler(c *cache.Cache) *Handler {
 	return &Handler{cache: c}
 }
@@ -76,6 +80,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// Tells the edge this 404 is the proxy's, not a route's.
+		w.Header().Set(UnroutedHeader, "1")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, notFoundPage, h.brandName(r.Context(), hostname, uuid.Nil), html.EscapeString(hostname))
 		return

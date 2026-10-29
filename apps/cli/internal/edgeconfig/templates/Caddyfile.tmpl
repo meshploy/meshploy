@@ -161,6 +161,24 @@ console.{{ .BaseDomain }}{{ $base := .BaseDomain }}{{ range $.ConsoleNames }}, {
 {{- template "named_tls" . }}
     import console_site
 }
+{{- if or (eq .DNSMode "delegation") .DNSProvider }}
+
+# ── The bare domain ──────────────────────────────────────────────────────────
+# The wildcard does not cover it. A route on it is served; with none, it leads
+# to the first door. Only where control is proved through DNS: the bare name
+# may point at a site elsewhere, which an HTTP challenge would keep failing on.
+{{ .BaseDomain }} {
+{{- template "named_tls" . }}
+    reverse_proxy 127.0.0.1:{{ $.ProxyPort }} {
+        # The proxy marks its own "no route" answer, so a route's own 404
+        # is passed on as it is.
+        @unrouted header X-Meshploy-Unrouted 1
+        handle_response @unrouted {
+            redir https://{{ index $.ConsoleNames 0 }}.{{ .BaseDomain }}{uri} 302
+        }
+    }
+}
+{{- end }}
 {{- end }}
 {{ end }}
 # ── Public workload routes ───────────────────────────────────────────────────

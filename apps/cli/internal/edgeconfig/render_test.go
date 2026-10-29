@@ -523,6 +523,40 @@ func TestConsoleNamesAreServedAsTheConsole(t *testing.T) {
 	assert.Contains(t, files["caddy/Caddyfile"], "console.example.com, apps.example.com {\n    tls force_automate")
 }
 
+// A reserved domain's bare name leads to its door where control is proved
+// through DNS, and is left alone where it is not: an HTTP challenge would keep
+// failing for a bare name that points at a site elsewhere. Without doors, as
+// in Community, nothing changes.
+func TestABareReservedDomainLeadsToItsDoor(t *testing.T) {
+	block := "\nacme.example.com {\n"
+	for _, c := range []struct {
+		name string
+		d    hostagent.EdgeDomain
+		want bool
+	}{
+		{"delegated", reserved(domain("acme.example.com", hostagent.EdgeDNSDelegation, false)), true},
+		{"through a provider", reserved(withProvider(domain("acme.example.com", hostagent.EdgeDNSOnDemand, false))), true},
+		{"on demand by hand", reserved(domain("acme.example.com", hostagent.EdgeDNSOnDemand, false)), false},
+		{"not reserved", withProvider(domain("acme.example.com", hostagent.EdgeDNSOnDemand, false)), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			snap := withConsoleNames(snapshot(domain("pool.example.com", hostagent.EdgeDNSOnDemand, true), c.d), "apps")
+			files, err := Render(snap)
+			require.NoError(t, err)
+			caddy := files["caddy/Caddyfile"]
+			assert.Equal(t, c.want, strings.Contains(caddy, block))
+			if c.want {
+				assert.Contains(t, caddy, "redir https://apps.acme.example.com{uri} 302")
+			}
+
+			snap.ConsoleNames = nil
+			files, err = Render(snap)
+			require.NoError(t, err)
+			assert.NotContains(t, files["caddy/Caddyfile"], block, "no doors, no change")
+		})
+	}
+}
+
 // A project's door is served as the console is, on the domains that serve the
 // platform, with a certificate of its own in either DNS mode and no zone
 // record: one would make the project's slug a name the wildcard stops

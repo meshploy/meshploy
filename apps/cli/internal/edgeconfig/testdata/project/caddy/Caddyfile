@@ -159,6 +159,24 @@ apps.acme.eu.example.com {
     import console_site
 }
 
+# ── The bare domain ──────────────────────────────────────────────────────────
+# The wildcard does not cover it. A route on it is served; with none, it leads
+# to the first door. Only where control is proved through DNS: the bare name
+# may point at a site elsewhere, which an HTTP challenge would keep failing on.
+acme.eu.example.com {
+    tls {
+        dns cloudflare {file./etc/caddy/secrets/0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90}
+    }
+    reverse_proxy 127.0.0.1:8081 {
+        # The proxy marks its own "no route" answer, so a route's own 404
+        # is passed on as it is.
+        @unrouted header X-Meshploy-Unrouted 1
+        handle_response @unrouted {
+            redir https://apps.acme.eu.example.com{uri} 302
+        }
+    }
+}
+
 # ── Public workload routes ───────────────────────────────────────────────────
 # The proxy reads the Host header, looks the route up, and forwards to the
 # target node over the mesh.
