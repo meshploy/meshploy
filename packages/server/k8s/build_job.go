@@ -230,11 +230,19 @@ func DeleteBuildCachePVC(ctx context.Context, client kubernetes.Interface, names
 	return nil
 }
 
+// BuildDeadline is the longest a build runs. A first build of a large
+// repository, with no cache, can take over 30 minutes. The pod is stopped at
+// it as well as waited for, so a build nobody waits for any longer holds no
+// node; and a pod with a deadline is "terminating" to a ResourceQuota, which
+// lets a quota on a project's apps leave its builds out.
+const BuildDeadline = 60 * time.Minute
+
 // CreateBuildJob submits a K8s Job that clones, builds, and pushes the image.
 // Returns the job name.
 func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJobParams) error {
 	ttl := int32(3600) // clean up finished jobs after 1h
 	backoff := int32(0)
+	deadline := int64(BuildDeadline / time.Second)
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -254,8 +262,9 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 				},
 				Spec: corev1.PodSpec{
 					// No legacy service-link variables: see ApplyDeployment.
-					EnableServiceLinks: boolPtr(false),
-					RestartPolicy:      corev1.RestartPolicyNever,
+					EnableServiceLinks:    boolPtr(false),
+					RestartPolicy:         corev1.RestartPolicyNever,
+					ActiveDeadlineSeconds: &deadline,
 					// Use ndots:1 so external hostnames like github.com are
 					// queried directly without appending cluster search domains.
 					// Alpine's musl libc resolver sends all search domain variants

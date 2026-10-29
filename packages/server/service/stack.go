@@ -835,9 +835,6 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					HealthcheckRetries:         hcRetries,
 					HealthcheckStartPeriodSecs: hcStartPeriod,
 				}
-				if dbInput.StorageGB == 0 {
-					dbInput.StorageGB = defaultDBStorageGB
-				}
 				svc, createErr = s.workload.Create(ctx, stack.ProjectID, dbInput)
 			} else {
 				input := CreateWorkloadInput{
@@ -1126,7 +1123,8 @@ func (s *StackService) resolveNamedVolumes(
 		}
 		// Stack-declared volumes are unpinned: the compose spec says nothing about
 		// placement, so let the provisioner choose when the first pod mounts them.
-		created, err := s.volumes.Create(ctx, projectID, storedName, 5, nil)
+		// Nor size: the default, which a project's limit may lower.
+		created, err := s.volumes.Create(ctx, projectID, storedName, 0, nil)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("volume %s: %v", volName, err))
 			continue

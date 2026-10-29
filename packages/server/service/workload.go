@@ -221,6 +221,9 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 	if in.Type == db.ServiceTypeDatabase {
 		return s.createDatabase(ctx, projectID, in)
 	}
+	if err := checkProjectQuota(ctx, s.db, projectID, QuotaService, 0); err != nil {
+		return nil, err
+	}
 
 	replicas := in.Replicas
 	if replicas == 0 {
@@ -442,7 +445,10 @@ func (s *WorkloadService) createDatabase(ctx context.Context, projectID uuid.UUI
 	}
 	storageGB := in.StorageGB
 	if storageGB == 0 {
-		storageGB = defaultDBStorageGB
+		storageGB = storageDefault(ctx, s.db, projectID, defaultDBStorageGB)
+	}
+	if err := checkProjectQuota(ctx, s.db, projectID, QuotaDatabase, storageGB); err != nil {
+		return nil, err
 	}
 	dbName := in.DBName
 	if dbName == "" {

@@ -473,11 +473,9 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 // It is the part of a pipeline an API restart can pick up again: the job goes
 // on in the cluster whatever happens to the process that started it.
 func (s *DeploymentService) followBuild(ctx context.Context, a runPipelineArgs) {
-	// Wait for the job to finish (up to 60 minutes).
-	// A first build of a large repository, with no cache, can exceed 30
-	// minutes.
+	// Wait for the job to finish, as long as a build may run.
 	result := appk8s.WaitForJobWith(ctx, s.k8s, a.namespace, a.jobName, appk8s.JobWaitOptions{
-		Timeout:       60 * time.Minute,
+		Timeout:       appk8s.BuildDeadline,
 		Unschedulable: buildUnschedulableGrace,
 		OnStarted: func(node string) {
 			s.setStatus(a.deployment.ID, db.DeploymentBuilding, "Build job created: "+a.jobName+"\nBuilding on node "+node)

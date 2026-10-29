@@ -297,7 +297,7 @@ packages/server/
 │   ├── template.go         # One-click template deploy: resolve, stack, routes
 │   ├── entitlement.go      # Licence verification + entitlements
 │   ├── brand.go            # An org's brand; Meshploy's until an edition registers a source
-│   ├── extension.go        # Extension point: per-org quotas (EE)
+│   ├── extension.go        # Extension points: per-org and per-project quotas, forget hooks (EE)
 │   ├── orphans.go          # Cluster workloads that no service owns
 │   ├── workload_status.go  # Reconciles stored service status with the cluster
 │   ├── volume_status.go    # Reconciles stored volume status with its claim

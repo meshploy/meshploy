@@ -57,6 +57,94 @@ func checkQuota(ctx context.Context, orgID uuid.UUID, kind QuotaKind) error {
 	return nil
 }
 
+// Extension point: per-project limits.
+//
+// Where projects sharing an organisation belong to different people, each has
+// limits of its own. CE registers no checker, so nothing is limited.
+
+// ProjectQuota is one more thing a project is about to hold. ProjectID is the
+// project itself, also for something created in one of its levels: a project
+// and its levels share their limits.
+type ProjectQuota struct {
+	OrganizationID uuid.UUID
+	ProjectID      uuid.UUID
+	Kind           QuotaKind
+	// StorageGB is the storage a volume or database asks for; 0 otherwise.
+	StorageGB int
+}
+
+// Kinds only a project quota meters: what takes storage.
+const (
+	QuotaDatabase QuotaKind = "database"
+	QuotaVolume   QuotaKind = "volume"
+)
+
+// ProjectQuotaChecker limits what a project holds.
+type ProjectQuotaChecker interface {
+	// CheckProjectQuota refuses q with a user-facing error, or allows it.
+	CheckProjectQuota(ctx context.Context, q ProjectQuota) error
+	// StorageDefault is the storage a new volume or database gets when none
+	// was asked for: fallback, or less where the project's limit leaves less.
+	StorageDefault(ctx context.Context, projectID uuid.UUID, fallback int) int
+}
+
+var projectQuotaCheckers []ProjectQuotaChecker
+
+// RegisterProjectQuotaChecker adds a project quota checker. Call from an
+// extension's init().
+func RegisterProjectQuotaChecker(c ProjectQuotaChecker) {
+	projectQuotaCheckers = append(projectQuotaCheckers, c)
+}
+
+// quotaProject is the project a project or level's limits are kept on, with
+// its organisation.
+func quotaProject(ctx context.Context, tx *gorm.DB, projectID uuid.UUID) (orgID, rootID uuid.UUID, err error) {
+	var p db.Project
+	if err := tx.WithContext(ctx).Select("id", "organization_id", "parent_project_id").First(&p, "id = ?", projectID).Error; err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	if p.ParentProjectID != nil {
+		return p.OrganizationID, *p.ParentProjectID, nil
+	}
+	return p.OrganizationID, p.ID, nil
+}
+
+// checkProjectQuota runs every project checker on one more kind in
+// projectID, a project or a level. A no-op in CE builds.
+func checkProjectQuota(ctx context.Context, tx *gorm.DB, projectID uuid.UUID, kind QuotaKind, storageGB int) error {
+	if len(projectQuotaCheckers) == 0 {
+		return nil
+	}
+	orgID, rootID, err := quotaProject(ctx, tx, projectID)
+	if err != nil {
+		return err
+	}
+	q := ProjectQuota{OrganizationID: orgID, ProjectID: rootID, Kind: kind, StorageGB: storageGB}
+	for _, c := range projectQuotaCheckers {
+		if err := c.CheckProjectQuota(ctx, q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// storageDefault is the storage a new volume or database in projectID gets
+// when none was asked for.
+func storageDefault(ctx context.Context, tx *gorm.DB, projectID uuid.UUID, fallback int) int {
+	if len(projectQuotaCheckers) == 0 {
+		return fallback
+	}
+	_, rootID, err := quotaProject(ctx, tx, projectID)
+	if err != nil {
+		return fallback
+	}
+	gb := fallback
+	for _, c := range projectQuotaCheckers {
+		gb = min(gb, c.StorageDefault(ctx, rootID, fallback))
+	}
+	return max(gb, 1)
+}
+
 // Extension point: a service's deletion.
 
 // ServiceDeleteHook runs inside a service's deletion, in its transaction and

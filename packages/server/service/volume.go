@@ -54,7 +54,10 @@ func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name st
 		return nil, fmt.Errorf("name is required")
 	}
 	if storageGB <= 0 {
-		storageGB = 5
+		storageGB = storageDefault(ctx, s.db, projectID, 5)
+	}
+	if err := checkProjectQuota(ctx, s.db, projectID, QuotaVolume, storageGB); err != nil {
+		return nil, err
 	}
 	nodeName, err := s.resolveNodeName(ctx, nodeID)
 	if err != nil {
