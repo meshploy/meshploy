@@ -158,3 +158,12 @@ func UseDNSForTest(cnames map[string]string, txts map[string][]string) func() {
 	lookupTXT = func(name string) ([]string, error) { return txts[name], nil }
 	return func() { lookupCNAME, lookupTXT = oldCNAME, oldTXT }
 }
+
+// ServiceEnvForTest exposes what a service's containers are given.
+func ServiceEnvForTest(ctx context.Context, s *Services, svc *meshdb.Service) map[string]string {
+	out := map[string]string{}
+	for _, e := range s.Deployments.serviceEnv(ctx, svc, 3000, uuid.Nil) {
+		out[e.Name] = e.Value
+	}
+	return out
+}

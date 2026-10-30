@@ -1998,9 +1998,18 @@ func runtimeEnvVars(envBlock string, port int32) []corev1.EnvVar {
 // loop, is left as written and noted in the deployment's log, so a typo shows
 // up instead of becoming an empty value. deploymentID is uuid.Nil where there
 // is no deployment to note it in.
+//
+// The service's variables are read here, as its groups' are, and not taken
+// from svc: a deploy loads svc when it starts, and what is saved during the
+// build must reach what the build starts.
 func (s *DeploymentService) serviceEnv(ctx context.Context, svc *db.Service, port int32, deploymentID uuid.UUID) []corev1.EnvVar {
+	own := svc.EnvVars
+	var now db.Service
+	if err := s.db.WithContext(ctx).Select("id", "env_vars").First(&now, "id = ?", svc.ID).Error; err == nil {
+		own = now.EnvVars
+	}
 	groupEnvs, _ := s.varGroups.CollectEnvVars(ctx, svc.ID)
-	envs, unknown, looped := resolveEnvRefs(mergeSecretEnvs(runtimeEnvVars(string(svc.EnvVars), port), groupEnvs))
+	envs, unknown, looped := resolveEnvRefs(mergeSecretEnvs(runtimeEnvVars(string(own), port), groupEnvs))
 	var notes []string
 	if len(unknown) > 0 {
 		notes = append(notes, "Left as written, not defined for this service: ${"+strings.Join(unknown, "}, ${")+"}")
