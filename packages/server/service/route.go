@@ -260,6 +260,23 @@ func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Rou
 		route.Targets = append(route.Targets, *target)
 	}
 
+	// A route asked to go live while a service it leads to has no address yet
+	// (made with the service, before its first build) would answer with an
+	// error. It waits for that deploy instead, which gives it the address and
+	// publishes it (PublishAwaitingRoutes).
+	if !in.Paused {
+		for _, t := range route.Targets {
+			if t.ServiceID != nil && t.TargetPort == 0 {
+				if err := s.db.WithContext(ctx).Model(route).
+					Updates(map[string]any{"published": false, "awaiting_deploy": true}).Error; err != nil {
+					return nil, err
+				}
+				route.Published, route.AwaitingDeploy = false, true
+				break
+			}
+		}
+	}
+
 	// Sort targets longest-path-first for consistent API response.
 	sort.Slice(route.Targets, func(i, j int) bool {
 		return len(route.Targets[i].Path) > len(route.Targets[j].Path)

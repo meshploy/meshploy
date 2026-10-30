@@ -170,3 +170,36 @@ func TestARouteWithNoHostnameIsRefused(t *testing.T) {
 	gdb.Model(&meshdb.Route{}).Count(&n)
 	assert.Zero(t, n)
 }
+
+// A route made live for a service that has no address yet, as an app's own
+// address is made with the app before its first build, waits for that build
+// rather than answering with an error, and the build publishes it.
+func TestARouteToAServiceNotYetDeployedWaitsForIt(t *testing.T) {
+	ctx := context.Background()
+	svcs, gdb, prod, _, _, web, _ := newChain(t)
+	var project meshdb.Project
+	require.NoError(t, gdb.First(&project, "id = ?", prod).Error)
+	domain := meshdb.Domain{OrganizationID: project.OrganizationID, BaseDomain: "waits.dev", InternalSubdomain: "internal",
+		PreviewSubdomain: "preview", Verified: true, IsPrimary: true, VerifyToken: "t"}
+	require.NoError(t, gdb.Create(&domain).Error)
+	require.NoError(t, gdb.Model(&meshdb.ServicePort{}).Where("service_id = ?", web.ID).
+		Updates(map[string]any{"node_port": 0, "is_public": true}).Error)
+
+	route, err := svcs.Routes.Create(ctx, service.CreateRouteInput{OrgID: project.OrganizationID, ProjectID: prod,
+		DomainID: &domain.ID, Zone: meshdb.RouteZonePublic, Subdomain: "notes",
+		Targets: []service.TargetInput{{Path: "/", ServiceID: &web.ID, AllowUnresolved: true}}})
+	require.NoError(t, err)
+	assert.False(t, route.Published, "nothing to serve yet")
+	assert.True(t, route.AwaitingDeploy)
+
+	require.NoError(t, gdb.Model(&meshdb.ServicePort{}).Where("service_id = ?", web.ID).Update("node_port", 31666).Error)
+	require.NoError(t, gdb.Create(&meshdb.Node{OrganizationID: project.OrganizationID, Name: "gw-waits", TailscaleIP: "100.64.0.9",
+		K3sRole: meshdb.K3sRoleServer, Status: meshdb.NodeOnline}).Error)
+	svcs.Routes.PublishAwaitingRoutes(ctx, web.ID)
+
+	var got meshdb.Route
+	require.NoError(t, gdb.Preload("Targets").First(&got, "id = ?", route.ID).Error)
+	assert.True(t, got.Published)
+	assert.False(t, got.AwaitingDeploy)
+	assert.Equal(t, 31666, got.Targets[0].TargetPort)
+}
