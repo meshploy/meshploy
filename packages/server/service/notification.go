@@ -578,6 +578,7 @@ func (d NotificationData) origin() string {
 // facts whichever channel it goes to.
 type notice struct {
 	Brand       string // the organisation's name for itself, as the message is signed
+	BrandInfo   meshdb.Brand
 	Event       string
 	Title       string
 	Tone        EventTone
@@ -603,7 +604,7 @@ func (s *NotificationService) consoleBase() string {
 }
 
 func (s *NotificationService) notice(brand meshdb.Brand, channel, event string, data NotificationData) notice {
-	n := notice{Brand: brand.Name, Event: event, Title: eventTitle(event), Data: data, Channel: channel, At: time.Now()}
+	n := notice{Brand: brand.Name, BrandInfo: brand, Event: event, Title: eventTitle(event), Data: data, Channel: channel, At: time.Now()}
 	if d, ok := eventDef(event); ok {
 		n.Tone = d.Tone
 	}

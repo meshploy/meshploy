@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Heading}}</title></head>
+<body style="margin:0;padding:0;background:#f4f4f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
+<tr><td align="center" style="padding:32px 16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;">
+    <tr><td style="height:4px;background:{{.Colour}};border-radius:12px 12px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+    <tr><td style="padding:24px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:20px;font-weight:600;letter-spacing:-.01em;color:#18181b;">{{.Brand}}</td></tr>
+    <tr><td style="padding:20px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <h1 style="margin:0;font-size:20px;line-height:28px;font-weight:600;color:#18181b;">{{.Heading}}</h1>
+      {{if .Body}}<p style="margin:8px 0 0;font-size:14px;line-height:22px;color:#3f3f46;">{{.Body}}</p>{{end}}
+    </td></tr>
+    {{if .Facts}}<tr><td style="padding:16px 32px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;">
+        {{range .Facts}}<tr>
+          <td style="padding:8px 0;border-top:1px solid #f4f4f5;color:#71717a;width:96px;vertical-align:top;">{{.Label}}</td>
+          <td style="padding:8px 0;border-top:1px solid #f4f4f5;color:#18181b;vertical-align:top;">{{.Value}}</td>
+        </tr>{{end}}
+      </table>
+    </td></tr>{{end}}
+    {{if .Error}}<tr><td style="padding:12px 32px 0;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#71717a;margin-bottom:6px;">What it said</div>
+      <pre style="margin:0;padding:12px 14px;background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;font-family:SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:18px;color:#b91c1c;white-space:pre-wrap;word-break:break-word;">{{.Error}}</pre>
+    </td></tr>{{end}}
+    {{if .Link}}<tr><td style="padding:24px 32px 0;">
+      <a href="{{.Link}}" style="display:inline-block;padding:11px 20px;background:{{.ButtonColour}};border-radius:8px;color:{{.ButtonText}};text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;">{{.Button}}</a>
+    </td></tr>{{end}}
+    {{if or .Note .Paste}}<tr><td style="padding:16px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#71717a;">
+      {{.Note}}{{if .Paste}}{{if .Note}} {{end}}If the button does not open, copy this address into your browser:<br><a href="{{.Link}}" style="color:#047857;word-break:break-all;">{{.Link}}</a>{{end}}
+    </td></tr>{{end}}
+    {{if .After}}<tr><td style="padding:12px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#71717a;">{{.After}}</td></tr>{{end}}
+    <tr><td style="padding:24px 32px 28px;"><div style="border-top:1px solid #f4f4f5;padding-top:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#a1a1aa;">
+      {{.Footer}}{{if .FooterURL}} <a href="{{.FooterURL}}" style="color:#71717a;">{{.FooterLink}}</a>{{end}}
+      {{if .ManageURL}}<br><a href="{{.ManageURL}}" style="color:#71717a;">Change what this channel receives</a>{{end}}
+    </div></td></tr>
+  </table>
+</td></tr>
+</table>
+</body>
+</html>
