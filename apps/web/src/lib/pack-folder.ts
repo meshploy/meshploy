@@ -3,6 +3,8 @@
 // .git, installed dependencies, .env files (an example of one is kept) and
 // what the folder's .gitignore and .meshployignore name.
 
+import { detectVariables, type FoundVariable } from "./detect-variables"
+
 /** The most the API takes, packed. */
 export const MAX_PACKED_BYTES = 100 * 1024 * 1024
 
@@ -12,6 +14,8 @@ export interface PackedFolder {
   files: number
   /** Left out by a rule rather than an ignore file: what a user may wonder about. */
   skipped: string[]
+  /** What the folder's example env files name and its code reads. */
+  variables: FoundVariable[]
 }
 
 interface FolderFile {
@@ -162,7 +166,10 @@ export async function packFolder(name: string, all: FolderFile[], preSkipped: st
   if (archive.size > MAX_PACKED_BYTES) {
     throw new Error(`The folder is over ${MAX_PACKED_BYTES / 1048576} MB packed: leave out build output with a .meshployignore.`)
   }
-  return { name, archive: new Blob([archive], { type: "application/gzip" }), files: files.length, skipped: [...skipped].sort() }
+  return {
+    name, archive: new Blob([archive], { type: "application/gzip" }), files: files.length, skipped: [...skipped].sort(),
+    variables: await detectVariables(files),
+  }
 }
 
 const encoder = new TextEncoder()

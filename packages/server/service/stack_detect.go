@@ -47,6 +47,8 @@ type Detection struct {
 	MemoryLimit  string `json:"memory_limit,omitempty"`
 	// Notes explain a suggestion, or say what could not be worked out.
 	Notes []string `json:"notes,omitempty"`
+	// Variables are what its example env files name and its code reads.
+	Variables []FoundVariable `json:"variables,omitempty"`
 }
 
 // repoView is a repository's files, by path, with their sizes, and a way to
@@ -261,6 +263,7 @@ func (s *GitIntegrationService) DetectStack(ctx context.Context, orgID uuid.UUID
 	}
 	defer cleanup()
 	d := suggest(detectStack(r, dockerfilePath))
+	d.Variables = detectVariables(r)
 	return &d, nil
 }
 

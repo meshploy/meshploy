@@ -1,4 +1,5 @@
 import { apiFetch } from "./core"
+import type { FoundVariable } from "@/lib/detect-variables"
 
 // The providers connected with a token or an OAuth app. GitHub is not one of
 // them: it is a GitHub App, with its own flow.
@@ -141,4 +142,6 @@ export interface ApiDetection {
   start_command?: string
   memory_limit?: string
   notes?: string[]
+  /** What the repository's example env files name and its code reads. */
+  variables?: FoundVariable[]
 }
