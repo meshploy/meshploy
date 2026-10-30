@@ -66,6 +66,26 @@ func domainsReservedFor(ctx context.Context, gdb *gorm.DB, projectID uuid.UUID) 
 	return names, err
 }
 
+// ProjectConsoleURL is where one of an edition's console names (its doors) is
+// served for a project on a base domain reserved for it, or "" when the
+// project has none or the name is the platform's own: a person who began
+// something there is returned there, signed in, and not to the primary.
+func (s *DomainService) ProjectConsoleURL(ctx context.Context, projectID uuid.UUID, name string) string {
+	if name == "" || name == "console" || !IsConsoleName(name) {
+		return ""
+	}
+	root, err := rootProject(ctx, s.db, projectID)
+	if err != nil {
+		return ""
+	}
+	var d db.Domain
+	if s.db.WithContext(ctx).Where("project_id = ? AND verified AND retiring_at IS NULL", root).
+		Order("created_at").First(&d).Error != nil {
+		return ""
+	}
+	return "https://" + name + "." + d.BaseDomain
+}
+
 // refuseIfDomainReserved is the check before a project is deleted: its
 // domain's records are removed with the domain, which is its own decision.
 func refuseIfDomainReserved(ctx context.Context, gdb *gorm.DB, projectID uuid.UUID) error {

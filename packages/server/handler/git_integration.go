@@ -110,6 +110,8 @@ type InitGitHubIntegrationInput struct {
 		// StartedFrom is the platform name the browser starts from, for
 		// GitHub's redirects to return it there. Empty is the console.
 		StartedFrom string `json:"started_from,omitempty"`
+		// ProjectID reserves the connection for that project and its levels.
+		ProjectID string `json:"project_id,omitempty"`
 	}
 }
 
@@ -147,6 +149,55 @@ func (h *Handler) gitIntegrationInOrg(ctx context.Context, orgIDStr string, id u
 	return nil
 }
 
+// gitIntegrationUsableIn refuses a connection that is not the org's, or one
+// reserved for a project other than projectIDStr's: what a service or stack
+// in that project may build from.
+func (h *Handler) gitIntegrationUsableIn(ctx context.Context, orgIDStr string, id uuid.UUID, projectIDStr string) error {
+	orgID, err := parseUUID(orgIDStr)
+	if err != nil {
+		return err
+	}
+	projectID, err := parseUUID(projectIDStr)
+	if err != nil {
+		return err
+	}
+	switch err := h.svc.GitIntegrations.UsableIn(ctx, orgID, id, projectID); {
+	case errors.Is(err, service.ErrGitIntegrationNotFound):
+		return huma.Error404NotFound("git integration not found")
+	case errors.Is(err, service.ErrGitIntegrationReserved):
+		return huma.Error422UnprocessableEntity(err.Error())
+	case err != nil:
+		return huma.Error500InternalServerError("check git integration", err)
+	}
+	return nil
+}
+
+// gitIntegrationAccess admits the caller to one connection. One reserved for
+// a project is reached through the project, by anyone allowed action on it;
+// any other is the organization's, an admin's where admin is set and any
+// member's otherwise. A reserved connection the caller may not reach is not
+// found, as one of another organization is.
+func (h *Handler) gitIntegrationAccess(ctx context.Context, orgIDStr, idStr string, action db.ResourceAction, admin bool) (orgID, id uuid.UUID, err error) {
+	callerID, orgID, id, err := h.checkOrgMemberAccess(ctx, orgIDStr, idStr)
+	if err != nil {
+		return orgID, id, err
+	}
+	row, err := h.svc.GitIntegrations.GetByID(ctx, id)
+	if err != nil || row.OrganizationID != orgID {
+		return orgID, id, huma.Error404NotFound("git integration not found")
+	}
+	if row.ProjectID != nil {
+		if h.svc.Permissions.CheckAccess(ctx, orgID, callerID, *row.ProjectID, db.ResourceProject, action, nil) != nil {
+			return orgID, id, huma.Error404NotFound("git integration not found")
+		}
+		return orgID, id, nil
+	}
+	if admin {
+		err = h.enforceAdminRole(ctx, orgID, callerID)
+	}
+	return orgID, id, err
+}
+
 func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 	const tag = "Git Integrations"
 
@@ -160,16 +211,36 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *struct {
 		OrgID string `path:"orgId"`
+		// Project narrows the list to what that project may build from.
+		Project string `query:"project"`
 	}) (*ListGitIntegrationsOutput, error) {
-		_, orgID, _, err := h.checkOrgMemberAccess(ctx, in.OrgID, "")
+		callerID, orgID, _, err := h.checkOrgMemberAccess(ctx, in.OrgID, "")
 		if err != nil {
 			return nil, err
+		}
+		var projectID uuid.UUID
+		if in.Project != "" {
+			if projectID, err = parseUUID(in.Project); err != nil {
+				return nil, err
+			}
 		}
 		rows, err := h.svc.GitIntegrations.List(ctx, orgID)
 		if err != nil {
 			return nil, err
 		}
-		return &ListGitIntegrationsOutput{Body: rows}, nil
+		// A connection reserved for a project shows only to those who may
+		// view it.
+		shown := rows[:0]
+		for _, r := range rows {
+			if r.ProjectID != nil && h.svc.Permissions.CheckAccess(ctx, orgID, callerID, *r.ProjectID, db.ResourceProject, db.ActionView, nil) != nil {
+				continue
+			}
+			if in.Project != "" && h.svc.GitIntegrations.UsableIn(ctx, orgID, r.ID, projectID) != nil {
+				continue
+			}
+			shown = append(shown, r)
+		}
+		return &ListGitIntegrationsOutput{Body: shown}, nil
 	})
 
 	// Init GitHub integration (create pending row + return manifest setup data)
@@ -181,16 +252,26 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Tags:          []string{tag},
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusCreated,
-	}, func(ctx context.Context, in *InitGitHubIntegrationInput) (*InitGitHubIntegrationOutput, error) {
-		_, orgID, _, err := h.checkOrgAdminAccess(ctx, in.OrgID, "")
+	}, func(ctx context.Context, in *InitGitHubIntegrationInput) (out *InitGitHubIntegrationOutput, err error) {
+		// A connection reserved for a project is made by anyone who may add
+		// to it; the organization's own, by an admin.
+		var callerID, orgID uuid.UUID
+		var projectID *uuid.UUID
+		if in.Body.ProjectID != "" {
+			var id uuid.UUID
+			callerID, orgID, id, _, err = h.checkAccess(ctx, in.OrgID, in.Body.ProjectID, db.ResourceProject, db.ActionCreate, "")
+			projectID = &id
+		} else {
+			callerID, orgID, _, err = h.checkOrgAdminAccess(ctx, in.OrgID, "")
+		}
 		if err != nil {
 			return nil, err
 		}
-		row, githubURL, manifest, err := h.svc.GitIntegrations.InitGitHubIntegration(ctx, orgID, in.Body.GithubOrg, in.Body.StartedFrom)
+		row, githubURL, manifest, err := h.svc.GitIntegrations.InitGitHubIntegration(ctx, orgID, in.Body.GithubOrg, in.Body.StartedFrom, projectID, &callerID)
 		if err != nil {
 			return nil, err
 		}
-		out := &InitGitHubIntegrationOutput{}
+		out = &InitGitHubIntegrationOutput{}
 		out.Body.Integration = row
 		out.Body.GithubURL = githubURL
 		out.Body.Manifest = manifest
@@ -258,11 +339,8 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		ID        string `path:"id"`
 		GithubOrg string `query:"github_org"`
 	}) (*GitHubInstallURLOutput, error) {
-		_, _, integrationID, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
+		_, integrationID, err := h.gitIntegrationAccess(ctx, in.OrgID, in.ID, db.ActionUpdate, true)
 		if err != nil {
-			return nil, err
-		}
-		if err := h.gitIntegrationInOrg(ctx, in.OrgID, integrationID); err != nil {
 			return nil, err
 		}
 		installURL, err := h.svc.GitIntegrations.GitHubInstallURL(ctx, integrationID, in.GithubOrg)
@@ -308,11 +386,8 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Tags:        []string{tag},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, func(ctx context.Context, in *GitIntegrationPathInput) (*ListReposOutput, error) {
-		_, _, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
+		_, id, err := h.gitIntegrationAccess(ctx, in.OrgID, in.ID, db.ActionView, false)
 		if err != nil {
-			return nil, err
-		}
-		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
 			return nil, err
 		}
 		repos, err := h.svc.GitIntegrations.ListRepos(ctx, id)
@@ -400,11 +475,8 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		ID    string `path:"id"`
 		Repo  string `query:"repo"`
 	}) (*ListBranchesOutput, error) {
-		_, _, id, err := h.checkOrgMemberAccess(ctx, in.OrgID, in.ID)
+		_, id, err := h.gitIntegrationAccess(ctx, in.OrgID, in.ID, db.ActionView, false)
 		if err != nil {
-			return nil, err
-		}
-		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
 			return nil, err
 		}
 		if in.Repo == "" {
@@ -441,6 +513,9 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		}
 		var idp *uuid.UUID
 		if in.Body.GitIntegrationID != "" {
+			if _, _, err := h.gitIntegrationAccess(ctx, in.OrgID, in.Body.GitIntegrationID, db.ActionView, false); err != nil {
+				return nil, err
+			}
 			idp = &integrationID
 		}
 		d, err := h.svc.GitIntegrations.DetectStack(ctx, orgID, idp, in.Body.Repo, in.Body.Branch, in.Body.DockerfilePath)
@@ -463,11 +538,8 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 		Security:      []map[string][]string{{"bearer": {}}},
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *GitIntegrationPathInput) (*struct{}, error) {
-		_, _, id, err := h.checkOrgAdminAccess(ctx, in.OrgID, in.ID)
+		_, id, err := h.gitIntegrationAccess(ctx, in.OrgID, in.ID, db.ActionUpdate, true)
 		if err != nil {
-			return nil, err
-		}
-		if err := h.gitIntegrationInOrg(ctx, in.OrgID, id); err != nil {
 			return nil, err
 		}
 		if err := h.svc.GitIntegrations.Delete(ctx, id); err != nil {
@@ -482,7 +554,7 @@ func (h *Handler) registerGitIntegrationRoutes(api huma.API) {
 // GitIntegration row identified by the state token.
 func (h *Handler) GitHubAppCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	frontendURL := h.consoleAfterCallback(r, h.svc.GitIntegrations.StartedFrom(r.Context(), q.Get("state")))
+	frontendURL := h.afterGitHubCallback(r, q.Get("state"))
 
 	code := q.Get("code")
 	state := q.Get("state")
@@ -552,7 +624,7 @@ func (h *Handler) BitbucketOAuthCallback(w http.ResponseWriter, r *http.Request)
 // GitHubCallback handles the redirect back from GitHub after App installation.
 func (h *Handler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	frontendURL := h.consoleAfterCallback(r, h.svc.GitIntegrations.StartedFrom(r.Context(), q.Get("state")))
+	frontendURL := h.afterGitHubCallback(r, q.Get("state"))
 
 	installationID := q.Get("installation_id")
 	setupAction := q.Get("setup_action")
@@ -575,6 +647,20 @@ func (h *Handler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, frontendURL+"/integrations/git?github=connected", http.StatusFound)
+}
+
+// afterGitHubCallback is where GitHub's redirect back sends the browser: the
+// door a connection reserved for a project was begun from, on that project's
+// own domain, where the person is signed in; else the console it was begun
+// from.
+func (h *Handler) afterGitHubCallback(r *http.Request, state string) string {
+	name, project := h.svc.GitIntegrations.StartedFrom(r.Context(), state)
+	if project != nil && h.svc.Domains != nil {
+		if u := h.svc.Domains.ProjectConsoleURL(r.Context(), *project, name); u != "" {
+			return u
+		}
+	}
+	return h.consoleAfterCallback(r, name)
 }
 
 // consoleAfterCallback is where a provider's redirect back sends the browser:

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -102,5 +103,99 @@ func TestAnotherOrgsGitIntegrationIsNotFound(t *testing.T) {
 	}
 	if code := api.Delete(base + "/git-integrations/" + own.ID.String()).Code; code >= 300 {
 		t.Fatalf("deleting the org's own integration: %d", code)
+	}
+}
+
+// A connection reserved for one project is another project's member's to
+// neither see nor use: absent from their list, not found by its id, and
+// refused as a service's source in their own project. Their own project's
+// is listed for it.
+func TestAGitConnectionReservedForAnotherProject(t *testing.T) {
+	ctx := context.Background()
+	database := newAuthzTestDB(t)
+	svc := service.New(database)
+	h := New(nil, svc)
+
+	owner, err := svc.Auth.Register(ctx, service.RegisterInput{Username: "owner", Email: "owner@example.com", Password: "password123"})
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	orgs, err := svc.Orgs.ListForUser(ctx, owner.ID)
+	if err != nil || len(orgs) != 1 {
+		t.Fatalf("orgs: %v", err)
+	}
+	org := orgs[0].ID
+	ann, err := svc.Projects.Create(ctx, org, "Ann", "ann")
+	if err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	bo, err := svc.Projects.Create(ctx, org, "Bo", "bo")
+	if err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	member := db.User{Username: "bo", Email: "bo@example.com"}
+	rows := []any{&member}
+	if err := database.Create(&member).Error; err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	rows = []any{&db.OrganizationMember{OrganizationID: org, UserID: member.ID, Role: db.RoleMember}}
+	for _, a := range []db.ResourceAction{db.ActionView, db.ActionCreate, db.ActionUpdate} {
+		rows = append(rows, &db.ResourcePermission{OrganizationID: org, UserID: member.ID,
+			ResourceType: db.ResourceProject, ResourceID: bo.ID, Action: a})
+	}
+	annsConn := db.GitIntegration{OrganizationID: org, Provider: "gitea", AuthMethod: "pat", Name: "ann's", BaseURL: "https://git.example.com", ProjectID: &ann.ID}
+	rows = append(rows, &annsConn)
+	for _, r := range rows {
+		if err := database.Create(r).Error; err != nil {
+			t.Fatalf("create %T: %v", r, err)
+		}
+	}
+
+	_, api := humatest.New(t)
+	api.UseMiddleware(func(hc huma.Context, next func(huma.Context)) {
+		next(huma.WithContext(hc, middleware.ContextWithUser(hc.Context(), member.ID)))
+	})
+	h.registerGitIntegrationRoutes(api)
+	h.registerWorkloadRoutes(api)
+
+	base := "/api/v1/orgs/" + org.String()
+	if body := api.Get(base + "/git-integrations").Body.String(); strings.Contains(body, annsConn.ID.String()) {
+		t.Error("another project's connection is listed")
+	}
+	gi := base + "/git-integrations/" + annsConn.ID.String()
+	for _, c := range []struct {
+		name string
+		call func() int
+		want int
+	}{
+		{"repos", func() int { return api.Get(gi + "/repos").Code }, http.StatusNotFound},
+		{"branches", func() int { return api.Get(gi + "/branches?repo=ann/app").Code }, http.StatusNotFound},
+		{"install url", func() int { return api.Get(gi + "/install-url").Code }, http.StatusNotFound},
+		{"delete", func() int { return api.Delete(gi).Code }, http.StatusNotFound},
+		{"detect", func() int {
+			return api.Post(base+"/detect-stack", map[string]any{"git_integration_id": annsConn.ID.String(), "repo": "ann/app", "branch": "main"}).Code
+		}, http.StatusNotFound},
+		{"service in their own project", func() int {
+			return api.Post(base+"/projects/"+bo.ID.String()+"/services", map[string]any{
+				"name": "borrowed", "git_integration_id": annsConn.ID.String(), "git_repo": "ann/app", "branch": "main"}).Code
+		}, http.StatusUnprocessableEntity},
+	} {
+		if code := c.call(); code != c.want {
+			t.Errorf("%s with another project's connection: got %d, want %d", c.name, code, c.want)
+		}
+	}
+
+	if code := api.Post(base+"/git-integrations/github", map[string]any{"project_id": ann.ID.String()}).Code; code < 400 {
+		t.Errorf("reserving one for a project they may not add to: got %d, want refused", code)
+	}
+	if code := api.Post(base+"/git-integrations/github", map[string]any{}).Code; code != http.StatusForbidden {
+		t.Errorf("the organization's own, as a member: got %d, want 403", code)
+	}
+	mine := db.GitIntegration{OrganizationID: org, Provider: "gitea", AuthMethod: "pat", Name: "bo's", BaseURL: "https://git.example.com", ProjectID: &bo.ID}
+	if err := database.Create(&mine).Error; err != nil {
+		t.Fatalf("their connection: %v", err)
+	}
+	if body := api.Get(base + "/git-integrations?project=" + bo.ID.String()).Body.String(); !strings.Contains(body, mine.ID.String()) {
+		t.Error("their own connection is not listed for their project")
 	}
 }

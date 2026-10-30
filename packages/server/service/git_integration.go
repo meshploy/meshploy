@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -99,12 +100,22 @@ type GitRepo struct {
 // then returns the GitHub manifest-setup URL and manifest JSON the frontend must
 // POST to GitHub to create the GitHub App.
 // Each call creates a separate GitHub App - multiple pending integrations are allowed.
+// projectID, when given, reserves the connection for that project (a level's
+// project, never the level); createdBy is who asked.
 func (s *GitIntegrationService) InitGitHubIntegration(
 	ctx context.Context,
 	orgID uuid.UUID,
 	githubOrg string,
 	startedFrom string,
+	projectID, createdBy *uuid.UUID,
 ) (row *db.GitIntegration, githubURL, manifest string, err error) {
+	if projectID != nil {
+		root, err := rootProject(ctx, s.db, *projectID)
+		if err != nil {
+			return nil, "", "", huma.Error404NotFound("project not found")
+		}
+		projectID = &root
+	}
 	if startedFrom == "console" || !IsConsoleName(startedFrom) {
 		startedFrom = ""
 	}
@@ -117,6 +128,8 @@ func (s *GitIntegrationService) InitGitHubIntegration(
 		Name:              autoName,
 		RegisteredAPIBase: apiBase,
 		StartedFrom:       startedFrom,
+		ProjectID:         projectID,
+		CreatedBy:         createdBy,
 	}
 	if err = s.db.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, "", "", huma.Error500InternalServerError("failed to create git integration")
@@ -246,21 +259,21 @@ func (s *GitIntegrationService) GitHubInstallURL(ctx context.Context, integratio
 
 // StartedFrom is the platform name the connection a callback's state names was
 // begun from, or "" for the console, which is also the answer for a state that
-// does not verify.
-func (s *GitIntegrationService) StartedFrom(ctx context.Context, state string) string {
+// does not verify; and the project it is reserved for, if any.
+func (s *GitIntegrationService) StartedFrom(ctx context.Context, state string) (string, *uuid.UUID) {
 	idText, err := validateState(state, s.cfg.JWTSecret)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	id, err := uuid.Parse(idText)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	var row db.GitIntegration
-	if s.db.WithContext(ctx).Select("started_from").First(&row, id).Error != nil {
-		return ""
+	if s.db.WithContext(ctx).Select("started_from", "project_id").First(&row, id).Error != nil {
+		return "", nil
 	}
-	return row.StartedFrom
+	return row.StartedFrom, row.ProjectID
 }
 
 // HandleGitHubCallback validates the install state, sets InstallationID on the
@@ -315,6 +328,27 @@ func (s *GitIntegrationService) InOrg(ctx context.Context, orgID, id uuid.UUID) 
 	}
 	if n == 0 {
 		return ErrGitIntegrationNotFound
+	}
+	return nil
+}
+
+// ErrGitIntegrationReserved is a connection reserved for another project.
+var ErrGitIntegrationReserved = errors.New("this git connection belongs to another project")
+
+// UsableIn reports whether a project may build from a connection: one
+// reserved for a project serves that project and its levels only.
+func (s *GitIntegrationService) UsableIn(ctx context.Context, orgID, id, projectID uuid.UUID) error {
+	var row db.GitIntegration
+	err := s.db.WithContext(ctx).Select("id", "project_id").Where("id = ? AND organization_id = ?", id, orgID).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrGitIntegrationNotFound
+	}
+	if err != nil || row.ProjectID == nil {
+		return err
+	}
+	root, err := rootProject(ctx, s.db, projectID)
+	if err != nil || root != *row.ProjectID {
+		return ErrGitIntegrationReserved
 	}
 	return nil
 }

@@ -28,6 +28,8 @@ export interface ApiGitIntegration {
   base_url: string
   gh_app_slug?: string
   groups?: string
+  /** Set when the connection is reserved for one project and its levels. */
+  project_id?: string
   connected: boolean
   created_at: string
   updated_at: string
@@ -40,11 +42,15 @@ export interface GitRepo {
 }
 
 export const gitIntegrations = {
-  list: (orgId: string, token: string) =>
-    apiFetch<ApiGitIntegration[]>(`/api/v1/orgs/${orgId}/git-integrations`, {}, token),
+  /** `project` narrows the list to what that project may build from. */
+  list: (orgId: string, token: string, project?: string) =>
+    apiFetch<ApiGitIntegration[]>(`/api/v1/orgs/${orgId}/git-integrations${project ? `?project=${project}` : ""}`, {}, token),
 
-  /** `started_from` is the platform name GitHub's redirects return the browser to; empty is the console. */
-  initGitHub: (orgId: string, body: { github_org?: string; started_from?: string }, token: string) =>
+  /**
+   * `started_from` is the platform name GitHub's redirects return the browser to; empty is the console.
+   * `project_id` reserves the connection for that project and its levels.
+   */
+  initGitHub: (orgId: string, body: { github_org?: string; started_from?: string; project_id?: string }, token: string) =>
     apiFetch<{ integration: ApiGitIntegration; github_url: string; manifest: string }>(
       `/api/v1/orgs/${orgId}/git-integrations/github`,
       { method: "POST", body: JSON.stringify(body) },

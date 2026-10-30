@@ -1779,7 +1779,14 @@ func (RegistryIntegration) TableName() string { return "registry_integrations" }
 //     InstallationID = OAuth access token (populated after callback)
 type GitIntegration struct {
 	Base
-	OrganizationID    uuid.UUID       `gorm:"type:uuid;not null;index"   json:"organization_id"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;index"   json:"organization_id"`
+	// ProjectID reserves the connection for one project and its levels: only
+	// they list it, read its repositories and build from it, as a reserved
+	// base domain serves only its project. Nil is the organization's.
+	ProjectID *uuid.UUID `gorm:"type:uuid;index" json:"project_id,omitempty"`
+	Project   *Project   `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE" json:"-"`
+	// CreatedBy is who made the connection, shown beside it.
+	CreatedBy         *uuid.UUID      `gorm:"type:uuid" json:"created_by,omitempty"`
 	Provider          string          `gorm:"type:varchar(15);not null"  json:"provider"`    // "github" | "gitlab" | "gitea" | "bitbucket"
 	AuthMethod        string          `gorm:"not null;default:'pat'"     json:"auth_method"` // "app" | "pat" | "oauth"
 	Name              string          `gorm:"not null"                   json:"name"`
