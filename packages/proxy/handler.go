@@ -25,16 +25,19 @@ type Handler struct {
 	// mesh decides who on the mesh opens an internal route; nil serves them
 	// to anyone who reaches them, as a proxy built without it does.
 	mesh *meshgate.Gate
-	// db is where the edge's own pages find whose brand to show; nil shows
-	// Meshploy's.
+	// db is where the edge's own pages find whose brand to show, and whether
+	// a service that does not answer was stopped; nil shows Meshploy's brand
+	// and says only that it does not answer.
 	db *gorm.DB
+	// stopped stands in for the database's answer in tests.
+	stopped func(ctx context.Context, serviceID uuid.UUID) bool
 }
 
 // CheckInternal has internal routes answer only the callers mesh allows.
 func (h *Handler) CheckInternal(mesh *meshgate.Gate) { h.mesh = mesh }
 
 // Brand has the edge's own pages show the brand of the organisation a host
-// belongs to.
+// belongs to, and say when a service that does not answer was stopped.
 func (h *Handler) Brand(gdb *gorm.DB) { h.db = gdb }
 
 // brandName is the name the edge's own pages are signed with, escaped for them.
@@ -143,10 +146,49 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		log.Printf("proxy: %s → %s error: %v", hostname, target.Host, err)
-		http.Error(w, `{"error":"upstream unavailable"}`, http.StatusBadGateway)
+		h.unavailable(w, r, hostname, entry.ServiceID, entry.OrgID)
 	}
 
 	proxy.ServeHTTP(w, r)
+}
+
+// unavailable answers a request its target did not take. A browser gets a
+// page saying whether the service was stopped on purpose or is not answering,
+// which is what someone opening the address wants to know; every other caller
+// gets the JSON it always has.
+func (h *Handler) unavailable(w http.ResponseWriter, r *http.Request, hostname string, serviceID, orgID uuid.UUID) {
+	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Error(w, `{"error":"upstream unavailable"}`, http.StatusBadGateway)
+		return
+	}
+	code, title, text := http.StatusBadGateway, "Not answering",
+		"It is not answering right now. If it was just deployed or restarted, it is starting: try again in a moment."
+	if h.serviceStopped(r.Context(), serviceID) {
+		code, title, text = http.StatusServiceUnavailable, "Stopped",
+			"It has been stopped by whoever runs it, and answers again once it is started."
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	fmt.Fprintf(w, unavailablePage, h.brandName(r.Context(), hostname, orgID), html.EscapeString(hostname), code, title, text)
+}
+
+// serviceStopped reports whether a service was stopped on purpose.
+func (h *Handler) serviceStopped(ctx context.Context, serviceID uuid.UUID) bool {
+	if serviceID == uuid.Nil {
+		return false
+	}
+	if h.stopped != nil {
+		return h.stopped(ctx, serviceID)
+	}
+	if h.db == nil {
+		return false
+	}
+	var status db.ServiceStatus
+	if h.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Pluck("status", &status).Error != nil {
+		return false
+	}
+	return status == db.ServiceStopped
 }
 
 // forwardToFallback hands a request to the old platform's edge.
@@ -270,6 +312,36 @@ const notSharedPage = `<!doctype html>
     <div class="code">403</div>
     <h1>Not shared with you</h1>
     <p>This internal route is open to the people granted what it serves, from machines they own. Ask an admin of the organisation for access, or join this machine to the mesh under your own name.</p>
+    <div class="host">%[2]s</div>
+  </div>
+</body>
+</html>`
+
+// unavailablePage answers a browser whose route's target did not answer:
+// %[3]d the status, %[4]s and %[5]s what happened.
+const unavailablePage = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>%[4]s - %[1]s</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0a0a0a;color:#a1a1aa;font-family:ui-monospace,monospace;
+         display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
+    .card{border:1px solid #27272a;border-radius:12px;padding:2.5rem 3rem;max-width:420px;width:100%%;text-align:center}
+    .code{font-size:3rem;font-weight:700;color:#3f3f46;margin-bottom:1rem}
+    h1{font-size:1rem;font-weight:600;color:#e4e4e7;margin-bottom:.5rem}
+    p{font-size:.8rem;line-height:1.6;margin-bottom:1.5rem}
+    .host{font-size:.75rem;background:#18181b;border:1px solid #27272a;border-radius:6px;
+          padding:.35rem .75rem;display:inline-block;color:#71717a}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="code">%[3]d</div>
+    <h1>%[4]s</h1>
+    <p>%[5]s</p>
     <div class="host">%[2]s</div>
   </div>
 </body>
