@@ -26,8 +26,8 @@ var deployCmd = &cobra.Command{
 	Long: `Packs the folder, uploads it as a service's source and deploys it.
 
 Left out: .git, node_modules and other installed dependencies, .env files
-(an .env.example is kept), and whatever the folder's .gitignore and
-.meshployignore name. The service is the folder's name unless --service names
+(an .env.example is kept), what the folder's .meshployignore names, and
+what each .gitignore in it names for its own folder. The service is the folder's name unless --service names
 another; one that does not exist yet is created.`,
 	Example: `  meshploy deploy .
   meshploy deploy ./my-app --project tools --port 8080`,

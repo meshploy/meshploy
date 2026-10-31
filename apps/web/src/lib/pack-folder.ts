@@ -1,7 +1,8 @@
 // Packs a folder from this computer the way `meshploy deploy` does, for a
 // service built from an upload: a tar.gz of the folder's files, leaving out
-// .git, installed dependencies, .env files (an example of one is kept) and
-// what the folder's .gitignore and .meshployignore name.
+// .git, installed dependencies, .env files (an example of one is kept), what
+// the folder's .meshployignore names, and what its .gitignore files name,
+// each for the folder it sits in.
 
 import { detectVariables, type FoundVariable } from "./detect-variables"
 
@@ -61,33 +62,54 @@ export function filesFromInput(list: FileList): { name: string; files: FolderFil
   return { name, files }
 }
 
-/** A folder dropped on the page. Skipped folders are not read at all, so a
- *  dropped app with its node_modules stays quick. */
-export async function filesFromDrop(items: DataTransferItemList): Promise<{ name: string; files: FolderFile[]; skipped: string[] } | null> {
+/** A folder dropped on the page. What is skipped or ignored is not read at
+ *  all, so a dropped app with its node_modules and build output stays quick.
+ *  onFile counts the files read so far. */
+export async function filesFromDrop(
+  items: DataTransferItemList,
+  onFile?: (read: number) => void,
+): Promise<{ name: string; files: FolderFile[]; skipped: string[] }> {
   const entry = Array.from(items)
     .map((i) => (i.kind === "file" ? i.webkitGetAsEntry?.() : null))
     .find((e): e is FileSystemEntry => !!e)
-  if (!entry || !entry.isDirectory) return null
+  if (!entry) throw new Error("Your browser did not hand over the folder. Try Choose a folder instead.")
+  if (!entry.isDirectory) throw new Error("Drop a folder, not a file.")
   const files: FolderFile[] = []
   const skipped: string[] = []
+  const scopes = new IgnoreScopes()
+  const fileOf = (e: FileSystemEntry) => new Promise<File>((res, rej) => (e as FileSystemFileEntry).file(res, rej))
   const walk = async (dir: FileSystemDirectoryEntry, prefix: string): Promise<void> => {
     const reader = dir.createReader()
+    const entries: FileSystemEntry[] = []
     // readEntries answers in batches until it answers none.
     for (;;) {
       const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej))
       if (batch.length === 0) break
-      for (const e of batch) {
-        const path = prefix ? `${prefix}/${e.name}` : e.name
-        if (ALWAYS_SKIPPED.has(e.name) || (e.isFile && isEnvFile(e.name))) {
-          skipped.push(path)
-          continue
-        }
-        if (e.isDirectory) await walk(e as FileSystemDirectoryEntry, path)
-        else files.push({ path, file: await new Promise<File>((res, rej) => (e as FileSystemFileEntry).file(res, rej)) })
+      entries.push(...batch)
+    }
+    // This folder's ignore files first: they decide what in it is read.
+    for (const name of prefix ? [".gitignore"] : [".gitignore", ".meshployignore"]) {
+      const f = entries.find((e) => e.isFile && e.name === name)
+      if (f) scopes.add(prefix, await (await fileOf(f)).text())
+    }
+    for (const e of entries) {
+      const path = prefix ? `${prefix}/${e.name}` : e.name
+      if (ALWAYS_SKIPPED.has(e.name) || (e.isFile && isEnvFile(e.name))) {
+        skipped.push(path)
+        continue
+      }
+      if (scopes.ignored(path, e.isDirectory)) continue
+      if (e.isDirectory) await walk(e as FileSystemDirectoryEntry, path)
+      else {
+        files.push({ path, file: await fileOf(e) })
+        onFile?.(files.length)
       }
     }
   }
   await walk(entry as FileSystemDirectoryEntry, "")
+  if (files.length === 0 && skipped.length === 0) {
+    throw new Error("Your browser handed over the folder empty. Try Choose a folder instead.")
+  }
   return { name: entry.name, files, skipped }
 }
 
@@ -120,14 +142,45 @@ export function parseIgnoreLine(raw: string): IgnoreRule | null {
   return { re: new RegExp(re + "(/.*)?$"), negate, dirOnly }
 }
 
-/** Whether a file is ignored: the last rule that matches it, or a folder it is in, decides. */
-export function ignored(rules: IgnoreRule[], path: string): boolean {
-  let out = false
+/** Whether path is ignored by rules, carrying on from what rules before
+ *  them decided: the last rule that matches it, or a folder it is in, decides. */
+function decide(rules: IgnoreRule[], path: string, isDir: boolean, was: boolean): boolean {
+  let out = was
   for (const r of rules) {
-    const target = r.dirOnly ? path.slice(0, Math.max(0, path.lastIndexOf("/"))) : path
-    if (target && r.re.test(target)) out = !r.negate
+    if (r.dirOnly && !isDir && !r.re.test(path.slice(0, Math.max(0, path.lastIndexOf("/"))))) continue
+    if (r.re.test(path)) out = !r.negate
   }
   return out
+}
+
+/** Whether a path is ignored by one set of rules. */
+export function ignored(rules: IgnoreRule[], path: string, isDir = false): boolean {
+  return decide(rules, path, isDir, false)
+}
+
+/** The rules of every folder that has an ignore file. A path is matched
+ *  against each of its folders' rules from the top down, relative to that
+ *  folder, so a deeper .gitignore overrides one above it. */
+export class IgnoreScopes {
+  private scopes = new Map<string, IgnoreRule[]>()
+
+  /** Adds an ignore file's text for the folder at base ("" for the top). */
+  add(base: string, text: string) {
+    const rules = text.split("\n").map(parseIgnoreLine).filter((r): r is IgnoreRule => !!r)
+    if (rules.length > 0) this.scopes.set(base, [...(this.scopes.get(base) ?? []), ...rules])
+  }
+
+  ignored(path: string, isDir: boolean): boolean {
+    let out = false
+    // i is where the folder being looked at ends in path; -1 is the top.
+    for (let i = -1; ; ) {
+      const rules = this.scopes.get(i < 0 ? "" : path.slice(0, i))
+      if (rules) out = decide(rules, i < 0 ? path : path.slice(i + 1), isDir, out)
+      const j = path.indexOf("/", i + 1)
+      if (j < 0) return out
+      i = j
+    }
+  }
 }
 
 // ─── Packing ─────────────────────────────────────────────────────────────────
@@ -140,16 +193,26 @@ export async function packFolder(name: string, all: FolderFile[], preSkipped: st
     if (by) skipped.add(by)
     else kept.push(f)
   }
-  const rules: IgnoreRule[] = []
-  for (const name of [".gitignore", ".meshployignore"]) {
-    const f = kept.find((k) => k.path === name)
-    if (!f) continue
-    for (const line of (await f.file.text()).split("\n")) {
-      const r = parseIgnoreLine(line)
-      if (r) rules.push(r)
-    }
+  // Each .gitignore not itself ignored applies to its folder, the shallowest
+  // first, so a folder's rules are in place before those below it are judged.
+  const scopes = new IgnoreScopes()
+  const ignoreFiles = kept
+    .filter((f) => f.path === ".meshployignore" || f.path === ".gitignore" || f.path.endsWith("/.gitignore"))
+    .sort((a, b) => a.path.split("/").length - b.path.split("/").length)
+  for (const f of ignoreFiles) {
+    const base = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : ""
+    if (base && scopes.ignored(base, true)) continue
+    scopes.add(base, await f.file.text())
   }
-  const files = kept.filter((f) => !ignored(rules, f.path)).sort((a, b) => (a.path < b.path ? -1 : 1))
+  // A file in an ignored folder stays out whatever is said of the file, as
+  // when the folder is walked and the ignored folder never opened.
+  const out = (path: string) => {
+    for (let i = path.indexOf("/"); i >= 0; i = path.indexOf("/", i + 1)) {
+      if (scopes.ignored(path.slice(0, i), true)) return true
+    }
+    return scopes.ignored(path, false)
+  }
+  const files = kept.filter((f) => !out(f.path)).sort((a, b) => (a.path < b.path ? -1 : 1))
   if (files.length === 0) throw new Error("Nothing to upload: every file in the folder is left out.")
   const unpacked = files.reduce((n, f) => n + f.file.size, 0)
   if (unpacked > 4 * MAX_PACKED_BYTES) {

@@ -85,6 +85,41 @@ func TestPackLeavesOutWhatTheBuildDoesNotNeed(t *testing.T) {
 	}
 }
 
+// A .gitignore in a subfolder names paths relative to that folder and
+// overrides the one above it; one inside an ignored folder is never read.
+func TestPackReadsEachFoldersGitignore(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "shop")
+	writeTree(t, dir, map[string]string{
+		".gitignore":                 "*.log\n**/.next/\n",
+		"apps/api/.gitignore":        "/dist\n.medusa\n!keep.log\n",
+		"apps/api/src/main.ts":       "x",
+		"apps/api/dist/main.js":      "built",
+		"apps/api/.medusa/server.js": "built",
+		"apps/api/keep.log":          "kept",
+		"apps/api/debug.log":         "log",
+		"apps/web/dist/page.js":      "a folder the api's rule does not reach",
+		"apps/web/.next/cache.bin":   "cache",
+		"apps/web/.next/.gitignore":  "!cache.bin\n",
+	})
+	p, err := PackFolder(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".gitignore", "apps/api/.gitignore", "apps/api/keep.log", "apps/api/src/main.ts", "apps/web/dist/page.js"}
+	if got := archived(t, p.Archive); !equal(got, want) {
+		t.Fatalf("archived %v, want %v", got, want)
+	}
+}
+
+func TestIgnoreScopes(t *testing.T) {
+	root, _ := parseIgnoreLine("build/")
+	sub, _ := parseIgnoreLine("!build/")
+	s := ignoreScopes{"": {root}, "keep": {sub}}
+	if !s.match("a/build", true) || s.match("keep/build", true) || !s.match("keepx/build", true) {
+		t.Fatal("scopes matched the wrong folders")
+	}
+}
+
 // The same files pack to the same bytes, so an unchanged folder uploads as
 // nothing new.
 func TestPackIsTheSameForTheSameFiles(t *testing.T) {

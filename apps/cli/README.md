@@ -324,7 +324,7 @@ meshploy deploy ./my-app                 # the service is the folder's name, mad
 meshploy deploy . --service api --port 8080
 ```
 
-Packs a folder on this machine, uploads it as a service's source, deploys it and follows the deployment until it succeeds or fails. Never sent: `.git`, installed dependencies (`node_modules`, `.venv`), `.env` files (an `.env.example` is kept), and what the folder's `.gitignore` and `.meshployignore` name; up to 100 MB packed. The same files pack to the same archive, so sending an unchanged folder stores nothing new. `--upload-only` stores it without deploying, `--no-wait` returns once the deploy has started, and `--port` is the port a service made now listens on (3000).
+Packs a folder on this machine, uploads it as a service's source, deploys it and follows the deployment until it succeeds or fails. Never sent: `.git`, installed dependencies (`node_modules`, `.venv`), `.env` files (an `.env.example` is kept), what the folder's `.meshployignore` names, and what each `.gitignore` in it names for its own folder; up to 100 MB packed. The same files pack to the same archive, so sending an unchanged folder stores nothing new. `--upload-only` stores it without deploying, `--no-wait` returns once the deploy has started, and `--port` is the port a service made now listens on (3000).
 
 ---
 

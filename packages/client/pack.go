@@ -54,8 +54,8 @@ func isEnvFile(name string) bool {
 }
 
 // PackFolder packs dir for upload. It leaves out .git, installed dependencies
-// and .env files always, and what the folder's .gitignore and .meshployignore
-// name. The archive is the same bytes for the same files, so uploading an
+// and .env files always, what the folder's .meshployignore names, and what
+// its .gitignore files name, each for the folder it sits in. The archive is the same bytes for the same files, so uploading an
 // unchanged folder again stores nothing new.
 func PackFolder(dir string) (*PackedFolder, error) {
 	abs, err := filepath.Abs(dir)
@@ -69,7 +69,7 @@ func PackFolder(dir string) (*PackedFolder, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("%s is not a folder", dir)
 	}
-	ignore := loadIgnore(abs, ".gitignore", ".meshployignore")
+	ignore := ignoreScopes{"": loadIgnore(abs, ".gitignore", ".meshployignore")}
 
 	type entry struct {
 		rel  string
@@ -98,6 +98,11 @@ func PackFolder(dir string) (*PackedFolder, error) {
 				return filepath.SkipDir
 			}
 			return nil
+		}
+		if d.IsDir() {
+			if rules := loadIgnore(p, ".gitignore"); len(rules) > 0 {
+				ignore[rel] = rules
+			}
 		}
 		fi, err := d.Info()
 		if err != nil {
@@ -192,11 +197,35 @@ func containsString(list []string, s string) bool {
 
 // ── Ignore files ─────────────────────────────────────────────────────────────
 
-// ignoreRules are the patterns of a folder's top-level ignore files, in the
+// ignoreRules are the patterns of one folder's ignore files, in the
 // .gitignore syntax: # comments, ! to take a match back, a trailing / for a
 // folder only, a leading or inner / anchoring to the folder, and *, ? and **.
-// Nested .gitignore files are not read.
 type ignoreRules []ignoreRule
+
+// ignoreScopes are the rules of every folder that has an ignore file, keyed
+// by the folder's path ("" for the top). A path is matched against each of
+// its folders' rules from the top down, relative to that folder, and the last
+// rule that matches decides, so a deeper .gitignore overrides one above it.
+type ignoreScopes map[string]ignoreRules
+
+func (s ignoreScopes) match(rel string, isDir bool) bool {
+	ignored := false
+	// i is where the folder being looked at ends in rel; -1 is the top.
+	for i := -1; ; {
+		base, sub := "", rel
+		if i >= 0 {
+			base, sub = rel[:i], rel[i+1:]
+		}
+		if rules, ok := s[base]; ok {
+			ignored = rules.decide(sub, isDir, ignored)
+		}
+		j := strings.IndexByte(rel[i+1:], '/')
+		if j < 0 {
+			return ignored
+		}
+		i += 1 + j
+	}
+}
 
 type ignoreRule struct {
 	re      *regexp.Regexp
@@ -277,7 +306,11 @@ func parseIgnoreLine(line string) (ignoreRule, bool) {
 // match says whether rel (slash-separated, relative to the folder) is
 // ignored: the last rule that matches decides.
 func (rules ignoreRules) match(rel string, isDir bool) bool {
-	ignored := false
+	return rules.decide(rel, isDir, false)
+}
+
+// decide is match carrying on from what rules before these decided.
+func (rules ignoreRules) decide(rel string, isDir, ignored bool) bool {
 	for _, r := range rules {
 		if r.dirOnly && !isDir && !r.re.MatchString(path.Dir(rel)) {
 			continue

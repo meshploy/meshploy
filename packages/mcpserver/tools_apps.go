@@ -31,7 +31,7 @@ const enterpriseURL = "https://meshploy.com/contact?topic=enterprise&src=mcp"
 func (s *srv) registerAppTools(ms *mcpsdk.MCPServer) {
 	ms.AddTool(
 		mcp.NewTool("deploy_folder",
-			mcp.WithDescription("Deploy a folder on this machine as a service: packs it (leaving out .git, node_modules, .env files and what .gitignore and .meshployignore name), uploads it, builds it with Railpack (or its Dockerfile when builder=dockerfile) and waits until it is up. "+
+			mcp.WithDescription("Deploy a folder on this machine as a service: packs it (leaving out .git, node_modules, .env files and what .meshployignore and each folder's .gitignore name), uploads it, builds it with Railpack (or its Dockerfile when builder=dockerfile) and waits until it is up. "+
 				"Makes the service when it does not exist, named after the folder. Returns the service, the deployment and its links, or the build's error with the end of its log. "+
 				"The service has no public link until a route points at it: use create_route after, if the user wants one."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID or slug")),

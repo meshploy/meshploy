@@ -24,7 +24,7 @@ A build runs as a job on a **build node**, pushes the image to your registry (th
 
 A service can be built from a **folder** instead of a repository: an app that is not in git yet, or one an agent just wrote. Choose **Folder** as its source and drop the folder on the page, or run `meshploy deploy ./my-app` from a terminal. Either way the folder is packed where it is, sent, and built as a clone would be, with the same builders.
 
-Some things are never sent: `.git`, installed dependencies such as `node_modules` (the build installs its own), and `.env` files, which hold secrets (an `.env.example` is kept). Neither is anything the folder's `.gitignore` or `.meshployignore` names. Up to 100 MB can be sent once packed.
+Some things are never sent: `.git`, installed dependencies such as `node_modules` (the build installs its own), and `.env` files, which hold secrets (an `.env.example` is kept). Neither is anything the folder's `.meshployignore` names, or what a `.gitignore` names in the folder it sits in, at any depth. Up to 100 MB can be sent once packed.
 
 A new version replaces the last one: drop the folder again on the service's Configuration page, or run the command again. Rollback still goes back to earlier images. A deployment built from a folder says **Built from a folder**, and where a git build records its commit it records the first characters of the folder's fingerprint. Choosing a repository later builds from the repository instead.
 

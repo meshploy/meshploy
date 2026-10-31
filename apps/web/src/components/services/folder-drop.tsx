@@ -16,6 +16,7 @@ export interface CurrentUpload {
  * A folder from this computer, packed here and sent when the form is saved.
  * Dropped or chosen; what is left out (.git, node_modules, .env files, what
  * the folder's ignore files name) is said, so nothing leaves unexpectedly.
+ * A dropped folder shows its reading at once: a big one takes a while.
  */
 export function FolderDrop({
   value,
@@ -28,22 +29,22 @@ export function FolderDrop({
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
+  // Reading a dropped folder, then packing it: each says how many files so far.
+  const [reading, setReading] = useState<number | null>(null)
   const [packing, setPacking] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function pack(read: () => Promise<{ name: string; files: { path: string; file: File }[]; skipped?: string[] } | null>) {
+  async function pack(read: () => Promise<{ name: string; files: { path: string; file: File }[]; skipped?: string[] }>) {
     setError(null)
     try {
       const got = await read()
-      if (!got) {
-        setError("Drop a folder, not a file.")
-        return
-      }
+      setReading(null)
       setPacking(got.files.length)
       onChange(await packFolder(got.name, got.files, got.skipped))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
+      setReading(null)
       setPacking(null)
     }
   }
@@ -90,17 +91,22 @@ export function FolderDrop({
             e.preventDefault()
             setOver(false)
             const items = e.dataTransfer.items
-            void pack(() => filesFromDrop(items))
+            setReading(0)
+            void pack(() => filesFromDrop(items, setReading))
           }}
           className={cn(
             "flex flex-col items-center justify-center gap-2 rounded-md border border-dashed px-4 py-7 text-center transition-colors",
             over ? "border-primary/70 bg-primary/5" : "border-border/60 bg-muted/10",
           )}
         >
-          {packing !== null ? (
+          {reading !== null || packing !== null ? (
             <>
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Packing {packing.toLocaleString()} files…</p>
+              <p className="text-sm text-muted-foreground" data-testid="folder-progress">
+                {packing !== null
+                  ? `Packing ${packing.toLocaleString()} files…`
+                  : `Reading the folder… ${reading!.toLocaleString()} ${reading === 1 ? "file" : "files"}`}
+              </p>
             </>
           ) : (
             <>
@@ -112,7 +118,7 @@ export function FolderDrop({
                 Choose a folder
               </Button>
               <p className="text-[11px] text-muted-foreground max-w-sm">
-                Left out: .git, node_modules, .env files, and what the folder&apos;s .gitignore and .meshployignore name. Up to 100 MB packed.
+                Left out: .git, node_modules, .env files, and what the folder&apos;s .gitignore files and .meshployignore name. Up to 100 MB packed.
               </p>
             </>
           )}
