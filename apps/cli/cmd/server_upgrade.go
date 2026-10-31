@@ -375,6 +375,8 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 		fmt.Printf("warning: could not start the host agent: %v\n", err)
 	}
 
+	tidyAfterUpgrade(runtime)
+
 	fmt.Println("✔  Server upgraded successfully")
 	return nil
 }

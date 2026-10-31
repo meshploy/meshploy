@@ -135,6 +135,9 @@ func newUpgradeFixture(t *testing.T) *upgradeFixture {
 		fx.tags = append(fx.tags, args)
 		return nil
 	}
+	origCap := journalCap
+	t.Cleanup(func() { journalCap = origCap })
+	journalCap = filepath.Join(t.TempDir(), "systemd", "journald.conf.d", "50-meshploy.conf")
 	verifyStack = func(context.Context) error {
 		fx.verified++
 		if fx.verified <= len(fx.verify) {
@@ -246,8 +249,9 @@ func TestServerUpgradeInstallsTheRelease(t *testing.T) {
 	if fx.calls("up -d --remove-orphans") != 1 || fx.calls("up -d --force-recreate caddy") != 1 {
 		t.Errorf("compose calls = %+v", fx.compose)
 	}
-	if fx.verified != 1 || len(fx.tags) != 0 {
-		t.Errorf("verified %d times, tags %v", fx.verified, fx.tags)
+	// Nothing retagged, and what the upgrade replaced is removed once it worked.
+	if want := [][]string{{"image", "prune", "-f"}}; fx.verified != 1 || !reflect.DeepEqual(fx.tags, want) {
+		t.Errorf("verified %d times, ran %v, want %v", fx.verified, fx.tags, want)
 	}
 
 	// What it replaced is kept, privately, for the operator.
@@ -630,6 +634,7 @@ func TestServerUpgradeOnPodmanPullsEachImageAndRecreates(t *testing.T) {
 		{"pull", "--quiet", "ghcr.io/meshploy/api-ee:latest"},
 		// The console the Enterprise API ships with, filled in beside it.
 		{"pull", "--quiet", "ghcr.io/meshploy/web-ee:latest"},
+		{"image", "prune", "-f"},
 	}
 	if !reflect.DeepEqual(fx.tags, wantPulls) {
 		t.Errorf("podman ran %v, want %v", fx.tags, wantPulls)

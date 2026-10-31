@@ -414,6 +414,16 @@ choose_local_port() {
 # at runtime breaks, silently and confusingly.
 #
 # So the file is written with nameservers only: no search list to inherit.
+# A gateway's disk is for what it runs: a tenth of a small disk goes to journald
+# otherwise. One already here is the operator's, and stays. Upgrades do the same.
+cap_journal() {
+  local conf=/etc/systemd/journald.conf.d/50-meshploy.conf
+  [[ -d /etc/systemd && ! -e "$conf" ]] || return 0
+  mkdir -p "$(dirname "$conf")"
+  printf '# Written by Meshploy: a gateway'"'"'s disk is for what it runs.\n[Journal]\nSystemMaxUse=500M\n' > "$conf"
+  systemctl restart systemd-journald 2>/dev/null || true
+}
+
 configure_pod_dns() {
   # The gateway path runs as root; a worker joins unprivileged and escalates per
   # command, so writes go through tee rather than a redirect either way.
@@ -1051,6 +1061,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
     success "k3s server installed and started"
   fi
 
+  cap_journal
   configure_pod_dns
 
   # ── Configure containerd to trust the built-in registry (HTTP) ─────────────
