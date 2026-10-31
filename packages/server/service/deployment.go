@@ -2405,6 +2405,7 @@ func (s *DeploymentService) provisionDatabase(ctx context.Context, svc *db.Servi
 			s.failDeployment(deploymentID, err.Error())
 			return
 		}
+		s.markDeployed(bgCtx, svc, svc.Image)
 		s.succeedDeployment(bgCtx, deploymentID, svc.ID, gorm.Expr("log || ?", "Database provisioned successfully.\n"), "")
 	}()
 

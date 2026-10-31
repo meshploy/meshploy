@@ -11,6 +11,17 @@ import (
 // envRef matches $${ (an escaped, literal "${") and ${NAME}.
 var envRef = regexp.MustCompile(`\$\$\{|\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
+// envRefNames are the names a value references; an escaped $${ is none.
+func envRefNames(value string) []string {
+	var names []string
+	for _, m := range envRef.FindAllStringSubmatch(value, -1) {
+		if m[1] != "" {
+			names = append(names, m[1])
+		}
+	}
+	return names
+}
+
 // resolveEnvRefs replaces ${NAME} in each value with the value of NAME among
 // envs, so an app that reads DATABASE_URL can be given ${PRIMARY_PG_DB_URL}.
 //

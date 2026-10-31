@@ -1029,6 +1029,9 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 	// correct, only the rollout did not land, and that is visible on the
 	// service's own page.
 	//
+	// Before anything deploys, so nothing starts without what it reads.
+	result.Warnings = append(result.Warnings, s.attachReferencedGroups(ctx, stackID)...)
+
 	// An instance with no cluster skips the rollout outright. There is nothing
 	// to deploy to, that is a supported state for local dev, and reporting it
 	// once per created service would repeat one instance-level fact N times.
