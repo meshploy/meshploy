@@ -198,6 +198,24 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		}
 	}()
 
+	// A reboot can leave services down that Docker will not try again.
+	go func() {
+		recovery := newRecoverer(logw)
+		t := time.NewTicker(recoverInterval)
+		defer t.Stop()
+		for {
+			if task, acted := recovery.check(ctx, time.Now()); acted {
+				setTask("recovery", task)
+				writeAgent()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+
 	// The container inventory rides with the firewall report. Its stats cost
 	// about a second per running container, so they are read on their own
 	// slower beat and carried over in between.

@@ -152,7 +152,14 @@ func (c *Client) Containers(ctx context.Context) ([]ContainerSummary, error) {
 // ContainerDetail is the part of /containers/{id}/json worth keeping.
 type ContainerDetail struct {
 	Created string `json:"Created"`
-	State   struct {
+	Config  struct {
+		Labels map[string]string `json:"Labels"`
+	} `json:"Config"`
+	State struct {
+		Status string `json:"Status"`
+		// Error is why the runtime could not start it, which is empty for a
+		// container that ran and stopped.
+		Error     string `json:"Error"`
 		StartedAt string `json:"StartedAt"`
 		Health    *struct {
 			Status string `json:"Status"`
