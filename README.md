@@ -365,6 +365,7 @@ Installing, reinstalling and removing all go through the install script:
 | `sudo bash -c "$(curl -fsSL URL)" _ --uninstall` | Remove Meshploy (interactive) |
 | `sudo bash -c "$(curl -fsSL URL)" _ --cli-only` | Install or update the `meshploy` CLI binary only — safe on existing nodes |
 | `sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand` | Install without NS delegation — you add a wildcard A record and Caddy issues a certificate per hostname |
+| `sudo NODE_TYPE=master DOMAIN=example.com PUBLIC_IP=203.0.113.1 bash -c "$(curl -fsSL URL)" _ --auto` | Install without asking anything: the answers come from the environment |
 | `sudo bash -c "$(curl -fsSL URL)" _ --edge` | Install edge builds from `main` instead of the latest stable release |
 
 > Replace `URL` with `https://meshploy.com/install.sh`

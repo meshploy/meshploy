@@ -19,6 +19,8 @@
 #     sudo bash -c "$(curl -fsSL URL)" _ --edge        # use edge builds from main
 #     sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand  # self-managed DNS
 #                                                     # (wildcard A record, no NS delegation)
+#     sudo NODE_TYPE=master DOMAIN=example.com PUBLIC_IP=203.0.113.1 \
+#       bash -c "$(curl -fsSL URL)" _ --auto            # nothing asked: answers from the environment
 #
 set -euo pipefail
 
@@ -36,6 +38,7 @@ WIPE_DATA=false
 CLI_ONLY=false
 EDGE=false
 DNS_MODE_FLAG=""
+AUTO=false
 for arg in "$@"; do
   case "$arg" in
     --uninstall)  MODE="uninstall" ;;
@@ -43,6 +46,7 @@ for arg in "$@"; do
     --wipe-data)  WIPE_DATA=true ;;
     --cli-only)   CLI_ONLY=true ;;
     --edge)       EDGE=true ;;
+    --auto)       AUTO=true ;;
     --dns-mode=*)
       DNS_MODE_FLAG="${arg#*=}"
       case "$DNS_MODE_FLAG" in
@@ -222,6 +226,7 @@ case "$MODE" in
       $WIPE_DATA && EXTRA_FLAGS+=("--wipe-data")
     fi
     [[ -n "$DNS_MODE_FLAG" ]] && EXTRA_FLAGS+=("--dns-mode=${DNS_MODE_FLAG}")
+    $AUTO && EXTRA_FLAGS+=("--auto")
     # Expanding an empty array under `set -u` is an error on bash < 4.4, which
     # is still what ships on older LTS images, so branch on the length.
     if [[ ${#EXTRA_FLAGS[@]} -gt 0 ]]; then
