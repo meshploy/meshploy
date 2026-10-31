@@ -128,6 +128,9 @@ var platformReservedSubdomains = map[string]bool{
 }
 
 func (s *RouteService) Create(ctx context.Context, in CreateRouteInput) (*db.Route, error) {
+	if err := s.onOwnDomain(ctx, &in); err != nil {
+		return nil, err
+	}
 	hostname := in.Hostname
 
 	level, err := s.levelOf(ctx, in.ProjectID)
@@ -583,6 +586,28 @@ func hostnameFor(zone db.RouteZone, subdomain string, d *db.Domain) string {
 	default:
 		return fmt.Sprintf("%s.%s", subdomain, d.BaseDomain)
 	}
+}
+
+// onOwnDomain turns a whole hostname one label under a domain the organisation
+// has verified into a route on that domain: its ownership is already proved, so
+// it asks for no DNS record, and every rule of a domain's routes applies to it.
+// Deeper names stay whole hostnames, since the domain's certificate does not
+// cover them.
+func (s *RouteService) onOwnDomain(ctx context.Context, in *CreateRouteInput) error {
+	if in.DomainID != nil || in.Hostname == "" {
+		return nil
+	}
+	under, err := db.BaseDomainFor(ctx, s.db, in.Hostname)
+	if err != nil || under == nil || under.OrganizationID != in.OrgID {
+		return err
+	}
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(in.Hostname)), ".")
+	label := strings.TrimSuffix(host, "."+under.BaseDomain)
+	if label == "" || strings.Contains(label, ".") {
+		return nil
+	}
+	in.DomainID, in.Subdomain, in.Zone, in.Hostname = &under.ID, label, db.RouteZonePublic, ""
+	return nil
 }
 
 // ── Custom domain verification ────────────────────────────────────────────────

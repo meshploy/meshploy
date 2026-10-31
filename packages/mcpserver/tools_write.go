@@ -379,9 +379,9 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 
 	ms.AddTool(
 		mcp.NewTool("create_route",
-			mcp.WithDescription("Map a hostname to a service for incoming traffic, or redirect it to another route's hostname (www.example.com to example.com, an old domain to a new one). Give exactly one of service_id or redirect_to. The hostname is a custom one, so it gets no certificate until ownership is proved: the result's prove_ownership lists the DNS records for the user to add, then call verify_route_hostname."),
+			mcp.WithDescription("Map a hostname to a service for incoming traffic, or redirect it to another route's hostname (www.example.com to example.com, an old domain to a new one). Give exactly one of service_id or redirect_to. Any other hostname gets no certificate until ownership is proved: the result's prove_ownership lists the DNS records for the user to add, then call verify_route_hostname. Its TXT record may be deleted once verified."),
 			mcp.WithString("project_id", mcp.Required(), mcp.Description("Project ID")),
-			mcp.WithString("hostname", mcp.Required(), mcp.Description("Full hostname, e.g. app.example.com")),
+			mcp.WithString("hostname", mcp.Required(), mcp.Description("Full hostname, e.g. app.example.com. One label under a verified domain, as list_domains shows them, is served at once")),
 			mcp.WithString("service_id", mcp.Description("Service ID to route traffic to")),
 			mcp.WithString("redirect_to", mcp.Description("Route to redirect to, by ID or by hostname of a route in this project. The path is kept. That route must not redirect itself")),
 			mcp.WithNumber("redirect_code", mcp.Description("301 (permanent, the default) or 302 (temporary). Only with redirect_to")),

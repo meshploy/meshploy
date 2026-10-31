@@ -36,6 +36,8 @@ Certificates are automatic. A base domain whose DNS is **delegated** to the gate
 
 A route can use a hostname outside your base domains, such as `shop.customer.com`. The simplest proof that it is yours is a CNAME from it to another address of the same project, such as the app's own address: that one record proves the name and points it here. A name that cannot have a CNAME, such as a bare domain, is pointed at the gateway and proved with a TXT record at `_meshploy-verify.<hostname>`; the route shows the value to add.
 
+A whole hostname one label under a verified base domain, such as `shop.example.com` under `example.com`, is simply a route on that domain, and needs no proof, whichever way it was created. The TXT record of a proof is read once, so delete it after the route is verified; a route deleted and made again asks for a new one.
+
 ## In environment levels {#levels}
 
 A route in a level takes the level's name: `app` in staging is served as `app-staging`. See [Projects & environments](/concepts/environments#routes).

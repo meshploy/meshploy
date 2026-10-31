@@ -96,7 +96,7 @@ export function CustomDomainOwnership({
       </div>
 
       <ol className="space-y-5">
-        <Step n={1} title="Prove you own it" done={false} detail="Add this at the DNS provider for the hostname, or skip it: a CNAME to another address of this project proves the name on its own.">
+        <Step n={1} title="Prove you own it" done={false} detail="Add this at the DNS provider for the hostname, or skip it: a CNAME to another address of this project proves the name on its own. The TXT record is read once, so it can be deleted after this route is verified.">
           {route.custom_domain_verify_token ? (
             <RecordTable
               records={[{ name: `_meshploy-verify.${host}`, zone: zoneOf(host), type: "TXT", value: route.custom_domain_verify_token }]}
