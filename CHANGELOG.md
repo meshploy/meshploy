@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.22.0](https://github.com/meshploy/meshploy/compare/v0.21.2...v0.22.0) (2026-10-31)
+
+
+### Features
+
+* a domain reserved for a project, its doors and its console ([dc40767](https://github.com/meshploy/meshploy/commit/dc4076704695a98e9bbbe4ea2221af8ef3ae5d89))
+* **apps:** find the variables an app reads ([fdbd8a2](https://github.com/meshploy/meshploy/commit/fdbd8a26483a1c3626c04e8c24fefe59b432f4cf))
+* **auth:** an edition can refuse a request before its handler ([889ed1b](https://github.com/meshploy/meshploy/commit/889ed1b7000c0fda737d73efe3cc710d96ba5d32))
+* **auth:** sessions an edition vouches for, and a member's beside their grants ([c838bbc](https://github.com/meshploy/meshploy/commit/c838bbcb2d2a712ddf65ce4bb52de229ba1ab2b2))
+* **backups:** download a backup, and reach only the database's own ([eca859d](https://github.com/meshploy/meshploy/commit/eca859d24907730e88596a91375123b9d98e1185))
+* **domains:** a base domain reserved for one project ([b6dda78](https://github.com/meshploy/meshploy/commit/b6dda78c81c2a3eec6ffd9efcc73b22a3d54a190))
+* **domains:** records written through a DNS provider, and ZeroSSL as a second issuer ([755b11b](https://github.com/meshploy/meshploy/commit/755b11b6728e107df4604b56b7b9360917779e6b))
+* **edge:** a name per project beside the console ([dd44947](https://github.com/meshploy/meshploy/commit/dd44947bdd1ab9ac08b6634cb7f721d672287ca3))
+* **edge:** a reserved domain's bare name leads to its door ([319c480](https://github.com/meshploy/meshploy/commit/319c48040a349387a5f8d4ee3823c22be9228dfa))
+* **edge:** wildcard certificates through a DNS provider ([e902dd8](https://github.com/meshploy/meshploy/commit/e902dd85fd4862da176aa648295e917d45dc9c69))
+* **email:** one layout for every email ([4be9d2c](https://github.com/meshploy/meshploy/commit/4be9d2cc290e0cea56e98f1f06ddd6e6bb074148))
+* **git:** a connection can belong to one project ([cd440c5](https://github.com/meshploy/meshploy/commit/cd440c58f1aca7d4df4c9a9cdab5e5809322cc68))
+* **integrations:** DNS providers, Cloudflare first ([1e5d631](https://github.com/meshploy/meshploy/commit/1e5d631f9573683cc5b183b5f8427eb128eb8b4f))
+* **k8s:** isolate projects from each other, with exceptions per project ([4f120d5](https://github.com/meshploy/meshploy/commit/4f120d55020d1386799f19cad2473294080d550d))
+* **license:** a licence for every feature, later ones included ([a8fab64](https://github.com/meshploy/meshploy/commit/a8fab64b09ddf2aa7cb81d603c361e4e2ea8b0d0))
+* **projects:** choose the sandbox when creating a project ([b713eba](https://github.com/meshploy/meshploy/commit/b713ebac3fb2d01baf3cc25d3da8df11b2788445))
+* **projects:** run a project's apps sandboxed in gVisor ([05173b2](https://github.com/meshploy/meshploy/commit/05173b245dd68ec674e7062ef852050cab47c725))
+* **proxy:** a stopped app's address says it is stopped ([f51268d](https://github.com/meshploy/meshploy/commit/f51268d70faee1c64e9ea42e036faaf6f75c2800))
+* **routes:** a CNAME to the project's own address proves a hostname ([4a09e9a](https://github.com/meshploy/meshploy/commit/4a09e9aa11a752681c9f8d1f67eb2b2c42db70e0))
+* **server:** a project can be held from running anything ([ce08612](https://github.com/meshploy/meshploy/commit/ce08612dbffb149c8e1f89e3b9efa5106c539720))
+* **server:** limits per project, and builds stop at an hour ([ea73d42](https://github.com/meshploy/meshploy/commit/ea73d425d058a922de2e1d277bc3d95f8f25b120))
+
+
+### Bug Fixes
+
+* **deploy:** what installing pool-1 showed, and the README in plain English ([9b00d90](https://github.com/meshploy/meshploy/commit/9b00d90e5f0652e2aff5b42720687a8d4e3fa322))
+* **deploy:** what is saved during a build reaches what it starts ([5afe22d](https://github.com/meshploy/meshploy/commit/5afe22db77d5011d8008d97bc4223a63daf4b4d8))
+* **dns:** no records per domain under a Cloudflare wildcard ([c4ea997](https://github.com/meshploy/meshploy/commit/c4ea99714998c1de0d0e5c5db893860e54d25d4e))
+* **routes:** a route to a service not yet deployed waits for its first deploy ([933c0c7](https://github.com/meshploy/meshploy/commit/933c0c7d37d08bdbf18208e4eae8e9ff19603f3c))
+* **web:** raised buttons, and renaming the organisation keeps your role ([9bb19ec](https://github.com/meshploy/meshploy/commit/9bb19ec48ac49d5145f41acf3faedf93f6bdf645))
+* **web:** the sign-in logo centres on what is seen ([30cb93f](https://github.com/meshploy/meshploy/commit/30cb93f0cf43016283f46e2abddebc98f5f36f6d))
+
+
+### Performance Improvements
+
+* **web:** the console loads faster ([7202907](https://github.com/meshploy/meshploy/commit/7202907f2d85dda49e2aaf5ac9723fc952abac50))
+
 ## [0.21.2](https://github.com/meshploy/meshploy/compare/v0.21.1...v0.21.2) (2026-10-24)
 
 
