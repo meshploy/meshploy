@@ -523,6 +523,9 @@ func (s *WorkloadService) Start(ctx context.Context, serviceID uuid.UUID) (*db.S
 	if err := s.db.WithContext(ctx).Preload("Project").First(&svc, "id = ?", serviceID).Error; err != nil {
 		return nil, err
 	}
+	if err := checkProjectHold(ctx, s.db, svc.ProjectID); err != nil {
+		return nil, err
+	}
 	if svc.Image == "" {
 		return nil, errors.New("service has never been deployed — trigger a deployment first")
 	}

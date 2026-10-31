@@ -19,6 +19,12 @@ func UseK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Deployments.k8s = client
 }
 
+// UseJobsK8sForTest gives the job service a cluster client, so a test can see
+// the schedules it writes there.
+func UseJobsK8sForTest(s *Services, client kubernetes.Interface) {
+	s.Jobs.k8s = client
+}
+
 // CommitFromBuildLog exposes the build-log parser to tests.
 var CommitFromBuildLog = commitFromBuildLog
 

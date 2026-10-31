@@ -298,6 +298,22 @@ func (s *JobService) Delete(ctx context.Context, jobID uuid.UUID) error {
 	})
 }
 
+// ReapplySchedules brings a project's schedules in the cluster up to date,
+// after a hold on it began or ended.
+func (s *JobService) ReapplySchedules(ctx context.Context, projectID uuid.UUID) error {
+	if s.k8s == nil {
+		return nil
+	}
+	var jobs []db.Job
+	if err := s.db.WithContext(ctx).Where("project_id = ? AND is_cron AND schedule <> ''", projectID).Find(&jobs).Error; err != nil {
+		return err
+	}
+	for i := range jobs {
+		s.applyCronJob(ctx, &jobs[i])
+	}
+	return nil
+}
+
 // applyCronJob ensures the K8s CronJob matches the current job config.
 func (s *JobService) applyCronJob(ctx context.Context, job *db.Job) {
 	var project db.Project
@@ -342,6 +358,9 @@ func (s *JobService) applyCronJob(ctx context.Context, job *db.Job) {
 		MemLimit:          job.MemoryLimit,
 		NodeName:          nodeName,
 		JobID:             job.ID.String(),
+		// A schedule fires in the cluster, where no check runs: a held
+		// project's is paused there.
+		Suspend: checkProjectHold(ctx, s.db, job.ProjectID) != nil,
 	})
 }
 
@@ -443,6 +462,9 @@ func (s *JobService) reconcileCronRuns(ctx context.Context) {
 func (s *JobService) Trigger(ctx context.Context, jobID uuid.UUID) (*db.JobRun, error) {
 	job, err := s.getByID(ctx, jobID)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkProjectHold(ctx, s.db, job.ProjectID); err != nil {
 		return nil, err
 	}
 

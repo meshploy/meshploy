@@ -96,6 +96,42 @@ func RegisterProjectQuotaChecker(c ProjectQuotaChecker) {
 	projectQuotaCheckers = append(projectQuotaCheckers, c)
 }
 
+// Extension point: a project held from running.
+//
+// CE registers no hold, so a project runs whatever it is asked to.
+
+// ProjectHold keeps a project and its levels from starting anything.
+type ProjectHold interface {
+	// CheckProjectRun refuses with a user-facing error, or allows. projectID
+	// is the project itself, also for something in one of its levels.
+	CheckProjectRun(ctx context.Context, projectID uuid.UUID) error
+}
+
+var projectHolds []ProjectHold
+
+// RegisterProjectHold adds a hold. Call from an extension's init() or setup.
+func RegisterProjectHold(h ProjectHold) {
+	projectHolds = append(projectHolds, h)
+}
+
+// checkProjectHold refuses to run something in projectID, a project or a
+// level, while a hold says so. A no-op in CE builds.
+func checkProjectHold(ctx context.Context, tx *gorm.DB, projectID uuid.UUID) error {
+	if len(projectHolds) == 0 {
+		return nil
+	}
+	_, rootID, err := quotaProject(ctx, tx, projectID)
+	if err != nil {
+		return err
+	}
+	for _, h := range projectHolds {
+		if err := h.CheckProjectRun(ctx, rootID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // quotaProject is the project a project or level's limits are kept on, with
 // its organisation.
 func quotaProject(ctx context.Context, tx *gorm.DB, projectID uuid.UUID) (orgID, rootID uuid.UUID, err error) {

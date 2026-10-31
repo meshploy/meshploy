@@ -112,6 +112,9 @@ func (s *DeploymentService) Trigger(ctx context.Context, in TriggerInput) (*db.D
 		First(&svc, "id = ?", in.ServiceID).Error; err != nil {
 		return nil, fmt.Errorf("service not found: %w", err)
 	}
+	if err := checkProjectHold(ctx, s.db, svc.ProjectID); err != nil {
+		return nil, err
+	}
 
 	if svc.Type == db.ServiceTypeDatabase {
 		return s.provisionDatabase(ctx, &svc)
@@ -1177,6 +1180,9 @@ func (s *DeploymentService) DeployImage(ctx context.Context, serviceID uuid.UUID
 // deployImage applies image to svc's workload in the background and records it
 // as a deployment. what names the operation in its log and errors.
 func (s *DeploymentService) deployImage(ctx context.Context, svc db.Service, image, logLine, what string, prov Provenance) (*db.Deployment, error) {
+	if err := checkProjectHold(ctx, s.db, svc.ProjectID); err != nil {
+		return nil, err
+	}
 	if err := s.checkBorrowing(ctx, svc.ID); err != nil {
 		return nil, err
 	}

@@ -28,6 +28,7 @@ type CronJobParams struct {
 	NodeName          string
 	JobID             string // meshploy Job UUID — stored as label on spawned K8s Jobs
 	RuntimeClass      string // see WorkloadParams
+	Suspend           bool   // keeps it from firing
 }
 
 // ApplyCronJob creates or updates a K8s CronJob for a meshploy cron job.
@@ -108,6 +109,7 @@ func buildCronJobSpec(p CronJobParams) batchv1.CronJobSpec {
 
 	return batchv1.CronJobSpec{
 		Schedule:                   p.Schedule,
+		Suspend:                    &p.Suspend,
 		ConcurrencyPolicy:          p.ConcurrencyPolicy,
 		SuccessfulJobsHistoryLimit: &histLimit,
 		FailedJobsHistoryLimit:     &histLimit,
