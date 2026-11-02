@@ -1,10 +1,12 @@
 ---
 import logo from '../assets/logo.svg';
+import logoLight from '../assets/logo-light.svg';
 ---
 
 <div class="docs-brand">
   <a class="site-title sl-flex" href="https://meshploy.com/">
-    <img src={logo.src} width="29" height="29" alt="" />
+    <img class="logo-dark" src={logo.src} width="29" height="29" alt="" />
+    <img class="logo-light" src={logoLight.src} width="29" height="29" alt="" />
     <span>meshploy</span>
   </a>
   <span class="docs-brand-divider" aria-hidden="true">/</span>
@@ -16,5 +18,9 @@ import logo from '../assets/logo.svg';
   .docs-brand { display: flex; align-items: center; gap: 0.65rem; white-space: nowrap; }
   .docs-brand-divider { color: var(--sl-color-gray-4); font-weight: 400; }
   .docs-brand-label { color: var(--sl-color-text-accent); font-size: 0.85rem; font-weight: 500; text-decoration: none; }
+  /* The mark is drawn in the accent: bone in the dark theme, forest in the light. */
+  .logo-light { display: none; }
+  :global(:root[data-theme="light"]) .logo-light { display: block; }
+  :global(:root[data-theme="light"]) .logo-dark { display: none; }
   .docs-brand-label:hover { color: var(--sl-color-white); }
 </style>

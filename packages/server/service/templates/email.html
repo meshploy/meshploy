@@ -1,8 +1,8 @@
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Heading}}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
+<body style="margin:0;padding:0;background:#f4f1e9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1e9;">
 <tr><td align="center" style="padding:32px 16px;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;">
     <tr><td style="height:4px;background:{{.Colour}};border-radius:12px 12px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
@@ -27,7 +27,7 @@
       <a href="{{.Link}}" style="display:inline-block;padding:11px 20px;background:{{.ButtonColour}};border-radius:8px;color:{{.ButtonText}};text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;">{{.Button}}</a>
     </td></tr>{{end}}
     {{if or .Note .Paste}}<tr><td style="padding:16px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#71717a;">
-      {{.Note}}{{if .Paste}}{{if .Note}} {{end}}If the button does not open, copy this address into your browser:<br><a href="{{.Link}}" style="color:#047857;word-break:break-all;">{{.Link}}</a>{{end}}
+      {{.Note}}{{if .Paste}}{{if .Note}} {{end}}If the button does not open, copy this address into your browser:<br><a href="{{.Link}}" style="color:#1a3a2d;word-break:break-all;">{{.Link}}</a>{{end}}
     </td></tr>{{end}}
     {{if .After}}<tr><td style="padding:12px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#71717a;">{{.After}}</td></tr>{{end}}
     <tr><td style="padding:24px 32px 28px;"><div style="border-top:1px solid #f4f4f5;padding-top:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#a1a1aa;">

@@ -1,5 +1,8 @@
 <p align="center">
-  <a href="https://meshploy.com"><img src="docs/assets/meshploy-mark.svg" width="64" height="64" alt="Meshploy logo"></a>
+  <a href="https://meshploy.com"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/meshploy-mark.svg">
+    <img src="docs/assets/meshploy-mark-light.svg" width="64" height="64" alt="Meshploy logo">
+  </picture></a>
 </p>
 
 <h1 align="center">Meshploy</h1>

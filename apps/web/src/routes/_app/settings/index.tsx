@@ -1,7 +1,7 @@
 import { SettingsWorkspace } from "@/components/layout/settings-workspace"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertCircle, Check, HardDrive, Loader2, Pencil, Plus, X } from "lucide-react"
+import { AlertCircle, Check, HardDrive, Loader2, Monitor, Moon, Pencil, Plus, Sun, X } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +37,8 @@ import { RestoreAccordion } from "@/components/backups/restore-accordion"
 import { cn } from "@/lib/utils"
 import { ACCENT_GROUPS } from "@/lib/accents"
 import { useAccentStore } from "@/store/accent-store"
+import { useThemeStore, type ThemePreference } from "@/store/theme-store"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { useBrand } from "@/lib/brand"
 import { EeSettingsSection } from "@/ee"
 import { TermInfo } from "@/help/term"
@@ -356,23 +358,46 @@ function expiryText(iso: string): string {
   return `${date}, in ${days} ${days === 1 ? "day" : "days"}`
 }
 
+function ThemePicker() {
+  const { theme, setTheme } = useThemeStore()
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">Theme</p>
+      <SegmentedControl<ThemePreference>
+        value={theme}
+        onValueChange={setTheme}
+        options={[
+          { value: "system", label: "System", icon: <Monitor className="h-3.5 w-3.5" /> },
+          { value: "light", label: "Light", icon: <Sun className="h-3.5 w-3.5" /> },
+          { value: "dark", label: "Dark", icon: <Moon className="h-3.5 w-3.5" /> },
+        ]}
+      />
+      <p className="mt-2 text-xs text-muted-foreground">Saved in this browser. System follows your device.</p>
+    </div>
+  )
+}
+
 function AppearanceSection() {
   const { accentId, setAccent } = useAccentStore()
   const brand = useBrand()
 
   // An organisation's own colour is everyone's in it, so there is nothing to pick.
   if (brand.accent) return (
-    <Section title="Appearance" subtitle="The accent color used across the interface">
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span className="h-3 w-3 rounded-full shrink-0 ring-1 ring-black/20" style={{ background: brand.accent }} />
-        {brand.name} sets the accent color for everyone in this organisation.
-      </p>
+    <Section title="Appearance" subtitle="Theme and accent color">
+      <div className="space-y-5">
+        <ThemePicker />
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="h-3 w-3 rounded-full shrink-0 ring-1 ring-black/20" style={{ background: brand.accent }} />
+          {brand.name} sets the accent color for everyone in this organisation.
+        </p>
+      </div>
     </Section>
   )
 
   return (
-    <Section title="Appearance" subtitle="Customize the accent color used across the interface">
+    <Section title="Appearance" subtitle="Theme and accent color">
       <div className="space-y-4">
+        <ThemePicker />
         {ACCENT_GROUPS.map((group) => (
           <div key={group.label}>
             <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-2">

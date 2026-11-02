@@ -13,6 +13,15 @@ export const useAccentStore = create<AccentStore>()(
       accentId: DEFAULT_ACCENT_ID,
       setAccent: (id) => set({ accentId: id }),
     }),
-    { name: "meshploy-accent" }
+    {
+      name: "meshploy-accent",
+      // Emerald was the default before bone; a browser still on it is moved
+      // to the new default.
+      version: 1,
+      migrate: (state, version) => {
+        const s = state as AccentStore
+        return version < 1 && s.accentId === "emerald" ? { ...s, accentId: DEFAULT_ACCENT_ID } : s
+      },
+    }
   )
 )

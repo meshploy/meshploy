@@ -1,4 +1,5 @@
 import { CountStepper, CpuStepper, MemoryStepper, StorageStepper } from "@/components/forms/steppers"
+import { editorTheme } from "@/lib/theme"
 import { FormLayout } from "@/components/layout/form-layout"
 import { SelfSignedNotice } from "@/components/domains/self-signed-notice"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -2170,7 +2171,7 @@ function JobForm({ projectId }: { projectId: string }) {
             <CodeMirror
               value={jf.envVars}
               height="120px"
-              theme="dark"
+              theme={editorTheme()}
               extensions={[envLanguage, envTheme]}
               onChange={(val) => patch({ envVars: val })}
               placeholder={"DATABASE_URL=postgres://...\nDEBUG=true"}
@@ -2197,7 +2198,7 @@ function JobForm({ projectId }: { projectId: string }) {
             <CodeMirror
               value={jf.command}
               height="160px"
-              theme="dark"
+              theme={editorTheme()}
               extensions={[StreamLanguage.define(shell)]}
               onChange={(val) => patch({ command: val })}
               placeholder={"#!/bin/sh\nset -e\n\necho 'Running job…'"}

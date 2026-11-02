@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view"
+import { editorTheme } from "@/lib/theme"
 import CodeMirror from "@uiw/react-codemirror"
 import { configFileLanguage } from "@/lib/config-file-lang"
 
@@ -31,7 +32,7 @@ export function ConfigFileEditor({
       <CodeMirror
         value={value}
         height={height}
-        theme="dark"
+        theme={editorTheme()}
         extensions={[...configFileLanguage(path), EditorView.contentAttributes.of({ ...(id ? { id } : {}), "aria-label": "File contents" })]}
         onChange={onChange}
         placeholder={placeholder}

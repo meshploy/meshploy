@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <g fill="none" stroke="#1a3a2d" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="18,78 18,22 50,58 82,22 82,78" stroke-width="7"></polyline>
+    <!-- The two diagonals close the mesh; without them this is a plain letter M.
+         Geometry and weight match meshploy-site's Nav.astro, so the docs header
+         and the marketing site show the same mark. -->
+    <line x1="18" y1="78" x2="50" y2="58" stroke-width="7" opacity="0.45"></line>
+    <line x1="82" y1="78" x2="50" y2="58" stroke-width="7" opacity="0.45"></line>
+  </g>
+  <g fill="#1a3a2d">
+    <circle cx="18" cy="78" r="7"></circle>
+    <circle cx="18" cy="22" r="7"></circle>
+    <circle cx="50" cy="58" r="7"></circle>
+    <circle cx="82" cy="22" r="7"></circle>
+    <circle cx="82" cy="78" r="7"></circle>
+  </g>
+</svg>

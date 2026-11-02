@@ -53,6 +53,8 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
   --color-chart-5: var(--chart-5);
+  --color-next: var(--next);
+  --color-ok: var(--ok);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
@@ -87,72 +89,140 @@
   --text-2xl: 1.625rem; /* 26px */
 }
 
-/* Light mode */
+/* The accent: a person's pick or the organisation's brand sets --pick (and
+   --pick-fg, the text drawn on it), tuned for the dark theme, and its
+   light-theme form as --pick-light and --pick-light-fg. Unset, the accent is
+   Meshploy's: bone in the dark, forest in the light, as on the site.
+   Everything else follows Meshploy's palette: forest surfaces in the dark,
+   paper surfaces in the light. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.5 0.17 160); /* emerald */
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.5 0.17 160);
-  --radius: 0.75rem;
-  --chart-1: oklch(0.5 0.17 160);
-  --chart-2: oklch(0.65 0.15 160);
-  --chart-3: oklch(0.75 0.14 145);
-  --chart-4: oklch(0.65 0.2 30);
-  --chart-5: oklch(0.6 0.22 300);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.5 0.17 160);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.5 0.17 160);
+  --pick-default: oklch(0.86 0.03 88); /* bone */
 }
 
-/* ── Dark theme — Maia: olive-tinted near-black, emerald accent ─────────── */
-.dark {
-  --background: oklch(0.175 0.003 260);
-  --foreground: oklch(0.96 0.002 260);
-  --card: oklch(0.205 0.003 260);
+/* Light theme: paper surfaces, near-black ink. */
+:root {
+  color-scheme: light;
+  --background: oklch(0.958 0.011 85);
+  --foreground: oklch(0.2 0.012 80);
+  --card: oklch(0.982 0.007 85);
   --card-foreground: var(--foreground);
-  --popover: oklch(0.235 0.004 260);
+  --popover: oklch(0.99 0.005 85);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.72 0.17 160);
-  --primary-foreground: oklch(0.14 0.002 260);
-  --secondary: oklch(0.255 0.004 260);
+  --primary: var(--pick-light, oklch(0.32 0.045 165));
+  --primary-foreground: var(--pick-light-fg, oklch(0.93 0.025 88));
+  --secondary: oklch(0.925 0.013 85);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.235 0.004 260);
-  --muted-foreground: oklch(0.74 0.006 260);
-  --accent: oklch(0.28 0.005 260);
+  --muted: oklch(0.935 0.012 85);
+  --muted-foreground: oklch(0.47 0.018 75);
+  --accent: oklch(0.915 0.015 85);
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.55 0.2 27);
+  --border: oklch(0.875 0.016 82);
+  --input: oklch(0.86 0.016 82);
+  --ring: var(--primary);
+  --radius: 0.75rem;
+  /* What is happening now or what to do next. Never warnings or "coming". */
+  --next: oklch(0.58 0.13 50);
+  /* Healthy, online, done. */
+  --ok: oklch(0.55 0.14 160);
+  --series-job: oklch(0.55 0.07 250);
+  --series-job-failed: oklch(0.5 0.15 25);
+  --hue-l: 0.58;
+  --hue-text-l: 0.45;
+  --graph-node: var(--card);
+  --graph-line: oklch(0.7 0.015 80 / 0.6);
+  --graph-off: oklch(0.65 0.012 80);
+  --map-edge: oklch(0.55 0.02 80);
+  --map-edge-soft: oklch(0.62 0.02 80);
+  --map-dots: oklch(0.8 0.015 80);
+  --auth-grid: oklch(0.55 0.02 80 / 0.5);
+  --code-key: oklch(0.48 0.11 220);
+  --code-op: oklch(0.5 0.01 80);
+  --code-string: oklch(0.5 0.12 50);
+  --code-value: oklch(0.28 0.01 80);
+  --code-comment: oklch(0.58 0.01 80);
+  --chart-1: oklch(0.52 0.13 163);
+  --chart-2: oklch(0.52 0.12 220);
+  --chart-3: oklch(0.52 0.14 290);
+  --chart-4: oklch(0.6 0.13 70);
+  --chart-5: oklch(0.55 0.16 345);
+  --sidebar: oklch(0.935 0.014 85);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: color-mix(in oklch, var(--primary) 11%, transparent);
+  --sidebar-accent-foreground: var(--primary);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--primary);
+}
+
+/* Status colours keep their meaning in both themes. Their light shades are
+   drawn for dark surfaces, so on paper each reads one step deeper. */
+:root:not(.dark) {
+  --color-emerald-200: oklch(0.5 0.12 163);
+  --color-emerald-300: oklch(0.5 0.12 163);
+  --color-emerald-400: oklch(0.52 0.13 163);
+  --color-amber-200: oklch(0.52 0.12 65);
+  --color-amber-300: oklch(0.52 0.12 65);
+  --color-amber-400: oklch(0.55 0.13 65);
+  --color-red-300: oklch(0.52 0.19 27);
+  --color-red-400: oklch(0.54 0.2 27);
+  --color-sky-200: oklch(0.48 0.11 235);
+  --color-sky-300: oklch(0.48 0.11 235);
+  --color-sky-400: oklch(0.5 0.12 235);
+  --color-blue-400: oklch(0.5 0.16 260);
+  --color-violet-400: oklch(0.5 0.17 290);
+}
+
+/* Dark theme: forest surfaces, the accent as picked. */
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.175 0.014 165);
+  --foreground: oklch(0.96 0.008 160);
+  --card: oklch(0.205 0.015 165);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.235 0.016 165);
+  --popover-foreground: var(--foreground);
+  --primary: var(--pick, var(--pick-default));
+  --primary-foreground: var(--pick-fg, oklch(0.16 0.014 165));
+  --secondary: oklch(0.255 0.016 165);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.235 0.016 165);
+  --muted-foreground: oklch(0.76 0.02 160);
+  --accent: oklch(0.28 0.017 165);
   --accent-foreground: var(--foreground);
   --destructive: oklch(0.72 0.18 25);
-  --border: oklch(0.325 0.004 260);
-  --input: oklch(0.3 0.004 260);
+  --border: oklch(0.32 0.016 165);
+  --input: oklch(0.3 0.016 165);
   --ring: var(--primary);
+  --next: oklch(0.78 0.12 55);
+  --ok: oklch(0.72 0.17 160);
+  --series-job: oklch(0.62 0.06 250);
+  --series-job-failed: oklch(0.58 0.14 25);
+  --hue-l: 0.72;
+  --hue-text-l: 0.78;
+  --graph-node: oklch(0.14 0.012 165);
+  --graph-line: oklch(0.36 0.012 165 / 0.5);
+  --graph-off: oklch(0.42 0.01 165);
+  --map-edge: oklch(0.55 0.02 165);
+  --map-edge-soft: oklch(0.6 0.02 165);
+  --map-dots: oklch(0.3 0.012 165);
+  --auth-grid: oklch(0.24 0.012 165);
+  --code-key: oklch(0.78 0.12 200);
+  --code-op: oklch(0.75 0 0);
+  --code-string: oklch(0.75 0.12 55);
+  --code-value: oklch(0.85 0 0);
+  --code-comment: oklch(0.55 0 0);
   --chart-1: oklch(0.72 0.17 160);
   --chart-2: oklch(0.73 0.12 220);
   --chart-3: oklch(0.78 0.12 290);
   --chart-4: oklch(0.8 0.14 80);
   --chart-5: oklch(0.75 0.15 345);
-  --sidebar: oklch(0.15 0.003 260);
+  --sidebar: oklch(0.155 0.013 165);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: color-mix(in oklch, var(--primary) 10%, transparent);
+  --sidebar-accent: color-mix(in oklch, var(--primary) 15%, transparent);
   --sidebar-accent-foreground: var(--primary);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--primary);
@@ -1116,3 +1186,18 @@ a {
 .execution-history-row { display:flex; align-items:center; gap:12px; padding:14px 16px; min-height:56px; transition:background-color 140ms; }
 .execution-history-row:hover { background:color-mix(in oklch,var(--foreground) 3%,transparent); }
 @media(max-width:600px) { .execution-history-row { flex-wrap:wrap; } .execution-history-row > div:last-child { margin-left:auto; } }
+
+/* CodeMirror's light theme paints white; on paper the editor takes the card's
+   surface and the page's lines instead. */
+:root:not(.dark) .cm-editor {
+  background-color: var(--card) !important;
+}
+:root:not(.dark) .cm-gutters {
+  background-color: var(--muted) !important;
+  border-color: var(--border) !important;
+  color: var(--muted-foreground) !important;
+}
+:root:not(.dark) .cm-activeLine,
+:root:not(.dark) .cm-activeLineGutter {
+  background-color: color-mix(in oklch, var(--primary) 6%, transparent) !important;
+}

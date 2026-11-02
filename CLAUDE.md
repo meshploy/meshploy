@@ -39,7 +39,7 @@ meshploy/
 - **packages/db** — Shared GORM models backed by **PostgreSQL**. `AutoMigrate` + supplementary partial unique indexes run on API startup via `db.Migrate()`. Exports an Extensible Migration Registry (`RegisterMigration`) for the EE open-core pattern. Imported by both `apps/api` and `apps/proxy`.
 - **packages/client** — Typed Go REST client for the Meshploy API. Imported by `apps/cli` (every command) and by `packages/mcpserver`. Lives in `packages/` so no app depends on another app.
 - **packages/mcpserver** — The MCP tool definitions (~100 tools) built on `packages/client`. Imported by `apps/cli` for the local stdio server (`meshploy mcp`) and by `packages/server` for the gateway-served remote `/mcp` endpoint.
-- **apps/web** — Vite + React 19 + TanStack Router frontend. Dark-only, Tailwind CSS v4 (CSS-first via `@tailwindcss/vite`, no config file), shadcn/ui Nova preset, `@base-ui/react` primitives.
+- **apps/web** — Vite + React 19 + TanStack Router frontend. Light and dark themes (forest and paper, bone accent by default), Tailwind CSS v4 (CSS-first via `@tailwindcss/vite`, no config file), shadcn/ui Nova preset, `@base-ui/react` primitives.
 - **deploy/** — Headscale (WireGuard mesh), CoreDNS, Docker Compose. The gateway node is the only public-internet-facing machine; all workers are dark.
 
 ### Help is one text

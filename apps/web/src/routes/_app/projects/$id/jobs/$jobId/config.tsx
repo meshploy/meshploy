@@ -1,4 +1,5 @@
 import { CpuStepper, MemoryStepper } from "@/components/forms/steppers"
+import { editorTheme } from "@/lib/theme"
 import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
 import { GroupAttachments } from "@/components/variables/group-attachments"
 import { FormLayout } from "@/components/layout/form-layout"
@@ -123,7 +124,7 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
             <CodeMirror
               value={form.envVars}
               height="140px"
-              theme="dark"
+              theme={editorTheme()}
               extensions={[envLanguage, envTheme]}
               onChange={(val) => patch({ envVars: val })}
               placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"}
@@ -150,7 +151,7 @@ function ConfigForm({ job, orgId, projectId, token }: { job: ApiJob; orgId: stri
             <CodeMirror
               value={form.command}
               height="200px"
-              theme="dark"
+              theme={editorTheme()}
               extensions={[shellExtension]}
               onChange={(val) => patch({ command: val })}
               placeholder={"#!/bin/sh\n\necho 'Hello World'"}

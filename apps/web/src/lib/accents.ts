@@ -3,6 +3,9 @@ export interface AccentColor {
   label: string
   // oklch value used in dark mode - also the swatch color
   value: string
+  // Its form in the light theme, and the text on it, when darkening the
+  // dark-mode value would not do
+  light?: { value: string; foreground: string }
 }
 
 export interface AccentGroup {
@@ -51,9 +54,15 @@ export const ACCENT_GROUPS: AccentGroup[] = [
     ],
   },
   {
+    label: "Meshploy",
+    colors: [
+      { id: "bone",       label: "Bone",       value: "oklch(0.86 0.03 88)",
+        light: { value: "oklch(0.32 0.045 165)", foreground: "oklch(0.93 0.025 88)" } },
+    ],
+  },
+  {
     label: "Neutral",
     colors: [
-      { id: "bone",       label: "Bone",       value: "oklch(0.80 0.03 90)"  },
       { id: "steel",      label: "Steel",      value: "oklch(0.72 0.03 220)" },
     ],
   },
@@ -61,24 +70,23 @@ export const ACCENT_GROUPS: AccentGroup[] = [
 
 export const ACCENTS: AccentColor[] = ACCENT_GROUPS.flatMap((g) => g.colors)
 
-export const DEFAULT_ACCENT_ID = "emerald"
+export const DEFAULT_ACCENT_ID = "bone"
 
 export function getAccent(id: string): AccentColor {
   return ACCENTS.find((a) => a.id === id) ?? ACCENTS[0]
 }
 
 /**
- * Sets the primary colour, and the text drawn on it when one is given;
- * without one the theme's own stays, which suits every colour above.
+ * Sets the accent for both themes: as given in the dark one (with the text
+ * drawn on it, when one is given), and in the light one its own light form,
+ * or else the colour darkened to a fixed lightness, so white text on it and
+ * links in it stay legible on paper.
  */
-export function applyAccent(value: string, foreground?: string) {
+export function applyAccent(value: string, foreground?: string, light?: AccentColor["light"]) {
   const root = document.documentElement
-  root.style.setProperty("--primary", value)
-  root.style.setProperty("--ring", value)
-  root.style.setProperty("--sidebar-primary", value)
-  root.style.setProperty("--sidebar-ring", value)
-  for (const name of ["--primary-foreground", "--sidebar-primary-foreground"]) {
-    if (foreground) root.style.setProperty(name, foreground)
-    else root.style.removeProperty(name)
-  }
+  const set = (name: string, v?: string) => (v ? root.style.setProperty(name, v) : root.style.removeProperty(name))
+  set("--pick", value)
+  set("--pick-fg", foreground)
+  set("--pick-light", light?.value ?? `oklch(from ${value} min(l, 0.5) c h)`)
+  set("--pick-light-fg", light?.foreground ?? "oklch(0.985 0.004 85)")
 }

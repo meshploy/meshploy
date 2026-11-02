@@ -274,7 +274,7 @@ function ProjectRow({ project, waiting, deploys }: { project: Project; waiting: 
     >
       <div
         className="w-1.5 h-7 rounded-full shrink-0"
-        style={{ background: `oklch(0.72 0.17 ${hue})` }}
+        style={{ background: `oklch(var(--hue-l) 0.17 ${hue})` }}
       />
       <div className="flex-1 min-w-0">
         <p className="flex items-center gap-1.5 text-sm font-medium text-foreground leading-tight"><span className="truncate">{project.name}</span><ProjectBadge projectId={project.id} /></p>
@@ -355,12 +355,12 @@ export function MeshGraph({ nodes, height = 220 }: { nodes: Node[]; height?: num
           <g key={a.id}>
             {gateway && <line
               x1={cx} y1={cy} x2={x} y2={y}
-              stroke={live ? "oklch(0.72 0.17 160 / 0.35)" : "oklch(0.35 0.005 90 / 0.4)"}
+              stroke={live ? "color-mix(in oklch, var(--ok) 35%, transparent)" : "var(--graph-line)"}
               strokeWidth="1"
               strokeDasharray={live ? undefined : "3 3"}
             />}
             {live && (
-              <circle r="2.5" fill="oklch(0.72 0.17 160)" opacity="0.85">
+              <circle r="2.5" fill="var(--ok)" opacity="0.85">
                 <animateMotion
                   dur={`${3 + i * 0.5}s`}
                   repeatCount="indefinite"
@@ -369,8 +369,8 @@ export function MeshGraph({ nodes, height = 220 }: { nodes: Node[]; height?: num
               </circle>
             )}
             {/* A mesh-only machine is on the network but not in the cluster: dashed. */}
-            <circle cx={x} cy={y} r="14" fill="oklch(0.13 0.005 90)" stroke={a.meshRole === "mesh" ? "oklch(0.5 0.005 90)" : "oklch(0.22 0.005 90)"} strokeDasharray={a.meshRole === "mesh" ? "3 2" : undefined} />
-            <circle cx={x} cy={y} r="4" fill={a.status === "online" ? "oklch(0.72 0.17 160)" : "oklch(0.40 0.005 90)"} />
+            <circle cx={x} cy={y} r="14" fill="var(--graph-node)" stroke={a.meshRole === "mesh" ? "var(--muted-foreground)" : "var(--border)"} strokeDasharray={a.meshRole === "mesh" ? "3 2" : undefined} />
+            <circle cx={x} cy={y} r="4" fill={a.status === "online" ? "var(--ok)" : "var(--graph-off)"} />
             <text
               x={x} y={y + 27}
               fill="var(--muted-foreground)"
@@ -385,11 +385,11 @@ export function MeshGraph({ nodes, height = 220 }: { nodes: Node[]; height?: num
       })}
       {/* Gateway status is reported, not inferred from its role. */}
       {gateway ? <g>
-      <circle cx={cx} cy={cy} r="20" fill={gateway.status === "online" ? "oklch(0.72 0.17 160 / 0.1)" : "oklch(0.3 0.01 90 / 0.1)"} stroke={gateway.status === "online" ? "oklch(0.72 0.17 160 / 0.4)" : "oklch(0.5 0.01 90 / 0.4)"} strokeWidth="1.5" />
-      <circle cx={cx} cy={cy} r="7" fill={gateway.status === "online" ? "oklch(0.72 0.17 160)" : "oklch(0.55 0.01 90)"} />
+      <circle cx={cx} cy={cy} r="20" fill={gateway.status === "online" ? "color-mix(in oklch, var(--ok) 10%, transparent)" : "color-mix(in oklch, var(--graph-off) 10%, transparent)"} stroke={gateway.status === "online" ? "color-mix(in oklch, var(--ok) 40%, transparent)" : "var(--graph-line)"} strokeWidth="1.5" />
+      <circle cx={cx} cy={cy} r="7" fill={gateway.status === "online" ? "var(--ok)" : "var(--graph-off)"} />
       <text
         x={cx} y={cy + 36}
-        fill="oklch(0.78 0.005 90)"
+        fill="var(--foreground)"
         fontSize="12"
         textAnchor="middle"
         fontWeight="600"

@@ -1,4 +1,5 @@
 import { nodeCapacity } from "@/lib/api/nodes"
+import { editorTheme } from "@/lib/theme"
 import { CountStepper, CpuStepper, MemoryStepper, StorageStepper } from "@/components/forms/steppers"
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -560,7 +561,7 @@ export function StackEditor({ value, onChange, projectId, minHeight = "360px", r
         <CodeMirror
           value={value}
           height={minHeight}
-          theme="dark"
+          theme={editorTheme()}
           extensions={[yaml()]}
           onChange={readOnly ? undefined : onChange}
           editable={!readOnly}

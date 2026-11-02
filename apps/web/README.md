@@ -1,6 +1,6 @@
 # apps/web
 
-The Meshploy web dashboard. A dark-only single-page app built with Vite, React 19, and TanStack Router.
+The Meshploy web dashboard. A single-page app, light or dark (Settings, Appearance), built with Vite, React 19, and TanStack Router.
 
 ---
 
@@ -46,7 +46,7 @@ apps/web/src/
 │   ├── org-store.ts    # Current org (Zustand, persisted)
 │   └── ui-store.ts     # Sidebar collapsed state (Zustand, persisted)
 ├── types/index.ts      # Shared TypeScript types
-├── index.css           # Tailwind v4 tokens + dark theme (oklch)
+├── index.css           # Tailwind v4 tokens: paper light theme, forest dark theme (oklch)
 └── main.tsx            # App entry point + router setup
 ```
 

@@ -1,4 +1,5 @@
 import { CountStepper, CpuStepper, MemoryStepper } from "@/components/forms/steppers"
+import { editorTheme } from "@/lib/theme"
 import { ConfigSaveBar, useConfigDraft, useConfigSave } from "@/components/layout/config-save-bar"
 import { GroupAttachments } from "@/components/variables/group-attachments"
 import { ResourceIntro } from "@/components/layout/resource-workbench"
@@ -128,7 +129,7 @@ function EnvVarsSection({ projectId, serviceId }: { projectId: string; serviceId
           <CodeMirror
             value={envVars}
             height={envEditorHeight(envVars, 160, 420)}
-            theme="dark"
+            theme={editorTheme()}
             extensions={extensions}
             onChange={(val) => setEnvVars(val)}
             editable={!readOnly}
@@ -834,7 +835,7 @@ function BuildEnvVarsSection({ projectId, serviceId }: { projectId: string; serv
           <CodeMirror
             value={envVars}
             height={envEditorHeight(envVars, 120, 360)}
-            theme="dark"
+            theme={editorTheme()}
             extensions={extensions}
             onChange={(val) => setEnvVars(val)}
             editable={!readOnly}

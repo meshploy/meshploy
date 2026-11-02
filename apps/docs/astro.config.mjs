@@ -24,7 +24,8 @@ export default defineConfig({
 			title: 'meshploy',
 			description: 'Documentation for Meshploy, the open-source application platform for your own servers and private mesh.',
 			logo: {
-				src: './src/assets/logo.svg',
+				dark: './src/assets/logo.svg',
+				light: './src/assets/logo-light.svg',
 				replacesTitle: false,
 				href: 'https://meshploy.com',
 			},

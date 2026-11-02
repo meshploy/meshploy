@@ -43,26 +43,31 @@
   --sl-sidebar-width: 18rem;
   --sl-content-width: 47rem;
   --sl-line-height: 1.75;
-  --mesh-bg: #090f13;
-  --mesh-surface: #0d171c;
-  --mesh-surface-strong: #111c22;
-  --mesh-ink: #e8eeec;
-  --mesh-muted: #94a6ab;
-  --mesh-line: #27363c;
-  --mesh-accent: #baffcf;
-  --mesh-accent-ink: #10261a;
+  /* Meshploy's palette, as on the site and in the console: forest surfaces
+     with a bone accent in the dark, paper with forest in the light. */
+  --mesh-bg: #0b120f;
+  --mesh-surface: #111915;
+  --mesh-surface-strong: #17211c;
+  --mesh-ink: #edf3f0;
+  --mesh-muted: #a7b5ad;
+  --mesh-line: #2b3631;
+  --mesh-accent: #d9d0bb;
+  --mesh-accent-high: #efe7d6;
+  --mesh-accent-ink: #0d1914;
+  --mesh-grid: #d9d0bb0a;
+  --mesh-glow: #d9d0bb10;
 }
 
 :root[data-theme="dark"] {
   --sl-color-white: var(--mesh-ink);
-  --sl-color-gray-1: #d3dedb;
+  --sl-color-gray-1: #d9e0dc;
   --sl-color-gray-2: var(--mesh-muted);
-  --sl-color-gray-3: #72858a;
-  --sl-color-gray-4: #46585e;
+  --sl-color-gray-3: #717e78;
+  --sl-color-gray-4: #45504b;
   --sl-color-gray-5: var(--mesh-line);
   --sl-color-gray-6: var(--mesh-surface);
   --sl-color-black: var(--mesh-bg);
-  --sl-color-text: #b8c5c6;
+  --sl-color-text: #c4cdc8;
   --sl-color-text-accent: var(--mesh-accent);
   --sl-color-text-invert: var(--mesh-accent-ink);
   --sl-color-bg: var(--mesh-bg);
@@ -70,19 +75,49 @@
   --sl-color-bg-sidebar: var(--mesh-bg);
   --sl-color-bg-inline-code: var(--mesh-surface-strong);
   --sl-color-bg-accent: var(--mesh-accent);
-  --sl-color-accent-low: #10231b;
-  --sl-color-accent: #7fdda2;
-  --sl-color-accent-high: var(--mesh-accent);
+  --sl-color-accent-low: #23261b;
+  --sl-color-accent: var(--mesh-accent);
+  --sl-color-accent-high: var(--mesh-accent-high);
   --sl-color-hairline: var(--mesh-line);
   --sl-color-hairline-light: var(--mesh-line);
   --sl-color-hairline-shade: var(--mesh-line);
 }
 
 :root[data-theme="light"] {
-  --sl-color-accent-low: #ddf9e7;
-  --sl-color-accent: #167b45;
-  --sl-color-accent-high: #0f5030;
-  --sl-color-text-accent: #167b45;
+  --mesh-bg: #f4f1e9;
+  --mesh-surface: #fbf9f4;
+  --mesh-surface-strong: #ede9e1;
+  --mesh-ink: #191610;
+  --mesh-muted: #615a50;
+  --mesh-line: #dbd5ca;
+  --mesh-accent: #1a3a2d;
+  --mesh-accent-high: #09251a;
+  --mesh-accent-ink: #efe7d6;
+  --mesh-grid: #1a3a2d0a;
+  --mesh-glow: #1a3a2d0d;
+  --sl-color-white: var(--mesh-ink);
+  --sl-color-gray-1: #322d26;
+  --sl-color-gray-2: var(--mesh-muted);
+  --sl-color-gray-3: #867f76;
+  --sl-color-gray-4: #b0aaa0;
+  --sl-color-gray-5: var(--mesh-line);
+  --sl-color-gray-6: var(--mesh-surface-strong);
+  --sl-color-gray-7: var(--mesh-surface);
+  --sl-color-black: var(--mesh-bg);
+  --sl-color-text: #322d26;
+  --sl-color-bg: var(--mesh-bg);
+  --sl-color-bg-nav: color-mix(in srgb, var(--mesh-bg) 88%, transparent);
+  --sl-color-bg-sidebar: var(--mesh-bg);
+  --sl-color-bg-inline-code: var(--mesh-surface-strong);
+  --sl-color-bg-accent: var(--mesh-accent);
+  --sl-color-text-invert: var(--mesh-accent-ink);
+  --sl-color-accent-low: #d6e6d9;
+  --sl-color-accent: var(--mesh-accent);
+  --sl-color-accent-high: var(--mesh-accent-high);
+  --sl-color-text-accent: var(--mesh-accent);
+  --sl-color-hairline: var(--mesh-line);
+  --sl-color-hairline-light: var(--mesh-line);
+  --sl-color-hairline-shade: var(--mesh-line);
 }
 
 html {
@@ -289,7 +324,7 @@ starlight-toc a[aria-current="true"] { color: var(--sl-color-text-accent); }
   border: 1px solid var(--sl-color-hairline);
   border-radius: 0.25rem;
   padding: 0.13em 0.35em;
-  color: #d8eee0;
+  color: var(--sl-color-white);
 }
 
 .sl-markdown-content table { font-size: 0.88rem; }
@@ -322,9 +357,9 @@ starlight-toc a[aria-current="true"] { color: var(--sl-color-text-accent); }
 :root[data-has-hero] body {
   background-image:
     radial-gradient(ellipse 60% 34rem at 50% 11rem, transparent 12%, var(--sl-color-bg) 78%),
-    radial-gradient(ellipse 45% 28rem at 50% 10rem, #75d49b12, transparent 78%),
-    linear-gradient(#baffcf08 1px, transparent 1px),
-    linear-gradient(90deg, #baffcf08 1px, transparent 1px);
+    radial-gradient(ellipse 45% 28rem at 50% 10rem, var(--mesh-glow), transparent 78%),
+    linear-gradient(var(--mesh-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mesh-grid) 1px, transparent 1px);
   background-size: auto, auto, 36px 36px, 36px 36px;
   background-attachment: scroll;
 }
@@ -396,7 +431,7 @@ starlight-toc a[aria-current="true"] { color: var(--sl-color-text-accent); }
 
 .sl-link-button.primary:hover {
   transform: translateY(-2px);
-  background: #cdfeda;
+  background: var(--mesh-accent-high);
 }
 
 .sl-link-button.minimal { color: var(--sl-color-white); }

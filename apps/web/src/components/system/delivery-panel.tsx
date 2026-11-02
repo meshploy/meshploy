@@ -57,15 +57,15 @@ export function DeliveryPanel({ delivery }: { delivery: ApiDelivery }) {
               <defs>
                 {Object.entries(COLORS).map(([key, color]) => (
                   <linearGradient key={key} id={`delivery-${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={color} stopOpacity={0.95} />
-                    <stop offset="100%" stopColor={color} stopOpacity={0.45} />
+                    <stop offset="0%" style={{ stopColor: color, stopOpacity: 0.95 }} />
+                    <stop offset="100%" style={{ stopColor: color, stopOpacity: 0.55 }} />
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="oklch(0.28 0 0)" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
-              <ChartTooltip cursor={{ fill: "oklch(1 0 0 / 4%)" }} content={DayTooltip} />
+              <ChartTooltip cursor={{ fill: "color-mix(in oklch, var(--foreground) 5%, transparent)" }} content={DayTooltip} />
               {/* The top segment of each stack gets the rounded corners,
                   whichever one it is on that day. */}
               <Bar dataKey="deployed" stackId="deploys" fill="url(#delivery-deployed)" maxBarSize={14} shape={segment("deploy_failed")} isAnimationActive={false} />
@@ -87,10 +87,10 @@ export function DeliveryPanel({ delivery }: { delivery: ApiDelivery }) {
 }
 
 const COLORS = {
-  deployed: "oklch(0.74 0.16 155)",
-  deploy_failed: "oklch(0.66 0.19 25)",
-  jobs_succeeded: "oklch(0.62 0.06 250)",
-  jobs_failed: "oklch(0.58 0.14 25)",
+  deployed: "var(--ok)",
+  deploy_failed: "var(--destructive)",
+  jobs_succeeded: "var(--series-job)",
+  jobs_failed: "var(--series-job-failed)",
 } as const
 
 /**

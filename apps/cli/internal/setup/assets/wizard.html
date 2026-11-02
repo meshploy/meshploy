@@ -23,21 +23,22 @@
 @font-face { font-family:"Geist Mono"; src:url("/assets/fonts/GeistMono-Regular.woff2") format("woff2"); font-weight:400; font-style:normal; font-display:swap }
 
 :root {
-  /* Maia: olive-tinted near-black, emerald accent. Values as in the console. */
-  --background: oklch(0.175 0.003 260);
-  --card:       oklch(0.205 0.003 260);
-  --popover:    oklch(0.235 0.004 260);
-  --muted:      oklch(0.235 0.004 260);
-  --secondary:  oklch(0.255 0.004 260);
-  --accent:     oklch(0.28 0.005 260);
-  --input:      oklch(0.3 0.004 260);
-  --border:     oklch(0.325 0.004 260);
-  --foreground: oklch(0.96 0.002 260);
-  --muted-foreground: oklch(0.74 0.006 260);
-  --primary:    oklch(0.72 0.17 160);
-  --primary-foreground: oklch(0.14 0.002 260);
+  /* Forest surfaces, bone accent: the console's dark theme, values as there. */
+  --background: oklch(0.175 0.014 165);
+  --card:       oklch(0.205 0.015 165);
+  --popover:    oklch(0.235 0.016 165);
+  --muted:      oklch(0.235 0.016 165);
+  --secondary:  oklch(0.255 0.016 165);
+  --accent:     oklch(0.28 0.017 165);
+  --input:      oklch(0.3 0.016 165);
+  --border:     oklch(0.32 0.016 165);
+  --foreground: oklch(0.96 0.008 160);
+  --muted-foreground: oklch(0.76 0.02 160);
+  --primary:    oklch(0.86 0.03 88);
+  --primary-foreground: oklch(0.16 0.014 165);
   --destructive: oklch(0.72 0.18 25);
   --warning:     oklch(0.8 0.14 80);
+  --ok:          oklch(0.72 0.17 160);
   --ring: var(--primary);
 
   --radius: 0.75rem;
@@ -71,8 +72,8 @@ button, a { transition:color 140ms, background-color 140ms, border-color 140ms }
 body::before {
   content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:0.12;
   background-image:
-    linear-gradient(oklch(0.24 0 0) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.24 0 0) 1px, transparent 1px);
+    linear-gradient(oklch(0.24 0.012 165) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.24 0.012 165) 1px, transparent 1px);
   background-size:40px 40px;
 }
 
@@ -231,7 +232,7 @@ button:focus-visible { outline:none; border-color:var(--ring);
    the hostnames beside it. */
 .chk-l { flex:0 0 auto }
 .chk-d { flex:1; min-width:0; color:var(--muted-foreground); overflow-wrap:anywhere }
-.ok { color:var(--primary) } .bad { color:var(--destructive) } .wait { color:var(--warning) }
+.ok { color:var(--ok) } .bad { color:var(--destructive) } .wait { color:var(--warning) }
 .mono { font-family:var(--font-mono) }
 
 #log {
@@ -260,7 +261,7 @@ button:focus-visible { outline:none; border-color:var(--ring);
 .pills { display:flex; gap:7px; flex-wrap:wrap; margin:0 0 14px }
 .pill { font-size:12px; font-family:var(--font-mono); padding:3px 9px; border-radius:999px;
         border:1px solid var(--border); color:var(--muted-foreground); background:var(--background) }
-.pill.good { color:var(--primary); border-color:color-mix(in oklab, var(--primary) 35%, transparent) }
+.pill.good { color:var(--ok); border-color:color-mix(in oklab, var(--ok) 35%, transparent) }
 .pill.warn { color:var(--warning); border-color:color-mix(in oklab, var(--warning) 35%, transparent) }
 .section-title { font-size:12.5px; color:var(--muted-foreground); margin:18px 0 8px }
 .group-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px }

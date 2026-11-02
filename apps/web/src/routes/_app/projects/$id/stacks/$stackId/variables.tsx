@@ -1,4 +1,5 @@
 import { createFileRoute, useParams } from "@tanstack/react-router"
+import { editorTheme } from "@/lib/theme"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect } from "react"
 import { Loader2, Save } from "lucide-react"
@@ -80,7 +81,7 @@ function StackVariablesTab() {
           <CodeMirror
             value={text}
             height="260px"
-            theme="dark"
+            theme={editorTheme()}
             extensions={[envLanguage, envTheme]}
             onChange={(val) => { setText(val); setDirty(val !== varsToText(stack?.variables ?? {})) }}
             placeholder={"JWT_SECRET=your-secret\nPOSTGRES_PASSWORD=admin123\nAPI_KEY=..."}

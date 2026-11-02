@@ -42,9 +42,9 @@ export const envLanguage = StreamLanguage.define<{ inValue: boolean }>({
 
 export const envTheme = EditorView.theme({
   ".cm-content": { fontFamily: "var(--font-mono, ui-monospace, monospace)", fontSize: "12px" },
-  ".tok-variableName": { color: "oklch(0.78 0.12 200)" },   // cyan key
-  ".tok-operator":     { color: "oklch(0.75 0 0)" },         // neutral =
-  ".tok-string":       { color: "oklch(0.75 0.12 55)" },     // amber quoted value
-  ".tok-atom":         { color: "oklch(0.85 0 0)" },         // light unquoted value
-  ".tok-comment":      { color: "oklch(0.55 0 0)", fontStyle: "italic" },
+  ".tok-variableName": { color: "var(--code-key)" },
+  ".tok-operator":     { color: "var(--code-op)" },
+  ".tok-string":       { color: "var(--code-string)" },
+  ".tok-atom":         { color: "var(--code-value)" },
+  ".tok-comment":      { color: "var(--code-comment)", fontStyle: "italic" },
 })

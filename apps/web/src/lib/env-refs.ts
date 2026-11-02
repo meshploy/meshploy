@@ -77,8 +77,9 @@ function secretMark(completion: Completion): Node | null {
   return mark
 }
 
-// The editor runs the One Dark theme, which comes earlier in the extension
-// order and so wins at equal specificity; these selectors are more specific.
+// The editor's own theme (One Dark, or the light one) comes earlier in the
+// extension order and so wins at equal specificity; these selectors are more
+// specific.
 const menu = "&.cm-editor .cm-tooltip.cm-tooltip-autocomplete"
 
 const envRefTheme = EditorView.theme({
@@ -120,7 +121,7 @@ const envRefTheme = EditorView.theme({
   // The part typed so far, in the editor's key colour.
   [`${menu} .cm-completionMatchedText`]: {
     textDecoration: "none",
-    color: "oklch(0.78 0.12 200)",
+    color: "var(--code-key)",
   },
   [`${menu} .cm-completionDetail`]: {
     marginLeft: "auto",

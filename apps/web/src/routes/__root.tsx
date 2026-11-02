@@ -3,6 +3,8 @@ import { useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useAccentStore } from "@/store/accent-store"
 import { getAccent, applyAccent } from "@/lib/accents"
+import { useThemeStore } from "@/store/theme-store"
+import { applyTheme, followSystemTheme } from "@/lib/theme"
 import { eeRedirect } from "@/ee"
 import { useBrand, useBrandDocument } from "@/lib/brand"
 
@@ -18,14 +20,20 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const accentId = useAccentStore((s) => s.accentId)
+  const theme = useThemeStore((s) => s.theme)
   const brand = useBrand()
   useBrandDocument(brand)
+
+  useEffect(() => {
+    applyTheme(theme)
+    return followSystemTheme(theme)
+  }, [theme])
 
   // An organisation's own colour is everyone's in it; a person's pick
   // applies under Meshploy's brand.
   useEffect(() => {
     if (brand.accent) applyAccent(brand.accent, brand.accent_foreground)
-    else applyAccent(getAccent(accentId).value)
+    else { const a = getAccent(accentId); applyAccent(a.value, undefined, a.light) }
   }, [accentId, brand.accent, brand.accent_foreground])
 
   return (

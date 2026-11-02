@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { editorTheme } from "@/lib/theme"
 import { Link } from "@tanstack/react-router"
 import {
   BaseEdge, Background, BackgroundVariant, Controls, EdgeLabelRenderer, Handle, MarkerType, MiniMap, Position, ReactFlow,
@@ -155,7 +156,7 @@ function RoutedEdge(props: EdgeProps<Edge<{ route?: Point[] }>>) {
 
 const edgeTypes = { routed: RoutedEdge }
 
-const STROKE = { base: "oklch(0.55 0.02 260)", soft: "oklch(0.6 0.02 260)", broken: "oklch(0.75 0.15 70)", go: "oklch(0.72 0.15 160)" }
+const STROKE = { base: "var(--map-edge)", soft: "var(--map-edge-soft)", broken: "var(--color-amber-400)", go: "var(--ok)" }
 
 function edgeStyle(e: MapEdge, route: Point[] | undefined, focus: "on" | "off" | "none"): Edge {
   const color = e.broken ? STROKE.broken : e.kind === "promotes" && e.waiting ? STROKE.go : e.kind === "reads" || e.kind === "runs" ? STROKE.soft : STROKE.base
@@ -167,8 +168,8 @@ function edgeStyle(e: MapEdge, route: Point[] | undefined, focus: "on" | "off" |
     id: e.id, source: e.source, target: e.target, label: e.kind === "depends" ? undefined : e.label, zIndex: 2, type: "routed",
     data: { route }, animated: !!e.broken || !!e.waiting,
     style: { stroke: color, opacity, strokeWidth: e.broken || focus === "on" ? 2 : 1.25, strokeDasharray: e.kind === "reads" || e.kind === "runs" ? "4 4" : undefined },
-    labelStyle: { fill: "oklch(0.7 0.02 260)", fontSize: 10 },
-    labelBgStyle: { fill: "oklch(0.18 0.01 260)" },
+    labelStyle: { fill: "var(--muted-foreground)", fontSize: 10 },
+    labelBgStyle: { fill: "var(--card)" },
     markerEnd: e.kind === "mesh" ? undefined : { type: MarkerType.ArrowClosed, width: 14, height: 14, color },
   }
 }
@@ -239,18 +240,18 @@ export function MapCanvas({ graph, selectedId, onSelect, panel }: {
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Nothing here yet.</div>
       ) : (
         <FocusContext.Provider value={focusValue}>
-        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} colorMode="dark" fitView fitViewOptions={{ padding: 0.15 }}
+        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} colorMode={editorTheme()} fitView fitViewOptions={{ padding: 0.15 }}
           minZoom={0.15} maxZoom={1.8} nodesConnectable={false} elementsSelectable proOptions={{ hideAttribution: true }}
           onNodeClick={(_, n) => onSelect(n.id)} onPaneClick={() => onSelect(null)}
           onNodeMouseEnter={(_, n) => !CONTAINERS.has((n.data as ItemNode["data"]).item.kind) && setHoverId(n.id)}
           onNodeMouseLeave={() => setHoverId(null)}>
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="oklch(0.3 0.01 260)" />
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--map-dots)" />
           <Controls showInteractive={false} />
           {/* Only where there is enough to get lost in. */}
-          {graph.items.length > 24 && <MiniMap pannable zoomable className="!bg-card" maskColor="oklch(0.15 0.01 260 / 0.6)"
+          {graph.items.length > 24 && <MiniMap pannable zoomable className="!bg-card" maskColor="color-mix(in oklch, var(--background) 60%, transparent)"
             nodeColor={(n) => {
               const h = (n.data as ItemNode["data"]).item.health
-              return h === "bad" ? "oklch(0.6 0.2 25)" : h === "warn" || h === "waiting" ? "oklch(0.75 0.15 70)" : n.type === "container" ? "oklch(0.25 0.01 260)" : "oklch(0.45 0.02 260)"
+              return h === "bad" ? "var(--destructive)" : h === "warn" || h === "waiting" ? "var(--color-amber-400)" : n.type === "container" ? "var(--muted)" : "var(--map-edge)"
             }} />}
         </ReactFlow>
         </FocusContext.Provider>

@@ -279,7 +279,7 @@ function LogsTab() {
 
       {/* Terminal. A fixed height, so output scrolls inside it instead of
           growing the page; it ends at the bottom of the window. */}
-      <div className="h-[calc(100dvh-23rem)] min-h-72 shrink-0 rounded-lg border border-border/60 bg-[oklch(0.12_0_0)] overflow-hidden flex flex-col">
+      <div className="h-[calc(100dvh-23rem)] min-h-72 shrink-0 dark rounded-lg border border-border/60 bg-[oklch(0.12_0.01_165)] text-foreground overflow-hidden flex flex-col">
         {/* Terminal bar */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
           <div className="flex gap-1.5">

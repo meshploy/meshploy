@@ -126,13 +126,13 @@ function ProjectCard({ project, list }: { project: Project; list: boolean }) {
           <div
             className="flex items-center justify-center w-9 h-9 rounded-md shrink-0"
             style={{
-              background: `oklch(0.72 0.17 ${hue} / 0.15)`,
-              border: `1px solid oklch(0.72 0.17 ${hue} / 0.3)`,
+              background: `oklch(var(--hue-l) 0.17 ${hue} / 0.15)`,
+              border: `1px solid oklch(var(--hue-l) 0.17 ${hue} / 0.3)`,
             }}
           >
             <FolderKanban
               className="h-4 w-4"
-              style={{ color: `oklch(0.78 0.17 ${hue})` }}
+              style={{ color: `oklch(var(--hue-text-l) 0.17 ${hue})` }}
             />
           </div>
           <div>

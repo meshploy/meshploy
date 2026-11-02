@@ -45,7 +45,7 @@ Set delay on `TooltipProvider` in `src/routes/__root.tsx`, not per-tooltip.
 
 There is **no** `tailwind.config.js/ts`. Tailwind runs via `@tailwindcss/vite` plugin in `vite.config.ts`. All theme tokens are defined in `src/index.css` under `@theme inline { ... }`.
 
-Dark mode uses `@custom-variant dark (&:is(.dark *))`. The `<html>` element has `class="dark"` set in `index.html` — this app is dark-only.
+Dark mode uses `@custom-variant dark (&:is(.dark *))`. The `<html>` element carries `class="dark"` unless the person chose Light (or System on a light device) in Settings, Appearance; a script in `index.html` applies the choice before the first paint, and `lib/theme.ts` after. Colours come from the tokens in `index.css`, never raw values, so both themes hold: status colours use the Tailwind palette, which the light theme deepens. Terminals and log panes stay dark in both themes by carrying `class="dark"` themselves.
 
 Use `oklch()` throughout. Do not introduce hex or hsl values.
 
@@ -247,7 +247,7 @@ apps/web/
 │   │   ├── org-store.ts    # Zustand — current org (persisted)
 │   │   └── ui-store.ts     # Zustand — sidebar collapsed (persisted)
 │   ├── types/index.ts      # Shared TypeScript types
-│   ├── index.css           # Tailwind v4 imports + dark theme tokens (oklch)
+│   ├── index.css           # Tailwind v4 imports + light and dark theme tokens (oklch)
 │   ├── main.tsx            # App entry point + router setup
 │   └── routeTree.gen.ts    # Auto-generated — do not edit
 ├── index.html              # HTML entry point (has class="dark" on <html>)

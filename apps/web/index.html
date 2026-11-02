@@ -7,6 +7,15 @@
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Opens in the theme chosen in Settings (dark until one is), before the
+      // first paint, so the page never flashes the other one.
+      try {
+        var t = (JSON.parse(localStorage.getItem("meshploy-theme") || "{}").state || {}).theme
+        var dark = t === "light" ? false : t === "system" ? matchMedia("(prefers-color-scheme: dark)").matches : true
+        document.documentElement.classList.toggle("dark", dark)
+      } catch (e) {}
+    </script>
     <title>Meshploy</title>
     <meta name="description" content="Zero-trust Internal Developer Platform" />
   </head>

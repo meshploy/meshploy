@@ -22,11 +22,12 @@ var emailHTML string
 // same way. No images, so nothing is fetched when the mail is opened.
 var emailTemplate = template.Must(template.New("email").Parse(emailHTML))
 
-// The look every email shares unless a brand or a tone says otherwise: the
-// console's emerald, with dark text on it as its buttons have.
+// The look every email shares unless a brand or a tone says otherwise:
+// Meshploy's forest, with bone text on it, as the console's buttons are drawn
+// on a light page.
 const (
-	emailColour     = "#10b981"
-	emailButtonText = "#04231a"
+	emailColour     = "#1a3a2d"
+	emailButtonText = "#efe7d6"
 )
 
 // Email is what one message says. Its look is one for every email the
