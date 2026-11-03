@@ -90,7 +90,15 @@ func PruneImagesForTest(s *Services, ctx context.Context, serviceID uuid.UUID) {
 func RequestRegistryGCForTest(s *Services, ctx context.Context, hostDir string, now time.Time) error {
 	s.Deployments.cfg = &config.Config{HostDir: hostDir, BuiltinRegistryEndpoint: "100.64.0.1:5000"}
 	defer func() { s.Deployments.cfg = nil }()
-	return s.Deployments.requestRegistryGC(ctx, now)
+	_, err := s.Deployments.requestRegistryGC(ctx, now, false)
+	return err
+}
+
+// RequestRegistryGCNowForTest asks for it at once, as freeing space does.
+func RequestRegistryGCNowForTest(s *Services, ctx context.Context, hostDir string) (bool, error) {
+	s.Deployments.cfg = &config.Config{HostDir: hostDir, BuiltinRegistryEndpoint: "100.64.0.1:5000"}
+	defer func() { s.Deployments.cfg = nil }()
+	return s.Deployments.RequestRegistryGCNow(ctx)
 }
 
 // UseNodeK8sForTest gives the node service a cluster client.

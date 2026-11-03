@@ -32,7 +32,7 @@ type Config struct {
 	K3sServerURL   string // K3S_SERVER_URL  override k3s API server URL (e.g. when running in Docker)
 	BuilderImage   string // BUILDER_IMAGE   override the builder container image
 	// BuildCacheLimitGB caps each project's build cache: after every build the
-	// builder trims it back under this. BUILD_CACHE_LIMIT_GB; default 10, 0 = no cap.
+	// builder trims it back under this. BUILD_CACHE_LIMIT_GB; default 5, 0 = no cap.
 	BuildCacheLimitGB int
 	K3sToken          string // K3S_TOKEN       node token for workers to join the cluster
 
@@ -160,7 +160,7 @@ func Load() (*Config, error) {
 			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 				return n
 			}
-			return 10
+			return 5
 		}(),
 		K3sToken: os.Getenv("K3S_TOKEN"),
 

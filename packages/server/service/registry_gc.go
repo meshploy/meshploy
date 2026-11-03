@@ -35,29 +35,38 @@ func (s *DeploymentService) StartRegistryGC(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := s.requestRegistryGC(ctx, time.Now()); err != nil {
+			if _, err := s.requestRegistryGC(ctx, time.Now(), false); err != nil {
 				log.Printf("warning: registry garbage collection: %v", err)
 			}
 		}
 	}
 }
 
-// requestRegistryGC files a registry.gc request when one is due.
-func (s *DeploymentService) requestRegistryGC(ctx context.Context, now time.Time) error {
+// RequestRegistryGCNow asks for the registry's garbage collection without
+// waiting for the week, as freeing a gateway's space does. It is still not
+// asked while a build may be pushing. True when a request is waiting for the
+// host agent.
+func (s *DeploymentService) RequestRegistryGCNow(ctx context.Context) (bool, error) {
+	return s.requestRegistryGC(ctx, time.Now(), true)
+}
+
+// requestRegistryGC files a registry.gc request when one is due, or at once
+// with now set. True when one is waiting for the host agent.
+func (s *DeploymentService) requestRegistryGC(ctx context.Context, now time.Time, force bool) (bool, error) {
 	if s.cfg == nil || s.cfg.HostDir == "" || s.cfg.BuiltinRegistryEndpoint == "" {
-		return nil
+		return false, nil
 	}
 	inbox := hostagent.InboxDir(s.cfg.HostDir)
 	if _, err := os.Stat(inbox); err != nil {
-		return nil // no host agent on this machine
+		return false, nil // no host agent on this machine
 	}
 	entries, err := os.ReadDir(inbox)
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), hostagent.RequestRegistryGC+"-") {
-			return nil // asked already, not yet taken
+			return true, nil // asked already, not yet taken
 		}
 	}
 	var last time.Time
@@ -67,23 +76,26 @@ func (s *DeploymentService) requestRegistryGC(ctx context.Context, now time.Time
 			last = gc.FinishedAt
 		}
 	}
-	if !last.IsZero() && now.Sub(last) < registryGCEvery {
-		return nil
-	}
-	var removed int64
-	s.db.WithContext(ctx).Model(&db.Deployment{}).Where("image_removed_at > ?", last).Count(&removed)
-	if removed == 0 {
-		return nil
+	if !force {
+		if !last.IsZero() && now.Sub(last) < registryGCEvery {
+			return false, nil
+		}
+		var removed int64
+		s.db.WithContext(ctx).Model(&db.Deployment{}).Where("image_removed_at > ?", last).Count(&removed)
+		if removed == 0 {
+			return false, nil
+		}
 	}
 	var building int64
 	s.db.WithContext(ctx).Model(&db.Deployment{}).
 		Where("status IN ?", []db.DeploymentStatus{db.DeploymentPending, db.DeploymentBuilding}).Count(&building)
 	if building > 0 {
-		return nil // an hour from now, once no build is pushing
+		return false, nil // an hour from now, once no build is pushing
 	}
-	return queueHostRequest(s.cfg.HostDir, hostagent.Request{
+	err = queueHostRequest(s.cfg.HostDir, hostagent.Request{
 		ID: uuid.NewString(), Type: hostagent.RequestRegistryGC, RequestedBy: "meshploy", RequestedAt: now.UTC(),
 	})
+	return err == nil, err
 }
 
 // queueHostRequest leaves a request in the host agent's inbox. It is written

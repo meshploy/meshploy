@@ -69,6 +69,17 @@ var (
 	// Seams for the published-port restriction, so a test can exercise it
 	// without a k3s to restart.
 	nodePortDropin   = "/etc/rancher/k3s/config.yaml.d/20-nodeport-addresses.yaml"
+	imageGCDropin    = "/etc/rancher/k3s/config.yaml.d/30-image-cleanup.yaml"
+	k3sRelease       = func() string {
+		out, err := exec.Command("k3s", "--version").Output()
+		if err != nil {
+			return ""
+		}
+		if f := strings.Fields(string(out)); len(f) >= 3 {
+			return f[2]
+		}
+		return ""
+	}
 	systemctlRestart = func(unit string) error { return sysCmd("systemctl", "restart", unit) }
 	verifyStack      = func(ctx context.Context) error {
 		return waitForHealthyStack(ctx, stackChecks(), upgradeHealthTimeout)
@@ -361,6 +372,9 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	if err := restrictNodePorts(); err != nil {
 		fmt.Printf("warning: could not keep published ports on the mesh: %v\n", err)
 	}
+	if err := cleanImagesDaily(); err != nil {
+		fmt.Printf("warning: could not set the daily image cleanup: %v\n", err)
+	}
 
 	// Upgrades now run through the host agent; retire the path unit earlier
 	// versions installed, so the two never race for a request. When this
@@ -448,6 +462,91 @@ func restrictNodePorts() error {
 		return fmt.Errorf("restart k3s: %w", err)
 	}
 	fmt.Println("✔  Published ports answer on the mesh only")
+	return nil
+}
+
+// imageGCWant is the kubelet drop-in that removes, daily, the images no
+// container has used for after, and starts kubelet's own cleanup at 80% full
+// rather than 85. The age needs Kubernetes 1.30; an older release gets the
+// thresholds alone.
+func imageGCWant(after, release string) string {
+	want := "kubelet-arg+:\n  - \"image-gc-high-threshold=80\"\n  - \"image-gc-low-threshold=70\"\n"
+	if k3sMinor(release) >= 30 {
+		want += "  - \"image-maximum-gc-age=" + after + "\"\n"
+	}
+	return want
+}
+
+// k3sMinor is the Kubernetes minor of a k3s release such as v1.36.5+k3s1,
+// or a large number when it cannot be read, so that a current k3s is assumed.
+func k3sMinor(release string) int {
+	parts := strings.SplitN(strings.TrimPrefix(release, "v"), ".", 3)
+	if len(parts) < 2 || parts[0] != "1" {
+		return 99
+	}
+	n, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 99
+	}
+	return n
+}
+
+// imageCleanupAfter is IMAGE_CLEANUP_AFTER from .env: how long an image no
+// container uses stays on a node. Default 24h; "off" or "0" leaves kubelet's
+// own rule, which waits for the disk to be 85% full.
+func imageCleanupAfter() (string, bool) {
+	v := strings.TrimSpace(readEnvVar("IMAGE_CLEANUP_AFTER"))
+	switch v {
+	case "":
+		return "24h", true
+	case "off", "0":
+		return "", false
+	}
+	if d, err := time.ParseDuration(v); err != nil || d < time.Minute {
+		fmt.Printf("warning: IMAGE_CLEANUP_AFTER=%s is not a duration like 24h; using 24h\n", v)
+		return "24h", true
+	}
+	return v, true
+}
+
+// cleanImagesDaily writes the kubelet drop-in for the daily image cleanup, or
+// removes it when IMAGE_CLEANUP_AFTER is off, restarting k3s only when the
+// file changed. Left alone, a node keeps every image it has ever run until
+// its disk is 85% full: each deploy leaves one behind.
+func cleanImagesDaily() error {
+	dropin := imageGCDropin
+	if _, err := os.Stat(filepath.Dir(filepath.Dir(dropin))); err != nil {
+		return nil // no k3s on this machine
+	}
+	after, on := imageCleanupAfter()
+	if !on {
+		if _, err := os.Stat(dropin); err != nil {
+			return nil
+		}
+		if err := os.Remove(dropin); err != nil {
+			return err
+		}
+		if err := systemctlRestart("k3s"); err != nil {
+			return fmt.Errorf("restart k3s: %w", err)
+		}
+		fmt.Println("✔  Daily image cleanup off: images stay until the disk is 85% full")
+		return nil
+	}
+	want := imageGCWant(after, k3sRelease())
+	if have, err := os.ReadFile(dropin); err == nil && string(have) == want {
+		return nil
+	}
+	fmt.Println("Removing unused images daily…")
+	if err := os.MkdirAll(filepath.Dir(dropin), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(dropin, []byte(want), 0o644); err != nil {
+		return err
+	}
+	if err := systemctlRestart("k3s"); err != nil {
+		return fmt.Errorf("restart k3s: %w", err)
+	}
+	fmt.Printf("✔  Images no app uses are removed after %s\n", after)
 	return nil
 }
 

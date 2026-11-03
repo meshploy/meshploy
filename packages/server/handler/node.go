@@ -484,6 +484,16 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		Tags:        []string{"Nodes"},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, h.ListNodeContainers)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "free-node-space",
+		Method:      "POST",
+		Path:        "/api/v1/orgs/{orgId}/nodes/{nodeId}/free-space",
+		Summary:     "Remove the images no app on a node uses",
+		Description: "Removes, at once, the container images no running container on the node uses, as the daily cleanup does for those unused for a day. On the gateway it also asks the built-in registry to drop the layers of images it no longer lists. Owners and admins only.",
+		Tags:        []string{"Nodes"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.FreeNodeSpace)
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -1177,6 +1187,40 @@ func (h *Handler) ListNodeContainers(ctx context.Context, input *NodePathInput) 
 		return &NodeContainersOutput{Body: service.HostContainers{Containers: []service.HostContainer{}, Groups: []service.HostContainerGroup{}}}, nil
 	}
 	return &NodeContainersOutput{Body: h.svc.System.HostContainers()}, nil
+}
+
+type FreeNodeSpaceOutput struct {
+	Body service.FreeSpaceResult
+}
+
+// FreeNodeSpace removes the images no app on a node uses, and on the gateway
+// asks the registry to collect what it no longer lists.
+func (h *Handler) FreeNodeSpace(ctx context.Context, input *NodePathInput) (*FreeNodeSpaceOutput, error) {
+	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	res, err := h.svc.Nodes.FreeSpace(ctx, nodeID)
+	switch {
+	case errors.Is(err, service.ErrNotInCluster):
+		return nil, huma.Error400BadRequest(err.Error())
+	case errors.Is(err, service.ErrFreeSpaceRunning):
+		return nil, huma.Error409Conflict(err.Error())
+	case err != nil:
+		return nil, huma.Error502BadGateway(err.Error())
+	}
+	if node.K3sRole == db.K3sRoleServer {
+		asked, err := h.svc.Deployments.RequestRegistryGCNow(ctx)
+		if err != nil {
+			log.Printf("warning: registry garbage collection: %v", err)
+		}
+		res.RegistryCleanup = asked
+	}
+	return &FreeNodeSpaceOutput{Body: *res}, nil
 }
 
 // ServeInstallScript serves deploy/install.sh, mounted at

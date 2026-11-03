@@ -219,6 +219,12 @@ func TestTheRegistryIsCollectedOnceImagesWereRemoved(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(hostagent.MigrateDir(dir), hostagent.RegistryGCFile), done, 0o644))
 	require.NoError(t, service.RequestRegistryGCForTest(e.svcs, ctx, dir, now))
 	assert.Empty(t, inbox())
+
+	// Freeing a gateway's space asks at once, week or not.
+	asked, err := service.RequestRegistryGCNowForTest(e.svcs, ctx, dir)
+	require.NoError(t, err)
+	assert.True(t, asked)
+	assert.Len(t, inbox(), 1)
 }
 
 // A level's services made before keeping their last images was the default

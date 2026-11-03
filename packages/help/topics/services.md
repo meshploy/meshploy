@@ -37,7 +37,7 @@ Three optional commands. Left empty, each is worked out for you, as before:
 
 ## Build cache {#build-cache}
 
-A project keeps a **build cache**: layers from earlier builds, so the next build reuses what has not changed and is faster. It is shared by every service in the project, and after each build it is trimmed back under the server's limit (10 GB unless the server sets `BUILD_CACHE_LIMIT_GB`). A Railpack build drops the layers used least recently, so what the next build needs stays; a Dockerfile build over the limit starts its cache again. Nothing fails at the limit: a build is only slower when it cannot reuse a layer.
+A project keeps a **build cache**: layers from earlier builds, so the next build reuses what has not changed and is faster. It is shared by every service in the project, and after each build it is trimmed back under the server's limit (5 GB unless the server sets `BUILD_CACHE_LIMIT_GB`). A Railpack build drops the layers used least recently, so what the next build needs stays; a Dockerfile build over the limit starts its cache again. Nothing fails at the limit: a build is only slower when it cannot reuse a layer.
 
 **Clear build cache**, in the project's settings or any of its services', empties it at once: to free the space, or to force a clean build.
 

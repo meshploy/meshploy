@@ -47,7 +47,7 @@ const (
 	diskReadingTTL = time.Minute
 	// A node's disk is worth a look from diskWarnPercent full, and an emergency
 	// from diskCriticalPercent: builds and databases fail when it fills.
-	diskWarnPercent     = 85
+	diskWarnPercent     = 80
 	diskCriticalPercent = 95
 )
 
@@ -675,7 +675,7 @@ func (s *OverviewService) diskItems(ctx context.Context, orgID uuid.UUID) []Atte
 		id := n.ID
 		out = append(out, AttentionItem{Kind: "node_disk", Severity: severity,
 			Title:  fmt.Sprintf("%s's disk is %d%% full", n.Name, used),
-			Detail: fmt.Sprintf("%s free; builds and databases fail when it fills. Build caches and volumes are the usual cause", humanBytes(r.avail)),
+			Detail: fmt.Sprintf("%s free; builds and databases fail when it fills. Free up space on the node removes the images no app uses", humanBytes(r.avail)),
 			NodeID: &id})
 	}
 	return out

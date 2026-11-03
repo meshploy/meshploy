@@ -447,6 +447,58 @@ configure_pod_dns() {
   success "Pod DNS upstream written to /etc/k3s-resolv.conf (no inherited search domains)"
 }
 
+# configure_image_cleanup has kubelet remove, daily, the images no container
+# has used for IMAGE_CLEANUP_AFTER (default 24h; "off" leaves kubelet's own
+# rule alone). Left alone, a node keeps every image it has ever run until its
+# disk is 85% full: each deploy leaves one behind. A running app keeps its
+# image, and the registry keeps the last few for a rollback to pull again.
+# It also starts kubelet's own cleanup at 80% full rather than 85.
+#
+# Sets IMAGE_CLEANUP_CHANGED=1 when the drop-in changed, so a running k3s is
+# restarted to read it. The age needs Kubernetes 1.30; on an older release
+# only the thresholds are written.
+IMAGE_CLEANUP_CHANGED=0
+configure_image_cleanup() {
+  local SUDO=""
+  [[ ${EUID:-$(id -u)} -ne 0 ]] && SUDO="sudo"
+  local dropin=/etc/rancher/k3s/config.yaml.d/30-image-cleanup.yaml
+  local after="${IMAGE_CLEANUP_AFTER:-24h}"
+
+  if [[ "$after" == "off" || "$after" == "0" ]]; then
+    if [[ -f "$dropin" ]]; then
+      $SUDO rm -f "$dropin"
+      IMAGE_CLEANUP_CHANGED=1
+    fi
+    return 0
+  fi
+  if ! [[ "$after" =~ ^[0-9]+(h|m)$ ]]; then
+    warn "IMAGE_CLEANUP_AFTER=${after} is not a duration like 24h; using 24h"
+    after=24h
+  fi
+
+  # The release this node runs or is about to: the gateway's for a worker.
+  local release="${K3S_VERSION:-}"
+  [[ -z "$release" ]] && command -v k3s >/dev/null 2>&1 && release="$(k3s --version 2>/dev/null | awk 'NR==1{print $3}')"
+  local minor=99
+  [[ "$release" =~ ^v1\.([0-9]+)\. ]] && minor="${BASH_REMATCH[1]}"
+
+  local want
+  want=$'kubelet-arg+:\n  - "image-gc-high-threshold=80"\n  - "image-gc-low-threshold=70"\n'
+  if [[ "$minor" -ge 30 ]]; then
+    want+="  - \"image-maximum-gc-age=${after}\""$'\n'
+  fi
+  if [[ "$($SUDO cat "$dropin" 2>/dev/null)"$'\n' != "$want" ]]; then
+    $SUDO mkdir -p "$(dirname "$dropin")"
+    printf '%s' "$want" | $SUDO tee "$dropin" > /dev/null
+    IMAGE_CLEANUP_CHANGED=1
+  fi
+  if [[ "$minor" -ge 30 ]]; then
+    success "Images no app uses are removed after ${after}"
+  else
+    warn "k3s ${release} is older than 1.30: images are cleaned from 80% full, not by age"
+  fi
+}
+
 # EDGE_DEFERRED means another platform holds 80 and 443 and keeps them until
 # cutover. Set by --beside-edge, or found by existing_edge_detected below.
 EDGE_DEFERRED="${EDGE_DEFERRED:-false}"
@@ -1063,6 +1115,7 @@ if [[ "$NODE_TYPE" == "master" ]]; then
 
   cap_journal
   configure_pod_dns
+  configure_image_cleanup
 
   # ── Configure containerd to trust the built-in registry (HTTP) ─────────────
   # registry:2 runs on the gateway at MESH_IP:5000 inside the WireGuard mesh.
@@ -1395,7 +1448,7 @@ NPEOF
   # exist. A drop-in rather than config.yaml so an operator's own config is
   # left intact.
   FLANNEL_DROPIN="/etc/rancher/k3s/config.yaml.d/10-flannel-iface.yaml"
-  if ! grep -qs "flannel-iface: ${MESH_IFACE}" "$FLANNEL_DROPIN" || [[ "$NODEPORT_CHANGED" -eq 1 ]]; then
+  if ! grep -qs "flannel-iface: ${MESH_IFACE}" "$FLANNEL_DROPIN" || [[ "$NODEPORT_CHANGED" -eq 1 ]] || [[ "$IMAGE_CLEANUP_CHANGED" -eq 1 ]]; then
     info "Binding flannel and published ports to the mesh interface…"
     mkdir -p "$(dirname "$FLANNEL_DROPIN")"
     printf 'flannel-iface: %s\n' "$MESH_IFACE" > "$FLANNEL_DROPIN"
@@ -2009,6 +2062,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       # that inherit the mesh search domains and resolve the whole internet to
       # the gateway.
       configure_pod_dns
+      configure_image_cleanup
       if [[ -n "${K3S_VERSION:-}" ]]; then
         info "Installing k3s agent ${K3S_VERSION}, the gateway's release, and joining ${K3S_SERVER_URL}…"
       else

@@ -76,14 +76,14 @@ function ItemBox({ data }: NodeProps<ItemNode>) {
   )
 }
 
-/** How full a machine is: amber past 85%, where a deploy starts to fail for room. */
+/** How full a machine is: amber from 80%, where the overview starts asking for room. */
 function LoadBar({ label, value }: { label: string; value: number }) {
   const pct = Math.round(Math.min(1, Math.max(0, value)) * 100)
   return (
     <div className="min-w-0" title={`${label} ${pct}% in use`}>
       <div className="flex justify-between text-[10px] text-muted-foreground"><span>{label}</span><span className="tabular-nums">{pct}%</span></div>
       <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-muted">
-        <div className={cn("h-full rounded-full", pct >= 85 ? "bg-amber-400" : "bg-emerald-400/70")} style={{ width: `${pct}%` }} />
+        <div className={cn("h-full rounded-full", pct >= 80 ? "bg-amber-400" : "bg-emerald-400/70")} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )

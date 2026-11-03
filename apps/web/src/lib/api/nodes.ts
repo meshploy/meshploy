@@ -279,6 +279,12 @@ export const nodes = {
   delete: (orgId: string, nodeId: string, token: string) =>
     apiFetch<{ removed: boolean; error?: string } | undefined>(`/api/v1/orgs/${orgId}/nodes/${nodeId}`, { method: "DELETE" }, token),
 
+  /** Remove the images no app on the node uses; on the gateway the registry
+   *  is also asked to drop the layers of images it no longer lists. */
+  freeSpace: (orgId: string, nodeId: string, token: string) =>
+    apiFetch<{ images_removed: number; registry_cleanup: boolean }>(
+      `/api/v1/orgs/${orgId}/nodes/${nodeId}/free-space`, { method: "POST" }, token),
+
   cancelRemoval: (orgId: string, nodeId: string, token: string) =>
     apiFetch<void>(`/api/v1/orgs/${orgId}/nodes/${nodeId}/cancel-removal`, { method: "POST" }, token),
 

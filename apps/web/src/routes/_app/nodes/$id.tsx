@@ -513,6 +513,7 @@ function NodeDetailPage() {
             ? <NodeRolePicker node={node} orgId={orgId!} token={token} />
             : <NodeRoleSummary node={node} />
       }
+      {isAdmin && node.meshRole !== "mesh" && <FreeSpacePanel node={node} orgId={orgId!} token={token} />}
 
       </aside></div>
       {/* What else this machine runs - a line, with the list itself on the
@@ -537,6 +538,44 @@ function NodeDetailPage() {
         </section>
       )}
     </div>
+  )
+}
+
+// ─── Free up space ────────────────────────────────────────────────────────────
+
+// A node keeps the images it has run; a daily cleanup removes those no app has
+// used for a day, and this does it now, for a disk that cannot wait.
+function FreeSpacePanel({ node, orgId, token }: { node: ReturnType<typeof toNode>; orgId: string; token: string }) {
+  const queryClient = useQueryClient()
+  const free = useMutation({
+    mutationFn: () => nodesApi.freeSpace(orgId, node.id, token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["overview"] })
+    },
+  })
+  const gateway = node.k3sRole === "server"
+  return (
+    <ResourcePanel
+      title="Disk space"
+      description={`Removes the images no app on this node uses. Running apps keep theirs, and an earlier one comes back from the registry on rollback.${gateway ? " On the gateway the registry also drops what it no longer lists." : ""}`}
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="sm" variant="outline" disabled={free.isPending} onClick={() => free.mutate()}>
+          {free.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <HardDrive className="h-3.5 w-3.5" />}
+          {free.isPending ? "Freeing space…" : "Free up space"}
+        </Button>
+        {free.isSuccess && (
+          <p role="status" className="text-xs text-muted-foreground">
+            {free.data.images_removed === 0
+              ? "No unused images to remove."
+              : `Removed ${free.data.images_removed} unused ${free.data.images_removed === 1 ? "image" : "images"}.`}
+            {free.data.registry_cleanup && " The registry is cleaning up too."}
+            {" "}The disk figure catches up within a minute.
+          </p>
+        )}
+      </div>
+      {free.isError && <p role="alert" className="mt-2 text-xs text-destructive">{(free.error as Error).message}</p>}
+    </ResourcePanel>
   )
 }
 

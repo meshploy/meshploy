@@ -127,7 +127,7 @@ services:
       HEADSCALE_URL: http://headscale:8080
       HEADSCALE_API_KEY: ${HEADSCALE_API_KEY}
       # Each project's build cache is trimmed back under this after every build.
-      BUILD_CACHE_LIMIT_GB: ${BUILD_CACHE_LIMIT_GB:-10}
+      BUILD_CACHE_LIMIT_GB: ${BUILD_CACHE_LIMIT_GB:-5}
       # Empty: the builder image of this release's channel.
       BUILDER_IMAGE: ${BUILDER_IMAGE:-}
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
