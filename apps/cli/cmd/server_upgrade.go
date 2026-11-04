@@ -68,9 +68,10 @@ var (
 	lookPath = exec.LookPath
 	// Seams for the published-port restriction, so a test can exercise it
 	// without a k3s to restart.
-	nodePortDropin   = "/etc/rancher/k3s/config.yaml.d/20-nodeport-addresses.yaml"
-	imageGCDropin    = "/etc/rancher/k3s/config.yaml.d/30-image-cleanup.yaml"
-	k3sRelease       = func() string {
+	nodePortDropin = "/etc/rancher/k3s/config.yaml.d/20-nodeport-addresses.yaml"
+	imageGCDropin  = "/etc/rancher/k3s/config.yaml.d/30-image-cleanup.yaml"
+	imageAgeConf   = "/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/30-meshploy-image-cleanup.conf"
+	k3sRelease     = func() string {
 		out, err := exec.Command("k3s", "--version").Output()
 		if err != nil {
 			return ""
@@ -465,16 +466,23 @@ func restrictNodePorts() error {
 	return nil
 }
 
-// imageGCWant is the kubelet drop-in that removes, daily, the images no
-// container has used for after, and starts kubelet's own cleanup at 80% full
-// rather than 85. The age needs Kubernetes 1.30; an older release gets the
-// thresholds alone.
-func imageGCWant(after, release string) string {
-	want := "kubelet-arg+:\n  - \"image-gc-high-threshold=80\"\n  - \"image-gc-low-threshold=70\"\n"
-	if k3sMinor(release) >= 30 {
-		want += "  - \"image-maximum-gc-age=" + after + "\"\n"
+// imageGCWant is the k3s drop-in that starts kubelet's own image cleanup at
+// 80% full rather than 85.
+func imageGCWant() string {
+	return "kubelet-arg+:\n  - \"image-gc-high-threshold=80\"\n  - \"image-gc-low-threshold=70\"\n"
+}
+
+// imageAgeWant is the kubelet configuration file that removes, daily, the
+// images no container has used for after; empty when the release cannot have
+// it. The age is a field of kubelet's configuration with no command-line flag
+// (kubelet refuses to start when given one as a flag), so it goes in the
+// directory k3s has kubelet read its configuration from. It needs Kubernetes
+// 1.30: an earlier kubelet refuses the field without its feature gate.
+func imageAgeWant(after, release string) string {
+	if k3sMinor(release) < 30 {
+		return ""
 	}
-	return want
+	return "apiVersion: kubelet.config.k8s.io/v1beta1\nkind: KubeletConfiguration\nimageMaximumGCAge: " + after + "\n"
 }
 
 // k3sMinor is the Kubernetes minor of a k3s release such as v1.36.5+k3s1,
@@ -509,45 +517,61 @@ func imageCleanupAfter() (string, bool) {
 	return v, true
 }
 
-// cleanImagesDaily writes the kubelet drop-in for the daily image cleanup, or
-// removes it when IMAGE_CLEANUP_AFTER is off, restarting k3s only when the
+// cleanImagesDaily writes the kubelet settings for the daily image cleanup,
+// or removes them when IMAGE_CLEANUP_AFTER is off, restarting k3s only when a
 // file changed. Left alone, a node keeps every image it has ever run until
 // its disk is 85% full: each deploy leaves one behind.
 func cleanImagesDaily() error {
-	dropin := imageGCDropin
-	if _, err := os.Stat(filepath.Dir(filepath.Dir(dropin))); err != nil {
+	if _, err := os.Stat(filepath.Dir(filepath.Dir(imageGCDropin))); err != nil {
 		return nil // no k3s on this machine
 	}
 	after, on := imageCleanupAfter()
-	if !on {
-		if _, err := os.Stat(dropin); err != nil {
-			return nil
-		}
-		if err := os.Remove(dropin); err != nil {
+	var flags, age string
+	if on {
+		flags, age = imageGCWant(), imageAgeWant(after, k3sRelease())
+	}
+	changed := false
+	for _, f := range []struct{ path, want string }{{imageGCDropin, flags}, {imageAgeConf, age}} {
+		c, err := keepFile(f.path, f.want)
+		if err != nil {
 			return err
 		}
-		if err := systemctlRestart("k3s"); err != nil {
-			return fmt.Errorf("restart k3s: %w", err)
-		}
-		fmt.Println("✔  Daily image cleanup off: images stay until the disk is 85% full")
+		changed = changed || c
+	}
+	if !changed {
 		return nil
-	}
-	want := imageGCWant(after, k3sRelease())
-	if have, err := os.ReadFile(dropin); err == nil && string(have) == want {
-		return nil
-	}
-	fmt.Println("Removing unused images daily…")
-	if err := os.MkdirAll(filepath.Dir(dropin), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(dropin, []byte(want), 0o644); err != nil {
-		return err
 	}
 	if err := systemctlRestart("k3s"); err != nil {
 		return fmt.Errorf("restart k3s: %w", err)
 	}
-	fmt.Printf("✔  Images no app uses are removed after %s\n", after)
+	switch {
+	case !on:
+		fmt.Println("✔  Daily image cleanup off: images stay until the disk is 85% full")
+	case age == "":
+		fmt.Println("✔  Images are cleaned from 80% full; removing them by age needs Kubernetes 1.30")
+	default:
+		fmt.Printf("✔  Images no app uses are removed after %s\n", after)
+	}
 	return nil
+}
+
+// keepFile makes path hold want, or removes it when want is empty, and says
+// whether it changed anything.
+func keepFile(path, want string) (bool, error) {
+	have, err := os.ReadFile(path)
+	if want == "" {
+		if err != nil {
+			return false, nil
+		}
+		return true, os.Remove(path)
+	}
+	if err == nil && string(have) == want {
+		return false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(path, []byte(want), 0o644)
 }
 
 // restrictEnvFile makes .env readable by its owner alone. It holds every secret

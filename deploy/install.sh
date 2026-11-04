@@ -454,21 +454,28 @@ configure_pod_dns() {
 # image, and the registry keeps the last few for a rollback to pull again.
 # It also starts kubelet's own cleanup at 80% full rather than 85.
 #
-# Sets IMAGE_CLEANUP_CHANGED=1 when the drop-in changed, so a running k3s is
-# restarted to read it. The age needs Kubernetes 1.30; on an older release
-# only the thresholds are written.
+# Sets IMAGE_CLEANUP_CHANGED=1 when a file changed, so a running k3s is
+# restarted to read it. The thresholds are kubelet flags, in a k3s drop-in.
+# The age is a field of kubelet's configuration with no flag (kubelet refuses
+# to start when given one as a flag), so it is a kubelet configuration file in
+# the directory k3s has kubelet read. It needs Kubernetes 1.30: an earlier
+# kubelet refuses the field, so an older release gets the thresholds alone.
 IMAGE_CLEANUP_CHANGED=0
 configure_image_cleanup() {
   local SUDO=""
   [[ ${EUID:-$(id -u)} -ne 0 ]] && SUDO="sudo"
   local dropin=/etc/rancher/k3s/config.yaml.d/30-image-cleanup.yaml
+  local ageconf=/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/30-meshploy-image-cleanup.conf
   local after="${IMAGE_CLEANUP_AFTER:-24h}"
 
   if [[ "$after" == "off" || "$after" == "0" ]]; then
-    if [[ -f "$dropin" ]]; then
-      $SUDO rm -f "$dropin"
-      IMAGE_CLEANUP_CHANGED=1
-    fi
+    local f
+    for f in "$dropin" "$ageconf"; do
+      if $SUDO test -f "$f"; then
+        $SUDO rm -f "$f"
+        IMAGE_CLEANUP_CHANGED=1
+      fi
+    done
     return 0
   fi
   if ! [[ "$after" =~ ^[0-9]+(h|m)$ ]]; then
@@ -482,20 +489,27 @@ configure_image_cleanup() {
   local minor=99
   [[ "$release" =~ ^v1\.([0-9]+)\. ]] && minor="${BASH_REMATCH[1]}"
 
-  local want
-  want=$'kubelet-arg+:\n  - "image-gc-high-threshold=80"\n  - "image-gc-low-threshold=70"\n'
+  keep_file "$dropin" $'kubelet-arg+:\n  - "image-gc-high-threshold=80"\n  - "image-gc-low-threshold=70"\n'
   if [[ "$minor" -ge 30 ]]; then
-    want+="  - \"image-maximum-gc-age=${after}\""$'\n'
-  fi
-  if [[ "$($SUDO cat "$dropin" 2>/dev/null)"$'\n' != "$want" ]]; then
-    $SUDO mkdir -p "$(dirname "$dropin")"
-    printf '%s' "$want" | $SUDO tee "$dropin" > /dev/null
-    IMAGE_CLEANUP_CHANGED=1
-  fi
-  if [[ "$minor" -ge 30 ]]; then
+    keep_file "$ageconf" $'apiVersion: kubelet.config.k8s.io/v1beta1\nkind: KubeletConfiguration\nimageMaximumGCAge: '"${after}"$'\n'
     success "Images no app uses are removed after ${after}"
   else
+    if $SUDO test -f "$ageconf"; then
+      $SUDO rm -f "$ageconf"
+      IMAGE_CLEANUP_CHANGED=1
+    fi
     warn "k3s ${release} is older than 1.30: images are cleaned from 80% full, not by age"
+  fi
+}
+
+# keep_file writes want to path when it holds anything else, and marks the
+# image cleanup changed. $SUDO is the caller's.
+keep_file() {
+  local path="$1" want="$2"
+  if [[ "$($SUDO cat "$path" 2>/dev/null)"$'\n' != "$want" ]]; then
+    $SUDO mkdir -p "$(dirname "$path")"
+    printf '%s' "$want" | $SUDO tee "$path" > /dev/null
+    IMAGE_CLEANUP_CHANGED=1
   fi
 }
 
