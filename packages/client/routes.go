@@ -3,12 +3,12 @@ package client
 import "fmt"
 
 type Route struct {
-	ID         string  `json:"id"`
-	Hostname   string  `json:"hostname"`
-	TargetIP   string  `json:"target_ip"`
-	TargetPort int     `json:"target_port"`
-	ServiceID  *string `json:"service_id"`
-	Zone       string  `json:"zone"`
+	ID       string `json:"id"`
+	Hostname string `json:"hostname"`
+	// Targets are its path rules, each sending what falls under its path to
+	// a service, a node or an address.
+	Targets []RouteTarget `json:"targets"`
+	Zone    string        `json:"zone"`
 	// Published is false for a paused route: kept, not served.
 	Published bool   `json:"published"`
 	CreatedAt string `json:"created_at"`
@@ -23,6 +23,69 @@ type Route struct {
 	// its DNS points at the gateway.
 	CustomDomainVerified    bool   `json:"custom_domain_verified"`
 	CustomDomainVerifyToken string `json:"custom_domain_verify_token"`
+}
+
+// RouteTarget is one path rule of a route.
+type RouteTarget struct {
+	Path        string  `json:"path"`
+	ServiceID   *string `json:"service_id"`
+	ServicePort int     `json:"service_port"`
+	NodeID      *string `json:"node_id"`
+	// TargetIP and TargetPort are where the gateway forwards: for a service,
+	// its NodePort on the gateway, which is zero until the service has
+	// deployed.
+	TargetIP        string  `json:"target_ip"`
+	TargetPort      int     `json:"target_port"`
+	RedirectRouteID *string `json:"redirect_route_id"`
+}
+
+// Main is the rule for "/", or the first when none is: what most requests
+// reach. Nil for a route with no targets.
+func (r Route) Main() *RouteTarget {
+	for i := range r.Targets {
+		if r.Targets[i].Path == "/" {
+			return &r.Targets[i]
+		}
+	}
+	if len(r.Targets) > 0 {
+		return &r.Targets[0]
+	}
+	return nil
+}
+
+// LeadsTo is whether any of its rules sends requests to the service.
+func (r Route) LeadsTo(serviceID string) bool {
+	for _, t := range r.Targets {
+		if t.ServiceID != nil && *t.ServiceID == serviceID {
+			return true
+		}
+	}
+	return false
+}
+
+// Target says where the route sends requests, for a person reading a list:
+// its main rule's address, or why it has none yet, and how many other paths
+// it has.
+func (r Route) Target() string {
+	t := r.Main()
+	if t == nil {
+		return "no target"
+	}
+	var s string
+	switch {
+	case t.RedirectRouteID != nil:
+		s = "redirect"
+	case t.TargetPort == 0:
+		s = "waiting for its service to deploy"
+	default:
+		s = fmt.Sprintf("%s:%d", t.TargetIP, t.TargetPort)
+	}
+	if n := len(r.Targets) - 1; n == 1 {
+		s += " (+1 path)"
+	} else if n > 1 {
+		s += fmt.Sprintf(" (+%d paths)", n)
+	}
+	return s
 }
 
 // IsCustomHostname reports whether the route's hostname is its own, rather

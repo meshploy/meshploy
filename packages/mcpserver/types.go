@@ -50,7 +50,11 @@ type MCPRoute struct {
 	ID        string `json:"id"`
 	Hostname  string `json:"hostname"`
 	ServiceID string `json:"service_id,omitempty"`
-	Port      int    `json:"port"`
+	// Port is the gateway port its main rule forwards to; zero until the
+	// service behind it has deployed.
+	Port int `json:"port"`
+	// Target says the same for a reader: the address, or why there is none.
+	Target string `json:"target"`
 	// Published is false for a paused route, which is kept and not served.
 	Published bool `json:"published"`
 	// CustomHostname is true when the hostname is its own, not a subdomain of a

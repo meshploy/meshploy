@@ -169,7 +169,7 @@ func (s *srv) serviceLinks(projectID, serviceID string) []string {
 	}
 	var links []string
 	for _, r := range routes {
-		if r.Published && r.ServiceID != nil && *r.ServiceID == serviceID && r.Hostname != "" {
+		if r.Published && r.LeadsTo(serviceID) && r.Hostname != "" {
 			links = append(links, "https://"+r.Hostname)
 		}
 	}

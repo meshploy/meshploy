@@ -99,8 +99,8 @@ func (f *fakeAPI) server(t *testing.T) *httptest.Server {
 	mux.HandleFunc("GET "+base+"/p1/routes", func(w http.ResponseWriter, r *http.Request) {
 		s1 := "s1"
 		j(w, 200, []client.Route{
-			{ID: "r1", Hostname: "todo.example.com", ServiceID: &s1, Published: true},
-			{ID: "r2", Hostname: "paused.example.com", ServiceID: &s1, Published: false},
+			{ID: "r1", Hostname: "todo.example.com", Targets: []client.RouteTarget{{Path: "/", ServiceID: &s1}}, Published: true},
+			{ID: "r2", Hostname: "paused.example.com", Targets: []client.RouteTarget{{Path: "/", ServiceID: &s1}}, Published: false},
 		})
 	})
 	mux.HandleFunc("POST "+base+"/p1/services/s1/shares", func(w http.ResponseWriter, r *http.Request) {

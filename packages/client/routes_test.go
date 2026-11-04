@@ -15,7 +15,7 @@ func TestListRoutes(t *testing.T) {
 			path:   "/api/v1/orgs/" + testOrg + "/projects/" + testProject + "/routes",
 			fn: func(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, []client.Route{
-					{ID: "r1", Hostname: "app.internal.example.com", TargetIP: "100.64.0.2", TargetPort: 3000},
+					{ID: "r1", Hostname: "app.internal.example.com", Targets: []client.RouteTarget{{Path: "/", TargetIP: "100.64.0.2", TargetPort: 3000}}},
 				})
 			},
 		},
@@ -30,8 +30,8 @@ func TestListRoutes(t *testing.T) {
 	if len(routes) != 1 {
 		t.Errorf("want 1 route, got %d", len(routes))
 	}
-	if routes[0].TargetPort != 3000 {
-		t.Errorf("want port 3000, got %d", routes[0].TargetPort)
+	if routes[0].Main() == nil || routes[0].Main().TargetPort != 3000 {
+		t.Errorf("want port 3000, got %+v", routes[0].Targets)
 	}
 }
 
@@ -126,5 +126,32 @@ func TestVerifyRouteHostname(t *testing.T) {
 	}
 	if r.NeedsOwnershipProof() {
 		t.Fatal("a verified hostname needs no proof")
+	}
+}
+
+// A route's target is read from its rules: the one for "/", what a service
+// still deploying has, a redirect, and how many other paths there are.
+func TestRouteTargetIsReadFromItsRules(t *testing.T) {
+	svc := "svc-1"
+	redirect := "route-2"
+	cases := []struct {
+		name string
+		r    client.Route
+		want string
+	}{
+		{"no rules", client.Route{}, "no target"},
+		{"a deployed service", client.Route{Targets: []client.RouteTarget{{Path: "/", ServiceID: &svc, TargetIP: "100.64.0.1", TargetPort: 30080}}}, "100.64.0.1:30080"},
+		{"a service not deployed yet", client.Route{Targets: []client.RouteTarget{{Path: "/", ServiceID: &svc}}}, "waiting for its service to deploy"},
+		{"a redirect", client.Route{Targets: []client.RouteTarget{{Path: "/", RedirectRouteID: &redirect}}}, "redirect"},
+		{"/ wins over the first rule, others counted", client.Route{Targets: []client.RouteTarget{
+			{Path: "/api", TargetIP: "100.64.0.2", TargetPort: 30081},
+			{Path: "/", TargetIP: "100.64.0.1", TargetPort: 30080},
+			{Path: "/docs", TargetIP: "100.64.0.3", TargetPort: 30082},
+		}}, "100.64.0.1:30080 (+2 paths)"},
+	}
+	for _, c := range cases {
+		if got := c.r.Target(); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
 	}
 }

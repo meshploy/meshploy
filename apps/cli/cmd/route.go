@@ -37,7 +37,7 @@ var routeListCmd = &cobra.Command{
 			if r.NeedsOwnershipProof() {
 				unproved++
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s:%d\t%s\n", r.ID, r.Hostname, publishState(r.Published), ownershipState(r), r.TargetIP, r.TargetPort, r.Zone)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.ID, r.Hostname, publishState(r.Published), ownershipState(r), r.Target(), r.Zone)
 		}
 		if err := w.Flush(); err != nil {
 			return err
@@ -140,7 +140,7 @@ Use a raw mesh IP directly:
 		if err != nil {
 			return err
 		}
-		fmt.Printf("✔  Route created: %s → %s:%d (%s)\n", r.Hostname, r.TargetIP, r.TargetPort, r.ID)
+		fmt.Printf("✔  Route created: %s → %s (%s)\n", r.Hostname, r.Target(), r.ID)
 		if r.NeedsOwnershipProof() {
 			printOwnershipProof(*r, c.GatewayPublicIP(orgID()))
 		}

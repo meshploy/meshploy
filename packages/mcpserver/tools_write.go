@@ -1451,12 +1451,15 @@ func (s *srv) handleVerifyRouteHostname(_ context.Context, req mcp.CallToolReque
 // publicIP is looked up when empty and a proof is needed.
 func (s *srv) toMCPRoute(r client.Route, publicIP string) MCPRoute {
 	out := MCPRoute{
-		ID: r.ID, Hostname: r.Hostname, Port: r.TargetPort, Published: r.Published,
+		ID: r.ID, Hostname: r.Hostname, Target: r.Target(), Published: r.Published,
 		CustomHostname:    r.IsCustomHostname(),
 		OwnershipVerified: !r.NeedsOwnershipProof(),
 	}
-	if r.ServiceID != nil {
-		out.ServiceID = *r.ServiceID
+	if t := r.Main(); t != nil {
+		out.Port = t.TargetPort
+		if t.ServiceID != nil {
+			out.ServiceID = *t.ServiceID
+		}
 	}
 	if r.NeedsOwnershipProof() {
 		if publicIP == "" {
