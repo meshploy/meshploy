@@ -34,7 +34,7 @@ Certificates are automatic. A base domain whose DNS is **delegated** to the gate
 
 ## Your own hostnames {#custom}
 
-A route can use a hostname outside your base domains, such as `shop.customer.com`. The simplest proof that it is yours is a CNAME from it to another address of the same project, such as the app's own address: that one record proves the name and points it here. A name that cannot have a CNAME, such as a bare domain, is pointed at the gateway and proved with a TXT record at `_meshploy-verify.<hostname>`; the route shows the value to add.
+A route can use a hostname outside your base domains, such as `shop.customer.com`. The simplest proof that it is yours is a CNAME from it to another address of the same project, such as the app's own address: that one record proves the name and points it here. Otherwise the name is proved with a TXT record at `_meshploy-verify.<hostname>`, and pointed here with a CNAME to the gateway's edge name, `edge.<primary domain>`, which follows the gateway if it ever moves to another machine. An A record to the gateway's address works too, but pins the name to this machine. A bare domain cannot have a CNAME: use your provider's flattening (ALIAS or ANAME) if it has one, or the A record. The route shows the records to add.
 
 A whole hostname one label under a verified base domain, such as `shop.example.com` under `example.com`, is simply a route on that domain, and needs no proof, whichever way it was created. The TXT record of a proof is read once, so delete it after the route is verified; a route deleted and made again asks for a new one.
 

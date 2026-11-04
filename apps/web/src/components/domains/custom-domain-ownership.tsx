@@ -3,7 +3,7 @@ import { Loader2, RefreshCw, ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { RecordTable, Step } from "@/components/domains/dns-records"
 import { zoneOf } from "@/lib/dns-name"
-import { useGatewayPublicIp } from "@/components/domains/use-gateway-ip"
+import { useGatewayEdge, useGatewayPublicIp } from "@/components/domains/use-gateway-ip"
 import { routes as routesApi, ApiError } from "@/lib/api"
 import type { ApiDbRoute } from "@/lib/api/routes"
 
@@ -38,7 +38,9 @@ export function CustomDomainOwnership({
   token: string
 }) {
   const qc = useQueryClient()
-  const publicIp = useGatewayPublicIp(orgId, token)
+  const nodeIp = useGatewayPublicIp(orgId, token)
+  const edge = useGatewayEdge(token)
+  const publicIp = edge?.public_ip || nodeIp
   const verify = useMutation({
     mutationFn: () => routesApi.verifyHostname(orgId, projectId, route.id, token),
     onSuccess: () => {
@@ -55,6 +57,11 @@ export function CustomDomainOwnership({
   if (route.domain_id || route.custom_domain_verified) return null
 
   const host = route.hostname
+  const zone = zoneOf(host)
+  // A CNAME cannot sit at a zone's root, beside its SOA and NS records.
+  const atRoot = host.toLowerCase() === zone
+  const ip = publicIp || "<gateway public IP>"
+  const cnameFirst = !!edge?.resolves && !!edge.name
   return (
     <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -96,7 +103,7 @@ export function CustomDomainOwnership({
       </div>
 
       <ol className="space-y-5">
-        <Step n={1} title="Prove you own it" done={false} detail="Add this at the DNS provider for the hostname, or skip it: a CNAME to another address of this project proves the name on its own. The TXT record is read once, so it can be deleted after this route is verified.">
+        <Step n={1} title="Prove you own it" done={false} detail="Add this at the DNS provider for the hostname, or skip it: a CNAME to another address of this project proves the name on its own, though one to the gateway's edge name does not. The TXT record is read once, so it can be deleted after this route is verified.">
           {route.custom_domain_verify_token ? (
             <RecordTable
               records={[{ name: `_meshploy-verify.${host}`, zone: zoneOf(host), type: "TXT", value: route.custom_domain_verify_token }]}
@@ -111,9 +118,24 @@ export function CustomDomainOwnership({
           n={2}
           title="Point it at this gateway"
           done={false}
-          detail="In any order with the record above. A CNAME to a name that resolves here works too, except at the root of a domain."
+          detail={
+            !cnameFirst
+              ? "In any order with the record above."
+              : atRoot
+                ? `In any order with the record above. ${host} is the root of its domain, which cannot hold a CNAME: use your provider's CNAME flattening (ALIAS or ANAME) to ${edge!.name} if it has one, so the name follows this gateway to another machine, or the A record, which pins it to this one.`
+                : `In any order with the record above. The CNAME follows this gateway if it moves to another machine; the A record instead pins the name to this one.`
+          }
         >
-          <RecordTable records={[{ name: host, zone: zoneOf(host), type: "A", value: publicIp || "<gateway public IP>" }]} />
+          <RecordTable
+            records={
+              cnameFirst
+                ? [
+                    { name: host, zone, type: atRoot ? "ALIAS" : "CNAME", value: edge!.name },
+                    { name: host, zone, type: "A", value: ip, note: "Or this instead: pins it to this machine" },
+                  ]
+                : [{ name: host, zone, type: "A", value: ip }]
+            }
+          />
         </Step>
       </ol>
     </section>

@@ -109,12 +109,13 @@ func (s *RouteService) getByID(ctx context.Context, routeID uuid.UUID) (*db.Rout
 // platformReservedSubdomains are gateway-level names that cannot be used as route subdomains.
 var platformReservedSubdomains = map[string]bool{
 	// Meshploy infrastructure
-	"console":   true,
-	"api":       true,
-	"mesh":      true,
-	"headscale": true,
-	"preview":   true,
-	"internal":  true,
+	"console":     true,
+	"api":         true,
+	"mesh":        true,
+	"headscale":   true,
+	"preview":     true,
+	"internal":    true,
+	EdgeSubdomain: true,
 	// Standard DNS / internet conventions
 	"www":  true,
 	"mail": true,

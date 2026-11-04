@@ -64,6 +64,16 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 	}, h.CheckForUpdates)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-edge",
+		Method:      "GET",
+		Path:        "/api/v1/system/edge",
+		Summary:     "The gateway's edge name, which a custom hostname points at with a CNAME",
+		Description: "Name is edge.<primary domain>. Resolves says whether it resolves to the gateway's public address now; until it does, point a hostname at public_ip instead.",
+		Tags:        []string{"System"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetEdge)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-exposure",
 		Method:      "GET",
 		Path:        "/api/v1/system/exposure",
@@ -128,6 +138,17 @@ type ExposureOutput struct {
 // ports are Meshploy's own published defaults, documented in the compose file --
 // and hiding it from the person who happens to be signed in is how it goes
 // unnoticed.
+type EdgeOutput struct {
+	Body service.Edge
+}
+
+func (h *Handler) GetEdge(ctx context.Context, _ *struct{}) (*EdgeOutput, error) {
+	if _, err := requireUser(ctx); err != nil {
+		return nil, err
+	}
+	return &EdgeOutput{Body: h.svc.Domains.Edge(ctx)}, nil
+}
+
 func (h *Handler) GetExposure(ctx context.Context, _ *struct{}) (*ExposureOutput, error) {
 	userID, err := requireUser(ctx)
 	if err != nil {

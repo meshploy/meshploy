@@ -107,6 +107,18 @@ export interface HostAgentStatus {
   firewall?: string
 }
 
+/**
+ * The gateway's edge name: edge.<primary domain>. A custom hostname pointed at
+ * it with a CNAME follows the gateway to another machine; an A record to
+ * `public_ip` pins it to this one. `resolves` is false until the name answers
+ * with that address in public DNS, and the console then asks for the A record.
+ */
+export interface GatewayEdge {
+  name: string
+  public_ip: string
+  resolves: boolean
+}
+
 /** Stable slug for the host-exposure advisory. */
 export const NOTICE_HOST_EXPOSURE = "host-exposure"
 
@@ -206,6 +218,9 @@ export const system = {
 
   exposure: (token: string) =>
     apiFetch<Exposure>("/api/v1/system/exposure", {}, token),
+
+  /** The name a custom hostname points at, and whether it resolves here yet. */
+  edge: (token: string) => apiFetch<GatewayEdge>("/api/v1/system/edge", {}, token),
 
   /** Every advisory the current user has dismissed. One call for all of them. */
   dismissedNotices: (token: string) =>

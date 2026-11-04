@@ -587,6 +587,7 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/system/login-info` | public | The console and API addresses for a CLI finding this server, on the domain it was reached through when that domain serves the platform, else the primary's; and the version |
+| GET | `/system/edge` | ✓ | The gateway's edge name (`edge.<primary domain>`), which a custom hostname points at with a CNAME, its public address, and whether the name resolves there now |
 | GET | `/system/exposure` | ✓ | Report whether this gateway runs without a host firewall |
 | POST | `/system/notices/{key}/dismiss` | ✓ | Dismiss a console advisory for the current user |
 | GET | `/system/channels` | ✓ | Describe the stable and edge channels, where this server is, and whether it may switch |

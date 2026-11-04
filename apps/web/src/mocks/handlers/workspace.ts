@@ -1609,6 +1609,9 @@ export const workspaceHandlers = [
       checked_at: now(),
     })
   ),
+  http.get("/api/v1/system/edge", () =>
+    json({ name: "edge.demo.example.com", public_ip: "203.0.113.10", resolves: true }),
+  ),
   http.get("/api/v1/system/exposure", () =>
     json({
       firewall_state: "ufw",

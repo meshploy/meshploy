@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net"
 	"time"
 
 	meshdb "github.com/meshploy/packages/db"
@@ -180,4 +181,22 @@ func ServiceEnvForTest(ctx context.Context, s *Services, svc *meshdb.Service) ma
 		out[e.Name] = e.Value
 	}
 	return out
+}
+
+// UseEdgeForTest gives the gateway the public address publicIP and has the
+// edge name resolve to addrs, forgetting any earlier lookup; the returned
+// function puts the resolver back.
+func UseEdgeForTest(svc *Services, publicIP string, addrs map[string][]string) func() {
+	svc.Domains.publicIP = publicIP
+	old := lookupEdge
+	lookupEdge = func(_ context.Context, name string) ([]string, error) {
+		if a, ok := addrs[name]; ok {
+			return a, nil
+		}
+		return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
+	}
+	edgeChecked.Lock()
+	edgeChecked.name = ""
+	edgeChecked.Unlock()
+	return func() { lookupEdge = old }
 }
