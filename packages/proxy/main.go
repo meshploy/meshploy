@@ -11,6 +11,7 @@ import (
 	dbpkg "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/proxy/cache"
 	"github.com/meshploy/packages/proxy/meshgate"
+	"github.com/meshploy/packages/proxy/saved"
 	"github.com/meshploy/packages/proxy/tcp"
 )
 
@@ -19,9 +20,18 @@ import (
 // an edition that adds to the proxy calls it after registering what it adds.
 func Main() {
 	// ── Database ──────────────────────────────────────────────────────────────
-	database, err := dbpkg.FromEnv()
+	// Opened without reaching it: the edge serves what it saved while the
+	// database is down, so it must start without one.
+	database, err := dbpkg.FromEnvLazily()
 	if err != nil {
 		log.Fatalf("db: %v", err)
+	}
+	// PROXY_STATE_DIR keeps the last routes, mesh grants and TCP ports loaded;
+	// unset, a proxy that starts without the database serves nothing.
+	keep, err := saved.Open(os.Getenv("PROXY_STATE_DIR"))
+	if err != nil {
+		log.Printf("saved state: %v; serving only what the database gives", err)
+		keep = nil
 	}
 
 	encKey := os.Getenv("ENCRYPTION_KEY")
@@ -31,12 +41,15 @@ func Main() {
 
 	// ── Route cache ───────────────────────────────────────────────────────────
 	routeCache := cache.New(database, 30*time.Second)
+	routeCache.Keep(keep)
 	routeCache.Start()
 
 	// ── TCP routes ────────────────────────────────────────────────────────────
 	// Each published port is a listener of its own, so they are opened here
 	// rather than served by the HTTP handler below.
-	tcp.New(database, os.Getenv("TCP_BIND"), 30*time.Second).Start()
+	forwarder := tcp.New(database, os.Getenv("TCP_BIND"), 30*time.Second)
+	forwarder.Keep(keep)
+	forwarder.Start()
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
 	port := os.Getenv("PROXY_PORT")
@@ -56,6 +69,7 @@ func Main() {
 	// Internal routes answer only the machines whose owners may use what they
 	// lead to, once the mesh policy is enforced.
 	mesh := meshgate.New(database)
+	mesh.Keep(keep)
 	mesh.Start(30 * time.Second)
 	handler.CheckInternal(mesh)
 	handler.Brand(database)

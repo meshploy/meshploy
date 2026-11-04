@@ -249,12 +249,13 @@ else
   if ! $REINSTALL; then
     header "Removing volumes"
     if confirm "Delete all volumes? (${BOLD}this deletes the database, TLS certificates and images pushed to the built-in registry${RESET})"; then
-      # postgres and registry are project-scoped, so they carry the compose
+      # postgres, registry and proxy_state are project-scoped, so they carry the compose
       # directory's name; the Caddy volumes are declared external with fixed
       # names, which a directory-derived name would miss when run elsewhere.
       $CONTAINER_RUNTIME volume rm \
         "$(basename "$(pwd)")_postgres_data" \
         "$(basename "$(pwd)")_registry_data" \
+        "$(basename "$(pwd)")_proxy_state" \
         meshploy_caddy_data \
         meshploy_caddy_config \
         2>/dev/null || true

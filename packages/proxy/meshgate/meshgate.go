@@ -13,6 +13,7 @@
 package meshgate
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	db "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/proxy/saved"
 	"gorm.io/gorm"
 )
 
@@ -79,27 +81,63 @@ type Snapshot struct {
 
 // Gate holds the latest snapshot.
 type Gate struct {
-	db   *gorm.DB
-	mu   sync.RWMutex
-	snap *Snapshot
+	db    *gorm.DB
+	mu    sync.RWMutex
+	snap  *Snapshot
+	saved *saved.Dir
 }
 
 func New(database *gorm.DB) *Gate { return &Gate{db: database} }
 
+// savedName is the gate's file in the saved directory.
+const savedName = "mesh"
+
+// Keep has every load saved in d, and the saved copy decided from when the
+// first load fails. Call it before Start.
+func (g *Gate) Keep(d *saved.Dir) { g.saved = d }
+
 // Start loads the snapshot, then again within a second of any change to what
 // the mesh policy is made from (db.EdgeMesh) and every refresh regardless.
+// When the first load fails, the saved copy decides until one succeeds.
 func (g *Gate) Start(refresh time.Duration) {
-	g.reload()
-	db.FollowEdgeVersion(g.db, db.EdgeMesh, refresh, g.reload)
+	if !g.reload() {
+		g.restore()
+	}
+	db.FollowEdgeVersion(g.db, db.EdgeMesh, refresh, func() { g.reload() })
 }
 
-func (g *Gate) reload() {
+func (g *Gate) reload() bool {
 	s, err := Load(g.db)
 	if err != nil {
 		log.Printf("meshgate: load failed, keeping the last state: %v", err)
-		return
+		return false
+	}
+	if err := g.saved.Save(savedName, s); err != nil {
+		log.Printf("meshgate: saving the state: %v", err)
 	}
 	g.Set(s)
+	return true
+}
+
+// restore decides from the saved copy. Without one the gate stays as Check
+// has it before any load: closed to all but the server's own machines.
+func (g *Gate) restore() {
+	s := &Snapshot{}
+	at, err := g.saved.Load(savedName, s)
+	switch {
+	case errors.Is(err, saved.ErrNone):
+		log.Printf("meshgate: no saved state either; internal routes answer only the cluster until the database does")
+		return
+	case err != nil:
+		log.Printf("meshgate: the saved state cannot be read: %v", err)
+		return
+	}
+	g.mu.Lock()
+	if g.snap == nil { // a load that succeeded meanwhile is newer
+		g.snap = s
+	}
+	g.mu.Unlock()
+	log.Printf("meshgate: deciding from the state saved at %s until the database answers", at.Format(time.RFC3339))
 }
 
 // Set replaces the snapshot; Start does this from the database.

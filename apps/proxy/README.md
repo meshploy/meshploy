@@ -18,7 +18,7 @@ Caddy (TLS) → Proxy (:8081) → WireGuard mesh → K3s worker node
 2. The proxy strips the port from the `Host` header and looks up the route
 3. On a cache hit, it creates a `httputil.ReverseProxy` targeting `http://<target_ip>:<target_port>`
 4. The original `Host` is preserved as `X-Forwarded-Host` for host-aware upstreams
-5. A hostname missing from the cache is looked up in the database once and cached; if there is still no route it returns `404`. Upstream errors return `502`
+5. A hostname missing from the cache is looked up in the database once and cached, while the database answers; if there is still no route it returns `404`. Upstream errors return `502`
 
 ---
 
@@ -38,6 +38,8 @@ packages/proxy/
 │   └── cache.go        # In-memory route table, reloaded within a second of a change
 ├── meshgate/
 │   └── meshgate.go     # Who on the mesh may open an internal route
+├── saved/
+│   └── saved.go        # The last good state on disk, served without the database
 └── tcp/
     └── forwarder.go    # Published TCP ports, one listener each
 ```
@@ -47,6 +49,32 @@ packages/proxy/
 ## Route cache
 
 The cache maps each hostname to a list of `TargetEntry` values (mesh IP, port and path prefix), sorted longest path first so a service mounted at a sub-path wins over one at `/`. Lookups try the exact hostname, then a wildcard (`*.parent`), then the database. It reloads within a second of any change to the routes (the `routes` count in `edge_versions`, which every write to a route table moves) and every 30 seconds regardless. All reads use a `sync.RWMutex` so hot-path lookups never block on refresh.
+
+---
+
+## Serving without the database
+
+The edge never needs the database to serve a request it already knows. Each
+part of it (the route table, the mesh gate's grants, the TCP ports) saves
+what it loaded to `PROXY_STATE_DIR` (`/var/lib/meshploy/proxy`, on the
+`proxy_state` volume) after every load that succeeds, and only when it
+changed. A proxy that starts while Postgres is down, or restarts during an
+outage, serves that copy and keeps trying; the first load that succeeds
+replaces it, within a second of Postgres answering again. A reload that fails
+keeps what is already served.
+
+While the last load failed, a hostname missing from the table is not looked
+up in the database, so unknown hostnames never wait on one that is not
+answering. The copy is the database's, never a second source: nothing in it is
+written back, and a copy in a format another version wrote is ignored. With no
+copy, the proxy serves no routes and the mesh gate opens internal routes only
+to the cluster's machines, as before any load.
+
+What still needs the database: the edge's own pages (the brand they show, and
+whether a service that does not answer was stopped) fall back to Meshploy's
+brand and "not answering"; a TCP port's status in the console is not updated;
+and Caddy's on-demand TLS asks the API before issuing a certificate for a
+**new** hostname, while certificates already issued keep serving.
 
 ---
 

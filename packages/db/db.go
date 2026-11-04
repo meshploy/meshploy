@@ -33,6 +33,22 @@ func FromEnv() (*gorm.DB, error) {
 	return Open(dsn)
 }
 
+// FromEnvLazily connects using DATABASE_URL without reaching the database
+// first: each query connects, and fails while it is down. For a process that
+// serves from its own saved copy while the database is away, so starting it
+// must not wait for one.
+func FromEnvLazily() (*gorm.DB, error) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return nil, fmt.Errorf("DATABASE_URL is not set")
+	}
+	conn, err := gorm.Open(postgres.Open(dsn), &gorm.Config{DisableAutomaticPing: true})
+	if err != nil {
+		return nil, err
+	}
+	return conn, countEdgeChanges(conn)
+}
+
 // ---------------------------------------------------------------------------
 // Extensible Migration Registry (Open-Core pattern)
 //

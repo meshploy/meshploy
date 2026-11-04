@@ -1,14 +1,18 @@
 package cache
 
 import (
+	"context"
+	"errors"
 	"log"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 	db "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/proxy/saved"
 	"gorm.io/gorm"
 )
 
@@ -67,13 +71,37 @@ type Cache struct {
 	// fallback is where a hostname with no published route goes while a
 	// migration serves it from the old platform's edge; see db.EdgeFallback.
 	fallback *Fallback
+	// saved keeps the last load, which a proxy serves when it starts without
+	// the database.
+	saved *saved.Dir
+	// reached is whether the last load from the database succeeded. While it
+	// did not, a hostname missing from the table is not looked up there:
+	// each lookup would wait on a database that is not answering.
+	reached atomic.Bool
 }
+
+// savedName is the routes' file in the saved directory.
+const savedName = "routes"
+
+// savedRoutes is what the routes' file holds.
+type savedRoutes struct {
+	Routes   map[string][]TargetEntry `json:"routes"`
+	Fallback *Fallback                `json:"fallback,omitempty"`
+}
+
+// missLookupTimeout bounds asking the database about a hostname missing from
+// the table, since a request waits on the answer.
+const missLookupTimeout = 2 * time.Second
 
 // Fallback is the old edge, and the hostnames it still serves.
 type Fallback struct {
 	Upstream  string
 	Hostnames map[string]bool
 }
+
+// Keep has every load saved in d, and the saved copy served when the first
+// load fails. Call it before Start.
+func (c *Cache) Keep(d *saved.Dir) { c.saved = d }
 
 func New(database *gorm.DB, refreshInterval time.Duration) *Cache {
 	return &Cache{
@@ -84,16 +112,44 @@ func New(database *gorm.DB, refreshInterval time.Duration) *Cache {
 }
 
 // Start loads the routes, then reloads them within a second of any change
-// (db.EdgeRoutes) and every refresh interval regardless.
+// (db.EdgeRoutes) and every refresh interval regardless. When the first load
+// fails the saved copy is served until one succeeds; a later failure keeps
+// what is already served.
 func (c *Cache) Start() {
 	if err := c.load(); err != nil {
 		log.Printf("cache: initial load failed: %v", err)
+		c.restore()
 	}
 	db.FollowEdgeVersion(c.db, db.EdgeRoutes, c.refresh, func() {
 		if err := c.load(); err != nil {
-			log.Printf("cache: refresh failed: %v", err)
+			log.Printf("cache: refresh failed, keeping the last routes: %v", err)
 		}
 	})
+}
+
+// restore serves the saved copy of the routes.
+func (c *Cache) restore() {
+	var s savedRoutes
+	at, err := c.saved.Load(savedName, &s)
+	switch {
+	case errors.Is(err, saved.ErrNone):
+		log.Printf("cache: no saved routes either; serving none until the database answers")
+		return
+	case err != nil:
+		log.Printf("cache: the saved routes cannot be read: %v", err)
+		return
+	}
+	if s.Routes == nil {
+		s.Routes = map[string][]TargetEntry{}
+	}
+	for _, entries := range s.Routes {
+		sortEntries(entries)
+	}
+	c.mu.Lock()
+	c.routes = s.Routes
+	c.fallback = s.Fallback
+	c.mu.Unlock()
+	log.Printf("cache: serving %d hostnames saved at %s until the database answers", len(s.Routes), at.Format(time.RFC3339))
 }
 
 // Get returns the best-matching TargetEntry for the given hostname and request path.
@@ -133,6 +189,7 @@ func (c *Cache) Get(hostname, path string) (TargetEntry, bool) {
 func (c *Cache) load() error {
 	var targets []db.RouteTarget
 	if err := c.db.Preload("Route").Preload("RedirectRoute").Find(&targets).Error; err != nil {
+		c.reached.Store(false)
 		return err
 	}
 	m := make(map[string][]TargetEntry, len(targets))
@@ -147,16 +204,26 @@ func (c *Cache) load() error {
 	}
 	var fb *Fallback
 	var row db.EdgeFallback
-	if err := c.db.Order("created_at").Limit(1).Find(&row).Error; err == nil && row.Upstream != "" {
+	if err := c.db.Order("created_at").Limit(1).Find(&row).Error; err != nil {
+		// Half a load is not served: without the fallback, a migration's
+		// hostnames would stop reaching the old edge.
+		c.reached.Store(false)
+		return err
+	} else if row.Upstream != "" {
 		fb = &Fallback{Upstream: row.Upstream, Hostnames: map[string]bool{}}
 		for _, h := range row.Hostnames {
 			fb.Hostnames[strings.ToLower(h)] = true
 		}
 	}
+	// Saved before it is served: once served, a wildcard hit adds to the map.
+	if err := c.saved.Save(savedName, savedRoutes{Routes: m, Fallback: fb}); err != nil {
+		log.Printf("cache: saving the routes: %v", err)
+	}
 	c.mu.Lock()
 	c.routes = m
 	c.fallback = fb
 	c.mu.Unlock()
+	c.reached.Store(true)
 	log.Printf("cache: loaded %d targets across %d hostnames", len(targets), len(m))
 	return nil
 }
@@ -191,23 +258,26 @@ func (c *Cache) FallbackFor(hostname string) (string, bool) {
 }
 
 func (c *Cache) loadHostname(hostname string) []TargetEntry {
-	if c.db == nil {
-		return nil // a cache filled by Set alone, as in tests
+	if c.db == nil || !c.reached.Load() {
+		return nil // a cache filled by Set alone, as in tests, or a database not answering
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), missLookupTimeout)
+	defer cancel()
+	conn := c.db.WithContext(ctx)
 	var route db.Route
-	err := c.db.Where("hostname = ? AND published = ?", hostname, true).First(&route).Error
+	err := conn.Where("hostname = ? AND published = ?", hostname, true).First(&route).Error
 	if err != nil {
 		// Try wildcard pattern (*.parent.domain).
 		wc := wildcardKey(hostname)
 		if wc == "" {
 			return nil
 		}
-		if err2 := c.db.Where("hostname = ? AND published = ?", wc, true).First(&route).Error; err2 != nil {
+		if err2 := conn.Where("hostname = ? AND published = ?", wc, true).First(&route).Error; err2 != nil {
 			return nil
 		}
 	}
 	var targets []db.RouteTarget
-	if err := c.db.Preload("RedirectRoute").Where("route_id = ?", route.ID).Find(&targets).Error; err != nil {
+	if err := conn.Preload("RedirectRoute").Where("route_id = ?", route.ID).Find(&targets).Error; err != nil {
 		return nil
 	}
 	entries := make([]TargetEntry, 0, len(targets))

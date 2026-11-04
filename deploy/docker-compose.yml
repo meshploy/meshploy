@@ -228,6 +228,11 @@ services:
       # Where TCP routes listen. Empty publishes them on every interface, which
       # is the point of a route on the gateway.
       TCP_BIND: ""
+      # The last routes, mesh grants and TCP ports loaded, served when the
+      # proxy starts while Postgres is down.
+      PROXY_STATE_DIR: /var/lib/meshploy/proxy
+    volumes:
+      - proxy_state:/var/lib/meshploy/proxy
     depends_on:
       postgres:
         condition: service_healthy
@@ -235,6 +240,7 @@ services:
 volumes:
   postgres_data:
   registry_data:
+  proxy_state:
   caddy_data:
     external: true
     name: meshploy_caddy_data

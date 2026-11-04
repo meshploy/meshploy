@@ -6,6 +6,7 @@
 package tcp
 
 import (
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	db "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/proxy/saved"
 	"gorm.io/gorm"
 )
 
@@ -31,7 +33,17 @@ type Forwarder struct {
 
 	mu        sync.Mutex
 	listeners map[int]*listener
+	// saved keeps the last routes loaded, which a proxy opens when it starts
+	// without the database.
+	saved *saved.Dir
 }
+
+// savedName is the TCP routes' file in the saved directory.
+const savedName = "tcp"
+
+// Keep has every load saved in d, and the saved routes opened when the first
+// load fails. Call it before Start.
+func (f *Forwarder) Keep(d *saved.Dir) { f.saved = d }
 
 func New(database *gorm.DB, bind string, refresh time.Duration) *Forwarder {
 	return &Forwarder{
@@ -43,21 +55,61 @@ func New(database *gorm.DB, bind string, refresh time.Duration) *Forwarder {
 }
 
 // Start opens the published ports, then follows changes within a second
-// (db.EdgeRoutes) and every refresh interval regardless.
+// (db.EdgeRoutes) and every refresh interval regardless. When the first load
+// fails the saved routes are opened until one succeeds.
 func (f *Forwarder) Start() {
-	f.sync()
-	db.FollowEdgeVersion(f.db, db.EdgeRoutes, f.refresh, f.sync)
+	if !f.sync() {
+		f.restore()
+	}
+	db.FollowEdgeVersion(f.db, db.EdgeRoutes, f.refresh, func() { f.sync() })
 }
 
-// sync brings the open listeners in line with the stored routes: it opens what
-// is new, closes what is gone, and updates the target of what stayed, since a
-// deploy moves a service to a different NodePort.
-func (f *Forwarder) sync() {
+// Stop closes every open port. A Forwarder still following the database
+// opens them again at its next load; Stop is for one that is done.
+func (f *Forwarder) Stop() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for port, l := range f.listeners {
+		l.close()
+		delete(f.listeners, port)
+	}
+}
+
+// sync loads the routes and applies them; false when the load failed, which
+// leaves the listeners as they are.
+func (f *Forwarder) sync() bool {
 	var routes []db.TCPRoute
 	if err := f.db.Find(&routes).Error; err != nil {
-		log.Printf("tcp: load routes: %v", err)
+		log.Printf("tcp: load routes, keeping the open ports: %v", err)
+		return false
+	}
+	if err := f.saved.Save(savedName, routes); err != nil {
+		log.Printf("tcp: saving the routes: %v", err)
+	}
+	f.apply(routes)
+	return true
+}
+
+// restore opens the saved routes.
+func (f *Forwarder) restore() {
+	var routes []db.TCPRoute
+	at, err := f.saved.Load(savedName, &routes)
+	switch {
+	case errors.Is(err, saved.ErrNone):
+		log.Printf("tcp: no saved routes either; opening none until the database answers")
+		return
+	case err != nil:
+		log.Printf("tcp: the saved routes cannot be read: %v", err)
 		return
 	}
+	log.Printf("tcp: opening %d routes saved at %s until the database answers", len(routes), at.Format(time.RFC3339))
+	f.apply(routes)
+}
+
+// apply brings the open listeners in line with routes: it opens what is new,
+// closes what is gone, and updates the target of what stayed, since a deploy
+// moves a service to a different NodePort.
+func (f *Forwarder) apply(routes []db.TCPRoute) {
 
 	wanted := make(map[int]db.TCPRoute, len(routes))
 	var paused []db.TCPRoute
