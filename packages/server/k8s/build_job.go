@@ -128,11 +128,19 @@ func sourceEnv(src *UploadedSource) []corev1.EnvVar {
 // A local-path volume lives on one node, and every build that mounts it must
 // run there. When that node has left the cluster no build could ever be
 // placed, so the cache is dropped and a fresh one made: it is only a cache.
-func EnsureBuildCachePVC(ctx context.Context, client kubernetes.Interface, namespace string) error {
+//
+// node is the node builds are pinned to, or "" when the scheduler places them.
+// A pinned build skips the scheduler, and local-path creates a volume only
+// once the scheduler has chosen a node or the claim names one, so a cache for
+// a pinned build names its node. A cache on, or waiting for, another node is
+// dropped and made again on the pinned one.
+func EnsureBuildCachePVC(ctx context.Context, client kubernetes.Interface, namespace, node string) error {
 	claims := client.CoreV1().PersistentVolumeClaims(namespace)
 	existing, err := claims.Get(ctx, buildCachePVC, metav1.GetOptions{})
 	switch {
-	case err == nil && existing.DeletionTimestamp == nil && !cacheNodeGone(ctx, client, existing.Spec.VolumeName):
+	case err == nil && existing.DeletionTimestamp == nil &&
+		!cacheNodeGone(ctx, client, existing.Spec.VolumeName) &&
+		cacheServes(ctx, client, existing, node):
 		return nil
 	case err == nil:
 		if existing.DeletionTimestamp == nil {
@@ -164,8 +172,59 @@ func EnsureBuildCachePVC(ctx context.Context, client kubernetes.Interface, names
 			},
 		},
 	}
+	if node != "" {
+		pvc.Annotations = map[string]string{SelectedNodeAnnotation: node}
+	}
 	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	return err
+}
+
+// cacheServes reports whether a build pinned to node can mount the cache.
+// Unpinned builds go through the scheduler, which places them with the
+// volume, so any cache serves them. A pinned build needs the cache on its
+// node, or waiting to be made there. Anything it cannot read counts as
+// serving, so a cache is never dropped on a guess.
+func cacheServes(ctx context.Context, client kubernetes.Interface, claim *corev1.PersistentVolumeClaim, node string) bool {
+	if node == "" {
+		return true
+	}
+	if claim.Spec.VolumeName == "" {
+		return claim.Annotations[SelectedNodeAnnotation] == node
+	}
+	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, claim.Spec.VolumeName, metav1.GetOptions{})
+	if err != nil {
+		return true
+	}
+	hosts := volumeHosts(pv)
+	if len(hosts) == 0 {
+		return true
+	}
+	host := node
+	if n, err := client.CoreV1().Nodes().Get(ctx, node, metav1.GetOptions{}); err == nil && n.Labels[corev1.LabelHostname] != "" {
+		host = n.Labels[corev1.LabelHostname]
+	}
+	for _, h := range hosts {
+		if h == host {
+			return true
+		}
+	}
+	return false
+}
+
+// volumeHosts is the hostnames a node-local volume is pinned to.
+func volumeHosts(pv *corev1.PersistentVolume) []string {
+	if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
+		return nil
+	}
+	var hosts []string
+	for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
+		for _, e := range term.MatchExpressions {
+			if e.Key == corev1.LabelHostname && e.Operator == corev1.NodeSelectorOpIn {
+				hosts = append(hosts, e.Values...)
+			}
+		}
+	}
+	return hosts
 }
 
 // cacheNodeGone reports whether the volume is pinned to nodes none of which
@@ -176,17 +235,10 @@ func cacheNodeGone(ctx context.Context, client kubernetes.Interface, volume stri
 		return false
 	}
 	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, volume, metav1.GetOptions{})
-	if err != nil || pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
+	if err != nil {
 		return false
 	}
-	var hosts []string
-	for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
-		for _, e := range term.MatchExpressions {
-			if e.Key == corev1.LabelHostname && e.Operator == corev1.NodeSelectorOpIn {
-				hosts = append(hosts, e.Values...)
-			}
-		}
-	}
+	hosts := volumeHosts(pv)
 	if len(hosts) == 0 {
 		return false
 	}

@@ -421,7 +421,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 
 	// Ensure the per-namespace build cache PVC exists (created once, reused
 	// across all builds so nix/npm layers are not re-downloaded every time).
-	if err := appk8s.EnsureBuildCachePVC(ctx, s.k8s, a.namespace); err != nil {
+	if err := appk8s.EnsureBuildCachePVC(ctx, s.k8s, a.namespace, a.bc.BuilderNode); err != nil {
 		s.failDeployment(a.deployment.ID, "failed to ensure build cache PVC: "+err.Error())
 		return
 	}

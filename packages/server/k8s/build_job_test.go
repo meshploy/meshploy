@@ -341,7 +341,7 @@ func TestEnsureBuildCachePVCReplacesACacheOnARemovedNode(t *testing.T) {
 
 	t.Run("node still here: kept", func(t *testing.T) {
 		client := fake.NewSimpleClientset(node, pinned("pv-1", "gw"), claim("pv-1"))
-		if err := EnsureBuildCachePVC(t.Context(), client, "shop"); err != nil {
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", ""); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := client.CoreV1().PersistentVolumeClaims("shop").Get(t.Context(), buildCachePVC, metav1.GetOptions{})
@@ -351,7 +351,7 @@ func TestEnsureBuildCachePVCReplacesACacheOnARemovedNode(t *testing.T) {
 	})
 	t.Run("node gone: replaced", func(t *testing.T) {
 		client := fake.NewSimpleClientset(node, pinned("pv-1", "old-worker"), claim("pv-1"))
-		if err := EnsureBuildCachePVC(t.Context(), client, "shop"); err != nil {
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", ""); err != nil {
 			t.Fatal(err)
 		}
 		got, err := client.CoreV1().PersistentVolumeClaims("shop").Get(t.Context(), buildCachePVC, metav1.GetOptions{})
@@ -364,8 +364,100 @@ func TestEnsureBuildCachePVCReplacesACacheOnARemovedNode(t *testing.T) {
 	})
 	t.Run("unbound: kept", func(t *testing.T) {
 		client := fake.NewSimpleClientset(claim(""))
-		if err := EnsureBuildCachePVC(t.Context(), client, "shop"); err != nil {
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", ""); err != nil {
 			t.Fatal(err)
+		}
+	})
+}
+
+// A pinned build skips the scheduler, so its cache must name the node or
+// local-path never makes it, and a cache elsewhere is made again there.
+func TestEnsureBuildCachePVCFollowsThePinnedNode(t *testing.T) {
+	pinned := func(name, host string) *corev1.PersistentVolume {
+		return &corev1.PersistentVolume{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: corev1.PersistentVolumeSpec{NodeAffinity: &corev1.VolumeNodeAffinity{Required: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchExpressions: []corev1.NodeSelectorRequirement{{
+					Key: corev1.LabelHostname, Operator: corev1.NodeSelectorOpIn, Values: []string{host},
+				}}}},
+			}}},
+		}
+	}
+	claim := func(volume, selected string) *corev1.PersistentVolumeClaim {
+		c := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: buildCachePVC, Namespace: "shop"},
+			Spec:       corev1.PersistentVolumeClaimSpec{VolumeName: volume},
+		}
+		if selected != "" {
+			c.Annotations = map[string]string{SelectedNodeAnnotation: selected}
+		}
+		return c
+	}
+	node := func(name string) *corev1.Node {
+		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{corev1.LabelHostname: name}}}
+	}
+	cache := func(t *testing.T, client *fake.Clientset) *corev1.PersistentVolumeClaim {
+		t.Helper()
+		got, err := client.CoreV1().PersistentVolumeClaims("shop").Get(t.Context(), buildCachePVC, metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	t.Run("new cache names the pinned node", func(t *testing.T) {
+		client := fake.NewSimpleClientset(node("w1"))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", "w1"); err != nil {
+			t.Fatal(err)
+		}
+		if got := cache(t, client).Annotations[SelectedNodeAnnotation]; got != "w1" {
+			t.Fatalf("selected node = %q, want w1", got)
+		}
+	})
+	t.Run("new cache unpinned names no node", func(t *testing.T) {
+		client := fake.NewSimpleClientset()
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := cache(t, client).Annotations[SelectedNodeAnnotation]; ok {
+			t.Fatal("an unpinned cache must leave the node to the scheduler")
+		}
+	})
+	t.Run("cache on the pinned node: kept", func(t *testing.T) {
+		client := fake.NewSimpleClientset(node("w1"), pinned("pv-1", "w1"), claim("pv-1", ""))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", "w1"); err != nil {
+			t.Fatal(err)
+		}
+		if cache(t, client).Spec.VolumeName != "pv-1" {
+			t.Fatal("cache on the pinned node was replaced")
+		}
+	})
+	t.Run("cache on another node: made again on the pinned one", func(t *testing.T) {
+		client := fake.NewSimpleClientset(node("w1"), node("w2"), pinned("pv-1", "w1"), claim("pv-1", ""))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", "w2"); err != nil {
+			t.Fatal(err)
+		}
+		got := cache(t, client)
+		if got.Spec.VolumeName != "" || got.Annotations[SelectedNodeAnnotation] != "w2" {
+			t.Fatalf("cache = volume %q, node %q; want a new one on w2", got.Spec.VolumeName, got.Annotations[SelectedNodeAnnotation])
+		}
+	})
+	t.Run("unbound cache waiting for the scheduler: made again on the pinned node", func(t *testing.T) {
+		client := fake.NewSimpleClientset(node("w1"), claim("", ""))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", "w1"); err != nil {
+			t.Fatal(err)
+		}
+		if got := cache(t, client).Annotations[SelectedNodeAnnotation]; got != "w1" {
+			t.Fatalf("selected node = %q, want w1", got)
+		}
+	})
+	t.Run("cache on another node, unpinned build: kept", func(t *testing.T) {
+		client := fake.NewSimpleClientset(node("w1"), pinned("pv-1", "w1"), claim("pv-1", ""))
+		if err := EnsureBuildCachePVC(t.Context(), client, "shop", ""); err != nil {
+			t.Fatal(err)
+		}
+		if cache(t, client).Spec.VolumeName != "pv-1" {
+			t.Fatal("an unpinned build follows the cache; it must not be replaced")
 		}
 	})
 }
