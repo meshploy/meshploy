@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.23.0](https://github.com/meshploy/meshploy/compare/v0.22.0...v0.23.0) (2026-11-06)
+
+
+### Features
+
+* **nodes:** unused images go daily, a node's disk can be freed from the console, and build caches stop at 5 GB ([eff137b](https://github.com/meshploy/meshploy/commit/eff137bb9e59c0aee7aeec6e0e984951dd17c733))
+* **proxy:** serve saved routes when Postgres is down ([e5791fb](https://github.com/meshploy/meshploy/commit/e5791fb375843008a7fdfd8aff6c5a2a3f894dc8))
+* **routes:** point custom hostnames at the edge name with a CNAME ([ea56f61](https://github.com/meshploy/meshploy/commit/ea56f61f2c8a329ff071a86834f1e93b89d9f8b9))
+
+
+### Bug Fixes
+
+* **builds:** a pinned build's cache is made on its node ([12a634f](https://github.com/meshploy/meshploy/commit/12a634f9e177c409f895026a9a9cd505d6f033f5))
+* **nodes:** set the image age in kubelet's config so k3s starts ([0f6cc03](https://github.com/meshploy/meshploy/commit/0f6cc0375ff8ecc81a8d4534aa2b58513a237b2c))
+* **routes:** CLI and MCP read a route's target from its rules ([be98c5c](https://github.com/meshploy/meshploy/commit/be98c5cd8b8bb9b083714473ba079df337bf34ed))
+
 ## [0.22.0](https://github.com/meshploy/meshploy/compare/v0.21.2...v0.22.0) (2026-11-02)
 
 
