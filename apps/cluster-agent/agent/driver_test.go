@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 )
 
 // servedAgent runs the agent behind its gate and TLS on a loopback port, as
@@ -150,5 +151,114 @@ func TestAgentDriverIdentityIsChecked(t *testing.T) {
 		if _, err := appk8s.NewAgentDriver(bad.addr, []byte(bad.cert), bad.token); !errors.Is(err, appk8s.ErrAgentIdentity) {
 			t.Errorf("NewAgentDriver(%q, %d bytes, %q): %v", bad.addr, len(bad.cert), bad.token, err)
 		}
+	}
+}
+
+// The API's cluster when its agent can register, move or be revoked while it
+// runs: one client, each request to the agent of the moment, what is open to
+// an old agent cut when it changes, and nothing at all without one.
+func TestAgentClusterFollowsTheAgent(t *testing.T) {
+	apiA, apiB := newAPIServer(t), newAPIServer(t)
+	agentA, _, _ := testAgent(t, apiA)
+	agentB, _, _ := testAgent(t, apiB)
+	addrA, idA := servedAgent(t, agentA)
+	addrB, idB := servedAgent(t, agentB)
+	identity := func(addr string, id Identity) appk8s.AgentIdentity {
+		cert, _ := id.CertPEM()
+		token, _ := id.Token()
+		return appk8s.AgentIdentity{Addr: addr, CertPEM: cert, Token: token}
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	c, err := appk8s.NewAgentCluster()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := c.Client()
+
+	if _, err := cs.CoreV1().Namespaces().Get(ctx, "shop", metav1.GetOptions{}); !errors.Is(err, appk8s.ErrNoClusterAgent) {
+		t.Fatalf("with no agent: %v, want ErrNoClusterAgent", err)
+	}
+	if err := c.StartBuild(ctx, appk8s.BuildJobParams{JobName: "b", Namespace: "shop"}); !errors.Is(err, appk8s.ErrNoClusterAgent) {
+		t.Fatalf("build with no agent: %v", err)
+	}
+
+	if err := c.Set(identity(addrA, idA)); err != nil {
+		t.Fatal(err)
+	}
+	cs.CoreV1().Namespaces().Get(ctx, "shop", metav1.GetOptions{})
+	if len(apiA.seen()) != 1 || len(apiB.seen()) != 0 {
+		t.Fatalf("after setting A: A saw %d, B saw %d", len(apiA.seen()), len(apiB.seen()))
+	}
+	if got := c.RestConfig().Host; got != "https://"+addrA {
+		t.Errorf("streams go to %s, want A", got)
+	}
+
+	// A watch open to A, then setting A again changes nothing.
+	w, err := cs.CoreV1().Pods("shop").Watch(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+	if err := c.Set(identity(addrA, idA)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case _, open := <-w.ResultChan():
+		if !open {
+			t.Fatal("setting the same agent again cut the watch")
+		}
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	// Moving to B cuts the watch on A, and requests go to B.
+	if err := c.Set(identity(addrB, idB)); err != nil {
+		t.Fatal(err)
+	}
+	// client-go reports the cut connection as an error event, then closes.
+	deadline := time.After(5 * time.Second)
+drain:
+	for {
+		select {
+		case ev, open := <-w.ResultChan():
+			if !open {
+				break drain
+			}
+			if ev.Type != watch.Error {
+				t.Fatalf("the watch on A delivered a %s event instead of ending", ev.Type)
+			}
+		case <-deadline:
+			t.Fatal("the watch on the old agent stayed open")
+		}
+	}
+	before := len(apiA.seen())
+	cs.CoreV1().Namespaces().Get(ctx, "shop", metav1.GetOptions{})
+	if len(apiA.seen()) != before || len(apiB.seen()) != 1 {
+		t.Fatalf("after moving to B: A saw %d more, B saw %d", len(apiA.seen())-before, len(apiB.seen()))
+	}
+
+	// B's address with A's certificate: the pinned certificate decides, so
+	// nothing reaches B.
+	bad := identity(addrB, idA)
+	if err := c.Set(bad); err != nil {
+		t.Fatal(err)
+	}
+	beforeB := len(apiB.seen())
+	if _, err := cs.CoreV1().Namespaces().Get(ctx, "shop", metav1.GetOptions{}); err == nil {
+		t.Fatal("a request reached B pinned to A's certificate")
+	}
+	if len(apiB.seen()) != beforeB {
+		t.Fatal("B's API server saw a request under the wrong certificate")
+	}
+
+	c.Clear()
+	if _, err := cs.CoreV1().Namespaces().Get(ctx, "shop", metav1.GetOptions{}); !errors.Is(err, appk8s.ErrNoClusterAgent) {
+		t.Fatalf("after revoking: %v, want ErrNoClusterAgent", err)
+	}
+	if _, ok := c.Current(); ok {
+		t.Fatal("an agent is still current after revoking")
+	}
+	if err := c.Set(appk8s.AgentIdentity{Addr: addrA}); !errors.Is(err, appk8s.ErrAgentIdentity) {
+		t.Fatalf("an incomplete identity: %v", err)
 	}
 }

@@ -54,9 +54,17 @@ sends them.
 
 ```bash
 meshploy-cluster-agent init                    # make the certificate, key and token in /var/lib/meshploy/cluster-agent
+meshploy-cluster-agent register -api-url http://100.64.0.1:4000 -token mprov-… -name edge-1 -mesh-ip 100.64.0.2
 meshploy-cluster-agent serve -listen 100.64.0.2:7443 -api 100.64.0.1 -builder-image <image>
 meshploy-cluster-agent approve-terminal 30m    # let the API open a node terminal until then; "off" ends it
 ```
+
+`register` sends the agent's certificate and token to an API started with
+`CLUSTER_AGENT=true`, spending a provisioning token minted for the agent (an
+ordinary or `mreg-` token is refused), and keeps the node secret it gets back.
+The API stores the identity on the node and reaches the cluster through the
+agent from then on, without restarting; revoking it in the API cuts what is
+open to the agent at once.
 
 The agent answers only the API's mesh addresses (`-api`), presenting the
 token. Its certificate names `cluster-agent.meshploy.internal` and is its own

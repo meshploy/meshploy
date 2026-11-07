@@ -15,11 +15,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	db "github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
@@ -27,7 +27,7 @@ import (
 type DBExplorerService struct {
 	db      *gorm.DB
 	k8s     kubernetes.Interface
-	restCfg *rest.Config
+	cluster appk8s.Driver // port-forward to database pods; nil exactly when k8s is
 }
 
 // QueryResult holds the tabular result of a DB query.
@@ -80,12 +80,13 @@ func (s *DBExplorerService) loadDC(ctx context.Context, serviceID uuid.UUID) (*d
 // openPortForward opens a kubectl port-forward tunnel to the given pod/port.
 // Returns the local address (127.0.0.1:localPort) and a stop function.
 func (s *DBExplorerService) openPortForward(ctx context.Context, namespace, podName string, remotePort int) (string, func(), error) {
-	transport, upgrader, err := spdy.RoundTripperFor(s.restCfg)
+	restCfg := s.cluster.RestConfig()
+	transport, upgrader, err := spdy.RoundTripperFor(restCfg)
 	if err != nil {
 		return "", nil, fmt.Errorf("spdy transport: %w", err)
 	}
 
-	url := s.restCfg.Host + fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/portforward", namespace, podName)
+	url := restCfg.Host + fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/portforward", namespace, podName)
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, parseURL(url))
 
 	stopCh := make(chan struct{})

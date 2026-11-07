@@ -41,6 +41,11 @@ type Config struct {
 	// so the name to verify against is pinned instead of dropping verification.
 	K3sTLSServerName string // K3S_TLS_SERVER_NAME  empty = k8s.DefaultTLSServerName
 	K3sSkipTLSVerify bool   // K3S_SKIP_TLS_VERIFY  escape hatch; disables authentication of the connection
+	// ClusterAgent is set when this API reaches its cluster only through a
+	// cluster agent on the cluster's server (CLUSTER_AGENT). It then holds no
+	// kubeconfig, accepts that agent's registration, and does no cluster work
+	// until one is registered. Unset, it never accepts one.
+	ClusterAgent bool
 
 	// Gateway seeding - set by install.sh on master nodes.
 	// When present, the first user to register gets a gateway node + domain pre-created.
@@ -166,6 +171,7 @@ func Load() (*Config, error) {
 
 		K3sTLSServerName: os.Getenv("K3S_TLS_SERVER_NAME"),
 		K3sSkipTLSVerify: envBool("K3S_SKIP_TLS_VERIFY"),
+		ClusterAgent:     envBool("CLUSTER_AGENT"),
 
 		Domain:          os.Getenv("DOMAIN"),
 		GatewayIP:       os.Getenv("MESH_IP"),

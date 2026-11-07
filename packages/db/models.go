@@ -837,9 +837,21 @@ type Node struct {
 	// when the person is deleted.
 	OwnerID *uuid.UUID `gorm:"type:uuid;index" json:"owner_id,omitempty"`
 
+	// The cluster agent on this node, when it holds the cluster's server for
+	// an API that reaches its cluster only through that agent: the
+	// certificate the API pins, the token it presents, and the port it listens
+	// on at the node's mesh address. Set once, at registration; at most one
+	// node carries an agent (idx_one_cluster_agent).
+	ClusterAgentCert  string          `gorm:"type:text;not null;default:''" json:"-"`
+	ClusterAgentToken EncryptedString `gorm:"type:text"                     json:"-"`
+	ClusterAgentPort  int             `gorm:"not null;default:0"            json:"-"`
+
 	Organization Organization `gorm:"foreignKey:OrganizationID" json:"-"`
 	Owner        *User        `gorm:"foreignKey:OwnerID;constraint:OnDelete:SET NULL" json:"-"`
 }
+
+// HasClusterAgent is whether the node carries a cluster agent's identity.
+func (n *Node) HasClusterAgent() bool { return n.ClusterAgentCert != "" }
 
 // ---------------------------------------------------------------------------
 // Workloads  (unified polymorphic table)
@@ -1293,6 +1305,11 @@ type NodeProvisioningToken struct {
 	// happens afterwards from inside the mesh; this stops one token from
 	// minting mesh credentials over and over.
 	ProvisionedAt *time.Time `json:"provisioned_at,omitempty"`
+	// ClusterAgent marks a token that registers the node holding the cluster's
+	// server, with its cluster agent, for an API that reaches its cluster only
+	// through one. Such a token registers nothing else, and no other token
+	// registers an agent.
+	ClusterAgent bool `gorm:"not null;default:false" json:"cluster_agent,omitempty"`
 	// CreatedBy is who minted the token; the machine that joins with it is
 	// theirs (Node.OwnerID). Nil for a token minted before owners existed.
 	CreatedBy *uuid.UUID `gorm:"type:uuid" json:"created_by,omitempty"`

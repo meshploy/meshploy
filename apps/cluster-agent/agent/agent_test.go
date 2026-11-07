@@ -57,6 +57,12 @@ func newAPIServer(t *testing.T) *apiServer {
 		s.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.URL.Query().Get("watch") == "true" || r.URL.Query().Get("watch") == "1":
+			// A watch stays open, as the API server's does, until the client
+			// goes away.
+			w.WriteHeader(200)
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
 		case r.URL.Query().Get("dryRun") == "All":
 			code, out := s.stored(r, body)
 			w.WriteHeader(code)

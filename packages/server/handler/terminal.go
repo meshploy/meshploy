@@ -208,7 +208,7 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 			TTY:     true,
 		}, scheme.ParameterCodec)
 
-	restCfg := h.svc.K8sRestConfig
+	restCfg := h.svc.Cluster.RestConfig()
 	executor, err := remotecommand.NewSPDYExecutor(restCfg, "POST", req.URL())
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("error: "+err.Error()))
@@ -390,7 +390,7 @@ func (h *Handler) ServiceTerminal(w http.ResponseWriter, r *http.Request) {
 			TTY:       true,
 		}, scheme.ParameterCodec)
 
-	restCfg := h.svc.K8sRestConfig
+	restCfg := h.svc.Cluster.RestConfig()
 	executor, err := remotecommand.NewSPDYExecutor(restCfg, "POST", req.URL())
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("error: "+err.Error()))

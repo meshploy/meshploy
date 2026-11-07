@@ -290,7 +290,7 @@ func (s *BackupService) execBackup(ctx context.Context, cfgID uuid.UUID) {
 
 	// 6. Execute the dump command inside the pod; stream stdout back.
 	// The container name equals the DB slug (set by ApplyDatabaseDeployment).
-	reader, err := appk8s.ExecDumpCommand(ctx, s.k8s, s.restCfg,
+	reader, err := appk8s.ExecDumpCommand(ctx, s.k8s, s.cluster.RestConfig(),
 		cfg.Service.Project.Slug, podName, dc.Slug, cmd)
 	if err != nil {
 		log.Printf("backup %s: exec dump: %v", cfgID, err)
@@ -463,7 +463,7 @@ func (s *BackupService) restoreObject(ctx context.Context, storage db.StorageInt
 		return fmt.Errorf("find pod: %w", err)
 	}
 
-	return appk8s.ExecRestoreCommand(ctx, s.k8s, s.restCfg,
+	return appk8s.ExecRestoreCommand(ctx, s.k8s, s.cluster.RestConfig(),
 		target.Project.Slug, podName, dc.Slug, cmd, obj)
 }
 

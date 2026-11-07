@@ -282,7 +282,7 @@ A project is its own production level; each level below it is a project of its o
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | DELETE | `/nodes/self-deregister` | node token | Self-deregister a node using its registration token and node ID |
-| POST | `/nodes/self-register` | registration token | Self-register a node using a registration token |
+| POST | `/nodes/self-register` | registration token | Self-register a node using a registration token. The node holding the cluster's server on a `CLUSTER_AGENT` API also sends `cluster_agent` (`certificate`, `token`, `port`), only with a provisioning token minted for it: 422 for any other token, 409 when an agent is already registered. The same machine registering again after a revocation keeps its node |
 | GET | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Get the most recent active Headscale preauth key |
 | POST | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Generate a new Headscale preauth key for joining the WireGuard mesh |
 | GET | `/orgs/{orgId}/cluster/join-token` | ✓ | Get the k3s node token for joining the cluster |
@@ -292,7 +292,7 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/orgs/{orgId}/cluster/mesh-health` | ✓ | Report whether the control plane can reach Headscale |
 | GET | `/orgs/{orgId}/cluster/orphans` | ✓ | List cluster workloads that no service owns |
 | DELETE | `/orgs/{orgId}/cluster/orphans/{namespace}/{name}` | ✓ | Remove a cluster workload that no service owns |
-| POST | `/orgs/{orgId}/node-provisioning-tokens` | ✓ | Create a single-use node provisioning token |
+| POST | `/orgs/{orgId}/node-provisioning-tokens` | ✓ | Create a single-use node provisioning token. `cluster_agent: true` mints the one for the node holding the cluster's server, with its cluster agent; only on a `CLUSTER_AGENT` API (422 otherwise), and only while none is registered (409) |
 | GET | `/orgs/{orgId}/node-registration-token` | ✓ | Get the node registration token |
 | POST | `/orgs/{orgId}/node-registration-token` | ✓ | Generate (or rotate) the node registration token |
 | GET | `/orgs/{orgId}/nodes` | ✓ | List nodes in an organization |
@@ -301,6 +301,7 @@ A project is its own production level; each level below it is a project of its o
 | PATCH | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Update a node |
 | DELETE | `/orgs/{orgId}/nodes/{nodeId}` | ✓ | Remove a node from Headscale, the cluster and Meshploy, in that order. 200 `{"removed": true}` when it is gone; 202 `{"removed": false, "error": ...}` while Headscale has not confirmed the peer is removed, which is retried every minute. Calling it again retries at once |
 | POST | `/orgs/{orgId}/nodes/{nodeId}/cancel-removal` | ✓ | Stop a node removal that is waiting for Headscale; 409 if none is |
+| DELETE | `/orgs/{orgId}/nodes/{nodeId}/cluster-agent` | ✓ admin | Revoke the node's cluster agent: the cluster is no longer reached through it, open requests to it are cut, and a new agent may register. 204; 404 if the node carries none |
 | GET | `/orgs/{orgId}/nodes/{nodeId}/metrics` | ✓ | Get live resource metrics for a node (requires node_exporter) |
 | GET | `/orgs/{orgId}/nodes/{nodeId}/containers` | ✓ | List containers running on a node that Meshploy does not manage |
 | GET | `/orgs/{orgId}/discovery` | ✓ | List endpoints and containers on this org's nodes that Meshploy does not route |

@@ -192,7 +192,7 @@ func Decide(r Request, f Facts) Decision {
 		return decideKubeSystem(r, p, f, now, streaming)
 	}
 	if !f.Managed(p.namespace) {
-		return deny(fmt.Sprintf("a write in namespace %s, which Meshploy did not create", p.namespace))
+		return deny(fmt.Sprintf("a write in namespace %s, which Meshploy did not create or which is being deleted", p.namespace))
 	}
 	return decideManaged(r, p, streaming)
 }

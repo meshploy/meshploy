@@ -55,6 +55,12 @@ type NodeService struct {
 	notif         *NotificationService
 	k8s           kubernetes.Interface // nil without a cluster; removal then skips that step
 	cluster       appk8s.Driver        // prunes a node's images; nil exactly when k8s is
+
+	// agent is the cluster when it is reached through a cluster agent, which
+	// registration points at the agent; nil otherwise, and then no agent
+	// registers. onClusterAgent runs each time it is pointed at one.
+	agent          *appk8s.AgentCluster
+	onClusterAgent []func(ctx context.Context)
 }
 
 // StartNodeMonitor polls Headscale every 2 minutes and dispatches node.offline
@@ -516,14 +522,22 @@ const provisioningTokenTTL = time.Hour
 
 // RegisterWithProvisioningToken validates a single-use provisioning token and
 // creates the node. On success it:
-//   - stamps UsedAt on the token (preventing re-use)
+//   - stamps UsedAt on the token, in the same transaction as the node, so two
+//     registrations racing with one token make one node
 //   - generates a per-node secret (mnode-<hex>) and stores its hash on the node
+//   - for a cluster agent's token, stores the agent's identity and points the
+//     API's cluster at it (see registerClusterAgent)
 //   - returns the new node and the plaintext node secret (shown once)
-func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, name, tailscaleIP string, meshRole db.MeshRole, nodeOS db.NodeOS) (*db.Node, string, error) {
-	hash := hashToken(token)
-
+//
+// agent is the cluster agent's identity, which only a ClusterAgent token
+// carries and such a token always does.
+func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, name, tailscaleIP string, meshRole db.MeshRole, nodeOS db.NodeOS, agent ...*ClusterAgentRegistration) (*db.Node, string, error) {
+	var reg *ClusterAgentRegistration
+	if len(agent) > 0 {
+		reg = agent[0]
+	}
 	var row db.NodeProvisioningToken
-	if err := s.db.WithContext(ctx).Where("token_hash = ?", hash).First(&row).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("token_hash = ?", hashToken(token)).First(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, "", fmt.Errorf("invalid provisioning token")
 		}
@@ -535,42 +549,109 @@ func (s *NodeService) RegisterWithProvisioningToken(ctx context.Context, token, 
 	if row.ExpiresAt != nil && time.Now().After(*row.ExpiresAt) {
 		return nil, "", fmt.Errorf("provisioning token expired")
 	}
+	if err := s.checkClusterAgentRegistration(ctx, &row, reg, tailscaleIP); err != nil {
+		return nil, "", err
+	}
 	role, nodeOS, err := joinRole(meshRole, nodeOS)
 	if err != nil {
 		return nil, "", err
 	}
-
-	node, err := s.Register(ctx, row.OrganizationID, name, tailscaleIP)
-	if err != nil {
-		return nil, "", err
+	if reg != nil && nodeOS != db.NodeOSLinux {
+		return nil, "", ErrNonLinuxClusterRole
 	}
 
-	// Generate per-node secret
 	secretRaw := make([]byte, 32)
 	if _, err := rand.Read(secretRaw); err != nil {
 		return nil, "", fmt.Errorf("generate node secret: %w", err)
 	}
 	nodeSecret := "mnode-" + hex.EncodeToString(secretRaw)
 
-	// Persist role + secret hash on node, stamp token as used
-	now := time.Now()
-	updates := map[string]any{
-		"mesh_role":        role,
-		"os":               nodeOS,
-		"node_secret_hash": hashToken(nodeSecret),
-	}
-	// The machine is whoever minted the token's.
-	if row.CreatedBy != nil {
-		updates["owner_id"] = *row.CreatedBy
-	}
-	if err := s.db.WithContext(ctx).Model(node).Updates(updates).Error; err != nil {
+	var node *db.Node
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The token is claimed first and conditionally: of two registrations
+		// racing with it, the second finds it used and makes nothing.
+		now := time.Now()
+		claim := tx.Model(&db.NodeProvisioningToken{}).
+			Where("id = ? AND used_at IS NULL", row.ID).
+			Update("used_at", &now)
+		if claim.Error != nil {
+			return claim.Error
+		}
+		if claim.RowsAffected != 1 {
+			return fmt.Errorf("provisioning token already used")
+		}
+		inTx := *s
+		inTx.db = tx
+		k3sRole := db.K3sRoleAgent
+		if reg != nil {
+			// The agent's node holds the cluster's server, which is never
+			// removed through the API.
+			k3sRole = db.K3sRoleServer
+		}
+		var n *db.Node
+		if reg != nil {
+			// The same machine registering again after its agent was revoked
+			// keeps its node: a second record would hold the cluster's server
+			// too, and could never be removed.
+			var prev db.Node
+			err := tx.Where("organization_id = ? AND tailscale_ip = ? AND k3s_role = ? AND cluster_agent_cert = ''",
+				row.OrganizationID, tailscaleIP, db.K3sRoleServer).First(&prev).Error
+			switch {
+			case err == nil:
+				if err := tx.Model(&prev).Update("name", name).Error; err != nil {
+					return err
+				}
+				prev.Name = name
+				n = &prev
+			case !errors.Is(err, gorm.ErrRecordNotFound):
+				return err
+			}
+		}
+		if n == nil {
+			created, err := inTx.Register(ctx, row.OrganizationID, name, tailscaleIP, k3sRole)
+			if err != nil {
+				return err
+			}
+			n = created
+		}
+		updates := map[string]any{
+			"mesh_role":        role,
+			"os":               nodeOS,
+			"node_secret_hash": hashToken(nodeSecret),
+		}
+		// The machine is whoever minted the token's.
+		if row.CreatedBy != nil {
+			updates["owner_id"] = *row.CreatedBy
+		}
+		if reg != nil {
+			// A server node is seeded as the local gateway, which reaches
+			// Headscale over loopback; this one joined from elsewhere.
+			if s.domains != nil {
+				updates["control_url"] = s.domains.PlatformURL(ctx, row.OrganizationID, "headscale")
+			}
+			updates["cluster_agent_cert"] = reg.CertPEM
+			updates["cluster_agent_token"] = db.EncryptedString(reg.Token)
+			updates["cluster_agent_port"] = reg.Port
+		}
+		if err := tx.Model(n).Updates(updates).Error; err != nil {
+			if reg != nil && isUniqueViolation(err) {
+				return ErrClusterAgentRegistered
+			}
+			return err
+		}
+		node = n
+		return nil
+	})
+	if err != nil {
 		return nil, "", err
 	}
-	if err := s.db.WithContext(ctx).Model(&row).Update("used_at", &now).Error; err != nil {
-		return nil, "", err
-	}
-
 	node.MeshRole, node.OS, node.OwnerID = role, nodeOS, row.CreatedBy
+	if reg != nil {
+		node.ClusterAgentCert, node.ClusterAgentToken, node.ClusterAgentPort = reg.CertPEM, db.EncryptedString(reg.Token), reg.Port
+		if err := s.attachClusterAgent(ctx, node); err != nil {
+			return nil, "", err
+		}
+	}
 	return node, nodeSecret, nil
 }
 

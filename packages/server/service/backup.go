@@ -15,11 +15,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/minio/minio-go/v7"
 	cronparser "github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 const maxConcurrentBackups = 3
@@ -27,7 +27,7 @@ const maxConcurrentBackups = 3
 type BackupService struct {
 	db      *gorm.DB
 	k8s     kubernetes.Interface
-	restCfg *rest.Config
+	cluster appk8s.Driver // exec into database pods; nil exactly when k8s is
 	cfg     *config.Config
 	notif   *NotificationService
 	// inFlight prevents duplicate concurrent runs for the same backup config.

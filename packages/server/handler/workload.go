@@ -893,7 +893,7 @@ func (h *Handler) GetPodMetrics(ctx context.Context, input *WorkloadPathInput) (
 	if err != nil {
 		return nil, err
 	}
-	if h.svc.K8s == nil || h.svc.K8sRestConfig == nil {
+	if h.svc.K8s == nil || h.svc.Cluster == nil {
 		return nil, huma.Error503ServiceUnavailable("kubernetes not available")
 	}
 	namespace, k8sName, err := h.svc.Workloads.GetK8sInfo(ctx, serviceID)
@@ -901,7 +901,7 @@ func (h *Handler) GetPodMetrics(ctx context.Context, input *WorkloadPathInput) (
 		return nil, huma.Error404NotFound("service not found")
 	}
 	labelSelector := "app=" + k8sName + ",managed-by=meshploy"
-	metrics, err := appk8s.GetPodMetrics(ctx, h.svc.K8sRestConfig, namespace, labelSelector)
+	metrics, err := appk8s.GetPodMetrics(ctx, h.svc.Cluster.RestConfig(), namespace, labelSelector)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("metrics: " + err.Error())
 	}

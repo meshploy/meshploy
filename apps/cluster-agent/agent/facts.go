@@ -40,8 +40,8 @@ func NewClusterFacts(cs kubernetes.Interface, approvalFile string) *ClusterFacts
 
 var _ policy.Facts = (*ClusterFacts)(nil)
 
-// Managed is whether a namespace carries managed-by=meshploy. Anything that
-// cannot be read counts as not managed.
+// Managed is whether a namespace carries managed-by=meshploy and is not being
+// deleted. Anything that cannot be read counts as not managed.
 func (f *ClusterFacts) Managed(ns string) bool {
 	if ns == "" {
 		return false

@@ -49,9 +49,9 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `projects` | K8s namespace: slug becomes the namespace name. A row with `parent_project_id` is an environment level of that project (`env_name`, `env_level`: 0 is production, each level below counts up), with a namespace of its own, `<project slug>-<level>`. `network_open` exempts it from its organization's network isolation; `sandboxed` runs its pods on gVisor |
 | `promotion_groups` | Services that move up a project's levels together, along their own `path` of level IDs, from the one that builds to production. `single` marks one made by copying one service down |
 | `promotion_group_members` | A service lineage in a group; at most one group per lineage per project |
-| `nodes` | Mesh worker nodes + K3s + Headscale metadata. `os` is `linux`, `darwin` or `windows`; anything but Linux is always mesh only |
+| `nodes` | Mesh worker nodes + K3s + Headscale metadata. `os` is `linux`, `darwin` or `windows`; anything but Linux is always mesh only. `cluster_agent_cert`, `cluster_agent_token` (encrypted) and `cluster_agent_port` are the cluster agent's identity on the node holding the cluster's server, for an API that reaches its cluster through one; at most one node carries them (`idx_one_cluster_agent`) |
 | `node_registration_tokens` | `mreg-<hex>` tokens for legacy worker self-registration |
-| `node_provisioning_tokens` | `mprov-<hex>` single-use provisioning tokens (hashed, with expiry) |
+| `node_provisioning_tokens` | `mprov-<hex>` single-use provisioning tokens (hashed, with expiry). `cluster_agent` marks the one that registers the node holding the cluster's server with its agent, and nothing else |
 | `domains` | Base domains an org routes on. Each carries its own `dns_mode` (`delegation` or `ondemand`); `is_primary` marks the one whose platform subdomains serve and that new routes default to; `retiring_at` stops new routes attaching while everything already on it keeps serving; `dns_provider_id`, on an on-demand domain only, names the DNS provider that writes its records; `project_id` reserves it for one project and its levels, whose routes alone may use it (a project with one cannot be deleted until it goes) |
 
 ### Workloads

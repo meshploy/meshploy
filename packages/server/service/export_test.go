@@ -203,3 +203,15 @@ func UseEdgeForTest(svc *Services, publicIP string, addrs map[string][]string) f
 	edgeChecked.Unlock()
 	return func() { lookupEdge = old }
 }
+
+// UseClusterAgentForTest puts the services in the mode where the cluster is
+// reached only through a cluster agent, as config ClusterAgent does.
+func UseClusterAgentForTest(s *Services) *appk8s.AgentCluster {
+	a, err := appk8s.NewAgentCluster()
+	if err != nil {
+		panic(err)
+	}
+	s.Agent, s.Cluster = a, a
+	s.Nodes.agent = a
+	return a
+}

@@ -61,10 +61,14 @@ type Services struct {
 	Isolation       *IsolationService
 	Sandbox         *SandboxService
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
-	K8sRestConfig   *rest.Config         // nil if KUBECONFIG unavailable
-	// Cluster makes the host-level pods (builder, image cleanup, node
-	// terminal); nil exactly when K8s is.
+	// Cluster is how the cluster is reached: its connection for exec and
+	// streams, and the host-level pods (builder, image cleanup, node
+	// terminal). Nil exactly when K8s is.
 	Cluster appk8s.Driver
+	// Agent is the cluster when this API reaches it through a cluster agent
+	// (config ClusterAgent), which registration points at the agent; nil
+	// otherwise.
+	Agent *appk8s.AgentCluster
 	// DB is the database, for an extension's own tables. Core code goes
 	// through the services above.
 	DB *gorm.DB
@@ -80,7 +84,17 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	var k8sClient kubernetes.Interface
 	var k8sRestCfg *rest.Config
 	var cluster appk8s.Driver
-	if c != nil {
+	var agent *appk8s.AgentCluster
+	if c != nil && c.ClusterAgent {
+		// The cluster is reached only through its cluster agent, once one is
+		// registered; never through a kubeconfig, which this API does not hold.
+		a, err := appk8s.NewAgentCluster()
+		if err != nil {
+			log.Printf("warning: cluster agent client: %v; build/deploy features disabled", err)
+		} else {
+			agent, cluster, k8sClient = a, a, a.Client()
+		}
+	} else if c != nil {
 		var err error
 		k8sClient, k8sRestCfg, err = appk8s.NewClientWithOptions(appk8s.Options{
 			KubeconfigPath: c.KubeconfigPath,
@@ -242,7 +256,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	sandbox := &SandboxService{db: db, k8s: k8sClient}
 	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, cluster: cluster, git: gitSvc, varGroups: varGroups, notif: notif, sandbox: sandbox}
 
-	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
+	backups := &BackupService{db: db, k8s: k8sClient, cluster: cluster, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
 	routes := &RouteService{db: db, k8s: k8sClient}
@@ -320,12 +334,12 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			}
 			return j
 		}(),
-		DBExplorer:    &DBExplorerService{db: db, k8s: k8sClient, restCfg: k8sRestCfg},
-		Headscale:     headscaleSvc,
-		Tickets:       NewTicketService(),
-		K8s:           k8sClient,
-		K8sRestConfig: k8sRestCfg,
-		Cluster:       cluster,
+		DBExplorer: &DBExplorerService{db: db, k8s: k8sClient, cluster: cluster},
+		Headscale:  headscaleSvc,
+		Tickets:    NewTicketService(),
+		K8s:        k8sClient,
+		Cluster:    cluster,
+		Agent:      agent,
 	}
 
 	// Template service - depends on the stack + route services, so wire it after
@@ -369,7 +383,23 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	go nodes.StartRemovalWorker(context.Background())
 	go svc.MeshAccess.Follow(context.Background())
 	go svc.Isolation.Start(context.Background())
-	if k8sClient != nil {
+	if agent != nil {
+		// What a local cluster gets at startup, an agent's cluster gets each
+		// time its agent is set: at startup if one is registered, and at
+		// registration otherwise.
+		nodes.agent = agent
+		nodes.onClusterAgent = append(nodes.onClusterAgent, func(ctx context.Context) {
+			appk8s.CleanupOrphanedShellPods(ctx, agent)
+			if err := appk8s.EnsureSandboxRuntimeClass(ctx, agent.Client()); err != nil {
+				log.Printf("warning: sandbox runtime class: %v", err)
+			}
+		})
+		go func() {
+			if err := nodes.LoadClusterAgent(context.Background()); err != nil {
+				log.Printf("warning: cluster agent: %v", err)
+			}
+		}()
+	} else if k8sClient != nil {
 		go func() {
 			if err := appk8s.EnsureSandboxRuntimeClass(context.Background(), k8sClient); err != nil {
 				log.Printf("warning: sandbox runtime class: %v", err)

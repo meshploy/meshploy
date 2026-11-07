@@ -293,6 +293,12 @@ func applyConstraints(db *gorm.DB) error {
 		// Exactly one primary domain per organization. Every base domain routes;
 		// primary only decides whose platform subdomains serve and what a new
 		// route defaults to, so two of them would leave that undecided.
+		// One cluster agent per installation: an API reaches one cluster, so a
+		// second agent's identity could only be a mistake or an attempt to
+		// take its traffic.
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_cluster_agent
+		 ON nodes ((true))
+		 WHERE cluster_agent_cert <> ''`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_one_primary_domain_per_org
 		 ON domains (organization_id)
 		 WHERE is_primary`,

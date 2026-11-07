@@ -343,6 +343,17 @@ func (h *Handler) registerNodeRoutes(api huma.API) {
 		DefaultStatus: 204,
 	}, h.CancelNodeRemoval)
 
+	huma.Register(api, huma.Operation{
+		OperationID:   "revoke-cluster-agent",
+		Method:        "DELETE",
+		Path:          "/api/v1/orgs/{orgId}/nodes/{nodeId}/cluster-agent",
+		Summary:       "Revoke a node's cluster agent",
+		Description:   "Forgets the cluster agent's certificate and token: the cluster is no longer reached through it, requests still open to it are cut, and a new agent may register.",
+		Tags:          []string{"Nodes"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: 204,
+	}, h.RevokeClusterAgent)
+
 	// Provisioning tokens - per-node single-use tokens (authenticated management)
 	huma.Register(api, huma.Operation{
 		OperationID: "create-provisioning-token",
@@ -851,7 +862,19 @@ type SelfRegisterNodeInput struct {
 		// OS is what the join script runs on. Absent means Linux: install.sh
 		// sends none.
 		OS db.NodeOS `json:"os,omitempty" enum:"linux,darwin,windows"`
+		// ClusterAgent is the cluster agent's identity, sent by the node that
+		// holds the cluster's server with a token made for it, and by no
+		// other.
+		ClusterAgent *ClusterAgentIdentityBody `json:"cluster_agent,omitempty"`
 	}
+}
+
+// ClusterAgentIdentityBody is a cluster agent's identity as its node sends it
+// at registration.
+type ClusterAgentIdentityBody struct {
+	Certificate string `json:"certificate" minLength:"1" maxLength:"16384" doc:"The agent's PEM certificate, which the API pins"`
+	Token       string `json:"token"       minLength:"1" maxLength:"128"   doc:"The token the API presents to the agent"`
+	Port        int    `json:"port"        minimum:"1"   maximum:"65535"   doc:"The port the agent listens on at the node's mesh address"`
 }
 
 // SelfRegisterNodeOutput extends the node response with a one-time node secret.
@@ -895,13 +918,28 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	var err error
 
 	if strings.HasPrefix(input.Body.Token, "mprov-") {
-		node, nodeSecret, err = h.svc.Nodes.RegisterWithProvisioningToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole, input.Body.OS)
+		var agent *service.ClusterAgentRegistration
+		if a := input.Body.ClusterAgent; a != nil {
+			agent = &service.ClusterAgentRegistration{CertPEM: a.Certificate, Token: a.Token, Port: a.Port}
+		}
+		node, nodeSecret, err = h.svc.Nodes.RegisterWithProvisioningToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole, input.Body.OS, agent)
+	} else if input.Body.ClusterAgent != nil {
+		// The reusable org token never registers a cluster agent: anyone who
+		// once saw it could take the cluster's traffic.
+		return nil, huma.Error422UnprocessableEntity(service.ErrClusterAgentToken.Error())
 	} else {
 		// Legacy org-wide mreg- token - no node secret issued
 		node, err = h.svc.Nodes.RegisterWithToken(ctx, input.Body.Token, input.Body.Name, input.Body.TailscaleIP, input.Body.MeshRole, input.Body.OS)
 	}
-	if errors.Is(err, service.ErrNonLinuxClusterRole) {
+	switch {
+	case errors.Is(err, service.ErrNonLinuxClusterRole),
+		errors.Is(err, service.ErrClusterAgentToken),
+		errors.Is(err, service.ErrClusterAgentNotExpected),
+		errors.Is(err, service.ErrClusterAgentIdentity),
+		errors.Is(err, service.ErrClusterAgentAddress):
 		return nil, huma.Error422UnprocessableEntity(err.Error())
+	case errors.Is(err, service.ErrClusterAgentRegistered):
+		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid or unknown registration token")
@@ -934,7 +972,7 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	// A cluster node needs one more thing, and this is where it may have it:
 	// the caller is on the mesh and has just spent a single-use token to get
 	// here. A mesh-only node is not in the cluster and has nothing to join.
-	if node.MeshRole != db.MeshRoleMesh {
+	if node.MeshRole != db.MeshRoleMesh && !node.HasClusterAgent() {
 		out.Body.K3sToken = h.k3sJoinToken()
 		out.Body.K3sServerURL = k3sServerURL
 		out.Body.K3sVersion = h.svc.Nodes.ClusterVersion(ctx)
@@ -1000,6 +1038,25 @@ func (h *Handler) SelfDeregisterNode(ctx context.Context, input *SelfDeregisterN
 	return nil, h.svc.Nodes.Delete(ctx, nodeID)
 }
 
+// RevokeClusterAgent forgets a node's cluster agent. Owners and admins only.
+func (h *Handler) RevokeClusterAgent(ctx context.Context, input *NodePathInput) (*struct{}, error) {
+	_, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	if err != nil || node.OrganizationID != orgID {
+		return nil, huma.Error404NotFound("node not found")
+	}
+	if err := h.svc.Nodes.RevokeClusterAgent(ctx, nodeID); err != nil {
+		if errors.Is(err, service.ErrNoClusterAgentOnNode) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, err
+	}
+	return nil, nil
+}
+
 // ─── Provisioning token CRUD ──────────────────────────────────────────────────
 
 type CreateProvisioningTokenInput struct {
@@ -1010,6 +1067,10 @@ type CreateProvisioningTokenInput struct {
 		// MeshRole is what the machine becomes, decided here rather than asked
 		// of it. Empty means the default, workload_builder.
 		MeshRole db.MeshRole `json:"mesh_role,omitempty" enum:"workload_builder,workload,builder,mesh"`
+		// ClusterAgent mints the token for the node holding the cluster's
+		// server, with its cluster agent, on a server that reaches its cluster
+		// only through one. Such a token registers nothing else.
+		ClusterAgent bool `json:"cluster_agent,omitempty"`
 	}
 }
 
@@ -1025,7 +1086,19 @@ func (h *Handler) CreateProvisioningToken(ctx context.Context, input *CreateProv
 	if err != nil {
 		return nil, err
 	}
-	plaintext, row, err := h.svc.Nodes.CreateProvisioningTokenBy(ctx, orgID, &userID, input.Body.Label, input.Body.ExpiresAt, input.Body.MeshRole)
+	var plaintext string
+	var row *db.NodeProvisioningToken
+	if input.Body.ClusterAgent {
+		plaintext, row, err = h.svc.Nodes.CreateClusterAgentToken(ctx, orgID, &userID, input.Body.Label, input.Body.ExpiresAt)
+		switch {
+		case errors.Is(err, service.ErrClusterAgentNotExpected):
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		case errors.Is(err, service.ErrClusterAgentRegistered):
+			return nil, huma.Error409Conflict(err.Error())
+		}
+	} else {
+		plaintext, row, err = h.svc.Nodes.CreateProvisioningTokenBy(ctx, orgID, &userID, input.Body.Label, input.Body.ExpiresAt, input.Body.MeshRole)
+	}
 	if err != nil {
 		return nil, err
 	}
