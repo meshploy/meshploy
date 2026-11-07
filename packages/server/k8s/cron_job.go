@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 )
 
 // CronJobParams holds the configuration for a meshploy CronJob.
@@ -31,33 +32,40 @@ type CronJobParams struct {
 	Suspend           bool   // keeps it from firing
 }
 
-// ApplyCronJob creates or updates a K8s CronJob for a meshploy cron job.
+// ApplyCronJob creates or updates a K8s CronJob for a meshploy cron job. An
+// update carries the CronJob's version, which its controller moves each time
+// it fires, so one that loses that race reads it again.
 func ApplyCronJob(ctx context.Context, client kubernetes.Interface, p CronJobParams) error {
 	spec := buildCronJobSpec(p)
-
-	existing, err := client.BatchV1().CronJobs(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		cj := &batchv1.CronJob{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      p.Name,
-				Namespace: p.Namespace,
-				Labels: map[string]string{
-					"managed-by":      "meshploy",
-					"meshploy-job-id": p.JobID,
-				},
-			},
-			Spec: spec,
+	cronJobs := client.BatchV1().CronJobs(p.Namespace)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := cronJobs.Get(ctx, p.Name, metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			_, err = cronJobs.Create(ctx, newCronJob(p, spec), metav1.CreateOptions{})
+			return err
 		}
-		_, err = client.BatchV1().CronJobs(p.Namespace).Create(ctx, cj, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
+		existing.Spec = spec
+		_, err = cronJobs.Update(ctx, existing, metav1.UpdateOptions{})
 		return err
-	}
-	if err != nil {
-		return err
-	}
+	})
+}
 
-	existing.Spec = spec
-	_, err = client.BatchV1().CronJobs(p.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+// newCronJob is the CronJob made the first time a job is applied.
+func newCronJob(p CronJobParams, spec batchv1.CronJobSpec) *batchv1.CronJob {
+	return &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      p.Name,
+			Namespace: p.Namespace,
+			Labels: map[string]string{
+				"managed-by":      "meshploy",
+				"meshploy-job-id": p.JobID,
+			},
+		},
+		Spec: spec,
+	}
 }
 
 // DeleteCronJob removes the K8s CronJob. No-ops if it doesn't exist.

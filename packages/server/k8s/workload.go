@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 )
 
 // PortSpec describes one port to expose on a K8s Service.
@@ -517,8 +518,23 @@ func ApplyDatabaseDeployment(ctx context.Context, client kubernetes.Interface, p
 		storageGB = 10
 	}
 
-	// Ensure the data PVC exists.
-	_, err := client.CoreV1().PersistentVolumeClaims(p.Namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	// Ensure the data PVC exists. A database pinned to a node skips the
+	// scheduler, and node-local storage makes a volume only once the scheduler
+	// has placed a pod or the claim names its node, so the claim names it. A
+	// claim still waiting for its volume is given the node too; once bound,
+	// its data stays where it is.
+	claims := client.CoreV1().PersistentVolumeClaims(p.Namespace)
+	existing, err := claims.Get(ctx, pvcName, metav1.GetOptions{})
+	if err == nil && p.NodeName != "" && existing.Spec.VolumeName == "" &&
+		existing.Annotations[SelectedNodeAnnotation] != p.NodeName {
+		if existing.Annotations == nil {
+			existing.Annotations = map[string]string{}
+		}
+		existing.Annotations[SelectedNodeAnnotation] = p.NodeName
+		if _, err := claims.Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
+			return fmt.Errorf("pin database PVC to %s: %w", p.NodeName, err)
+		}
+	}
 	if k8serrors.IsNotFound(err) {
 		qty := resource.MustParse(fmt.Sprintf("%dGi", storageGB))
 		pvc := &corev1.PersistentVolumeClaim{
@@ -534,7 +550,10 @@ func ApplyDatabaseDeployment(ctx context.Context, client kubernetes.Interface, p
 				},
 			},
 		}
-		if _, err = client.CoreV1().PersistentVolumeClaims(p.Namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
+		if p.NodeName != "" {
+			pvc.Annotations = map[string]string{SelectedNodeAnnotation: p.NodeName}
+		}
+		if _, err = claims.Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
 			return fmt.Errorf("create database PVC: %w", err)
 		}
 	} else if err != nil {
@@ -723,17 +742,21 @@ func extractNodePorts(ports []corev1.ServicePort) map[string]int32 {
 
 // ScaleDeployment sets the replica count on an existing Deployment.
 // If the Deployment does not exist (not yet deployed) the call is a no-op.
+// The scale carries the Deployment's version, which its controller moves on
+// every status change, so a write that loses that race reads it again.
 func ScaleDeployment(ctx context.Context, client kubernetes.Interface, name, namespace string, replicas int32) error {
-	scale, err := client.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("get scale: %w", err)
-	}
-	scale.Spec.Replicas = replicas
-	_, err = client.AppsV1().Deployments(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
-	return err
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		scale, err := client.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("get scale: %w", err)
+		}
+		scale.Spec.Replicas = replicas
+		_, err = client.AppsV1().Deployments(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 // SetDeploymentNode updates the node pin on a live Deployment's pod template.
@@ -741,18 +764,21 @@ func ScaleDeployment(ctx context.Context, client kubernetes.Interface, name, nam
 // full redeploy. An empty nodeName clears the pin and returns the workload to
 // normal scheduling. No-op when the Deployment does not exist yet.
 func SetDeploymentNode(ctx context.Context, client kubernetes.Interface, name, namespace, nodeName string) error {
-	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("get deployment: %w", err)
-	}
-	if dep.Spec.Template.Spec.NodeName == nodeName {
-		return nil
-	}
-	dep.Spec.Template.Spec.NodeName = nodeName
-	_, err = client.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if dep.Spec.Template.Spec.NodeName == nodeName {
+			return nil
+		}
+		dep.Spec.Template.Spec.NodeName = nodeName
+		_, err = client.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{})
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("update deployment node: %w", err)
 	}

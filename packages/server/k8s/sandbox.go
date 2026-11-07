@@ -12,6 +12,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 )
 
 // A sandboxed project's pods run on gVisor's user-space kernel instead of the
@@ -134,8 +135,17 @@ func SetNamespaceRuntime(ctx context.Context, client kubernetes.Interface, names
 		if same(d.Spec.Template.Spec.RuntimeClassName, want) {
 			continue
 		}
-		d.Spec.Template.Spec.RuntimeClassName = want
-		if _, err := deployments.Update(ctx, d, metav1.UpdateOptions{}); err != nil {
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			d.Spec.Template.Spec.RuntimeClassName = want
+			_, err := deployments.Update(ctx, d, metav1.UpdateOptions{})
+			if k8serrors.IsConflict(err) {
+				if fresh, gerr := deployments.Get(ctx, d.Name, metav1.GetOptions{}); gerr == nil {
+					*d = *fresh
+				}
+			}
+			return err
+		})
+		if err != nil {
 			return fmt.Errorf("deployment %s: %w", d.Name, err)
 		}
 	}
@@ -152,8 +162,17 @@ func SetNamespaceRuntime(ctx context.Context, client kubernetes.Interface, names
 		if same(spec.RuntimeClassName, want) {
 			continue
 		}
-		spec.RuntimeClassName = want
-		if _, err := cronJobs.Update(ctx, c, metav1.UpdateOptions{}); err != nil {
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			c.Spec.JobTemplate.Spec.Template.Spec.RuntimeClassName = want
+			_, err := cronJobs.Update(ctx, c, metav1.UpdateOptions{})
+			if k8serrors.IsConflict(err) {
+				if fresh, gerr := cronJobs.Get(ctx, c.Name, metav1.GetOptions{}); gerr == nil {
+					*c = *fresh
+				}
+			}
+			return err
+		})
+		if err != nil {
 			return fmt.Errorf("cron job %s: %w", c.Name, err)
 		}
 	}
