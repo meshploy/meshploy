@@ -923,9 +923,9 @@ func (s *RouteService) resolveTarget(ctx context.Context, orgID uuid.UUID, in *T
 		t.TargetIP = gateway.TailscaleIP
 		t.TargetPort = sp.NodePort
 	} else if in.NodeID != nil {
-		var node db.Node
-		if err := s.db.WithContext(ctx).First(&node, "id = ?", *in.NodeID).Error; err != nil {
-			return nil, huma.Error404NotFound("node not found")
+		node, err := nodeInOrg(ctx, s.db, orgID, *in.NodeID)
+		if err != nil {
+			return nil, err
 		}
 		t.TargetIP = node.TailscaleIP
 		t.TargetPort = in.Port

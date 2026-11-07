@@ -47,7 +47,7 @@ func (s *VolumeService) Get(ctx context.Context, volumeID, projectID uuid.UUID) 
 }
 
 func (s *VolumeService) Create(ctx context.Context, projectID uuid.UUID, name string, storageGB int, nodeID *uuid.UUID) (*db.Volume, error) {
-	if err := schedulable(ctx, s.db, nodeID); err != nil {
+	if err := schedulable(ctx, s.db, projectID, nodeID); err != nil {
 		return nil, err
 	}
 	if name == "" {
@@ -141,6 +141,9 @@ func (s *VolumeService) PVCStatus(ctx context.Context, volumeID uuid.UUID) (appk
 func (s *VolumeService) SetNode(ctx context.Context, volumeID uuid.UUID, nodeID *uuid.UUID) (*db.Volume, error) {
 	var volume db.Volume
 	if err := s.db.WithContext(ctx).First(&volume, "id = ?", volumeID).Error; err != nil {
+		return nil, err
+	}
+	if err := schedulable(ctx, s.db, volume.ProjectID, nodeID); err != nil {
 		return nil, err
 	}
 	nodeName, err := s.resolveNodeName(ctx, nodeID)

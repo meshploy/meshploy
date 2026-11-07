@@ -535,11 +535,11 @@ func (h *Handler) RegisterNode(ctx context.Context, input *RegisterNodeInput) (*
 }
 
 func (h *Handler) GetNode(ctx context.Context, input *NodePathInput) (*GetNodeOutput, error) {
-	_, _, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
+	_, orgID, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
-	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	node, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -548,12 +548,12 @@ func (h *Handler) GetNode(ctx context.Context, input *NodePathInput) (*GetNodeOu
 }
 
 func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*UpdateNodeOutput, error) {
-	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	_, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
 	// Fetch the current node so we know the stored headscale_id and old name.
-	current, err := h.svc.Nodes.Get(ctx, nodeID)
+	current, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -621,11 +621,11 @@ type NodeRemovalBody struct {
 }
 
 func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*DeleteNodeOutput, error) {
-	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	_, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
-	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	node, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -647,9 +647,12 @@ func (h *Handler) DeleteNode(ctx context.Context, input *NodePathInput) (*Delete
 
 // CancelNodeRemoval stops a removal that is waiting for Headscale.
 func (h *Handler) CancelNodeRemoval(ctx context.Context, input *NodePathInput) (*struct{}, error) {
-	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	_, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
+	}
+	if _, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID); err != nil {
+		return nil, notFound(err)
 	}
 	if err := h.svc.Nodes.CancelRemoval(ctx, nodeID); err != nil {
 		if errors.Is(err, service.ErrNoPendingRemoval) {
@@ -1044,8 +1047,7 @@ func (h *Handler) RevokeClusterAgent(ctx context.Context, input *NodePathInput) 
 	if err != nil {
 		return nil, err
 	}
-	node, err := h.svc.Nodes.Get(ctx, nodeID)
-	if err != nil || node.OrganizationID != orgID {
+	if _, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID); err != nil {
 		return nil, huma.Error404NotFound("node not found")
 	}
 	if err := h.svc.Nodes.RevokeClusterAgent(ctx, nodeID); err != nil {
@@ -1219,9 +1221,12 @@ type NodeMetricsOutput struct {
 }
 
 func (h *Handler) GetNodeMetrics(ctx context.Context, input *NodePathInput) (*NodeMetricsOutput, error) {
-	_, _, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
+	_, orgID, nodeID, err := h.checkOrgMemberAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
+	}
+	if _, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID); err != nil {
+		return nil, notFound(err)
 	}
 	m, err := h.svc.Nodes.GetNodeMetrics(ctx, nodeID)
 	if errors.Is(err, service.ErrNodeMetricsUnsupported) {
@@ -1248,11 +1253,11 @@ type NodeContainersOutput struct {
 // ListNodeContainers is what else a machine runs, as Discovery shows it, and an
 // owner's or admin's like Discovery.
 func (h *Handler) ListNodeContainers(ctx context.Context, input *NodePathInput) (*NodeContainersOutput, error) {
-	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	_, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
-	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	node, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -1269,11 +1274,11 @@ type FreeNodeSpaceOutput struct {
 // FreeNodeSpace removes the images no app on a node uses, and on the gateway
 // asks the registry to collect what it no longer lists.
 func (h *Handler) FreeNodeSpace(ctx context.Context, input *NodePathInput) (*FreeNodeSpaceOutput, error) {
-	_, _, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
+	_, orgID, nodeID, err := h.checkOrgAdminAccess(ctx, input.OrgID, input.NodeID)
 	if err != nil {
 		return nil, err
 	}
-	node, err := h.svc.Nodes.Get(ctx, nodeID)
+	node, err := h.svc.Nodes.GetInOrg(ctx, orgID, nodeID)
 	if err != nil {
 		return nil, notFound(err)
 	}

@@ -215,7 +215,10 @@ func (s *WorkloadService) Create(ctx context.Context, projectID uuid.UUID, in Cr
 		return nil, err
 	}
 
-	if err := schedulable(ctx, s.db, in.NodeID); err != nil {
+	if err := schedulable(ctx, s.db, projectID, in.NodeID); err != nil {
+		return nil, err
+	}
+	if err := builderPinnable(ctx, s.db, s.k8s, projectID, in.BuilderNode); err != nil {
 		return nil, err
 	}
 	if in.Type == db.ServiceTypeDatabase {
@@ -865,7 +868,7 @@ func (s *WorkloadService) Update(ctx context.Context, serviceID uuid.UUID, in Up
 		updates["image"] = *in.Image
 	}
 	if in.UpdateNode {
-		if err := schedulable(ctx, s.db, in.NodeID); err != nil {
+		if err := schedulable(ctx, s.db, before.ProjectID, in.NodeID); err != nil {
 			return nil, err
 		}
 		updates["node_id"] = in.NodeID // nil → NULL, uuid → pin
@@ -1165,6 +1168,13 @@ func (s *WorkloadService) UpsertBuildConfig(ctx context.Context, serviceID uuid.
 		bc.BuildArgs = db.EnvVarsMap(*in.BuildArgs)
 	}
 	if in.BuilderNode != nil {
+		var svc db.Service
+		if err := s.db.WithContext(ctx).Select("project_id").First(&svc, "id = ?", serviceID).Error; err != nil {
+			return nil, err
+		}
+		if err := builderPinnable(ctx, s.db, s.k8s, svc.ProjectID, *in.BuilderNode); err != nil {
+			return nil, err
+		}
 		bc.BuilderNode = *in.BuilderNode
 	}
 	if in.BuilderCPURequest != nil {

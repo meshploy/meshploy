@@ -151,7 +151,7 @@ func (s *JobService) DeleteRun(ctx context.Context, runID uuid.UUID) error {
 // ─── Write ────────────────────────────────────────────────────────────────────
 
 func (s *JobService) Create(ctx context.Context, in CreateJobInput) (*db.Job, error) {
-	if err := schedulable(ctx, s.db, in.NodeID); err != nil {
+	if err := schedulable(ctx, s.db, in.ProjectID, in.NodeID); err != nil {
 		return nil, err
 	}
 	k8sName, err := jobK8sName(in.Name)
@@ -242,7 +242,7 @@ func (s *JobService) Update(ctx context.Context, jobID uuid.UUID, in UpdateJobIn
 		updates["env_vars"] = db.EncryptedString(*in.EnvVars)
 	}
 	if in.NodeID != nil {
-		if err := schedulable(ctx, s.db, in.NodeID); err != nil {
+		if err := schedulable(ctx, s.db, row.ProjectID, in.NodeID); err != nil {
 			return nil, err
 		}
 		updates["node_id"] = in.NodeID

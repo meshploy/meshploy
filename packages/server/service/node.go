@@ -152,6 +152,15 @@ func (s *NodeService) Get(ctx context.Context, nodeID uuid.UUID) (*db.Node, erro
 	return &node, err
 }
 
+// GetInOrg is orgID's node nodeID. Another organization's node is not found,
+// as an unknown one is: what a path names under an organization is that
+// organization's, whoever asks.
+func (s *NodeService) GetInOrg(ctx context.Context, orgID, nodeID uuid.UUID) (*db.Node, error) {
+	var node db.Node
+	err := s.db.WithContext(ctx).First(&node, "id = ? AND organization_id = ?", nodeID, orgID).Error
+	return &node, err
+}
+
 // Register creates a new node. Pass db.K3sRoleServer as the optional role to
 // mark the gateway node; defaults to db.K3sRoleAgent if omitted.
 func (s *NodeService) Register(ctx context.Context, orgID uuid.UUID, name, tailscaleIP string, role ...db.K3sRole) (*db.Node, error) {
