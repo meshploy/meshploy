@@ -78,7 +78,7 @@ func (s *DeploymentService) applyBuildRoles(ctx context.Context, nodes []appk8s.
 	}
 	changed := false
 	for name, role := range buildRoleTargets(nodes, records) {
-		if err := appk8s.SetNodeMeshRole(ctx, s.k8s, name, role); err != nil {
+		if err := appk8s.SetNodeMeshRole(ctx, s.k8s, name, NodePlacement(role)); err != nil {
 			log.Printf("warning: apply build role to node %s: %v", name, err)
 			continue
 		}
@@ -111,4 +111,15 @@ func buildRoleTargets(nodes []appk8s.ClusterNode, records []db.Node) map[string]
 // noBuildNodeMessage explains a build the scheduler could not place.
 func noBuildNodeMessage(reason string) string {
 	return "No node could run this build: " + strings.TrimSpace(reason) + " " + buildNodeHelp
+}
+
+// NodePlacement is what a node's mesh role asks of the cluster: a mesh-only
+// node is not in it, builder and workload_builder take builds, and builder
+// takes nothing else.
+func NodePlacement(role db.MeshRole) appk8s.NodePlacement {
+	return appk8s.NodePlacement{
+		InCluster:  role != db.MeshRoleMesh,
+		Builds:     role == db.MeshRoleWorkloadBuilder || role == db.MeshRoleBuilder,
+		BuildsOnly: role == db.MeshRoleBuilder,
+	}
 }

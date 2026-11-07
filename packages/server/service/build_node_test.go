@@ -75,3 +75,21 @@ func TestBuildRoleTargets(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+// Every stored role maps to the placement the cluster had before placements
+// existed: the empty role (rows from before roles) is in the cluster without
+// the builder label, as SetNodeMeshRole's default case gave it.
+func TestNodePlacement(t *testing.T) {
+	cases := map[db.MeshRole]appk8s.NodePlacement{
+		db.MeshRoleWorkloadBuilder: {InCluster: true, Builds: true},
+		db.MeshRoleWorkload:        {InCluster: true},
+		db.MeshRoleBuilder:         {InCluster: true, Builds: true, BuildsOnly: true},
+		db.MeshRoleMesh:            {},
+		"":                         {InCluster: true},
+	}
+	for role, want := range cases {
+		if got := NodePlacement(role); got != want {
+			t.Errorf("NodePlacement(%q) = %+v, want %+v", role, got, want)
+		}
+	}
+}

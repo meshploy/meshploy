@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/meshploy/packages/db"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -73,15 +72,25 @@ func IsBuildNode(labels map[string]string) bool {
 	return labels[meshRoleLabelKey] == meshRoleBuilderValue
 }
 
-// SetNodeMeshRole applies the correct k8s label and taint to a node based on its
-// MeshRole. Safe to call repeatedly - it reconciles to the desired state each time.
+// NodePlacement is what a node takes, which its label and taint express.
+type NodePlacement struct {
+	// InCluster is false for a node on the mesh only: nothing to apply.
+	InCluster bool
+	// Builds is whether build jobs may land on the node (the builder label).
+	Builds bool
+	// BuildsOnly keeps everything but builds off it (a NoSchedule taint).
+	BuildsOnly bool
+}
+
+// SetNodeMeshRole applies the label and taint for a node's placement. Safe to
+// call repeatedly - it reconciles to the desired state each time.
 //
-//   - workload_builder: adds builder label, no taint  → builds + workloads land here
-//   - workload:         removes builder label, no taint → workloads only
-//   - builder:          adds builder label + NoSchedule taint → builds only
-//   - mesh:             not in the cluster, so there is nothing to apply
-func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName string, role db.MeshRole) error {
-	if role == db.MeshRoleMesh {
+//   - builds and workloads: builder label, no taint
+//   - workloads only:       no builder label, no taint
+//   - builds only:          builder label and a NoSchedule taint
+//   - not in the cluster:   nothing to apply
+func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName string, p NodePlacement) error {
+	if !p.InCluster {
 		return nil
 	}
 	node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
@@ -89,15 +98,12 @@ func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName 
 		return fmt.Errorf("get node %s: %w", nodeName, err)
 	}
 
-	// ── Labels ────────────────────────────────────────────────────────────────
-	if node.Labels == nil {
-		node.Labels = map[string]string{}
-	}
-	switch role {
-	case db.MeshRoleWorkloadBuilder, db.MeshRoleBuilder:
-		node.Labels[meshRoleLabelKey] = meshRoleBuilderValue
-	default:
-		delete(node.Labels, meshRoleLabelKey)
+	// ── Label ─────────────────────────────────────────────────────────────────
+	// Only Meshploy's key is sent. A merge patch leaves keys it does not name
+	// as they are, so removing the label takes an explicit null.
+	var label any
+	if p.Builds || p.BuildsOnly {
+		label = meshRoleBuilderValue
 	}
 
 	// ── Taints ────────────────────────────────────────────────────────────────
@@ -108,7 +114,7 @@ func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName 
 			filtered = append(filtered, t)
 		}
 	}
-	if role == db.MeshRoleBuilder {
+	if p.BuildsOnly {
 		filtered = append(filtered, corev1.Taint{
 			Key:    meshRoleLabelKey,
 			Value:  meshRoleBuilderValue,
@@ -119,7 +125,7 @@ func SetNodeMeshRole(ctx context.Context, client kubernetes.Interface, nodeName 
 
 	// ── Patch ─────────────────────────────────────────────────────────────────
 	patch, err := json.Marshal(map[string]any{
-		"metadata": map[string]any{"labels": node.Labels},
+		"metadata": map[string]any{"labels": map[string]any{meshRoleLabelKey: label}},
 		"spec":     map[string]any{"taints": node.Spec.Taints},
 	})
 	if err != nil {

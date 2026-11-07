@@ -194,7 +194,7 @@ func (h *Handler) enrichNodes(ctx context.Context, nodes []db.Node) []NodeRespon
 			// self-register), apply them async so the next request sees them.
 			if n.MeshRole != "" && h.svc.K8s != nil && !meshRoleLabelsMatch(kn.Labels, n.MeshRole) {
 				go func(name string, role db.MeshRole) {
-					if err := appk8s.SetNodeMeshRole(context.Background(), h.svc.K8s, name, role); err != nil {
+					if err := appk8s.SetNodeMeshRole(context.Background(), h.svc.K8s, name, service.NodePlacement(role)); err != nil {
 						log.Printf("warning: reconcile mesh role labels for %s: %v", name, err)
 					}
 				}(kn.name, n.MeshRole)
@@ -565,7 +565,7 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateNodeInput) (*Upda
 	}
 	// Apply k8s labels/taints if mesh_role changed and k8s client is available.
 	if input.Body.MeshRole != "" && h.svc.K8s != nil {
-		if err := appk8s.SetNodeMeshRole(ctx, h.svc.K8s, node.Name, node.MeshRole); err != nil {
+		if err := appk8s.SetNodeMeshRole(ctx, h.svc.K8s, node.Name, service.NodePlacement(node.MeshRole)); err != nil {
 			log.Printf("warning: apply mesh role to k8s node %s: %v", node.Name, err)
 		}
 	}
