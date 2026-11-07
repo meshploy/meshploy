@@ -13,6 +13,7 @@ COPY apps/api/go.mod apps/api/go.sum* ./apps/api/
 COPY apps/proxy/go.mod apps/proxy/go.sum* ./apps/proxy/
 COPY packages/proxy/go.mod packages/proxy/go.sum ./packages/proxy/
 COPY apps/cli/go.mod apps/cli/go.sum ./apps/cli/
+COPY apps/cluster-agent/go.mod apps/cluster-agent/go.sum* ./apps/cluster-agent/
 COPY packages/db/go.mod packages/db/go.sum ./packages/db/
 # proxy doesn't import these, but go work sync needs every workspace module's
 # go.mod. Keep this list in step with the `use (...)` block in go.work —

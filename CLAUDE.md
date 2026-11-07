@@ -11,6 +11,7 @@ meshploy/
 ├── apps/
 │   ├── api/          # Chi + Huma REST API (Go, OpenAPI 3.1)
 │   ├── proxy/        # Edge reverse proxy — "Ask & Resolve" L7 routing
+│   ├── cluster-agent/ # meshploy-cluster-agent: holds a cluster's credential for an API elsewhere, checks its requests
 │   ├── cli/          # Static Go binary — node & cluster management CLI
 │   ├── web/          # Vite + React 19 + TanStack Router frontend
 │   ├── builder/      # Builder image (meshploy-build): git clone + Railpack / Dockerfile

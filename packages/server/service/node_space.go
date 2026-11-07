@@ -57,7 +57,7 @@ func (s *NodeService) FreeSpace(ctx context.Context, nodeID uuid.UUID) (*FreeSpa
 	if err != nil {
 		return nil, ErrNotInCluster
 	}
-	n, err := appk8s.PruneNodeImages(ctx, s.k8s, name, freeSpaceTimeout)
+	n, err := s.cluster.PruneNodeImages(ctx, name, freeSpaceTimeout)
 	if err != nil {
 		return nil, err
 	}

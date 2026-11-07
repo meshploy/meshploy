@@ -119,17 +119,17 @@ func DeleteShellPod(ctx context.Context, client kubernetes.Interface, podName st
 	})
 }
 
-// CleanupOrphanedShellPods deletes any meshploy-shell-* pods left over from a
+// CleanupOrphanedShellPods closes any meshploy-shell-* pods left over from a
 // previous API instance that exited without cleaning up (e.g. crash, SIGKILL).
-func CleanupOrphanedShellPods(ctx context.Context, client kubernetes.Interface) {
-	pods, err := client.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{
+func CleanupOrphanedShellPods(ctx context.Context, d Driver) {
+	pods, err := d.Client().CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{
 		LabelSelector: "managed-by=meshploy,app=meshploy-shell",
 	})
 	if err != nil || len(pods.Items) == 0 {
 		return
 	}
 	for _, pod := range pods.Items {
-		DeleteShellPod(ctx, client, pod.Name)
+		d.CloseNodeShell(ctx, pod.Name)
 		log.Printf("terminal: cleaned up orphaned shell pod %s", pod.Name)
 	}
 }

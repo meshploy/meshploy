@@ -37,7 +37,7 @@ OUT_DIR = ROOT / "notices"
 WEB_NOTICES = ROOT / "apps" / "web" / "public" / "third-party-notices.md"
 
 # Go binaries, by the name their notices file carries.
-GO_BINARIES = {"api": "./apps/api", "proxy": "./apps/proxy", "cli": "./apps/cli"}
+GO_BINARIES = {"api": "./apps/api", "proxy": "./apps/proxy", "cli": "./apps/cli", "cluster-agent": "./apps/cluster-agent"}
 
 LICENSE_FILE = re.compile(r"^(licen[sc]e|copying|unlicense|notice)([.-].*)?$", re.I)
 

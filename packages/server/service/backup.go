@@ -16,7 +16,6 @@ import (
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/server/config"
 	"github.com/minio/minio-go/v7"
-	appk8s "github.com/meshploy/packages/server/k8s"
 	cronparser "github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
@@ -248,11 +247,6 @@ func (s *BackupService) TriggerSystem(ctx context.Context, orgID uuid.UUID) (*db
 // StartScheduler ticks every minute and runs any backup configs whose cron
 // schedule is overdue. Safe to call once at startup in a goroutine.
 func (s *BackupService) StartScheduler(ctx context.Context) {
-	// Ensure K8s shell pods from crashed sessions are cleaned before first tick.
-	if s.k8s != nil {
-		go appk8s.CleanupOrphanedShellPods(ctx, s.k8s)
-	}
-
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 

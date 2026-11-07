@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"net"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 // service_test can drive a deploy against a fake one. Compiled only into tests.
 func UseK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Deployments.k8s = client
+	s.Deployments.cluster = appk8s.NewLocalDriver(client, nil)
 }
 
 // UseJobsK8sForTest gives the job service a cluster client, so a test can see
@@ -105,6 +107,7 @@ func RequestRegistryGCNowForTest(s *Services, ctx context.Context, hostDir strin
 // UseNodeK8sForTest gives the node service a cluster client.
 func UseNodeK8sForTest(s *Services, client kubernetes.Interface) {
 	s.Nodes.k8s = client
+	s.Nodes.cluster = appk8s.NewLocalDriver(client, nil)
 }
 
 // UsePlacementK8sForTest gives the placement service a cluster client.

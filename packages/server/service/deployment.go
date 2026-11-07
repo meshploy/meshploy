@@ -45,6 +45,7 @@ type DeploymentService struct {
 	db        *gorm.DB
 	cfg       *config.Config
 	k8s       kubernetes.Interface // nil when K8s is not configured
+	cluster   appk8s.Driver        // starts builds; nil exactly when k8s is
 	git       *GitIntegrationService
 	varGroups *VariableGroupService
 	notif     *NotificationService
@@ -434,7 +435,7 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 	}
 
 	// Create the build Job.
-	err := appk8s.CreateBuildJob(ctx, s.k8s, appk8s.BuildJobParams{
+	err := s.cluster.StartBuild(ctx, appk8s.BuildJobParams{
 		JobName:        a.jobName,
 		Namespace:      a.namespace,
 		Image:          builderImage,

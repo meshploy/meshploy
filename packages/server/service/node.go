@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"k8s.io/client-go/kubernetes"
@@ -53,6 +54,7 @@ type NodeService struct {
 	headscaleUser string         // HEADSCALE_USER — whose pre-auth keys those are
 	notif         *NotificationService
 	k8s           kubernetes.Interface // nil without a cluster; removal then skips that step
+	cluster       appk8s.Driver        // prunes a node's images; nil exactly when k8s is
 }
 
 // StartNodeMonitor polls Headscale every 2 minutes and dispatches node.offline

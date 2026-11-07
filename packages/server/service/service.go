@@ -62,6 +62,9 @@ type Services struct {
 	Sandbox         *SandboxService
 	K8s             kubernetes.Interface // nil if KUBECONFIG unavailable
 	K8sRestConfig   *rest.Config         // nil if KUBECONFIG unavailable
+	// Cluster makes the host-level pods (builder, image cleanup, node
+	// terminal); nil exactly when K8s is.
+	Cluster appk8s.Driver
 	// DB is the database, for an extension's own tables. Core code goes
 	// through the services above.
 	DB *gorm.DB
@@ -76,6 +79,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	// K8s client is optional - log a warning if not available.
 	var k8sClient kubernetes.Interface
 	var k8sRestCfg *rest.Config
+	var cluster appk8s.Driver
 	if c != nil {
 		var err error
 		k8sClient, k8sRestCfg, err = appk8s.NewClientWithOptions(appk8s.Options{
@@ -92,7 +96,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			// instead of dereferencing a nil clientset and panicking.
 			k8sClient, k8sRestCfg = nil, nil
 		} else {
-			go appk8s.CleanupOrphanedShellPods(context.Background(), k8sClient)
+			cluster = appk8s.NewLocalDriver(k8sClient, k8sRestCfg)
+			go appk8s.CleanupOrphanedShellPods(context.Background(), cluster)
 		}
 	}
 
@@ -235,7 +240,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		nodePortMeshOnly: c != nil && c.NodePortAddresses != ""}
 	projects := &ProjectService{db: db}
 	sandbox := &SandboxService{db: db, k8s: k8sClient}
-	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, git: gitSvc, varGroups: varGroups, notif: notif, sandbox: sandbox}
+	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, cluster: cluster, git: gitSvc, varGroups: varGroups, notif: notif, sandbox: sandbox}
 
 	backups := &BackupService{db: db, k8s: k8sClient, restCfg: k8sRestCfg, cfg: c, sem: make(chan struct{}, maxConcurrentBackups), notif: notif}
 
@@ -260,6 +265,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	}
 	nodes.notif = notif
 	nodes.k8s = k8sClient
+	nodes.cluster = cluster
 	// Workloads need the deployment service to re-apply a Deployment from current
 	// config on start; the two are wired after construction because deployments
 	// is built from workloads' dependencies.
@@ -319,6 +325,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Tickets:       NewTicketService(),
 		K8s:           k8sClient,
 		K8sRestConfig: k8sRestCfg,
+		Cluster:       cluster,
 	}
 
 	// Template service - depends on the stack + route services, so wire it after

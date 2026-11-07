@@ -165,16 +165,16 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 	// ── Create shell pod ──────────────────────────────────────────────────────
 	podName := fmt.Sprintf("meshploy-shell-%s", strings.ReplaceAll(nodeID.String()[:8], "-", ""))
 	// Best-effort delete any leftover pod from a previous session.
-	appk8s.DeleteShellPod(context.Background(), h.svc.K8s, podName)
+	h.svc.Cluster.CloseNodeShell(context.Background(), podName)
 
 	startCtx, cancel := context.WithTimeout(ctx, 30_000_000_000) // 30s
 	defer cancel()
 
-	if _, err := appk8s.CreateShellPod(startCtx, h.svc.K8s, k8sNodeName, podName); err != nil {
+	if _, err := h.svc.Cluster.OpenNodeShell(startCtx, k8sNodeName, podName); err != nil {
 		http.Error(w, fmt.Sprintf("create shell pod: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer appk8s.DeleteShellPod(context.Background(), h.svc.K8s, podName)
+	defer h.svc.Cluster.CloseNodeShell(context.Background(), podName)
 
 	if err := appk8s.WaitForPodRunning(startCtx, h.svc.K8s, podName); err != nil {
 		http.Error(w, fmt.Sprintf("pod not ready: %v", err), http.StatusInternalServerError)
@@ -217,7 +217,7 @@ func (h *Handler) NodeTerminal(w http.ResponseWriter, r *http.Request) {
 
 	// ── Bridge WebSocket ↔ exec ───────────────────────────────────────────────
 	// execCtx is cancelled the moment the WebSocket reader exits (client closed
-	// tab / browser). This unblocks StreamWithContext so the defer DeleteShellPod
+	// tab / browser). This unblocks StreamWithContext so the deferred CloseNodeShell
 	// fires even though gorilla hijacks the connection and r.Context() is never
 	// cancelled by the HTTP server.
 	execCtx, execCancel := context.WithCancel(ctx)

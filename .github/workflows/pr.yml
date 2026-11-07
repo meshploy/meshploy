@@ -20,6 +20,7 @@ jobs:
             apps/api/go.sum
             apps/cli/go.sum
             apps/proxy/go.sum
+            apps/cluster-agent/go.sum
             packages/proxy/go.sum
             packages/db/go.sum
             packages/server/go.sum
@@ -31,7 +32,7 @@ jobs:
       # of the codebase.
       - name: vet all workspace modules
         run: |
-          for m in apps/api apps/cli apps/proxy                    packages/db packages/client packages/mcpserver                    packages/license packages/server packages/help packages/proxy; do
+          for m in apps/api apps/cli apps/cluster-agent apps/proxy                    packages/db packages/client packages/mcpserver                    packages/license packages/server packages/help packages/proxy; do
             echo "::group::go vet $m"
             (cd "$m" && go vet ./...) || exit 1
             echo "::endgroup::"
@@ -141,6 +142,24 @@ jobs:
       # The proxy's code is in packages/proxy; apps/proxy is its one-call main.
       - name: test
         run: cd packages/proxy && go test ./... -v -timeout 60s && cd ../../apps/proxy && go build ./...
+
+  # ── Cluster agent tests ───────────────────────────────────────────────────────
+  # The agent is what stands between a Meshploy API elsewhere and a cluster's
+  # credential: its policy, gate, dry runs and intents. The end-to-end test
+  # needs a real cluster and agent, so it is built here and run by hand.
+  test-cluster-agent:
+    name: Cluster agent tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/cluster-agent/go.mod
+          cache-dependency-path: apps/cluster-agent/go.sum
+
+      - name: test
+        run: cd apps/cluster-agent && go test ./... -race -v -timeout 120s && go vet -tags agente2e ./e2e && go test -tags agente2e -c -o /dev/null ./e2e
 
   # ── Help topics ───────────────────────────────────────────────────────────────
   # The console's help, the docs' Concepts and the MCP server read one text;

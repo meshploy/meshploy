@@ -3,6 +3,7 @@ go 1.25.8
 use (
 	./apps/api
 	./apps/cli
+	./apps/cluster-agent
 	./apps/proxy
 	./packages/client
 	./packages/db
