@@ -1,0 +1,111 @@
+# Meshploy Caddyfile - generated, do not edit.
+#
+# Rendered by `meshploy domain apply` from the edge snapshot at
+# /var/lib/meshploy/host/state/edge.json.
+# Every edit here is lost the next time a base domain is added, removed,
+# verified, or has its DNS mode changed. Put your own configuration in
+# conf.d/*.caddy, which is imported below and never written.
+#
+# Caddy runs with network_mode: host, so every reverse_proxy target is on the
+# loopback address. Written 127.0.0.1, never "localhost": some images map
+# localhost to ::1 alone, and the services behind are published on IPv4.
+#
+# `tls force_automate` on a platform subdomain of an on-demand domain is not
+# decoration. That domain's wildcard is on-demand, so it is never obtained up
+# front, and Caddy prefers a covering wildcard to an individual certificate -
+# leaving the named site in a gap where nothing issues its certificate and the
+# console is unreachable over HTTPS on a fresh install. A delegated domain does
+# not need it: its wildcard is a real certificate that genuinely covers them.
+#
+# An on-demand domain with a DNS provider is arranged as a delegated one is:
+# its wildcards are obtained up front by DNS-01, answered through the
+# provider's API. The token is not in this file. {file.*} names where Caddy
+# reads it, under secrets/, which only root can read.
+
+{
+    on_demand_tls {
+        # One ask endpoint for the whole server, because on_demand_tls is a
+        # global option and cannot vary per site. It approves an active workload
+        # route under any verified base domain, and a verified custom domain -
+        # the two things that may be issued without being named here.
+        # The API runs on another machine and is asked over the mesh. Only a
+        # new hostname needs it: certificates already issued keep serving
+        # while it is away.
+        ask http://100.64.0.1:4000/api/v1/internal/ondemand-tls-check
+    }
+}
+
+# The platform's API, console and Headscale run on another machine, which
+# serves their names itself. This edge serves the apps alone.
+
+# Anything you add yourself. Imported before the site blocks, so a syntax error
+# in it fails the config outright rather than at the first request.
+import conf.d/*.caddy
+
+# ═══ example.com - NS delegation, primary ═══
+
+# ── Public workload routes ───────────────────────────────────────────────────
+# The proxy reads the Host header, looks the route up, and forwards to the
+# target node over the mesh.
+*.example.com {
+    # One wildcard certificate by DNS-01, written into this domain's own
+    # challenge zone.
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.example.com
+        }
+    }
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ── Internal mesh traffic ────────────────────────────────────────────────────
+# Bound to the mesh address, so it is reachable only from inside the mesh.
+*.internal.example.com {
+    bind 100.64.0.2
+    # A public wildcard needs DNS-01, which needs a zone the world can query.
+    # resolvers points CertMagic at the authoritative CoreDNS directly, so no
+    # CNAME is chased and no recursive cache stands in the way.
+    tls {
+        dns meshploy {
+            zone_file_path /etc/coredns/zones/_acme-challenge.internal.example.com
+        }
+        resolvers 203.0.113.10
+    }
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ═══ second.test - on-demand, records through cloudflare ═══
+
+# ── Public workload routes ───────────────────────────────────────────────────
+# The proxy reads the Host header, looks the route up, and forwards to the
+# target node over the mesh.
+*.second.test {
+    # One wildcard certificate by DNS-01, written through the provider.
+    tls {
+        dns cloudflare {file./etc/caddy/secrets/0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90}
+    }
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ── Internal mesh traffic ────────────────────────────────────────────────────
+# Bound to the mesh address, so it is reachable only from inside the mesh.
+*.internal.second.test {
+    bind 100.64.0.2
+    # The challenge record goes in the provider's zone, which the world can
+    # query, so an internal name gets a public certificate like any other.
+    tls {
+        dns cloudflare {file./etc/caddy/secrets/0b6f3c2e-6a1d-4f7e-9a51-2c8d4e7f1a90}
+    }
+    reverse_proxy 127.0.0.1:8081
+}
+
+# ── Custom domains ───────────────────────────────────────────────────────────
+# Any hostname none of the blocks above matched, such as a customer's own domain
+# on a route. The ask endpoint gates issuance, so only a hostname whose
+# ownership was proved gets a certificate.
+:443 {
+    tls {
+        on_demand
+    }
+    reverse_proxy 127.0.0.1:8081
+}

@@ -623,7 +623,8 @@ Verifying a domain, changing its DNS mode or removing one records the new domain
 
 Worker nodes authenticate with a registration or provisioning token rather than a user JWT:
 
-- **Self-register** — called by `install.sh`. Accepts either a `mreg-<hex>` registration token (reusable, org-wide) or a `mprov-<hex>` provisioning token (single-use, with expiry). Creates the node record and returns the node ID.
+- **Self-register** — called by `install.sh`. Accepts either a `mreg-<hex>` registration token (reusable, org-wide) or a `mprov-<hex>` provisioning token (single-use, with expiry). Creates the node record and returns the node ID. A cluster node also gets its k3s join token there; when none can be had the node is registered anyway, with its secret, and `k3s_join_error` says why, since the single-use token it spent cannot register it again.
+- **Provision** (`POST /nodes/provision`): the public call before the mesh, made with a provisioning token. It answers the mesh credentials, the API's own mesh address (`api_mesh_url`, on `API_PORT`), and `cluster_agent: true` for a token minted for the cluster's server, which `install.sh` installs as an edge.
 - **Self-deregister** — called by `uninstall.sh`. Removes the node from Headscale, the k3s cluster, and the database.
 
 ---

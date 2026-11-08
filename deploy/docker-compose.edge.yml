@@ -1,0 +1,85 @@
+# The edge of a cluster whose platform runs on another machine.
+#
+# install.sh runs this file instead of docker-compose.yml for an edge install
+# (`COMPOSE_FILE` in .env names it, so `meshploy domain apply` and the
+# registry's cleanup find it too). Postgres, the API, the console and
+# Headscale are not here: they run where the platform does, which reaches
+# this server over the mesh through its cluster agent. What stays is what
+# visitors and the cluster need from this machine.
+services:
+  # ── CoreDNS ────────────────────────────────────────────────────────────────
+  # The mesh zone on the mesh address, and the challenge zones on the public
+  # one for a delegated domain. The public zone is kept where the platform
+  # runs.
+  coredns:
+    image: docker.io/coredns/coredns:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coredns/Corefile:/etc/coredns/Corefile:ro,z
+      - ./coredns/zones:/etc/coredns/zones:z
+    command: -conf /etc/coredns/Corefile
+
+  # ── Caddy ──────────────────────────────────────────────────────────────────
+  # TLS for the apps, on 80 and 443. Its on-demand checks go to the platform's
+  # API over the mesh.
+  caddy:
+    image: ghcr.io/meshploy/caddy:${MESHPLOY_CHANNEL:-latest}
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      # The whole directory: the generated config imports conf.d/*.caddy,
+      # relative to itself.
+      - ./caddy:/etc/caddy:ro,z
+      - ./coredns/zones:/etc/coredns/zones:z # shared with CoreDNS for ACME TXT records
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # ── Built-in container registry ───────────────────────────────────────────
+  # Builds push here and the cluster's nodes pull, at this server's mesh
+  # address. Insecure HTTP with no sign-in, so never on the public address.
+  registry:
+    image: docker.io/library/registry:2
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    ports:
+      - "127.0.0.1:5000:5000"
+      - "${MESH_IP}:5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry_data:/var/lib/registry
+
+  # ── Meshploy Traffic Proxy ─────────────────────────────────────────────────
+  # No database: it takes the routes, mesh grants and TCP routes from the
+  # platform's API, as the node holding the cluster agent, and serves the
+  # copy it saved while the API is away.
+  proxy:
+    image: ${MESHPLOY_PROXY_IMAGE:-ghcr.io/meshploy/proxy}:${MESHPLOY_CHANNEL:-latest}
+    restart: unless-stopped
+    # Host networking, as on a gateway: a TCP route opens a port the operator
+    # chose. Caddy reaches the proxy on the loopback.
+    network_mode: host
+    environment:
+      PROXY_API_URL: ${MESHPLOY_API_URL}
+      PROXY_NODE_ID: ${NODE_ID}
+      PROXY_NODE_SECRET_FILE: /run/meshploy/node-secret
+      PROXY_PORT: ${PROXY_PORT:-8081}
+      PROXY_BIND: ${PROXY_BIND:-127.0.0.1}
+      MESH_IP: ${MESH_IP}
+      TCP_BIND: ""
+      PROXY_STATE_DIR: /var/lib/meshploy/proxy
+    volumes:
+      - proxy_state:/var/lib/meshploy/proxy
+      # The node's secret, which registration handed the cluster agent. The
+      # proxy proves with it that it is this edge's.
+      - /var/lib/meshploy/cluster-agent/node-secret:/run/meshploy/node-secret:ro,z
+
+volumes:
+  registry_data:
+  proxy_state:
+  caddy_data:
+  caddy_config:

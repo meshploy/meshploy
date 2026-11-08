@@ -38,9 +38,18 @@
         # global option and cannot vary per site. It approves an active workload
         # route under any verified base domain, and a verified custom domain -
         # the two things that may be issued without being named here.
-        ask http://127.0.0.1:4000/api/v1/internal/ondemand-tls-check
+{{- if .PlatformElsewhere }}
+        # The API runs on another machine and is asked over the mesh. Only a
+        # new hostname needs it: certificates already issued keep serving
+        # while it is away.
+{{- end }}
+        ask {{ .API }}/api/v1/internal/ondemand-tls-check
     }
 }
+{{ if .PlatformElsewhere }}
+# The platform's API, console and Headscale run on another machine, which
+# serves their names itself. This edge serves the apps alone.
+{{ else }}
 
 # Security headers for the platform's own names, never for a workload route:
 # those answer with whatever their app sends.
@@ -101,6 +110,7 @@
         reverse_proxy 127.0.0.1:5173
     }
 }
+{{ end }}
 
 # Anything you add yourself. Imported before the site blocks, so a syntax error
 # in it fails the config outright rather than at the first request.
@@ -111,7 +121,7 @@ import conf.d/*.caddy
 # No longer primary, and still serving the platform's names: this console may
 # be the one in use, and workers joined the mesh through this headscale name.
 # They stop when the domain is retired and removed.
-{{ end }}{{ if .Platform }}
+{{ end }}{{ if $.PlatformElsewhere }}{{ else if .Platform }}
 # ── Headscale control plane ──────────────────────────────────────────────────
 headscale.{{ .BaseDomain }} {
 {{- template "named_tls" . }}

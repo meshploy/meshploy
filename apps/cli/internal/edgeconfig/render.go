@@ -72,7 +72,15 @@ type caddyData struct {
 	ConsoleNames []string
 	// Served as the console is, each with its own certificate.
 	ProjectConsoleNames []string
+	// The platform runs on another machine: none of its names are served
+	// here, and API is that machine's API on the mesh.
+	PlatformElsewhere bool
+	// Where the on-demand ask endpoint is, http://<address>:<port>.
+	API string
 }
+
+// localAPI is the gateway's own API, on the loopback.
+const localAPI = "http://127.0.0.1:4000"
 
 // HeadscaleConfig is the one generated file that is not reloaded in place:
 // Headscale reads its configuration at start, so a change to it means a
@@ -118,6 +126,10 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 		ProxyPort: snap.ProxyPortOrDefault(), HeadscalePort: snap.HeadscalePortOrDefault(),
 		ACMEEmail:    snap.ACMEEmail,
 		ConsoleNames: snap.ConsoleNames, ProjectConsoleNames: snap.ProjectConsoleNames,
+		PlatformElsewhere: snap.PlatformElsewhere, API: localAPI,
+	}
+	if snap.PlatformElsewhere {
+		data.API = snap.PlatformAPI
 	}
 	caddyfile, err := execute(tmpl, "Caddyfile.tmpl", data)
 	if err != nil {
@@ -163,9 +175,15 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 		// real provider - a disagreement that is unpleasant to find. They are
 		// not kept against a later mode switch either: that switch re-renders,
 		// and they appear then.
+		//
+		// An edge whose platform runs elsewhere serves no public zone either:
+		// it is kept where the platform runs, and only the challenge zones are
+		// delegated here.
 		if d.DNSMode == hostagent.EdgeDNSDelegation {
+			if !snap.PlatformElsewhere {
+				zones = append(zones, zoneFile{name: d.BaseDomain, tmpl: "zone_public.tmpl"})
+			}
 			zones = append(zones,
-				zoneFile{name: d.BaseDomain, tmpl: "zone_public.tmpl"},
 				zoneFile{name: "_acme-challenge." + d.BaseDomain, tmpl: "zone_acme.tmpl"},
 				zoneFile{name: "_acme-challenge." + internal, tmpl: "zone_acme.tmpl"},
 			)

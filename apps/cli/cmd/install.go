@@ -18,7 +18,8 @@ var installCmd = &cobra.Command{
 
 Available components:
   node-exporter    Prometheus node_exporter for live CPU/memory/disk/network metrics
-  sandbox          gVisor, so sandboxed projects can run on this node`,
+  sandbox          gVisor, so sandboxed projects can run on this node
+  cluster-agent    the agent an API elsewhere reaches this cluster through`,
 }
 
 var installNodeExporterCmd = &cobra.Command{

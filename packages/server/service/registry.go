@@ -55,6 +55,36 @@ func (s *RegistryService) Delete(ctx context.Context, id, orgID uuid.UUID) error
 		Delete(&db.RegistryIntegration{}).Error
 }
 
+// SyncEdgeBuiltin points every organisation's built-in registry at the edge's,
+// on an API that reaches its cluster through a cluster agent: the registry runs
+// on the edge, at its mesh address, and builds push there and nodes pull from
+// there. Made when missing, and moved when the edge's address changed.
+func (s *RegistryService) SyncEdgeBuiltin(ctx context.Context) error {
+	var edge []db.Node
+	if err := s.db.WithContext(ctx).Where("cluster_agent_cert <> ''").Limit(1).Find(&edge).Error; err != nil {
+		return err
+	}
+	if len(edge) == 0 || edge[0].TailscaleIP == "" {
+		return nil
+	}
+	endpoint := edge[0].TailscaleIP + ":5000"
+	var orgs []db.Organization
+	if err := s.db.WithContext(ctx).Find(&orgs).Error; err != nil {
+		return err
+	}
+	for _, org := range orgs {
+		if err := s.SeedBuiltin(ctx, org.ID, endpoint); err != nil {
+			return err
+		}
+		if err := s.db.WithContext(ctx).Model(&db.RegistryIntegration{}).
+			Where("organization_id = ? AND provider = ? AND endpoint <> ?", org.ID, db.RegistryBuiltin, endpoint).
+			Updates(map[string]any{"endpoint": endpoint, "namespace": endpoint}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SeedBuiltin ensures a built-in registry row exists for the given org.
 // It is idempotent - calling it multiple times is safe.
 func (s *RegistryService) SeedBuiltin(ctx context.Context, orgID uuid.UUID, endpoint string) error {

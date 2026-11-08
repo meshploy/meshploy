@@ -6,6 +6,11 @@
 {{ range .Domains }}
 # ═══ {{ .BaseDomain }} - {{ if eq .DNSMode "delegation" }}NS delegation{{ else }}on-demand TLS{{ end }} ═══
 {{ if eq .DNSMode "delegation" }}
+{{- if $.PlatformElsewhere }}
+# The public zone is kept where the platform runs, which names the platform's
+# subdomains and points the apps here. Only the challenge zones are delegated
+# to this edge, for the wildcard certificates its Caddy obtains.
+{{- else }}
 # Public zone - answers internet queries (browsers, Let's Encrypt).
 {{ .BaseDomain }}:53 {
     bind {{ $.PublicIP }}
@@ -14,6 +19,7 @@
     log
     errors
 }
+{{- end }}
 
 # ACME challenge delegation zone. Let's Encrypt queries this during DNS-01
 # verification; the Caddy DNS module writes TXT records here and removes them

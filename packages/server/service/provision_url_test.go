@@ -63,6 +63,8 @@ func TestProvisionHandsOutThePublicControlURL(t *testing.T) {
 	assert.Equal(t, "https://headscale.install.test", out.HeadscaleURL)
 	assert.NotEqual(t, hs.URL, out.HeadscaleURL, "never the API's own address for Headscale")
 	assert.Equal(t, "hskey-test", out.PreAuthKey)
+	assert.False(t, out.ClusterAgent, "a worker's token")
+	assert.Equal(t, "http://100.64.0.1:4000", out.APIMeshURL)
 
 	// And it follows the primary, which can move.
 	second, err := svcs.Domains.Create(ctx, org.ID, "new.test", meshdb.DNSModeDelegation)
@@ -75,6 +77,15 @@ func TestProvisionHandsOutThePublicControlURL(t *testing.T) {
 	out, err = svcs.Nodes.Provision(ctx, tok)
 	require.NoError(t, err)
 	assert.Equal(t, "https://headscale.new.test", out.HeadscaleURL)
+
+	// A token for the server that holds the cluster says so, and the machine
+	// installs as an edge.
+	tok, row, err := svcs.Nodes.CreateProvisioningToken(ctx, org.ID, "edge", nil)
+	require.NoError(t, err)
+	require.NoError(t, gdb.Model(row).Update("cluster_agent", true).Error)
+	out, err = svcs.Nodes.Provision(ctx, tok)
+	require.NoError(t, err)
+	assert.True(t, out.ClusterAgent)
 }
 
 // With no domain at all there is nothing public to join through. Saying so

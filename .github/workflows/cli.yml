@@ -6,6 +6,9 @@ on:
     paths:
       - "apps/cli/**"
       - "packages/hostagent/**"
+      # The cluster agent is published with the CLI, which installs it.
+      - "apps/cluster-agent/**"
+      - "packages/server/**"
       - "deploy/tailscale/**"
       - "go.work"
       - "go.work.sum"
@@ -62,11 +65,24 @@ jobs:
           fi
           go build -ldflags="${LDFLAGS}" -o "meshploy-${{ matrix.goos }}-${{ matrix.goarch }}" .
 
+      # The cluster agent, which the CLI installs on an edge, from the same
+      # release so the two always match.
+      - name: Build the cluster agent
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          cd apps/cluster-agent
+          go build -ldflags="-s -w" -o "../cli/meshploy-cluster-agent-${{ matrix.goos }}-${{ matrix.goarch }}" .
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: meshploy-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: apps/cli/meshploy-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            apps/cli/meshploy-${{ matrix.goos }}-${{ matrix.goarch }}
+            apps/cli/meshploy-cluster-agent-${{ matrix.goos }}-${{ matrix.goarch }}
 
   # Meshploy's own tailscaled and tailscale: Tailscale's source at the pinned
   # version with meshploy.patch, so the mesh can run beside a Tailscale the
@@ -112,7 +128,7 @@ jobs:
 
       # The licences of what the binary bundles travel with the binary.
       - name: Add licence and notices
-        run: cp LICENSE NOTICE notices/THIRD-PARTY-NOTICES-cli.md dist/
+        run: cp LICENSE NOTICE notices/THIRD-PARTY-NOTICES-cli.md notices/THIRD-PARTY-NOTICES-cluster-agent.md dist/
 
       # Published beside the binaries so `meshploy update` and get.sh can check
       # a download against it. It comes from the same release, so it catches a

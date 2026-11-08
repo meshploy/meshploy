@@ -50,6 +50,14 @@ func reserved(d hostagent.EdgeDomain) hostagent.EdgeDomain {
 	return d
 }
 
+// elsewhere is an edge whose platform runs on another machine.
+func elsewhere(s hostagent.EdgeSnapshot) hostagent.EdgeSnapshot {
+	s.MeshIP = "100.64.0.2"
+	s.PlatformElsewhere = true
+	s.PlatformAPI = "http://100.64.0.1:4000"
+	return s
+}
+
 // withACMEEmail adds ZeroSSL as the second issuer.
 func withACMEEmail(s hostagent.EdgeSnapshot) hostagent.EdgeSnapshot {
 	s.ACMEEmail = "ops@example.com"
@@ -79,6 +87,11 @@ func TestRenderMatchesGolden(t *testing.T) {
 			domain("pool.example.com", hostagent.EdgeDNSOnDemand, true),
 			reserved(withProvider(domain("acme.eu.example.com", hostagent.EdgeDNSOnDemand, false))),
 		), "apps")},
+		// An edge whose platform runs on another machine: the apps alone.
+		{"elsewhere", elsewhere(snapshot(
+			domain("example.com", hostagent.EdgeDNSDelegation, true),
+			withProvider(domain("second.test", hostagent.EdgeDNSOnDemand, false)),
+		))},
 		{"provider", withACMEEmail(snapshot(
 			withProvider(domain("example.com", hostagent.EdgeDNSOnDemand, true)),
 			domain("second.test", hostagent.EdgeDNSOnDemand, false),
@@ -396,7 +409,7 @@ func TestGoldenCaddyfilesAreValid(t *testing.T) {
 	if err != nil {
 		t.Skip("no caddy on PATH; see the comment above for the container command")
 	}
-	for _, c := range []string{"delegation", "ondemand", "mixed"} {
+	for _, c := range []string{"delegation", "ondemand", "mixed", "elsewhere"} {
 		t.Run(c, func(t *testing.T) {
 			cmd := exec.Command(caddy, "validate",
 				"--config", filepath.Join("testdata", c, "caddy", "Caddyfile"),
@@ -428,14 +441,50 @@ func TestHeadscaleSendsEveryInternalZoneToTheMesh(t *testing.T) {
 // configuration is not rendered there, so an apply never writes or restarts
 // one. Caddy and CoreDNS are rendered as before.
 func TestAnEdgeWithThePlatformElsewhereRendersNoHeadscale(t *testing.T) {
-	snap := snapshot(domain("example.com", hostagent.EdgeDNSDelegation, true))
-	snap.PlatformElsewhere = true
-	files, err := Render(snap)
+	files, err := Render(elsewhere(snapshot(domain("example.com", hostagent.EdgeDNSDelegation, true))))
 	require.NoError(t, err)
 	assert.NotContains(t, files, HeadscaleConfig)
 	assert.Contains(t, files, "caddy/Caddyfile")
 	assert.Contains(t, files, "coredns/Corefile")
 	assert.Contains(t, files, "coredns/zones/internal.example.com")
+}
+
+// The platform's names are the other machine's to serve, and its public zone
+// is kept there: the edge serves the apps, asks the API over the mesh before
+// issuing a certificate on demand, and answers only the challenge zones.
+func TestAnEdgeWithThePlatformElsewhereServesTheAppsAlone(t *testing.T) {
+	files, err := Render(withConsoleNames(elsewhere(snapshot(
+		domain("example.com", hostagent.EdgeDNSDelegation, true),
+		reserved(withProvider(domain("acme.test", hostagent.EdgeDNSOnDemand, false))),
+	)), "apps"))
+	require.NoError(t, err)
+	caddy := files["caddy/Caddyfile"]
+	for _, gone := range []string{"127.0.0.1:4000", "127.0.0.1:5173", "headscale.example.com", "api.example.com", "console.example.com", "apps.acme.test", "console_site"} {
+		assert.NotContains(t, caddy, gone)
+	}
+	assert.Contains(t, caddy, "ask http://100.64.0.1:4000/api/v1/internal/ondemand-tls-check")
+	assert.Contains(t, caddy, "*.example.com {")
+	assert.Contains(t, caddy, "*.internal.example.com {\n    bind 100.64.0.2")
+
+	assert.NotContains(t, files, "coredns/zones/example.com")
+	assert.Contains(t, files, "coredns/zones/_acme-challenge.example.com")
+	assert.Contains(t, files, "coredns/zones/_acme-challenge.internal.example.com")
+	assert.NotContains(t, files["coredns/Corefile"], "\nexample.com:53")
+}
+
+// The API is named exactly when the platform runs elsewhere, and only as an
+// address and port: it is written into the Caddyfile as it is.
+func TestThePlatformsAPIIsAnAddressOnTheMesh(t *testing.T) {
+	base := elsewhere(snapshot(domain("example.com", hostagent.EdgeDNSDelegation, true)))
+	require.NoError(t, base.Validate())
+	for _, bad := range []string{"", "https://100.64.0.1:4000", "http://brain.example.com:4000", "http://100.64.0.1", "http://100.64.0.1:4000/x", "http://100.64.0.1:4000 {", "http://u@100.64.0.1:4000"} {
+		s := base
+		s.PlatformAPI = bad
+		assert.Error(t, s.Validate(), "%q", bad)
+	}
+	gateway := snapshot(domain("example.com", hostagent.EdgeDNSDelegation, true))
+	gateway.PlatformAPI = "http://100.64.0.1:4000"
+	assert.Error(t, gateway.Validate(), "a gateway's own API is on the loopback")
 }
 
 // Moving the primary moves where Headscale says it lives, and nothing that

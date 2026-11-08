@@ -51,7 +51,7 @@ func (s *DeploymentService) RequestRegistryGCNow(ctx context.Context) (bool, err
 // with now set. True when one is waiting for the host agent.
 func (s *DeploymentService) requestRegistryGC(ctx context.Context, now time.Time, force bool) (bool, error) {
 	host := hostFolder(s.host, s.cfg)
-	if host == nil || s.cfg == nil || s.cfg.BuiltinRegistryEndpoint == "" {
+	if host == nil || s.cfg == nil || (s.cfg.BuiltinRegistryEndpoint == "" && !s.cfg.ClusterAgent) {
 		return false, nil
 	}
 	pending, err := hostagent.PendingRequests(host)

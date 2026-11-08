@@ -623,6 +623,52 @@ mesh_install() {
 mesh_ip() { "${MESH_CMD[@]}" ip -4 2>/dev/null | head -1 || true; }
 mesh_detect_legacy
 
+# install_node_exporter_on_mesh <mesh ip> runs node_exporter on this machine's
+# mesh address only, where the platform scrapes it: never the public one.
+install_node_exporter_on_mesh() {
+  header "Installing node_exporter"
+  if systemctl is-active --quiet node_exporter 2>/dev/null; then
+    success "node_exporter already running — skipping"
+  else
+    _NE_VERSION="1.8.2"
+    _NE_ARCH="$(uname -m)"
+    case "$_NE_ARCH" in
+      x86_64)  _NE_ARCH="amd64" ;;
+      aarch64) _NE_ARCH="arm64" ;;
+      *) warn "Unsupported arch '$_NE_ARCH' — skipping node_exporter install"; _NE_ARCH="" ;;
+    esac
+
+    if [[ -n "$_NE_ARCH" ]]; then
+      _NE_TARBALL="node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}.tar.gz"
+      _NE_URL="https://github.com/prometheus/node_exporter/releases/download/v${_NE_VERSION}/${_NE_TARBALL}"
+      info "Downloading node_exporter ${_NE_VERSION} (${_NE_ARCH})…"
+      curl -fsSL "$_NE_URL" -o "/tmp/${_NE_TARBALL}"
+      tar xzf "/tmp/${_NE_TARBALL}" -C /tmp
+      sudo install -m 755 "/tmp/node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}/node_exporter" /usr/local/bin/node_exporter
+      rm -rf "/tmp/node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}" "/tmp/${_NE_TARBALL}"
+
+      sudo tee /etc/systemd/system/node_exporter.service > /dev/null <<NEUNIT
+[Unit]
+Description=Prometheus node_exporter
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/node_exporter --web.listen-address=${1}:9100
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+NEUNIT
+
+      sudo systemctl daemon-reload
+      sudo systemctl enable --now node_exporter
+      success "node_exporter running on ${1}:9100"
+    fi
+  fi
+}
+
 # ── Banner ────────────────────────────────────────────────────────────────────
 # Tolerated: `clear` fails when there is no terminal to clear - an install run
 # over ssh without a tty, or from a script - and under `set -e` that ended the
@@ -747,6 +793,141 @@ success "Host gateway IP (${CONTAINER_RUNTIME} bridge): ${BOLD}${HOST_GATEWAY_IP
 
 cd "$SCRIPT_DIR"
 
+# join_mesh joins this machine to the platform's Headscale (HEADSCALE_URL,
+# PREAUTH_KEY) as NODE_HOSTNAME and waits for its address, MESH_IP_ASSIGNED.
+join_mesh() {
+  header "Joining the Meshploy mesh"
+  # A rerun on the mesh its token provisioned stays on it: the key that
+  # joined it is spent, and the token does not mint another.
+  # The mesh install may have just restarted the daemon, so its address can
+  # take a moment to come back.
+  if [[ -n "${MESH_JOINED:-}" ]]; then
+    MESH_IP_ASSIGNED=""
+    for _i in $(seq 1 30); do
+      MESH_IP_ASSIGNED="$(mesh_ip)"
+      [[ -n "$MESH_IP_ASSIGNED" ]] && break
+      sleep 1
+    done
+    [[ -n "$MESH_IP_ASSIGNED" ]] || die "This machine left the mesh its token provisioned. Mint a new token and run again."
+    success "Already on the mesh as '${NODE_HOSTNAME}' — mesh IP: ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
+    return
+  fi
+  info "Connecting to ${HEADSCALE_URL}…"
+
+  # Warn if already connected to a *different* login server so the user can decide
+  # whether to switch. --force-reauth is always passed unconditionally below because
+  # tailscale refuses to re-authenticate with an authkey without it, even when the
+  # login server hasn't changed.
+  # Only the stock tailscale0 can be on another network already: Meshploy's own
+  # daemon is this mesh's alone, and a Tailscale of the machine's own is left
+  # where it is.
+  EXISTING_URL=""
+  if [[ "$MESH_IFACE" == "tailscale0" ]]; then
+    EXISTING_URL="$(tailscale status --json 2>/dev/null | grep -m1 '"LoginServerURL"' | cut -d'"' -f4 || true)"
+  fi
+  if [[ -n "$EXISTING_URL" && "$EXISTING_URL" != "$HEADSCALE_URL" ]]; then
+    warn "This node is connected to a different network: ${EXISTING_URL}"
+    warn "Switching to ${HEADSCALE_URL} — it will disconnect from the current network."
+    warn "To rejoin it later: tailscale up --login-server=${EXISTING_URL} --force-reauth"
+    echo
+    if ! ask_yn "Switch networks and join the Meshploy mesh?"; then
+      die "Aborted — node not joined to mesh."
+    fi
+  fi
+
+  # --force-reauth re-authenticates silently with the authkey (no browser).
+  # --reset clears any pre-existing non-default settings (e.g. exit-node,
+  # shields-up) that would cause tailscale to reject the up command.
+  sudo "${MESH_CMD[@]}" up \
+    --login-server="$HEADSCALE_URL" \
+    --authkey="$PREAUTH_KEY" \
+    --hostname="$NODE_HOSTNAME" \
+    --accept-routes \
+    --force-reauth \
+    --reset \
+    || die "Joining the mesh failed. Check: sudo ${MESH_CMD[*]} status"
+
+  # Wait up to 15 s for the WireGuard IP to be assigned.
+  MESH_IP_ASSIGNED=""
+  for _i in $(seq 1 15); do
+    MESH_IP_ASSIGNED="$(mesh_ip)"
+    [[ -n "$MESH_IP_ASSIGNED" ]] && break
+    sleep 1
+  done
+  if [[ -z "$MESH_IP_ASSIGNED" ]]; then
+    die "No mesh IP assigned after 15 s. Check: sudo ${MESH_CMD[*]} status"
+  fi
+  success "Joined mesh as '${NODE_HOSTNAME}' — mesh IP: ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
+}
+
+# provision_with_token asks the platform, with the provisioning token, for what
+# this machine needs to reach the mesh, and what it is: a token minted for the
+# cluster's server and its agent makes it the edge, any other a worker.
+#
+# Only the mesh credentials come back here. The k3s join token is asked for
+# later, from inside the mesh, where this machine has had to prove it got
+# there - so a token that leaks costs an unknown peer on the mesh and not the
+# cluster's own key.
+#
+# The platform answers a token once, so the answer is kept, without its mesh
+# key, in PROVISION_STATE (root only). A rerun with the same token on a machine
+# that reached the mesh with it carries on from the kept answer: registration
+# is what spends the token, and it may be the step that failed.
+PROVISION_STATE=/var/lib/meshploy/provisioned.json
+provision_with_token() {
+  [[ -n "$MESHPLOY_API_BASE" ]] || die "A provisioning token needs the gateway's address: pass --api=https://api.<your-domain>"
+  _TOKEN_SUM="$(printf '%s' "$PROVISION_TOKEN" | sha256sum | cut -d' ' -f1)"
+  _PROV=""
+  MESH_JOINED=""
+  if sudo test -f "$PROVISION_STATE"; then
+    _SAVED="$(sudo cat "$PROVISION_STATE")"
+    _SAVED_SUM="$(echo "$_SAVED" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token_sha256',''))" 2>/dev/null || true)"
+    _SAVED_API="$(echo "$_SAVED" | python3 -c "import sys,json; print(json.load(sys.stdin).get('api_mesh_url',''))" 2>/dev/null || true)"
+    # On the mesh it was given, the platform's API answers at its mesh address.
+    if [[ "$_SAVED_SUM" == "$_TOKEN_SUM" && -n "$_SAVED_API" && -n "$(mesh_ip)" ]] \
+      && curl -s --max-time 5 -o /dev/null "${_SAVED_API}/health"; then
+      _PROV="$_SAVED"
+      MESH_JOINED=1
+      info "This machine is on the mesh this token provisioned: carrying on from there"
+    fi
+  fi
+  if [[ -z "$_PROV" ]]; then
+    info "Asking ${MESHPLOY_API_BASE} for this machine's mesh credentials…"
+    _PROV="$(curl -s --max-time 20 \
+      -X POST "${MESHPLOY_API_BASE}/api/v1/nodes/provision" \
+      -H "Content-Type: application/json" \
+      -d "{\"token\":\"${PROVISION_TOKEN}\"}" 2>&1 || true)"
+  fi
+
+  HEADSCALE_URL="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('headscale_url',''))" 2>/dev/null || true)"
+  PREAUTH_KEY="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('preauth_key',''))" 2>/dev/null || true)"
+  _PROV_API="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('api_mesh_url',''))" 2>/dev/null || true)"
+  _PROV_ROLE="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mesh_role',''))" 2>/dev/null || true)"
+
+  if [[ -z "$HEADSCALE_URL" || ( -z "$PREAUTH_KEY" && -z "$MESH_JOINED" ) ]]; then
+    # The API answers the same 401 for every bad token on purpose, so there is
+    # nothing more specific to report than what it said.
+    die "The gateway refused this provisioning token. Response: ${_PROV:-<no response>}"
+  fi
+  if [[ -z "$MESH_JOINED" ]]; then
+    sudo mkdir -p "$(dirname "$PROVISION_STATE")"
+    echo "$_PROV" | _TOKEN_SUM="$_TOKEN_SUM" python3 -c "import sys,json,os; d=json.load(sys.stdin); d.pop('preauth_key',None); d['token_sha256']=os.environ['_TOKEN_SUM']; print(json.dumps(d))" \
+      | sudo sh -c "umask 077; cat > '$PROVISION_STATE'"
+  fi
+  MESHPLOY_TOKEN="$PROVISION_TOKEN"
+  [[ -n "$_PROV_API" ]]  && MESHPLOY_API_URL="$_PROV_API"
+  [[ -n "$_PROV_ROLE" ]] && NODE_ROLE_FLAG="${NODE_ROLE_FLAG:-$_PROV_ROLE}"
+  _PROV_EDGE="$(echo "$_PROV" | python3 -c "import sys,json; print('yes' if json.load(sys.stdin).get('cluster_agent') else '')" 2>/dev/null || true)"
+  if [[ -n "$_PROV_EDGE" ]]; then
+    NODE_TYPE="edge"
+    success "Provisioned: mesh at ${HEADSCALE_URL}, installing as the cluster's edge"
+  else
+    success "Provisioned: mesh at ${HEADSCALE_URL}, joining as ${_PROV_ROLE:-workload_builder}"
+  fi
+}
+
+[[ -n "$PROVISION_TOKEN" ]] && provision_with_token
+
 # ── Node type ─────────────────────────────────────────────────────────────────
 header "Node type"
 echo
@@ -757,6 +938,8 @@ if $AUTO_MODE && [[ -n "${NODE_TYPE:-}" ]]; then
   case "$NODE_TYPE" in
     1|master|Master) NODE_TYPE="master" ;;
     2|worker|Worker) NODE_TYPE="worker" ;;
+    edge) [[ -n "$PROVISION_TOKEN" ]] || die "An edge installs with a provisioning token made for it: pass --token=mprov-..."
+          NODE_TYPE="edge" ;;
     *) die "Auto mode: NODE_TYPE must be 'master' or 'worker', got: '$NODE_TYPE'" ;;
   esac
   info "Auto: node type → $NODE_TYPE"
@@ -1809,43 +1992,215 @@ NEUNIT
 # =============================================================================
 #  WORKER
 # =============================================================================
+elif [[ "$NODE_TYPE" == "edge" ]]; then
+  # ===========================================================================
+  #  EDGE: the cluster's server, for a platform that runs on another machine
+  # ===========================================================================
+  # The platform (API, console, Postgres, Headscale) runs elsewhere and reaches
+  # this cluster only through the cluster agent installed here, over the mesh.
+  # This server keeps what visitors and the cluster need from it: Caddy,
+  # CoreDNS, the proxy and the registry, and the k3s server.
+  header "Edge configuration"
+  [[ -f "$SCRIPT_DIR/docker-compose.edge.yml" ]] \
+    || die "The edge's compose file is missing: run the install through get.sh, which fetches it."
+  [[ -n "${MESHPLOY_API_URL:-}" ]] || die "The platform did not say where its API answers on the mesh."
+  # Its address on the mesh, the only caller the cluster agent answers.
+  PLATFORM_MESH_IP="$(echo "$MESHPLOY_API_URL" | sed -E 's|^https?://||; s|[:/].*$||')"
+
+  # A re-run finds its own k3s, Caddy and CoreDNS on these ports.
+  if ! $REINSTALL && [[ "$(read_env MESHPLOY_INSTALL)" != "edge" ]]; then
+    for _port in 80 443 53 6443; do
+      if port_in_use "$_port"; then
+        die "Port ${_port} is already in use on this server, and the edge needs it. Free it and re-run."
+      fi
+    done
+    success "Ports 80, 443, 53 and 6443 are free"
+  fi
+
+  # The public ports, and what the firewall was found to be (FIREWALL_STATE).
+  if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    for _p in 80/tcp 443/tcp 53/tcp 53/udp; do
+      ufw allow "$_p" comment "Meshploy" >/dev/null 2>&1 || true
+    done
+    FIREWALL_STATE="ufw"
+    success "UFW: 80/tcp, 443/tcp, 53 (TCP+UDP) opened"
+  elif command -v firewall-cmd &>/dev/null && firewall-cmd --state 2>/dev/null | grep -q "running"; then
+    firewall-cmd --permanent --add-service=http  >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-service=https >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-service=dns   >/dev/null 2>&1 || true
+    firewall-cmd --reload >/dev/null 2>&1
+    FIREWALL_STATE="firewalld"
+    success "firewalld: http, https, dns opened"
+  else
+    FIREWALL_STATE="none"
+    info "No active firewall detected: skipping public port rules."
+  fi
+  FIREWALL_CHECKED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  PUBLIC_IP="${PUBLIC_IP:-$(curl -4 -fsSL --max-time 10 https://ifconfig.me 2>/dev/null || true)}"
+  [[ -n "$PUBLIC_IP" ]] || die "This server's public address could not be found: set PUBLIC_IP and re-run."
+  success "Public address: ${BOLD}${PUBLIC_IP}${RESET}"
+
+  # ── The mesh ────────────────────────────────────────────────────────────────
+  header "Installing the mesh"
+  mesh_install
+  NODE_HOSTNAME="$(hostname -s | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
+  join_mesh
+  MESH_IP="$MESH_IP_ASSIGNED"
+
+  # Caddy and CoreDNS bind the mesh address, which after a reboot exists only
+  # once the mesh is up again.
+  if [[ "$(sysctl -n net.ipv4.ip_nonlocal_bind 2>/dev/null || echo 0)" != "1" ]]; then
+    echo "net.ipv4.ip_nonlocal_bind = 1" > /etc/sysctl.d/99-meshploy-nonlocal-bind.conf
+    sysctl -q -w net.ipv4.ip_nonlocal_bind=1 || true
+  fi
+
+  # ── k3s server ──────────────────────────────────────────────────────────────
+  # The mesh is up already, so the pod network and published ports are pinned
+  # to it from the first start (a gateway has to do this afterwards).
+  header "Installing k3s"
+  cap_journal
+  configure_pod_dns
+  configure_image_cleanup
+  mkdir -p /etc/rancher/k3s
+  printf 'mirrors:\n  "%s:5000":\n    endpoint:\n      - "http://%s:5000"\n' "$MESH_IP" "$MESH_IP" \
+    > /etc/rancher/k3s/registries.yaml
+  if command -v k3s &>/dev/null && systemctl is-active --quiet k3s 2>/dev/null; then
+    success "k3s server already running: $(k3s --version | head -1)"
+  else
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${K3S_VERSION:-}" INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb --node-ip=${MESH_IP} --flannel-iface=${MESH_IFACE} --tls-san=${MESH_IP} --secrets-encryption --kube-proxy-arg=nodeport-addresses=${NODEPORT_CIDRS}" sh - \
+      || die "k3s did not install. Check: journalctl -u k3s"
+    success "k3s server installed and started"
+  fi
+  _K3S_WAITED=0
+  until k3s kubectl get --raw='/readyz' &>/dev/null; do
+    sleep 3; _K3S_WAITED=$((_K3S_WAITED+3))
+    [[ $_K3S_WAITED -ge 120 ]] && die "k3s is not ready after 120s. Check: journalctl -u k3s"
+    wait_dot "Waiting for k3s" "$_K3S_WAITED"
+  done
+  success "k3s is ready"
+
+  # ── .env ────────────────────────────────────────────────────────────────────
+  # What the host agent reports to the platform (facts.json) and what the
+  # edge's compose file reads.
+  header "Writing configuration files"
+  choose_local_port PROXY_PORT 8081
+  set_env MESHPLOY_INSTALL     "edge"
+  set_env COMPOSE_FILE         "docker-compose.edge.yml"
+  set_env PUBLIC_IP            "${PUBLIC_IP}"
+  set_env MESH_IP              "${MESH_IP}"
+  set_env GATEWAY_HOSTNAME     "$(hostname)"
+  set_env MESHPLOY_API_URL     "${MESHPLOY_API_URL}"
+  set_env CONTAINER_RUNTIME    "${CONTAINER_RUNTIME}"
+  set_env FIREWALL_STATE       "${FIREWALL_STATE}"
+  set_env FIREWALL_CHECKED_AT  "${FIREWALL_CHECKED_AT}"
+  set_env NODEPORT_ADDRESSES   "${NODEPORT_CIDRS}"
+  set_env PROXY_PORT           "${PROXY_PORT}"
+  set_env MESHPLOY_CHANNEL     "${MESHPLOY_CHANNEL:-latest}"
+  success "Wrote $(pwd)/.env"
+
+  # ── The registry and the host agent ─────────────────────────────────────────
+  # Up before registering: the platform reads the host agent's report the
+  # moment the agent is set, and hands it the domains to serve.
+  header "Starting the registry and the host agent"
+  $COMPOSE_CMD -f docker-compose.edge.yml up -d registry || die "The registry did not start."
+  ensure_cli
+  "$MESHPLOY_CLI" host start >/dev/null || die "The host agent did not start. Check: journalctl -u meshployd"
+  success "Registry and host agent running"
+
+  # ── The cluster agent ───────────────────────────────────────────────────────
+  # Holds this cluster's credential and answers the platform's API alone, over
+  # the mesh. Its key never leaves this machine.
+  header "Starting the cluster agent"
+  "$MESHPLOY_CLI" install cluster-agent ${MESHPLOY_CLUSTER_AGENT_FROM:+--from "$MESHPLOY_CLUSTER_AGENT_FROM"} \
+    || die "The cluster agent could not be installed."
+  /usr/local/bin/meshploy-cluster-agent init >/dev/null || die "The cluster agent's identity could not be made."
+  cat > /etc/systemd/system/meshploy-cluster-agent.service <<AGENTUNIT
+[Unit]
+Description=Meshploy cluster agent: the platform's API reaches this cluster through it
+Wants=meshploy-tailscaled.service k3s.service
+After=meshploy-tailscaled.service k3s.service
+
+[Service]
+ExecStart=/usr/local/bin/meshploy-cluster-agent serve -listen ${MESH_IP}:7443 -api ${PLATFORM_MESH_IP}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+AGENTUNIT
+  systemctl daemon-reload
+  systemctl enable meshploy-cluster-agent >/dev/null 2>&1
+  systemctl restart meshploy-cluster-agent
+  success "Cluster agent serving the platform at ${MESH_IP}:7443"
+
+  # ── Registration ────────────────────────────────────────────────────────────
+  header "Registering with the platform"
+  _REG_WAITED=0
+  until curl -s --max-time 4 -o /dev/null "${MESHPLOY_API_URL}/health"; do
+    sleep 5; _REG_WAITED=$((_REG_WAITED+5))
+    [[ $_REG_WAITED -ge 60 ]] && die "The platform's API is not reachable at ${MESHPLOY_API_URL} over the mesh."
+  done
+  # Registered already, by a run that failed after it: the token is spent, and
+  # the node and its secret are this machine's.
+  NODE_ID="$(sed -n 's/^NODE_ID=//p' /etc/meshploy/node.conf 2>/dev/null || true)"
+  if [[ -n "$NODE_ID" && -s /var/lib/meshploy/cluster-agent/node-secret ]]; then
+    info "Already registered as node ${NODE_ID}"
+  else
+    _AGENT_OUT="$(/usr/local/bin/meshploy-cluster-agent register -api-url "$MESHPLOY_API_URL" \
+      -token "$PROVISION_TOKEN" -name "$NODE_HOSTNAME" -mesh-ip "$MESH_IP" 2>&1)" \
+      || die "Registration was refused: ${_AGENT_OUT}"
+    NODE_ID="$(echo "$_AGENT_OUT" | sed -n 's/^registered as node \([0-9a-f-]*\);.*/\1/p')"
+    [[ -n "$NODE_ID" ]] || die "Registration did not say which node this is: ${_AGENT_OUT}"
+  fi
+  set_env NODE_ID "$NODE_ID"
+  mkdir -p /etc/meshploy
+  printf 'NODE_ID=%s\nNODE_NAME=%s\nMESHPLOY_API_URL=%s\nNODE_SECRET=%s\n' \
+    "$NODE_ID" "$NODE_HOSTNAME" "$MESHPLOY_API_URL" "$(cat /var/lib/meshploy/cluster-agent/node-secret)" \
+    > /etc/meshploy/node.conf
+  chmod 600 /etc/meshploy/node.conf
+  success "Registered as node ${NODE_ID}; the platform reaches this cluster through the agent"
+
+  # ── The edge ────────────────────────────────────────────────────────────────
+  header "Starting the edge"
+  $COMPOSE_CMD -f docker-compose.edge.yml up -d proxy || die "The proxy did not start."
+  success "Proxy running, taking its routes from the platform"
+  # Caddy and CoreDNS start once the platform has handed this edge its domains:
+  # their configuration is rendered from them, by the host agent.
+  info "Waiting for the platform to hand this edge its domains…"
+  _EDGE_WAITED=0
+  until [[ -f /var/lib/meshploy/host/state/edge.json ]] && [[ -n "$($COMPOSE_CMD -f docker-compose.edge.yml ps -q caddy 2>/dev/null)" ]]; do
+    sleep 5; _EDGE_WAITED=$((_EDGE_WAITED+5))
+    if [[ $_EDGE_WAITED -ge 180 ]]; then
+      warn "No domains have arrived yet. The edge starts serving once the platform has a verified domain;"
+      warn "nothing here needs re-running. Check: meshploy host status"
+      break
+    fi
+    wait_dot "Waiting for the edge's domains" "$_EDGE_WAITED"
+  done
+  [[ -f /var/lib/meshploy/host/state/edge.json ]] && success "The edge serves the platform's domains"
+
+  install_node_exporter_on_mesh "$MESH_IP"
+
+  echo
+  hr
+  echo -e "  ${BOLD}${GREEN}✔  The edge is ready${RESET}"
+  hr
+  echo -e "  ${BOLD}Node${RESET}       ${CYAN}${NODE_HOSTNAME}${RESET}"
+  echo -e "  ${BOLD}Mesh IP${RESET}    ${CYAN}${MESH_IP}${RESET}"
+  echo -e "  ${BOLD}Public IP${RESET}  ${CYAN}${PUBLIC_IP}${RESET}"
+  echo -e "  ${BOLD}Platform${RESET}   ${CYAN}${MESHPLOY_API_URL}${RESET}"
+  hr
+
 elif [[ "$NODE_TYPE" == "worker" ]]; then
 
   header "Worker configuration"
 
   # ── One command, no questions ───────────────────────────────────────────────
-  #
-  # With a provisioning token the gateway is asked for what this machine needs
-  # to reach the mesh, and everything below that would have been typed is
-  # answered from that one call: where Headscale is, a key to join it with,
-  # which address the API answers on inside the mesh, and what this node is for.
-  #
-  # Only the mesh credentials come back here. The k3s join token is asked for
-  # later, from inside the mesh, where this machine has had to prove it got
-  # there - so a token that leaks costs an unknown peer on the mesh and not the
-  # cluster's own key.
+  # With a provisioning token, provision_with_token has already answered
+  # everything below that would otherwise be typed.
   if [[ -n "$PROVISION_TOKEN" ]]; then
-    [[ -n "$MESHPLOY_API_BASE" ]] || die "A provisioning token needs the gateway's address: pass --api=https://api.<your-domain>"
-    info "Asking ${MESHPLOY_API_BASE} for this machine's mesh credentials…"
-    _PROV="$(curl -s --max-time 20 \
-      -X POST "${MESHPLOY_API_BASE}/api/v1/nodes/provision" \
-      -H "Content-Type: application/json" \
-      -d "{\"token\":\"${PROVISION_TOKEN}\"}" 2>&1 || true)"
-
-    HEADSCALE_URL="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('headscale_url',''))" 2>/dev/null || true)"
-    PREAUTH_KEY="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('preauth_key',''))" 2>/dev/null || true)"
-    _PROV_API="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('api_mesh_url',''))" 2>/dev/null || true)"
-    _PROV_ROLE="$(echo "$_PROV" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mesh_role',''))" 2>/dev/null || true)"
-
-    if [[ -z "$HEADSCALE_URL" || -z "$PREAUTH_KEY" ]]; then
-      # The API answers the same 401 for every bad token on purpose, so there is
-      # nothing more specific to report than what it said.
-      die "The gateway refused this provisioning token. Response: ${_PROV:-<no response>}"
-    fi
-    MESHPLOY_TOKEN="$PROVISION_TOKEN"
-    [[ -n "$_PROV_API" ]]  && MESHPLOY_API_URL="$_PROV_API"
-    [[ -n "$_PROV_ROLE" ]] && NODE_ROLE_FLAG="${NODE_ROLE_FLAG:-$_PROV_ROLE}"
-    success "Provisioned: mesh at ${HEADSCALE_URL}, joining as ${_PROV_ROLE:-workload_builder}"
+    : # provisioned before the node type was chosen
   else
     ask HEADSCALE_URL  "Master's Headscale URL (e.g. https://headscale.meshploy.example.com)"
     ask_secret PREAUTH_KEY "Pre-auth key (generated on the master node)"
@@ -1891,53 +2246,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   fi
 
   # ── Join the mesh ───────────────────────────────────────────────────────────
-  header "Joining the Meshploy mesh"
-  info "Connecting to ${HEADSCALE_URL}…"
-
-  # Warn if already connected to a *different* login server so the user can decide
-  # whether to switch. --force-reauth is always passed unconditionally below because
-  # tailscale refuses to re-authenticate with an authkey without it, even when the
-  # login server hasn't changed.
-  # Only the stock tailscale0 can be on another network already: Meshploy's own
-  # daemon is this mesh's alone, and a Tailscale of the machine's own is left
-  # where it is.
-  EXISTING_URL=""
-  if [[ "$MESH_IFACE" == "tailscale0" ]]; then
-    EXISTING_URL="$(tailscale status --json 2>/dev/null | grep -m1 '"LoginServerURL"' | cut -d'"' -f4 || true)"
-  fi
-  if [[ -n "$EXISTING_URL" && "$EXISTING_URL" != "$HEADSCALE_URL" ]]; then
-    warn "This node is connected to a different network: ${EXISTING_URL}"
-    warn "Switching to ${HEADSCALE_URL} — it will disconnect from the current network."
-    warn "To rejoin it later: tailscale up --login-server=${EXISTING_URL} --force-reauth"
-    echo
-    if ! ask_yn "Switch networks and join the Meshploy mesh?"; then
-      die "Aborted — node not joined to mesh."
-    fi
-  fi
-
-  # --force-reauth re-authenticates silently with the authkey (no browser).
-  # --reset clears any pre-existing non-default settings (e.g. exit-node,
-  # shields-up) that would cause tailscale to reject the up command.
-  sudo "${MESH_CMD[@]}" up \
-    --login-server="$HEADSCALE_URL" \
-    --authkey="$PREAUTH_KEY" \
-    --hostname="$NODE_HOSTNAME" \
-    --accept-routes \
-    --force-reauth \
-    --reset \
-    || die "Joining the mesh failed. Check: sudo ${MESH_CMD[*]} status"
-
-  # Wait up to 15 s for the WireGuard IP to be assigned.
-  MESH_IP_ASSIGNED=""
-  for _i in $(seq 1 15); do
-    MESH_IP_ASSIGNED="$(mesh_ip)"
-    [[ -n "$MESH_IP_ASSIGNED" ]] && break
-    sleep 1
-  done
-  if [[ -z "$MESH_IP_ASSIGNED" ]]; then
-    die "No mesh IP assigned after 15 s. Check: sudo ${MESH_CMD[*]} status"
-  fi
-  success "Joined mesh as '${NODE_HOSTNAME}' — mesh IP: ${BOLD}${MESH_IP_ASSIGNED}${RESET}"
+  join_mesh
 
   # ── Node role selection ──────────────────────────────────────────────────────
   echo
@@ -2028,6 +2337,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
       # installs the day's stable, and a worker joining months later ran a
       # newer Kubernetes than its control plane, which is not supported.
       K3S_VERSION="${K3S_VERSION:-$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('k3s_version',''))" 2>/dev/null || true)}"
+      _REG_K3S_ERR="$(echo "$_REG_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('k3s_join_error',''))" 2>/dev/null || true)"
     else
       warn "Auto-registration failed. You can register manually in the dashboard."
       warn "API response: ${_REG_RESPONSE:-<no response>}"
@@ -2043,6 +2353,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
     # has no cluster, or could not read its token. Saying so beats dying on a
     # prompt nobody is there to answer.
     warn "No k3s join token came back from the gateway, so this node stays on the mesh only."
+    [[ -n "${_REG_K3S_ERR:-}" ]] && warn "The gateway said: ${_REG_K3S_ERR}"
     warn "Join it later from the dashboard → Cluster, or re-run without --token."
   elif ask_yn "Join this node to the k3s cluster now?"; then
     ask_secret K3S_JOIN_TOKEN "k3s node token (from master summary or dashboard → Cluster)"
@@ -2125,48 +2436,7 @@ elif [[ "$NODE_TYPE" == "worker" ]]; then
   fi
 
   # ── Install node_exporter (metrics) ─────────────────────────────────────────
-  header "Installing node_exporter"
-  if systemctl is-active --quiet node_exporter 2>/dev/null; then
-    success "node_exporter already running — skipping"
-  else
-    _NE_VERSION="1.8.2"
-    _NE_ARCH="$(uname -m)"
-    case "$_NE_ARCH" in
-      x86_64)  _NE_ARCH="amd64" ;;
-      aarch64) _NE_ARCH="arm64" ;;
-      *) warn "Unsupported arch '$_NE_ARCH' — skipping node_exporter install"; _NE_ARCH="" ;;
-    esac
-
-    if [[ -n "$_NE_ARCH" ]]; then
-      _NE_TARBALL="node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}.tar.gz"
-      _NE_URL="https://github.com/prometheus/node_exporter/releases/download/v${_NE_VERSION}/${_NE_TARBALL}"
-      info "Downloading node_exporter ${_NE_VERSION} (${_NE_ARCH})…"
-      curl -fsSL "$_NE_URL" -o "/tmp/${_NE_TARBALL}"
-      tar xzf "/tmp/${_NE_TARBALL}" -C /tmp
-      sudo install -m 755 "/tmp/node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}/node_exporter" /usr/local/bin/node_exporter
-      rm -rf "/tmp/node_exporter-${_NE_VERSION}.linux-${_NE_ARCH}" "/tmp/${_NE_TARBALL}"
-
-      # Bind to the Tailscale interface IP — not reachable from outside the WireGuard mesh.
-      sudo tee /etc/systemd/system/node_exporter.service > /dev/null <<NEUNIT
-[Unit]
-Description=Prometheus node_exporter
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/node_exporter --web.listen-address=${MESH_IP_ASSIGNED}:9100
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-NEUNIT
-
-      sudo systemctl daemon-reload
-      sudo systemctl enable --now node_exporter
-      success "node_exporter running on ${MESH_IP_ASSIGNED}:9100"
-    fi
-  fi
+  install_node_exporter_on_mesh "$MESH_IP_ASSIGNED"
 
   if [[ "$NODE_MESH_ROLE" != "mesh" ]] && systemctl is-active --quiet k3s-agent 2>/dev/null; then
     prepare_sandbox

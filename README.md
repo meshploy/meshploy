@@ -369,6 +369,7 @@ Installing, reinstalling and removing all go through the install script:
 | `sudo bash -c "$(curl -fsSL URL)" _ --cli-only` | Install or update the `meshploy` CLI binary only — safe on existing nodes |
 | `sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand` | Install without NS delegation — you add a wildcard A record and Caddy issues a certificate per hostname |
 | `sudo NODE_TYPE=master DOMAIN=example.com PUBLIC_IP=203.0.113.1 bash -c "$(curl -fsSL URL)" _ --auto` | Install without asking anything: the answers come from the environment |
+| `sudo bash -c "$(curl -fsSL URL)" _ --token=mprov-… --api=https://…` | Join with a provisioning token: a worker, or, with a token minted for the cluster's server on a platform that runs elsewhere, that server: its **edge** (Caddy, CoreDNS, the proxy, the registry, k3s and the cluster agent, with no database, API, console or Headscale; `deploy/docker-compose.edge.yml`) |
 | `sudo bash -c "$(curl -fsSL URL)" _ --edge` | Install edge builds from `main` instead of the latest stable release |
 
 > Replace `URL` with `https://meshploy.com/install.sh`

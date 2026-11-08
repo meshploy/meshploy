@@ -237,7 +237,8 @@ func TestPublishEdgeHandsOverTheDNSProvidersToken(t *testing.T) {
 // Through a cluster agent the edge is another machine: what it should serve
 // goes to the host folder the agent carries, says the platform runs
 // elsewhere, so the edge renders no Headscale of its own, carries the edge
-// node's addresses rather than this API's, and asks for an apply there.
+// node's addresses rather than this API's, names this API's mesh address for
+// the edge's certificate checks, and asks for an apply there.
 // Without an edge node, or before it has reported its public address, nothing
 // is served, and the domain change itself is not what fails.
 func TestAnAgentAPIPublishesItsEdgeThroughTheAgent(t *testing.T) {
@@ -267,6 +268,7 @@ func TestAnAgentAPIPublishesItsEdgeThroughTheAgent(t *testing.T) {
 	require.NoError(t, svc.System.PublishPrimaryEdge(ctx))
 	snap := desired(t, host)
 	assert.True(t, snap.PlatformElsewhere)
+	assert.Equal(t, "http://100.64.0.1:4000", snap.PlatformAPI, "the edge asks this API over the mesh")
 	assert.Equal(t, "198.51.100.7", snap.PublicIP)
 	assert.Equal(t, "100.64.0.2", snap.MeshIP)
 	require.Len(t, snap.Domains, 1)
@@ -309,4 +311,37 @@ func TestTheEdgesFactsReachItsNode(t *testing.T) {
 	moved, err = svc.Nodes.SyncEdgeFacts(ctx)
 	require.NoError(t, err)
 	assert.False(t, moved, "the same address again is no move")
+}
+
+// Through a cluster agent the built-in registry is the edge's, at its mesh
+// address: made for each organisation once the edge is known, and moved with
+// the edge.
+func TestTheBuiltInRegistryIsTheEdges(t *testing.T) {
+	gdb := newTestDB(t)
+	svc := service.New(gdb, &config.Config{})
+	ctx := context.Background()
+	org := &db.Organization{Name: "acme", Slug: "acme-" + uuid.NewString()[:8]}
+	require.NoError(t, gdb.Create(org).Error)
+
+	require.NoError(t, svc.Registries.SyncEdgeBuiltin(ctx), "no edge yet: nothing to point at")
+	builtin := func() []db.RegistryIntegration {
+		var rows []db.RegistryIntegration
+		require.NoError(t, gdb.Where("organization_id = ? AND provider = ?", org.ID, db.RegistryBuiltin).Find(&rows).Error)
+		return rows
+	}
+	assert.Empty(t, builtin())
+
+	edge := &db.Node{OrganizationID: org.ID, Name: "edge", TailscaleIP: "100.64.0.3", ClusterAgentCert: "cert", ClusterAgentPort: 7443}
+	require.NoError(t, gdb.Create(edge).Error)
+	require.NoError(t, svc.Registries.SyncEdgeBuiltin(ctx))
+	rows := builtin()
+	require.Len(t, rows, 1)
+	assert.Equal(t, "100.64.0.3:5000", rows[0].Endpoint)
+
+	require.NoError(t, gdb.Model(edge).Update("tailscale_ip", "100.64.0.9").Error)
+	require.NoError(t, svc.Registries.SyncEdgeBuiltin(ctx))
+	rows = builtin()
+	require.Len(t, rows, 1, "moved, not added")
+	assert.Equal(t, "100.64.0.9:5000", rows[0].Endpoint)
+	assert.Equal(t, "100.64.0.9:5000", rows[0].Namespace)
 }

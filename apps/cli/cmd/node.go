@@ -264,6 +264,12 @@ k3s setup, Headscale registration, and saves /etc/meshploy/node.conf.`,
 		if nodeInstallRole != "" {
 			scriptArgs = append(scriptArgs, "--role="+nodeInstallRole)
 		}
+		if nodeInstallToken != "" {
+			scriptArgs = append(scriptArgs, "--token="+nodeInstallToken)
+		}
+		if nodeInstallAPI != "" {
+			scriptArgs = append(scriptArgs, "--api="+nodeInstallAPI)
+		}
 		return runScript(installScript, scriptArgs)
 	},
 }
@@ -275,6 +281,8 @@ var (
 	nodeInstallAuto      bool
 	nodeInstallDNSMode   string
 	nodeInstallRole      string
+	nodeInstallToken     string
+	nodeInstallAPI       string
 )
 
 // nodeRoles are the roles install.sh accepts for a worker. mesh joins the mesh
@@ -813,6 +821,8 @@ func init() {
 	nodeInstallCmd.Flags().BoolVar(&nodeInstallWipeData, "wipe-data", false, "With --reinstall: wipe the database and TLS cert cache")
 	nodeInstallCmd.Flags().BoolVar(&nodeInstallAuto, "auto", false, "Non-interactive install, taking answers from the environment")
 	nodeInstallCmd.Flags().StringVar(&nodeInstallRole, "role", "", "Worker role: workload_builder (default), workload, builder, or mesh (the mesh only, not the cluster)")
+	nodeInstallCmd.Flags().StringVar(&nodeInstallToken, "token", "", "A provisioning token (mprov-): the platform answers what this machine is, a worker or the cluster's edge")
+	nodeInstallCmd.Flags().StringVar(&nodeInstallAPI, "api", "", "The platform's address the provisioning token is for, e.g. https://api.example.com")
 	nodeInstallCmd.Flags().StringVar(&nodeInstallDNSMode, "dns-mode", "", "DNS strategy: 'delegation' (NS record, wildcard DNS-01) or 'ondemand' (wildcard A record, cert per hostname)")
 
 	nodeCmd.AddCommand(nodeListCmd, nodeDeleteCmd, nodeRemoveCmd, nodeStatusCmd, nodeInstallCmd, nodeUninstallCmd, nodeTokenCmd, nodeInitCmd, nodeAddCmd)

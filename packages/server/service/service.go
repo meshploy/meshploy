@@ -148,6 +148,9 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		notif.consoleURL = c.FrontendURL
 	}
 	nodes := &NodeService{db: db, gatewayIP: gatewayIP, hostGatewayIP: hostGatewayIP}
+	if c != nil {
+		nodes.apiPort = c.APIPort
+	}
 	sessions := &ConsoleSessionService{db: db}
 	auth := &AuthService{db: db, sessions: sessions}
 	if c != nil {
@@ -412,6 +415,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			// it reports.
 			if _, err := nodes.SyncEdgeFacts(ctx); err != nil {
 				log.Printf("warning: the edge's facts: %v", err)
+			}
+			// Its registry is the built-in one: builds push there.
+			if err := registries.SyncEdgeBuiltin(ctx); err != nil {
+				log.Printf("warning: the edge's registry: %v", err)
 			}
 			if err := svc.System.PublishPrimaryEdge(ctx); err != nil {
 				log.Printf("warning: could not hand the edge its domain set: %v", err)

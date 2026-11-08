@@ -400,7 +400,13 @@ func reloadEdgeWithCompose(changes []edgeconfig.Change) error {
 	}
 	runtime := detectContainerRuntime()
 	if coredns {
-		if err := composeRun(runtime, "restart", "coredns"); err != nil {
+		if !composeRunning(runtime, "coredns") {
+			// Nothing to restart: an edge's first apply, before which it had
+			// no configuration to start with.
+			if err := composeRun(runtime, "up", "-d", "coredns"); err != nil {
+				return fmt.Errorf("start coredns: %w", err)
+			}
+		} else if err := composeRun(runtime, "restart", "coredns"); err != nil {
 			return fmt.Errorf("restart coredns: %w", err)
 		}
 	}
@@ -409,13 +415,23 @@ func reloadEdgeWithCompose(changes []edgeconfig.Change) error {
 			return fmt.Errorf("restart headscale: %w", err)
 		}
 	}
-	if caddy {
+	if caddy && !composeRunning(runtime, "caddy") {
+		if err := composeRun(runtime, "up", "-d", "caddy"); err != nil {
+			return fmt.Errorf("start caddy: %w", err)
+		}
+	} else if caddy {
 		if err := composeRun(runtime, "exec", "-T", "caddy",
 			"caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"); err != nil {
 			return fmt.Errorf("reload caddy: %w", err)
 		}
 	}
 	return nil
+}
+
+// composeRunning reports whether a compose service has a running container.
+func composeRunning(runtime, service string) bool {
+	out, err := runtimeOutput(meshployInstDir, runtime, "compose", "ps", "-q", service)
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 func lastLines(s string, n int) string {

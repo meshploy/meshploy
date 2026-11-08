@@ -100,7 +100,7 @@ else
 fi
 
 # ── Banner ────────────────────────────────────────────────────────────────────
-clear
+clear 2>/dev/null || true
 echo -e "${BOLD}${RED}"
 cat <<'EOF'
   __  __           _     ____  _
@@ -365,6 +365,24 @@ if ! $REINSTALL && { command -v node_exporter &>/dev/null || [[ -f /etc/systemd/
     info "node_exporter kept"
   fi
 fi
+
+# ── Cluster agent (an edge) ───────────────────────────────────────────────────
+# The edge of a cluster whose platform runs elsewhere holds the cluster's
+# credential in its cluster agent, which the platform reached it through. The
+# platform still lists the edge until it is removed there.
+if ! $REINSTALL && { [[ -f /etc/systemd/system/meshploy-cluster-agent.service ]] || [[ -d /var/lib/meshploy/cluster-agent ]]; }; then
+  header "Cluster agent"
+  sudo systemctl disable --now meshploy-cluster-agent.service 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/meshploy-cluster-agent.service /usr/local/bin/meshploy-cluster-agent
+  sudo systemctl daemon-reload 2>/dev/null || true
+  sudo rm -rf /var/lib/meshploy/cluster-agent
+  sudo rm -f /etc/meshploy/node.conf
+  sudo rmdir /etc/meshploy 2>/dev/null || true
+  success "Cluster agent removed: the platform no longer reaches this server"
+  warn "The platform still lists this edge until it is removed there."
+fi
+# What a provisioning token was answered with, kept for a rerun.
+sudo rm -f /var/lib/meshploy/provisioned.json 2>/dev/null || true
 
 # ── Host agent (gateway) ──────────────────────────────────────────────────────
 # meshploy-host.service is the name it had before meshployd.

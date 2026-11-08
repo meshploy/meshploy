@@ -239,8 +239,19 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 		MeshIP:       meshIP,
 		WrittenAt:    time.Now().UTC(),
 		ConsoleNames: append([]string(nil), consoleNames...),
-		// Through a cluster agent, the edge is another machine than this API's.
-		PlatformElsewhere: s.cfg.ClusterAgent,
+	}
+	if s.cfg.ClusterAgent {
+		// The edge is another machine than this API's, and asks it over the
+		// mesh before issuing a certificate on demand.
+		if s.cfg.GatewayIP == "" {
+			return nil, errors.New("this API's mesh address is not known (MESH_IP), so the edge cannot reach it")
+		}
+		port := s.cfg.APIPort
+		if port == 0 {
+			port = 4000
+		}
+		snap.PlatformElsewhere = true
+		snap.PlatformAPI = fmt.Sprintf("http://%s:%d", s.cfg.GatewayIP, port)
 	}
 	for _, d := range domains {
 		mode := string(d.DNSMode)

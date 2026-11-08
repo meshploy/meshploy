@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -755,5 +756,20 @@ func TestServicesToRecreateFollowsThePaths(t *testing.T) {
 	}
 	if got := servicesToRecreate(nil); len(got) != 0 {
 		t.Fatalf("no changes should recreate nothing, got %v", got)
+	}
+}
+
+// An edge names its compose file in .env, and every compose call gets it, so
+// an apply restarts the edge's CoreDNS rather than looking for a gateway's.
+func TestComposeCallsUseTheComposeFileTheInstallNames(t *testing.T) {
+	t.Setenv("COMPOSE_FILE", "")
+	os.Unsetenv("COMPOSE_FILE")
+	dir := t.TempDir()
+	if got := composeEnv(dir); slices.ContainsFunc(got, func(e string) bool { return strings.HasPrefix(e, "COMPOSE_FILE=") }) {
+		t.Fatalf("no .env, yet %v", got)
+	}
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("MESHPLOY_INSTALL=edge\nCOMPOSE_FILE=docker-compose.edge.yml\n"), 0o600)
+	if got := composeEnv(dir); !slices.Contains(got, "COMPOSE_FILE=docker-compose.edge.yml") {
+		t.Fatalf("the edge's compose file is not passed on: %v", got)
 	}
 }

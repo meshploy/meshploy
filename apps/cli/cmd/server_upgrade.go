@@ -54,12 +54,14 @@ var (
 	composeExec   = func(dir, runtime string, args ...string) error {
 		c := exec.Command(runtime, append([]string{"compose"}, args...)...)
 		c.Dir = dir
+		c.Env = composeEnv(dir)
 		c.Stdout, c.Stderr = os.Stdout, os.Stderr
 		return c.Run()
 	}
 	runtimeOutput = func(dir, runtime string, args ...string) ([]byte, error) {
 		c := exec.Command(runtime, args...)
 		c.Dir = dir
+		c.Env = composeEnv(dir)
 		return c.Output()
 	}
 	runtimeExec = func(runtime string, args ...string) error {
@@ -139,6 +141,11 @@ type serverUpgradeOptions struct {
 }
 
 func runServerUpgrade(cmd *cobra.Command, _ []string) error {
+	if isEdgeInstall() {
+		// Its database, API and Headscale are elsewhere; what this command
+		// backs up, migrates and restarts is not here.
+		return errors.New("this server is an edge whose platform runs elsewhere, which server-upgrade does not upgrade")
+	}
 	var o serverUpgradeOptions
 	o.pat, _ = cmd.Flags().GetString("token")
 	if o.pat == "" {
@@ -1036,6 +1043,26 @@ func setEnvVar(key, value string) error {
 }
 
 // readEnvVar returns one value from /opt/meshploy/.env, or "" if unset.
+// composeEnv is this process's environment, with the compose file the
+// install's .env names (COMPOSE_FILE): an edge runs docker-compose.edge.yml.
+// Passed on rather than left to the runtime, which does not always read it
+// from .env itself.
+func composeEnv(dir string) []string {
+	env := os.Environ()
+	if os.Getenv("COMPOSE_FILE") != "" {
+		return env
+	}
+	vars, err := parseEnvFile(filepath.Join(dir, ".env"), "COMPOSE_FILE")
+	if err != nil || vars["COMPOSE_FILE"] == "" {
+		return env
+	}
+	return append(env, "COMPOSE_FILE="+vars["COMPOSE_FILE"])
+}
+
+// isEdgeInstall reports whether this server is the edge of a cluster whose
+// platform runs on another machine (MESHPLOY_INSTALL=edge in .env).
+func isEdgeInstall() bool { return readEnvVar("MESHPLOY_INSTALL") == "edge" }
+
 func readEnvVar(key string) string {
 	vars, err := parseEnvFile(meshployInstDir+"/.env", key)
 	if err != nil {

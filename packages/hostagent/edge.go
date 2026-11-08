@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -115,6 +118,10 @@ type EdgeSnapshot struct {
 	// another machine, which reaches the cluster through its cluster agent.
 	// Its Headscale configuration is that machine's to render, not this one's.
 	PlatformElsewhere bool `json:"platform_elsewhere,omitempty"`
+	// PlatformAPI is where that API answers on the mesh, http://<address>:<port>,
+	// set exactly when PlatformElsewhere is: Caddy asks it before issuing a
+	// certificate on demand, as a gateway asks its own API on the loopback.
+	PlatformAPI string `json:"platform_api,omitempty"`
 }
 
 // ProxyPortOrDefault is ProxyPort, or 8081.
@@ -289,6 +296,38 @@ func (s EdgeSnapshot) Validate() error {
 		if err := validEdgeName(s.MeshDomain); err != nil {
 			return fmt.Errorf("mesh domain %q: %w", s.MeshDomain, err)
 		}
+	}
+	if s.PlatformElsewhere != (s.PlatformAPI != "") {
+		return errors.New("edge snapshot names the platform's API exactly when the platform runs elsewhere")
+	}
+	if s.PlatformAPI != "" {
+		if err := validPlatformAPI(s.PlatformAPI); err != nil {
+			return fmt.Errorf("platform API %q: %w", s.PlatformAPI, err)
+		}
+	}
+	return nil
+}
+
+// validPlatformAPI allows http://<IP>:<port> and nothing more: it is written
+// into the Caddyfile as it is, and the API is reached over the mesh, by
+// address.
+func validPlatformAPI(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "http" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return errors.New("must be http://<address>:<port>")
+	}
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return errors.New("must name a port")
+	}
+	if net.ParseIP(host) == nil {
+		return errors.New("must be an address, not a name")
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return errors.New("has no valid port")
 	}
 	return nil
 }

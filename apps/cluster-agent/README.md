@@ -68,6 +68,8 @@ it is left:
 
 ## Commands
 
+`install.sh` sets all of this up for an edge: `meshploy install cluster-agent` puts the binary in place, from the CLI's own release (`--from <file>` for one built here), then `init`, a `meshploy-cluster-agent.service` running `serve`, and `register` with the provisioning token the install was given.
+
 ```bash
 meshploy-cluster-agent init                    # make the certificate, key and token in /var/lib/meshploy/cluster-agent
 meshploy-cluster-agent register -api-url http://100.64.0.1:4000 -token mprov-… -name edge-1 -mesh-ip 100.64.0.2

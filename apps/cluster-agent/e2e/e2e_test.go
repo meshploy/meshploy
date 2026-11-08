@@ -671,7 +671,7 @@ func TestHostRequestsThroughTheAgent(t *testing.T) {
 	step(t, "the host agent's report, read through the agent", err)
 
 	snap := hostagent.EdgeSnapshot{
-		PublicIP: "203.0.113.10", MeshIP: "100.64.0.2", PlatformElsewhere: true,
+		PublicIP: "203.0.113.10", MeshIP: "100.64.0.2", PlatformElsewhere: true, PlatformAPI: "http://100.64.0.1:4000",
 		Domains: []hostagent.EdgeDomain{
 			{BaseDomain: "edge.test", InternalSubdomain: "internal", DNSMode: hostagent.EdgeDNSOnDemand, Primary: true},
 		},

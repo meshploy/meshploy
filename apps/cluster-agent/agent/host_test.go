@@ -47,7 +47,7 @@ func refused(t *testing.T, what string, err error) {
 
 func edgeToServe() hostagent.EdgeSnapshot {
 	return hostagent.EdgeSnapshot{
-		PublicIP: "203.0.113.10", MeshIP: "100.64.0.2", PlatformElsewhere: true,
+		PublicIP: "203.0.113.10", MeshIP: "100.64.0.2", PlatformElsewhere: true, PlatformAPI: "http://100.64.0.1:4000",
 		Domains: []hostagent.EdgeDomain{
 			{BaseDomain: "example.com", InternalSubdomain: "internal", DNSMode: hostagent.EdgeDNSDelegation, Primary: true},
 		},

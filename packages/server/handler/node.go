@@ -903,6 +903,10 @@ type SelfRegisterNodeOutput struct {
 		// K3sVersion is the release the server runs: the node installs the
 		// same, never a newer Kubernetes than its control plane.
 		K3sVersion string `json:"k3s_version,omitempty"`
+		// K3sJoinError says why no join token came back. The node is
+		// registered and holds its secret either way: the token it spent
+		// cannot register it again, and it joins the cluster later.
+		K3sJoinError string `json:"k3s_join_error,omitempty"`
 	}
 }
 
@@ -970,7 +974,8 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 		join, err := h.svc.Nodes.ClusterJoin(ctx, node.Name)
 		if err != nil {
 			log.Printf("warning: no join token for node %s: %v", node.ID, err)
-			return nil, huma.Error503ServiceUnavailable("the node is registered, but no token to join the cluster could be had: " + err.Error())
+			out.Body.K3sJoinError = "no token to join the cluster could be had: " + err.Error()
+			return out, nil
 		}
 		out.Body.K3sToken = join.Token
 		out.Body.K3sServerURL = join.ServerURL

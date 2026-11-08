@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/meshploy/apps/cli/internal/edgeconfig"
@@ -437,4 +439,38 @@ func TestDomainApplyRequestWithoutAToken(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "bad-token")
 	assert.Contains(t, err.Error(), "[token]")
+}
+
+// An edge's first apply finds no Caddy or CoreDNS to reload, because they had
+// no configuration to start with: it starts them. A running edge is reloaded
+// as before.
+func TestAnApplyStartsAnEdgeThatIsNotRunning(t *testing.T) {
+	origCompose, origOut := composeExec, runtimeOutput
+	t.Cleanup(func() { composeExec, runtimeOutput = origCompose, origOut })
+	running := false
+	var calls []string
+	composeExec = func(_, _ string, args ...string) error {
+		calls = append(calls, strings.Join(args, " "))
+		return nil
+	}
+	runtimeOutput = func(_, _ string, args ...string) ([]byte, error) {
+		if running {
+			return []byte("abc123\n"), nil
+		}
+		return nil, nil
+	}
+	changes := []edgeconfig.Change{{Path: "caddy/Caddyfile"}, {Path: "coredns/Corefile"}}
+	if err := reloadEdgeWithCompose(changes); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"up -d coredns", "up -d caddy"}; !slices.Equal(calls, want) {
+		t.Fatalf("not running: %v, want %v", calls, want)
+	}
+	calls, running = nil, true
+	if err := reloadEdgeWithCompose(changes); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[0] != "restart coredns" || !strings.HasPrefix(calls[1], "exec -T caddy caddy reload") {
+		t.Fatalf("running: %v", calls)
+	}
 }

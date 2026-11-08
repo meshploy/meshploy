@@ -19,6 +19,7 @@
 #     sudo bash -c "$(curl -fsSL URL)" _ --edge        # use edge builds from main
 #     sudo bash -c "$(curl -fsSL URL)" _ --dns-mode=ondemand  # self-managed DNS
 #                                                     # (wildcard A record, no NS delegation)
+#     sudo bash -c "$(curl -fsSL URL)" _ --token=mprov-... --api=https://...  # provisioned: a worker, or an edge
 #     sudo NODE_TYPE=master DOMAIN=example.com PUBLIC_IP=203.0.113.1 \
 #       bash -c "$(curl -fsSL URL)" _ --auto            # nothing asked: answers from the environment
 #
@@ -39,6 +40,8 @@ CLI_ONLY=false
 EDGE=false
 DNS_MODE_FLAG=""
 AUTO=false
+PROVISION_TOKEN=""
+PROVISION_API=""
 for arg in "$@"; do
   case "$arg" in
     --uninstall)  MODE="uninstall" ;;
@@ -47,6 +50,10 @@ for arg in "$@"; do
     --cli-only)   CLI_ONLY=true ;;
     --edge)       EDGE=true ;;
     --auto)       AUTO=true ;;
+    # A provisioning token and the platform it is for: the whole install in
+    # one command, an edge's included.
+    --token=*)    PROVISION_TOKEN="${arg#*=}" ;;
+    --api=*)      PROVISION_API="${arg#*=}" ;;
     --dns-mode=*)
       DNS_MODE_FLAG="${arg#*=}"
       case "$DNS_MODE_FLAG" in
@@ -227,6 +234,8 @@ case "$MODE" in
     fi
     [[ -n "$DNS_MODE_FLAG" ]] && EXTRA_FLAGS+=("--dns-mode=${DNS_MODE_FLAG}")
     $AUTO && EXTRA_FLAGS+=("--auto")
+    [[ -n "$PROVISION_TOKEN" ]] && EXTRA_FLAGS+=("--token=${PROVISION_TOKEN}")
+    [[ -n "$PROVISION_API" ]] && EXTRA_FLAGS+=("--api=${PROVISION_API}")
     # Expanding an empty array under `set -u` is an error on bash < 4.4, which
     # is still what ships on older LTS images, so branch on the length.
     if [[ ${#EXTRA_FLAGS[@]} -gt 0 ]]; then

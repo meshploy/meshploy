@@ -50,6 +50,7 @@ type NodeService struct {
 	db            *gorm.DB
 	gatewayIP     string // gateway mesh IP (MESH_IP) — used to detect self-scrape
 	hostGatewayIP string // Docker bridge host IP (HOST_GATEWAY_IP) — used instead of gatewayIP when API is in Docker
+	apiPort       int    // API_PORT: where this API answers on the mesh address
 	headscale     *HeadscaleService
 	domains       *DomainService // where the public Headscale URL a joining machine needs comes from
 	headscaleUser string         // HEADSCALE_USER — whose pre-auth keys those are
@@ -455,6 +456,9 @@ type Provisioning struct {
 	PreAuthKey   string      `json:"preauth_key"`
 	APIMeshURL   string      `json:"api_mesh_url"`
 	MeshRole     db.MeshRole `json:"mesh_role"`
+	// ClusterAgent is a token for the server that holds the cluster and its
+	// agent: the machine installs as an edge, not a worker.
+	ClusterAgent bool `json:"cluster_agent,omitempty"`
 }
 
 // Provision validates a provisioning token and mints the mesh credentials for
@@ -520,11 +524,16 @@ func (s *NodeService) Provision(ctx context.Context, token string) (*Provisionin
 	if gateway == "" {
 		gateway = "100.64.0.1"
 	}
+	port := s.apiPort
+	if port == 0 {
+		port = 4000
+	}
 	return &Provisioning{
 		HeadscaleURL: controlURL,
 		PreAuthKey:   key.Key,
-		APIMeshURL:   fmt.Sprintf("http://%s:4000", gateway),
+		APIMeshURL:   fmt.Sprintf("http://%s:%d", gateway, port),
 		MeshRole:     role,
+		ClusterAgent: row.ClusterAgent,
 	}, nil
 }
 
