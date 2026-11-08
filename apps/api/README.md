@@ -252,7 +252,7 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | GET | `/orgs/{orgId}/projects/{projectId}/sandbox` | ✓ | Whether the project's, or the level's, apps and jobs run on gVisor: `on`, and `required` with `why` when a rule makes it so |
 | PUT | `/orgs/{orgId}/projects/{projectId}/sandbox` | ✓ admin | `{"on": true}` runs its apps and jobs on gVisor instead of the host's kernel and moves the running ones at once (services roll); its managed databases stay on the host's kernel. Refused (409) while no node can run sandboxed pods, while an app or job is pinned to one that cannot, or, switching off, while it is required. Builds are never sandboxed |
 | DELETE | `/orgs/{orgId}/projects/{projectId}` | ✓ | Delete a project |
-| DELETE | `/orgs/{orgId}/projects/{projectId}/build-cache` | ✓ | Clear the buildah layer cache PVC for a project |
+| DELETE | `/orgs/{orgId}/projects/{projectId}/build-cache` | ✓ | Clear a project's build cache: its claim, every builder's folder in it |
 
 ### Environments
 

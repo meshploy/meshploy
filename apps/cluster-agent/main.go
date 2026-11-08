@@ -76,7 +76,7 @@ func cmdServe(args []string) {
 	from := fs.String("api", "", "the Meshploy API's mesh addresses, comma-separated: the only callers answered")
 	kubeconfig := fs.String("kubeconfig", "/etc/rancher/k3s/k3s.yaml", "the cluster's admin kubeconfig")
 	approval := fs.String("approval", defaultApproval, "the file holding the owner's terminal approval")
-	builder := fs.String("builder-image", "", "the builder image builds run; empty refuses builds")
+	builder := fs.String("builder-image", appk8s.DefaultBuilderImage(), "the builder image builds run; empty refuses builds")
 	fs.Parse(args)
 	if *listen == "" || *from == "" {
 		log.Fatal("serve needs -listen and -api")

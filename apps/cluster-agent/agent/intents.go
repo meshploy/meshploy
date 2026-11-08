@@ -155,10 +155,25 @@ func (a *Agent) closeShell(ctx context.Context, name string) (string, error) {
 // RootlessBuilds makes every build Job the agent creates rootless: uid 1000,
 // unprivileged, no added capabilities, with seccomp and AppArmor left off
 // because the builder makes its own user namespace inside the pod. That
-// namespace is mapped by newuidmap and newgidmap, which are setuid: so
-// privilege escalation stays allowed and the default capabilities stay, or the
-// kernel ignores the setuid bit and the build cannot start.
+// namespace is mapped by newuidmap and newgidmap, which hold file
+// capabilities: so privilege escalation stays allowed and the default
+// capabilities stay, or the kernel ignores them and the build cannot start.
+//
+// On a host enforcing SELinux the pod runs as container_engine_t, the type
+// container-selinux gives a container engine inside a container: the default
+// container_t may not mount the devpts a build step needs. It stays confined,
+// unlike the privileged builder's spc_t; hosts without SELinux ignore it.
+//
+// Rootless, the builder builds everything with BuildKit, so the build cache
+// keeps only BuildKit's folder, and a folder of its own: a cache a builder
+// running as root wrote holds files uid 1000 can neither use nor remove.
 type RootlessBuilds struct{}
+
+// BuilderSELinuxType is the SELinux type rootless builds run as.
+const BuilderSELinuxType = "container_engine_t"
+
+// RootlessCacheSubPath is the build cache's folder for rootless builds.
+const RootlessCacheSubPath = "buildkit-rootless"
 
 func (RootlessBuilds) MutateJob(_ context.Context, kind appk8s.JobKind, job *batchv1.Job) error {
 	if kind != appk8s.JobBuild {
@@ -171,6 +186,9 @@ func (RootlessBuilds) MutateJob(_ context.Context, kind appk8s.JobKind, job *bat
 		spec.SecurityContext = &corev1.PodSecurityContext{}
 	}
 	spec.SecurityContext.FSGroup = &uid
+	// The cache is handed to uid 1000's group once, not walked on every build.
+	onMismatch := corev1.FSGroupChangeOnRootMismatch
+	spec.SecurityContext.FSGroupChangePolicy = &onMismatch
 	spec.SecurityContext.RunAsUser = &uid
 	spec.SecurityContext.RunAsGroup = &uid
 	for _, cs := range [][]corev1.Container{spec.InitContainers, spec.Containers} {
@@ -180,12 +198,30 @@ func (RootlessBuilds) MutateJob(_ context.Context, kind appk8s.JobKind, job *bat
 				RunAsGroup:      &uid,
 				RunAsNonRoot:    boolPtr(true),
 				Privileged:      &no,
+				SELinuxOptions:  &corev1.SELinuxOptions{Type: BuilderSELinuxType},
 				SeccompProfile:  &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeUnconfined},
 				AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
 			}
+			cs[i].VolumeMounts = rootlessCache(cs[i].VolumeMounts)
 		}
 	}
 	return nil
+}
+
+// rootlessCache keeps BuildKit's mount of the build cache, moved to the
+// rootless folder, and drops Buildah's.
+func rootlessCache(mounts []corev1.VolumeMount) []corev1.VolumeMount {
+	var kept []corev1.VolumeMount
+	for _, m := range mounts {
+		if m.Name == appk8s.BuildCacheVolume {
+			if m.SubPath != appk8s.BuildKitCacheSubPath {
+				continue
+			}
+			m.SubPath = RootlessCacheSubPath
+		}
+		kept = append(kept, m)
+	}
+	return kept
 }
 
 func boolPtr(b bool) *bool { return &b }

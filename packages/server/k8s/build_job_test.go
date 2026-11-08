@@ -497,3 +497,36 @@ func TestPodStartingReasonSaysWhatThePodWaitsOn(t *testing.T) {
 		}
 	}
 }
+
+// A build without the cache gets its BuildKit root on the node's disk, where
+// overlayfs works, not in the container's own filesystem, where it cannot and
+// every step would be a full copy.
+func TestCreateBuildJobGivesTheBuildAScratchFolderOnTheNode(t *testing.T) {
+	p := BuildJobParams{JobName: "build-app-5", Namespace: "demo", Image: "x", GitBranch: "main"}
+	_, env := jobEnv(t, p)
+	client := fake.NewSimpleClientset()
+	if err := CreateBuildJob(t.Context(), client, p); err != nil {
+		t.Fatal(err)
+	}
+	job, err := client.BatchV1().Jobs(p.Namespace).Get(t.Context(), p.JobName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := job.Spec.Template.Spec
+	var vol *corev1.Volume
+	for i := range spec.Volumes {
+		if spec.Volumes[i].Name == BuildScratchVolume {
+			vol = &spec.Volumes[i]
+		}
+	}
+	if vol == nil || vol.EmptyDir == nil {
+		t.Fatalf("volumes %+v, want an emptyDir %s", spec.Volumes, BuildScratchVolume)
+	}
+	mounted := false
+	for _, m := range spec.Containers[0].VolumeMounts {
+		mounted = mounted || m.Name == BuildScratchVolume && m.MountPath == env["BUILD_SCRATCH"]
+	}
+	if !mounted || env["BUILD_SCRATCH"] == "" {
+		t.Errorf("BUILD_SCRATCH %q is not where the scratch folder is mounted", env["BUILD_SCRATCH"])
+	}
+}

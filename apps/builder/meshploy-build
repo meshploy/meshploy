@@ -17,9 +17,14 @@
 #   BUILDER        railpack | dockerfile
 #   INSTALL_COMMAND, BUILD_COMMAND   optional: replace Railpack's own
 #   IMAGE_DEST     registry/image:tag to push to
-#   REGISTRY_HOST  registry hostname (for buildah login)
+#   REGISTRY_HOST  registry hostname, plain HTTP
 #   REGISTRY_USER  registry username
 #   REGISTRY_PASS  registry password
+
+#
+# Started as root (a privileged pod) it builds Dockerfiles with Buildah and
+# Railpack with BuildKit. Started as any other user (an unprivileged pod, as a
+# cluster agent runs it) it builds both with BuildKit, rootless.
 
 set -euo pipefail
 
@@ -42,12 +47,22 @@ BUILDER="${BUILDER:-railpack}"
 # Overridable so the clone can be exercised outside a build pod.
 WORKDIR="${MESHPLOY_BUILD_WORKDIR:-/tmp/workspace}"
 
+ROOTLESS=""
+if [[ "$(id -u)" != 0 ]]; then
+    ROOTLESS=1
+    # The image's HOME is root's when the pod names only a uid.
+    [[ -w "${HOME:-/nonexistent}" ]] || export HOME=/home/build
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    log "Building rootless, as uid $(id -u)"
+fi
+
 # ── Parse build-time env vars ─────────────────────────────────────────────────
 # BUILD_ENV_VARS is a newline-separated list of KEY=VALUE pairs.
 # Build arrays of flags for each builder from the non-empty, non-comment lines.
 RAILPACK_ENV_FLAGS=()
 RAILPACK_SECRET_FLAGS=()
 DOCKERFILE_BUILD_ARG_FLAGS=()
+BUILDKIT_BUILD_ARG_FLAGS=()
 
 if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
     while IFS= read -r line; do
@@ -67,6 +82,7 @@ if [[ -n "${BUILD_ENV_VARS:-}" ]]; then
         fi
         RAILPACK_ENV_FLAGS+=(--env "${key}=${value}")
         DOCKERFILE_BUILD_ARG_FLAGS+=(--build-arg "${key}=${value}")
+        BUILDKIT_BUILD_ARG_FLAGS+=(--opt "build-arg:${key}=${value}")
         # Railpack embeds build env vars as BuildKit secrets in the plan.
         # Export + --secret makes them available to buildctl.
         export "${key}=${value}"
@@ -242,122 +258,134 @@ detect_stack() {
 }
 detect_stack || true
 
-# ── Mark registry as insecure if it is HTTP ──────────────────────────────────
-# buildah defaults to HTTPS. Internal mesh registries (e.g. 100.64.x.x:5000)
-# are plain HTTP — add them to registries.conf so buildah doesn't upgrade to TLS.
-# This covers both `buildah push` and `buildah build --cache-from`.
-mkdir -p "${HOME}/.config/containers"
-# This file is read instead of the system's, so it says what the system's
-# does too: a short name (FROM golang:1.24-alpine) means Docker Hub, as Docker
-# reads it. Top-level keys go before any [[registry]] table.
-if ! grep -q '^unqualified-search-registries' "${HOME}/.config/containers/registries.conf" 2>/dev/null; then
-    printf 'unqualified-search-registries = ["docker.io"]\nshort-name-mode = "permissive"\n' \
-        | cat - "${HOME}/.config/containers/registries.conf" 2>/dev/null > /tmp/registries.conf || true
-    mv /tmp/registries.conf "${HOME}/.config/containers/registries.conf"
-fi
-cat >> "${HOME}/.config/containers/registries.conf" <<EOF
-
-[[registry]]
-location = "${REGISTRY_HOST}"
-insecure = true
-EOF
-
-# ── Registry login ────────────────────────────────────────────────────────────
+# ── Registry ──────────────────────────────────────────────────────────────────
+# BuildKit reads ~/.docker/config.json.
 if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
-    log "Logging in to ${REGISTRY_HOST}…"
-    echo "${REGISTRY_PASS}" | buildah login \
-        --username "${REGISTRY_USER}" \
-        --password-stdin \
-        "${REGISTRY_HOST}"
-    # Mirror credentials for BuildKit (used by railpack).
-    # BuildKit reads ~/.docker/config.json, not buildah's auth.json.
     mkdir -p "${HOME}/.docker"
-    echo "${REGISTRY_PASS}" | docker login \
-        --username "${REGISTRY_USER}" \
-        --password-stdin \
-        "${REGISTRY_HOST}" 2>/dev/null || \
     printf '{"auths":{"%s":{"auth":"%s"}}}' \
         "${REGISTRY_HOST}" \
         "$(printf '%s:%s' "${REGISTRY_USER}" "${REGISTRY_PASS}" | base64 -w0)" \
         > "${HOME}/.docker/config.json"
 fi
 
-# ── Build ─────────────────────────────────────────────────────────────────────
-# Strip tag to get the bare repo ref for --cache-from.
-# Guard: if IMAGE_DEST has no tag (e.g. a registry with a port like
-# host:5000/app) the naive %:* pattern would eat the port instead of the tag.
-# Only strip when the final path component (after the last /) contains a colon.
-_IMAGE_FINAL="${IMAGE_DEST##*/}"
-if [[ "${_IMAGE_FINAL}" == *:* ]]; then
-    CACHE_FROM_REPO="${IMAGE_DEST%:*}"
-else
-    CACHE_FROM_REPO="${IMAGE_DEST}"
-fi
-unset _IMAGE_FINAL
+# Buildah, which only a Dockerfile build as root uses: the registry is plain
+# HTTP, and a short name (FROM golang:1.24-alpine) means Docker Hub, as Docker
+# reads it.
+if [[ -z "${ROOTLESS}" && "${BUILDER}" == "dockerfile" ]]; then
+    mkdir -p "${HOME}/.config/containers"
+    # This file is read instead of the system's, so it says what the system's
+    # does too. Top-level keys go before any [[registry]] table.
+    if ! grep -q '^unqualified-search-registries' "${HOME}/.config/containers/registries.conf" 2>/dev/null; then
+        printf 'unqualified-search-registries = ["docker.io"]\nshort-name-mode = "permissive"\n' \
+            | cat - "${HOME}/.config/containers/registries.conf" 2>/dev/null > /tmp/registries.conf || true
+        mv /tmp/registries.conf "${HOME}/.config/containers/registries.conf"
+    fi
+    cat >> "${HOME}/.config/containers/registries.conf" <<EOF
 
-case "${BUILDER}" in
-  railpack)
-    log "Building with Railpack → ${IMAGE_DEST}"
-    # Railpack requires a BuildKit daemon. Start rootless buildkitd, wait for
-    # the socket, then run railpack. --oci-worker-no-process-sandbox is required
-    # in containers where full kernel namespace sandboxing is unavailable.
-    BUILDKIT_SOCK="/tmp/buildkitd.sock"
-
-    # Tell buildkitd the internal registry is plain HTTP (not HTTPS).
-    mkdir -p /tmp/buildkit-config
-    cat > /tmp/buildkit-config/buildkitd.toml <<EOF
-[registry."${REGISTRY_HOST}"]
-  http = true
-  insecure = true
+[[registry]]
+location = "${REGISTRY_HOST}"
+insecure = true
 EOF
+    if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
+        log "Logging in to ${REGISTRY_HOST}…"
+        echo "${REGISTRY_PASS}" | buildah login \
+            --username "${REGISTRY_USER}" \
+            --password-stdin \
+            "${REGISTRY_HOST}"
+    fi
+fi
+
+# ── BuildKit ──────────────────────────────────────────────────────────────────
+# Railpack always builds with BuildKit; a Dockerfile does when rootless.
+# Rootless, build steps share the daemon's process namespace
+# (--oci-worker-no-process-sandbox), as a new one per step needs a /proc the
+# pod is not given: a step can see and stop its own build's daemon, nothing
+# else.
+BUILDKIT_SOCK="/tmp/buildkitd.sock"
+BUILDKITD_PID=""
+
+start_buildkitd() {
+    rm -f "${BUILDKIT_SOCK}"
+    > /tmp/buildkitd.log          # reset log so readiness grep is unambiguous
+    local cmd=(buildkitd)
+    # rootlesskit makes the user namespace in which buildkitd is root and the
+    # node sees this user.
+    if [[ -n "${ROOTLESS}" ]]; then
+        cmd=(rootlesskit buildkitd --rootless --oci-worker-no-process-sandbox)
+    fi
+    "${cmd[@]}" \
+        --addr "unix://${BUILDKIT_SOCK}" \
+        --root "${BUILDKIT_ROOT}" \
+        --oci-worker-snapshotter=auto \
+        --config /tmp/buildkit-config/buildkitd.toml \
+        2>/tmp/buildkitd.log &
+    BUILDKITD_PID=$!
+}
+
+# Returns 0 when buildkitd prints "running server" (gRPC listener active).
+# buildkitd emits this line only after workers are initialised, so it is a
+# reliable readiness signal — unlike polling via buildctl which returns fast
+# gRPC errors while the daemon is still starting up.
+wait_buildkitd_ready() {
+    local secs="${1:-30}"
+    for i in $(seq 1 "${secs}"); do
+        grep -q "running server" /tmp/buildkitd.log 2>/dev/null && return 0
+        sleep 1
+    done
+    return 1
+}
+
+use_buildkit() {
+    # The registry is plain HTTP, not HTTPS.
+    mkdir -p /tmp/buildkit-config
+    {
+        # Rootless, buildkitd may write only its own folders: its trace
+        # socket goes under /tmp, not /run/buildkit.
+        if [[ -n "${ROOTLESS}" ]]; then
+            printf '[otel]\n  socketPath = "/tmp/buildkit-otel.sock"\n\n'
+        fi
+        printf '[registry."%s"]\n  http = true\n  insecure = true\n' "${REGISTRY_HOST}"
+    } > /tmp/buildkit-config/buildkitd.toml
 
     # auto is overlayfs wherever the cache volume supports it, native
     # elsewhere. native stores every step as a full copy of the filesystem,
     # about a gigabyte for a Node build: slow to write, and enough to push the
     # cache over its limit so each build's trim deletes the steps the next one
     # needs.
+    BUILDKIT_ROOT=/tmp/buildkit-root
+    mkdir -p "${BUILDKIT_ROOT}" 2>/dev/null || true
+    # A build without the cache gets a root of its own in BUILD_SCRATCH, a
+    # folder on the node's disk the build job mounts: there overlayfs works as
+    # it does in the cache. In the container's own /tmp it cannot (overlayfs
+    # does not stack on overlayfs), and native's full copy of every step takes
+    # over 14GB for a small Node build.
+    scratch_root() { mktemp -d "${BUILD_SCRATCH:-/tmp}/buildkit-private.XXXXXX"; }
+    # A cache a builder running as root wrote holds files this user can
+    # neither use nor remove: build without it rather than fail.
+    if [[ -n "${ROOTLESS}" ]]; then
+        if [[ ! -w "${BUILDKIT_ROOT}" ]] \
+            || [[ -n "$(find "${BUILDKIT_ROOT}" -mindepth 1 -maxdepth 2 ! -user "$(id -u)" ! -name .build.lock -print -quit 2>/dev/null)" ]]; then
+            log "The build cache belongs to another user (a builder that ran as root): building without it."
+            BUILDKIT_ROOT="$(scratch_root)"
+        fi
+    fi
+
     # Every build in a project shares one cache, and one BuildKit may use it
     # at a time: a second daemon on the same root cannot start. So a build
     # waits for the others in its project, and after BUILDKIT_LOCK_WAIT seconds
     # builds without the cache rather than wait longer.
-    BUILDKIT_ROOT=/tmp/buildkit-root
     exec 9>"${BUILDKIT_ROOT}/.build.lock"
-    waited=0
+    local waited=0
     until flock -n 9; do
         if (( waited == 0 )); then log "Waiting for another build in this project to finish with the build cache…"; fi
         if (( waited >= ${BUILDKIT_LOCK_WAIT:-1200} )); then
             log "Still busy after $(( waited / 60 )) minutes: building without the cache."
-            BUILDKIT_ROOT="$(mktemp -d /tmp/buildkit-private.XXXXXX)"
+            BUILDKIT_ROOT="$(scratch_root)"
             break
         fi
         sleep 5
         waited=$(( waited + 5 ))
     done
-
-    start_buildkitd() {
-        rm -f "${BUILDKIT_SOCK}"
-        > /tmp/buildkitd.log          # reset log so readiness grep is unambiguous
-        buildkitd \
-            --addr "unix://${BUILDKIT_SOCK}" \
-            --root "${BUILDKIT_ROOT}" \
-            --oci-worker-snapshotter=auto \
-            --config /tmp/buildkit-config/buildkitd.toml \
-            2>/tmp/buildkitd.log &
-        BUILDKITD_PID=$!
-    }
-
-    # Returns 0 when buildkitd prints "running server" (gRPC listener active).
-    # buildkitd emits this line only after workers are initialised, so it is a
-    # reliable readiness signal — unlike polling via buildctl which returns fast
-    # gRPC errors while the daemon is still starting up.
-    wait_buildkitd_ready() {
-        local secs="${1:-30}"
-        for i in $(seq 1 "${secs}"); do
-            grep -q "running server" /tmp/buildkitd.log 2>/dev/null && return 0
-            sleep 1
-        done
-        return 1
-    }
 
     export BUILDKIT_HOST="unix://${BUILDKIT_SOCK}"
 
@@ -385,6 +413,25 @@ EOF
         log "Removing the build cache kept in the old format…"
         rm -rf "${BUILDKIT_ROOT}/runc-native"
     fi
+}
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+# Strip tag to get the bare repo ref for --cache-from.
+# Guard: if IMAGE_DEST has no tag (e.g. a registry with a port like
+# host:5000/app) the naive %:* pattern would eat the port instead of the tag.
+# Only strip when the final path component (after the last /) contains a colon.
+_IMAGE_FINAL="${IMAGE_DEST##*/}"
+if [[ "${_IMAGE_FINAL}" == *:* ]]; then
+    CACHE_FROM_REPO="${IMAGE_DEST%:*}"
+else
+    CACHE_FROM_REPO="${IMAGE_DEST}"
+fi
+unset _IMAGE_FINAL
+
+case "${BUILDER}" in
+  railpack)
+    log "Building with Railpack → ${IMAGE_DEST}"
+    use_buildkit
 
     # Generate the railpack build plan, then drive BuildKit directly via buildctl.
     # Using type=image,push=true bypasses the railpack CLI's docker-tar-to-stdout
@@ -409,34 +456,41 @@ EOF
         --output "type=image,name=${IMAGE_DEST},push=true,registry.insecure=true" \
         --progress plain \
         "${RAILPACK_SECRET_FLAGS[@]+"${RAILPACK_SECRET_FLAGS[@]}"}"
-
-    # Keep the cache under the project's limit: BuildKit drops the least
-    # recently used layers first, so what the next build needs is what stays.
-    if [[ "${CACHE_LIMIT_MB:-0}" -gt 0 ]]; then
-        log "Trimming the build cache to ${CACHE_LIMIT_MB} MB…"
-        buildctl prune --keep-storage "${CACHE_LIMIT_MB}" >/dev/null \
-            || log "Could not trim the build cache; the build itself succeeded."
-    fi
-
-    kill "${BUILDKITD_PID}" 2>/dev/null || true
     ;;
 
   dockerfile)
     log "Building with Dockerfile → ${IMAGE_DEST}"
-    # As the image sets it, for a builder image from before it did.
-    export BUILDAH_ISOLATION="${BUILDAH_ISOLATION:-chroot}"
     DOCKERFILE="${DOCKERFILE_PATH:-Dockerfile}"
     [[ -f "${DOCKERFILE}" ]] || die "Dockerfile not found at ${DOCKERFILE}"
-    # --layers enables intermediate layer caching in the PVC-backed OCI storage.
-    # --cache-from uses the last successfully pushed image as the cache source,
-    # so stale intermediate layers from failed builds are never reused.
-    buildah build \
-        --layers \
-        --cache-from "${CACHE_FROM_REPO}" \
-        --file "${DOCKERFILE}" \
-        --tag "${IMAGE_DEST}" \
-        "${DOCKERFILE_BUILD_ARG_FLAGS[@]+"${DOCKERFILE_BUILD_ARG_FLAGS[@]}"}" \
-        .
+    if [[ -n "${ROOTLESS}" ]]; then
+        # BuildKit's Dockerfile frontend, pushing as it builds. Its cache is
+        # its own, so it needs no --cache-from.
+        use_buildkit
+        buildctl build \
+            --frontend=dockerfile.v0 \
+            --local context=. \
+            --local dockerfile="$(dirname "${DOCKERFILE}")" \
+            --opt filename="$(basename "${DOCKERFILE}")" \
+            --output "type=image,name=${IMAGE_DEST},push=true,registry.insecure=true" \
+            --progress plain \
+            "${BUILDKIT_BUILD_ARG_FLAGS[@]+"${BUILDKIT_BUILD_ARG_FLAGS[@]}"}"
+    else
+        # As the image sets it, for a builder image from before it did.
+        export BUILDAH_ISOLATION="${BUILDAH_ISOLATION:-chroot}"
+        # --layers enables intermediate layer caching in the PVC-backed OCI storage.
+        # --cache-from uses the last successfully pushed image as the cache source,
+        # so stale intermediate layers from failed builds are never reused.
+        buildah build \
+            --layers \
+            --cache-from "${CACHE_FROM_REPO}" \
+            --file "${DOCKERFILE}" \
+            --tag "${IMAGE_DEST}" \
+            "${DOCKERFILE_BUILD_ARG_FLAGS[@]+"${DOCKERFILE_BUILD_ARG_FLAGS[@]}"}" \
+            .
+        # buildah uses registries.conf (written above) to reach HTTP registries.
+        log "Pushing ${IMAGE_DEST}…"
+        buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
+    fi
     ;;
 
   *)
@@ -444,23 +498,18 @@ EOF
     ;;
 esac
 
-# ── Push ──────────────────────────────────────────────────────────────────────
-# dockerfile: image is in buildah's local store after `buildah build`.
-# railpack: already pushed to the registry by buildctl above — nothing to do.
-# buildah uses registries.conf (written above) to reach HTTP registries.
-case "${BUILDER}" in
-  dockerfile)
-    log "Pushing ${IMAGE_DEST}…"
-    buildah push "${IMAGE_DEST}" "docker://${IMAGE_DEST}"
-    ;;
-esac
-
-# ── Cache limit (Buildah) ─────────────────────────────────────────────────────
-# Buildah cannot trim its layer cache to a size, so over the limit it is
-# emptied, and the next build starts cold. Never fails the build.
-case "${BUILDER}" in
-  dockerfile)
-    if [[ "${CACHE_LIMIT_MB:-0}" -gt 0 ]]; then
+# ── Cache limit ───────────────────────────────────────────────────────────────
+# Never fails the build.
+if [[ "${CACHE_LIMIT_MB:-0}" -gt 0 ]]; then
+    if [[ -n "${BUILDKITD_PID}" ]]; then
+        # BuildKit drops the least recently used layers first, so what the
+        # next build needs is what stays.
+        log "Trimming the build cache to ${CACHE_LIMIT_MB} MB…"
+        buildctl prune --keep-storage "${CACHE_LIMIT_MB}" >/dev/null \
+            || log "Could not trim the build cache; the build itself succeeded."
+    else
+        # Buildah cannot trim its layer cache to a size, so over the limit it
+        # is emptied, and the next build starts cold.
         used_mb=$(du -sm /var/lib/containers/storage 2>/dev/null | cut -f1)
         if [[ "${used_mb:-0}" -gt "${CACHE_LIMIT_MB}" ]]; then
             log "Build cache is ${used_mb} MB, over the ${CACHE_LIMIT_MB} MB limit: emptying it."
@@ -468,7 +517,9 @@ case "${BUILDER}" in
                 || log "Could not empty the build cache; the build itself succeeded."
         fi
     fi
-    ;;
-esac
+fi
+if [[ -n "${BUILDKITD_PID}" ]]; then
+    kill "${BUILDKITD_PID}" 2>/dev/null || true
+fi
 
 log "Build complete: ${IMAGE_DEST}"

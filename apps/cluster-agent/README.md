@@ -45,7 +45,7 @@ sends them.
 
 | Intent | |
 |---|---|
-| `POST builds` | a build from the API's inputs, run with the agent's builder image (whatever the API names), rootless: uid 1000, unprivileged |
+| `POST builds` | a build from the API's inputs, run with the agent's builder image (whatever the API names), rootless: uid 1000, unprivileged, its cache in a folder of the claim (`buildkit-rootless`) no root builder wrote; a build that cannot use the cache works in a folder on the node's disk (`build-scratch`), where layers stay layers |
 | `POST nodes/<node>/prune` | the image cleanup on a node |
 | `POST nodes/<node>/shells/<name>` | the node terminal, only while the owner has approved it |
 | `DELETE shells/<name>` | closes a node terminal |
@@ -55,7 +55,7 @@ sends them.
 ```bash
 meshploy-cluster-agent init                    # make the certificate, key and token in /var/lib/meshploy/cluster-agent
 meshploy-cluster-agent register -api-url http://100.64.0.1:4000 -token mprov-… -name edge-1 -mesh-ip 100.64.0.2
-meshploy-cluster-agent serve -listen 100.64.0.2:7443 -api 100.64.0.1 -builder-image <image>
+meshploy-cluster-agent serve -listen 100.64.0.2:7443 -api 100.64.0.1   # -builder-image overrides ghcr.io/meshploy/builder
 meshploy-cluster-agent approve-terminal 30m    # let the API open a node terminal until then; "off" ends it
 ```
 

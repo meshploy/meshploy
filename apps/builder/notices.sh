@@ -63,6 +63,13 @@ if command -v buildctl >/dev/null 2>&1; then
         "https://github.com/moby/buildkit"
 fi
 
+if command -v rootlesskit >/dev/null 2>&1; then
+    v="$(rootlesskit --version | awk '{print $NF}' | sed 's/^v//')"
+    tool_section "RootlessKit" "$v" \
+        "https://raw.githubusercontent.com/rootless-containers/rootlesskit/v${v}/LICENSE" \
+        "https://github.com/rootless-containers/rootlesskit"
+fi
+
 if command -v railpack >/dev/null 2>&1; then
     v="$(railpack --version | awk '{print $NF}' | sed 's/^v//')"
     tool_section "Railpack" "$v" \

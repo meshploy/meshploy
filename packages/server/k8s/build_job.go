@@ -19,7 +19,7 @@ import (
 
 const (
 	// builderImageRepo is the image that performs git clone + build + push.
-	// Contains: git, railpack, buildah.
+	// Contains: git, railpack, buildah, buildkit.
 	builderImageRepo = "ghcr.io/meshploy/builder"
 
 	// BuilderNodeLabel is the node label used to schedule build jobs.
@@ -33,6 +33,17 @@ const (
 	buildCacheSize       = "20Gi"
 	buildahCacheMountAt  = "/var/lib/containers/storage" // root buildah storage
 	buildkitCacheMountAt = "/tmp/buildkit-root"          // buildkitd --root
+	// BuildScratchVolume is a folder on the node's disk for one build's own
+	// BuildKit root, when it builds without the cache: there overlayfs works,
+	// as it cannot on the container's own filesystem. Removed with the pod.
+	BuildScratchVolume  = "build-scratch"
+	buildScratchMountAt = "/var/lib/meshploy-scratch"
+)
+
+// The build pod's cache volume, and the folder of it BuildKit keeps.
+const (
+	BuildCacheVolume     = "build-cache"
+	BuildKitCacheSubPath = "buildkit"
 )
 
 // DefaultBuilderImage is the builder matching this API's release channel. An
@@ -353,12 +364,16 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 					Volumes: []corev1.Volume{
 						{
 							// Single PVC shared by both buildah and buildkitd via subpaths.
-							Name: "build-cache",
+							Name: BuildCacheVolume,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 									ClaimName: buildCachePVC,
 								},
 							},
+						},
+						{
+							Name:         BuildScratchVolume,
+							VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 						},
 					},
 					Containers: []corev1.Container{
@@ -390,19 +405,24 @@ func CreateBuildJob(ctx context.Context, client kubernetes.Interface, p BuildJob
 								{Name: "INSTALL_COMMAND", Value: p.InstallCommand},
 								{Name: "BUILD_COMMAND", Value: p.BuildCommand},
 								{Name: "CACHE_LIMIT_MB", Value: strconv.Itoa(p.CacheLimitMB)},
+								{Name: "BUILD_SCRATCH", Value: buildScratchMountAt},
 							}, sourceEnv(p.Source)...),
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									// buildah (dockerfile) layer cache
-									Name:      "build-cache",
+									Name:      BuildCacheVolume,
 									MountPath: buildahCacheMountAt,
 									SubPath:   "buildah",
 								},
 								{
 									// buildkitd (railpack) layer cache
-									Name:      "build-cache",
+									Name:      BuildCacheVolume,
 									MountPath: buildkitCacheMountAt,
-									SubPath:   "buildkit",
+									SubPath:   BuildKitCacheSubPath,
+								},
+								{
+									Name:      BuildScratchVolume,
+									MountPath: buildScratchMountAt,
 								},
 							},
 							// Buildah needs elevated privileges to create overlay mounts.

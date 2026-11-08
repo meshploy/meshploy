@@ -1,7 +1,9 @@
 # Meshploy Builder Image
 # Runs as the build container inside K8s Jobs.
-# Contains: git, railpack, buildah, buildkitd, buildctl.
-# Runs as root — build jobs are ephemeral and mesh-internal.
+# Contains: git, railpack, buildah, buildkitd, buildctl, rootlesskit.
+# Started as root (privileged), it builds Dockerfiles with Buildah and Railpack
+# with BuildKit. Started as uid 1000 (unprivileged, as a cluster agent runs
+# it), it builds both with BuildKit inside its own user namespace.
 #
 # Build: docker build -t ghcr.io/meshploy/builder:latest -f apps/builder/Dockerfile .
 #        (from the repository root, so the image can carry its LICENSE)
@@ -24,6 +26,7 @@ RUN apk add --no-cache \
     aardvark-dns \
     fuse-overlayfs \
     buildkit \
+    shadow-uidmap \
     mise \
     gcompat \
     libc6-compat && \
@@ -52,6 +55,20 @@ RUN mkdir -p /etc/containers && \
 RUN mkdir -p /root/.config/containers && \
     printf '[storage]\ndriver = "overlay"\ngraphRoot = "/var/lib/containers/storage"\n' \
     > /root/.config/containers/storage.conf
+
+# ── Rootless ──────────────────────────────────────────────────────────────────
+# Started as uid 1000, BuildKit runs inside rootlesskit's user namespace, where
+# a build step's root is uid 1000 on the node, and the range below is the ids
+# its files may hold. newuidmap and newgidmap (shadow-uidmap) map it; they are
+# setuid, so the pod must allow privilege escalation. rootlesskit stays at
+# /usr/bin/rootlesskit: Ubuntu, which forbids user namespaces to programs
+# without a profile allowing them, ships one for that path.
+COPY --from=docker.io/moby/buildkit:v0.23.2-rootless /usr/bin/rootlesskit /usr/bin/rootlesskit
+RUN adduser -D -u 1000 -h /home/build build && \
+    echo build:100000:65536 > /etc/subuid && \
+    echo build:100000:65536 > /etc/subgid && \
+    mkdir -p /run/user/1000 && chown build:build /run/user/1000 && chmod 700 /run/user/1000 && \
+    rootlesskit --version
 
 # ── buildctl (BuildKit client) ────────────────────────────────────────────────
 # Alpine's buildkit apk only ships buildkitd. buildctl is in the same upstream
@@ -89,7 +106,7 @@ RUN chmod +x /usr/local/bin/meshploy-build
 # graph the way the API's are.
 COPY LICENSE NOTICE /usr/share/meshploy/
 COPY apps/builder/notices.sh /tmp/notices.sh
-RUN sh /tmp/notices.sh && rm /tmp/notices.sh
+RUN sh /tmp/notices.sh && rm /tmp/notices.sh && chown -R build:build /tmp/railpack
 
 WORKDIR /root
 

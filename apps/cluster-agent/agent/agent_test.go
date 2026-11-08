@@ -339,6 +339,29 @@ func TestIntentBuildUsesTheAgentsBuilder(t *testing.T) {
 	if sc := c.SecurityContext; sc == nil || sc.Privileged == nil || *sc.Privileged || sc.RunAsUser == nil || *sc.RunAsUser != 1000 {
 		t.Errorf("build container security %+v, want unprivileged uid 1000", sc)
 	}
+	if sc := c.SecurityContext; sc.SELinuxOptions == nil || sc.SELinuxOptions.Type != BuilderSELinuxType {
+		t.Errorf("build container SELinux %+v, want %s", sc.SELinuxOptions, BuilderSELinuxType)
+	}
+	// Only BuildKit's cache, in a folder no root builder wrote.
+	var cache []corev1.VolumeMount
+	for _, m := range c.VolumeMounts {
+		if m.Name == appk8s.BuildCacheVolume {
+			cache = append(cache, m)
+		}
+	}
+	if len(cache) != 1 || cache[0].SubPath != RootlessCacheSubPath || cache[0].MountPath != "/tmp/buildkit-root" {
+		t.Errorf("build cache mounts %+v, want BuildKit's alone, in %s", cache, RootlessCacheSubPath)
+	}
+	scratch := false
+	for _, m := range c.VolumeMounts {
+		scratch = scratch || m.Name == appk8s.BuildScratchVolume
+	}
+	if !scratch {
+		t.Error("a rootless build lost its scratch folder on the node")
+	}
+	if ps := job.Spec.Template.Spec.SecurityContext; ps.FSGroupChangePolicy == nil || *ps.FSGroupChangePolicy != corev1.FSGroupChangeOnRootMismatch {
+		t.Error("the build cache is handed over on every build, not once")
+	}
 	if len(api.seen()) != 0 {
 		t.Error("an intent was forwarded to the API server as a request")
 	}
