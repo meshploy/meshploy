@@ -50,12 +50,27 @@ sends them.
 | `POST nodes/<node>/shells/<name>` | the node terminal, only while the owner has approved it |
 | `DELETE shells/<name>` | closes a node terminal |
 
+## What the agent carries to the host agent
+
+The host agent (`meshploy host serve`) on the agent's machine takes requests
+from a folder, `/var/lib/meshploy/host` (`-host-dir`; empty refuses them): on
+a gateway the API shares it, and through the agent the API reaches it as
+`host/files/<name>` and `host/list/<name>` under `/meshploy/v1/`
+(`hostagent.Folder`, `AgentCluster.HostFolder`). The host agent is the same
+either way. Each name is one the agent knows, and each body is checked before
+it is left:
+
+| | |
+|---|---|
+| written into `inbox/` | a `domain.apply` or `registry.gc` request, the edge to serve (`edge.json`, which must validate) and the DNS providers' tokens it names (`dns-credentials.json`, always root-only). A migration is refused: it acts through an API on the same machine |
+| read | the host agent's reports in `state/`, each request's status, the results of `domain.apply` and `registry.gc`, and the requests still waiting. Nothing else: not the migration's credential or plan, not the tokens the API left, not a link out of the folder |
+
 ## Commands
 
 ```bash
 meshploy-cluster-agent init                    # make the certificate, key and token in /var/lib/meshploy/cluster-agent
 meshploy-cluster-agent register -api-url http://100.64.0.1:4000 -token mprov-… -name edge-1 -mesh-ip 100.64.0.2
-meshploy-cluster-agent serve -listen 100.64.0.2:7443 -api 100.64.0.1   # -builder-image overrides ghcr.io/meshploy/builder
+meshploy-cluster-agent serve -listen 100.64.0.2:7443 -api 100.64.0.1   # -builder-image overrides ghcr.io/meshploy/builder, -host-dir the host agent's folder
 meshploy-cluster-agent approve-terminal 30m    # let the API open a node terminal until then; "off" ends it
 ```
 
@@ -77,5 +92,6 @@ and the API's `AgentDriver` against the agent over TLS.
 
 `e2e/` drives a real cluster through a running agent the way the API does,
 Meshploy's own Kubernetes functions over an `AgentDriver`, then the writes the
-agent must refuse. It is built with the `agente2e` tag and run on a machine on
+agent must refuse, and, with `AGENT_HOST_DIR`, the host agent's requests
+carried to a real host agent. It is built with the `agente2e` tag and run on a machine on
 the agent's mesh; its header lists the variables it reads.

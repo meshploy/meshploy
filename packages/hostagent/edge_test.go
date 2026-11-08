@@ -17,13 +17,13 @@ func okSnapshot() EdgeSnapshot {
 
 func TestEdgeSnapshotRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := ReadEdgeSnapshot(dir); !os.IsNotExist(err) {
+	if _, err := ReadEdgeSnapshot(Local(dir)); !os.IsNotExist(err) {
 		t.Fatalf("a host directory with no snapshot must report not-exist, got %v", err)
 	}
 	if err := WriteEdgeSnapshot(dir, okSnapshot()); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ReadEdgeSnapshot(dir)
+	got, err := ReadEdgeSnapshot(Local(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestDNSCredentialsAreTakenOnce(t *testing.T) {
 	if creds, err := TakeDNSCredentials(dir); err != nil || creds != nil {
 		t.Fatalf("no file must be no credentials, got %v, %v", creds, err)
 	}
-	if err := WriteDNSCredentials(dir, DNSCredentials{testProviderID: "tok"}); err != nil {
+	if err := WriteDNSCredentials(Local(dir), DNSCredentials{testProviderID: "tok"}); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(filepath.Join(dir, DNSCredentialsFile))
@@ -180,7 +180,10 @@ func TestDNSCredentialsAreTakenOnce(t *testing.T) {
 	if again, _ := TakeDNSCredentials(dir); again != nil {
 		t.Error("the credentials must be removed once taken")
 	}
-	if err := WriteDNSCredentials(dir, DNSCredentials{"../x": "tok"}); err != nil {
+	if err := WriteDNSCredentials(Local(dir), DNSCredentials{"../x": "tok"}); err == nil {
+		t.Error("the API must not leave a key that is not a provider ID")
+	}
+	if err := Local(dir).Put(DNSCredentialsFile, []byte(`{"../x":"tok"}`), true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := TakeDNSCredentials(dir); err == nil {

@@ -2,8 +2,10 @@
 // API: what the agent reports about the host, and how the API reads it.
 //
 // The agent (`meshploy host serve`, in the CLI) runs as root on the gateway
-// and writes reports into a directory mounted read-only into the API. The API
-// never runs anything on the host; it reads these files.
+// and writes reports into a directory the API reads (Folder): mounted
+// read-only into it on a gateway, or reached through the cluster agent when
+// the API runs elsewhere. The API never runs anything on the host; it reads
+// these files and leaves requests in the inbox.
 package hostagent
 
 import (
@@ -11,7 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -94,14 +96,14 @@ type Rule struct {
 	App string `json:"app,omitempty"`
 }
 
-// ReadState loads the agent status and firewall report from dir. Either is
-// nil when its file does not exist.
-func ReadState(dir string) (*Agent, *Firewall, error) {
-	agent, err := readJSON[Agent](filepath.Join(StateDir(dir), AgentFile))
+// ReadState loads the agent status and firewall report. Either is nil when
+// its file does not exist.
+func ReadState(f Folder) (*Agent, *Firewall, error) {
+	agent, err := readJSON[Agent](f, statePath(AgentFile))
 	if err != nil {
 		return nil, nil, err
 	}
-	fw, err := readJSON[Firewall](filepath.Join(StateDir(dir), FirewallFile))
+	fw, err := readJSON[Firewall](f, statePath(FirewallFile))
 	if err != nil {
 		return agent, nil, err
 	}
@@ -110,18 +112,15 @@ func ReadState(dir string) (*Agent, *Firewall, error) {
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
 
-func readJSON[T any](path string) (*T, error) {
-	info, err := os.Lstat(path)
+// statePath is a name under state/, as a Folder takes it.
+func statePath(parts ...string) string { return path.Join(append([]string{"state"}, parts...)...) }
+
+// readJSON reads a report, or nil when it has not been written.
+func readJSON[T any](f Folder, name string) (*T, error) {
+	b, _, err := f.Read(name, maxReportBytes)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > maxReportBytes {
-		return nil, errors.New(path + " is not a report")
-	}
-	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +219,8 @@ type Port struct {
 
 // ReadDocker returns the container inventory, and whether it is stale. A nil
 // report with no error is a host that has never written one.
-func ReadDocker(dir string, now time.Time) (*Docker, bool, error) {
-	d, err := readJSON[Docker](filepath.Join(StateDir(dir), DockerFile))
+func ReadDocker(f Folder, now time.Time) (*Docker, bool, error) {
+	d, err := readJSON[Docker](f, statePath(DockerFile))
 	if err != nil || d == nil {
 		return nil, false, err
 	}
@@ -298,8 +297,8 @@ func (l Listener) Loopback() bool {
 
 // ReadListeners returns what listens on the host, and whether it is stale. A
 // nil report with no error is a host that has never written one.
-func ReadListeners(dir string, now time.Time) (*Listeners, bool, error) {
-	l, err := readJSON[Listeners](filepath.Join(StateDir(dir), ListenersFile))
+func ReadListeners(f Folder, now time.Time) (*Listeners, bool, error) {
+	l, err := readJSON[Listeners](f, statePath(ListenersFile))
 	if err != nil || l == nil {
 		return nil, false, err
 	}

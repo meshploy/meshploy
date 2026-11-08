@@ -22,8 +22,8 @@ import (
 type TCPRouteService struct {
 	db  *gorm.DB
 	k8s kubernetes.Interface
-	// hostDir is where the host agent reports; empty on an API with no config.
-	hostDir string
+	// host is the host agent's folder; nil on an API with no host agent.
+	host hostagent.Folder
 }
 
 // zoneAddressName names what a zone binds, for a sentence.
@@ -42,10 +42,10 @@ func zoneAddressName(z db.TCPRouteZone) string {
 // withHostFirewall reads the host agent's last report once and says, for each
 // route, what the host firewall does with its port.
 func (s *TCPRouteService) withHostFirewall(routes []db.TCPRoute) {
-	if s.hostDir == "" || len(routes) == 0 {
+	if s.host == nil || len(routes) == 0 {
 		return
 	}
-	agent, fw, err := hostagent.ReadState(s.hostDir)
+	agent, fw, err := hostagent.ReadState(s.host)
 	now := time.Now()
 	for i := range routes {
 		// A port that was never on a public interface cannot be blocked by the

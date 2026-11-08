@@ -568,7 +568,7 @@ func hostUnitState() string {
 
 func printHostStatus(out io.Writer, now time.Time) error {
 	fmt.Fprintf(out, "Service:   %s\n", orDash(hostUnitState()))
-	agent, fw, err := hostagent.ReadState(hostDir)
+	agent, fw, err := hostagent.ReadState(hostagent.Local(hostDir))
 	if err != nil {
 		return err
 	}

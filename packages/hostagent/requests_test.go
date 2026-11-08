@@ -63,19 +63,19 @@ func TestReadRequestFileTrustsOnlyTheShape(t *testing.T) {
 
 func TestReadResultPassesJSONThrough(t *testing.T) {
 	dir := t.TempDir()
-	if raw, at, err := ReadResult(dir, PlanFile); raw != nil || at != nil || err != nil {
+	if raw, at, err := ReadResult(Local(dir), PlanFile); raw != nil || at != nil || err != nil {
 		t.Fatalf("no result: %s %v %v", raw, at, err)
 	}
 	if err := os.MkdirAll(MigrateDir(dir), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(MigrateDir(dir), PlanFile), `{"summary":{"moves":3}}`)
-	raw, at, err := ReadResult(dir, PlanFile)
+	raw, at, err := ReadResult(Local(dir), PlanFile)
 	if err != nil || at == nil || !strings.Contains(string(raw), `"moves":3`) {
 		t.Errorf("got %s %v %v", raw, at, err)
 	}
 	writeFile(t, filepath.Join(MigrateDir(dir), DetectFile), `{broken`)
-	if _, _, err := ReadResult(dir, DetectFile); err == nil {
+	if _, _, err := ReadResult(Local(dir), DetectFile); err == nil {
 		t.Error("accepted invalid JSON")
 	}
 }
@@ -85,7 +85,7 @@ func TestReadResultPassesJSONThrough(t *testing.T) {
 func TestCredentialIsConsumedOnce(t *testing.T) {
 	dir := t.TempDir()
 	want := Credential{Token: "magt-abcdef", OrgID: "org-1", AgentID: "a-1", TokenID: "t-1", BaseURL: "http://127.0.0.1:4000"}
-	if err := WriteCredential(dir, want); err != nil {
+	if err := WriteCredential(Local(dir), want); err != nil {
 		t.Fatal(err)
 	}
 

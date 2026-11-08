@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"slices"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/hostagent"
+	appk8s "github.com/meshploy/packages/server/k8s"
 )
 
 // The edge configuration - Caddy's site blocks, CoreDNS's zones - follows the
@@ -31,7 +34,7 @@ import (
 // its DNS mode switched, a domain removed. Not when one is created - an
 // unverified domain is not served, so there is nothing to render for it yet.
 func (s *SystemService) PublishEdge(ctx context.Context, orgID, by uuid.UUID) error {
-	if s.hostDir() == "" {
+	if s.host() == nil {
 		// No host agent configured: a developer running the API locally, where
 		// there is no gateway to serve anything.
 		return nil
@@ -47,11 +50,11 @@ func (s *SystemService) PublishEdge(ctx context.Context, orgID, by uuid.UUID) er
 		return err
 	}
 	if len(creds) > 0 {
-		if err := hostagent.WriteDNSCredentials(s.hostDir(), creds); err != nil {
+		if err := hostagent.WriteDNSCredentials(s.host(), creds); err != nil {
 			return fmt.Errorf("hand over the DNS providers' tokens: %w", err)
 		}
 	}
-	if err := hostagent.WriteDesiredEdgeSnapshot(s.hostDir(), *snap); err != nil {
+	if err := hostagent.WriteDesiredEdgeSnapshot(s.host(), *snap); err != nil {
 		return fmt.Errorf("record the domain set: %w", err)
 	}
 	if !s.HostAgentStatus().Reporting {
@@ -63,11 +66,28 @@ func (s *SystemService) PublishEdge(ctx context.Context, orgID, by uuid.UUID) er
 	return s.queueEdgeApply(by)
 }
 
+// PublishPrimaryEdge publishes the edge of the organisation whose verified
+// domain is primary, for an edge that has just become reachable. Nothing to
+// do before a domain is verified.
+func (s *SystemService) PublishPrimaryEdge(ctx context.Context) error {
+	if s.host() == nil {
+		return nil
+	}
+	var primary []meshdb.Domain
+	if err := s.db.WithContext(ctx).Where("is_primary AND verified").Limit(1).Find(&primary).Error; err != nil {
+		return err
+	}
+	if len(primary) == 0 {
+		return nil
+	}
+	return s.PublishEdge(ctx, primary[0].OrganizationID, uuid.Nil)
+}
+
 // SyncEdge publishes the edge when the installed one does not serve the console
 // names this binary does: an upgrade to a build that registers one, which
 // nothing else would publish until a domain changed. Run once, at start.
 func (s *SystemService) SyncEdge(ctx context.Context) {
-	if s.hostDir() == "" {
+	if s.host() == nil {
 		return
 	}
 	var primary meshdb.Domain
@@ -84,7 +104,7 @@ func (s *SystemService) SyncEdge(ctx context.Context) {
 // prefix. Nothing to do otherwise, so Community never reloads its edge for a
 // project.
 func (s *SystemService) PublishProjectNames(ctx context.Context, orgID, by uuid.UUID) error {
-	if s.hostDir() == "" || len(projectConsolePrefixes) == 0 {
+	if s.host() == nil || len(projectConsolePrefixes) == 0 {
 		return nil
 	}
 	return s.publishNamesIfChanged(ctx, orgID, by)
@@ -93,7 +113,10 @@ func (s *SystemService) PublishProjectNames(ctx context.Context, orgID, by uuid.
 // publishNamesIfChanged publishes the edge when the names it serves as the
 // console differ from the installed edge's.
 func (s *SystemService) publishNamesIfChanged(ctx context.Context, orgID, by uuid.UUID) error {
-	installed, err := hostagent.ReadEdgeSnapshot(s.hostDir())
+	installed, err := hostagent.ReadEdgeSnapshot(s.host())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil // nothing installed yet: its first apply serves the names
+	}
 	if err != nil || installed == nil {
 		return err
 	}
@@ -207,11 +230,17 @@ func (s *SystemService) edgeSnapshot(ctx context.Context, orgID uuid.UUID) (*hos
 		Order("is_primary DESC, created_at ASC").Find(&domains).Error; err != nil {
 		return nil, err
 	}
+	publicIP, meshIP, err := s.edgeAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
 	snap := hostagent.EdgeSnapshot{
-		PublicIP:     s.cfg.PublicIP,
-		MeshIP:       s.cfg.GatewayIP,
+		PublicIP:     publicIP,
+		MeshIP:       meshIP,
 		WrittenAt:    time.Now().UTC(),
 		ConsoleNames: append([]string(nil), consoleNames...),
+		// Through a cluster agent, the edge is another machine than this API's.
+		PlatformElsewhere: s.cfg.ClusterAgent,
 	}
 	for _, d := range domains {
 		mode := string(d.DNSMode)
@@ -287,9 +316,34 @@ func (s *SystemService) edgeCredentials(ctx context.Context, snap hostagent.Edge
 	return creds, nil
 }
 
+// ErrEdgeNotReported is an edge whose public address is not known yet: its
+// host agent reports it once the edge is installed.
+var ErrEdgeNotReported = errors.New("the edge has not reported its public address yet")
+
+// edgeAddresses are the edge's public and mesh addresses. On a gateway they
+// are this machine's, as install.sh recorded them. Through a cluster agent the
+// edge is the node holding the agent, and its addresses are that node's.
+func (s *SystemService) edgeAddresses(ctx context.Context) (public, mesh string, err error) {
+	if !s.cfg.ClusterAgent {
+		return s.cfg.PublicIP, s.cfg.GatewayIP, nil
+	}
+	var edge []meshdb.Node
+	if err := s.db.WithContext(ctx).Select("public_ip", "tailscale_ip").
+		Where("cluster_agent_cert <> ''").Limit(1).Find(&edge).Error; err != nil {
+		return "", "", err
+	}
+	if len(edge) == 0 {
+		return "", "", appk8s.ErrNoClusterAgent
+	}
+	if edge[0].PublicIP == "" {
+		return "", "", ErrEdgeNotReported
+	}
+	return edge[0].PublicIP, edge[0].TailscaleIP, nil
+}
+
 // queueEdgeApply leaves a domain.apply request in the inbox.
 func (s *SystemService) queueEdgeApply(by uuid.UUID) error {
-	return queueHostRequest(s.hostDir(), hostagent.Request{
+	return hostagent.QueueRequest(s.host(), hostagent.Request{
 		ID: uuid.NewString(), Type: hostagent.RequestDomainApply,
 		RequestedBy: by.String(), RequestedAt: time.Now().UTC(),
 	})

@@ -39,7 +39,7 @@ func TestTCPRoutesCarryTheHostFirewallVerdict(t *testing.T) {
 		}},
 	)
 	routes := []db.TCPRoute{{GatewayPort: 10000}, {GatewayPort: 443}, {GatewayPort: 5432}}
-	(&TCPRouteService{hostDir: dir}).withHostFirewall(routes)
+	(&TCPRouteService{host: hostagent.Local(dir)}).withHostFirewall(routes)
 
 	for i, want := range []string{hostagent.PortBlocked, hostagent.PortOpen, hostagent.PortRestricted} {
 		got := routes[i].HostFirewall
@@ -55,7 +55,7 @@ func TestTCPRoutesCarryTheHostFirewallVerdict(t *testing.T) {
 // A gateway without the agent must not guess.
 func TestTCPRoutesWithoutAnAgentAreUnknown(t *testing.T) {
 	routes := []db.TCPRoute{{GatewayPort: 10000}}
-	(&TCPRouteService{hostDir: t.TempDir()}).withHostFirewall(routes)
+	(&TCPRouteService{host: hostagent.Local(t.TempDir())}).withHostFirewall(routes)
 	if got := routes[0].HostFirewall; got == nil || got.State != hostagent.PortUnknown || got.Reason == "" {
 		t.Errorf("got %+v, want unknown with a reason", got)
 	}

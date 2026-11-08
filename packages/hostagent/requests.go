@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -249,47 +250,107 @@ func ReadRequestFile(path string) (Request, error) {
 	if err != nil {
 		return req, err
 	}
+	return ParseRequest(b, filepath.Base(path))
+}
+
+// ParseRequest reads a request from the contents of the inbox file name.
+func ParseRequest(b []byte, name string) (Request, error) {
+	var req Request
+	if len(b) > MaxRequestBytes {
+		return req, errors.New("request file is too large")
+	}
 	dec := json.NewDecoder(bytesReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		return req, fmt.Errorf("request is not valid JSON: %w", err)
 	}
-	return req, ValidateRequest(req, filepath.Base(path))
+	return req, ValidateRequest(req, name)
 }
 
 // ReadRequestStatus loads one request's status, or nil if the agent has not
 // picked it up.
-func ReadRequestStatus(dir, id string) (*RequestStatus, error) {
+func ReadRequestStatus(f Folder, id string) (*RequestStatus, error) {
 	if !requestID.MatchString(id) {
 		return nil, errors.New("request id is not a UUID")
 	}
-	return readJSON[RequestStatus](filepath.Join(RequestsDir(dir), id+".json"))
+	return readJSON[RequestStatus](f, statePath(requestsDir, id+".json"))
 }
+
+// RequestStatuses is every request the agent has picked up, in no order.
+func RequestStatuses(f Folder) ([]RequestStatus, error) {
+	names, err := f.List(statePath(requestsDir))
+	if err != nil {
+		return nil, err
+	}
+	var out []RequestStatus
+	for _, n := range names {
+		id, ok := strings.CutSuffix(n, ".json")
+		if !ok || !requestID.MatchString(id) {
+			continue
+		}
+		if st, err := ReadRequestStatus(f, id); err == nil && st != nil {
+			out = append(out, *st)
+		}
+	}
+	return out, nil
+}
+
+// MaxResultBytes bounds a result the API reads.
+const MaxResultBytes = 16 << 20
 
 // ReadResult loads a migration result as raw JSON, or nil when there is none.
 // The API passes it through; its shape belongs to the CLI that wrote it.
-func ReadResult(dir, file string) (json.RawMessage, *time.Time, error) {
-	path := filepath.Join(MigrateDir(dir), file)
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
+func ReadResult(f Folder, file string) (json.RawMessage, *time.Time, error) {
+	b, at, err := f.Read(statePath(migrateDir, file), MaxResultBytes)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil
 	}
-	if err != nil {
-		return nil, nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > 16<<20 {
-		return nil, nil, errors.New(file + " is not a result")
-	}
-	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !json.Valid(b) {
 		return nil, nil, errors.New(file + " is not valid JSON")
 	}
-	at := info.ModTime().UTC()
 	return b, &at, nil
 }
+
+// QueueRequest leaves a request in the inbox for the agent.
+func QueueRequest(f Folder, req Request) error {
+	if err := ValidateRequest(req, ""); err != nil {
+		return err
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	return f.Put(InboxName(RequestFileName(req)), data, false)
+}
+
+// PendingRequests are the requests in the inbox that the agent has not taken
+// yet. Anything there that is not a request is skipped.
+func PendingRequests(f Folder) ([]Request, error) {
+	names, err := f.List("inbox")
+	if err != nil {
+		return nil, err
+	}
+	var out []Request
+	for _, n := range names {
+		if !requestName.MatchString(n) {
+			continue
+		}
+		b, _, err := f.Read(InboxName(n), MaxRequestBytes)
+		if err != nil {
+			continue
+		}
+		if req, err := ParseRequest(b, n); err == nil {
+			out = append(out, req)
+		}
+	}
+	return out, nil
+}
+
+// InboxName is a name under inbox/, as a Folder takes it.
+func InboxName(file string) string { return "inbox/" + file }
 
 // ── The migration's credential ───────────────────────────────────────────────
 //
@@ -317,34 +378,14 @@ type Credential struct {
 	WrittenAt time.Time `json:"written_at"`
 }
 
-// WriteCredential leaves a credential in the inbox for the agent, written under
-// a temporary name and renamed so the agent never reads half of it.
-func WriteCredential(dir string, c Credential) error {
-	inbox := InboxDir(dir)
-	if err := os.MkdirAll(inbox, 0o755); err != nil {
-		return err
-	}
+// WriteCredential leaves a credential in the inbox for the agent, readable by
+// root only.
+func WriteCredential(f Folder, c Credential) error {
 	data, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(inbox, ".credential-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), filepath.Join(inbox, CredentialFile))
+	return f.Put(InboxName(CredentialFile), data, true)
 }
 
 // TakeCredential reads the credential and removes it, so it is consumed once.

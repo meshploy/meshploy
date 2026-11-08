@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,24 +50,21 @@ func (s *DeploymentService) RequestRegistryGCNow(ctx context.Context) (bool, err
 // requestRegistryGC files a registry.gc request when one is due, or at once
 // with now set. True when one is waiting for the host agent.
 func (s *DeploymentService) requestRegistryGC(ctx context.Context, now time.Time, force bool) (bool, error) {
-	if s.cfg == nil || s.cfg.HostDir == "" || s.cfg.BuiltinRegistryEndpoint == "" {
+	host := hostFolder(s.host, s.cfg)
+	if host == nil || s.cfg == nil || s.cfg.BuiltinRegistryEndpoint == "" {
 		return false, nil
 	}
-	inbox := hostagent.InboxDir(s.cfg.HostDir)
-	if _, err := os.Stat(inbox); err != nil {
-		return false, nil // no host agent on this machine
-	}
-	entries, err := os.ReadDir(inbox)
+	pending, err := hostagent.PendingRequests(host)
 	if err != nil {
 		return false, err
 	}
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), hostagent.RequestRegistryGC+"-") {
+	for _, req := range pending {
+		if req.Type == hostagent.RequestRegistryGC {
 			return true, nil // asked already, not yet taken
 		}
 	}
 	var last time.Time
-	if b, err := os.ReadFile(filepath.Join(hostagent.MigrateDir(s.cfg.HostDir), hostagent.RegistryGCFile)); err == nil {
+	if b, _, err := hostagent.ReadResult(host, hostagent.RegistryGCFile); err == nil && b != nil {
 		var gc hostagent.RegistryGC
 		if json.Unmarshal(b, &gc) == nil {
 			last = gc.FinishedAt
@@ -92,34 +86,8 @@ func (s *DeploymentService) requestRegistryGC(ctx context.Context, now time.Time
 	if building > 0 {
 		return false, nil // an hour from now, once no build is pushing
 	}
-	err = queueHostRequest(s.cfg.HostDir, hostagent.Request{
+	err = hostagent.QueueRequest(host, hostagent.Request{
 		ID: uuid.NewString(), Type: hostagent.RequestRegistryGC, RequestedBy: "meshploy", RequestedAt: now.UTC(),
 	})
 	return err == nil, err
-}
-
-// queueHostRequest leaves a request in the host agent's inbox. It is written
-// under a temporary name and renamed, so the agent never reads half of one.
-func queueHostRequest(hostDir string, req hostagent.Request) error {
-	if err := hostagent.ValidateRequest(req, ""); err != nil {
-		return err
-	}
-	data, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-	inbox := hostagent.InboxDir(hostDir)
-	tmp, err := os.CreateTemp(inbox, ".request-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), filepath.Join(inbox, hostagent.RequestFileName(req)))
 }

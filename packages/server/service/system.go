@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/meshploy/packages/hostagent"
 	"log"
 	"net/http"
 	"sync"
@@ -82,6 +83,9 @@ type SystemService struct {
 	// agents mints the migration's own principal. Nil where a server was built
 	// without one, which is every test that does not need it.
 	agents *AgentService
+	// hostFolder is the host agent's folder when it is not the one cfg names
+	// on this machine: the cluster agent's (host).
+	hostFolder hostagent.Folder
 
 	// upgradeMu serialises upgrade requests, so two clicks cannot both pass the
 	// "nothing queued" check.

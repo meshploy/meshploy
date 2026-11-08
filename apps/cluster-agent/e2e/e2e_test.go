@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/meshploy/packages/hostagent"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -648,3 +649,72 @@ func portForwardGet(ctx context.Context, e env, ns, pod string, port int, path s
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// The host agent's requests, carried by the agent to a real host agent on its
+// machine (`meshploy host serve`, folder AGENT_HOST_DIR), the way an API on
+// another machine asks for them: its report read back, an edge whose
+// platform runs elsewhere handed over and applied as a dry run, with no
+// Headscale among what it would write, and a migration refused.
+func TestHostRequestsThroughTheAgent(t *testing.T) {
+	e := setup(t)
+	if os.Getenv("AGENT_HOST_DIR") == "" {
+		t.Skip("AGENT_HOST_DIR not set")
+	}
+	f := e.d.HostFolder()
+	ctx := ctxFor(t, 3*time.Minute)
+
+	agent, _, err := hostagent.ReadState(f)
+	if err == nil && (agent == nil || time.Since(agent.HeartbeatAt) > hostagent.StaleAfter) {
+		err = fmt.Errorf("no recent heartbeat: %+v", agent)
+	}
+	step(t, "the host agent's report, read through the agent", err)
+
+	snap := hostagent.EdgeSnapshot{
+		PublicIP: "203.0.113.10", MeshIP: "100.64.0.2", PlatformElsewhere: true,
+		Domains: []hostagent.EdgeDomain{
+			{BaseDomain: "edge.test", InternalSubdomain: "internal", DNSMode: hostagent.EdgeDNSOnDemand, Primary: true},
+		},
+	}
+	step(t, "the edge to serve, handed over", hostagent.WriteDesiredEdgeSnapshot(f, snap))
+	req := hostagent.Request{
+		ID: uuidString(), Type: hostagent.RequestDomainApply, RequestedBy: "e2e",
+		RequestedAt: time.Now().UTC(), Args: map[string]string{"dry_run": "true"},
+	}
+	step(t, "a domain.apply, queued", hostagent.QueueRequest(f, req))
+
+	var st *hostagent.RequestStatus
+	step(t, "the host agent runs it", waitFor(ctx, "the request's status", func() (bool, error) {
+		st, err = hostagent.ReadRequestStatus(f, req.ID)
+		return err == nil && st != nil && st.State != hostagent.RequestRunning, err
+	}))
+	if st.State != hostagent.RequestSucceeded {
+		t.Fatalf("domain.apply %s: %s", st.State, st.Error)
+	}
+	raw, _, err := hostagent.ReadResult(f, hostagent.DomainApplyFile)
+	step(t, "its result, read back", err)
+	var result struct {
+		DryRun bool   `json:"dry_run"`
+		Log    string `json:"log"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil || !result.DryRun {
+		t.Fatalf("result %s: %v", raw, err)
+	}
+	if !strings.Contains(result.Log, "caddy/Caddyfile") || strings.Contains(result.Log, "headscale") {
+		t.Fatalf("an edge with the platform elsewhere would write:\n%s", result.Log)
+	}
+	t.Logf("ok   the dry run would write Caddy and CoreDNS, and no Headscale:\n%s", result.Log)
+
+	plan := hostagent.Request{ID: uuidString(), Type: hostagent.RequestMigratePlan, RequestedBy: "e2e", RequestedAt: time.Now().UTC()}
+	refused(t, "a migration", hostagent.QueueRequest(f, plan))
+	_, _, err = f.Read("state/migrate/"+hostagent.PlanFile, 1<<20)
+	refused(t, "reading a migration's plan", err)
+}
+
+func uuidString() string {
+	b := make([]byte, 16)
+	for i := range b {
+		b[i] = byte(rand.Intn(256))
+	}
+	b[6], b[8] = b[6]&0x0f|0x40, b[8]&0x3f|0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}

@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"github.com/meshploy/packages/server/config"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,11 +65,22 @@ type HostRequestState struct {
 	Error       string     `json:"error,omitempty"`
 }
 
-func (s *SystemService) hostDir() string {
-	if s.cfg == nil {
-		return ""
+// host is the host agent's folder: on this machine, or on the cluster
+// agent's when this API reaches its cluster through one. Nil when there is no
+// host agent to reach, a developer's API.
+func (s *SystemService) host() hostagent.Folder {
+	return hostFolder(s.hostFolder, s.cfg)
+}
+
+// hostFolder is the folder a service was given, or the one its config names.
+func hostFolder(given hostagent.Folder, cfg *config.Config) hostagent.Folder {
+	if given != nil {
+		return given
 	}
-	return s.cfg.HostDir
+	if cfg == nil || cfg.HostDir == "" {
+		return nil
+	}
+	return hostagent.Local(cfg.HostDir)
 }
 
 // RequestMigration asks the host agent to detect or plan. Only the instance
@@ -104,7 +114,7 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 	default:
 		return HostRequestState{}, ErrUnknownHostRequest
 	}
-	if s.hostDir() == "" || !s.HostAgentStatus().Reporting {
+	if s.host() == nil || !s.HostAgentStatus().Reporting {
 		return HostRequestState{}, ErrHostAgentNotReporting
 	}
 
@@ -135,26 +145,7 @@ func (s *SystemService) RequestMigration(ctx context.Context, userID uuid.UUID, 
 	if err := hostagent.ValidateRequest(req, ""); err != nil {
 		return HostRequestState{}, err
 	}
-	data, err := json.Marshal(req)
-	if err != nil {
-		return HostRequestState{}, err
-	}
-	inbox := hostagent.InboxDir(s.hostDir())
-	// Written under a temporary name and renamed, so the agent never reads
-	// half a request.
-	tmp, err := os.CreateTemp(inbox, ".request-*")
-	if err != nil {
-		return HostRequestState{}, err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return HostRequestState{}, err
-	}
-	if err := tmp.Close(); err != nil {
-		return HostRequestState{}, err
-	}
-	if err := os.Rename(tmp.Name(), filepath.Join(inbox, hostagent.RequestFileName(req))); err != nil {
+	if err := hostagent.QueueRequest(s.host(), req); err != nil {
 		return HostRequestState{}, err
 	}
 	return HostRequestState{ID: req.ID, State: "queued", RequestedAt: req.RequestedAt}, nil
@@ -170,8 +161,8 @@ func (s *SystemService) GetMigrationState(ctx context.Context, userID uuid.UUID)
 	if !owner {
 		return out, ErrMigrationNotOwner
 	}
-	dir := s.hostDir()
-	if dir == "" {
+	dir := s.host()
+	if dir == nil {
 		return out, nil
 	}
 	out.AgentReporting = s.HostAgentStatus().Reporting
@@ -212,23 +203,14 @@ func (s *SystemService) GetMigrationState(ctx context.Context, userID uuid.UUID)
 		}
 	}
 	// Picked up and run, or running.
-	if entries, err := os.ReadDir(hostagent.RequestsDir(dir)); err == nil {
-		for _, e := range entries {
-			id := trimJSON(e.Name())
-			st, err := hostagent.ReadRequestStatus(dir, id)
-			if err != nil || st == nil {
-				continue
-			}
+	if statuses, err := hostagent.RequestStatuses(dir); err == nil {
+		for _, st := range statuses {
 			latest(kindOf(st.Type), HostRequestState{ID: st.ID, State: st.State, RequestedAt: st.StartedAt, FinishedAt: st.FinishedAt, Error: st.Error})
 		}
 	}
 	// Still waiting for the agent.
-	if entries, err := os.ReadDir(hostagent.InboxDir(dir)); err == nil {
-		for _, e := range entries {
-			req, err := hostagent.ReadRequestFile(filepath.Join(hostagent.InboxDir(dir), e.Name()))
-			if err != nil {
-				continue
-			}
+	if pending, err := hostagent.PendingRequests(dir); err == nil {
+		for _, req := range pending {
 			latest(kindOf(req.Type), HostRequestState{ID: req.ID, State: "queued", RequestedAt: req.RequestedAt})
 		}
 	}
@@ -245,13 +227,6 @@ func kindOf(reqType string) string {
 	return reqType
 }
 
-func trimJSON(name string) string {
-	if len(name) > 5 && name[len(name)-5:] == ".json" {
-		return name[:len(name)-5]
-	}
-	return name
-}
-
 // issueMigrationCredential mints the migration agent's token and leaves it for
 // the host agent to take.
 func (s *SystemService) issueMigrationCredential(ctx context.Context, userID uuid.UUID) error {
@@ -266,7 +241,7 @@ func (s *SystemService) issueMigrationCredential(ctx context.Context, userID uui
 	if err != nil {
 		return err
 	}
-	return hostagent.WriteCredential(s.hostDir(), hostagent.Credential{
+	return hostagent.WriteCredential(s.host(), hostagent.Credential{
 		Token:     token,
 		OrgID:     orgID.String(),
 		AgentID:   agentID.String(),

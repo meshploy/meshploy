@@ -7,6 +7,7 @@ import (
 	"time"
 
 	meshdb "github.com/meshploy/packages/db"
+	"github.com/meshploy/packages/hostagent"
 	"github.com/meshploy/packages/server/config"
 	"github.com/meshploy/packages/server/dnsprovider"
 
@@ -14,6 +15,14 @@ import (
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
 )
+
+// UseHostFolderForTest stands f in for the cluster agent's host folder, as if
+// the agent were registered and carried for the API.
+func UseHostFolderForTest(s *Services, f hostagent.Folder) {
+	s.System.hostFolder = f
+	s.Deployments.host = f
+	s.TCPRoutes.host = f
+}
 
 // UseK8sForTest gives the deployment service a cluster client, so tests in
 // service_test can drive a deploy against a fake one. Compiled only into tests.

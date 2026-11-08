@@ -424,6 +424,20 @@ func TestHeadscaleSendsEveryInternalZoneToTheMesh(t *testing.T) {
 	assert.Contains(t, hs, "base_domain: mesh.example.com")
 }
 
+// An edge whose platform runs elsewhere has no Headscale of its own: its
+// configuration is not rendered there, so an apply never writes or restarts
+// one. Caddy and CoreDNS are rendered as before.
+func TestAnEdgeWithThePlatformElsewhereRendersNoHeadscale(t *testing.T) {
+	snap := snapshot(domain("example.com", hostagent.EdgeDNSDelegation, true))
+	snap.PlatformElsewhere = true
+	files, err := Render(snap)
+	require.NoError(t, err)
+	assert.NotContains(t, files, HeadscaleConfig)
+	assert.Contains(t, files, "caddy/Caddyfile")
+	assert.Contains(t, files, "coredns/Corefile")
+	assert.Contains(t, files, "coredns/zones/internal.example.com")
+}
+
 // Moving the primary moves where Headscale says it lives, and nothing that
 // would rename a node.
 func TestMovingThePrimaryKeepsTheMeshDomainAndTheOldPlatformNames(t *testing.T) {

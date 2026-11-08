@@ -111,6 +111,10 @@ type EdgeSnapshot struct {
 	// under a prefix an edition registered: "<prefix>.<project slug>",
 	// beside <domain>. Empty in Community.
 	ProjectConsoleNames []string `json:"project_console_names,omitempty"`
+	// PlatformElsewhere is an edge whose API, console and Headscale run on
+	// another machine, which reaches the cluster through its cluster agent.
+	// Its Headscale configuration is that machine's to render, not this one's.
+	PlatformElsewhere bool `json:"platform_elsewhere,omitempty"`
 }
 
 // ProxyPortOrDefault is ProxyPort, or 8081.
@@ -347,35 +351,40 @@ func (s EdgeSnapshot) Sorted() []EdgeDomain {
 }
 
 // ReadDesiredEdgeSnapshot loads what the API asked to be served, or reports
-// os.ErrNotExist when it has asked for nothing.
-func ReadDesiredEdgeSnapshot(hostDir string) (*EdgeSnapshot, error) {
-	return readEdgeSnapshotAt(filepath.Join(hostDir, EdgeDesiredFile))
+// an error wrapping fs.ErrNotExist when it has asked for nothing.
+func ReadDesiredEdgeSnapshot(f Folder) (*EdgeSnapshot, error) {
+	return readEdgeSnapshot(f, EdgeDesiredFile)
 }
 
 // WriteDesiredEdgeSnapshot records what should be served. Used by the API; it
 // installs nothing on its own.
-func WriteDesiredEdgeSnapshot(hostDir string, snap EdgeSnapshot) error {
-	return writeEdgeSnapshotAt(filepath.Join(hostDir, EdgeDesiredFile), snap)
+func WriteDesiredEdgeSnapshot(f Folder, snap EdgeSnapshot) error {
+	data, err := encodeEdgeSnapshot(snap)
+	if err != nil {
+		return err
+	}
+	return f.Put(EdgeDesiredFile, data, false)
 }
 
-// ReadEdgeSnapshot loads the snapshot from a host directory. A missing file is
-// reported as os.ErrNotExist, which callers treat as "nothing has written one
+// ReadEdgeSnapshot loads the installed snapshot. A missing file is an error
+// wrapping fs.ErrNotExist, which callers treat as "nothing has written one
 // yet" rather than as a failure.
-func ReadEdgeSnapshot(hostDir string) (*EdgeSnapshot, error) {
-	return readEdgeSnapshotAt(filepath.Join(hostDir, EdgeSnapshotFile))
+func ReadEdgeSnapshot(f Folder) (*EdgeSnapshot, error) {
+	return readEdgeSnapshot(f, EdgeSnapshotFile)
 }
 
-func readEdgeSnapshotAt(path string) (*EdgeSnapshot, error) {
-	info, err := os.Stat(path)
+func readEdgeSnapshot(f Folder, name string) (*EdgeSnapshot, error) {
+	data, _, err := f.Read(name, MaxEdgeSnapshotBytes)
 	if err != nil {
 		return nil, err
 	}
-	if info.Size() > MaxEdgeSnapshotBytes {
-		return nil, fmt.Errorf("edge snapshot is %d bytes, over the %d limit", info.Size(), MaxEdgeSnapshotBytes)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+	return DecodeEdgeSnapshot(data)
+}
+
+// DecodeEdgeSnapshot reads a snapshot from a file's contents.
+func DecodeEdgeSnapshot(data []byte) (*EdgeSnapshot, error) {
+	if len(data) > MaxEdgeSnapshotBytes {
+		return nil, fmt.Errorf("edge snapshot is %d bytes, over the %d limit", len(data), MaxEdgeSnapshotBytes)
 	}
 	var snap EdgeSnapshot
 	if err := json.Unmarshal(data, &snap); err != nil {
@@ -384,73 +393,56 @@ func readEdgeSnapshotAt(path string) (*EdgeSnapshot, error) {
 	return &snap, nil
 }
 
-// WriteEdgeSnapshot replaces the snapshot, validating it first so an unusable
-// one never reaches the file the generator reads. Written through a temporary
-// file so a reader never sees half of one.
-func WriteEdgeSnapshot(hostDir string, snap EdgeSnapshot) error {
-	return writeEdgeSnapshotAt(filepath.Join(hostDir, EdgeSnapshotFile), snap)
-}
-
-func writeEdgeSnapshotAt(path string, snap EdgeSnapshot) error {
+// encodeEdgeSnapshot validates a snapshot and writes it out, so an unusable
+// one never reaches a file the generator reads.
+func encodeEdgeSnapshot(snap EdgeSnapshot) ([]byte, error) {
 	if err := snap.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 	if snap.WrittenAt.IsZero() {
 		snap.WrittenAt = time.Now().UTC()
 	}
 	data, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".edge-*.json")
+	return append(data, '\n'), nil
+}
+
+// WriteEdgeSnapshot replaces the installed snapshot. Used on the host, by
+// whoever applied it.
+func WriteEdgeSnapshot(hostDir string, snap EdgeSnapshot) error {
+	data, err := encodeEdgeSnapshot(snap)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return Local(hostDir).Put(EdgeSnapshotFile, data, false)
 }
 
 // WriteDNSCredentials leaves the providers' tokens for the next domain.apply.
 // Used by the API, readable by root only.
-func WriteDNSCredentials(hostDir string, creds DNSCredentials) error {
+func WriteDNSCredentials(f Folder, creds DNSCredentials) error {
+	if err := creds.Validate(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(creds)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(hostDir, DNSCredentialsFile)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	return f.Put(DNSCredentialsFile, data, true)
+}
+
+// Validate checks that every key names a provider and every token is there.
+func (c DNSCredentials) Validate() error {
+	for id, token := range c {
+		if !uuidPattern.MatchString(id) {
+			return fmt.Errorf("DNS credentials name %q, which is not a provider ID", id)
+		}
+		if token == "" {
+			return fmt.Errorf("DNS credentials give provider %s no token", id)
+		}
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".dns-credentials-*.json")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return nil
 }
 
 // TakeDNSCredentials reads the tokens the API left and removes the file. No
@@ -480,10 +472,8 @@ func TakeDNSCredentials(hostDir string) (DNSCredentials, error) {
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, fmt.Errorf("DNS credentials file is not readable: %w", err)
 	}
-	for id := range creds {
-		if !uuidPattern.MatchString(id) {
-			return nil, fmt.Errorf("DNS credentials name %q, which is not a provider ID", id)
-		}
+	if err := creds.Validate(); err != nil {
+		return nil, err
 	}
 	return creds, nil
 }

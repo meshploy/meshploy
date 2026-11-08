@@ -214,7 +214,7 @@ func touchesCaddy(changes []edgeconfig.Change) bool {
 // and merging it on every upgrade would quietly undo those choices.
 func applyEdgeConfigFromEnv(out io.Writer) ([]edgeconfig.Change, error) {
 	prevFromEnv, prevNoReload, prevDry, prevForce := domainApplyFromEnv, domainApplyNoReload, domainApplyDryRun, domainApplyForce
-	_, statErr := hostagent.ReadEdgeSnapshot(hostDir)
+	_, statErr := hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	domainApplyFromEnv, domainApplyNoReload, domainApplyDryRun, domainApplyForce = statErr != nil, true, false, false
 	defer func() {
 		domainApplyFromEnv, domainApplyNoReload, domainApplyDryRun, domainApplyForce = prevFromEnv, prevNoReload, prevDry, prevForce
@@ -238,7 +238,7 @@ func applyEdgeConfigFromEnv(out io.Writer) ([]edgeconfig.Change, error) {
 // name the installer wrote and the one Headscale and the console are reached
 // on; it says nothing about the others, so they are kept.
 func loadEdgeSnapshot() (*hostagent.EdgeSnapshot, error) {
-	existing, err := hostagent.ReadEdgeSnapshot(hostDir)
+	existing, err := hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}

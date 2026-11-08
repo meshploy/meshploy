@@ -24,17 +24,18 @@ type HostAgentStatus struct {
 // requests, has reported recently. An API configured without a host directory
 // has no agent to wait for.
 func (s *SystemService) hostAgentReporting() bool {
-	if s.cfg == nil || s.cfg.HostDir == "" {
+	if s.host() == nil {
 		return true
 	}
 	return s.HostAgentStatus().Reporting
 }
 
 func (s *SystemService) HostAgentStatus() HostAgentStatus {
-	if s.cfg == nil || s.cfg.HostDir == "" {
+	host := s.host()
+	if host == nil {
 		return HostAgentStatus{}
 	}
-	agent, fw, err := hostagent.ReadState(s.cfg.HostDir)
+	agent, fw, err := hostagent.ReadState(host)
 	if err != nil || agent == nil {
 		return HostAgentStatus{}
 	}

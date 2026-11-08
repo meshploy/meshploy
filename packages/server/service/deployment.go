@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meshploy/packages/hostagent"
 	"io"
 	"log"
 	"net/http"
@@ -38,6 +39,10 @@ var ErrK8sNotConfigured = errors.New("kubernetes is not configured on this insta
 func (s *DeploymentService) K8sConfigured() bool { return s != nil && s.k8s != nil }
 
 type DeploymentService struct {
+	// host is the host agent's folder when it is not the one cfg names on
+	// this machine: the cluster agent's.
+	host hostagent.Folder
+
 	// configFiles supplies a service's projected files. Assigned after
 	// construction in service.New; the two services reference each other.
 	configFiles *ConfigFileService

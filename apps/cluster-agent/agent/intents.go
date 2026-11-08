@@ -35,6 +35,11 @@ type errRefused struct{ reason string }
 func (e errRefused) Error() string { return e.reason }
 
 func (a *Agent) serveIntent(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.EscapedPath(), IntentPrefix)
+	if host, ok := strings.CutPrefix(rest, "host/"); ok {
+		a.serveHost(w, r, host)
+		return
+	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, IntentPrefix), "/"), "/")
 	ctx := r.Context()
 	var (

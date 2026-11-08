@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/meshploy/apps/cluster-agent/policy"
+	"github.com/meshploy/packages/hostagent"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -35,6 +36,7 @@ type Agent struct {
 	direct   *http.Client // the agent's own calls: dry runs, current objects
 	facts    *ClusterFacts
 	builds   BuildOptions
+	hostDir  hostagent.Folder // nil refuses requests for the host agent
 	logf     func(format string, args ...any)
 	timeNow  func() time.Time
 	dryLimit time.Duration

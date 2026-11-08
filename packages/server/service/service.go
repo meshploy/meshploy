@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/meshploy/packages/hostagent"
 	"log"
 	"os"
 	"time"
@@ -262,10 +263,16 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
 	routes := &RouteService{db: db, k8s: k8sClient}
 	deployments.routes = routes
-	tcpRoutes := &TCPRouteService{db: db, k8s: k8sClient}
-	if c != nil {
-		tcpRoutes.hostDir = c.HostDir
+	// The host agent's folder: on the cluster agent's machine when the
+	// cluster is reached through one, which is where the edge and its
+	// registry are; otherwise on this one.
+	var host hostagent.Folder
+	if agent != nil {
+		host = agent.HostFolder()
 	}
+	host = hostFolder(host, c)
+	deployments.host = host
+	tcpRoutes := &TCPRouteService{db: db, k8s: k8sClient, host: host}
 	workloads.tcpRoutes = tcpRoutes
 	deployments.tcpRoutes = tcpRoutes
 	workloads.notif = notif
@@ -325,7 +332,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Storage:         &StorageService{db: db},
 		DNSProviders:    dnsProviders,
 		Backups:         backups,
-		System:          &SystemService{db: db, cfg: c, ent: entitlements, agents: agents},
+		System:          &SystemService{db: db, cfg: c, ent: entitlements, agents: agents, hostFolder: host},
 		Notifications:   notif,
 		EmailConfig:     &EmailConfigService{db: db},
 		VariableGroups:  varGroups,
@@ -394,6 +401,11 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			appk8s.CleanupOrphanedShellPods(ctx, agent)
 			if err := appk8s.EnsureSandboxRuntimeClass(ctx, agent.Client()); err != nil {
 				log.Printf("warning: sandbox runtime class: %v", err)
+			}
+			// The edge is on the agent's machine and reached only through it,
+			// so it is told what to serve as soon as it can be.
+			if err := svc.System.PublishPrimaryEdge(ctx); err != nil {
+				log.Printf("warning: could not hand the edge its domain set: %v", err)
 			}
 		})
 		go func() {

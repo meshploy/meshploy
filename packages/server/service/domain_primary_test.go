@@ -60,7 +60,7 @@ func TestMakingADomainPrimaryKeepsTheOldOneServing(t *testing.T) {
 	assert.True(t, old.FormerPrimary)
 
 	require.NoError(t, e.svc.System.PublishEdge(ctx, e.org, uuid.New()))
-	snap, err := hostagent.ReadDesiredEdgeSnapshot(e.host)
+	snap, err := hostagent.ReadDesiredEdgeSnapshot(hostagent.Local(e.host))
 	require.NoError(t, err)
 	assert.Equal(t, "new.test", snap.Primary().BaseDomain)
 	for _, dom := range snap.Domains {

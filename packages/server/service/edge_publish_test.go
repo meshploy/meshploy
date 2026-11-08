@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
 	"github.com/meshploy/packages/hostagent"
 	"github.com/meshploy/packages/server/config"
+	appk8s "github.com/meshploy/packages/server/k8s"
 	"github.com/meshploy/packages/server/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +35,7 @@ func edgeServer(t *testing.T) (*service.Services, *gorm.DB, uuid.UUID, string) {
 
 func desired(t *testing.T, host string) *hostagent.EdgeSnapshot {
 	t.Helper()
-	snap, err := hostagent.ReadDesiredEdgeSnapshot(host)
+	snap, err := hostagent.ReadDesiredEdgeSnapshot(hostagent.Local(host))
 	require.NoError(t, err)
 	return snap
 }
@@ -230,4 +232,46 @@ func TestPublishEdgeHandsOverTheDNSProvidersToken(t *testing.T) {
 	creds, err := hostagent.TakeDNSCredentials(host)
 	require.NoError(t, err)
 	assert.Equal(t, hostagent.DNSCredentials{p.ID.String(): "cf-token-value"}, creds)
+}
+
+// Through a cluster agent the edge is another machine: what it should serve
+// goes to the host folder the agent carries, says the platform runs
+// elsewhere, so the edge renders no Headscale of its own, carries the edge
+// node's addresses rather than this API's, and asks for an apply there.
+// Without an edge node, or before it has reported its public address, nothing
+// is served, and the domain change itself is not what fails.
+func TestAnAgentAPIPublishesItsEdgeThroughTheAgent(t *testing.T) {
+	gdb := newTestDB(t)
+	// Built as an ordinary API and switched after: an agent API registers a
+	// namespace hook for the whole process, which later tests would inherit.
+	cfg := &config.Config{PublicIP: "203.0.113.10", GatewayIP: "100.64.0.1"}
+	svc := service.New(gdb, cfg)
+	cfg.ClusterAgent = true
+	host := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(host, "state"), 0o755))
+	beat, _ := json.Marshal(hostagent.Agent{HeartbeatAt: time.Now().UTC()})
+	require.NoError(t, os.WriteFile(filepath.Join(host, "state", hostagent.AgentFile), beat, 0o644))
+	service.UseHostFolderForTest(svc, hostagent.Local(host))
+
+	org := &db.Organization{Name: "acme", Slug: "acme-" + uuid.NewString()[:8]}
+	require.NoError(t, gdb.Create(org).Error)
+	ctx := context.Background()
+	require.NoError(t, svc.Domains.CreateSeeded(ctx, org.ID, "example.com", db.DNSModeOnDemand))
+
+	assert.ErrorIs(t, svc.System.PublishEdge(ctx, org.ID, uuid.New()), appk8s.ErrNoClusterAgent)
+	edge := &db.Node{OrganizationID: org.ID, Name: "edge", TailscaleIP: "100.64.0.2", ClusterAgentCert: "cert", ClusterAgentPort: 7443}
+	require.NoError(t, gdb.Create(edge).Error)
+	assert.ErrorIs(t, svc.System.PublishEdge(ctx, org.ID, uuid.New()), service.ErrEdgeNotReported)
+	require.NoError(t, gdb.Model(edge).Update("public_ip", "198.51.100.7").Error)
+
+	require.NoError(t, svc.System.PublishPrimaryEdge(ctx))
+	snap := desired(t, host)
+	assert.True(t, snap.PlatformElsewhere)
+	assert.Equal(t, "198.51.100.7", snap.PublicIP)
+	assert.Equal(t, "100.64.0.2", snap.MeshIP)
+	require.Len(t, snap.Domains, 1)
+	pending, err := hostagent.PendingRequests(hostagent.Local(host))
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, hostagent.RequestDomainApply, pending[0].Type)
 }

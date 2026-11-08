@@ -51,6 +51,8 @@ meshploy/
 
 `caddy/Caddyfile`, `coredns/Corefile`, the zone files and `headscale/config/config.yaml` are **output**, rendered by `meshploy domain apply` from an edge snapshot at `$HOST_DIR/state/edge.json`. Headscale's is generated because its split DNS must name every base domain's internal zone and its `server_url` follows the primary. They are not shipped in the deploy tarball and editing them is pointless - the next apply overwrites them. An operator's own Caddy configuration goes in `caddy/conf.d/*.caddy`, which the generated file imports and nothing writes.
 
+An edge whose API, console and Headscale run on another machine (an API reaching its cluster through a cluster agent) gets `platform_elsewhere` in its snapshot and renders no Headscale configuration: Headscale is rendered where it runs. Its public and mesh addresses are those of the node holding the cluster agent, not the API's.
+
 Templates live in `apps/cli/internal/edgeconfig/templates/`, with golden fixtures in its `testdata/`. A change to a template is therefore a change to a checked-in file a reviewer can read, and it reaches servers through `server-upgrade`, which re-renders. `install.sh` seeds the first snapshot with `--from-env`.
 
 Two snapshots, separated by who writes them: `inbox/edge.json` is what the API wants served (the one place the API can write, and leaving one there changes nothing by itself), and `state/edge.json` is what is actually installed. A `domain.apply` host-agent request is what puts the first into service and writes the second, so "the database changed" and "the gateway's edge changed" stay two visible events.
@@ -175,7 +177,7 @@ Required in `.env` at the monorepo root:
 | `HEADSCALE_USER` | Headscale user pre-auth keys are created under (default: `meshploy`) |
 | `BUILD_CACHE_LIMIT_GB` | Each project's build cache is trimmed back under this after every build (default: `5`; `0` = no cap). The builder applies it, so it needs a builder image that knows `CACHE_LIMIT_MB` |
 | `BUILDER_IMAGE` | Override the builder container image (default: `ghcr.io/meshploy/builder:latest`, or `:main` on an edge API) |
-| `HOST_DIR` | Where the host agent (`meshploy host serve`, run by `meshployd.service` on the gateway) reports (default: `/var/lib/meshploy/host`). docker-compose mounts its `state/` read-only and its `inbox/` read-write for requests (Dokploy detect and plan, domain apply, the registry's weekly garbage collection); missing or stale reports make firewall verdicts `unknown` |
+| `HOST_DIR` | Where the host agent (`meshploy host serve`, run by `meshployd.service` on the gateway) reports (default: `/var/lib/meshploy/host`). docker-compose mounts its `state/` read-only and its `inbox/` read-write for requests (Dokploy detect and plan, domain apply, the registry's weekly garbage collection); missing or stale reports make firewall verdicts `unknown`. Through a cluster agent (`CLUSTER_AGENT`) the folder is on the agent's machine and reached through the agent, which carries `domain.apply` and `registry.gc` only (`hostagent.Folder`) |
 | `UPGRADE_DIR` | Where the console and the host-side updater meet (default: `/var/lib/meshploy/upgrade`). docker-compose mounts its `inbox/` read-write and `state/` read-only, so the API can queue an upgrade but never run one |
 
 ---

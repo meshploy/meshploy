@@ -3,6 +3,7 @@ module github.com/meshploy/apps/cluster-agent
 go 1.25.8
 
 require (
+	github.com/meshploy/packages/hostagent v0.0.0-00010101000000-000000000000
 	github.com/meshploy/packages/server v0.0.0-00010101000000-000000000000
 	k8s.io/api v0.31.0
 	k8s.io/apimachinery v0.31.0

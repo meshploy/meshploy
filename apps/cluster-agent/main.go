@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/meshploy/apps/cluster-agent/agent"
+	"github.com/meshploy/packages/hostagent"
 	appk8s "github.com/meshploy/packages/server/k8s"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -77,6 +78,7 @@ func cmdServe(args []string) {
 	kubeconfig := fs.String("kubeconfig", "/etc/rancher/k3s/k3s.yaml", "the cluster's admin kubeconfig")
 	approval := fs.String("approval", defaultApproval, "the file holding the owner's terminal approval")
 	builder := fs.String("builder-image", appk8s.DefaultBuilderImage(), "the builder image builds run; empty refuses builds")
+	hostDir := fs.String("host-dir", hostagent.DefaultDir, "the host agent's folder, whose requests the agent carries for the API; empty refuses them")
 	fs.Parse(args)
 	if *listen == "" || *from == "" {
 		log.Fatal("serve needs -listen and -api")
@@ -104,6 +106,7 @@ func cmdServe(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	a.CarryHostRequests(*hostDir)
 	var callers []string
 	for _, c := range strings.Split(*from, ",") {
 		if c = strings.TrimSpace(c); c != "" {

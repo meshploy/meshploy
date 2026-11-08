@@ -328,7 +328,7 @@ func readMigrationCredential() (*hostagent.Credential, error) {
 // syntax rather than writing it into the configuration of the thing that serves
 // this machine.
 func runDomainApplyRequest(dryRun bool) ([]byte, error) {
-	desired, err := hostagent.ReadDesiredEdgeSnapshot(hostDir)
+	desired, err := hostagent.ReadDesiredEdgeSnapshot(hostagent.Local(hostDir))
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("no domain set was left at %s", hostagent.EdgeDesiredFile)
 	}

@@ -81,8 +81,8 @@ const (
 // Available false until the agent runs there too.
 func (s *SystemService) HostContainers() HostContainers {
 	out := HostContainers{Containers: []HostContainer{}, Groups: []HostContainerGroup{}}
-	dir := s.hostDir()
-	if dir == "" {
+	dir := s.host()
+	if dir == nil {
 		return out
 	}
 	report, stale, err := hostagent.ReadDocker(dir, time.Now())

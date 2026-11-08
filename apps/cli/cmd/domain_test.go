@@ -48,7 +48,7 @@ func TestDomainApplyFromEnvWritesTheSnapshotAndTheConfig(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, runDomainApply(&out))
 
-	snap, err := hostagent.ReadEdgeSnapshot(hostDir)
+	snap, err := hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	require.NoError(t, err, "--from-env must leave a snapshot for later runs to read")
 	require.Len(t, snap.Domains, 1)
 	assert.Equal(t, "example.com", snap.Domains[0].BaseDomain)
@@ -224,7 +224,7 @@ func TestApplyFromEnvKeepsTheOtherBaseDomains(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, runDomainApply(&out))
 
-	snap, err := hostagent.ReadEdgeSnapshot(hostDir)
+	snap, err := hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	require.NoError(t, err)
 	require.Len(t, snap.Domains, 2, "the second base domain must survive an installer re-run")
 	assert.FileExists(t, filepath.Join(inst, "coredns/zones/internal.second.test"))
@@ -246,7 +246,7 @@ func TestApplyFromEnvMovesThePrimaryWithoutDroppingTheOldOne(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, runDomainApply(&out))
 
-	snap, err := hostagent.ReadEdgeSnapshot(hostDir)
+	snap, err := hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	require.NoError(t, err)
 	require.Len(t, snap.Domains, 2)
 	assert.Equal(t, "new.test", snap.Primary().BaseDomain)
@@ -287,7 +287,7 @@ func TestDomainApplyRequestServesWhatTheAPILeftInTheInbox(t *testing.T) {
 			{BaseDomain: "second.test", InternalSubdomain: "internal", DNSMode: "ondemand"},
 		},
 	}
-	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, desired))
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostagent.Local(hostDir), desired))
 
 	// Writing it changes nothing on its own.
 	_, err := os.Stat(filepath.Join(inst, "caddy/Caddyfile"))
@@ -302,7 +302,7 @@ func TestDomainApplyRequestServesWhatTheAPILeftInTheInbox(t *testing.T) {
 
 	// state/ records what is installed, so the console can read back what the
 	// gateway is actually serving.
-	installed, err := hostagent.ReadEdgeSnapshot(hostDir)
+	installed, err := hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	require.NoError(t, err)
 	assert.Len(t, installed.Domains, 2)
 
@@ -314,7 +314,7 @@ func TestDomainApplyRequestServesWhatTheAPILeftInTheInbox(t *testing.T) {
 // state/ must never claim the gateway is serving something it is not.
 func TestDomainApplyRequestRecordsNothingWhenTheApplyFails(t *testing.T) {
 	domainTestServer(t, gatewayEnv)
-	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, hostagent.EdgeSnapshot{
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostagent.Local(hostDir), hostagent.EdgeSnapshot{
 		PublicIP: "203.0.113.10", MeshIP: "100.64.0.1",
 		Domains: []hostagent.EdgeDomain{{BaseDomain: "example.com", InternalSubdomain: "internal", DNSMode: "delegation", Primary: true}},
 	}))
@@ -322,13 +322,13 @@ func TestDomainApplyRequestRecordsNothingWhenTheApplyFails(t *testing.T) {
 
 	_, err := runDomainApplyRequest(false)
 	require.Error(t, err)
-	_, statErr := hostagent.ReadEdgeSnapshot(hostDir)
+	_, statErr := hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	assert.True(t, os.IsNotExist(statErr), "nothing must be recorded as installed")
 }
 
 func TestDomainApplyRequestDryRunWritesNothing(t *testing.T) {
 	inst, _, reloads := domainTestServer(t, gatewayEnv)
-	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, hostagent.EdgeSnapshot{
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostagent.Local(hostDir), hostagent.EdgeSnapshot{
 		PublicIP: "203.0.113.10", MeshIP: "100.64.0.1",
 		Domains: []hostagent.EdgeDomain{{BaseDomain: "example.com", InternalSubdomain: "internal", DNSMode: "delegation", Primary: true}},
 	}))
@@ -338,7 +338,7 @@ func TestDomainApplyRequestDryRunWritesNothing(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(inst, "caddy/Caddyfile"))
 	assert.True(t, os.IsNotExist(statErr))
 	assert.Zero(t, *reloads)
-	_, statErr = hostagent.ReadEdgeSnapshot(hostDir)
+	_, statErr = hostagent.ReadEdgeSnapshot(hostagent.Local(hostDir))
 	assert.True(t, os.IsNotExist(statErr))
 	assert.Contains(t, string(body), "\"dry_run\":true")
 }
@@ -384,8 +384,8 @@ func providerEdge() hostagent.EdgeSnapshot {
 // loses its token.
 func TestDomainApplyRequestInstallsTheDNSProviderToken(t *testing.T) {
 	inst, validated, reloads := domainTestServer(t, gatewayEnv)
-	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, providerEdge()))
-	require.NoError(t, hostagent.WriteDNSCredentials(hostDir, hostagent.DNSCredentials{providerID: "secret-token-1"}))
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostagent.Local(hostDir), providerEdge()))
+	require.NoError(t, hostagent.WriteDNSCredentials(hostagent.Local(hostDir), hostagent.DNSCredentials{providerID: "secret-token-1"}))
 
 	body, err := runDomainApplyRequest(false)
 	require.NoError(t, err)
@@ -405,7 +405,7 @@ func TestDomainApplyRequestInstallsTheDNSProviderToken(t *testing.T) {
 
 	// The same snapshot, a new token: nothing rendered differs, and Caddy must
 	// still load the token.
-	require.NoError(t, hostagent.WriteDNSCredentials(hostDir, hostagent.DNSCredentials{providerID: "secret-token-2"}))
+	require.NoError(t, hostagent.WriteDNSCredentials(hostagent.Local(hostDir), hostagent.DNSCredentials{providerID: "secret-token-2"}))
 	_, err = runDomainApplyRequest(false)
 	require.NoError(t, err)
 	assert.Equal(t, 2, *reloads)
@@ -413,7 +413,7 @@ func TestDomainApplyRequestInstallsTheDNSProviderToken(t *testing.T) {
 	// The provider dropped: its token goes once the new edge is serving.
 	plain := providerEdge()
 	plain.Domains[0].DNSProvider = nil
-	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, plain))
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostagent.Local(hostDir), plain))
 	_, err = runDomainApplyRequest(false)
 	require.NoError(t, err)
 	assert.NoFileExists(t, secret)
@@ -424,14 +424,14 @@ func TestDomainApplyRequestInstallsTheDNSProviderToken(t *testing.T) {
 // certificate. And a token Caddy quotes back is not passed on.
 func TestDomainApplyRequestWithoutAToken(t *testing.T) {
 	_, validated, reloads := domainTestServer(t, gatewayEnv)
-	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostDir, providerEdge()))
+	require.NoError(t, hostagent.WriteDesiredEdgeSnapshot(hostagent.Local(hostDir), providerEdge()))
 	_, err := runDomainApplyRequest(false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no token for DNS provider")
 	assert.Empty(t, *validated)
 	assert.Zero(t, *reloads)
 
-	require.NoError(t, hostagent.WriteDNSCredentials(hostDir, hostagent.DNSCredentials{providerID: "bad-token"}))
+	require.NoError(t, hostagent.WriteDNSCredentials(hostagent.Local(hostDir), hostagent.DNSCredentials{providerID: "bad-token"}))
 	validateCaddyfile = func(string) error { return errors.New("API token 'bad-token' appears invalid") }
 	_, err = runDomainApplyRequest(false)
 	require.Error(t, err)

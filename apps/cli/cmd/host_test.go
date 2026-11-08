@@ -115,7 +115,7 @@ func TestHostServeWritesReports(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	agent, fw, err := hostagent.ReadState(hostDir)
+	agent, fw, err := hostagent.ReadState(hostagent.Local(hostDir))
 	if err != nil || agent == nil || fw == nil {
 		t.Fatalf("agent=%v fw=%v err=%v", agent, fw, err)
 	}

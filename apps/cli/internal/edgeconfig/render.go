@@ -131,11 +131,14 @@ func Render(snap hostagent.EdgeSnapshot) (Files, error) {
 	}
 	out["coredns/Corefile"] = corefile
 
-	headscale, err := execute(tmpl, "headscale.yaml.tmpl", data)
-	if err != nil {
-		return nil, err
+	// Headscale runs where the platform does, and only there is it rendered.
+	if !snap.PlatformElsewhere {
+		headscale, err := execute(tmpl, "headscale.yaml.tmpl", data)
+		if err != nil {
+			return nil, err
+		}
+		out[HeadscaleConfig] = headscale
 	}
-	out[HeadscaleConfig] = headscale
 
 	for _, d := range domains {
 		internal := d.InternalSubdomain + "." + d.BaseDomain

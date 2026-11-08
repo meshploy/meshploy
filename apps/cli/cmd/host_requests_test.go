@@ -48,11 +48,11 @@ func TestAgentRunsARequest(t *testing.T) {
 	if fileExists(path) {
 		t.Error("request left in the inbox")
 	}
-	st, err := hostagent.ReadRequestStatus(hostDir, testRequestID)
+	st, err := hostagent.ReadRequestStatus(hostagent.Local(hostDir), testRequestID)
 	if err != nil || st == nil || st.State != hostagent.RequestSucceeded || st.FinishedAt == nil {
 		t.Fatalf("status %+v, %v", st, err)
 	}
-	raw, _, err := hostagent.ReadResult(hostDir, hostagent.PlanFile)
+	raw, _, err := hostagent.ReadResult(hostagent.Local(hostDir), hostagent.PlanFile)
 	if err != nil || string(raw) != `{"summary":{"moves":1}}` {
 		t.Errorf("result %s, %v", raw, err)
 	}
@@ -74,7 +74,7 @@ func TestAgentRecordsAFailedRequest(t *testing.T) {
 	rr := &requestRunner{running: map[string]bool{}}
 	rr.check(func(hostagent.Task) {})
 	rr.wg.Wait()
-	st, _ := hostagent.ReadRequestStatus(hostDir, testRequestID)
+	st, _ := hostagent.ReadRequestStatus(hostagent.Local(hostDir), testRequestID)
 	if st == nil || st.State != hostagent.RequestFailed || st.Error == "" {
 		t.Errorf("status %+v", st)
 	}

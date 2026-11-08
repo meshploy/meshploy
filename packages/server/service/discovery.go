@@ -204,8 +204,8 @@ func (s *SystemService) discoverGateway(node meshdb.Node, routed map[routeKey][]
 		NodeID: node.ID, Name: node.Name, MeshIP: node.TailscaleIP, Gateway: true,
 		Endpoints: []Endpoint{}, Containers: []HostContainer{},
 	}
-	dir := s.hostDir()
-	if dir == "" {
+	dir := s.host()
+	if dir == nil {
 		out.Error = "this API is not configured with a host directory, so nothing reports"
 		return out, false
 	}
