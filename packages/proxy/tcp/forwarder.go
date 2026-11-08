@@ -27,7 +27,10 @@ import (
 const dialTimeout = 10 * time.Second
 
 type Forwarder struct {
-	db      *gorm.DB
+	db *gorm.DB
+	// report records what the gateway managed to do with a route; nil
+	// writes it to db.
+	report  StatusReport
 	bind    string // address to listen on; empty means every interface
 	refresh time.Duration
 
@@ -37,6 +40,14 @@ type Forwarder struct {
 	// without the database.
 	saved *saved.Dir
 }
+
+// StatusReport is told when a route's state on this edge changes from what
+// it was loaded with.
+type StatusReport func(route db.TCPRoute, status db.TCPRouteStatus, lastErr string)
+
+// Report has status changes told to r rather than written to the database,
+// for an edge that has none.
+func (f *Forwarder) Report(r StatusReport) { f.report = r }
 
 // savedName is the TCP routes' file in the saved directory.
 const savedName = "tcp"
@@ -59,7 +70,7 @@ func New(database *gorm.DB, bind string, refresh time.Duration) *Forwarder {
 // fails the saved routes are opened until one succeeds.
 func (f *Forwarder) Start() {
 	if !f.sync() {
-		f.restore()
+		f.Restore()
 	}
 	db.FollowEdgeVersion(f.db, db.EdgeRoutes, f.refresh, func() { f.sync() })
 }
@@ -78,31 +89,45 @@ func (f *Forwarder) Stop() {
 // sync loads the routes and applies them; false when the load failed, which
 // leaves the listeners as they are.
 func (f *Forwarder) sync() bool {
-	var routes []db.TCPRoute
-	if err := f.db.Find(&routes).Error; err != nil {
+	routes, err := LoadRoutes(f.db)
+	if err != nil {
 		log.Printf("tcp: load routes, keeping the open ports: %v", err)
 		return false
 	}
+	f.Serve(routes)
+	return true
+}
+
+// LoadRoutes reads every TCP route from the database.
+func LoadRoutes(database *gorm.DB) ([]db.TCPRoute, error) {
+	var routes []db.TCPRoute
+	if err := database.Find(&routes).Error; err != nil {
+		return nil, err
+	}
+	return routes, nil
+}
+
+// Serve opens and closes ports to match routes, and saves them.
+func (f *Forwarder) Serve(routes []db.TCPRoute) {
 	if err := f.saved.Save(savedName, routes); err != nil {
 		log.Printf("tcp: saving the routes: %v", err)
 	}
 	f.apply(routes)
-	return true
 }
 
-// restore opens the saved routes.
-func (f *Forwarder) restore() {
+// Restore opens the saved routes, until a load succeeds.
+func (f *Forwarder) Restore() {
 	var routes []db.TCPRoute
 	at, err := f.saved.Load(savedName, &routes)
 	switch {
 	case errors.Is(err, saved.ErrNone):
-		log.Printf("tcp: no saved routes either; opening none until the database answers")
+		log.Printf("tcp: no saved routes either; opening none until the source answers")
 		return
 	case err != nil:
 		log.Printf("tcp: the saved routes cannot be read: %v", err)
 		return
 	}
-	log.Printf("tcp: opening %d routes saved at %s until the database answers", len(routes), at.Format(time.RFC3339))
+	log.Printf("tcp: opening %d routes saved at %s until the source answers", len(routes), at.Format(time.RFC3339))
 	f.apply(routes)
 }
 
@@ -168,6 +193,13 @@ func (f *Forwarder) apply(routes []db.TCPRoute) {
 // change: the alternative is an update per route every refresh, for ever.
 func (f *Forwarder) setStatus(route db.TCPRoute, status db.TCPRouteStatus, lastErr string) {
 	if route.Status == status && route.LastError == lastErr {
+		return
+	}
+	if f.report != nil {
+		f.report(route, status, lastErr)
+		return
+	}
+	if f.db == nil {
 		return
 	}
 	if err := f.db.Model(&db.TCPRoute{}).Where("id = ?", route.ID).

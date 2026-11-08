@@ -324,6 +324,10 @@ var publicRules = []publicRule{
 	{Method: "GET", Path: "/join/windows.ps1", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/nodes/self-register", Match: matchExact},
 	{Method: "DELETE", Path: "/api/v1/nodes/self-deregister", Match: matchExact},
+	// The edge's proxy, with no database: authed in the handler by the node
+	// secret of the node holding the cluster agent.
+	{Method: "GET", Path: "/api/v1/edge/snapshot", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/edge/tcp-status", Match: matchExact},
 
 	// WebSocket terminals redeem a single-use ?ticket= internally, because the
 	// browser WebSocket API cannot set headers. The paths carry variable

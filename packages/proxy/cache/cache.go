@@ -83,8 +83,10 @@ type Cache struct {
 // savedName is the routes' file in the saved directory.
 const savedName = "routes"
 
-// savedRoutes is what the routes' file holds.
-type savedRoutes struct {
+// State is the routes as the proxy serves them: what a load from the
+// database makes, what is saved, and what the API hands a proxy that has no
+// database.
+type State struct {
 	Routes   map[string][]TargetEntry `json:"routes"`
 	Fallback *Fallback                `json:"fallback,omitempty"`
 }
@@ -118,7 +120,7 @@ func New(database *gorm.DB, refreshInterval time.Duration) *Cache {
 func (c *Cache) Start() {
 	if err := c.load(); err != nil {
 		log.Printf("cache: initial load failed: %v", err)
-		c.restore()
+		c.Restore()
 	}
 	db.FollowEdgeVersion(c.db, db.EdgeRoutes, c.refresh, func() {
 		if err := c.load(); err != nil {
@@ -127,13 +129,13 @@ func (c *Cache) Start() {
 	})
 }
 
-// restore serves the saved copy of the routes.
-func (c *Cache) restore() {
-	var s savedRoutes
+// Restore serves the saved copy of the routes, until a load succeeds.
+func (c *Cache) Restore() {
+	var s State
 	at, err := c.saved.Load(savedName, &s)
 	switch {
 	case errors.Is(err, saved.ErrNone):
-		log.Printf("cache: no saved routes either; serving none until the database answers")
+		log.Printf("cache: no saved routes either; serving none until the source answers")
 		return
 	case err != nil:
 		log.Printf("cache: the saved routes cannot be read: %v", err)
@@ -149,7 +151,7 @@ func (c *Cache) restore() {
 	c.routes = s.Routes
 	c.fallback = s.Fallback
 	c.mu.Unlock()
-	log.Printf("cache: serving %d hostnames saved at %s until the database answers", len(s.Routes), at.Format(time.RFC3339))
+	log.Printf("cache: serving %d hostnames saved at %s until the source answers", len(s.Routes), at.Format(time.RFC3339))
 }
 
 // Get returns the best-matching TargetEntry for the given hostname and request path.
@@ -187,10 +189,22 @@ func (c *Cache) Get(hostname, path string) (TargetEntry, bool) {
 }
 
 func (c *Cache) load() error {
-	var targets []db.RouteTarget
-	if err := c.db.Preload("Route").Preload("RedirectRoute").Find(&targets).Error; err != nil {
+	st, err := LoadState(c.db)
+	if err != nil {
 		c.reached.Store(false)
 		return err
+	}
+	c.Serve(st)
+	c.reached.Store(true)
+	return nil
+}
+
+// LoadState reads the published routes and the migration fallback from the
+// database, as the proxy serves them.
+func LoadState(database *gorm.DB) (State, error) {
+	var targets []db.RouteTarget
+	if err := database.Preload("Route").Preload("RedirectRoute").Find(&targets).Error; err != nil {
+		return State{}, err
 	}
 	m := make(map[string][]TargetEntry, len(targets))
 	for _, t := range targets {
@@ -199,33 +213,41 @@ func (c *Cache) load() error {
 		}
 		m[t.Route.Hostname] = append(m[t.Route.Hostname], entryFor(t, t.Route))
 	}
-	for k := range m {
-		sortEntries(m[k])
-	}
 	var fb *Fallback
 	var row db.EdgeFallback
-	if err := c.db.Order("created_at").Limit(1).Find(&row).Error; err != nil {
+	if err := database.Order("created_at").Limit(1).Find(&row).Error; err != nil {
 		// Half a load is not served: without the fallback, a migration's
 		// hostnames would stop reaching the old edge.
-		c.reached.Store(false)
-		return err
+		return State{}, err
 	} else if row.Upstream != "" {
 		fb = &Fallback{Upstream: row.Upstream, Hostnames: map[string]bool{}}
 		for _, h := range row.Hostnames {
 			fb.Hostnames[strings.ToLower(h)] = true
 		}
 	}
+	return State{Routes: m, Fallback: fb}, nil
+}
+
+// Serve replaces every route with s, and saves it.
+func (c *Cache) Serve(s State) {
+	m := make(map[string][]TargetEntry, len(s.Routes))
+	targets := 0
+	for host, entries := range s.Routes {
+		entries = append([]TargetEntry(nil), entries...)
+		sortEntries(entries)
+		m[host] = entries
+		targets += len(entries)
+	}
+	s.Routes = m
 	// Saved before it is served: once served, a wildcard hit adds to the map.
-	if err := c.saved.Save(savedName, savedRoutes{Routes: m, Fallback: fb}); err != nil {
+	if err := c.saved.Save(savedName, s); err != nil {
 		log.Printf("cache: saving the routes: %v", err)
 	}
 	c.mu.Lock()
 	c.routes = m
-	c.fallback = fb
+	c.fallback = s.Fallback
 	c.mu.Unlock()
-	c.reached.Store(true)
-	log.Printf("cache: loaded %d targets across %d hostnames", len(targets), len(m))
-	return nil
+	log.Printf("cache: loaded %d targets across %d hostnames", targets, len(m))
 }
 
 // Set replaces a hostname's entries until the next refresh; the refresh

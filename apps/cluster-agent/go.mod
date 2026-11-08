@@ -64,4 +64,5 @@ replace (
 	github.com/meshploy/packages/license => ../../packages/license
 	github.com/meshploy/packages/mcpserver => ../../packages/mcpserver
 	github.com/meshploy/packages/server => ../../packages/server
+	github.com/meshploy/packages/proxy => ../../packages/proxy
 )

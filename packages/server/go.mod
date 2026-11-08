@@ -8,6 +8,8 @@ replace github.com/meshploy/packages/client => ../client
 
 replace github.com/meshploy/packages/mcpserver => ../mcpserver
 
+replace github.com/meshploy/packages/proxy => ../proxy
+
 require (
 	github.com/compose-spec/compose-go/v2 v2.11.0
 	github.com/danielgtaylor/huma/v2 v2.37.2
@@ -23,6 +25,7 @@ require (
 	github.com/meshploy/packages/client v0.0.0
 	github.com/meshploy/packages/db v0.0.0-00010101000000-000000000000
 	github.com/meshploy/packages/mcpserver v0.0.0-00010101000000-000000000000
+	github.com/meshploy/packages/proxy v0.0.0-00010101000000-000000000000
 	github.com/minio/minio-go/v7 v7.1.0
 	github.com/pquerna/otp v1.5.0
 	github.com/redis/go-redis/v9 v9.18.0
@@ -38,6 +41,11 @@ require (
 	k8s.io/api v0.31.0
 	k8s.io/apimachinery v0.31.0
 	k8s.io/client-go v0.31.0
+)
+
+require (
+	github.com/pkg/errors v0.9.1 // indirect
+	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 )
 
 require (

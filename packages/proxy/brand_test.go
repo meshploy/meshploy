@@ -25,7 +25,7 @@ func TestTheEdgesPagesCarryTheBrand(t *testing.T) {
 	})
 	t.Cleanup(func() { db.RegisterBrandSource(nil) })
 
-	h := &Handler{db: &gorm.DB{}}
+	h := &Handler{pages: dbPages{&gorm.DB{}}}
 	name := h.brandName(ctx, "app.acme.test", org)
 	if name != "Acme &lt;Cloud&gt;" {
 		t.Fatalf("brand = %q", name)

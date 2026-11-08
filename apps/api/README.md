@@ -282,6 +282,8 @@ A project is its own production level; each level below it is a project of its o
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | DELETE | `/nodes/self-deregister` | node token | Self-deregister a node using its registration token and node ID |
+| GET | `/edge/snapshot` | edge node secret | The edge's snapshot for a proxy with no database: routes, TCP ports, mesh gate state, page brands, stopped services. Only the node holding the cluster agent, with its `mnode-` secret and `X-Meshploy-Node`, on a `CLUSTER_AGENT` API; 401 otherwise. With `routes` and `mesh` (the versions held) it waits up to `wait` seconds (25 at most) for them to move, and answers 204 when they did not |
+| POST | `/edge/tcp-status` | edge node secret | What became of TCP routes on the edge: `{"routes":[{"id","status","last_error"}]}`, status `open`, `paused` or `failed` |
 | POST | `/nodes/self-register` | registration token | Self-register a node using a registration token. The node holding the cluster's server on a `CLUSTER_AGENT` API also sends `cluster_agent` (`certificate`, `token`, `port`), only with a provisioning token minted for it: 422 for any other token, 409 when an agent is already registered. The same machine registering again after a revocation keeps its node |
 | GET | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Get the most recent active Headscale preauth key |
 | POST | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Generate a new Headscale preauth key for joining the WireGuard mesh |

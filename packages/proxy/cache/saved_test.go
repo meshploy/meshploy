@@ -32,7 +32,7 @@ func TestRoutesServeWithoutTheDatabase(t *testing.T) {
 		t.Fatal("nothing saved, yet a route answered")
 	}
 
-	if err := dir.Save(savedName, savedRoutes{
+	if err := dir.Save(savedName, State{
 		Routes: map[string][]TargetEntry{
 			"app.example.com":    {{Path: "/", TargetIP: "100.64.0.2", TargetPort: 30080}, {Path: "/api", TargetIP: "100.64.0.3", TargetPort: 30081}},
 			"*.apps.example.com": {{Path: "/", TargetIP: "100.64.0.4", TargetPort: 30082}},

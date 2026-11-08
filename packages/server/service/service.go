@@ -41,6 +41,7 @@ type Services struct {
 	Routes          *RouteService
 	TCPRoutes       *TCPRouteService
 	EdgeFallback    *EdgeFallbackService
+	Edge            *EdgeService
 	Deployments     *DeploymentService
 	Activity        *ActivityService
 	Overview        *OverviewService
@@ -316,6 +317,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Routes:          routes,
 		TCPRoutes:       tcpRoutes,
 		EdgeFallback:    &EdgeFallbackService{db: db},
+		Edge:            NewEdgeService(db, c != nil && c.ClusterAgent),
 		Deployments:     deployments,
 		Activity:        &ActivityService{db: db},
 		GitIntegrations: gitSvc,

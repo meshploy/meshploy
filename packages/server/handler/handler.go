@@ -80,6 +80,11 @@ func (h *Handler) RegisterRaw(r chi.Router) {
 	// Mesh-only joins for machines install.sh cannot run on, public like it.
 	r.Get("/join/{script}", h.ServeJoinScript)
 
+	// The edge's proxy, when it has no database: authed by the edge node's
+	// secret (edge.go).
+	r.Get("/api/v1/edge/snapshot", h.EdgeSnapshot)
+	r.Post("/api/v1/edge/tcp-status", h.EdgeTCPStatus)
+
 	// Template icons - public image bytes, served for <img src>.
 	r.Get("/api/v1/templates/{templateId}/icon", h.ServeTemplateIcon)
 

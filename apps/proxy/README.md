@@ -38,6 +38,7 @@ packages/proxy/
 │   └── cache.go        # In-memory route table, reloaded within a second of a change
 ├── meshgate/
 │   └── meshgate.go     # Who on the mesh may open an internal route
+├── edge/               # The edge's whole state as one snapshot, read from the API when there is no database
 ├── saved/
 │   └── saved.go        # The last good state on disk, served without the database
 └── tcp/
@@ -78,6 +79,29 @@ and Caddy's on-demand TLS asks the API before issuing a certificate for a
 
 ---
 
+## Without a database: the snapshot from the API
+
+On an edge whose API and database are elsewhere (a cluster reached through
+its cluster agent), the proxy has no `DATABASE_URL` and no `ENCRYPTION_KEY`.
+With `PROXY_API_URL` set it asks the API for the edge's snapshot
+(`GET /api/v1/edge/snapshot`, `edge/`): the routes and the migration fallback,
+the TCP ports, the mesh gate's state, and what its own pages need (the brands,
+which domain is whose, the stopped services). Nothing in it is a secret.
+
+It asks as the node holding the cluster agent, with the secret that node
+registered with (`PROXY_NODE_ID`, `PROXY_NODE_SECRET_FILE`); any other caller,
+or an API that holds its own cluster, gets 401. The API holds the request until
+the `routes` or `mesh` count moves past the versions the proxy sends, so a
+change arrives within a second or two, and the whole snapshot is asked for
+every 30 seconds regardless. A TCP port's status goes back as a report
+(`POST /api/v1/edge/tcp-status`), sent again until a snapshot shows it.
+
+Each part saves what it serves to `PROXY_STATE_DIR` as before, the pages
+included, so a proxy that starts while the API is away serves the last
+snapshot, and one that loses the API keeps what it serves.
+
+---
+
 ## Internal routes
 
 An internal route is reached over the mesh, and every internal route shares the gateway's 443, so the mesh policy cannot tell them apart; the proxy does (`meshgate/`). Caddy hands it the caller's mesh address, which is a machine, which has an owner, who has grants. While the mesh policy is enforced, an internal route answers:
@@ -95,8 +119,12 @@ Anyone else gets a 403 "Not shared with you". It follows the `mesh` count, so a 
 
 | Variable | Required | Description |
 |---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL DSN — same as the API |
-| `ENCRYPTION_KEY` | No | Required only if encrypted columns are read |
+| `DATABASE_URL` | Unless `PROXY_API_URL` | PostgreSQL DSN, the same as the API's |
+| `ENCRYPTION_KEY` | With `DATABASE_URL` | The API's key: the node rows the mesh gate reads hold encrypted columns |
+| `PROXY_API_URL` | No | The API to take the edge's snapshot from instead of a database, e.g. `http://100.64.0.1:4000` |
+| `PROXY_NODE_ID` | With `PROXY_API_URL` | The node the edge runs on: the one holding the cluster agent |
+| `PROXY_NODE_SECRET_FILE` | With `PROXY_API_URL` | A file holding that node's secret (`mnode-`), from its registration |
+| `PROXY_STATE_DIR` | No | Where the last state served is saved, and served from at a start without its source |
 | `PROXY_PORT` | No | Listen port (default: `8081`) |
 | `PROXY_BIND` | No | Comma-separated addresses to listen on (default: `127.0.0.1`, where Caddy reaches it). Empty means every interface |
 | `MESH_IP` | No | The node's mesh address. The proxy listens there as well, so callers outside this host's network namespace - a container, which during a migration is the edge still holding 443 - can reach it |

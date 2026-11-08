@@ -101,7 +101,7 @@ func (g *Gate) Keep(d *saved.Dir) { g.saved = d }
 // When the first load fails, the saved copy decides until one succeeds.
 func (g *Gate) Start(refresh time.Duration) {
 	if !g.reload() {
-		g.restore()
+		g.Restore()
 	}
 	db.FollowEdgeVersion(g.db, db.EdgeMesh, refresh, func() { g.reload() })
 }
@@ -112,21 +112,27 @@ func (g *Gate) reload() bool {
 		log.Printf("meshgate: load failed, keeping the last state: %v", err)
 		return false
 	}
+	g.Serve(s)
+	return true
+}
+
+// Serve decides from s from now on, and saves it.
+func (g *Gate) Serve(s *Snapshot) {
 	if err := g.saved.Save(savedName, s); err != nil {
 		log.Printf("meshgate: saving the state: %v", err)
 	}
 	g.Set(s)
-	return true
 }
 
-// restore decides from the saved copy. Without one the gate stays as Check
-// has it before any load: closed to all but the server's own machines.
-func (g *Gate) restore() {
+// Restore decides from the saved copy until a load succeeds. Without one the
+// gate stays as Check has it before any load: closed to all but the server's
+// own machines.
+func (g *Gate) Restore() {
 	s := &Snapshot{}
 	at, err := g.saved.Load(savedName, s)
 	switch {
 	case errors.Is(err, saved.ErrNone):
-		log.Printf("meshgate: no saved state either; internal routes answer only the cluster until the database does")
+		log.Printf("meshgate: no saved state either; internal routes answer only the cluster until the source does")
 		return
 	case err != nil:
 		log.Printf("meshgate: the saved state cannot be read: %v", err)
@@ -137,7 +143,7 @@ func (g *Gate) restore() {
 		g.snap = s
 	}
 	g.mu.Unlock()
-	log.Printf("meshgate: deciding from the state saved at %s until the database answers", at.Format(time.RFC3339))
+	log.Printf("meshgate: deciding from the state saved at %s until the source answers", at.Format(time.RFC3339))
 }
 
 // Set replaces the snapshot; Start does this from the database.

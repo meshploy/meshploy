@@ -41,6 +41,7 @@ COPY packages/mcpserver ./packages/mcpserver
 COPY packages/license ./packages/license
 COPY packages/hostagent ./packages/hostagent
 COPY packages/server ./packages/server
+COPY packages/proxy ./packages/proxy
 
 # Build a fully static binary.
 WORKDIR /workspace/apps/api

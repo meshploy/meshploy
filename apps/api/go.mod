@@ -121,3 +121,5 @@ replace github.com/meshploy/packages/client => ../../packages/client
 replace github.com/meshploy/packages/mcpserver => ../../packages/mcpserver
 
 replace github.com/meshploy/packages/server => ../../packages/server
+
+replace github.com/meshploy/packages/proxy => ../../packages/proxy

@@ -25,10 +25,10 @@ type Handler struct {
 	// mesh decides who on the mesh opens an internal route; nil serves them
 	// to anyone who reaches them, as a proxy built without it does.
 	mesh *meshgate.Gate
-	// db is where the edge's own pages find whose brand to show, and whether
-	// a service that does not answer was stopped; nil shows Meshploy's brand
-	// and says only that it does not answer.
-	db *gorm.DB
+	// pages is where the edge's own pages find whose brand to show, and
+	// whether a service that does not answer was stopped; nil shows
+	// Meshploy's brand and says only that it does not answer.
+	pages Pages
 	// stopped stands in for the database's answer in tests.
 	stopped func(ctx context.Context, serviceID uuid.UUID) bool
 }
@@ -36,21 +36,47 @@ type Handler struct {
 // CheckInternal has internal routes answer only the callers mesh allows.
 func (h *Handler) CheckInternal(mesh *meshgate.Gate) { h.mesh = mesh }
 
-// Brand has the edge's own pages show the brand of the organisation a host
-// belongs to, and say when a service that does not answer was stopped.
-func (h *Handler) Brand(gdb *gorm.DB) { h.db = gdb }
+// Pages is what the edge's own pages ask: whose brand a host shows (by its
+// route's organisation, or by the domain it sits under when it has none) and
+// whether a service was stopped on purpose.
+type Pages interface {
+	BrandName(ctx context.Context, host string, orgID uuid.UUID) string
+	Stopped(ctx context.Context, serviceID uuid.UUID) bool
+}
+
+// Brand has the edge's own pages ask the database, as a proxy beside it does.
+func (h *Handler) Brand(gdb *gorm.DB) { h.pages = dbPages{gdb} }
+
+// AnswerPages has the edge's own pages ask p.
+func (h *Handler) AnswerPages(p Pages) { h.pages = p }
+
+// dbPages answers from the database.
+type dbPages struct{ db *gorm.DB }
+
+func (d dbPages) BrandName(ctx context.Context, host string, orgID uuid.UUID) string {
+	if orgID != uuid.Nil {
+		return db.BrandOf(ctx, d.db, orgID).Name
+	}
+	return db.BrandForHost(ctx, d.db, host).Name
+}
+
+func (d dbPages) Stopped(ctx context.Context, serviceID uuid.UUID) bool {
+	var status db.ServiceStatus
+	if d.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Pluck("status", &status).Error != nil {
+		return false
+	}
+	return status == db.ServiceStopped
+}
 
 // brandName is the name the edge's own pages are signed with, escaped for them.
 func (h *Handler) brandName(ctx context.Context, host string, orgID uuid.UUID) string {
-	b := db.DefaultBrand
-	if h.db != nil {
-		if orgID != uuid.Nil {
-			b = db.BrandOf(ctx, h.db, orgID)
-		} else {
-			b = db.BrandForHost(ctx, h.db, host)
+	name := db.DefaultBrand.Name
+	if h.pages != nil {
+		if n := h.pages.BrandName(ctx, host, orgID); n != "" {
+			name = n
 		}
 	}
-	return html.EscapeString(b.Name)
+	return html.EscapeString(name)
 }
 
 // UnroutedHeader marks the proxy's answer for a hostname no route serves. The
@@ -181,14 +207,10 @@ func (h *Handler) serviceStopped(ctx context.Context, serviceID uuid.UUID) bool 
 	if h.stopped != nil {
 		return h.stopped(ctx, serviceID)
 	}
-	if h.db == nil {
+	if h.pages == nil {
 		return false
 	}
-	var status db.ServiceStatus
-	if h.db.WithContext(ctx).Model(&db.Service{}).Where("id = ?", serviceID).Pluck("status", &status).Error != nil {
-		return false
-	}
-	return status == db.ServiceStopped
+	return h.pages.Stopped(ctx, serviceID)
 }
 
 // forwardToFallback hands a request to the old platform's edge.
