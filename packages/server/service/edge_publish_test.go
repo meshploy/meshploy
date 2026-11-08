@@ -275,3 +275,38 @@ func TestAnAgentAPIPublishesItsEdgeThroughTheAgent(t *testing.T) {
 	require.Len(t, pending, 1)
 	assert.Equal(t, hostagent.RequestDomainApply, pending[0].Type)
 }
+
+// What the edge's install recorded reaches the node holding the agent: its
+// public address, once, so a move is seen and the edge published again, and
+// whether published ports are bound to the mesh.
+func TestTheEdgesFactsReachItsNode(t *testing.T) {
+	gdb := newTestDB(t)
+	svc := service.New(gdb, &config.Config{})
+	host := t.TempDir()
+	service.UseAgentNodesForTest(svc, hostagent.Local(host))
+	ctx := context.Background()
+	org := &db.Organization{Name: "acme", Slug: "acme-" + uuid.NewString()[:8]}
+	require.NoError(t, gdb.Create(org).Error)
+	edge := &db.Node{OrganizationID: org.ID, Name: "edge", TailscaleIP: "100.64.0.2", ClusterAgentCert: "cert", ClusterAgentPort: 7443}
+	require.NoError(t, gdb.Create(edge).Error)
+
+	moved, err := svc.Nodes.SyncEdgeFacts(ctx)
+	require.NoError(t, err)
+	assert.False(t, moved, "nothing reported yet")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(host, "state"), 0o755))
+	facts, _ := json.Marshal(hostagent.Facts{PublicIP: "198.51.100.7", NodePortAddresses: "100.64.0.0/10"})
+	require.NoError(t, os.WriteFile(filepath.Join(host, "state", hostagent.FactsFile), facts, 0o644))
+	moved, err = svc.Nodes.SyncEdgeFacts(ctx)
+	require.NoError(t, err)
+	assert.True(t, moved)
+	var got db.Node
+	require.NoError(t, gdb.First(&got, "id = ?", edge.ID).Error)
+	assert.Equal(t, "198.51.100.7", got.PublicIP)
+	dc, _ := svc.Workloads.GetDatabaseConfig(ctx, uuid.New())
+	assert.True(t, dc.NodePortMeshOnly)
+
+	moved, err = svc.Nodes.SyncEdgeFacts(ctx)
+	require.NoError(t, err)
+	assert.False(t, moved, "the same address again is no move")
+}

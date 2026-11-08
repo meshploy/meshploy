@@ -24,6 +24,15 @@ func UseHostFolderForTest(s *Services, f hostagent.Folder) {
 	s.TCPRoutes.host = f
 }
 
+// UseAgentNodesForTest has the node service follow an edge through an agent
+// cluster with no agent set, its host folder f, as an agent API's does.
+func UseAgentNodesForTest(s *Services, f hostagent.Folder) {
+	a, _ := appk8s.NewAgentCluster()
+	s.Nodes.agent = a
+	s.Nodes.host = f
+	s.Nodes.nodePorts = s.Workloads.nodePortMeshOnly.Store
+}
+
 // UseK8sForTest gives the deployment service a cluster client, so tests in
 // service_test can drive a deploy against a fake one. Compiled only into tests.
 func UseK8sForTest(s *Services, client kubernetes.Interface) {

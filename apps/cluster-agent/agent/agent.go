@@ -30,13 +30,15 @@ const maxBody = 16 << 20
 // Agent is the handler the API's requests reach once they are known to come
 // from it.
 type Agent struct {
-	cs       kubernetes.Interface
-	host     *url.URL
-	proxy    *httputil.ReverseProxy
-	direct   *http.Client // the agent's own calls: dry runs, current objects
-	facts    *ClusterFacts
-	builds   BuildOptions
-	hostDir  hostagent.Folder // nil refuses requests for the host agent
+	cs      kubernetes.Interface
+	host    *url.URL
+	proxy   *httputil.ReverseProxy
+	direct  *http.Client // the agent's own calls: dry runs, current objects
+	facts   *ClusterFacts
+	builds  BuildOptions
+	hostDir hostagent.Folder // nil refuses requests for the host agent
+	// mintJoin makes a k3s join token; nil refuses them.
+	mintJoin func(ctx context.Context, ttl time.Duration, description string) (string, error)
 	logf     func(format string, args ...any)
 	timeNow  func() time.Time
 	dryLimit time.Duration

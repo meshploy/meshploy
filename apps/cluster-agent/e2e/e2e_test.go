@@ -18,6 +18,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -717,4 +718,58 @@ func uuidString() string {
 	}
 	b[6], b[8] = b[6]&0x0f|0x40, b[8]&0x3f|0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+// A join token minted by the agent on the real k3s server: the full form,
+// with the server's CA hash, lasting an hour. And the install's facts, read
+// through the agent.
+func TestJoinTokensAndFactsThroughTheAgent(t *testing.T) {
+	e := setup(t)
+	ctx := ctxFor(t, time.Minute)
+	j, err := e.d.JoinToken(ctx, "e2e-probe")
+	step(t, "a join token", err)
+	if !strings.HasPrefix(j.Token, "K10") || !strings.Contains(j.Token, "::") {
+		t.Fatalf("a join token of another shape (%d characters)", len(j.Token))
+	}
+	if left := time.Until(j.ExpiresAt); left > time.Hour || left < 55*time.Minute {
+		t.Fatalf("expires in %s", left)
+	}
+	t.Logf("ok   it lasts until %s", j.ExpiresAt.Format(time.RFC3339))
+	_, err = e.d.JoinToken(ctx, "../server")
+	refused(t, "a join token for a name that is not one", err)
+
+	// The k3s server takes it: its secret half authenticates to the
+	// cluster's API, as a joining machine's first request does, where a
+	// made-up one is refused.
+	if server := os.Getenv("AGENT_K3S_SERVER"); server != "" {
+		_, secret, _ := strings.Cut(j.Token, "::")
+		get := func(bearer string) int {
+			c := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server+"/api", nil)
+			req.Header.Set("Authorization", "Bearer "+bearer)
+			resp, err := c.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			return resp.StatusCode
+		}
+		if got := get("abcdef.0123456789abcdef"); got != http.StatusUnauthorized {
+			t.Fatalf("a made-up token: %d", got)
+		}
+		if got := get(secret); got != http.StatusOK {
+			t.Fatalf("the minted token: %d, want the k3s server to take it", got)
+		}
+		t.Logf("ok   the k3s server takes it, and refuses a made-up one")
+	}
+
+	if os.Getenv("AGENT_HOST_DIR") == "" {
+		return
+	}
+	facts, err := hostagent.ReadFacts(e.d.HostFolder())
+	if err == nil && facts == nil {
+		err = errors.New("no facts reported")
+	}
+	step(t, "the install's facts, read through the agent", err)
+	t.Logf("ok   public address %q, node ports bound to %q", facts.PublicIP, facts.NodePortAddresses)
 }

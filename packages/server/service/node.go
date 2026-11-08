@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/meshploy/packages/hostagent"
 	"log"
 	"time"
 
@@ -61,6 +62,13 @@ type NodeService struct {
 	// registers. onClusterAgent runs each time it is pointed at one.
 	agent          *appk8s.AgentCluster
 	onClusterAgent []func(ctx context.Context)
+	// k3sToken is the server's token from the config (K3S_TOKEN), for a
+	// gateway whose token file the API cannot read.
+	k3sToken string
+	// host is the host agent's folder, which on an agent API is the edge's.
+	host hostagent.Folder
+	// nodePorts is told whether the edge binds published ports to the mesh.
+	nodePorts func(meshOnly bool)
 }
 
 // StartNodeMonitor polls Headscale every 2 minutes and dispatches node.offline

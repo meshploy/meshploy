@@ -32,7 +32,7 @@ var carriedRequests = []string{hostagent.RequestDomainApply, hostagent.RequestRe
 
 // readableState are the reports the API reads, under state/.
 var readableState = []string{
-	hostagent.AgentFile, hostagent.FirewallFile, hostagent.DockerFile, hostagent.ListenersFile,
+	hostagent.AgentFile, hostagent.FirewallFile, hostagent.DockerFile, hostagent.ListenersFile, hostagent.FactsFile,
 	path.Base(hostagent.EdgeSnapshotFile),
 }
 

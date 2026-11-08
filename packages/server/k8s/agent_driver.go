@@ -106,6 +106,29 @@ func (d *AgentDriver) CloseNodeShell(ctx context.Context, podName string) {
 	_ = d.call(ctx, http.MethodDelete, "shells/"+url.PathEscape(podName), nil, nil)
 }
 
+// JoinTokenRequest asks the cluster agent for a token a machine joins the
+// cluster with.
+type JoinTokenRequest struct {
+	// Node is the joining node's name, which the token's description names.
+	Node string `json:"node"`
+}
+
+// JoinToken is a k3s bootstrap token the agent minted, and when it expires.
+type JoinToken struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// JoinToken asks the agent for a token node joins the cluster with. It lasts
+// as long as the agent decides, an hour.
+func (d *AgentDriver) JoinToken(ctx context.Context, node string) (*JoinToken, error) {
+	var out JoinToken
+	if err := d.call(ctx, http.MethodPost, "k3s/join-tokens", JoinTokenRequest{Node: node}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // AgentRefusal is a cluster agent declining a request, with its reason.
 type AgentRefusal struct {
 	Status  int

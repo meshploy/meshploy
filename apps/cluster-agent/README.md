@@ -49,6 +49,7 @@ sends them.
 | `POST nodes/<node>/prune` | the image cleanup on a node |
 | `POST nodes/<node>/shells/<name>` | the node terminal, only while the owner has approved it |
 | `DELETE shells/<name>` | closes a node terminal |
+| `POST k3s/join-tokens` | a token for one machine to join the cluster (`k3s token create`, `-k3s` names the binary), named for the node and lasting an hour, whatever the API would like: the API never holds the server's own token |
 
 ## What the agent carries to the host agent
 
@@ -63,7 +64,7 @@ it is left:
 | | |
 |---|---|
 | written into `inbox/` | a `domain.apply` or `registry.gc` request, the edge to serve (`edge.json`, which must validate) and the DNS providers' tokens it names (`dns-credentials.json`, always root-only). A migration is refused: it acts through an API on the same machine |
-| read | the host agent's reports in `state/`, each request's status, the results of `domain.apply` and `registry.gc`, and the requests still waiting. Nothing else: not the migration's credential or plan, not the tokens the API left, not a link out of the folder |
+| read | the host agent's reports in `state/` (with `facts.json`, what the install recorded: the public address, where node ports are bound), each request's status, the results of `domain.apply` and `registry.gc`, and the requests still waiting. Nothing else: not the migration's credential or plan, not the tokens the API left, not a link out of the folder |
 
 ## Commands
 

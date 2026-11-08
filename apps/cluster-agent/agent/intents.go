@@ -57,6 +57,8 @@ func (a *Agent) serveIntent(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "nodes" && parts[2] == "shells":
 		out, err = a.openShell(ctx, parts[1], parts[3])
 		what = "the node terminal on " + parts[1]
+	case r.Method == http.MethodPost && len(parts) == 2 && parts[0] == "k3s" && parts[1] == "join-tokens":
+		out, what, err = a.mintJoinToken(ctx, r.Body)
 	case r.Method == http.MethodDelete && len(parts) == 2 && parts[0] == "shells":
 		what, err = a.closeShell(ctx, parts[1])
 	default:

@@ -304,3 +304,25 @@ func ReadListeners(f Folder, now time.Time) (*Listeners, bool, error) {
 	}
 	return l, now.Sub(l.CheckedAt) > ListenerStaleAfter, nil
 }
+
+// ── What the install recorded ────────────────────────────────────────────────
+
+// FactsFile is state/facts.json: what install.sh recorded about the host in
+// its .env, for an API that runs elsewhere and cannot read it.
+const FactsFile = "facts.json"
+
+// Facts is state/facts.json.
+type Facts struct {
+	// PublicIP is the address the host's public names point at.
+	PublicIP string `json:"public_ip,omitempty"`
+	// NodePortAddresses is the range kube-proxy binds published ports to;
+	// empty is every interface.
+	NodePortAddresses string    `json:"nodeport_addresses,omitempty"`
+	CheckedAt         time.Time `json:"checked_at"`
+}
+
+// ReadFacts returns what the install recorded, or nil before the agent has
+// written it.
+func ReadFacts(f Folder) (*Facts, error) {
+	return readJSON[Facts](f, statePath(FactsFile))
+}

@@ -252,8 +252,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 			}
 		}()
 	}
-	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups,
-		nodePortMeshOnly: c != nil && c.NodePortAddresses != ""}
+	workloads := &WorkloadService{db: db, k8s: k8sClient, varGroups: varGroups}
+	// On a gateway the install recorded where published ports are bound; an
+	// agent API learns it from the edge's facts (NodeService.SyncEdgeFacts).
+	workloads.nodePortMeshOnly.Store(c != nil && c.NodePortAddresses != "")
 	projects := &ProjectService{db: db}
 	sandbox := &SandboxService{db: db, k8s: k8sClient}
 	deployments := &DeploymentService{db: db, cfg: c, k8s: k8sClient, cluster: cluster, git: gitSvc, varGroups: varGroups, notif: notif, sandbox: sandbox}
@@ -272,6 +274,8 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	}
 	host = hostFolder(host, c)
 	deployments.host = host
+	nodes.host = host
+	nodes.nodePorts = workloads.nodePortMeshOnly.Store
 	tcpRoutes := &TCPRouteService{db: db, k8s: k8sClient, host: host}
 	workloads.tcpRoutes = tcpRoutes
 	deployments.tcpRoutes = tcpRoutes
@@ -284,6 +288,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	nodes.domains = domains
 	if c != nil {
 		nodes.headscaleUser = c.HeadscaleUser
+		nodes.k3sToken = c.K3sToken
 	}
 	nodes.notif = notif
 	nodes.k8s = k8sClient
@@ -403,11 +408,16 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 				log.Printf("warning: sandbox runtime class: %v", err)
 			}
 			// The edge is on the agent's machine and reached only through it,
-			// so it is told what to serve as soon as it can be.
+			// so it is told what to serve as soon as it can be, at the address
+			// it reports.
+			if _, err := nodes.SyncEdgeFacts(ctx); err != nil {
+				log.Printf("warning: the edge's facts: %v", err)
+			}
 			if err := svc.System.PublishPrimaryEdge(ctx); err != nil {
 				log.Printf("warning: could not hand the edge its domain set: %v", err)
 			}
 		})
+		go nodes.FollowEdgeFacts(context.Background(), svc.System.PublishPrimaryEdge)
 		go func() {
 			if err := nodes.LoadClusterAgent(context.Background()); err != nil {
 				log.Printf("warning: cluster agent: %v", err)

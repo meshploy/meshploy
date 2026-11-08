@@ -287,7 +287,7 @@ A project is its own production level; each level below it is a project of its o
 | POST | `/nodes/self-register` | registration token | Self-register a node using a registration token. The node holding the cluster's server on a `CLUSTER_AGENT` API also sends `cluster_agent` (`certificate`, `token`, `port`), only with a provisioning token minted for it: 422 for any other token, 409 when an agent is already registered. The same machine registering again after a revocation keeps its node |
 | GET | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Get the most recent active Headscale preauth key |
 | POST | `/orgs/{orgId}/cluster/headscale-preauth-key` | ✓ | Generate a new Headscale preauth key for joining the WireGuard mesh |
-| GET | `/orgs/{orgId}/cluster/join-token` | ✓ | Get the k3s node token for joining the cluster |
+| GET | `/orgs/{orgId}/cluster/join-token` | ✓ | Get a token for joining the cluster: the server's own on a gateway; through a cluster agent, one it mints that lasts an hour (`expires_at`) |
 | GET | `/orgs/{orgId}/projects/{projectId}/map` | ✓ | Everything a level's map is drawn from, in one read: services, stacks, routes, volumes, troubles, build hints, and which services read another's published variables |
 | GET | `/orgs/{orgId}/placement` | ✓ | Org admins. Where every service runs: each node's allocatable room and what its pods request, each service's pods, requests, pinned node and the nodes its volumes' data is bound to |
 | GET | `/orgs/{orgId}/placement/nodes/{node}/what-if` | ✓ | Org admins. What would happen if the cluster node went down: per service, keeps running, moves (and where), or stays down and why. Nothing is stopped |

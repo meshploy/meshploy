@@ -78,6 +78,7 @@ func cmdServe(args []string) {
 	kubeconfig := fs.String("kubeconfig", "/etc/rancher/k3s/k3s.yaml", "the cluster's admin kubeconfig")
 	approval := fs.String("approval", defaultApproval, "the file holding the owner's terminal approval")
 	builder := fs.String("builder-image", appk8s.DefaultBuilderImage(), "the builder image builds run; empty refuses builds")
+	k3sBin := fs.String("k3s", "k3s", "the k3s binary join tokens are minted with; empty refuses them")
 	hostDir := fs.String("host-dir", hostagent.DefaultDir, "the host agent's folder, whose requests the agent carries for the API; empty refuses them")
 	fs.Parse(args)
 	if *listen == "" || *from == "" {
@@ -107,6 +108,7 @@ func cmdServe(args []string) {
 		log.Fatal(err)
 	}
 	a.CarryHostRequests(*hostDir)
+	a.K3sJoinTokens(*k3sBin)
 	var callers []string
 	for _, c := range strings.Split(*from, ",") {
 		if c = strings.TrimSpace(c); c != "" {

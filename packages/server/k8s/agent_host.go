@@ -173,3 +173,12 @@ func (d *AgentDriver) PutHostFile(name string, data []byte, private bool) error 
 	_, _, err = d.hostCall(http.MethodPut, path, data, h, 64<<10)
 	return err
 }
+
+// JoinToken asks the current agent for a token node joins the cluster with.
+func (c *AgentCluster) JoinToken(ctx context.Context, node string) (*JoinToken, error) {
+	a, err := c.conn()
+	if err != nil {
+		return nil, err
+	}
+	return a.driver.JoinToken(ctx, node)
+}

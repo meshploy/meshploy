@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"strings"
+	"sync/atomic"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -34,7 +35,7 @@ type WorkloadService struct {
 	// nodePortMeshOnly records whether this cluster binds NodePorts to the mesh
 	// range alone. Reported with a database's config so the console can say
 	// what exposing it actually exposes.
-	nodePortMeshOnly bool
+	nodePortMeshOnly atomic.Bool
 	// deployment re-applies a service's K8s Deployment from its current DB
 	// config. Assigned after construction in service.New because the two
 	// services reference each other.
@@ -598,7 +599,7 @@ func (s *WorkloadService) Stop(ctx context.Context, serviceID uuid.UUID) (*db.Se
 func (s *WorkloadService) GetDatabaseConfig(ctx context.Context, serviceID uuid.UUID) (*db.DatabaseConfig, error) {
 	var dc db.DatabaseConfig
 	err := s.db.WithContext(ctx).Where("service_id = ?", serviceID).First(&dc).Error
-	dc.NodePortMeshOnly = s.nodePortMeshOnly
+	dc.NodePortMeshOnly = s.nodePortMeshOnly.Load()
 	return &dc, err
 }
 

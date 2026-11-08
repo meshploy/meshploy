@@ -699,8 +699,8 @@ func (h *Handler) GenerateNodeRegistrationToken(ctx context.Context, input *List
 	return out, nil
 }
 
-// GetClusterJoinToken returns the k3s node token stored in server config.
-// Empty string if K3S_TOKEN is not set (k3s not installed on master yet).
+// ClusterJoinTokenOutput is what a machine joins the cluster with
+// (NodeService.ClusterJoin).
 type ClusterJoinTokenOutput struct {
 	Body struct {
 		Token     string `json:"token"`      // empty if k3s not installed
@@ -708,13 +708,11 @@ type ClusterJoinTokenOutput struct {
 		// K3sVersion is the release the server runs, which a joining node
 		// installs (INSTALL_K3S_VERSION). Empty when it cannot be read.
 		K3sVersion string `json:"k3s_version,omitempty"`
+		// ExpiresAt is when Token stops being accepted: set for a token a
+		// cluster agent minted, absent for the server's own.
+		ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	}
 }
-
-const k3sTokenPath = "/var/lib/rancher/k3s/server/node-token"
-
-// k3sServerURL is the cluster's API, as a node on the mesh reaches it.
-const k3sServerURL = "https://100.64.0.1:6443"
 
 // MeshHealthOutput reports the control plane's ability to reach Headscale.
 type MeshHealthOutput struct {
@@ -821,9 +819,14 @@ func (h *Handler) GetClusterJoinToken(ctx context.Context, input *ClusterPathInp
 	if _, _, _, err := h.checkOrgAdminAccess(ctx, input.OrgID, ""); err != nil {
 		return nil, err
 	}
+	join, err := h.svc.Nodes.ClusterJoin(ctx, "console")
+	if err != nil {
+		return nil, huma.Error503ServiceUnavailable("could not get a token to join the cluster: " + err.Error())
+	}
 	out := &ClusterJoinTokenOutput{}
-	out.Body.Token = h.k3sJoinToken()
-	out.Body.ServerURL = k3sServerURL
+	out.Body.Token = join.Token
+	out.Body.ServerURL = join.ServerURL
+	out.Body.ExpiresAt = join.ExpiresAt
 	out.Body.K3sVersion = h.svc.Nodes.ClusterVersion(ctx)
 	return out, nil
 }
@@ -903,18 +906,6 @@ type SelfRegisterNodeOutput struct {
 	}
 }
 
-// k3sJoinToken is the cluster's own token, read at request time so a rotated
-// one is always current.
-func (h *Handler) k3sJoinToken() string {
-	if raw, err := os.ReadFile(k3sTokenPath); err == nil {
-		return strings.TrimSpace(string(raw))
-	}
-	if h.cfg != nil {
-		return h.cfg.K3sToken
-	}
-	return ""
-}
-
 func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeInput) (*SelfRegisterNodeOutput, error) {
 	var node *db.Node
 	var nodeSecret string
@@ -976,8 +967,13 @@ func (h *Handler) SelfRegisterNode(ctx context.Context, input *SelfRegisterNodeI
 	// the caller is on the mesh and has just spent a single-use token to get
 	// here. A mesh-only node is not in the cluster and has nothing to join.
 	if node.MeshRole != db.MeshRoleMesh && !node.HasClusterAgent() {
-		out.Body.K3sToken = h.k3sJoinToken()
-		out.Body.K3sServerURL = k3sServerURL
+		join, err := h.svc.Nodes.ClusterJoin(ctx, node.Name)
+		if err != nil {
+			log.Printf("warning: no join token for node %s: %v", node.ID, err)
+			return nil, huma.Error503ServiceUnavailable("the node is registered, but no token to join the cluster could be had: " + err.Error())
+		}
+		out.Body.K3sToken = join.Token
+		out.Body.K3sServerURL = join.ServerURL
 		out.Body.K3sVersion = h.svc.Nodes.ClusterVersion(ctx)
 	}
 	return out, nil

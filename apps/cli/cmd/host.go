@@ -268,6 +268,19 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		}
 		setTask("listeners", listenerTask)
 
+		// What install.sh recorded, for an API that cannot read this .env.
+		facts := hostagent.Facts{
+			PublicIP:          strings.TrimSpace(readEnvVar("PUBLIC_IP")),
+			NodePortAddresses: strings.TrimSpace(readEnvVar("NODEPORT_ADDRESSES")),
+			CheckedAt:         time.Now().UTC(),
+		}
+		factsTask := hostagent.Task{OK: true, At: facts.CheckedAt}
+		if err := writeHostJSON(filepath.Join(state, hostagent.FactsFile), facts); err != nil {
+			factsTask = hostagent.Task{Error: err.Error(), At: time.Now().UTC()}
+			fmt.Fprintf(logw, "facts: %v\n", err)
+		}
+		setTask("facts", factsTask)
+
 		writeAgent()
 	}
 
