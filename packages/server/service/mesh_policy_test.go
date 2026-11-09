@@ -174,3 +174,43 @@ func TestAMachineNotYetRegisteredCanRegister(t *testing.T) {
 		t.Errorf("the gateway's DNS and API are not open to every machine:\n%s", b)
 	}
 }
+
+// Through a cluster agent the API runs on a machine of its own: every machine
+// registers through it there, it reaches every machine, and the gateway (the
+// edge) keeps its DNS but has no API port to open.
+func TestAnAPIApartFromTheGatewayIsOnThePolicy(t *testing.T) {
+	in := meshFixture()
+	in.API = &service.MeshAPI{IP: "100.64.0.9", Port: 4100}
+	p := service.BuildMeshPolicy(in)
+	if p.Hosts["meshploy-api"] != "100.64.0.9/32" {
+		t.Fatalf("the API's machine is not a host: %v", p.Hosts)
+	}
+	b, err := p.Headscale()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, want := range []string{
+		`"src": [
+        "*"
+      ],
+      "dst": [
+        "meshploy-api:4100"
+      ]`,
+		`"src": [
+        "meshploy-api"
+      ],
+      "dst": [
+        "asha-s-macbook-00c3:*",`,
+		`"dst": [
+        "gw-1-00c1:53"
+      ]`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %s in:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "gw-1-00c1:4000") {
+		t.Errorf("the gateway's API port is open with the API elsewhere:\n%s", s)
+	}
+}

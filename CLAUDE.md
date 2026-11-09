@@ -157,7 +157,7 @@ Required in `.env` at the monorepo root:
 | `CLUSTER_AGENT` | `true` when the API reaches its cluster only through a cluster agent (`apps/cluster-agent`) on the cluster's server: no kubeconfig, the agent registers with a token minted for it, and cluster work waits until it has. Unset, the API never accepts an agent |
 | `K3S_TOKEN` | Node token for workers joining the cluster |
 | `DOMAIN` | Base domain — seeds the org domain record |
-| `MESH_IP` | WireGuard IP of the gateway node |
+| `MESH_IP` | WireGuard IP of the gateway node. Through a cluster agent (`CLUSTER_AGENT`) it is the API's own machine, which is no node: the mesh policy names it `meshploy-api`, open to every machine on the API port and reaching every machine, while the gateway (the edge) keeps DNS only |
 | `PUBLIC_IP` | Public internet IP — backfilled on the gateway node record |
 | `GATEWAY_HOSTNAME` | Gateway server hostname |
 | `HOST_GATEWAY_IP` | Docker bridge gateway IP — used to reach node_exporter from inside the API container |

@@ -73,7 +73,23 @@ type MeshInputs struct {
 	// Rules are network rules: a machine and ports on it, for a person's
 	// machines, one machine or every machine of an organisation.
 	Rules []MeshNetRule
+	// API is the API's own machine when it is not the gateway: an API that
+	// reaches its cluster through a cluster agent runs on a machine of its
+	// own, on the mesh but no node of the cluster. Unset, the API is the
+	// gateway's.
+	API *MeshAPI
 }
+
+// MeshAPI is the machine the API runs on, and the port it answers on there.
+type MeshAPI struct {
+	IP   string
+	IP6  string
+	Port int
+}
+
+// meshAPIHost is the API's machine in the policy. Every node's name ends in
+// part of its ID, so no node can take it.
+const meshAPIHost = "meshploy-api"
 
 // MeshNetRule is a network rule as the policy uses it.
 type MeshNetRule struct {
@@ -189,6 +205,13 @@ func BuildMeshPolicy(in MeshInputs) MeshPolicy {
 			}
 		}
 	}
+	api := in.API != nil && in.API.IP != ""
+	if api {
+		hosts[meshAPIHost] = in.API.IP + "/32"
+		if in.API.IP6 != "" {
+			hosts6[meshAPIHost] = in.API.IP6 + "/128"
+		}
+	}
 	members := map[[2]uuid.UUID]MeshMember{}
 	for _, m := range in.Members {
 		members[[2]uuid.UUID{m.OrgID, m.UserID}] = m
@@ -247,7 +270,15 @@ func BuildMeshPolicy(in MeshInputs) MeshPolicy {
 	// Every machine on the mesh, known or not: a machine joining is unknown
 	// until it registers, and it registers through this API over the mesh. The
 	// API answers publicly through Caddy anyway, and asks every call for a token.
-	add([]string{meshEveryone}, on(gateway, meshGatewayBasics), "Every machine resolves names and registers through the gateway")
+	if api {
+		// The edge's proxy and Caddy ask the API too, and nothing answers on
+		// the gateway's API port.
+		add([]string{meshEveryone}, on(gateway, []int{53}), "Every machine resolves names through the gateway")
+		add([]string{meshEveryone}, []MeshDest{{Host: meshAPIHost, Ports: []int{in.API.Port}}}, "Every machine registers through the API, which the edge's proxy and certificates also ask")
+		add([]string{meshAPIHost}, every(all), "The API reaches the cluster through its agent, and every machine's metrics")
+	} else {
+		add([]string{meshEveryone}, on(gateway, meshGatewayBasics), "Every machine resolves names and registers through the gateway")
+	}
 	add(cluster, every(connected), "Apps reach data on connected machines, on any port until a machine says which it offers")
 
 	// People's machines: owners and admins everything, members what they

@@ -171,6 +171,14 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 
 	// seedGateway creates the gateway node and domain for an org if not already present.
 	seedGateway := func(ctx context.Context, orgID uuid.UUID) {
+		// Through a cluster agent the gateway is the agent's machine, which
+		// registers itself; MESH_IP is the API's own machine, no node.
+		if c.ClusterAgent {
+			if err := domains.CreateSeeded(ctx, orgID, c.Domain, meshdb.DNSMode(c.DNSMode)); err != nil {
+				log.Printf("warning: seed domain: %v", err)
+			}
+			return
+		}
 		var nodeCount int64
 		if db.WithContext(ctx).Model(&meshdb.Node{}).
 			Where("organization_id = ? AND tailscale_ip = ?", orgID, c.GatewayIP).
@@ -315,7 +323,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		CLILogins:       &CLILoginService{db: db},
 		Sessions:        sessions,
 		OAuth:           &OAuthService{db: db},
-		MeshAccess:      &MeshAccessService{db: db, headscale: headscaleSvc},
+		MeshAccess:      &MeshAccessService{db: db, headscale: headscaleSvc, api: meshAPIOf(c)},
 		Orgs:            &OrgService{db: db, notif: notif},
 		Permissions:     &PermissionService{db: db},
 		Projects:        projects,
@@ -459,4 +467,18 @@ func newTemplateCatalog(c *config.Config) templates.Catalog {
 	)
 	go remote.StartRefresh(context.Background())
 	return remote
+}
+
+// meshAPIOf is the API's own machine on the mesh, for an API that reaches its
+// cluster through a cluster agent: there the gateway is the agent's machine,
+// and the API's is another.
+func meshAPIOf(c *config.Config) *MeshAPI {
+	if c == nil || !c.ClusterAgent || c.GatewayIP == "" {
+		return nil
+	}
+	port := c.APIPort
+	if port == 0 {
+		port = 4000
+	}
+	return &MeshAPI{IP: c.GatewayIP, Port: port}
 }

@@ -22,6 +22,9 @@ import (
 type MeshAccessService struct {
 	db        *gorm.DB
 	headscale *HeadscaleService // nil without a mesh: nothing to give a policy to
+	// api is the API's own machine, set when it reaches its cluster through a
+	// cluster agent and so runs apart from the gateway.
+	api *MeshAPI
 }
 
 // Policy is the install's policy: every organisation's machines, since one
@@ -53,6 +56,9 @@ func (s *MeshAccessService) inputs(ctx context.Context) (MeshInputs, error) {
 	for _, n := range nodes {
 		known[n.TailscaleIP] = true
 	}
+	if s.api != nil {
+		known[s.api.IP] = true
+	}
 	for _, p := range peers {
 		var v4, v6addr string
 		for _, ip := range p.IPAddresses {
@@ -74,6 +80,11 @@ func (s *MeshAccessService) inputs(ctx context.Context) (MeshInputs, error) {
 		}
 	}
 
+	if s.api != nil {
+		api := *s.api
+		api.IP6 = v6[api.IP]
+		in.API = &api
+	}
 	for _, n := range nodes {
 		kind := MeshCluster
 		switch {
