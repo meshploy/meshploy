@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -46,6 +47,11 @@ type Config struct {
 	// kubeconfig, accepts that agent's registration, and does no cluster work
 	// until one is registered. Unset, it never accepts one.
 	ClusterAgent bool
+	// PlatformURLs are the platform's addresses when they are not names on
+	// the primary domain (PLATFORM_URLS: console=https://...,api=...,
+	// headscale=...): where an API runs apart from its cluster, its
+	// operator's names for it. A name not listed follows the primary.
+	PlatformURLs map[string]string
 
 	// Gateway seeding - set by install.sh on master nodes.
 	// When present, the first user to register gets a gateway node + domain pre-created.
@@ -172,6 +178,7 @@ func Load() (*Config, error) {
 		K3sTLSServerName: os.Getenv("K3S_TLS_SERVER_NAME"),
 		K3sSkipTLSVerify: envBool("K3S_SKIP_TLS_VERIFY"),
 		ClusterAgent:     envBool("CLUSTER_AGENT"),
+		PlatformURLs:     parsePlatformURLs(os.Getenv("PLATFORM_URLS")),
 
 		Domain:          os.Getenv("DOMAIN"),
 		GatewayIP:       os.Getenv("MESH_IP"),
@@ -235,4 +242,22 @@ func Load() (*Config, error) {
 func envBool(key string) bool {
 	v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key)))
 	return err == nil && v
+}
+
+// parsePlatformURLs reads PLATFORM_URLS: name=https://host pairs, comma
+// separated. A pair that is not one is left out, and logged.
+func parsePlatformURLs(v string) map[string]string {
+	out := map[string]string{}
+	for _, pair := range strings.Split(v, ",") {
+		name, u, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		if pair == "" {
+			continue
+		}
+		if !ok || name == "" || !strings.HasPrefix(u, "https://") || strings.ContainsAny(u[len("https://"):], "/?#") {
+			log.Printf("PLATFORM_URLS: %q is not name=https://host; left out", pair)
+			continue
+		}
+		out[strings.TrimSpace(name)] = strings.TrimSpace(u)
+	}
+	return out
 }

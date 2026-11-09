@@ -169,3 +169,22 @@ func TestPlatformAddressesFollowThePrimary(t *testing.T) {
 	assert.True(t, e.svc.Domains.ServesPlatform(ctx, "new.test"))
 	assert.False(t, e.svc.Domains.ServesPlatform(ctx, "evil.example"))
 }
+
+// Addresses an operator set (PLATFORM_URLS) are the platform's whatever the
+// primary is, for every caller; a name not set still follows the primary.
+func TestPlatformAddressesAnOperatorSetAreUsedAsTheyAre(t *testing.T) {
+	ctx := context.Background()
+	gdb := newTestDB(t)
+	svc := service.New(gdb, &config.Config{
+		Domain: "acme.meshploy.cloud", GatewayIP: "100.64.0.1", HostDir: t.TempDir(),
+		PlatformURLs: map[string]string{"console": "https://acme.meshploy.cloud", "headscale": "https://acme-mesh.meshploy.cloud"},
+	})
+	org := &meshdb.Organization{Name: "acme", Slug: "acme-" + uuid.NewString()[:8]}
+	require.NoError(t, gdb.Create(org).Error)
+	require.NoError(t, svc.Domains.CreateSeeded(ctx, org.ID, "acme.meshploy.cloud", meshdb.DNSModeOnDemand))
+
+	assert.Equal(t, "https://acme-mesh.meshploy.cloud", svc.Domains.PlatformURL(ctx, org.ID, "headscale"))
+	assert.Equal(t, "https://acme.meshploy.cloud", svc.Domains.GatewayPlatformURL(ctx, "console"))
+	assert.Equal(t, "https://acme.meshploy.cloud", svc.Domains.PlatformURLFor(ctx, "evil.example", "console"))
+	assert.Equal(t, "https://api.acme.meshploy.cloud", svc.Domains.PlatformURL(ctx, org.ID, "api"), "a name not set follows the primary")
+}

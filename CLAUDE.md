@@ -156,6 +156,7 @@ Required in `.env` at the monorepo root:
 | `K3S_SKIP_TLS_VERIFY` | Escape hatch — disables authentication of the cluster connection. Leave unset |
 | `CLUSTER_AGENT` | `true` when the API reaches its cluster only through a cluster agent (`apps/cluster-agent`) on the cluster's server: no kubeconfig, the agent registers with a token minted for it, and cluster work waits until it has. Unset, the API never accepts an agent |
 | `K3S_TOKEN` | Node token for workers joining the cluster |
+| `PLATFORM_URLS` | The platform's addresses when they are not names on the primary domain: `console=https://...,api=https://...,headscale=https://...`. Each one set is used whatever the primary is (`DomainService.PlatformURL` and its siblings); a name not set follows the primary. For an API run apart from its cluster under its operator's names, as a Cloud workspace's |
 | `DOMAIN` | Base domain — seeds the org domain record |
 | `MESH_IP` | WireGuard IP of the gateway node. Through a cluster agent (`CLUSTER_AGENT`) it is the API's own machine, which is no node: the mesh policy names it `meshploy-api`, open to every machine on the API port and reaching every machine, while the gateway (the edge) keeps DNS only |
 | `PUBLIC_IP` | Public internet IP — backfilled on the gateway node record |

@@ -26,6 +26,9 @@ type DomainService struct {
 	// them at publicIP, the gateway's public address.
 	dns      *DNSProviderService
 	publicIP string
+	// fixed are platform addresses set by the operator (config PlatformURLs),
+	// used whatever the primary is.
+	fixed map[string]string
 }
 
 // BackfillDNSModes gives a DNS mode to domains that predate the column.
@@ -67,6 +70,9 @@ func (s *DomainService) Primary(ctx context.Context, orgID uuid.UUID) (*db.Domai
 // gateway can resolve. Handing it to a machine being provisioned is how a
 // one-command join failed at the first step.
 func (s *DomainService) PlatformURL(ctx context.Context, orgID uuid.UUID, sub string) string {
+	if u := s.fixed[sub]; u != "" {
+		return u
+	}
 	if d, err := s.Primary(ctx, orgID); err == nil && d != nil {
 		return "https://" + sub + "." + d.BaseDomain
 	}
@@ -80,6 +86,9 @@ func (s *DomainService) PlatformURL(ctx context.Context, orgID uuid.UUID, sub st
 // unauthenticated script download. A Community gateway serves one
 // organisation, so its primary is the gateway's.
 func (s *DomainService) GatewayPlatformURL(ctx context.Context, sub string) string {
+	if u := s.fixed[sub]; u != "" {
+		return u
+	}
 	var d db.Domain
 	if err := s.db.WithContext(ctx).Where("is_primary").Order("created_at ASC").First(&d).Error; err == nil {
 		return "https://" + sub + "." + d.BaseDomain
@@ -98,6 +107,9 @@ func (s *DomainService) GatewayPlatformURL(ctx context.Context, sub string) stri
 // on; anything else gets the gateway's primary. Empty when there is neither,
 // as on a development machine with no domain.
 func (s *DomainService) PlatformURLFor(ctx context.Context, host, sub string) string {
+	if u := s.fixed[sub]; u != "" {
+		return u
+	}
 	host = strings.ToLower(host)
 	if i := strings.LastIndexByte(host, ':'); i >= 0 {
 		host = host[:i]

@@ -124,6 +124,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	if c != nil {
 		domains.installDomain = c.Domain
 		domains.publicIP = c.PublicIP
+		domains.fixed = c.PlatformURLs
 		// Before anything reads a mode: a domain row from before the column
 		// would otherwise be served as a delegation it never was.
 		if err := domains.BackfillDNSModes(context.Background(), c.DNSMode); err != nil {
