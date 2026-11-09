@@ -113,6 +113,8 @@ Protected files are never overwritten: `.env`, DNS zone files, and Headscale con
 
 The upgrade runs with the CLI you have installed, so run `sudo meshploy update` (or `update --edge`) first.
 
+On the **edge of a cluster whose platform runs elsewhere** (`MESHPLOY_INSTALL=edge`), it upgrades what runs there, from its own compose file: Caddy, CoreDNS, the proxy and the registry, checking that the proxy and Caddy answer. Its cluster agent is upgraded too, once they do, from the same release (or the bundle's `meshploy-cluster-agent` with `--from`), and restarted when it changed. `--ee` is refused there: Enterprise is chosen where the platform runs.
+
 | Flag | Description |
 |---|---|
 | `--edge` | Sync from the `main` branch and pull edge images instead of the latest stable release |

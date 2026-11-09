@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -73,6 +74,48 @@ func installClusterAgent(w io.Writer, from, pat, dest string) error {
 		return err
 	}
 	fmt.Fprintf(w, "✔  The cluster agent is at %s\n", dest)
+	return nil
+}
+
+// clusterAgentUnit is the agent's service on an edge, which install.sh writes.
+const clusterAgentUnit = "meshploy-cluster-agent"
+
+// Seams for tests: where the agent is upgraded, and how an edge's upgrade
+// upgrades it.
+var (
+	clusterAgentPath = ClusterAgentBin
+	upgradeAgent     = upgradeClusterAgent
+)
+
+// upgradeClusterAgent replaces an edge's cluster agent with the one from the
+// bundle (--from), or from this CLI's release, and restarts it when it
+// changed.
+func upgradeClusterAgent(o serverUpgradeOptions) error {
+	before, _ := os.ReadFile(clusterAgentPath)
+	if o.from != "" {
+		from := filepath.Join(o.from, "meshploy-cluster-agent")
+		if _, err := os.Stat(from); err != nil {
+			fmt.Println("The bundle carries no cluster agent: it stays as it is.")
+			return nil
+		}
+		if err := copyExecutable(from, clusterAgentPath); err != nil {
+			return err
+		}
+	} else if err := installClusterAgent(io.Discard, "", o.pat, clusterAgentPath); err != nil {
+		return err
+	}
+	after, err := os.ReadFile(clusterAgentPath)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(before, after) {
+		fmt.Println("✔  The cluster agent is current")
+		return nil
+	}
+	if err := systemctlRestart(clusterAgentUnit); err != nil {
+		return fmt.Errorf("restart %s: %w", clusterAgentUnit, err)
+	}
+	fmt.Println("✔  Cluster agent upgraded and restarted")
 	return nil
 }
 

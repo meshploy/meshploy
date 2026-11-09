@@ -9,7 +9,8 @@
 # puts the server back on the published images.
 #
 # Usage: scripts/ship.sh <ssh-host> [component...]
-#   components: api web proxy caddy builder cli   (default: api web proxy cli)
+#   components: api web proxy caddy builder cli cluster-agent
+#               (default: api web proxy cli; on an edge, proxy cli cluster-agent)
 #   An image not shipped runs what the server has on the local tag, or edge.
 #
 # Environment:
@@ -24,7 +25,13 @@ set -euo pipefail
 
 HOST="${1:?usage: scripts/ship.sh <ssh-host> [api web proxy caddy builder cli]}"
 shift
-if [[ $# -gt 0 ]]; then COMPONENTS=("$@"); else COMPONENTS=(api web proxy cli); fi
+if [[ $# -gt 0 ]]; then
+  COMPONENTS=("$@")
+elif ssh "$HOST" 'sudo grep -qx MESHPLOY_INSTALL=edge /opt/meshploy/.env' 2>/dev/null; then
+  COMPONENTS=(proxy cli cluster-agent)
+else
+  COMPONENTS=(api web proxy cli)
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -36,7 +43,7 @@ CONTAINER="${CONTAINER:-$(command -v docker >/dev/null && echo docker || echo po
 command -v "$CONTAINER" >/dev/null || die "no docker or podman here"
 
 for c in "${COMPONENTS[@]}"; do
-  case "$c" in api|web|proxy|caddy|builder|cli) ;; *) die "unknown component: $c" ;; esac
+  case "$c" in api|web|proxy|caddy|builder|cli|cluster-agent) ;; *) die "unknown component: $c" ;; esac
 done
 
 # Stamped like an edge build, so the console reads the commit it came from.
@@ -61,6 +68,21 @@ rsync -a deploy/ "$BUNDLE/deploy/" \
   --exclude .env --exclude headscale/data --exclude headscale/config/config.yaml \
   --exclude caddy/Caddyfile --exclude caddy/conf.d --exclude coredns/Corefile --exclude coredns/zones
 
+# build_go <module dir> <binary> <ldflags> builds a static binary into the bundle.
+build_go() {
+  local dir="$1" out="$2" LDFLAGS="$3"
+  if command -v go >/dev/null; then
+    (cd "$dir" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -ldflags="$LDFLAGS" -o "$BUNDLE/$out" .)
+  else
+    # No Go here: build in the toolchain's image, caches kept in volumes.
+    "$CONTAINER" run --rm -v "$ROOT:/src:z" -v meshploy-ship-gomod:/go/pkg/mod -v meshploy-ship-gocache:/root/.cache/go-build \
+      -w "/src/$dir" -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH="$ARCH" -e GOFLAGS=-buildvcs=false \
+      -e LDFLAGS="$LDFLAGS" -e OUT="$out" \
+      docker.io/library/golang:1.25 sh -c 'go build -ldflags="$LDFLAGS" -o "/src/.ship-$OUT" .'
+    mv ".ship-$out" "$BUNDLE/$out"
+  fi
+}
+
 build_image() {
   local name="$1"; shift
   local tag="ghcr.io/meshploy/${name}:local"
@@ -81,17 +103,10 @@ for c in "${COMPONENTS[@]}"; do
     builder) build_image builder -f apps/builder/Dockerfile . ;;
     cli)
       log "Building the CLI (linux/${ARCH})…"
-      LDFLAGS="-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}' -X 'github.com/meshploy/apps/cli/cmd.Channel=edge'"
-      if command -v go >/dev/null; then
-        (cd apps/cli && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -ldflags="$LDFLAGS" -o "$BUNDLE/meshploy" .)
-      else
-        # No Go here: build in the toolchain's image, caches kept in volumes.
-        "$CONTAINER" run --rm -v "$ROOT:/src:z" -v meshploy-ship-gomod:/go/pkg/mod -v meshploy-ship-gocache:/root/.cache/go-build \
-          -w /src/apps/cli -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH="$ARCH" -e GOFLAGS=-buildvcs=false \
-          -e LDFLAGS="$LDFLAGS" \
-          docker.io/library/golang:1.25 sh -c 'go build -ldflags="$LDFLAGS" -o /src/.ship-meshploy .'
-        mv .ship-meshploy "$BUNDLE/meshploy"
-      fi ;;
+      build_go apps/cli meshploy "-s -w -X 'github.com/meshploy/apps/cli/cmd.Version=${VERSION}' -X 'github.com/meshploy/apps/cli/cmd.Channel=edge'" ;;
+    cluster-agent)
+      log "Building the cluster agent (linux/${ARCH})…"
+      build_go apps/cluster-agent meshploy-cluster-agent "-s -w" ;;
   esac
 done
 

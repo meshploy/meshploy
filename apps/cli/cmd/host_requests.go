@@ -59,6 +59,9 @@ var hostRunRequest = func(req hostagent.Request) (file string, body []byte, perm
 		// Base domains and their DNS modes: no secret, but it names what this
 		// gateway serves, so it follows the other results and stays root-only.
 		return hostagent.DomainApplyFile, body, 0o600, err
+	case hostagent.RequestServerUpgrade:
+		body, err := queueServerUpgrade(req)
+		return hostagent.ServerUpgradeFile, body, 0o644, err
 	case hostagent.RequestRegistryGC:
 		body, err := runRegistryGC()
 		return hostagent.RegistryGCFile, body, 0o644, err
@@ -364,4 +367,32 @@ func runDomainApplyRequest(dryRun bool) ([]byte, error) {
 		"domains":    desired.Domains,
 		"log":        log.String(),
 	})
+}
+
+// queueServerUpgrade leaves an upgrade request for this server's updater, as
+// the console does on a gateway; the host agent's launcher starts it. Only
+// with the updater on, which is what says upgrades may run here.
+func queueServerUpgrade(req hostagent.Request) ([]byte, error) {
+	channel := req.Args["channel"]
+	if channel == "" {
+		channel = currentUpgradeChannel()
+	}
+	if channel != channelStable && channel != channelEdge {
+		return nil, fmt.Errorf("unknown channel %q: stable or edge", channel)
+	}
+	if !fileExists(filepath.Join(upgradeStateDir(), upgradeEnabledFile)) {
+		return nil, errors.New("the updater is off on this server: turn it on with sudo meshploy updater start")
+	}
+	if fileExists(filepath.Join(upgradeInboxDir(), upgradeRequestFile)) {
+		return nil, errors.New("an upgrade is already waiting to start")
+	}
+	up := upgradeRequest{ID: req.ID, Channel: channel, RequestedBy: req.RequestedBy, RequestedAt: req.RequestedAt.UTC().Format(time.RFC3339)}
+	b, err := json.Marshal(up)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeFileAtomic(filepath.Join(upgradeInboxDir(), upgradeRequestFile), b, 0o644); err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]string{"queued": req.ID, "channel": channel})
 }

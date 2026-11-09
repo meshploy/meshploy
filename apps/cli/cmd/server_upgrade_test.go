@@ -773,3 +773,85 @@ func TestComposeCallsUseTheComposeFileTheInstallNames(t *testing.T) {
 		t.Fatalf("the edge's compose file is not passed on: %v", got)
 	}
 }
+
+// An edge is upgraded as a gateway is, staged and rolled back, with what its
+// platform runs elsewhere left out: its own health checks, no Enterprise
+// images, and its cluster agent upgraded once the stack answers.
+func TestServerUpgradeUpgradesAnEdgeAndItsAgent(t *testing.T) {
+	fx := newUpgradeFixture(t)
+	writeTestFile(t, filepath.Join(fx.live, ".env"), upgradeEnv+"MESHPLOY_INSTALL=edge\nCOMPOSE_FILE=docker-compose.edge.yml\nMESHPLOY_API_IMAGE=ghcr.io/acme/api-ee\n")
+	orig := upgradeAgent
+	t.Cleanup(func() { upgradeAgent = orig })
+	agent := 0
+	upgradeAgent = func(serverUpgradeOptions) error {
+		if fx.verified == 0 {
+			t.Error("the agent was upgraded before the stack answered")
+		}
+		agent++
+		return nil
+	}
+	if err := serverUpgrade(context.Background(), serverUpgradeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if agent != 1 {
+		t.Errorf("the cluster agent was upgraded %d times, want once", agent)
+	}
+	for _, c := range fx.tags {
+		if strings.Contains(strings.Join(c, " "), "api-ee") {
+			t.Errorf("an Enterprise image was checked on an edge: %v", c)
+		}
+	}
+	for _, c := range stackChecks() {
+		if c.name == "API" || c.name == "console" {
+			t.Errorf("an edge is checked for its %s, which runs elsewhere", c.name)
+		}
+	}
+	serverUpgradeCmd.Flags().Set("ee", "true")
+	t.Cleanup(func() { serverUpgradeCmd.Flags().Set("ee", "false") })
+	if err := runServerUpgrade(serverUpgradeCmd, nil); err == nil || !strings.Contains(err.Error(), "edge") {
+		t.Errorf("--ee on an edge: %v", err)
+	}
+}
+
+// The agent from a bundle replaces the installed one, which is restarted only
+// when it changed.
+func TestTheClusterAgentIsReplacedFromTheBundle(t *testing.T) {
+	dir := t.TempDir()
+	origPath, origRestart := clusterAgentPath, systemctlRestart
+	t.Cleanup(func() { clusterAgentPath, systemctlRestart = origPath, origRestart })
+	clusterAgentPath = filepath.Join(dir, "installed")
+	var restarted []string
+	systemctlRestart = func(u string) error { restarted = append(restarted, u); return nil }
+	os.WriteFile(clusterAgentPath, []byte("old"), 0o755)
+	bundle := t.TempDir()
+	os.WriteFile(filepath.Join(bundle, "meshploy-cluster-agent"), []byte("new"), 0o755)
+
+	if err := upgradeClusterAgent(serverUpgradeOptions{from: bundle}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(clusterAgentPath); string(b) != "new" || len(restarted) != 1 || restarted[0] != clusterAgentUnit {
+		t.Fatalf("installed %q, restarted %v", b, restarted)
+	}
+	if err := upgradeClusterAgent(serverUpgradeOptions{from: bundle}); err != nil || len(restarted) != 1 {
+		t.Fatalf("an unchanged agent was restarted: %v %v", err, restarted)
+	}
+	if err := upgradeClusterAgent(serverUpgradeOptions{from: t.TempDir()}); err != nil {
+		t.Fatalf("a bundle without an agent: %v", err)
+	}
+}
+
+// The images an upgrade pulls one by one are the stack's own: an edge's
+// compose file, which .env names, not the gateway's.
+func TestImagesComeFromTheComposeFileTheInstallNames(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services:\n  api:\n    image: ghcr.io/meshploy/api:latest\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "docker-compose.edge.yml"), []byte("services:\n  proxy:\n    image: ghcr.io/meshploy/proxy:latest\n"), 0o644)
+	if got := composeFile(dir); filepath.Base(got) != "docker-compose.yml" {
+		t.Fatalf("a gateway's compose file: %s", got)
+	}
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("COMPOSE_FILE=docker-compose.edge.yml\n"), 0o600)
+	images, err := composeImages(composeFile(dir))
+	if err != nil || len(images) != 1 || images[0] != "ghcr.io/meshploy/proxy:latest" {
+		t.Fatalf("an edge's images: %v %v", images, err)
+	}
+}

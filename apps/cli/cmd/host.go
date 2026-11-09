@@ -283,6 +283,14 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		}
 		setTask("facts", factsTask)
 
+		// The updater's progress, for an API that reads this folder and not
+		// the updater's own: one on another machine, through a cluster agent.
+		if st, err := readUpgradeStatus(upgradeStateDir()); err == nil && st != nil {
+			if err := writeHostJSON(filepath.Join(state, hostagent.UpgradeFile), st); err != nil {
+				fmt.Fprintf(logw, "upgrade status: %v\n", err)
+			}
+		}
+
 		writeAgent()
 	}
 

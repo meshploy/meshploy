@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -145,5 +147,40 @@ func TestAgentLeavesTheDesiredDomainSetInTheInbox(t *testing.T) {
 	rr.wg.Wait()
 	if !fileExists(desired) || len(got) != 0 {
 		t.Errorf("left=%v tasks=%+v, want the file kept and nothing reported", fileExists(desired), got)
+	}
+}
+
+// A server.upgrade request leaves the updater the request the console would,
+// and only where the updater is on and nothing is already waiting.
+func TestAServerUpgradeRequestQueuesTheUpdater(t *testing.T) {
+	orig := upgradeDir
+	t.Cleanup(func() { upgradeDir = orig })
+	upgradeDir = t.TempDir()
+	req := hostagent.Request{ID: "6f1c3a52-2d6c-4bde-9a4f-5b7c0e8d1a23", Type: hostagent.RequestServerUpgrade,
+		RequestedBy: "owner", RequestedAt: time.Now(), Args: map[string]string{"channel": "edge"}}
+
+	if _, err := queueServerUpgrade(req); err == nil || !strings.Contains(err.Error(), "updater is off") {
+		t.Fatalf("with the updater off: %v", err)
+	}
+	if err := ensureUpgradeDirs(); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(upgradeStateDir(), upgradeEnabledFile), []byte("on\n"), 0o644)
+	if _, err := queueServerUpgrade(hostagent.Request{ID: req.ID, Args: map[string]string{"channel": "nightly"}}); err == nil {
+		t.Fatal("an unknown channel was queued")
+	}
+	if _, err := queueServerUpgrade(req); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(upgradeInboxDir(), upgradeRequestFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var up upgradeRequest
+	if json.Unmarshal(b, &up) != nil || up.ID != req.ID || up.Channel != "edge" || up.RequestedBy != "owner" {
+		t.Fatalf("queued %s", b)
+	}
+	if _, err := queueServerUpgrade(req); err == nil {
+		t.Fatal("a second upgrade was queued over the first")
 	}
 }

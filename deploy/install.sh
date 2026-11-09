@@ -2182,6 +2182,14 @@ AGENTUNIT
 
   install_node_exporter_on_mesh "$MESH_IP"
 
+  # The platform upgrades this edge release by release: it queues the request
+  # through the cluster agent, and the updater runs it here.
+  if "$MESHPLOY_CLI" updater start >/dev/null; then
+    success "The platform can upgrade this edge"
+  else
+    warn "Could not let the platform upgrade this edge; retry with: sudo meshploy updater start"
+  fi
+
   echo
   hr
   echo -e "  ${BOLD}${GREEN}✔  The edge is ready${RESET}"

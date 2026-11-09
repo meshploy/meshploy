@@ -141,11 +141,6 @@ type serverUpgradeOptions struct {
 }
 
 func runServerUpgrade(cmd *cobra.Command, _ []string) error {
-	if isEdgeInstall() {
-		// Its database, API and Headscale are elsewhere; what this command
-		// backs up, migrates and restarts is not here.
-		return errors.New("this server is an edge whose platform runs elsewhere, which server-upgrade does not upgrade")
-	}
 	var o serverUpgradeOptions
 	o.pat, _ = cmd.Flags().GetString("token")
 	if o.pat == "" {
@@ -159,6 +154,10 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 	o.from, _ = cmd.Flags().GetString("from")
 	if o.from != "" && (o.edge || o.noSync || o.ee) {
 		return fmt.Errorf("--from installs a local build: it cannot be combined with --edge, --no-sync or --ee")
+	}
+	if o.ee && isEdgeInstall() {
+		// The API whose image Enterprise replaces runs where the platform does.
+		return errors.New("this server is an edge whose platform runs elsewhere: Enterprise is chosen where the platform runs")
 	}
 
 	if !o.noSync && os.Getuid() != 0 {
@@ -177,6 +176,10 @@ func runServerUpgrade(cmd *cobra.Command, _ []string) error {
 func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	restrictEnvFile()
 	runtime := detectContainerRuntime()
+	// An edge's platform runs elsewhere: its compose file holds no API,
+	// console, database or Headscale, so nothing here is Enterprise's, and the
+	// cluster agent is upgraded with the rest.
+	edge := isEdgeInstall()
 
 	// Download into a private directory first. Nothing live has changed yet,
 	// so a failed download leaves the server exactly as it was.
@@ -244,8 +247,13 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	// Enterprise image selection. Explicit --ee switches; otherwise a licensed
 	// install running the stock image just gets told, because a routine upgrade
 	// should not silently change which product is running.
-	scope := entitledRegistryScope()
-	if o.ee {
+	scope := ""
+	if !edge {
+		scope = entitledRegistryScope()
+	}
+	if edge {
+		// Nothing to choose: see above.
+	} else if o.ee {
 		eeImage := o.eeImage
 		if eeImage == "" {
 			img, err := eeImageFromScope(scope)
@@ -299,7 +307,7 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 
 	// Only with a known release: --no-sync installs nothing, so there is no
 	// release to hold the Enterprise images to.
-	if ref != "" {
+	if ref != "" && !edge {
 		if err := checkEnterpriseImages(pullDir, runtime, ref, channel); err != nil {
 			return putBackBeforeRestart(snap, err)
 		}
@@ -372,6 +380,14 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 	fmt.Println("Checking that the services answer…")
 	if err := verifyStack(ctx); err != nil {
 		return fail(err)
+	}
+
+	// The platform reaches this cluster through its agent, which follows the
+	// CLI's release; the old one keeps serving if the new one cannot be had.
+	if edge {
+		if err := upgradeAgent(o); err != nil {
+			fmt.Printf("warning: the cluster agent was not upgraded: %v\n", err)
+		}
 	}
 
 	// Published ports on the mesh only. Left to last: it restarts k3s, which
@@ -814,6 +830,13 @@ type stackCheck struct {
 // configuration loaded: the proxy answers 404 for a host it has no route for,
 // and Caddy 308 to HTTPS. A crashed container does not answer at all.
 func stackChecks() []stackCheck {
+	if isEdgeInstall() {
+		// The API and console run where the platform does.
+		return []stackCheck{
+			{name: "proxy", url: "http://127.0.0.1:" + strconv.Itoa(proxyPortOrDefault()) + "/"},
+			{name: "Caddy", url: "http://127.0.0.1:80/"},
+		}
+	}
 	host := ""
 	if d := readEnvVar("DOMAIN"); d != "" {
 		host = "console." + d
@@ -1059,6 +1082,15 @@ func composeEnv(dir string) []string {
 	return append(env, "COMPOSE_FILE="+vars["COMPOSE_FILE"])
 }
 
+// composeFile is the compose file the stack in dir runs: the one .env names
+// (an edge's), or the gateway's.
+func composeFile(dir string) string {
+	if vars, err := parseEnvFile(filepath.Join(dir, ".env"), "COMPOSE_FILE"); err == nil && vars["COMPOSE_FILE"] != "" {
+		return filepath.Join(dir, vars["COMPOSE_FILE"])
+	}
+	return filepath.Join(dir, "docker-compose.yml")
+}
+
 // isEdgeInstall reports whether this server is the edge of a cluster whose
 // platform runs on another machine (MESHPLOY_INSTALL=edge in .env).
 func isEdgeInstall() bool { return readEnvVar("MESHPLOY_INSTALL") == "edge" }
@@ -1097,7 +1129,7 @@ func pullStackImages(dir, runtime string) error {
 		}
 		return nil
 	}
-	images, err := composeImages(filepath.Join(dir, "docker-compose.yml"))
+	images, err := composeImages(composeFile(dir))
 	if err != nil {
 		return err
 	}

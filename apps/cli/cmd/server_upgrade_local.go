@@ -96,7 +96,7 @@ func loadLocalImages(runtime, from string) ([]string, error) {
 // local tag that was never shipped is taken from edge and tagged local; the
 // rest are pulled as usual.
 func ensureLocalImages(dir, runtime string) error {
-	images, err := composeImages(filepath.Join(dir, "docker-compose.yml"))
+	images, err := composeImages(composeFile(dir))
 	if err != nil {
 		return err
 	}

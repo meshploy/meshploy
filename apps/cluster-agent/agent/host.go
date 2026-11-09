@@ -28,16 +28,16 @@ import (
 // carriedRequests are the host agent's requests the API may ask for through
 // this agent. A migration is not among them: it acts on the machine through
 // an API on the same machine.
-var carriedRequests = []string{hostagent.RequestDomainApply, hostagent.RequestRegistryGC}
+var carriedRequests = []string{hostagent.RequestDomainApply, hostagent.RequestRegistryGC, hostagent.RequestServerUpgrade}
 
 // readableState are the reports the API reads, under state/.
 var readableState = []string{
 	hostagent.AgentFile, hostagent.FirewallFile, hostagent.DockerFile, hostagent.ListenersFile, hostagent.FactsFile,
-	path.Base(hostagent.EdgeSnapshotFile),
+	path.Base(hostagent.EdgeSnapshotFile), hostagent.UpgradeFile,
 }
 
 // readableResults are the results the API reads, under state/migrate/.
-var readableResults = []string{hostagent.RegistryGCFile, hostagent.DomainApplyFile}
+var readableResults = []string{hostagent.RegistryGCFile, hostagent.DomainApplyFile, hostagent.ServerUpgradeFile}
 
 var (
 	requestFile = regexp.MustCompile(`^inbox/[a-z]+\.[a-z]+-[0-9a-f-]{36}\.json$`)

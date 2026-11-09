@@ -120,6 +120,25 @@ func (h *Handler) registerSystemRoutes(api huma.API) {
 	}, h.RequestUpgrade)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-edge-upgrade",
+		Method:      "GET",
+		Path:        "/api/v1/system/edge-upgrade",
+		Summary:     "Report the upgrade of the edge this server reaches its cluster through",
+		Tags:        []string{"System"},
+		Security:    []map[string][]string{{"bearer": {}}},
+	}, h.GetEdgeUpgrade)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "request-edge-upgrade",
+		Method:        "POST",
+		Path:          "/api/v1/system/edge-upgrade",
+		Summary:       "Ask the edge this server reaches its cluster through to upgrade itself and its cluster agent",
+		Tags:          []string{"System"},
+		Security:      []map[string][]string{{"bearer": {}}},
+		DefaultStatus: http.StatusAccepted,
+	}, h.RequestEdgeUpgrade)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-channels",
 		Method:      "GET",
 		Path:        "/api/v1/system/channels",
@@ -350,4 +369,69 @@ func (h *Handler) GetChannels(ctx context.Context, _ *struct{}) (*ChannelsOutput
 	}
 	out := h.svc.System.GetChannels(ctx)
 	return &ChannelsOutput{Body: &out}, nil
+}
+
+type EdgeUpgradeInput struct {
+	Request string `query:"request" doc:"A request id RequestEdgeUpgrade returned, to read how it went"`
+}
+
+type EdgeUpgradeOutput struct {
+	Body *service.EdgeUpgrade
+}
+
+type RequestEdgeUpgradeInput struct {
+	Body *struct {
+		Channel string `json:"channel,omitempty" enum:"stable,edge" doc:"Upgrade to this channel's latest build. Omit for the edge's own."`
+	}
+}
+
+type RequestEdgeUpgradeOutput struct {
+	Body struct {
+		Request string `json:"request" doc:"Follow it with GET /api/v1/system/edge-upgrade?request=<id>"`
+	}
+}
+
+// GetEdgeUpgrade reports the upgrade of the edge an agent-reached cluster
+// runs on, which its own updater does and its host agent reports.
+func (h *Handler) GetEdgeUpgrade(ctx context.Context, input *EdgeUpgradeInput) (*EdgeUpgradeOutput, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	st, err := h.svc.System.GetEdgeUpgrade(ctx, userID, input.Request)
+	if err != nil {
+		return nil, edgeUpgradeError(err)
+	}
+	return &EdgeUpgradeOutput{Body: &st}, nil
+}
+
+// RequestEdgeUpgrade asks the edge to upgrade itself and its cluster agent.
+func (h *Handler) RequestEdgeUpgrade(ctx context.Context, input *RequestEdgeUpgradeInput) (*RequestEdgeUpgradeOutput, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	channel := ""
+	if input.Body != nil {
+		channel = input.Body.Channel
+	}
+	id, err := h.svc.System.RequestEdgeUpgrade(ctx, userID, channel)
+	if err != nil {
+		return nil, edgeUpgradeError(err)
+	}
+	out := &RequestEdgeUpgradeOutput{}
+	out.Body.Request = id
+	return out, nil
+}
+
+func edgeUpgradeError(err error) error {
+	switch {
+	case errors.Is(err, service.ErrNotInstanceOwner):
+		return huma.Error403Forbidden(err.Error())
+	case errors.Is(err, service.ErrUnknownChannel):
+		return huma.Error400BadRequest(err.Error())
+	case errors.Is(err, service.ErrNoEdge), errors.Is(err, service.ErrUpgradeRunning):
+		return huma.Error409Conflict(err.Error())
+	}
+	return huma.Error502BadGateway("the edge could not be reached", err)
 }

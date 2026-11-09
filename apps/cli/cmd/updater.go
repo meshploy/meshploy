@@ -428,9 +428,13 @@ func runUpgrade(ctx context.Context, out io.Writer, opts upgradeOptions) error {
 		return run.end(fmt.Errorf("meshploy server-upgrade: %w", err))
 	}
 
-	run.step("Waiting for the API")
-	if err := waitForHealthyAPI(ctx, upgradeHealthURL, upgradeHealthTimeout); err != nil {
-		return run.end(err)
+	// An edge's API runs where its platform does; server-upgrade has checked
+	// what runs here.
+	if !isEdgeInstall() {
+		run.step("Waiting for the API")
+		if err := waitForHealthyAPI(ctx, upgradeHealthURL, upgradeHealthTimeout); err != nil {
+			return run.end(err)
+		}
 	}
 	return run.end(nil)
 }

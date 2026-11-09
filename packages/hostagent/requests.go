@@ -55,13 +55,47 @@ const (
 	// asks for it when images were removed and no build is pushing, since a
 	// layer being pushed during a collection can be deleted under the push.
 	RequestRegistryGC = "registry.gc"
+	// RequestServerUpgrade queues an upgrade of this server for its updater,
+	// as the console's Upgrade button does on a gateway: Args["channel"] is
+	// "stable" or "edge". It is how an API that reaches its cluster through a
+	// cluster agent upgrades the edge, which runs on another machine. The
+	// upgrade itself reports in UpgradeFile.
+	RequestServerUpgrade = "server.upgrade"
 )
+
+// ServerUpgradeFile is a server.upgrade request's result, under
+// state/migrate/: which upgrade it queued.
+const ServerUpgradeFile = "server-upgrade.json"
+
+// UpgradeFile is the updater's progress, under state/, as the host agent
+// copies it from the updater's own folder for an API that cannot read that.
+const UpgradeFile = "upgrade.json"
+
+// UpgradeProgress is the updater's progress on one upgrade.
+type UpgradeProgress struct {
+	ID          string `json:"id"`
+	State       string `json:"state"` // running, succeeded, failed
+	Step        string `json:"step"`
+	Channel     string `json:"channel"`
+	RequestedBy string `json:"requested_by"`
+	CLIFrom     string `json:"cli_from"`
+	CLITo       string `json:"cli_to"`
+	StartedAt   string `json:"started_at"`
+	HeartbeatAt string `json:"heartbeat_at"`
+	FinishedAt  string `json:"finished_at"`
+	Error       string `json:"error"`
+}
+
+// ReadUpgrade returns the updater's last progress, or nil before any upgrade.
+func ReadUpgrade(f Folder) (*UpgradeProgress, error) {
+	return readJSON[UpgradeProgress](f, statePath(UpgradeFile))
+}
 
 // RequestTypes is every type the agent accepts.
 var RequestTypes = []string{
 	RequestMigrateDetect, RequestMigratePlan, RequestMigrateCredential,
 	RequestMigratePrepare, RequestMigrateMove, RequestMigrateCutover, RequestMigrateRollback,
-	RequestMigrateFinish, RequestDomainApply, RequestRegistryGC,
+	RequestMigrateFinish, RequestDomainApply, RequestRegistryGC, RequestServerUpgrade,
 }
 
 const (

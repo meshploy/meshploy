@@ -55,7 +55,7 @@ func edgeToServe() hostagent.EdgeSnapshot {
 }
 
 // What the API leaves for the host agent reaches its inbox, as the host
-// agent reads it: a domain.apply, a registry.gc, the edge to serve and the
+// agent reads it: a domain.apply, a registry.gc, a server.upgrade, the edge to serve and the
 // DNS providers' tokens, the tokens readable by root only.
 func TestTheAgentCarriesTheAPIsRequestsToTheHostAgent(t *testing.T) {
 	f, dir := hostFolder(t, true)
@@ -72,8 +72,13 @@ func TestTheAgentCarriesTheAPIsRequestsToTheHostAgent(t *testing.T) {
 	if err := hostagent.QueueRequest(f, gc); err != nil {
 		t.Fatalf("registry.gc: %v", err)
 	}
+	up := hostagent.Request{ID: uuid.NewString(), Type: hostagent.RequestServerUpgrade, RequestedBy: "meshploy", RequestedAt: time.Now().UTC(),
+		Args: map[string]string{"channel": "stable"}}
+	if err := hostagent.QueueRequest(f, up); err != nil {
+		t.Fatalf("server.upgrade: %v", err)
+	}
 	pending, err := hostagent.PendingRequests(f)
-	if err != nil || len(pending) != 2 {
+	if err != nil || len(pending) != 3 {
 		t.Fatalf("pending through the agent: %+v, %v", pending, err)
 	}
 
@@ -191,5 +196,19 @@ func TestNoHostFolderNoAgentNothingCarried(t *testing.T) {
 	c, _ := appk8s.NewAgentCluster()
 	if _, _, err := c.HostFolder().Read("state/agent.json", 1<<10); !errors.Is(err, appk8s.ErrNoClusterAgent) {
 		t.Fatalf("no agent: %v", err)
+	}
+}
+
+// The updater's progress, which the host agent copies beside its reports, is
+// readable through the agent.
+func TestTheAPIReadsTheEdgesUpgrade(t *testing.T) {
+	f, dir := hostFolder(t, true)
+	if st, err := hostagent.ReadUpgrade(f); err != nil || st != nil {
+		t.Fatalf("before any upgrade: %+v %v", st, err)
+	}
+	os.MkdirAll(filepath.Join(dir, "state"), 0o755)
+	os.WriteFile(filepath.Join(dir, "state", hostagent.UpgradeFile), []byte(`{"id":"u1","state":"succeeded","channel":"stable"}`), 0o644)
+	if st, err := hostagent.ReadUpgrade(f); err != nil || st == nil || st.State != "succeeded" {
+		t.Fatalf("the edge's upgrade: %+v %v", st, err)
 	}
 }
