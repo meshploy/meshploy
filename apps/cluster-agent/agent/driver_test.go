@@ -93,6 +93,14 @@ func TestAgentDriverThroughTheAgent(t *testing.T) {
 		t.Fatalf("prune on a node not in the cluster: %v", err)
 	}
 
+	cs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-1"}}, metav1.CreateOptions{})
+	if err := d.RemoveNode(ctx, "worker-1"); err != nil {
+		t.Fatalf("RemoveNode: %v", err)
+	}
+	if _, err := cs.CoreV1().Nodes().Get(ctx, "worker-1", metav1.GetOptions{}); !k8serrors.IsNotFound(err) {
+		t.Fatalf("the worker is still in the cluster: %v", err)
+	}
+
 	// The typed client reaches the agent, and a raw host-level pod comes back
 	// as Kubernetes' own Forbidden, which the API's code already handles.
 	_, err = d.Client().CoreV1().Pods("kube-system").Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "x"}}, metav1.CreateOptions{})

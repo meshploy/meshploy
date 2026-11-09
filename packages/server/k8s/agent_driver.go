@@ -106,6 +106,12 @@ func (d *AgentDriver) CloseNodeShell(ctx context.Context, podName string) {
 	_ = d.call(ctx, http.MethodDelete, "shells/"+url.PathEscape(podName), nil, nil)
 }
 
+// RemoveNode asks the agent to take a node out of the cluster: the agent
+// removes a worker, never the server it runs on.
+func (d *AgentDriver) RemoveNode(ctx context.Context, node string) error {
+	return d.call(ctx, http.MethodDelete, "nodes/"+url.PathEscape(node), nil, nil)
+}
+
 // JoinTokenRequest asks the cluster agent for a token a machine joins the
 // cluster with.
 type JoinTokenRequest struct {

@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +36,9 @@ type Driver interface {
 	// CloseNodeShell removes a node terminal's pod. Best effort: a pod that is
 	// already gone is not an error.
 	CloseNodeShell(ctx context.Context, podName string)
+	// RemoveNode takes a node out of the cluster, once it has left the mesh.
+	// A node already gone is not an error.
+	RemoveNode(ctx context.Context, node string) error
 }
 
 // LocalDriver is a cluster whose credential the API holds itself, through a
@@ -67,4 +71,11 @@ func (d *LocalDriver) OpenNodeShell(ctx context.Context, node, podName string) (
 
 func (d *LocalDriver) CloseNodeShell(ctx context.Context, podName string) {
 	DeleteShellPod(ctx, d.cs, podName)
+}
+
+func (d *LocalDriver) RemoveNode(ctx context.Context, node string) error {
+	if err := DeleteNode(ctx, d.cs, node); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }

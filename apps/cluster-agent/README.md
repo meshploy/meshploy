@@ -49,6 +49,7 @@ sends them.
 | `POST nodes/<node>/prune` | the image cleanup on a node |
 | `POST nodes/<node>/shells/<name>` | the node terminal, only while the owner has approved it |
 | `DELETE shells/<name>` | closes a node terminal |
+| `DELETE nodes/<node>` | takes a worker out of the cluster once its machine has left the mesh; never the cluster's server, and a node already gone is no error |
 | `POST k3s/join-tokens` | a token for one machine to join the cluster (`k3s token create`, `-k3s` names the binary), named for the node and lasting an hour, whatever the API would like: the API never holds the server's own token |
 
 ## What the agent carries to the host agent

@@ -220,4 +220,12 @@ func (c *AgentCluster) CloseNodeShell(ctx context.Context, podName string) {
 	}
 }
 
+func (c *AgentCluster) RemoveNode(ctx context.Context, node string) error {
+	a, err := c.conn()
+	if err != nil {
+		return err
+	}
+	return a.driver.RemoveNode(ctx, node)
+}
+
 var _ Driver = (*AgentCluster)(nil)

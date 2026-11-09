@@ -61,6 +61,8 @@ func (a *Agent) serveIntent(w http.ResponseWriter, r *http.Request) {
 		out, what, err = a.mintJoinToken(ctx, r.Body)
 	case r.Method == http.MethodDelete && len(parts) == 2 && parts[0] == "shells":
 		what, err = a.closeShell(ctx, parts[1])
+	case r.Method == http.MethodDelete && len(parts) == 2 && parts[0] == "nodes":
+		what, err = a.removeNode(ctx, parts[1])
 	default:
 		a.refuseIntent(w, r, http.StatusNotFound, "no such request")
 		return
@@ -126,6 +128,37 @@ func (a *Agent) prune(ctx context.Context, node string) (int, error) {
 		return 0, err
 	}
 	return appk8s.PruneNodeImages(ctx, a.cs, node, pruneTimeout)
+}
+
+// removeNode takes a worker out of the cluster, which the API asks for once
+// the machine has left the mesh. Never the server: that is the machine the
+// agent runs on, and the cluster itself.
+func (a *Agent) removeNode(ctx context.Context, name string) (string, error) {
+	n, err := a.cs.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return "removing node " + name + ", which was already gone", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if isServer(n) {
+		return "", errRefused{"removing " + name + ", the cluster's server"}
+	}
+	if err := a.cs.CoreV1().Nodes().Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+		return "", err
+	}
+	return "removing node " + name, nil
+}
+
+// isServer is whether a node runs the cluster's control plane, as k3s labels
+// its servers.
+func isServer(n *corev1.Node) bool {
+	for _, l := range []string{"node-role.kubernetes.io/control-plane", "node-role.kubernetes.io/master"} {
+		if v, ok := n.Labels[l]; ok && v != "false" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Agent) openShell(ctx context.Context, node, name string) (*corev1.Pod, error) {

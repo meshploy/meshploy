@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
@@ -460,7 +461,7 @@ func TestUnknownIntentsAreRefused(t *testing.T) {
 		{"GET", IntentPrefix + "builds"},
 		{"POST", IntentPrefix + "nodes/edge/delete"},
 		{"POST", IntentPrefix + "exec"},
-		{"DELETE", IntentPrefix + "nodes/edge"},
+		{"DELETE", IntentPrefix + "nodes/edge/shells"},
 	} {
 		if w := do(a, c.method, c.path, nil, nil); w.Code != http.StatusNotFound {
 			t.Errorf("%s %s: %d, want 404", c.method, c.path, w.Code)
@@ -498,5 +499,33 @@ func TestTheCallersTokenNeverReachesTheCluster(t *testing.T) {
 	}
 	if got := api.seen(); len(got) != 1 || got[0].auth != "" {
 		t.Fatalf("API server saw Authorization %q", got[0].auth)
+	}
+}
+
+// A machine leaving takes its node out of the cluster through the agent: a
+// worker is removed, one already gone is no error, and the server never is.
+func TestTheAgentRemovesAWorkerButNeverTheServer(t *testing.T) {
+	api := newAPIServer(t)
+	a, cs, _ := testAgent(t, api)
+	ctx := t.Context()
+	edge, _ := cs.CoreV1().Nodes().Get(ctx, "edge", metav1.GetOptions{})
+	edge.Labels = map[string]string{"node-role.kubernetes.io/control-plane": "true"}
+	cs.CoreV1().Nodes().Update(ctx, edge, metav1.UpdateOptions{})
+	cs.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-1"}}, metav1.CreateOptions{})
+
+	if c := do(a, "DELETE", IntentPrefix+"nodes/edge", nil, nil).Code; c != http.StatusForbidden {
+		t.Errorf("removing the server: %d, want 403", c)
+	}
+	if _, err := cs.CoreV1().Nodes().Get(ctx, "edge", metav1.GetOptions{}); err != nil {
+		t.Fatalf("the server was removed: %v", err)
+	}
+	if c := do(a, "DELETE", IntentPrefix+"nodes/worker-1", nil, nil).Code; c != 200 {
+		t.Errorf("removing a worker: %d", c)
+	}
+	if _, err := cs.CoreV1().Nodes().Get(ctx, "worker-1", metav1.GetOptions{}); !k8serrors.IsNotFound(err) {
+		t.Errorf("the worker is still there: %v", err)
+	}
+	if c := do(a, "DELETE", IntentPrefix+"nodes/worker-1", nil, nil).Code; c != 200 {
+		t.Errorf("removing a worker already gone: %d", c)
 	}
 }

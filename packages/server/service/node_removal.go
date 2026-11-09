@@ -10,8 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/meshploy/packages/db"
-	appk8s "github.com/meshploy/packages/server/k8s"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // Removing a node takes three steps, in this order: Headscale drops the node's
@@ -111,11 +109,12 @@ func (s *NodeService) finishRemoval(ctx context.Context, node *db.Node, waits []
 	if err := s.dropPeer(ctx, node, waits); err != nil {
 		return s.waiting(ctx, node, fmt.Sprintf("Headscale has not removed the node's peer: %v", err))
 	}
-	if s.k8s != nil && node.Name != "" && node.MeshRole != db.MeshRoleMesh {
+	if s.cluster != nil && node.Name != "" && node.MeshRole != db.MeshRoleMesh {
 		// Not fatal: without its peer the machine cannot reach the cluster, so
 		// a node object left behind only shows as NotReady. A mesh-only node
-		// never had one.
-		if err := appk8s.DeleteNode(ctx, s.k8s, node.Name); err != nil && !apierrors.IsNotFound(err) {
+		// never had one. Through the driver, since an API reaching its cluster
+		// through an agent may not delete a node itself.
+		if err := s.cluster.RemoveNode(ctx, node.Name); err != nil {
 			log.Printf("warning: delete k8s node %s: %v", node.Name, err)
 		}
 	}
