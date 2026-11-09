@@ -272,6 +272,8 @@ func hostServe(ctx context.Context, logw io.Writer) error {
 		facts := hostagent.Facts{
 			PublicIP:          strings.TrimSpace(readEnvVar("PUBLIC_IP")),
 			NodePortAddresses: strings.TrimSpace(readEnvVar("NODEPORT_ADDRESSES")),
+			FirewallState:     strings.TrimSpace(readEnvVar("FIREWALL_STATE")),
+			FirewallCheckedAt: strings.TrimSpace(readEnvVar("FIREWALL_CHECKED_AT")),
 			CheckedAt:         time.Now().UTC(),
 		}
 		factsTask := hostagent.Task{OK: true, At: facts.CheckedAt}

@@ -169,3 +169,13 @@ func TestExposureCarriesTheDNSMode(t *testing.T) {
 		assert.Equal(t, "ondemand", got.DNSMode)
 	})
 }
+
+// Through a cluster agent the host is the edge, whose facts the API reads
+// through the agent: unread, the API's own machine says nothing about it.
+func TestExposureOnAnEdgeIsUnknownUntilItsFactsAreRead(t *testing.T) {
+	cfg := &config.Config{GatewayIP: "100.64.0.9", ClusterAgent: true, FirewallState: "ufw"}
+	got, err := service.New(newTestDB(t), cfg).System.GetExposure(context.Background(), uuid.New())
+	require.NoError(t, err)
+	require.Equal(t, "unknown", got.FirewallState, "the API's own machine is not the edge")
+	require.Empty(t, got.Ports)
+}

@@ -161,7 +161,7 @@ Required in `.env` at the monorepo root:
 | `PUBLIC_IP` | Public internet IP — backfilled on the gateway node record |
 | `GATEWAY_HOSTNAME` | Gateway server hostname |
 | `HOST_GATEWAY_IP` | Docker bridge gateway IP — used to reach node_exporter from inside the API container |
-| `FIREWALL_STATE` | What `install.sh` saw on the host: `none`, `ufw` or `firewalld`. Read-only record — the API container cannot inspect the host firewall itself. Drives the console's exposure notice |
+| `FIREWALL_STATE` | What `install.sh` saw on the host: `none`, `ufw` or `firewalld`. Read-only record — the API container cannot inspect the host firewall itself. Drives the console's exposure notice. Through a cluster agent the notice is the edge's: its install's record, in the facts its host agent reports, with the ports an edge publishes (k3s's) |
 | `FIREWALL_CHECKED_AT` | RFC3339 UTC timestamp of that check, so the notice never reads as live state |
 | `DNS_MODE` | `delegation` (the gateway runs authoritative DNS and holds a wildcard) or `ondemand` (DNS stays with the operator's provider). Seeds the **primary** domain's mode in the edge snapshot; every base domain carries its own from then on. An internal route on an `ondemand` domain is served with a certificate from Caddy's own CA, which the console says on the route form |
 | `ACME_EMAIL` | Read by `meshploy domain apply` on the host, not by the API. Set, certificates are tried at Let's Encrypt and then ZeroSSL, which needs an address for its account; empty, Let's Encrypt alone |

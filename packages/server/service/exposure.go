@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/meshploy/packages/hostagent"
 
 	"github.com/google/uuid"
 	meshdb "github.com/meshploy/packages/db"
@@ -87,6 +88,29 @@ func publishedPorts() []ExposedPort {
 	}
 }
 
+// edgePublishedPorts are the ports bound on all interfaces on the edge of a
+// cluster whose API runs elsewhere: k3s's. Its registry and node metrics
+// listen on the mesh alone, and the API is not there.
+func edgePublishedPorts() []ExposedPort {
+	return []ExposedPort{
+		{Port: 6443, Service: "kubernetes api"},
+		{Port: 10250, Service: "kubelet"},
+	}
+}
+
+// edgeFirewall is what the edge's install saw of its firewall, and when, as
+// its host agent reports it; empty while that cannot be read.
+func edgeFirewall(host hostagent.Folder) (state, checkedAt string) {
+	if host == nil {
+		return "", ""
+	}
+	facts, err := hostagent.ReadFacts(host)
+	if err != nil || facts == nil {
+		return "", ""
+	}
+	return facts.FirewallState, facts.FirewallCheckedAt
+}
+
 // GetExposure reports the host-exposure advisory for one user.
 //
 // Returns FirewallState "unknown" with no ports on anything that is not a
@@ -104,13 +128,20 @@ func (s *SystemService) GetExposure(ctx context.Context, userID uuid.UUID) (Expo
 		return out, nil
 	}
 
-	if s.cfg.FirewallState != "" {
-		out.FirewallState = s.cfg.FirewallState
+	state, checked, ports := s.cfg.FirewallState, s.cfg.FirewallCheckedAt, publishedPorts()
+	if s.cfg.ClusterAgent {
+		// The host is the edge, whose install recorded what it saw there and
+		// whose host agent reports it. Unread, it is unknown.
+		state, checked = edgeFirewall(s.host())
+		ports = edgePublishedPorts()
 	}
-	out.CheckedAt = s.cfg.FirewallCheckedAt
+	if state != "" {
+		out.FirewallState = state
+	}
+	out.CheckedAt = checked
 	out.DNSMode = s.cfg.DNSMode
 	if out.FirewallState == "none" {
-		out.Ports = publishedPorts()
+		out.Ports = ports
 	}
 
 	dismissed, err := s.noticeDismissed(ctx, userID, NoticeHostExposure)

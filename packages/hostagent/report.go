@@ -317,7 +317,11 @@ type Facts struct {
 	PublicIP string `json:"public_ip,omitempty"`
 	// NodePortAddresses is the range kube-proxy binds published ports to;
 	// empty is every interface.
-	NodePortAddresses string    `json:"nodeport_addresses,omitempty"`
+	NodePortAddresses string `json:"nodeport_addresses,omitempty"`
+	// FirewallState is what the install saw on the host: none, ufw or
+	// firewalld. FirewallCheckedAt is when, RFC3339.
+	FirewallState     string    `json:"firewall_state,omitempty"`
+	FirewallCheckedAt string    `json:"firewall_checked_at,omitempty"`
 	CheckedAt         time.Time `json:"checked_at"`
 }
 
