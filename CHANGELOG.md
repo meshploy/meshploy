@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.23.0](https://github.com/meshploy/meshploy/compare/v0.22.0...v0.23.0) (2026-11-10)
+
+
+### Features
+
+* **builder:** one builder image builds as root or rootless; the agent's builds run rootless with a cache folder of their own ([03d58aa](https://github.com/meshploy/meshploy/commit/03d58aadb7a4d0cca5ee67ce7609140b1fea2675))
+* **cluster-agent:** add the cluster agent, which holds the cluster's credential and checks every request from the API ([0efaae7](https://github.com/meshploy/meshploy/commit/0efaae779344f60450640b2f934ca10e1b5898cd))
+* **cluster-agent:** carry host-agent requests through the agent, and skip the Headscale render on an edge ([bf5a151](https://github.com/meshploy/meshploy/commit/bf5a1512ed10f439d8195b0aceba5bf90112307c))
+* **cluster-agent:** remove a leaving worker through the agent, never the server ([c0ce184](https://github.com/meshploy/meshploy/commit/c0ce18406b43b0164512888b3d14e74d4bd441ba))
+* **cluster-agent:** the agent mints join tokens, and the edge's public address comes from its host agent ([c6352da](https://github.com/meshploy/meshploy/commit/c6352da1b4b609098db52610fb830d1ad067c7f1))
+* **cluster-agent:** the agent registers with a token minted for it, and the API switches to it without a restart ([6ad9a59](https://github.com/meshploy/meshploy/commit/6ad9a59518557548bd08fab74287c101921c50a6))
+* **domains:** PLATFORM_URLS sets the platform's console, API and Headscale addresses whatever the primary is ([92d7c8c](https://github.com/meshploy/meshploy/commit/92d7c8c3eb2bb5d4cd4dcb43686c1691cf09b181))
+* **edge:** install an edge for a platform that runs elsewhere: apps-only config, cluster agent, registry, reruns and uninstall ([accaf63](https://github.com/meshploy/meshploy/commit/accaf63077a89f8bea4356b9518ba888ffa51d64))
+* **edge:** the exposure notice shows the edge's firewall when the API runs elsewhere ([24792eb](https://github.com/meshploy/meshploy/commit/24792eb5c2d136a6a049a8084e71bbf812a9249f))
+* **mesh:** the mesh policy includes the API's own machine when the API runs apart from its cluster ([9791a45](https://github.com/meshploy/meshploy/commit/9791a45af25cd8c54d98cc0c0ff194b15cc5f108))
+* **nodes:** unused images go daily, a node's disk can be freed from the console, and build caches stop at 5 GB ([eff137b](https://github.com/meshploy/meshploy/commit/eff137bb9e59c0aee7aeec6e0e984951dd17c733))
+* **proxy:** serve saved routes when Postgres is down ([e5791fb](https://github.com/meshploy/meshploy/commit/e5791fb375843008a7fdfd8aff6c5a2a3f894dc8))
+* **proxy:** without a database, the proxy serves the snapshot the API hands the edge ([6f41304](https://github.com/meshploy/meshploy/commit/6f413044ba7e0b2740ef138473a0377675febea6))
+* **routes:** point custom hostnames at the edge name with a CNAME ([ea56f61](https://github.com/meshploy/meshploy/commit/ea56f61f2c8a329ff071a86834f1e93b89d9f8b9))
+* **upgrade:** upgrade an edge and its cluster agent, by server-upgrade or POST /system/edge-upgrade ([f287a9d](https://github.com/meshploy/meshploy/commit/f287a9da122e6e06873817659bceda6d68b86aa4))
+
+
+### Bug Fixes
+
+* **builds:** a pinned build's cache is made on its node ([12a634f](https://github.com/meshploy/meshploy/commit/12a634f9e177c409f895026a9a9cd505d6f033f5))
+* **isolation:** a cluster's isolation step runs only for namespaces made in that cluster ([3101522](https://github.com/meshploy/meshploy/commit/310152238b9c175716a3f3380b5243dabb024965))
+* **k8s:** pinned databases get their volume, and updates retry on conflict ([eee5644](https://github.com/meshploy/meshploy/commit/eee56444b32754dcda8d5d9c425c3c65f58b4493))
+* **nodes:** reach, pin and route to a node only within its own organization ([12f80cc](https://github.com/meshploy/meshploy/commit/12f80ccdf716078ab6395fcda969abaa90b90d47))
+* **nodes:** set the image age in kubelet's config so k3s starts ([0f6cc03](https://github.com/meshploy/meshploy/commit/0f6cc0375ff8ecc81a8d4534aa2b58513a237b2c))
+* **nodes:** turning off a node's builds removes its builder label ([b880bac](https://github.com/meshploy/meshploy/commit/b880bac6be6dd5ce1c79a89aed688a2e80549d17))
+* **routes:** CLI and MCP read a route's target from its rules ([be98c5c](https://github.com/meshploy/meshploy/commit/be98c5cd8b8bb9b083714473ba079df337bf34ed))
+
 ## [0.22.0](https://github.com/meshploy/meshploy/compare/v0.21.2...v0.22.0) (2026-11-02)
 
 
