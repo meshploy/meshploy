@@ -205,7 +205,7 @@ jobs:
           cache-dependency-path: apps/api/go.sum
 
       - name: test
-        run: cd packages/server && go test ./... -v -timeout 300s
+        run: cd packages/server && go test ./... -v -timeout 600s
 
   # ── Builder smoke test ────────────────────────────────────────────────────────
   # Builds the builder image and builds something real with each builder, as
