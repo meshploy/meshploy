@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -10,15 +11,30 @@ import (
 )
 
 // namespaceCreated are called once a namespace has been made, before
-// anything is deployed into it.
-var namespaceCreated []func(ctx context.Context, name string) error
+// anything is deployed into it: those of every cluster, and those of one
+// cluster, keyed by its client.
+var (
+	namespaceMu        sync.RWMutex
+	namespaceCreated   []func(ctx context.Context, name string) error
+	namespaceCreatedIn = map[kubernetes.Interface][]func(ctx context.Context, name string) error{}
+)
 
 // OnNamespaceCreated adds a step every new namespace takes before anything
 // runs in it: its isolation, so a new project is never open in between.
 // Call it before the server starts. An error fails the deploy that made the
 // namespace.
 func OnNamespaceCreated(fn func(ctx context.Context, name string) error) {
+	namespaceMu.Lock()
+	defer namespaceMu.Unlock()
 	namespaceCreated = append(namespaceCreated, fn)
+}
+
+// OnNamespaceCreatedIn is OnNamespaceCreated for the namespaces made through
+// client alone: a step that acts on one cluster never runs for another's.
+func OnNamespaceCreatedIn(client kubernetes.Interface, fn func(ctx context.Context, name string) error) {
+	namespaceMu.Lock()
+	defer namespaceMu.Unlock()
+	namespaceCreatedIn[client] = append(namespaceCreatedIn[client], fn)
 }
 
 // EnsureNamespace creates the namespace if it does not already exist.
@@ -39,7 +55,10 @@ func EnsureNamespace(ctx context.Context, client kubernetes.Interface, name stri
 	if _, err = client.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
 		return err
 	}
-	for _, fn := range namespaceCreated {
+	namespaceMu.RLock()
+	steps := append(append([]func(context.Context, string) error{}, namespaceCreated...), namespaceCreatedIn[client]...)
+	namespaceMu.RUnlock()
+	for _, fn := range steps {
 		if err := fn(ctx, name); err != nil {
 			return err
 		}

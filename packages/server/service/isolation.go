@@ -43,7 +43,7 @@ const isolationSweep = time.Minute
 func newIsolationService(gdb *gorm.DB, client kubernetes.Interface) *IsolationService {
 	s := &IsolationService{db: gdb, k8s: client}
 	if client != nil {
-		appk8s.OnNamespaceCreated(func(ctx context.Context, _ string) error { return s.Sweep(ctx) })
+		appk8s.OnNamespaceCreatedIn(client, func(ctx context.Context, _ string) error { return s.Sweep(ctx) })
 	}
 	return s
 }

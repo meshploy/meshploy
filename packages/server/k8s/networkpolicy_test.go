@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -117,5 +118,25 @@ func TestANewNamespaceIsIsolatedAsItIsMade(t *testing.T) {
 	}
 	if len(made) != 1 || made[0] != "shop" {
 		t.Errorf("the step ran for %v, want once, for shop", made)
+	}
+}
+
+// A step for one cluster runs for the namespaces made in it, never another's.
+func TestAClustersStepRunsOnlyForItsNamespaces(t *testing.T) {
+	ours, theirs := fake.NewSimpleClientset(), fake.NewSimpleClientset()
+	t.Cleanup(func() { delete(namespaceCreatedIn, ours) })
+	var made []string
+	OnNamespaceCreatedIn(ours, func(_ context.Context, name string) error { made = append(made, name); return nil })
+
+	for _, c := range []struct {
+		client kubernetes.Interface
+		name   string
+	}{{theirs, "theirs"}, {ours, "ours"}} {
+		if err := EnsureNamespace(context.Background(), c.client, c.name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(made) != 1 || made[0] != "ours" {
+		t.Errorf("the step ran for %v, want only ours", made)
 	}
 }
