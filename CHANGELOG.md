@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/meshploy/meshploy/compare/v0.23.0...v0.23.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **mesh:** update and server-upgrade bring Meshploy's mesh to the release's build, restarting it only when the build changed ([a304e05](https://github.com/meshploy/meshploy/commit/a304e05bd9570a7f1f8b0a911439b098c76f8b6a))
+
 ## [0.23.0](https://github.com/meshploy/meshploy/compare/v0.22.0...v0.23.0) (2026-11-10)
 
 
