@@ -50,10 +50,7 @@ func installClusterAgent(w io.Writer, from, pat, dest string) error {
 		fmt.Fprintf(w, "✔  The cluster agent is at %s\n", dest)
 		return nil
 	}
-	release := "cli-latest"
-	if Channel == "stable" {
-		release = "v" + Version
-	}
+	release := cliRelease()
 	assets, err := releaseAssets(pat, release)
 	if err != nil {
 		return err

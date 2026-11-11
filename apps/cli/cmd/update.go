@@ -86,6 +86,19 @@ func updateCLI(w io.Writer, pat string, edge bool, exePath, assetName string) er
 		fmt.Fprintf(w, "✔  Verified against the release's %s\n", checksumAsset)
 	}
 	fmt.Fprintf(w, "✔  meshploy updated at %s\n", exePath)
+
+	// Meshploy's mesh is published with the CLI and follows it: a machine
+	// that runs it would otherwise keep the Tailscale it was installed with.
+	if !meshRunsHere() {
+		return nil
+	}
+	if !meshAsRoot() {
+		fmt.Fprintln(w, "Meshploy's mesh runs here: sudo meshploy update brings it to this release too")
+		return nil
+	}
+	if err := refreshMesh(w, pat, channel, assets); err != nil {
+		return fmt.Errorf("meshploy was updated, but Meshploy's mesh was not: %w (sudo meshploy mesh install tries again)", err)
+	}
 	return nil
 }
 
@@ -202,8 +215,8 @@ func downloadReplace(pat, assetURL, dest, wantSHA string) error {
 	tmp.Close()
 
 	if got := hex.EncodeToString(h.Sum(nil)); wantSHA != "" && got != wantSHA {
-		return fmt.Errorf("the download does not match the release's %s (got %s, want %s); the installed CLI was not replaced",
-			checksumAsset, got, wantSHA)
+		return fmt.Errorf("the download does not match the release's %s (got %s, want %s); %s was not replaced",
+			checksumAsset, got, wantSHA, dest)
 	}
 
 	if err := os.Chmod(tmpPath, 0755); err != nil {

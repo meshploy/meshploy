@@ -23,7 +23,7 @@ One thing the patch cannot change is the stock daemon: every time it starts it p
 - `LICENSE.sha256`: the Tailscale licence accepted. `build.sh` refuses to build when it differs.
 - `build.sh <out-dir> [goarch]`: clones the release, checks the licence, applies the patch, builds `meshploy-tailscaled-linux-<arch>` and `meshploy-tailscale-linux-<arch>`.
 
-The CLI workflow builds both architectures and publishes them with each CLI release, in its `SHA256SUMS`. `meshploy mesh install` fetches them from the release the CLI came from.
+The CLI workflow builds both architectures and publishes them with each CLI release, in its `SHA256SUMS`. `meshploy mesh install` fetches them from the release the CLI came from. `sudo meshploy update` and `server-upgrade` replace them when a release carries another build, so a merged Tailscale bump reaches every machine with the next upgrade.
 
 ## New Tailscale releases
 

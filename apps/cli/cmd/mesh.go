@@ -84,10 +84,7 @@ func meshInstall(w io.Writer, args []string) error {
 
 // meshDownload fetches the mesh binaries from this CLI's own release.
 func meshDownload(w io.Writer, pat string) error {
-	release := "cli-latest"
-	if Channel == "stable" {
-		release = "v" + Version
-	}
+	release := cliRelease()
 	assets, err := releaseAssets(pat, release)
 	if err != nil {
 		return err

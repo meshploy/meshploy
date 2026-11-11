@@ -520,6 +520,8 @@ Downloads the latest CLI binary from GitHub and replaces the running binary in-p
 
 The download is checked against the release's `SHA256SUMS` before it replaces anything, and a mismatch leaves the installed CLI as it was. A release published before checksums existed is installed with a warning.
 
+On a machine that runs Meshploy's mesh, `sudo meshploy update` brings the mesh to the release's build too, checked against the same `SHA256SUMS`, and restarts it only when the build changed. `server-upgrade` does the same from the release it installs.
+
 On the gateway, run it before [`server-upgrade`](#meshploy-server-upgrade), which upgrades the server with whichever CLI is installed.
 
 ---

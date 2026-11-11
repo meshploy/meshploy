@@ -390,6 +390,13 @@ func serverUpgrade(ctx context.Context, o serverUpgradeOptions) error {
 		}
 	}
 
+	// Meshploy's mesh follows the release too, restarted only when its build
+	// changed; the old one keeps the machine on the mesh if the new one cannot
+	// be had.
+	if err := upgradeMesh(o); err != nil {
+		fmt.Printf("warning: Meshploy's mesh was not upgraded (sudo meshploy mesh install tries again): %v\n", err)
+	}
+
 	// Published ports on the mesh only. Left to last: it restarts k3s, which
 	// running pods survive but a deploy in flight does not, and everything above
 	// has already succeeded by here.
