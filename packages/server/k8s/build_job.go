@@ -551,6 +551,11 @@ func WaitForJobWith(ctx context.Context, client kubernetes.Interface, namespace,
 	}
 }
 
+// JobPod returns the job's pod, or nil before it exists.
+func JobPod(ctx context.Context, client kubernetes.Interface, namespace, jobName string) *corev1.Pod {
+	return jobPod(ctx, client, namespace, jobName)
+}
+
 // jobPod returns the job's pod, or nil before it exists.
 func jobPod(ctx context.Context, client kubernetes.Interface, namespace, jobName string) *corev1.Pod {
 	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
@@ -562,27 +567,55 @@ func jobPod(ctx context.Context, client kubernetes.Interface, namespace, jobName
 	return &pods.Items[0]
 }
 
+// PodStart is what a pod whose container has not started yet is waiting on.
+type PodStart struct {
+	// Reason says it in a line for the build log; "" when the pod cannot be
+	// read.
+	Reason string
+	// Pulling is set while the node downloads the pod's image, Image, onto
+	// Node: the one wait that can last long and still be progressing.
+	Pulling bool
+	// PullingSince is when the node began that download, when it says.
+	PullingSince time.Time
+	Image        string
+	Node         string
+	// Started is set once a container has started: nothing is awaited any more.
+	Started bool
+}
+
 // PodStartingReason says, in a line for the build log, what a pod whose
 // container has not started yet is waiting on: a node, its image, or the
 // container itself. "" when the pod cannot be read.
 func PodStartingReason(ctx context.Context, client kubernetes.Interface, namespace, name string) string {
+	return PodStarting(ctx, client, namespace, name).Reason
+}
+
+// PodStarting is PodStartingReason with what the reason is about.
+func PodStarting(ctx context.Context, client kubernetes.Interface, namespace, name string) PodStart {
 	pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return ""
+		return PodStart{}
 	}
 	image := ""
 	if len(pod.Spec.Containers) > 0 {
 		image = pod.Spec.Containers[0].Image
 	}
+	out := PodStart{Image: image, Node: pod.Spec.NodeName}
 	if pod.Spec.NodeName == "" {
 		if reason := noNodeMatches(pod); reason != "" {
-			return "Waiting for a node to take the build: " + reason
+			out.Reason = "Waiting for a node to take the build: " + reason
+			return out
 		}
-		return "Waiting for a node to take the build"
+		out.Reason = "Waiting for a node to take the build"
+		return out
 	}
 	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Running != nil || cs.State.Terminated != nil {
+			out.Started = true
+		}
 		if w := cs.State.Waiting; w != nil && (w.Reason == "ErrImagePull" || w.Reason == "ImagePullBackOff") {
-			return fmt.Sprintf("Cannot pull image %s: %s", image, strings.TrimSpace(w.Message))
+			out.Reason = fmt.Sprintf("Cannot pull image %s: %s", image, strings.TrimSpace(w.Message))
+			return out
 		}
 	}
 
@@ -602,9 +635,16 @@ func PodStartingReason(ctx context.Context, client kubernetes.Interface, namespa
 		}
 	}
 	if latest != nil && latest.Reason == "Pulling" {
-		return fmt.Sprintf("Pulling image %s on %s (a node's first build downloads it; later builds reuse it)", image, pod.Spec.NodeName)
+		out.Reason = fmt.Sprintf("Pulling image %s on %s (a node's first build downloads it; later builds reuse it)", image, pod.Spec.NodeName)
+		out.Pulling = true
+		out.PullingSince = eventTime(*latest)
+		if !latest.FirstTimestamp.IsZero() {
+			out.PullingSince = latest.FirstTimestamp.Time
+		}
+		return out
 	}
-	return "Starting the build container on " + pod.Spec.NodeName
+	out.Reason = "Starting the build container on " + pod.Spec.NodeName
+	return out
 }
 
 // noNodeMatches returns the scheduler's reason when the pod cannot be placed

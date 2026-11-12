@@ -278,6 +278,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	volumes := &VolumeService{db: db, k8s: k8sClient, deployment: deployments}
 	routes := &RouteService{db: db, k8s: k8sClient}
 	deployments.routes = routes
+	deployments.nodes = nodes
 	// The host agent's folder: on the cluster agent's machine when the
 	// cluster is reached through one, which is where the edge and its
 	// registry are; otherwise on this one.

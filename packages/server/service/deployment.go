@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,6 +63,12 @@ type DeploymentService struct {
 	tcpRoutes *TCPRouteService
 	// sandbox picks the runtime a service's pods take.
 	sandbox *SandboxService
+	// nodes reads a node's metrics, for a build's image download. Assigned
+	// in service.New.
+	nodes *NodeService
+	// pulls is each build job's image download under way (*pullWatch), by
+	// job name.
+	pulls sync.Map
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -482,6 +489,8 @@ func (s *DeploymentService) runPipeline(ctx context.Context, a runPipelineArgs) 
 // It is the part of a pipeline an API restart can pick up again: the job goes
 // on in the cluster whatever happens to the process that started it.
 func (s *DeploymentService) followBuild(ctx context.Context, a runPipelineArgs) {
+	pull := s.followPull(ctx, a.namespace, a.jobName)
+	defer pull.stop()
 	// Wait for the job to finish, as long as a build may run.
 	result := appk8s.WaitForJobWith(ctx, s.k8s, a.namespace, a.jobName, appk8s.JobWaitOptions{
 		Timeout:       appk8s.BuildDeadline,
@@ -506,6 +515,9 @@ func (s *DeploymentService) followBuild(ctx context.Context, a runPipelineArgs) 
 		msg := result.Log
 		if result.OutOfMemory {
 			msg += "\n\n" + buildOutOfMemoryMessage(a.bc.BuilderMemoryRequest, a.bc.BuilderMemoryLimit)
+		}
+		if w := pull.stillPulling(); w != nil {
+			msg += "\n\n" + slowPullMessage(w)
 		}
 		s.failDeployment(a.deployment.ID, msg)
 		return
@@ -1525,6 +1537,7 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 	streamDeadline := time.Now().Add(3 * time.Minute)
 	waitStart := time.Now()
 	lastReason, lastSaid := "", time.Time{}
+	warnedSlow := false
 	for {
 		req := s.k8s.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 			Follow: true,
@@ -1551,15 +1564,33 @@ func (s *DeploymentService) StreamBuildLogs(ctx context.Context, deploymentID uu
 		}
 		// Say what the container is waiting on when that changes, and again
 		// every half minute so a long image pull does not look stuck.
-		if reason := appk8s.PodStartingReason(ctx, s.k8s, namespace, podName); reason != "" {
+		st := appk8s.PodStarting(ctx, s.k8s, namespace, podName)
+		if reason := st.Reason; reason != "" {
+			pull := s.pullFor(d.BuildJobName)
 			switch {
 			case reason != lastReason:
 				sendLine(reason + "…")
 				lastReason, lastSaid = reason, time.Now()
 			case time.Since(lastSaid) >= 30*time.Second:
-				sendLine(fmt.Sprintf("%s… (%ds)", reason, int(time.Since(waitStart).Seconds())))
+				line := ""
+				if st.Pulling && pull != nil {
+					line = pull.line()
+				}
+				if line == "" {
+					line = fmt.Sprintf("%s… (%ds)", reason, int(time.Since(waitStart).Seconds()))
+				}
+				sendLine(line)
 				lastSaid = time.Now()
+				if st.Pulling && pull != nil && !warnedSlow && pull.outlasts(appk8s.BuildDeadline) {
+					sendLine(slowPullMessage(pull))
+					warnedSlow = true
+				}
 			}
+		}
+		// A download that is under way is progress, however long it takes:
+		// the stream waits for it, as the build does.
+		if st.Pulling {
+			streamDeadline = time.Now().Add(3 * time.Minute)
 		}
 		select {
 		case <-ctx.Done():
