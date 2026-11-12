@@ -1079,6 +1079,9 @@ type BuildConfig struct {
 	// ImagesKept is how many images the service's deployments still have in
 	// the registry: what it can roll back to. Read, not stored.
 	ImagesKept int `gorm:"-" json:"images_kept"`
+	// RepoURL is the repository's page on its provider, for a build from a
+	// repository. Read, not stored.
+	RepoURL string `gorm:"-" json:"repo_url,omitempty"`
 
 	// Auto-deploy - when enabled, a push to the tracked branch triggers a new build.
 	// Works via GitHub App webhook (for private repos) or a per-service deploy token.

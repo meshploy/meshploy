@@ -130,3 +130,26 @@ func TestCloneRepoSendsTheTokenAsAHeaderOnly(t *testing.T) {
 		}
 	}
 }
+
+// A repository's page is where its clone URL points, without .git: on its
+// provider's host, or the URL typed in for a public repository.
+func TestARepositorysPageIsOnItsProvidersHost(t *testing.T) {
+	for name, tc := range map[string]struct {
+		gi   *db.GitIntegration
+		repo string
+		want string
+	}{
+		"public, typed":  {nil, "https://github.com/acme/shop.git", "https://github.com/acme/shop"},
+		"public, path":   {nil, "acme/shop", "https://github.com/acme/shop"},
+		"github":         {&db.GitIntegration{Provider: "github"}, "acme/shop", "https://github.com/acme/shop"},
+		"gitlab hosted":  {&db.GitIntegration{Provider: "gitlab"}, "group/sub/shop", "https://gitlab.com/group/sub/shop"},
+		"gitlab own":     {&db.GitIntegration{Provider: "gitlab", BaseURL: "https://git.acme.dev/"}, "group/shop", "https://git.acme.dev/group/shop"},
+		"gitea":          {&db.GitIntegration{Provider: "gitea", BaseURL: "https://gitea.acme.dev"}, "acme/shop", "https://gitea.acme.dev/acme/shop"},
+		"bitbucket":      {&db.GitIntegration{Provider: "bitbucket"}, "acme/shop", "https://bitbucket.org/acme/shop"},
+		"gitea, no host": {&db.GitIntegration{Provider: "gitea"}, "acme/shop", ""},
+	} {
+		if got := repoWebURL(tc.gi, tc.repo); got != tc.want {
+			t.Errorf("%s: got %q, want %q", name, got, tc.want)
+		}
+	}
+}

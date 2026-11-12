@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, FolderUp, GitBranch, GitCommitHorizontal, Package, RefreshCw, RotateCcw } from "lucide-react"
+import { ArrowDown, ArrowUp, ExternalLink, FolderUp, GitBranch, GitCommitHorizontal, Package, RefreshCw, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** Where a deployment's image came from, as a deployment or a board cell carries it. */
@@ -64,8 +64,20 @@ export function OriginLine({ origin, className }: { origin: DeploymentOrigin; cl
   )
 }
 
-/** The service page's strip: what is running here and where it came from. */
-export function OriginStrip({ origin, image }: { origin: DeploymentOrigin; image?: string }) {
+/** "acme/shop" for a repository's page, the URL's path. */
+function repoName(url: string): string {
+  try {
+    return new URL(url).pathname.replace(/^\/+|\/+$/g, "") || url
+  } catch {
+    return url
+  }
+}
+
+/**
+ * The service page's strip: what is running here and where it came from, and
+ * the repository it builds from, which opens on its provider in a new tab.
+ */
+export function OriginStrip({ origin, image, repoUrl }: { origin: DeploymentOrigin; image?: string; repoUrl?: string }) {
   if (!origin.source) return null
   const Icon = iconOf(origin)
   const moved = origin.source === "promotion" || origin.source === "bring_down"
@@ -96,6 +108,19 @@ export function OriginStrip({ origin, image }: { origin: DeploymentOrigin; image
       )}
       {image && !origin.source_commit && (
         <span className="truncate font-mono text-muted-foreground">{image}</span>
+      )}
+      {repoUrl && (
+        <a
+          href={repoUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="ml-auto inline-flex min-w-0 items-center gap-1 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          title={`Open ${repoUrl}`}
+          data-testid="origin-repo"
+        >
+          <span className="truncate font-mono">{repoName(repoUrl)}</span>
+          <ExternalLink className="h-3 w-3 shrink-0" />
+        </a>
       )}
     </div>
   )

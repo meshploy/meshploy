@@ -191,6 +191,8 @@ export interface ApiBuildConfig {
   image_retention: number
   /** How many images its deployments still have in the registry. */
   images_kept?: number
+  /** The repository's page on its provider, for a build from a repository. */
+  repo_url?: string
   auto_deploy: boolean
   /** Deploy on push only when one of these paths changed. Empty = every push. */
   watch_paths: string[]

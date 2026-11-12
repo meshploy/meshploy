@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Box, ChevronDown, Database, ExternalLink, Globe, Loader2, Play, Rocket, ServerCrash, Square, Terminal } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { services as servicesApi, deployments, stacks as stacksApi, routes as routesApi, projects as projectsApi } from "@/lib/api"
+import { services as servicesApi, deployments, stacks as stacksApi, routes as routesApi, projects as projectsApi, buildConfigs } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { DetailPageHeader, tabLinkCls } from "@/components/layout/detail-page-header"
@@ -97,6 +97,15 @@ function ServiceLayout() {
     enabled: !!orgId,
   })
   const current = history?.find((d) => d.status === "success")
+
+  // The repository it builds from, linked from the strip. Shares the
+  // configuration page's query; a database has no build.
+  const { data: buildConfig } = useQuery({
+    queryKey: ["build-config", orgId, projectId, serviceId],
+    queryFn: () => buildConfigs.get(orgId!, projectId, serviceId, token),
+    enabled: !!orgId && !!service && service.type !== "database",
+    retry: false,
+  })
   // A deploy is under way only while one is queued, building or rolling out.
   // The service's own status is not the test: it also reads deploying while
   // no pod is ready, which is when a redeploy is most needed.
@@ -185,7 +194,7 @@ function ServiceLayout() {
             <>
               {trouble && <TroubleBanner trouble={trouble} projectId={projectId} serviceId={serviceId} />}
               {orgId && <HintsPanel hints={hints} service={service} orgId={orgId} projectId={projectId} />}
-              {current && <OriginStrip origin={current} image={current.image} />}
+              {current && <OriginStrip origin={current} image={current.image} repoUrl={buildConfig?.repo_url} />}
             </>
           )
         }

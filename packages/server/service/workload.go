@@ -1070,6 +1070,16 @@ func (s *WorkloadService) GetBuildConfig(ctx context.Context, serviceID uuid.UUI
 	if s.deployment != nil {
 		bc.ImagesKept = s.deployment.ImagesKept(ctx, serviceID)
 	}
+	if bc.GitRepo != "" {
+		var gi *db.GitIntegration
+		if bc.GitIntegrationID != nil {
+			var row db.GitIntegration
+			if s.db.WithContext(ctx).Select("provider", "base_url").Limit(1).Find(&row, "id = ?", bc.GitIntegrationID).RowsAffected == 1 {
+				gi = &row
+			}
+		}
+		bc.RepoURL = repoWebURL(gi, bc.GitRepo)
+	}
 	return &bc, nil
 }
 

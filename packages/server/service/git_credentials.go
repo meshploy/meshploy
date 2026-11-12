@@ -96,6 +96,27 @@ func repoCloneURL(base, repo string) string {
 	return strings.TrimRight(base, "/") + "/" + path + ".git"
 }
 
+// repoWebURL is repo's page on its provider, which a browser opens: the
+// clone URL without .git, on the host cloneCredentials clones from.
+func repoWebURL(integration *db.GitIntegration, repo string) string {
+	base := "https://github.com"
+	if integration != nil {
+		switch integration.Provider {
+		case "gitlab":
+			base = gitLabBase(integration.BaseURL)
+		case "gitea":
+			base = strings.TrimRight(integration.BaseURL, "/")
+		case "bitbucket":
+			base = bitbucketWeb
+		}
+	}
+	u := strings.TrimSuffix(repoCloneURL(base, repo), ".git")
+	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		return ""
+	}
+	return u
+}
+
 // gitEnv is the environment that has git present the credentials, as a header
 // on this one command. It goes through the environment rather than -c, so the
 // token is not in the process's arguments either.
