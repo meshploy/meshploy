@@ -185,6 +185,33 @@ func defaultDBVersion(engine db.DatabaseEngine) string {
 	return ""
 }
 
+// stackDBVersion is the version a stack's database is made at: the one its
+// block names, else the tag of the compose image when that is the engine's own
+// image (image: redis:7 is Redis 7), else "" for the default. A compose file
+// that names the image has chosen its version, and the database it gets must
+// be the one it named.
+func stackDBVersion(engine db.DatabaseEngine, declared, composeImage string) string {
+	if declared != "" || composeImage == "" {
+		return declared
+	}
+	want, _ := dbDefaults(engine, "x")
+	want = strings.TrimSuffix(want, ":x")
+	name, tag := composeImage, ""
+	if i := strings.LastIndexByte(composeImage, ':'); i > strings.LastIndexByte(composeImage, '/') {
+		name, tag = composeImage[:i], composeImage[i+1:]
+	}
+	if strings.Contains(name, "@") {
+		return ""
+	}
+	for _, prefix := range []string{"docker.io/library/", "docker.io/", "library/"} {
+		name = strings.TrimPrefix(name, prefix)
+	}
+	if name != want {
+		return ""
+	}
+	return tag
+}
+
 // dbDefaults returns the default image, port, and storage for a managed-database engine.
 func dbDefaults(engine db.DatabaseEngine, version string) (image string, port int) {
 	if version == "" {

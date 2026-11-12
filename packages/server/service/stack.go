@@ -820,7 +820,7 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 					Type:                       meshdb.ServiceTypeDatabase,
 					Replicas:                   replicas,
 					Engine:                     meshdb.DatabaseEngine(ext.Database.Engine),
-					Version:                    ext.Database.Version,
+					Version:                    stackDBVersion(meshdb.DatabaseEngine(ext.Database.Engine), ext.Database.Version, svcDef.Image),
 					StorageGB:                  ext.Database.StorageGB,
 					CPURequest:                 cpuRequest,
 					CPULimit:                   cpuLimit,

@@ -105,7 +105,11 @@ func meshployDefaults(svc, xm *yaml.Node) []meshploySection {
 			engine = meshdb.DatabasePostgres
 		}
 		settings := []meshploySetting{{"engine", string(engine)}}
-		if v := defaultDBVersion(engine); v != "" {
+		v := stackDBVersion(engine, "", scalarValue(svc, "image"))
+		if v == "" {
+			v = defaultDBVersion(engine)
+		}
+		if v != "" {
 			settings = append(settings, meshploySetting{"version", v})
 		}
 		settings = append(settings, meshploySetting{"storage_gb", defaultDBStorageGB})
