@@ -163,21 +163,24 @@ func setResources(service *db.Service, in CreateWorkloadInput) {
 	}
 }
 
-// defaultDBVersion is the version a managed database gets when none is given.
+// defaultDBVersion is the version a managed database gets when none is given:
+// the newest release with long support, as the console's version picker
+// recommends (apps/web/src/lib/db-versions.ts). Only new databases take it; an
+// existing one keeps its image.
 func defaultDBVersion(engine db.DatabaseEngine) string {
 	switch engine {
 	case db.DatabasePostgres:
-		return "16"
+		return "18"
 	case db.DatabaseMySQL:
-		return "8.0"
+		return "9.7"
 	case db.DatabaseRedis:
-		return "7"
+		return "8"
 	case db.DatabaseMongoDB:
-		return "7"
+		return "8"
 	case db.DatabaseDragonfly:
-		return "latest"
+		return "v1.40.2"
 	case db.DatabaseClickHouse:
-		return "24"
+		return "26.8"
 	}
 	return ""
 }

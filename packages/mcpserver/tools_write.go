@@ -62,7 +62,7 @@ func (s *srv) registerWriteTools(ms *mcpsdk.MCPServer) {
 			mcp.WithString("image", mcp.Description("Container image (for image-based services)")),
 			mcp.WithString("type", mcp.Description("Service type: application (default) or database")),
 			mcp.WithString("engine", mcp.Description("Database engine: postgres, mysql, redis, mongodb (required when type=database)")),
-			mcp.WithString("version", mcp.Description("Database version, e.g. 16, 8.0, 7")),
+			mcp.WithString("version", mcp.Description("Database version: the engine image's tag, e.g. 18 (postgres), 9.7 (mysql), 8 (redis, mongodb), 26.8 (clickhouse). Left out, the newest with long support")),
 			mcp.WithString("storage_gb", mcp.Description("Database storage in GiB (default: 10)")),
 			mcp.WithString("git_repo", mcp.Description("Git repository URL for build-from-source")),
 			mcp.WithString("branch", mcp.Description("Git branch (default: main)")),

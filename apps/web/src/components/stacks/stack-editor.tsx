@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button"
 import { gitIntegrations as gitApi, nodes as nodesApi, stacks as stacksApi, toNode, type ApiNode } from "@/lib/api"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
+import { dbVersionTags, recommendedDbVersion } from "@/lib/db-versions"
+import { VersionLabel } from "@/components/services/db-version-label"
 import { cn } from "@/lib/utils"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -26,12 +28,12 @@ import { cn } from "@/lib/utils"
 export type VisualBuilder = "railpack" | "dockerfile"
 
 const DB_ENGINES = [
-  { value: "postgres",   label: "PostgreSQL",  versions: ["17", "16", "15", "14", "13"], port: 5432,  icon: SiPostgresql },
-  { value: "mysql",      label: "MySQL",        versions: ["8.0", "5.7"],                 port: 3306,  icon: SiMysql },
-  { value: "redis",      label: "Redis",        versions: ["7", "6"],                     port: 6379,  icon: SiRedis },
-  { value: "mongodb",    label: "MongoDB",      versions: ["7", "6"],                     port: 27017, icon: SiMongodb },
-  { value: "clickhouse", label: "ClickHouse",   versions: ["24", "23"],                   port: 9000,  icon: SiClickhouse },
-  { value: "dragonfly",  label: "Dragonfly",    versions: ["latest"],                     port: 6379,  icon: null },
+  { value: "postgres",   label: "PostgreSQL",  port: 5432,  icon: SiPostgresql },
+  { value: "mysql",      label: "MySQL",        port: 3306,  icon: SiMysql },
+  { value: "redis",      label: "Redis",        port: 6379,  icon: SiRedis },
+  { value: "mongodb",    label: "MongoDB",      port: 27017, icon: SiMongodb },
+  { value: "clickhouse", label: "ClickHouse",   port: 9000,  icon: SiClickhouse },
+  { value: "dragonfly",  label: "Dragonfly",    port: 6379,  icon: null },
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -133,13 +135,13 @@ function newService(): VisualService {
     memoryRequest: "",
     memoryLimit: "",
     dbEngine: "postgres",
-    dbVersion: "16",
+    dbVersion: recommendedDbVersion("postgres"),
     dbStorageGB: 10,
   }
 }
 
 function dbVersions(engine: string) {
-  return DB_ENGINES.find((e) => e.value === engine)?.versions ?? ["latest"]
+  return dbVersionTags(engine)
 }
 
 // ─── Compose conversion ───────────────────────────────────────────────────────
@@ -1119,7 +1121,7 @@ function DatabaseFields({
               <Button
                 key={eng.value}
                 variant="ghost"
-                onClick={() => onChange({ dbEngine: eng.value, dbVersion: eng.versions[0] })}
+                onClick={() => onChange({ dbEngine: eng.value, dbVersion: recommendedDbVersion(eng.value) })}
                 className={cn(
                   "flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-colors",
                   svc.dbEngine === eng.value
@@ -1143,14 +1145,14 @@ function DatabaseFields({
         <Field label="Version">
           <Select
             value={svc.dbVersion}
-            onValueChange={(v) => onChange({ dbVersion: v ?? dbVersions(svc.dbEngine)[0] })}
+            onValueChange={(v) => onChange({ dbVersion: v ?? recommendedDbVersion(svc.dbEngine) })}
           >
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
               <SelectValue placeholder="Default" />
             </SelectTrigger>
             <SelectContent>
               {dbVersions(svc.dbEngine).map((v) => (
-                <SelectItem key={v} value={v}>{v}</SelectItem>
+                <SelectItem key={v} value={v}><VersionLabel engine={svc.dbEngine} tag={v} /></SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1213,7 +1215,7 @@ function DatabaseHint({ svc, onChange }: { svc: VisualService; onChange: (p: Par
         variant="link"
         className="h-auto p-0 text-xs"
         onClick={() =>
-          onChange({ serviceType: "database", dbEngine: engine, dbVersion: imageVersion(svc.image) ?? known.versions[0] })
+          onChange({ serviceType: "database", dbEngine: engine, dbVersion: imageVersion(svc.image) ?? recommendedDbVersion(known.value) })
         }
       >
         Make it a managed database

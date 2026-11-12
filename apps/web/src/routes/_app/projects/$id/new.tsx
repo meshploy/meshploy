@@ -3,6 +3,8 @@ import { editorTheme } from "@/lib/theme"
 import { FormLayout } from "@/components/layout/form-layout"
 import { SelfSignedNotice } from "@/components/domains/self-signed-notice"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { dbVersionTags, recommendedDbVersion, type DbEngine } from "@/lib/db-versions"
+import { VersionLabel } from "@/components/services/db-version-label"
 import { SiPostgresql, SiMysql, SiRedis, SiMongodb, SiClickhouse } from "@icons-pack/react-simple-icons"
 import { createFileRoute, useNavigate, useParams, useBlocker } from "@tanstack/react-router"
 import { useState, useEffect, useRef, useContext, createContext } from "react"
@@ -828,7 +830,6 @@ function ServiceForm({
 
 // ─── Database form ────────────────────────────────────────────────────────────
 
-type DbEngine = "postgres" | "mysql" | "redis" | "mongodb" | "dragonfly" | "clickhouse"
 
 function DbEngineLogo({ engine, className }: { engine: DbEngine; className?: string }) {
   if (engine === "dragonfly") return (
@@ -860,13 +861,13 @@ function DbEngineLogo({ engine, className }: { engine: DbEngine; className?: str
   return Icon ? <Icon className={className} /> : null
 }
 
-const ENGINE_OPTIONS: { value: DbEngine; label: string; versions: string[]; defaultPort: number }[] = [
-  { value: "postgres",   label: "PostgreSQL",  versions: ["17", "16", "15", "14", "13"], defaultPort: 5432 },
-  { value: "mysql",      label: "MySQL",       versions: ["8.0", "5.7"],                 defaultPort: 3306 },
-  { value: "redis",      label: "Redis",       versions: ["7", "6"],                     defaultPort: 6379 },
-  { value: "mongodb",    label: "MongoDB",     versions: ["7", "6"],                     defaultPort: 27017 },
-  { value: "dragonfly",  label: "Dragonfly",   versions: ["latest"],                     defaultPort: 6379 },
-  { value: "clickhouse", label: "ClickHouse",  versions: ["24", "23"],                   defaultPort: 9000 },
+const ENGINE_OPTIONS: { value: DbEngine; label: string; defaultPort: number }[] = [
+  { value: "postgres",   label: "PostgreSQL",  defaultPort: 5432 },
+  { value: "mysql",      label: "MySQL",       defaultPort: 3306 },
+  { value: "redis",      label: "Redis",       defaultPort: 6379 },
+  { value: "mongodb",    label: "MongoDB",     defaultPort: 27017 },
+  { value: "dragonfly",  label: "Dragonfly",   defaultPort: 6379 },
+  { value: "clickhouse", label: "ClickHouse",  defaultPort: 9000 },
 ]
 
 interface DbFormState {
@@ -883,7 +884,7 @@ interface DbFormState {
 const DB_INITIAL: DbFormState = {
   name: "",
   engine: "postgres",
-  version: "16",
+  version: recommendedDbVersion("postgres"),
   storageGB: 10,
   nodeId: null,
   dbName: "",
@@ -953,7 +954,7 @@ function DatabaseForm({ projectId }: { projectId: string }) {
             <Button
               key={eng.value}
               variant="ghost"
-              onClick={() => patchDbf({ engine: eng.value, version: eng.versions[0] })}
+              onClick={() => patchDbf({ engine: eng.value, version: recommendedDbVersion(eng.value) })}
               className={cn(
                 "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-colors",
                 dbf.engine === eng.value
@@ -968,13 +969,13 @@ function DatabaseForm({ projectId }: { projectId: string }) {
         </div>
 
         <Field label="Version">
-          <Select value={dbf.version} onValueChange={(v) => patchDbf({ version: v ?? selectedEngine.versions[0] })}>
+          <Select value={dbf.version} onValueChange={(v) => patchDbf({ version: v ?? recommendedDbVersion(selectedEngine.value) })}>
             <SelectTrigger className="w-full! h-9 text-sm bg-muted/20 border-border/60">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {selectedEngine.versions.map((v) => (
-                <SelectItem key={v} value={v}>{v}</SelectItem>
+              {dbVersionTags(selectedEngine.value).map((v) => (
+                <SelectItem key={v} value={v}><VersionLabel engine={selectedEngine.value} tag={v} /></SelectItem>
               ))}
             </SelectContent>
           </Select>

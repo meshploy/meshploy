@@ -231,11 +231,12 @@ func wizardGitSource(sc *bufio.Scanner, c *client.Client, org string, build *Bui
 func wizardDatabase(sc *bufio.Scanner, m *ServiceManifest) error {
 	engine := pickOne(sc, "Database engine", []string{"postgres", "mysql", "redis", "mongodb"})
 
+	// The API's defaults for a new database, which the console recommends too.
 	versionMap := map[string]string{
-		"postgres": "16",
-		"mysql":    "8",
-		"redis":    "7",
-		"mongodb":  "7",
+		"postgres": "18",
+		"mysql":    "9.7",
+		"redis":    "8",
+		"mongodb":  "8",
 	}
 	defaultPort := map[string]int{
 		"postgres": 5432,
