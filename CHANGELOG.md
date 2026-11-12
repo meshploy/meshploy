@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.0](https://github.com/meshploy/meshploy/compare/v0.23.1...v0.24.0) (2026-11-12)
+
+
+### Features
+
+* **auth:** one-time sign-in links, made with the installation's SIGN_IN_LINK_KEY, sign a person in to the console at /link ([24f6dca](https://github.com/meshploy/meshploy/commit/24f6dca605b31af602114346b57a790912eb17f3))
+* **databases:** offer each engine's newest versions with notes, defaulting to the newest with long support ([db57c81](https://github.com/meshploy/meshploy/commit/db57c8114c4b3390ccb9428eb30610c764791d1c))
+
 ## [0.23.1](https://github.com/meshploy/meshploy/compare/v0.23.0...v0.23.1) (2026-11-11)
 
 
