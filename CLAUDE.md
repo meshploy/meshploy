@@ -173,6 +173,7 @@ Required in `.env` at the monorepo root:
 | `TEMPLATE_REPO_REF` | Git ref for the catalog repo (default: `main`) |
 | `TEMPLATE_REFRESH_INTERVAL` | How often the in-memory catalog cache refreshes (Go duration, default: `1h`) |
 | `SETUP_TOKEN` | Gates the first registration; set by `install.sh`. Empty disables the check |
+| `SIGN_IN_LINK_KEY` | Lets whoever holds it make one-time links that sign a person in to the console without their password or second factor (`SignInLinkService`, the console's `/link`): an operator opening a console for someone, as Cloud's Open does for a workspace. Empty (the default) turns them off |
 | `API_BASE_URL` | Public base URL of the API (default: `http://localhost:4000`) |
 | `FRONTEND_URL` | Console URL (default: `http://localhost:5173`) |
 | `HEADSCALE_USER` | Headscale user pre-auth keys are created under (default: `meshploy`) |
@@ -184,13 +185,13 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (61 CE tables)
+## packages/db — schema (62 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
 | Group | Tables |
 |---|---|
-| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `console_sessions`, `oauth_clients`, `oauth_grants`, `oauth_codes`, `oauth_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `mesh_reach`, `mesh_policy_state`, `mesh_rules`, `org_invitations` |
+| Identity & Access | `users`, `trusted_devices`, `recovery_codes`, `dismissed_notices`, `agent_tokens`, `cli_logins`, `cli_tokens`, `sign_in_links`, `console_sessions`, `oauth_clients`, `oauth_grants`, `oauth_codes`, `oauth_tokens`, `installed_licenses`, `organizations`, `organization_members`, `resource_permissions`, `mesh_reach`, `mesh_policy_state`, `mesh_rules`, `org_invitations` |
 | Projects & Infra | `projects`, `nodes`, `node_registration_tokens`, `node_provisioning_tokens`, `domains` |
 | Environments | `promotion_groups`, `promotion_group_members` |
 | Workloads | `stacks`, `stack_runs`, `services`, `service_ports`, `build_configs`, `database_configs`, `volumes`, `volume_mounts`, `volume_backup_configs` |

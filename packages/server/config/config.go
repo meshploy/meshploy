@@ -96,6 +96,13 @@ type Config struct {
 	// already has an owner refuses registration outright.
 	SetupToken string // SETUP_TOKEN
 
+	// SignInLinkKey lets whoever holds it make one-time links that sign a person
+	// in to the console without their password or second factor: an operator
+	// opening a workspace for its owner, as Cloud's account plane does. It is
+	// as strong as the database itself, so it lives where the database's
+	// password does. Empty (the default) turns the links off.
+	SignInLinkKey string // SIGN_IN_LINK_KEY
+
 	// Built-in registry - set when docker-compose includes the registry:2 service.
 	// Format: <host>:<port>, e.g. "100.64.0.1:5000" (mesh IP of gateway).
 	// When set, a registry_integrations row is auto-seeded for every org on startup.
@@ -157,6 +164,7 @@ func Load() (*Config, error) {
 			return "meshploy"
 		}(),
 		SetupToken:    os.Getenv("SETUP_TOKEN"),
+		SignInLinkKey: os.Getenv("SIGN_IN_LINK_KEY"),
 		JWTSecret:     require("JWT_SECRET"),
 		EncryptionKey: require("ENCRYPTION_KEY"),
 

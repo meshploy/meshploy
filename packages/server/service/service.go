@@ -22,6 +22,7 @@ type Services struct {
 	Entitlements    *EntitlementService
 	Agents          *AgentService
 	CLILogins       *CLILoginService
+	SignInLinks     *SignInLinkService
 	Sessions        *ConsoleSessionService
 	OAuth           *OAuthService
 	MeshAccess      *MeshAccessService
@@ -322,6 +323,7 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 		Entitlements:    entitlements,
 		Agents:          agents,
 		CLILogins:       &CLILoginService{db: db},
+		SignInLinks:     &SignInLinkService{db: db},
 		Sessions:        sessions,
 		OAuth:           &OAuthService{db: db},
 		MeshAccess:      &MeshAccessService{db: db, headscale: headscaleSvc, api: meshAPIOf(c)},

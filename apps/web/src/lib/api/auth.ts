@@ -53,6 +53,16 @@ export const auth = {
       }
     ),
 
+  /**
+   * Spends a one-time sign-in link, which an operator made for this person,
+   * starting their console session. Public: the link's token is the proof.
+   */
+  spendSignInLink: (token: string) =>
+    apiFetch<{ token: string }>("/api/v1/auth/sign-in-link", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
   /** Ends the console session making the request: signing out. */
   logout: (token: string) => apiFetch<void>("/api/v1/auth/logout", { method: "POST" }, token),
 

@@ -350,6 +350,21 @@ type CLILogin struct {
 
 func (CLILogin) TableName() string { return "cli_logins" }
 
+// SignInLink is a one-time way into the console for one person, made by
+// whoever holds the installation's sign-in link key (SIGN_IN_LINK_KEY): an
+// operator handing someone a signed-in console, as Cloud's account plane does
+// when its Open button opens a workspace. Only the token's hash is kept; it is
+// spent once, within minutes.
+type SignInLink struct {
+	Base
+	UserID    uuid.UUID  `gorm:"type:uuid;not null;index" json:"-"`
+	TokenHash string     `gorm:"not null;uniqueIndex"     json:"-"`
+	ExpiresAt time.Time  `gorm:"not null;index"           json:"expires_at"`
+	UsedAt    *time.Time `json:"used_at,omitempty"`
+}
+
+func (SignInLink) TableName() string { return "sign_in_links" }
+
 // CLIToken is a CLI's credential (format: mcli-<hex>), made when an approved
 // login is collected. It acts as the person who approved it, with their
 // permissions. Only its SHA-256 hash is kept. It lapses after a while unused

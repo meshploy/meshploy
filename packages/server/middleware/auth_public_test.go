@@ -45,6 +45,8 @@ func TestGenuinelyPublicRoutesStayPublic(t *testing.T) {
 		{http.MethodPost, "/api/v1/auth/register"},
 		{http.MethodPost, "/api/v1/auth/totp"},
 		{http.MethodPost, "/api/v1/auth/recovery"},
+		{http.MethodPost, "/api/v1/auth/sign-in-link"},
+		{http.MethodPost, "/api/v1/system/sign-in-links"},
 		{http.MethodPost, "/api/v1/nodes/provision"},
 		{http.MethodGet, "/install.sh"},
 		{http.MethodPost, "/api/v1/nodes/self-register"},

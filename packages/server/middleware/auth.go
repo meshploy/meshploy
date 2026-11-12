@@ -287,6 +287,12 @@ var publicRules = []publicRule{
 	{Method: "POST", Path: "/api/v1/cli/logins", Match: matchExact},
 	{Method: "POST", Path: "/api/v1/cli/logins/token", Match: matchExact},
 
+	// One-time sign-in links. Making one takes the installation's sign-in link
+	// key, a machine credential the handler checks; spending one is a browser
+	// with no session yet, the link's token being its credential.
+	{Method: "POST", Path: "/api/v1/system/sign-in-links", Match: matchExact},
+	{Method: "POST", Path: "/api/v1/auth/sign-in-link", Match: matchExact},
+
 	// Remote MCP checks its own credential, so that a request without one is
 	// answered with the OAuth challenge (WWW-Authenticate) a client follows to
 	// connect, not a bare 401.

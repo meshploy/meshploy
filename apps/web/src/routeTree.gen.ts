@@ -15,6 +15,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AuthRegisterRouteImport } from './routes/_auth/register'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
+import { Route as AuthLinkRouteImport } from './routes/_auth/link'
 import { Route as AuthCliLoginRouteImport } from './routes/_auth/cli-login'
 import { Route as AppUsersIndexRouteImport } from './routes/_app/users/index'
 import { Route as AppTemplatesIndexRouteImport } from './routes/_app/templates/index'
@@ -117,6 +118,11 @@ const AuthRegisterRoute = AuthRegisterRouteImport.update({
 const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthLinkRoute = AuthLinkRouteImport.update({
+  id: '/link',
+  path: '/link',
   getParentRoute: () => AuthRoute,
 } as any)
 const AuthCliLoginRoute = AuthCliLoginRouteImport.update({
@@ -539,6 +545,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/setup-required': typeof SetupRequiredRoute
   '/cli-login': typeof AuthCliLoginRoute
+  '/link': typeof AuthLinkRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/projects/$id': typeof AppProjectsIdRouteRouteWithChildren
@@ -620,6 +627,7 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/setup-required': typeof SetupRequiredRoute
   '/cli-login': typeof AuthCliLoginRoute
+  '/link': typeof AuthLinkRoute
   '/login': typeof AuthLoginRoute
   '/register': typeof AuthRegisterRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
@@ -697,6 +705,7 @@ export interface FileRoutesById {
   '/_auth': typeof AuthRouteWithChildren
   '/setup-required': typeof SetupRequiredRoute
   '/_auth/cli-login': typeof AuthCliLoginRoute
+  '/_auth/link': typeof AuthLinkRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/register': typeof AuthRegisterRoute
   '/_app/': typeof AppIndexRoute
@@ -781,6 +790,7 @@ export interface FileRouteTypes {
     | '/'
     | '/setup-required'
     | '/cli-login'
+    | '/link'
     | '/login'
     | '/register'
     | '/projects/$id'
@@ -862,6 +872,7 @@ export interface FileRouteTypes {
     | '/'
     | '/setup-required'
     | '/cli-login'
+    | '/link'
     | '/login'
     | '/register'
     | '/agents/$agentId'
@@ -938,6 +949,7 @@ export interface FileRouteTypes {
     | '/_auth'
     | '/setup-required'
     | '/_auth/cli-login'
+    | '/_auth/link'
     | '/_auth/login'
     | '/_auth/register'
     | '/_app/'
@@ -1065,6 +1077,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/link': {
+      id: '/_auth/link'
+      path: '/link'
+      fullPath: '/link'
+      preLoaderRoute: typeof AuthLinkRouteImport
       parentRoute: typeof AuthRoute
     }
     '/_auth/cli-login': {
@@ -1836,6 +1855,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 interface AuthRouteChildren {
   AuthCliLoginRoute: typeof AuthCliLoginRoute
+  AuthLinkRoute: typeof AuthLinkRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
   AuthOauthAuthorizeRoute: typeof AuthOauthAuthorizeRoute
@@ -1843,6 +1863,7 @@ interface AuthRouteChildren {
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthCliLoginRoute: AuthCliLoginRoute,
+  AuthLinkRoute: AuthLinkRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   AuthOauthAuthorizeRoute: AuthOauthAuthorizeRoute,

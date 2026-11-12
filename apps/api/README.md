@@ -162,6 +162,15 @@ A CLI logs in through a browser, as OAuth's device flow does: it starts a login 
 | POST | `/cli/logins/{code}/deny` | ✓ | Deny it. A browser session only |
 | DELETE | `/cli/session` | ✓ | Log out the CLI making the request (an `mcli-` token only) |
 
+### Sign-in links
+
+An installation that sets `SIGN_IN_LINK_KEY` lets whoever holds the key make a one-time link that signs a person in to the console, skipping their password and second factor: an operator opening a console for someone, as Cloud's Open button does for a workspace's owner. The key is as strong as the database, so it lives beside the database's password. The link is the console's `/link`, its `mlnk-` token in the fragment so no server on the way logs it; it is spent once, within five minutes. Unset, making one answers 404.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/system/sign-in-links` | key | Make a link for the person signing in with `email` (an agent has none), landing on `next`, a path on the console. Takes the key in `X-Sign-In-Link-Key`. Returns the `url` and its expiry |
+| POST | `/auth/sign-in-link` | public | Spend a link's `token`, starting a console session: returns the session's `token` |
+
 ### OAuth for MCP clients
 
 Meshploy is the OAuth authorization server for its own `/mcp`, so a client that can only connect by signing in (Claude on the web and the desktop) can connect. `/mcp` answers a request without a working credential with `401` and `WWW-Authenticate: Bearer resource_metadata=...`; the client reads the metadata, registers itself, sends a person to the console's `/oauth/authorize` page to approve, and trades the code (PKCE S256) for an `moat-` access token (an hour) and an `mort-` refresh token (rotated on every use; a copied one presented again ends the connection). A connection acts as the person who approved it or, chosen by an owner or admin, as one of the organisation's agents. Its access token opens `/mcp` and nothing else: the API accepts it only on `/mcp`'s own calls back to it.
@@ -642,6 +651,7 @@ Worker nodes authenticate with a registration or provisioning token rather than 
 | `API_BASE_URL` | No | Public base URL of the API (default: `http://localhost:4000`) |
 | `FRONTEND_URL` | No | Console URL (default: `http://localhost:5173`) |
 | `SETUP_TOKEN` | No | Gates the first registration; set by install.sh. Empty disables the check |
+| `SIGN_IN_LINK_KEY` | No | Lets whoever holds it make one-time console sign-in links (`POST /system/sign-in-links`). Empty (the default) turns them off |
 | `HEADSCALE_URL` | No | Headscale API URL |
 | `HEADSCALE_API_KEY` | No | Headscale API key |
 | `HEADSCALE_USER` | No | Headscale user pre-auth keys are created under (default: `meshploy`) |
