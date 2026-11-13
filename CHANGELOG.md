@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.0](https://github.com/meshploy/meshploy/compare/v0.24.0...v0.25.0) (2026-11-13)
+
+
+### Features
+
+* **builds:** the build log estimates a node's image download, warns when it outlasts the build's hour, and keeps streaming through it ([5c8a5a5](https://github.com/meshploy/meshploy/commit/5c8a5a52518df969ac6284d9a459aadbfe260512))
+* **services:** the service page links the repository it builds from, opening on its provider ([1296a9f](https://github.com/meshploy/meshploy/commit/1296a9f7e8497b55cc87b65bd5c03441e2c06a4e))
+
+
+### Bug Fixes
+
+* **stacks:** a database a compose file names by image tag is made at that version, not the default ([93861cf](https://github.com/meshploy/meshploy/commit/93861cfb4091be119c66dcfde5c91946d7a6e6d5))
+
 ## [0.24.0](https://github.com/meshploy/meshploy/compare/v0.23.1...v0.24.0) (2026-11-12)
 
 
