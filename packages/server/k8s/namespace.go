@@ -37,8 +37,21 @@ func OnNamespaceCreatedIn(client kubernetes.Interface, fn func(ctx context.Conte
 	namespaceCreatedIn[client] = append(namespaceCreatedIn[client], fn)
 }
 
-// EnsureNamespace creates the namespace if it does not already exist.
+// namespaceLocks serializes EnsureNamespace per namespace, so services deployed
+// together into a new project (a stack, a template) make it once and all wait
+// for its isolation instead of racing to create it.
+var namespaceLocks sync.Map // name -> *sync.Mutex
+
+// EnsureNamespace creates the namespace if it does not already exist. One
+// made by someone else between the look and the create (another API process)
+// is not an error: the new-namespace steps still run before this returns, as
+// they are safe to repeat, so nothing deploys into it before its isolation.
 func EnsureNamespace(ctx context.Context, client kubernetes.Interface, name string) error {
+	l, _ := namespaceLocks.LoadOrStore(name, &sync.Mutex{})
+	mu := l.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+
 	_, err := client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
 		return nil
@@ -52,7 +65,7 @@ func EnsureNamespace(ctx context.Context, client kubernetes.Interface, name stri
 			Labels: map[string]string{"managed-by": "meshploy"},
 		},
 	}
-	if _, err = client.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
+	if _, err = client.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
 	}
 	namespaceMu.RLock()
