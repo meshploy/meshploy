@@ -10,6 +10,7 @@ import {
   configFiles as configFilesApi,
   type ApiService,
 } from "@/lib/api"
+import type { StackRun } from "@/lib/api/stacks"
 import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore } from "@/store/org-store"
 import { formatRelativeTime } from "@/lib/utils"
@@ -20,11 +21,12 @@ export const Route = createFileRoute("/_app/projects/$id/stacks/$stackId/service
   component: StackServicesTab,
 })
 
-const STATUS_STYLES: Record<ServiceStatus, string> = {
+const STATUS_STYLES: Record<ServiceStatus | "queued", string> = {
   running:   "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   deploying: "bg-amber-500/10 text-amber-400 border-amber-500/20",
   failed:    "bg-destructive/10 text-destructive border-destructive/20",
   stopped:   "bg-muted text-muted-foreground border-border",
+  queued:    "bg-amber-500/5 text-amber-400/80 border-amber-500/20",
   completed: "bg-sky-500/10 text-sky-400 border-sky-500/20",
 }
 
@@ -42,6 +44,24 @@ function StackServicesTab() {
     enabled: !!orgId,
     refetchInterval: livePoll<ApiService[]>((d) => d.some((s) => s.status === "deploying")),
   })
+
+  // A rollout in progress starts its services layer by layer. One it has not
+  // reached yet, or has only just started, still has the stored status stopped:
+  // it is shown as queued or deploying, as the rollout has it.
+  const { data: runs = [] } = useQuery({
+    queryKey: ["stack-runs", orgId, projectId, stackId],
+    queryFn: () => stacksApi.runs(orgId!, projectId, stackId, token),
+    enabled: !!orgId,
+    refetchInterval: livePoll<StackRun[]>((d) => d.some((r) => r.status === "running")),
+  })
+  const rolling = new Map<string, "queued" | "deploying">()
+  for (const r of runs) {
+    if (r.status !== "running") continue
+    for (const st of r.rollout) {
+      if (st.status === "waiting") rolling.set(st.service_id, "queued")
+      else if (st.status === "started") rolling.set(st.service_id, "deploying")
+    }
+  }
 
   // Routes and volumes are project-scoped in the API and carry stack_id, so the
   // stack's own are filtered from the project's list rather than needing a
@@ -105,9 +125,14 @@ function StackServicesTab() {
               <Server className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="text-sm font-medium text-foreground">{svc.name}</span>
-                <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[svc.status]}`}>
-                  {svc.status}
-                </Badge>
+                {(() => {
+                  const shown = (svc.status === "stopped" && rolling.get(svc.id)) || svc.status
+                  return (
+                    <Badge className={`text-[11px] px-1.5 py-0 h-4 border shrink-0 ${STATUS_STYLES[shown]}`}>
+                      {shown}
+                    </Badge>
+                  )
+                })()}
                 <NotLatestTag service={svc} />
                 {svc.image && (
                   <code className="text-[11px] font-mono text-muted-foreground/60 truncate hidden sm:block">
