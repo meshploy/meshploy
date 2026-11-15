@@ -86,6 +86,18 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 		return nil, err
 	}
 
+	// Each exposed service's route is declared in the stack's file, so the
+	// apply makes it (and every later apply keeps it), waiting paused for the
+	// service's first deploy when it has not run yet.
+	if domainID != nil {
+		if resolvedSpec, err = declareExposedRoutes(resolvedSpec, exposes); err != nil {
+			return nil, err
+		}
+	} else if len(exposes) > 0 {
+		log.Printf("template %s: no verified base domain - %d exposed service(s) declared no route",
+			tpl.Manifest.ID, len(exposes))
+	}
+
 	stack, err := s.stacks.Create(ctx, projectID, CreateStackInput{
 		Name:            s.uniqueStackName(ctx, projectID, tpl.Manifest.ID),
 		Spec:            resolvedSpec,
@@ -97,24 +109,9 @@ func (s *TemplateService) Deploy(ctx context.Context, projectID uuid.UUID, templ
 		return nil, err
 	}
 
-	// Reconcile services/volumes from the resolved spec.
+	// Reconcile services, volumes and routes from the resolved spec.
 	if _, err := s.stacks.Apply(ctx, stack.ID, triggeredBy, nil); err != nil {
 		return stack, fmt.Errorf("template deployed but reconcile failed: %w", err)
-	}
-
-	// Create a public route per exposed service, in the background.
-	//
-	// This cannot be done inline. A route target resolves to the service's
-	// NodePort, and that is assigned by the deployment - which Apply starts in
-	// its own goroutine. Inline, the port is always still zero, so route
-	// creation returned "service has not been deployed yet" every single time
-	// and the error was discarded: a template declaring `expose` produced a
-	// deployed app with no way to reach it, and nothing in the logs.
-	//
-	// Waiting here instead would hold the HTTP request open for the length of a
-	// rollout, so the wait is detached and bounded.
-	if len(exposes) > 0 {
-		go s.createExposedRoutes(context.Background(), tpl.Manifest.ID, stack.ID, projectID, domainID, exposes)
 	}
 
 	return stack, nil
@@ -160,30 +157,13 @@ func nextFreeName(base string, taken func(string) bool) string {
 	return fmt.Sprintf("%s-%d", base, time.Now().UnixMilli())
 }
 
-// orgBaseDomain returns the domain a template's routes go on - the primary,
-// or failing that the oldest usable one - falling back to the configured DOMAIN
-// for the base name when no domain record exists. A nil id means no
-// domain-based routing is possible.
-//
-// Primary first because it is what a new route defaults to everywhere else,
-// and never a retiring domain: a template would only put routes on it that
-// then have to be moved off again.
+// orgBaseDomain returns the domain a template's routes go on, the one a
+// declared route defaults to (defaultRouteDomain), falling back to the
+// configured DOMAIN for the base name when no domain record exists. A nil id
+// means no domain-based routing is possible.
 func (s *TemplateService) orgBaseDomain(ctx context.Context, projectID uuid.UUID) (*uuid.UUID, string) {
-	orgID, err := s.projectOrgID(ctx, projectID)
-	if err != nil {
-		return nil, s.cfgDomain()
-	}
-	// A domain reserved for this project comes first: it is the project's
-	// own address. One reserved for another project is never a candidate.
-	root, err := rootProject(ctx, s.db, projectID)
-	if err != nil {
-		return nil, s.cfgDomain()
-	}
-	var d meshdb.Domain
-	err = s.db.WithContext(ctx).
-		Where("organization_id = ? AND verified = ? AND retiring_at IS NULL AND (project_id IS NULL OR project_id = ?)", orgID, true, root).
-		Order("project_id IS NULL, is_primary DESC, created_at ASC").First(&d).Error
-	if err != nil {
+	d, err := defaultRouteDomain(ctx, s.db, projectID)
+	if err != nil || d == nil {
 		return nil, s.cfgDomain()
 	}
 	id := d.ID
@@ -195,105 +175,4 @@ func (s *TemplateService) cfgDomain() string {
 		return s.cfg.Domain
 	}
 	return ""
-}
-
-func (s *TemplateService) projectOrgID(ctx context.Context, projectID uuid.UUID) (uuid.UUID, error) {
-	var p meshdb.Project
-	if err := s.db.WithContext(ctx).Select("organization_id").First(&p, "id = ?", projectID).Error; err != nil {
-		return uuid.Nil, err
-	}
-	return p.OrganizationID, nil
-}
-
-func (s *TemplateService) findStackService(ctx context.Context, stackID uuid.UUID, name string) *meshdb.Service {
-	var svc meshdb.Service
-	if err := s.db.WithContext(ctx).First(&svc, "stack_id = ? AND name = ?", stackID, name).Error; err != nil {
-		return nil
-	}
-	return &svc
-}
-
-// routeWaitTimeout bounds how long the background route creator waits for a
-// service to come up. Long enough for a first image pull on a slow link, short
-// enough that a service which never starts stops holding a goroutine.
-const routeWaitTimeout = 10 * time.Minute
-
-// createExposedRoutes waits for each exposed service to have a routable
-// NodePort, then creates its public route. Run detached from the deploy request.
-//
-// It polls rather than watching the cluster: the thing it needs is a database
-// column that the deployment writes after the rollout, so the database is the
-// authority, and a poll keeps this independent of how deployments are driven.
-func (s *TemplateService) createExposedRoutes(
-	ctx context.Context,
-	templateID string,
-	stackID, projectID uuid.UUID,
-	domainID *uuid.UUID,
-	exposes []templates.ResolvedExpose,
-) {
-	if domainID == nil {
-		log.Printf("template %s: no verified base domain — %d exposed service(s) got no route",
-			templateID, len(exposes))
-		return
-	}
-	orgID, err := s.projectOrgID(ctx, projectID)
-	if err != nil {
-		log.Printf("template %s: resolve org for project %s: %v — no routes created", templateID, projectID, err)
-		return
-	}
-
-	deadline := time.Now().Add(routeWaitTimeout)
-	for _, e := range exposes {
-		svc := s.findStackService(ctx, stackID, e.Service)
-		if svc == nil {
-			log.Printf("template %s: exposed service %q is not in the applied stack — no route for %s",
-				templateID, e.Service, e.Hostname)
-			continue
-		}
-		if !s.waitForRoutablePort(ctx, svc.ID, deadline) {
-			log.Printf("template %s: service %q never got a routable port — no route for %s; create one from the routes tab once it is running",
-				templateID, e.Service, e.Hostname)
-			continue
-		}
-		route, err := s.routes.Create(ctx, CreateRouteInput{
-			OrgID:     orgID,
-			ProjectID: projectID,
-			DomainID:  domainID,
-			Zone:      meshdb.RouteZonePublic,
-			Subdomain: e.Subdomain,
-			Targets:   []TargetInput{{ServiceID: &svc.ID, Port: e.Port}},
-		})
-		if err != nil {
-			log.Printf("template %s: create route %s for service %q: %v", templateID, e.Hostname, e.Service, err)
-			continue
-		}
-		// Record the originating stack. Set after creation rather than widening
-		// CreateRouteInput, which every other caller shares.
-		if route != nil {
-			_ = s.db.WithContext(ctx).Model(route).Update("stack_id", stackID).Error
-		}
-		log.Printf("template %s: route %s created for service %q", templateID, e.Hostname, e.Service)
-	}
-}
-
-// waitForRoutablePort reports whether the service has a public HTTP port with a
-// NodePort assigned, waiting until it does or the deadline passes.
-func (s *TemplateService) waitForRoutablePort(ctx context.Context, serviceID uuid.UUID, deadline time.Time) bool {
-	for {
-		var count int64
-		s.db.WithContext(ctx).Model(&meshdb.ServicePort{}).
-			Where("service_id = ? AND is_public = true AND is_http = true AND node_port <> 0", serviceID).
-			Count(&count)
-		if count > 0 {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(3 * time.Second):
-		}
-	}
 }

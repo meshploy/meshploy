@@ -31,6 +31,8 @@ export interface ApiDbRoute {
   custom_domain_verify_token: string
   /** Stack that created this route. null = created directly. */
   stack_id: string | null
+  /** Declared in the stack's file: each apply remakes it while the file names it. */
+  stack_declared?: boolean
   /** False when paused: kept with its targets, not served. */
   published: boolean
   /** Copied into an environment level; published by its service's first deploy there. */

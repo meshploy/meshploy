@@ -285,6 +285,12 @@ function RouteDetailPage() {
               <p className="text-xs text-muted-foreground mt-0.5">
                 Removes this routing rule. Traffic to <span className="font-mono">{route.hostname}</span> will stop being proxied.
               </p>
+              {route.stack_declared && (
+                <p className="text-xs text-amber-400 mt-1">
+                  Its stack&apos;s file declares this route, so the next apply makes it again. To remove it for good, take
+                  its <span className="font-mono">route:</span> out of the file.
+                </p>
+              )}
             </div>
             {!confirmDelete ? (
               <Button variant="destructive" size="sm" className="shrink-0 gap-1.5" onClick={() => setConfirmDelete(true)}>

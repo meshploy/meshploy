@@ -42,11 +42,13 @@ A stack runs a Compose file the way Docker Compose would, with Kubernetes undern
 - **Resources.** `mem_limit`, `cpus`, `mem_reservation` and `deploy.resources` set the service's limits and requests. Where the file says nothing, a new service gets Meshploy's defaults, and a limit set on the service since is kept by the next apply.
 - **Images kept for rollback.** A stack's built services keep every image they build until the stack says otherwise, on its Services tab: then each keeps its last few, as a service made on its own does. A service's own `x-meshploy.rollback` (`enabled`, `retention`) in the file wins over the stack's.
 - **Routes name a port.** A route to a service names the port it serves, and that port is routable from then on, even one the file only published on `127.0.0.1` or never listed.
+- **Routes in the file.** `x-meshploy.route` gives a service its address: `subdomain:`, and optionally `domain:` (a verified base domain; the project's own or the primary otherwise), `port:` (the primary port otherwise), `zone: internal` and `published: false`. A list gives it several. Apply makes each one, waiting paused until the service has run once if it has not yet, and removes one the file no longer names. A route made by hand for the same service and hostname is taken over rather than duplicated, and routes the file does not declare are never touched. Delete a declared route in the console and the next apply brings it back: take it out of the file instead. A template's routes are written into its file this way.
 
 ## Terms {#terms}
 
 - **Apply** {#apply -> apply}: Makes the cluster match the stack's spec. A service taken out of the spec is unlinked, not deleted.
 - **Apply again** {#apply-again -> apply}: On a stack from git, applies the last sync as it was, its commit included, fetching nothing. Only Sync brings in newer commits.
 - **Destroyed** {#destroyed -> apply}: The stack's services are torn down; the stack and its spec are kept, and applying again recreates them. Volumes and routes go only if you chose so.
+- **Declared route** {#declared-route -> compose}: A route a stack's file names in a service's x-meshploy.route. Apply makes it and removes it when the file stops naming it.
 - **Run once** {#run-once -> compose}: A service that does its work and exits, run to completion on each deploy. Compose marks it by another service waiting for it to complete.
 - **Stack variables** {#variables -> sources}: Values filled in for ${NAME} in the stack's spec.

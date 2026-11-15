@@ -576,6 +576,7 @@ type meshployExt struct {
 	Deploy   *meshployDeploy   `json:"deploy"`
 	Rollback *meshployRollback `json:"rollback"`
 	Database *meshployDatabase `json:"database"`
+	Route    meshployRoutes    `json:"route"`
 }
 
 // meshployFile is a file the template projects into the container. Content has
@@ -639,9 +640,14 @@ type ApplyResult struct {
 	// compose file's depends_on, started once the one before it is up.
 	Queued []string
 	// RunID is the record this apply keeps of its rollout.
-	RunID    *uuid.UUID
-	Errors   []string
-	Warnings []string // what could not be carried over exactly, such as a UDP port
+	RunID *uuid.UUID
+	// Routes are the hostnames this apply made or took over for the file's
+	// `x-meshploy.route` declarations; RoutesDeleted the ones it removed
+	// because the file no longer names them.
+	Routes        []string
+	RoutesDeleted []string
+	Errors        []string
+	Warnings      []string // what could not be carried over exactly, such as a UDP port
 }
 
 // ---------------------------------------------------------------------------
@@ -693,6 +699,9 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 		Deployed: []string{},
 		Errors:   []string{},
 		Warnings: []string{},
+
+		Routes:        []string{},
+		RoutesDeleted: []string{},
 	}
 
 	// Build environment map: stored variables + one-shot overrides.
@@ -1002,6 +1011,9 @@ func (s *StackService) apply(ctx context.Context, stackID uuid.UUID, triggerBy u
 			result.Deleted = append(result.Deleted, name)
 		}
 	}
+
+	// The file's routes, now that every service it names exists.
+	s.reconcileStackRoutes(ctx, &stack, project, result)
 
 	now := time.Now()
 	finalStatus := meshdb.StackIdle

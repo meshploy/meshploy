@@ -147,8 +147,11 @@ type applyResultBody struct {
 	Deployed []string  `json:"deployed"`
 	Queued   []string  `json:"queued" doc:"Services that roll out once what they depend on is up"`
 	RunID    *string   `json:"run_id,omitempty" doc:"The record of this apply's rollout, under the stack's runs"`
-	Errors   []string  `json:"errors"`
-	Warnings []string  `json:"warnings"`
+	Routes   []string  `json:"routes" doc:"Hostnames this apply made or took over for the file's x-meshploy.route declarations"`
+	// RoutesDeleted are routes the file no longer declares.
+	RoutesDeleted []string `json:"routes_deleted" doc:"Hostnames this apply removed because the file no longer declares them"`
+	Errors        []string `json:"errors"`
+	Warnings      []string `json:"warnings"`
 }
 
 // DestroyStackBody selects how far the destroy goes. Both default to false, so
@@ -535,15 +538,17 @@ func (h *Handler) ApplyManifest(ctx context.Context, input *ApplyManifestInput) 
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &ApplyResultOutput{Body: &applyResultBody{
-		Stack:    result.Stack,
-		Created:  result.Created,
-		Updated:  result.Updated,
-		Deleted:  result.Deleted,
-		Deployed: result.Deployed,
-		Queued:   result.Queued,
-		RunID:    runIDString(result.RunID),
-		Errors:   result.Errors,
-		Warnings: result.Warnings,
+		Stack:         result.Stack,
+		Created:       result.Created,
+		Updated:       result.Updated,
+		Deleted:       result.Deleted,
+		Deployed:      result.Deployed,
+		Queued:        result.Queued,
+		RunID:         runIDString(result.RunID),
+		Routes:        result.Routes,
+		RoutesDeleted: result.RoutesDeleted,
+		Errors:        result.Errors,
+		Warnings:      result.Warnings,
 	}}, nil
 }
 
@@ -579,15 +584,17 @@ func (h *Handler) ApplyStack(ctx context.Context, input *ApplyStackInput) (*Appl
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &ApplyResultOutput{Body: &applyResultBody{
-		Stack:    result.Stack,
-		Created:  result.Created,
-		Updated:  result.Updated,
-		Deleted:  result.Deleted,
-		Deployed: result.Deployed,
-		Queued:   result.Queued,
-		RunID:    runIDString(result.RunID),
-		Errors:   result.Errors,
-		Warnings: result.Warnings,
+		Stack:         result.Stack,
+		Created:       result.Created,
+		Updated:       result.Updated,
+		Deleted:       result.Deleted,
+		Deployed:      result.Deployed,
+		Queued:        result.Queued,
+		RunID:         runIDString(result.RunID),
+		Routes:        result.Routes,
+		RoutesDeleted: result.RoutesDeleted,
+		Errors:        result.Errors,
+		Warnings:      result.Warnings,
 	}}, nil
 }
 

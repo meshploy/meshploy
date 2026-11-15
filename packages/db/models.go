@@ -1483,6 +1483,11 @@ type Route struct {
 	// StackID records the stack that created this route (a template deploy
 	// exposes services through one). SET NULL on stack delete.
 	StackID *uuid.UUID `gorm:"type:uuid;index" json:"stack_id"`
+	// StackDeclared marks a route the stack's file declares (`x-meshploy.route`):
+	// each apply makes it if it is missing and removes it once the file no
+	// longer names it. A route with a StackID and no StackDeclared was made
+	// some other way and is never touched by an apply.
+	StackDeclared bool `gorm:"not null;default:false" json:"stack_declared"`
 
 	// Published decides whether the route carries traffic. A paused route is
 	// kept with its targets but answers as if it did not exist, and gets no
