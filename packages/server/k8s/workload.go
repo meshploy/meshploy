@@ -843,6 +843,9 @@ type PodInfo struct {
 	// ImagePullBackOff, CreateContainerConfigError, ...), and the message.
 	WaitingReason  string `json:"waiting_reason,omitempty"`
 	WaitingMessage string `json:"waiting_message,omitempty"`
+	// RunningSince is when the container now running started, nil while it
+	// is not running: how long it has stayed up since its last exit.
+	RunningSince *time.Time `json:"running_since,omitempty"`
 	// MemoryLimit is the container's memory limit as set (e.g. "512Mi").
 	MemoryLimit string `json:"memory_limit,omitempty"`
 	// RuntimeClass is the runtime the pod runs on: SandboxRuntimeClass for a
@@ -898,6 +901,10 @@ func podInfos(items []corev1.Pod) []PodInfo {
 			}
 			if w := cs.State.Waiting; w != nil {
 				info.WaitingReason, info.WaitingMessage = w.Reason, w.Message
+			}
+			if r := cs.State.Running; r != nil && !r.StartedAt.IsZero() {
+				at := r.StartedAt.UTC()
+				info.RunningSince = &at
 			}
 		}
 		if len(p.Spec.Containers) > 0 {

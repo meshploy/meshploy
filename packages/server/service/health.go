@@ -15,8 +15,9 @@ import (
 // restarts it, and the reason lives in the container's last termination. So
 // the console asks for this summary rather than trusting the status alone:
 // an out-of-memory kill, a process that keeps exiting, an image that cannot
-// be pulled, a container that cannot start. Old restarts do not count; only
-// what happened in troubleWindow, or what is happening now.
+// be pulled, a container that cannot start. It describes now: an exit counts
+// only while the container has not stayed up since, so a service that
+// restarted while its database came up, and runs, shows nothing.
 
 // Trouble kinds, most specific first.
 const (
@@ -27,6 +28,11 @@ const (
 )
 
 const troubleWindow = 30 * time.Minute
+
+// steadyAfter is how long a container stays up after an exit before that exit
+// stops counting. A process that keeps exiting is waiting between its
+// restarts (CrashLoopBackOff), not running, so it still reads as crashing.
+const steadyAfter = 2 * time.Minute
 
 // Trouble is what is wrong with a service's pods, when something is.
 type Trouble struct {
@@ -56,7 +62,8 @@ func troubleOf(pods []appk8s.PodInfo, now time.Time) *Trouble {
 		case "CrashLoopBackOff":
 			crashLoop = true
 		}
-		if p.LastFinishedAt != nil && now.Sub(*p.LastFinishedAt) < troubleWindow {
+		steady := p.RunningSince != nil && now.Sub(*p.RunningSince) >= steadyAfter
+		if p.LastFinishedAt != nil && now.Sub(*p.LastFinishedAt) < troubleWindow && !steady {
 			if t.LastAt == nil || p.LastFinishedAt.After(*t.LastAt) {
 				t.LastAt, t.ExitCode = p.LastFinishedAt, p.LastExitCode
 			}

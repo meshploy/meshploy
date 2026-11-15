@@ -77,7 +77,7 @@ A service whose container keeps dying can still say "running", because it is res
 - **Keeps stopping**: its process exits and is restarted, with the exit code. Its log says why.
 - **Cannot pull its image**, or **cannot start**: the image name, the registry's credentials, or its configuration needs fixing.
 
-Restarts from more than half an hour ago are not counted, so a service that recovered stops being flagged.
+A restart stops counting once the service has stayed up for two minutes since, so a service that recovered, or restarted only while something it needs was starting, stops being flagged.
 
 
 While it waits to restart, its **Logs** tab shows the run that exited, with its exit code, since the run about to start has written nothing yet. Stopping a service removes its pod and the pod's logs, so Stop keeps the last 500 lines it wrote, and the Logs tab shows them, with when it stopped, until it runs again.

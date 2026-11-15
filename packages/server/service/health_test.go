@@ -96,3 +96,42 @@ func TestServicesSayWhyTheyKeepDying(t *testing.T) {
 	assert.Contains(t, titles, "web cannot pull its image")
 	assert.NotContains(t, titles, "old keeps stopping")
 }
+
+// A service that exited while starting, waiting for its database, and has
+// stayed up since says nothing: the summary describes now. One that came back
+// moments ago still says it keeps stopping.
+func TestTroubleEndsOnceTheServiceStaysUp(t *testing.T) {
+	ctx := context.Background()
+	gdb := newTestDB(t)
+	svcs := newServices(gdb)
+	orgID := seedOrg(t, gdb, "umami", nil)
+	project, err := svcs.Projects.Create(ctx, orgID, "Umami", "umami")
+	require.NoError(t, err)
+	mk := func(name string) meshdb.Service {
+		s := meshdb.Service{ProjectID: project.ID, Name: name, Slug: name, Type: meshdb.ServiceTypeApplication, Status: meshdb.ServiceRunning}
+		require.NoError(t, gdb.Create(&s).Error)
+		return s
+	}
+	settled, fresh := mk("settled"), mk("fresh")
+
+	running := func(p *corev1.Pod, since time.Duration) *corev1.Pod {
+		p.Status.ContainerStatuses[0].State.Running = &corev1.ContainerStateRunning{StartedAt: metav1.NewTime(time.Now().Add(-since))}
+		p.Status.ContainerStatuses[0].Ready = true
+		p.Namespace = project.Slug
+		return p
+	}
+	exited := func(ago time.Duration) *corev1.ContainerStateTerminated {
+		return &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 1, FinishedAt: metav1.NewTime(time.Now().Add(-ago))}
+	}
+	client := fake.NewSimpleClientset(
+		running(pod("settled-1", "settled", 2, exited(6*time.Minute), nil, ""), 6*time.Minute),
+		running(pod("fresh-1", "fresh", 2, exited(20*time.Second), nil, ""), 20*time.Second),
+	)
+	service.UseWorkloadsK8sForTroubleTest(svcs, client)
+
+	troubles, err := svcs.Workloads.Troubles(ctx, project.ID)
+	require.NoError(t, err)
+	assert.Nil(t, troubles[settled.ID], "up for minutes since its last exit")
+	require.NotNil(t, troubles[fresh.ID])
+	assert.Equal(t, service.TroubleCrashing, troubles[fresh.ID].Kind)
+}
