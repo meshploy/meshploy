@@ -72,13 +72,17 @@ type NodeService struct {
 	nodePorts func(meshOnly bool)
 }
 
-// StartNodeMonitor polls Headscale every 2 minutes and dispatches node.offline
-// notifications when a node transitions from online to offline.
+// StartNodeMonitor polls Headscale every 2 minutes, keeps each node's stored
+// status to whether its mesh peer is connected, and dispatches node.offline
+// and node.online notifications when that changes. The stored status is what
+// the overview, placement and a route's gateway read, so a node that is gone
+// reads offline even when the cluster it was in can no longer be asked.
 func (s *NodeService) StartNodeMonitor(ctx context.Context) {
-	if s.headscale == nil || s.notif == nil {
+	if s.headscale == nil {
 		return
 	}
 	offlineNotified := make(map[uuid.UUID]bool)
+	s.checkNodeOnlineStatus(ctx, offlineNotified)
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -130,6 +134,18 @@ func (s *NodeService) checkNodeOnlineStatus(ctx context.Context, offlineNotified
 			continue
 		}
 		isOnline := known && peer.Online
+		want := db.NodeOffline
+		if isOnline {
+			want = db.NodeOnline
+		}
+		if node.Status != want {
+			if err := s.db.WithContext(ctx).Model(&db.Node{}).Where("id = ?", node.ID).Update("status", want).Error; err != nil {
+				log.Printf("warning: monitor store status of node %s: %v", node.ID, err)
+			}
+		}
+		if s.notif == nil {
+			continue
+		}
 		wasOffline := offlineNotified[node.ID]
 		if !isOnline && !wasOffline {
 			offlineNotified[node.ID] = true

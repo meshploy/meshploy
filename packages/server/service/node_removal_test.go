@@ -24,6 +24,7 @@ type fakeHeadscale struct {
 	down          bool
 	notFoundAs500 bool              // how some Headscale versions answer a missing node
 	peers         map[string]string // peer ID to mesh IP
+	online        map[string]bool   // peer ID to connected
 	deleted       []string
 }
 
@@ -38,7 +39,7 @@ func (f *fakeHeadscale) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/node":
 		nodes := []map[string]any{}
 		for id, ip := range f.peers {
-			nodes = append(nodes, map[string]any{"id": id, "ipAddresses": []string{ip}})
+			nodes = append(nodes, map[string]any{"id": id, "ipAddresses": []string{ip}, "online": f.online[id]})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"nodes": nodes})
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/node/"):
