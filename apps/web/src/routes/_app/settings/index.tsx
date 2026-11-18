@@ -31,6 +31,7 @@ import {
   UpgradeDialog as ServerUpgradeDialog,
 } from "@/components/system/upgrade-dialog"
 import { system as systemApi } from "@/lib/api/system"
+import { metrics as metricsApi } from "@/lib/api/metrics"
 import { DEFAULT_ENTERPRISE_IMAGE } from "@/lib/api/entitlements"
 import { BackupCard } from "@/components/backups/backup-card"
 import { RestoreAccordion } from "@/components/backups/restore-accordion"
@@ -77,7 +78,7 @@ function SettingsPage() {
       <SettingsWorkspace sections={[
         ["general", "General"], ["isolation", "Isolation"], ["appearance", "Appearance"],
         ...(EeSettingsSection ? [[EeSettingsSection.id, EeSettingsSection.label] as [string, string]] : []),
-        ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"],
+        ["monitoring", "Monitoring"], ["backups", "Backups"], ["server", "Server"], ["licence", "Licence"],
       ]}>
       <div id="general"><GeneralSection org={org} onNameUpdated={(updated) => setCurrentOrg({ id: updated.id, name: updated.name, slug: updated.slug })} /></div>
 
@@ -86,6 +87,8 @@ function SettingsPage() {
       <div id="appearance"><AppearanceSection /></div>
 
       {EeSettingsSection && <div id={EeSettingsSection.id}><EeSettingsSection.component orgId={orgId} /></div>}
+
+      <div id="monitoring"><MonitoringSection orgId={orgId} /></div>
 
       <div id="backups"><SystemBackupSection /></div>
 
@@ -488,6 +491,57 @@ function GeneralSection({ org, onNameUpdated }: { org: { id: string; name: strin
 
 // How the organization's projects are kept apart from each other: one row
 // per kind of isolation.
+// How long node and service metrics are kept. Lowering it frees the space
+// within the hour, when the stored readings are next cleaned up.
+function MonitoringSection({ orgId }: { orgId: string }) {
+  const token = useAuthStore((s) => s.token)!
+  const isAdmin = useIsAdmin()
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ["metric-settings", orgId], queryFn: () => metricsApi.settings(orgId, token) })
+  const set = useMutation({
+    mutationFn: (days: number) => metricsApi.setRetention(orgId, days, token),
+    onSuccess: (updated) => {
+      qc.setQueryData(["metric-settings", orgId], updated)
+      qc.invalidateQueries({ queryKey: ["node"] })
+      qc.invalidateQueries({ queryKey: ["service"] })
+    },
+  })
+  return (
+    <Section title="Monitoring" subtitle="Metrics history for nodes and services">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <span className="text-sm font-medium">Keep metrics for</span>
+          <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+            Every node and service is read once a minute. After a day each five minutes of readings is kept as one,
+            with its highest CPU and memory, until this many days have passed.
+          </p>
+          {!isAdmin && <p className="text-xs text-muted-foreground">Only an owner or admin can change this.</p>}
+          {set.error && (
+            <p className="flex items-center gap-1.5 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {set.error instanceof ApiError ? set.error.message : "Could not change how long metrics are kept"}
+            </p>
+          )}
+        </div>
+        {data && (
+          <div className="flex items-center gap-2">
+            {set.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {isAdmin ? (
+              <SegmentedControl
+                value={String(data.retention_days)}
+                onValueChange={(v) => set.mutate(Number(v))}
+                options={data.choices.map((d) => ({ value: String(d), label: d === 1 ? "1 day" : `${d} days` }))}
+              />
+            ) : (
+              <span className="text-sm tabular-nums">{data.retention_days === 1 ? "1 day" : `${data.retention_days} days`}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 function IsolationSection({ org }: { org: ApiOrg }) {
   const token = useAuthStore((s) => s.token)!
   const isAdmin = useIsAdmin()

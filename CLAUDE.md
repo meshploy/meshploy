@@ -185,7 +185,7 @@ Required in `.env` at the monorepo root:
 
 ---
 
-## packages/db — schema (62 CE tables)
+## packages/db — schema (64 CE tables)
 
 Full schema documented in `packages/db/README.md`. Key groups:
 
@@ -203,6 +203,7 @@ Full schema documented in `packages/db/README.md`. Key groups:
 | Integrations | `storage_integrations`, `registry_integrations`, `git_integrations`, `dns_providers` |
 | Operations | `backup_configs`, `system_backup_configs`, `notification_channels`, `notification_deliveries`, `org_email_configs` |
 | Templates | `templates` |
+| Metrics | `node_metric_samples`, `service_metric_samples` |
 
 **Partial unique indexes** (in `applyConstraints`):
 - `idx_one_owner_per_org` — exactly one owner per org
@@ -259,6 +260,7 @@ packages/server/
 │   ├── storage.go          # Storage integration CRUD
 │   ├── dns_provider.go     # DNS providers: connect (token checked first), check again, disconnect
 │   ├── terminal.go         # WebSocket: node terminal + pod terminal
+│   ├── metrics_history.go  # Node and service metrics history, retention setting
 │   ├── webhook.go          # Inbound webhooks (GitHub push, deploy token)
 │   ├── domain.go           # Domain CRUD + DNS verification
 │   ├── system.go           # Version, exposure notice, upgrade requests, install/uninstall scripts
@@ -282,6 +284,7 @@ packages/server/
 │   ├── permission.go       # Resource permission grants
 │   ├── node.go             # Node CRUD, registration/provisioning tokens, offline monitor
 │   ├── node_exporter.go    # Live metrics scraping from node_exporter
+│   ├── metrics_history.go  # Metrics history: once-a-minute sampler, five-minute rollup, retention, reads
 │   ├── workload.go         # Service CRUD, env vars, build/db config
 │   ├── stack.go            # Stack parse, apply, sync
 │   ├── job.go              # Job CRUD, trigger, K8s Job reconciler goroutine

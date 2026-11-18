@@ -30,6 +30,20 @@ import {
 } from "../data"
 
 const O = "/api/v1/orgs/:orgId"
+
+const metricSettings = { retention_days: 7, choices: [1, 3, 7, 14, 30] }
+const RANGE_MINUTES: Record<string, number> = { "1h": 60, "6h": 360, "24h": 1440, "7d": 10080, "30d": 43200 }
+
+// A demo metrics history: a point a minute up to a day, five minutes beyond.
+function demoHistory(request: Request, point: (i: number, at: string) => object) {
+  const range = new URL(request.url).searchParams.get("range") ?? "24h"
+  const minutes = RANGE_MINUTES[range] ?? 1440
+  const step = minutes > 1440 ? 5 : 1
+  const end = Math.floor(Date.now() / 60000) * 60000
+  const points = []
+  for (let m = minutes; m >= 0; m -= step) points.push(point((minutes - m) / step, new Date(end - m * 60000).toISOString()))
+  return { range, resolution: step === 5 ? "5m" : "1m", retention_days: metricSettings.retention_days, points }
+}
 const P = `${O}/projects/:projectId`
 const S = `${P}/services/:serviceId`
 const json = (value: any, status = 200) => HttpResponse.json(value, { status })
@@ -642,6 +656,25 @@ export const workspaceHandlers = [
       net_tx_bytes: t * 800,
     })
   }),
+  http.get(`${O}/nodes/:nodeId/metrics/history`, ({ request }) =>
+    json(demoHistory(request, (i, at) => ({
+      at,
+      cpu_pct: 18 + 12 * Math.sin(i / 9) + (i % 17 === 0 ? 30 : 0),
+      cpu_pct_max: 30 + 12 * Math.sin(i / 9),
+      mem_used: 3.2e9 + 4e8 * Math.sin(i / 23),
+      mem_used_max: 3.6e9,
+      mem_total: 8589934592,
+      disk_used: 25.7e9 + i * 1e6,
+      disk_total: 85899345920,
+      net_rx_bps: 120000 + 60000 * Math.sin(i / 5),
+      net_tx_bps: 80000 + 30000 * Math.cos(i / 7),
+    })))
+  ),
+  http.get(`${O}/metrics/settings`, () => json(metricSettings)),
+  http.put(`${O}/metrics/settings`, async ({ request }) => {
+    metricSettings.retention_days = ((await body(request)) as { retention_days: number }).retention_days
+    return json(metricSettings)
+  }),
   http.get(`${O}/node-registration-token`, () =>
     json({ token: "mreg-demo-not-valid-on-a-real-server" })
   ),
@@ -1101,6 +1134,17 @@ export const workspaceHandlers = [
         : []
     )
   }),
+  http.get(`${S}/metrics/history`, ({ request }) =>
+    json(demoHistory(request, (i, at) => ({
+      at,
+      cpu_millis: Math.round(45 + 20 * Math.sin(i / 8)),
+      cpu_millis_max: 80,
+      mem_bytes: Math.round(1.3e8 + 1e7 * Math.sin(i / 30)),
+      mem_bytes_max: 1.5e8,
+      pods: 1,
+      restarts: i > 40 ? 1 : 0,
+    })))
+  ),
   http.get(`${S}/database-config`, ({ params }) => {
     const s = find("services", params.serviceId)
     return json({

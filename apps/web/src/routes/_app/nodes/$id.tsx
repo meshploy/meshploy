@@ -32,6 +32,15 @@ import { useAuthStore } from "@/store/auth-store"
 import { useOrgStore, useIsAdmin } from "@/store/org-store"
 import { useTabStore } from "@/store/tab-store"
 import { useMetricsStore, type RawSample } from "@/store/metrics-store"
+import { MetricsHistory, formatBytes, type HistorySeries } from "@/components/metrics/metrics-history"
+import { metrics as metricsApi, type ApiNodeMetricSample } from "@/lib/api"
+
+const NODE_HISTORY: HistorySeries<ApiNodeMetricSample>[] = [
+  { label: "CPU", color: "oklch(0.65 0.18 250)", value: (p) => p.cpu_pct, format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
+  { label: "Memory", color: "oklch(0.65 0.18 300)", value: (p) => (p.mem_total ? (100 * p.mem_used) / p.mem_total : null), format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
+  { label: "Disk", color: "oklch(0.72 0.18 70)", value: (p) => (p.disk_total ? (100 * p.disk_used) / p.disk_total : null), format: (v) => `${v.toFixed(0)}%`, domain: [0, 100] },
+  { label: "Network", color: "oklch(0.65 0.18 200)", value: (p) => p.net_rx_bps + p.net_tx_bps, format: (v) => `${formatBytes(v)}/s` },
+]
 import { CLUSTER_ROLES, RolePicker } from "@/components/nodes/role-picker"
 import { RoleChangeDialog } from "@/components/nodes/role-change-dialog"
 import { formatRelativeTime } from "@/lib/utils"
@@ -415,6 +424,18 @@ function NodeDetailPage() {
           <SpecCard icon={<MemoryStick className="h-4 w-4" />} label="Memory" value={node.memoryGB ? `${node.memoryGB.toFixed(1)} GB` : "—"} />
           <SpecCard icon={<HardDrive className="h-4 w-4" />} label="Disk" value={node.diskGB ? `${node.diskGB.toFixed(0)} GB` : "—"} />
         </div>
+      )}
+
+      {node.os !== "windows" && (
+        <>
+          <ResourceIntro title="History" description="What this node used over time, from the readings Meshploy stores." />
+          <MetricsHistory
+            queryKey={["node", orgId, id]}
+            load={(range) => metricsApi.nodeHistory(orgId!, id, range, token)}
+            series={NODE_HISTORY}
+            empty="Nothing stored yet. Readings start once the node has been online a few minutes with node_exporter."
+          />
+        </>
       )}
 
       <ResourceIntro title="Connectivity and role" description="Mesh membership, cluster readiness and workload scheduling for this node." />

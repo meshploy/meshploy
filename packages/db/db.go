@@ -168,6 +168,10 @@ func Migrate(db *gorm.DB) error {
 
 		// Templates
 		&Template{},
+
+		// Metrics history
+		&NodeMetricSample{},
+		&ServiceMetricSample{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

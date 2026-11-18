@@ -22,6 +22,8 @@ import { useTabStore } from "@/store/tab-store"
 import { cn, formatRelativeTime } from "@/lib/utils"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { MetricsHistory, formatBytes, type HistorySeries } from "@/components/metrics/metrics-history"
+import { metrics as metricsApi, type ApiServiceMetricSample } from "@/lib/api"
 
 export const Route = createFileRoute(
   "/_app/projects/$id/services/$serviceId/overview"
@@ -109,6 +111,13 @@ function buildConnectionString(dc: ApiDatabaseConfig, host: string, port?: numbe
     default:          return `${host}${portStr}`
   }
 }
+
+const SERVICE_HISTORY: HistorySeries<ApiServiceMetricSample>[] = [
+  { label: "CPU", color: "oklch(0.65 0.18 250)", value: (p) => p.cpu_millis / 1000, format: (v) => `${v.toFixed(2)} cores` },
+  { label: "Memory", color: "oklch(0.65 0.18 300)", value: (p) => p.mem_bytes, format: formatBytes },
+  { label: "Running pods", color: "oklch(0.7 0.15 160)", value: (p) => p.pods, format: (v) => v.toFixed(0) },
+  { label: "Restarts", color: "oklch(0.7 0.18 30)", value: (p) => p.restarts, format: (v) => v.toFixed(0) },
+]
 
 function ServiceOverviewTab() {
   const { id: projectId, serviceId } = useParams({
@@ -200,6 +209,14 @@ function ServiceOverviewTab() {
         <MetricTile icon={MemoryStick} label="Memory" value={memory ?? "-"} unit={memory !== null ? "MiB" : undefined} detail={metricsError || !metrics?.length ? "Metrics unavailable" : `Limit · ${service.memory_limit || "Not set"}`} />
         <MetricTile icon={Box} label="Replicas" value={podsError || !pods ? "-" : readyPods} unit={`/ ${service.replicas} ready`} detail={podsError ? "Pod readiness unavailable" : observedNodeNames.length ? `On ${observedNodeNames.join(", ")}` : "No placement reported"} />
       </div>
+      <ResourcePanel title="History" description="CPU, memory and restarts over time, summed over the service's pods.">
+        <MetricsHistory
+          queryKey={["service", orgId, projectId, serviceId]}
+          load={(range) => metricsApi.serviceHistory(orgId!, projectId, serviceId, range, token)}
+          series={SERVICE_HISTORY}
+          empty="Nothing stored yet. Readings start a minute or two after the service is running."
+        />
+      </ResourcePanel>
       <div className="resource-overview-columns">
         <div className="space-y-6 min-w-0">
           <ResourcePanel title="Latest deployment" action={latest && <StatusPill status={latest.status} />}>

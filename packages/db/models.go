@@ -544,6 +544,10 @@ type Organization struct {
 	// service.SandboxService.NewProject). Existing projects keep their own.
 	SandboxNewProjects bool `gorm:"not null;default:false" json:"sandbox_new_projects"`
 
+	// MetricRetentionDays is how long its nodes' and services' metrics are
+	// kept, one of MetricRetentionChoices; 0 is the default.
+	MetricRetentionDays int `gorm:"not null;default:0" json:"metric_retention_days"`
+
 	Members  []OrganizationMember `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
 	Projects []Project            `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`
 	Nodes    []Node               `gorm:"foreignKey:OrganizationID;constraint:OnDelete:CASCADE" json:"-"`

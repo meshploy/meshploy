@@ -47,6 +47,7 @@ type Services struct {
 	Deployments     *DeploymentService
 	Activity        *ActivityService
 	Overview        *OverviewService
+	MetricsHistory  *MetricsHistoryService
 	GitIntegrations *GitIntegrationService
 	Registries      *RegistryService
 	Storage         *StorageService
@@ -451,6 +452,10 @@ func New(db *gorm.DB, cfg ...*config.Config) *Services {
 	}
 
 	svc.ProjectMaps = &ProjectMapService{db: db, workloads: workloads, stacks: svc.Stacks, routes: routes, volumes: volumes}
+	svc.MetricsHistory = newMetricsHistory(db, nodes.GetNodeMetrics, cluster)
+	if c != nil {
+		go svc.MetricsHistory.Start(context.Background())
+	}
 	svc.Overview = &OverviewService{db: db, projects: projects, promotions: svc.Promotions, orphans: svc.Orphans, workloads: workloads, metrics: nodes.GetNodeMetrics}
 	return svc
 }

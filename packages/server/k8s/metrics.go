@@ -26,7 +26,8 @@ type podMetricsList struct {
 
 type podMetricsItem struct {
 	Metadata struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
 	} `json:"metadata"`
 	Containers []struct {
 		Usage struct {
@@ -94,6 +95,59 @@ func GetPodMetrics(ctx context.Context, restCfg *rest.Config, namespace, labelSe
 			CPUMillis: cpuMillis,
 			MemoryMiB: memMiB,
 		})
+	}
+	return out, nil
+}
+
+// PodUsage is one pod's CPU and memory, summed over its containers.
+type PodUsage struct {
+	Namespace string
+	Pod       string
+	CPUMillis int64
+	MemBytes  int64
+}
+
+// ListPodUsage reads every pod's usage matching labelSelector, in every
+// namespace, in one request. No metrics-server is no usage, not an error.
+func ListPodUsage(ctx context.Context, restCfg *rest.Config, labelSelector string) ([]PodUsage, error) {
+	httpClient, err := rest.HTTPClientFor(restCfg)
+	if err != nil {
+		return nil, fmt.Errorf("build http client: %w", err)
+	}
+	apiURL := restCfg.Host + "/apis/metrics.k8s.io/v1beta1/pods?labelSelector=" + url.QueryEscape(labelSelector)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("metrics api: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusServiceUnavailable {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("metrics api %d: %s", resp.StatusCode, body)
+	}
+	var list podMetricsList
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("decode metrics: %w", err)
+	}
+	out := make([]PodUsage, 0, len(list.Items))
+	for _, item := range list.Items {
+		u := PodUsage{Namespace: item.Metadata.Namespace, Pod: item.Metadata.Name}
+		for _, c := range item.Containers {
+			if q, err := resource.ParseQuantity(c.Usage.CPU); err == nil {
+				u.CPUMillis += q.MilliValue()
+			}
+			if q, err := resource.ParseQuantity(c.Usage.Memory); err == nil {
+				u.MemBytes += q.Value()
+			}
+		}
+		out = append(out, u)
 	}
 	return out, nil
 }

@@ -40,10 +40,17 @@ If your own Tailscale restarts, Meshploy's mesh can pause for about a second whi
 
 Mac and Windows machines join with the ordinary Tailscale app.
 
+## Metrics history {#metrics-history}
+
+Meshploy reads every online node and every running service once a minute and keeps what it reads, so a node's page and a service's overview can show the last hour, day or week, not only this moment. A node's history is its CPU, memory, disk and network; a service's is its CPU, memory, running pods and restarts, summed over its pods.
+
+Readings are kept as they are for a day. After that each five minutes becomes one point, the average with the highest CPU and memory kept beside it, so a short spike still shows. How long they are kept at all is **Keep metrics for** in Settings, Monitoring: 1, 3, 7, 14 or 30 days, 7 unless you change it. Lowering it frees the space within the hour. Windows nodes report no metrics yet, so they have no history.
+
 ## Terms {#terms}
 
 - **Gateway** {#gateway -> nodes}: The one machine facing the internet: the control plane, the console and API, and the edge.
 - **Mesh address** {#mesh-address -> mesh}: A node's address on the private WireGuard mesh, which all traffic between nodes uses.
 - **Build node** {#build-node -> roles}: A node that runs image builds.
 - **Mesh-only** {#mesh-only -> roles}: On the mesh but not in the cluster: nothing is scheduled on it, and routes can reach its ports.
+- **Keep metrics for** {#metric-retention -> metrics-history}: How many days node and service readings are stored, from 1 to 30.
 - **Provisioning token** {#provisioning-token -> joining}: A join token that works once. A registration token can be used again.

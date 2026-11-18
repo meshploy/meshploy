@@ -202,6 +202,8 @@ Meshploy is the OAuth authorization server for its own `/mcp`, so a client that 
 | POST | `/orgs` | ✓ | Create an organization, only on a server that has none: Community runs one per server (409 otherwise) |
 | GET | `/orgs/{orgId}` | ✓ | Get an organization |
 | PATCH | `/orgs/{orgId}` | ✓ | Update an organization |
+| GET | `/orgs/{orgId}/metrics/settings` | ✓ | How many days metrics are kept (`retention_days`) and the `choices` |
+| PUT | `/orgs/{orgId}/metrics/settings` | ✓ admin | `{"retention_days": 7}`, one of 1, 3, 7, 14, 30. Rows past it go at the next hourly cleanup |
 | PUT | `/orgs/{orgId}/network-isolation` | ✓ admin | `{"enabled": true}` closes each of the organization's projects to the rest of the cluster: its pods take traffic only from the project's own pods and levels, from projects that use one of its services' published variables, and from the nodes (the proxy, published ports). Outgoing traffic is unchanged. Off (the default) removes every policy it made. Enforced by k3s's own NetworkPolicy controller |
 | GET | `/orgs/{orgId}/sandbox` | ✓ | The nodes prepared to run sandboxed pods (labelled `meshploy.com/sandbox=true` by `meshploy install sandbox`), the sandboxed projects and levels the caller can see, with `required` where a rule makes it so, and `new_projects`: whether a project created now starts sandboxed (`new_projects_required` and `new_projects_why` when a rule makes it so) |
 | PUT | `/orgs/{orgId}/sandbox` | ✓ admin | `{"new_projects": true}` starts the organization's new projects sandboxed when their creator does not say; existing projects keep their own. Refused (409) while no node can run sandboxed pods |
@@ -314,6 +316,7 @@ A project is its own production level; each level below it is a project of its o
 | POST | `/orgs/{orgId}/nodes/{nodeId}/cancel-removal` | ✓ | Stop a node removal that is waiting for Headscale; 409 if none is |
 | DELETE | `/orgs/{orgId}/nodes/{nodeId}/cluster-agent` | ✓ admin | Revoke the node's cluster agent: the cluster is no longer reached through it, open requests to it are cut, and a new agent may register. 204; 404 if the node carries none |
 | GET | `/orgs/{orgId}/nodes/{nodeId}/metrics` | ✓ | Get live resource metrics for a node (requires node_exporter) |
+| GET | `/orgs/{orgId}/nodes/{nodeId}/metrics/history` | ✓ | `?range=1h\|6h\|24h\|7d\|30d` (default 24h): the node's stored CPU %, memory, disk and network rates, oldest first. A day or less is one point a minute; longer is one per five minutes, averaged, with `cpu_pct_max` and `mem_used_max` |
 | GET | `/orgs/{orgId}/nodes/{nodeId}/containers` | ✓ | List containers running on a node that Meshploy does not manage |
 | GET | `/orgs/{orgId}/discovery` | ✓ | List endpoints and containers on this org's nodes that Meshploy does not route |
 | POST | `/orgs/{orgId}/discovery/ignores` | ✓ | Record that a discovered endpoint is known and correct as it is. Not called by the console: Discovery is a view of a machine, not a list to clear. Kept for a future "new endpoint appeared" notification, which needs a baseline |
@@ -340,6 +343,7 @@ A project is its own production level; each level below it is a project of its o
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/env-vars` | ✓ | Get decrypted env vars for a service |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods` | ✓ | List running pods for a service; `runtime_class` is `gvisor` for a sandboxed pod |
 | GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/pods/metrics` | ✓ | Live CPU and memory usage per pod (requires metrics-server) |
+| GET | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/metrics/history` | ✓ | `?range=` as for a node: the service's stored CPU (millicores), memory, running pods and restarts, summed over its pods |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/reset` | ✓ | Wipe and re-provision a database (destructive) |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/start` | ✓ | Start a service |
 | POST | `/orgs/{orgId}/projects/{projectId}/services/{serviceId}/stop` | ✓ | Stop a service |

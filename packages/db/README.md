@@ -35,7 +35,7 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | `oauth_codes` | Authorization codes: single use, five minutes, with the redirect URI and PKCE challenge they were issued for |
 | `oauth_tokens` | `moat-` access and `mort-` refresh tokens under a grant, SHA-256 hashed; a refresh token is marked when traded |
 | `installed_licenses` | Enterprise licence tokens activated on this install |
-| `organizations` | Tenancy root. `network_isolation` closes each of its projects to the rest of the cluster |
+| `organizations` | Tenancy root. `network_isolation` closes each of its projects to the rest of the cluster; `metric_retention_days` is how long its metrics history is kept (0 is the default, 7) |
 | `organization_members` | User ↔ Org join (roles: owner / admin / member) |
 | `mesh_reach` | Whether a member's machines may reach a granted service, stack or project on the mesh, once someone chose; without a row, databases are off and everything else on |
 | `mesh_rules` | Network rules: a machine, and ports on it, that a person's machines, one machine or every machine of the organisation may reach; for what is not a Meshploy resource. Added to the generated mesh policy, no console permission |
@@ -128,6 +128,13 @@ Shared GORM models and database utilities. Imported by `apps/api` and `apps/prox
 | Table | Purpose |
 |---|---|
 | `templates` | 1-click deployment blueprints (official + user-created) |
+
+### Metrics history
+
+| Table | Purpose |
+|---|---|
+| `node_metric_samples` | A node's node_exporter reading each minute (`resolution` `1m`), rates worked out at write time; after a day, five minutes of them averaged into one `5m` row with the highest CPU and memory kept. Deleted past the organization's `metric_retention_days` (default 7), or once the node is gone. No foreign key |
+| `service_metric_samples` | The same for a service, summed over its running pods: CPU millicores, memory, pods, restarts (cumulative) |
 
 ---
 
